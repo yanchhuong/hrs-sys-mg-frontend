@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+
+# Vite cache
+.vite/
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+coverage/
+*.local
+
+# Claude Code
+.claude/
