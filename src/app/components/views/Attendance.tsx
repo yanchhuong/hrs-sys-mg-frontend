@@ -20,6 +20,7 @@ import {
   Clock, CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
   CheckCircle2, XCircle, AlertTriangle, LogIn, LogOut, Users,
   ChevronLeft, ChevronRight, Pencil, Download, AlertCircle, BarChart3,
+  Search, X,
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isToday as isTodayFn, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
@@ -46,6 +47,8 @@ export function Attendance() {
   const [monthDate, setMonthDate] = useState(new Date(2026, 3, 1)); // April 2026
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [monthlySearch, setMonthlySearch] = useState('');
+  const [monthlyStatusFilter, setMonthlyStatusFilter] = useState<'all' | 'late' | 'absent' | 'late_or_absent'>('all');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editRecord, setEditRecord] = useState<AttendanceType | null>(null);
   const [editCheckIn, setEditCheckIn] = useState('');
@@ -563,10 +566,64 @@ export function Attendance() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Monthly Summary Table */}
             <Card className="lg:col-span-2">
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 space-y-3">
                 <CardTitle className="text-base">Monthly Summary</CardTitle>
+                {/* Filters row */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[180px] max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                    <Input
+                      value={monthlySearch}
+                      onChange={(e) => setMonthlySearch(e.target.value)}
+                      placeholder="Search name, ID, department…"
+                      className="h-8 pl-8 pr-8 text-sm"
+                    />
+                    {monthlySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setMonthlySearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        title="Clear"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {([
+                      { key: 'all', label: 'All' },
+                      { key: 'late', label: 'Late' },
+                      { key: 'absent', label: 'Absent' },
+                      { key: 'late_or_absent', label: 'Late or Absent' },
+                    ] as const).map(chip => (
+                      <Button
+                        key={chip.key}
+                        variant={monthlyStatusFilter === chip.key ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setMonthlyStatusFilter(chip.key)}
+                      >
+                        {chip.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
+                {(() => {
+                  const kw = monthlySearch.trim().toLowerCase();
+                  const filteredRows = monthlyData.filter(d => {
+                    if (departmentFilter !== 'all' && d.employee.department !== departmentFilter) return false;
+                    if (kw) {
+                      const hay = `${d.employee.name} ${d.employee.id} ${d.employee.department}`.toLowerCase();
+                      if (!hay.includes(kw)) return false;
+                    }
+                    if (monthlyStatusFilter === 'late' && d.lateCount === 0) return false;
+                    if (monthlyStatusFilter === 'absent' && d.absentCount === 0) return false;
+                    if (monthlyStatusFilter === 'late_or_absent' && d.lateCount === 0 && d.absentCount === 0) return false;
+                    return true;
+                  });
+                  return (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -581,8 +638,14 @@ export function Attendance() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {monthlyData
-                      .filter(d => departmentFilter === 'all' || d.employee.department === departmentFilter)
+                    {filteredRows.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
+                          No employees match these filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {filteredRows
                       .map(data => (
                         <TableRow
                           key={data.employee.id}
@@ -642,6 +705,8 @@ export function Attendance() {
                       ))}
                   </TableBody>
                 </Table>
+                  );
+                })()}
               </CardContent>
             </Card>
 
