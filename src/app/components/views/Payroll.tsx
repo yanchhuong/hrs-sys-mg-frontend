@@ -34,6 +34,8 @@ import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel } from '../../utils/excelExport';
+import { getPolicyRequireBiometric, listEnrollments } from '../../utils/webauthn';
+import { BiometricGate } from '../common/BiometricGate';
 
 export function Payroll() {
   const { currentUser, currentEmployee } = useAuth();
@@ -49,6 +51,7 @@ export function Payroll() {
   const [previewData, setPreviewData] = useState<ParsedPayrollData | null>(null);
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [biometricGateOpen, setBiometricGateOpen] = useState(false);
 
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -103,6 +106,17 @@ export function Payroll() {
     }
   };
 
+  const commitPayrollUpload = () => {
+    if (!previewData) return;
+    toast.success(`Payroll batch "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
+    setUploadDialogOpen(false);
+    setSelectedFile(null);
+    setBatchName('');
+    setPeriodStart('');
+    setPeriodEnd('');
+    setPreviewData(null);
+  };
+
   const handleUploadPayroll = () => {
     if (!selectedFile || !batchName || !periodStart || !periodEnd) {
       toast.error('Please fill in all fields and select a file');
@@ -119,13 +133,16 @@ export function Payroll() {
       return;
     }
 
-    toast.success(`Payroll batch "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
-    setUploadDialogOpen(false);
-    setSelectedFile(null);
-    setBatchName('');
-    setPeriodStart('');
-    setPeriodEnd('');
-    setPreviewData(null);
+    // Step-up auth: require biometric when policy enabled and user has enrollments
+    const userId = currentUser?.employeeId;
+    if (userId
+      && getPolicyRequireBiometric(userId)
+      && listEnrollments(userId).length > 0) {
+      setBiometricGateOpen(true);
+      return;
+    }
+
+    commitPayrollUpload();
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -1195,6 +1212,17 @@ export function Payroll() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {currentUser && (
+        <BiometricGate
+          open={biometricGateOpen}
+          onOpenChange={setBiometricGateOpen}
+          userId={currentUser.employeeId}
+          title="Confirm payroll upload"
+          description={`Your admin policy requires biometric verification before uploading ${previewData?.totalEmployees ?? 0} payroll records.`}
+          onVerified={commitPayrollUpload}
+        />
       )}
     </div>
   );
