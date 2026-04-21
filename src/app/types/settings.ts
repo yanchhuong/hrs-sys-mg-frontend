@@ -78,6 +78,8 @@ export interface OTSettings {
   calculationMode: 'factory' | 'office';
 }
 
+export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';
+
 export interface PayrollBatch {
   id: string;
   date: string; // e.g., "2026-04-01"
@@ -90,7 +92,18 @@ export interface PayrollBatch {
   totalEarnings: number;
   deductions: number;
   remarks?: string;
+  /** Who created the batch. Segregation-of-duties requires approver ≠ uploader. */
   uploadedBy: string;
   uploadedAt: string;
-  status: 'draft' | 'approved' | 'processed';
+  status: PayrollBatchStatus;
+  /** Admin who approved. Must differ from uploadedBy. */
+  approvedBy?: string;
+  approvedAt?: string;
+  /** Admin who marked the batch paid / done. */
+  completedBy?: string;
+  completedAt?: string;
+  /** Audit for rejections — rejected batches can be re-submitted as a new run. */
+  rejectedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
 }

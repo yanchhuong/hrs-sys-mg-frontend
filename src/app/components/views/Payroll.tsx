@@ -29,7 +29,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Clock, Check, X as XIcon, Lock, Wallet } from 'lucide-react';
+import { Textarea } from '../ui/textarea';
+import { PayrollBatchStatus } from '../../types/settings';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
@@ -54,6 +60,15 @@ export function Payroll() {
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [biometricGateOpen, setBiometricGateOpen] = useState(false);
+
+  // Batch workflow state — live list (so approvals mutate in place).
+  const [batches, setBatches] = useState(mockPayrollBatches);
+  const [batchStatusTab, setBatchStatusTab] = useState<'all' | PayrollBatchStatus>('all');
+  const [approveTarget, setApproveTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [completeTarget, setCompleteTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [pendingApprovalBatch, setPendingApprovalBatch] = useState<typeof mockPayrollBatches[0] | null>(null);
 
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -187,6 +202,74 @@ export function Payroll() {
 
   const handleGeneratePayroll = () => {
     toast.success('Payroll generated for current month');
+  };
+
+  // ---------------------------------------------------------------------------
+  // Batch workflow (Pending → Approved → Done, with Rejection)
+  // ---------------------------------------------------------------------------
+  const canApprove = currentUser?.role === 'admin';
+  const myUserEmpId = currentUser?.employeeId ?? '';
+
+  /** Segregation of duties: approver cannot be the uploader. */
+  const canApproveBatch = (b: typeof mockPayrollBatches[0]) =>
+    canApprove && b.status === 'pending' && b.uploadedBy !== myUserEmpId;
+  const canMarkDone = (b: typeof mockPayrollBatches[0]) =>
+    canApprove && b.status === 'approved';
+  const canEdit = (b: typeof mockPayrollBatches[0]) =>
+    b.status === 'pending';   // once approved, immutable (corrections go to next run)
+
+  const requestApproval = (batch: typeof mockPayrollBatches[0]) => {
+    if (batch.uploadedBy === myUserEmpId) {
+      toast.error('Segregation of duties: you cannot approve a batch you uploaded.');
+      return;
+    }
+    setPendingApprovalBatch(batch);
+    // Respect the biometric step-up policy for sensitive admin actions.
+    if (myUserEmpId && getPolicyRequireBiometric(myUserEmpId) && listEnrollments(myUserEmpId).length > 0) {
+      setBiometricGateOpen(true);
+    } else {
+      setApproveTarget(batch);
+    }
+  };
+
+  const performApproval = () => {
+    const target = approveTarget ?? pendingApprovalBatch;
+    if (!target) return;
+    const now = new Date().toISOString();
+    setBatches(prev => prev.map(b =>
+      b.id === target.id
+        ? { ...b, status: 'approved' as PayrollBatchStatus, approvedBy: myUserEmpId, approvedAt: now, rejectedBy: undefined, rejectedAt: undefined, rejectionReason: undefined }
+        : b
+    ));
+    toast.success(`Approved ${target.subject}`);
+    setApproveTarget(null);
+    setPendingApprovalBatch(null);
+  };
+
+  const performReject = () => {
+    if (!rejectTarget) return;
+    if (!rejectionReason.trim()) { toast.error('Provide a reason for rejection'); return; }
+    const now = new Date().toISOString();
+    setBatches(prev => prev.map(b =>
+      b.id === rejectTarget.id
+        ? { ...b, status: 'rejected' as PayrollBatchStatus, rejectedBy: myUserEmpId, rejectedAt: now, rejectionReason: rejectionReason.trim() }
+        : b
+    ));
+    toast.success(`Rejected ${rejectTarget.subject}`);
+    setRejectTarget(null);
+    setRejectionReason('');
+  };
+
+  const performMarkDone = () => {
+    if (!completeTarget) return;
+    const now = new Date().toISOString();
+    setBatches(prev => prev.map(b =>
+      b.id === completeTarget.id
+        ? { ...b, status: 'done' as PayrollBatchStatus, completedBy: myUserEmpId, completedAt: now }
+        : b
+    ));
+    toast.success(`Marked ${completeTarget.subject} as paid / done`);
+    setCompleteTarget(null);
   };
 
   const handleDownloadTemplate = () => {
@@ -791,63 +874,171 @@ export function Payroll() {
         </div>
       )}
 
-      {isAdminOrManager && !selectedBatch && (
+      {isAdminOrManager && !selectedBatch && (() => {
+        const statusCounts: Record<'all' | PayrollBatchStatus, number> = {
+          all: batches.length,
+          pending: batches.filter(b => b.status === 'pending').length,
+          approved: batches.filter(b => b.status === 'approved').length,
+          done: batches.filter(b => b.status === 'done').length,
+          rejected: batches.filter(b => b.status === 'rejected').length,
+        };
+        const visibleBatches = batchStatusTab === 'all'
+          ? [...batches].sort((a, b) => b.date.localeCompare(a.date))
+          : [...batches].filter(b => b.status === batchStatusTab).sort((a, b) => b.date.localeCompare(a.date));
+        return (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Payroll Batches
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Payroll Batches
+                </CardTitle>
+                <p className="text-xs text-gray-500 mt-1">
+                  {statusCounts.pending > 0
+                    ? <>Segregation of duties: Manager uploads, Admin approves. <strong>{statusCounts.pending}</strong> batch{statusCounts.pending === 1 ? '' : 'es'} awaiting approval.</>
+                    : 'Approved runs are locked — corrections are made in the next run.'}
+                </p>
+              </div>
+              <Tabs value={batchStatusTab} onValueChange={(v) => setBatchStatusTab(v as typeof batchStatusTab)}>
+                <TabsList>
+                  <TabsTrigger value="all">
+                    All
+                    <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{statusCounts.all}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="pending">
+                    Pending
+                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="approved">
+                    Approved
+                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-800 hover:bg-blue-100">{statusCounts.approved}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="done">
+                    Done
+                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">{statusCounts.done}</Badge>
+                  </TabsTrigger>
+                  {statusCounts.rejected > 0 && (
+                    <TabsTrigger value="rejected">
+                      Rejected
+                      <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">{statusCounts.rejected}</Badge>
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+              </Tabs>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Month/Year</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Period</TableHead>
                   <TableHead>Subject</TableHead>
-                  <TableHead>No. of Employees</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead>Net Salary</TableHead>
-                  <TableHead>Total Earnings</TableHead>
-                  <TableHead>Deductions</TableHead>
-                  <TableHead>Remarks</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Employees</TableHead>
+                  <TableHead className="text-right">Net Salary</TableHead>
+                  <TableHead>Audit</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockPayrollBatches.map((batch) => {
-                  const getStatusColor = (status: string) => {
-                    switch (status) {
-                      case 'approved':
-                        return 'bg-green-100 text-green-800 hover:bg-green-100';
-                      case 'processed':
-                        return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
-                      default:
-                        return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100';
-                    }
-                  };
+                {visibleBatches.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
+                      No batches in this status.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {visibleBatches.map((batch) => {
+                  const uploader = mockEmployees.find(e => e.id === batch.uploadedBy);
+                  const approver = batch.approvedBy ? mockEmployees.find(e => e.id === batch.approvedBy) : null;
+                  const completer = batch.completedBy ? mockEmployees.find(e => e.id === batch.completedBy) : null;
+                  const rejecter = batch.rejectedBy ? mockEmployees.find(e => e.id === batch.rejectedBy) : null;
+                  const rowTone =
+                    batch.status === 'pending'  ? 'bg-yellow-50/40' :
+                    batch.status === 'rejected' ? 'bg-red-50/40'    : '';
                   return (
-                    <TableRow key={batch.id}>
-                      <TableCell>{format(new Date(batch.date), 'MM-dd-yyyy')}</TableCell>
-                      <TableCell>{batch.monthYear}</TableCell>
-                      <TableCell>{batch.type}</TableCell>
-                      <TableCell>{batch.subject}</TableCell>
-                      <TableCell>{batch.totalEmployees} person</TableCell>
-                      <TableCell>{batch.currency}</TableCell>
-                      <TableCell className="font-semibold">${batch.netSalary.toLocaleString()}</TableCell>
-                      <TableCell className="text-green-600">${batch.totalEarnings.toLocaleString()}</TableCell>
-                      <TableCell className="text-red-600">${batch.deductions.toLocaleString()}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{batch.remarks || '-'}</TableCell>
+                    <TableRow key={batch.id} className={rowTone}>
+                      <TableCell><StatusBadge status={batch.status} /></TableCell>
                       <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSelectedBatch(batch)}
-                        >
-                          View Details
-                        </Button>
+                        <p className="font-medium text-sm">{batch.monthYear}</p>
+                        <p className="text-[11px] text-gray-500">{format(new Date(batch.date), 'MMM dd, yyyy')} · {batch.type}</p>
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <p className="text-sm truncate">{batch.subject}</p>
+                        {batch.status === 'rejected' && batch.rejectionReason && (
+                          <p className="text-[11px] text-red-700 truncate" title={batch.rejectionReason}>
+                            <AlertCircle className="inline h-3 w-3 mr-0.5" />
+                            {batch.rejectionReason}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">{batch.totalEmployees}</TableCell>
+                      <TableCell className="text-right font-semibold text-sm">
+                        ${batch.netSalary.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-[11px] text-gray-600 leading-snug">
+                        <p>📥 {uploader?.name ?? batch.uploadedBy} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
+                        {approver && batch.approvedAt && (
+                          <p>✅ {approver.name} · {format(new Date(batch.approvedAt), 'MMM dd HH:mm')}</p>
+                        )}
+                        {completer && batch.completedAt && (
+                          <p>💰 {completer.name} · {format(new Date(batch.completedAt), 'MMM dd HH:mm')}</p>
+                        )}
+                        {rejecter && batch.rejectedAt && (
+                          <p className="text-red-700">❌ {rejecter.name} · {format(new Date(batch.rejectedAt), 'MMM dd HH:mm')}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSelectedBatch(batch)}>
+                            <FileText className="h-3.5 w-3.5 mr-1" />
+                            View
+                          </Button>
+                          {canApproveBatch(batch) && (
+                            <>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                onClick={() => requestApproval(batch)}
+                              >
+                                <Check className="h-3.5 w-3.5 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                                onClick={() => { setRejectTarget(batch); setRejectionReason(''); }}
+                              >
+                                <XIcon className="h-3.5 w-3.5 mr-1" />
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                          {canApprove && batch.status === 'pending' && batch.uploadedBy === myUserEmpId && (
+                            <Badge variant="outline" className="h-7 text-[10px] text-gray-500" title="You uploaded this — another admin must approve">
+                              <Lock className="h-3 w-3 mr-1" />
+                              Needs another admin
+                            </Badge>
+                          )}
+                          {canMarkDone(batch) && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => setCompleteTarget(batch)}
+                            >
+                              <Wallet className="h-3.5 w-3.5 mr-1" />
+                              Mark Done
+                            </Button>
+                          )}
+                          {batch.status === 'done' && (
+                            <Badge variant="outline" className="h-7 text-[10px] text-gray-500" title="Locked — corrections happen in the next run">
+                              <Lock className="h-3 w-3 mr-1" />
+                              Locked
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -856,7 +1047,8 @@ export function Payroll() {
             </Table>
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       {isEmployee && !selectedBatch && (
         <Card>
@@ -1241,13 +1433,129 @@ export function Payroll() {
       {currentUser && (
         <BiometricGate
           open={biometricGateOpen}
-          onOpenChange={setBiometricGateOpen}
+          onOpenChange={(o) => { setBiometricGateOpen(o); if (!o) setPendingApprovalBatch(null); }}
           userId={currentUser.employeeId}
-          title="Confirm payroll upload"
-          description={`Your admin policy requires biometric verification before uploading ${previewData?.totalEmployees ?? 0} payroll records.`}
-          onVerified={commitPayrollUpload}
+          title={pendingApprovalBatch ? 'Confirm payroll approval' : 'Confirm payroll upload'}
+          description={
+            pendingApprovalBatch
+              ? `Your admin policy requires biometric verification before approving "${pendingApprovalBatch.subject}".`
+              : `Your admin policy requires biometric verification before uploading ${previewData?.totalEmployees ?? 0} payroll records.`
+          }
+          onVerified={() => {
+            if (pendingApprovalBatch) {
+              setApproveTarget(pendingApprovalBatch);
+            } else {
+              commitPayrollUpload();
+            }
+          }}
         />
       )}
+
+      {/* Approve batch — confirmation */}
+      <AlertDialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve payroll batch?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Once approved, this batch is <strong>locked</strong>. Corrections must be made in the next run via retroactive adjustments.
+                </p>
+                {approveTarget && (
+                  <div className="rounded-md border p-3 bg-gray-50 text-sm space-y-1 text-gray-900">
+                    <p><span className="text-gray-500">Batch:</span> <strong>{approveTarget.subject}</strong></p>
+                    <p><span className="text-gray-500">Period:</span> {approveTarget.monthYear} · {approveTarget.type}</p>
+                    <p><span className="text-gray-500">Employees:</span> {approveTarget.totalEmployees}</p>
+                    <p><span className="text-gray-500">Net Salary:</span> <strong>${approveTarget.netSalary.toLocaleString()}</strong></p>
+                    <p><span className="text-gray-500">Uploaded by:</span> {mockEmployees.find(e => e.id === approveTarget.uploadedBy)?.name ?? approveTarget.uploadedBy}</p>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={performApproval} className="bg-green-600 hover:bg-green-700">
+              <Check className="h-4 w-4 mr-2" />
+              Approve &amp; Lock
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reject batch — require a reason */}
+      <AlertDialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectionReason(''); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject payroll batch?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The batch is marked Rejected and the uploader is notified. They can revise and re-submit as a new run.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason">
+              Reason <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              id="reject-reason"
+              rows={3}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="e.g. Bonus amount for dept X is wrong — please re-upload."
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={performReject}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={!rejectionReason.trim()}
+            >
+              <XIcon className="h-4 w-4 mr-2" />
+              Reject
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Mark Done (payment complete) */}
+      <AlertDialog open={!!completeTarget} onOpenChange={(o) => !o && setCompleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark batch as paid / done?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirm that {completeTarget ? `${completeTarget.totalEmployees} employee${completeTarget.totalEmployees === 1 ? '' : 's'} in ${completeTarget.subject}` : 'this batch'} have received their salary. The bank file should already be processed.
+              Marking as Done is permanent and writes an audit entry.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Not yet</AlertDialogCancel>
+            <AlertDialogAction onClick={performMarkDone}>
+              <Wallet className="h-4 w-4 mr-2" />
+              Mark Done
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payroll status badge
+// ---------------------------------------------------------------------------
+function StatusBadge({ status }: { status: PayrollBatchStatus }) {
+  const map: Record<PayrollBatchStatus, { label: string; cls: string; Icon: typeof Clock }> = {
+    pending:  { label: 'Pending',  cls: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100', Icon: Clock },
+    approved: { label: 'Approved', cls: 'bg-blue-100 text-blue-800 hover:bg-blue-100',       Icon: Check },
+    done:     { label: 'Done',     cls: 'bg-green-100 text-green-800 hover:bg-green-100',    Icon: Wallet },
+    rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-800 hover:bg-red-100',          Icon: XIcon },
+  };
+  const { label, cls, Icon } = map[status];
+  return (
+    <Badge className={`${cls} gap-1`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
   );
 }

@@ -100,18 +100,34 @@ const _generateBatches = (): PayrollBatch[] => {
     { type: 'Salary & Bonus', subject: 'Monthly Salary + Holiday Bonus', remarks: 'Khmer New Year Bonus' },
     { type: 'Bonus', subject: '13th Month Pay', remarks: 'Year-end 13th Month' },
   ];
-  const statuses: PayrollBatch['status'][] = ['approved', 'approved', 'approved', 'processed', 'pending'];
+  // Historical months are Done, one-month-ago is Approved (paid soon), current is Pending.
+  // EMP002 is the Manager who uploads; EMP001 is the Admin who approves and completes.
+  const uploader = 'EMP002';
+  const approver = 'EMP001';
 
   for (let m = 0; m < 12; m++) {
     const d = new Date(today.getFullYear(), today.getMonth() - m, 1);
     const monthStr = `${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-16`;
     const variant = batchTypes[m % batchTypes.length];
-    const employees = 110 + ((m * 7) % 8); // fluctuates 110-117
+    const employees = 110 + ((m * 7) % 8);
     const baseTotalEarnings = employees * (2800 + (m * 37) % 500);
-    const bonusMultiplier = variant.type === 'Salary & Bonus' ? 1.15 : variant.type === 'Bonus' ? 1.0 : 1.0;
+    const bonusMultiplier = variant.type === 'Salary & Bonus' ? 1.15 : 1.0;
     const totalEarnings = Math.round(baseTotalEarnings * bonusMultiplier);
     const deductions = Math.round(totalEarnings * 0.18);
+
+    const uploadedAt = `${dateStr}T10:00:00`;
+    const approvedAt = `${dateStr}T14:30:00`;
+    const completedAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-25T16:00:00`;
+
+    // m=0 → Pending (current month, awaiting admin approval)
+    // m=1 → Approved (approved, not yet paid)
+    // m≥2 → Done (paid, locked)
+    const status: PayrollBatch['status'] =
+      m === 0 ? 'pending' :
+      m === 1 ? 'approved' :
+      'done';
+
     items.push({
       id: `BATCH${String(items.length + 1).padStart(3, '0')}`,
       date: dateStr,
@@ -124,9 +140,13 @@ const _generateBatches = (): PayrollBatch[] => {
       totalEarnings,
       deductions,
       remarks: variant.remarks,
-      uploadedBy: 'EMP001',
-      uploadedAt: `${dateStr}T10:00:00`,
-      status: m === 0 ? 'pending' : statuses[m % statuses.length],
+      uploadedBy: uploader,
+      uploadedAt,
+      status,
+      approvedBy: status !== 'pending' ? approver : undefined,
+      approvedAt: status !== 'pending' ? approvedAt : undefined,
+      completedBy: status === 'done' ? approver : undefined,
+      completedAt: status === 'done' ? completedAt : undefined,
     });
   }
   return items;
