@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
+import { UserProfileDialog } from './common/UserProfileDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
   BarChart3,
+  UserCog,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 
@@ -39,12 +41,13 @@ interface LayoutProps {
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { currentUser, currentEmployee, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const isSettingsSubView = ['settings', 'user-management', 'attendance-settings', 'deps-group'].includes(currentView);
   const [settingsExpanded, setSettingsExpanded] = useState(isSettingsSubView);
 
   const menuItems = [
     { id: 'dashboard', label: 'Home', icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
-    { id: 'employees', label: 'Staffs', icon: Users, roles: ['admin', 'manager'] },
+    { id: 'employees', label: 'Employee', icon: Users, roles: ['admin', 'manager'] },
     { id: 'attendance', label: 'Attendance', icon: Clock, roles: ['admin', 'manager', 'employee'] },
     { id: 'exception', label: 'Exception', icon: AlertCircle, roles: ['admin', 'manager'] },
     { id: 'overtime', label: 'Overtime', icon: TimerIcon, roles: ['admin', 'manager', 'employee'] },
@@ -191,6 +194,11 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                    <UserCog className="mr-2 h-4 w-4" />
+                    <span>Your Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
@@ -214,6 +222,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
+      <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }

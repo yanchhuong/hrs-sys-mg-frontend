@@ -19,20 +19,24 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { mockIncreases } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
-import { TrendingUp, Plus } from 'lucide-react';
+import { SalaryIncrease } from '../../types/timework';
+import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 
 export function Increase() {
   const [increases] = useState(mockIncreases);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -198,7 +202,9 @@ export function Increase() {
                 const approver = mockEmployees.find((e) => e.id === increase.approvedBy);
                 return (
                   <TableRow key={increase.id}>
-                    <TableCell className="font-medium">{employee?.name}</TableCell>
+                    <TableCell>
+                      <EmployeeCell employee={employee} />
+                    </TableCell>
                     <TableCell>
                       <Badge className={getTypeColor(increase.type)}>
                         {increase.type}
@@ -211,7 +217,8 @@ export function Increase() {
                     <TableCell className="max-w-xs truncate">{increase.reason}</TableCell>
                     <TableCell>{approver?.name}</TableCell>
                     <TableCell>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" onClick={() => setDetailsTarget(increase)}>
+                        <Eye className="mr-1.5 h-3.5 w-3.5" />
                         View Details
                       </Button>
                     </TableCell>
@@ -237,6 +244,75 @@ export function Increase() {
           />
         </CardContent>
       </Card>
+
+      {/* View Details */}
+      <Dialog open={!!detailsTarget} onOpenChange={(o) => !o && setDetailsTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              Salary Increase Details
+            </DialogTitle>
+            <DialogDescription>Read-only record. Create a correction entry if anything here is wrong.</DialogDescription>
+          </DialogHeader>
+          {detailsTarget && (() => {
+            const employee = mockEmployees.find(e => e.id === detailsTarget.employeeId);
+            const approver = mockEmployees.find(e => e.id === detailsTarget.approvedBy);
+            return (
+              <div className="space-y-4">
+                <div className="p-3 rounded-md border">
+                  <EmployeeCell employee={employee} subtitle={employee?.position} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailRow label="Type">
+                    <Badge className={getTypeColor(detailsTarget.type)}>{detailsTarget.type}</Badge>
+                  </DetailRow>
+                  <DetailRow label="Amount">
+                    <span className="font-semibold text-green-700">
+                      +{detailsTarget.isPercentage ? `${detailsTarget.amount}%` : `$${detailsTarget.amount.toLocaleString()}`}
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Effective Date">
+                    {format(new Date(detailsTarget.effectiveDate), 'MMM dd, yyyy')}
+                  </DetailRow>
+                  <DetailRow label="Approved At">
+                    {detailsTarget.approvedAt
+                      ? format(new Date(detailsTarget.approvedAt), 'MMM dd, yyyy HH:mm')
+                      : '—'}
+                  </DetailRow>
+                </div>
+
+                <DetailRow label="Reason" full>
+                  <p className="text-sm">{detailsTarget.reason}</p>
+                </DetailRow>
+
+                <DetailRow label="Approved By" full>
+                  <div className="flex items-center gap-2 text-sm">
+                    <UserIcon className="h-3.5 w-3.5 text-gray-400" />
+                    <span>{approver?.name ?? detailsTarget.approvedBy}</span>
+                    {approver?.email && <span className="text-gray-500 text-xs">· {approver.email}</span>}
+                  </div>
+                </DetailRow>
+
+                <div className="text-[11px] text-gray-400">Record ID: <code>{detailsTarget.id}</code></div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button onClick={() => setDetailsTarget(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function DetailRow({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <div className={`space-y-1 ${full ? 'col-span-2' : ''}`}>
+      <Label className="text-[11px] uppercase tracking-wide text-gray-500">{label}</Label>
+      <div className="text-sm">{children}</div>
     </div>
   );
 }

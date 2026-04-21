@@ -26,6 +26,7 @@ import {
 } from '../ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { mockExceptions } from '../../data/timeworkData';
 import { mockEmployees as employees } from '../../data/mockData';
 import { AlertCircle, Check, X, Plus } from 'lucide-react';
@@ -321,7 +322,9 @@ export function Exception() {
                 const isPending = exception.status === 'pending';
                 return (
                   <TableRow key={exception.id} className={isPending ? 'bg-yellow-50/50' : ''}>
-                    <TableCell className="font-medium">{employee?.name}</TableCell>
+                    <TableCell>
+                      <EmployeeCell employee={employee} />
+                    </TableCell>
                     <TableCell>{format(new Date(exception.date), 'MMM dd, yyyy')}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{getTypeLabel(exception.type)}</Badge>

@@ -29,6 +29,7 @@ import { Calendar } from '../ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { Plus, CalendarIcon, Check, X } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -267,7 +268,11 @@ export function Overtime() {
                 const isPending = request.status === 'pending';
                 return (
                   <TableRow key={request.id} className={isPending ? 'bg-yellow-50/50' : ''}>
-                    {!isEmployee && <TableCell className="font-medium">{employee?.name}</TableCell>}
+                    {!isEmployee && (
+                      <TableCell>
+                        <EmployeeCell employee={employee} />
+                      </TableCell>
+                    )}
                     <TableCell>{format(new Date(request.date), 'MMM dd, yyyy')}</TableCell>
                     <TableCell>{request.hours}h</TableCell>
                     <TableCell>

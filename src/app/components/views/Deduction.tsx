@@ -18,20 +18,26 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
+import { Switch } from '../ui/switch';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { mockDeductions } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
-import { Minus, Plus } from 'lucide-react';
+import { SalaryDeduction } from '../../types/timework';
+import { Minus, Plus, Pencil, Save } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 
 export function Deduction() {
-  const [deductions] = useState(mockDeductions);
+  const [deductions, setDeductions] = useState(mockDeductions);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<SalaryDeduction | null>(null);
+  const [editForm, setEditForm] = useState<SalaryDeduction | null>(null);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -211,7 +217,9 @@ export function Deduction() {
                 const employee = mockEmployees.find((e) => e.id === deduction.employeeId);
                 return (
                   <TableRow key={deduction.id}>
-                    <TableCell className="font-medium">{employee?.name}</TableCell>
+                    <TableCell>
+                      <EmployeeCell employee={employee} />
+                    </TableCell>
                     <TableCell>{deduction.name}</TableCell>
                     <TableCell>
                       <Badge className={getTypeColor(deduction.type)}>
@@ -232,10 +240,23 @@ export function Deduction() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setEditTarget(deduction); setEditForm({ ...deduction }); }}
+                        >
+                          <Pencil className="h-3.5 w-3.5 mr-1" />
                           Edit
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={deduction.status !== 'active'}
+                          onClick={() => {
+                            setDeductions(prev => prev.map(d => d.id === deduction.id ? { ...d, status: 'cancelled' } : d));
+                            toast.success(`Stopped "${deduction.name}"`);
+                          }}
+                        >
                           Stop
                         </Button>
                       </div>
@@ -255,6 +276,148 @@ export function Deduction() {
           />
         </CardContent>
       </Card>
+
+      {/* Edit deduction */}
+      <Dialog
+        open={!!editTarget}
+        onOpenChange={(o) => { if (!o) { setEditTarget(null); setEditForm(null); } }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />
+              Edit Deduction
+            </DialogTitle>
+            <DialogDescription>Update the recurring or one-off deduction for this employee.</DialogDescription>
+          </DialogHeader>
+          {editTarget && editForm && (() => {
+            const employee = mockEmployees.find(e => e.id === editTarget.employeeId);
+            return (
+              <div className="space-y-4">
+                <div className="p-3 rounded-md border">
+                  <EmployeeCell employee={employee} subtitle={employee?.position} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Name <span className="text-red-500">*</span></Label>
+                  <Input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    placeholder="Tax Withholding"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Type</Label>
+                    <select
+                      value={editForm.type}
+                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value as SalaryDeduction['type'] })}
+                      className="w-full h-9 px-3 border rounded-md text-sm"
+                    >
+                      <option value="tax">Tax</option>
+                      <option value="insurance">Insurance</option>
+                      <option value="loan">Loan</option>
+                      <option value="fine">Fine</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Status</Label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value as SalaryDeduction['status'] })}
+                      className="w-full h-9 px-3 border rounded-md text-sm"
+                    >
+                      <option value="active">Active</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Amount <span className="text-red-500">*</span></Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={editForm.amount}
+                      onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center justify-between">
+                      <span>Percentage of salary</span>
+                      <Switch
+                        checked={editForm.isPercentage}
+                        onCheckedChange={(v) => setEditForm({ ...editForm, isPercentage: v })}
+                      />
+                    </Label>
+                    <p className="text-[11px] text-gray-500">
+                      {editForm.isPercentage
+                        ? `${editForm.amount}% of base salary per cycle`
+                        : `$${editForm.amount} flat per cycle`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={editForm.startDate}
+                      onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={editForm.endDate ?? ''}
+                      onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value || undefined })}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 p-3 rounded-md border">
+                  <div className="space-y-0.5">
+                    <p className="font-medium text-sm">Recurring</p>
+                    <p className="text-[11px] text-gray-500">
+                      Apply automatically to every payroll cycle until End Date or Cancelled.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editForm.isRecurring}
+                    onCheckedChange={(v) => setEditForm({ ...editForm, isRecurring: v })}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditTarget(null); setEditForm(null); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!editForm) return;
+                if (!editForm.name.trim()) { toast.error('Name is required'); return; }
+                if (!Number.isFinite(editForm.amount) || editForm.amount < 0) { toast.error('Amount must be ≥ 0'); return; }
+                setDeductions(prev => prev.map(d => d.id === editForm.id ? editForm : d));
+                toast.success(`Updated "${editForm.name}"`);
+                setEditTarget(null);
+                setEditForm(null);
+              }}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

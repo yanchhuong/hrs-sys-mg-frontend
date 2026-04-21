@@ -82,7 +82,16 @@ export function LoginPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => quickLogin('super_admin')}
+              className="flex flex-col h-auto py-3 gap-1 border-amber-300 bg-amber-50/40 hover:bg-amber-50"
+            >
+              <Shield className="h-4 w-4 text-amber-700" />
+              <span className="text-[10px] text-amber-900">Super</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -90,7 +99,7 @@ export function LoginPage() {
               className="flex flex-col h-auto py-3 gap-1"
             >
               <Shield className="h-4 w-4" />
-              <span className="text-xs">Admin</span>
+              <span className="text-[10px]">Admin</span>
             </Button>
             <Button
               variant="outline"
@@ -99,7 +108,7 @@ export function LoginPage() {
               className="flex flex-col h-auto py-3 gap-1"
             >
               <Users className="h-4 w-4" />
-              <span className="text-xs">Manager</span>
+              <span className="text-[10px]">Manager</span>
             </Button>
             <Button
               variant="outline"
@@ -108,13 +117,22 @@ export function LoginPage() {
               className="flex flex-col h-auto py-3 gap-1"
             >
               <User className="h-4 w-4" />
-              <span className="text-xs">Employee</span>
+              <span className="text-[10px]">Employee</span>
             </Button>
           </div>
 
           <div className="text-xs text-gray-500 space-y-2">
             <p className="text-center">Or auto-fill credentials:</p>
             <div className="space-y-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => autoFill('platform@hrms.com', 'super123')}
+                className="w-full justify-start text-xs h-7 px-2 text-amber-800 hover:bg-amber-50"
+              >
+                Super Admin: platform@hrms.com / super123
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

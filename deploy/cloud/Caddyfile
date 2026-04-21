@@ -1,0 +1,28 @@
+# Caddy reverse proxy — auto HTTPS, HTTP→HTTPS redirect.
+# PUBLIC_HOST is expected to be a real DNS name pointing at this server.
+
+{
+  email {$ACME_EMAIL}
+}
+
+{$PUBLIC_HOST} {
+  encode zstd gzip
+
+  # API routes → backend
+  handle /api/* {
+    reverse_proxy backend:4000
+  }
+
+  # Everything else → SPA
+  handle {
+    reverse_proxy frontend:80
+  }
+
+  # Sensible security headers
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  }
+}

@@ -1,6 +1,6 @@
 // Core HRMS Types
 
-export type UserRole = 'admin' | 'manager' | 'employee';
+export type UserRole = 'super_admin' | 'admin' | 'manager' | 'employee';
 
 export type EmployeeStatus = 'active' | 'inactive';
 
@@ -42,6 +42,34 @@ export interface Employee {
   nffNo?: string;
   tid?: string;
   contractExpireDate?: string;
+  // Banking
+  bankName?: string;
+  bankAccount?: string;
+  // Attached documents (contracts, IDs, certificates)
+  documents?: EmployeeDocument[];
+}
+
+export type EmployeeDocumentType =
+  | 'contract'
+  | 'id_card'
+  | 'passport'
+  | 'certificate'
+  | 'resume'
+  | 'tax_form'
+  | 'other';
+
+export interface EmployeeDocument {
+  id: string;
+  employeeId: string;
+  name: string;
+  type: EmployeeDocumentType;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  uploadedBy?: string;
+  /** In production this is an object-storage URL or signed link. */
+  url?: string;
+  notes?: string;
 }
 
 export interface Attendance {

@@ -26,6 +26,11 @@ import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, 
 import { toast } from 'sonner';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { EmployeeCell } from '../common/EmployeeCell';
+import { AnnualLeaveSetup } from '../common/AnnualLeaveSetup';
+import {
+  loadRule, daysForTenure, tenureYears, loadValuesForYear,
+} from '../../utils/annualLeave';
 
 type ViewMode = 'daily' | 'monthly';
 type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'absent' | 'present' | 'leave';
@@ -49,6 +54,9 @@ export function Attendance() {
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [monthlySearch, setMonthlySearch] = useState('');
   const [monthlyStatusFilter, setMonthlyStatusFilter] = useState<'all' | 'late' | 'absent' | 'late_or_absent'>('all');
+  const [alDialogOpen, setAlDialogOpen] = useState(false);
+  // Bumped whenever the AL dialog applies/resets values so monthlyData re-reads storage.
+  const [alVersion, setAlVersion] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editRecord, setEditRecord] = useState<AttendanceType | null>(null);
   const [editCheckIn, setEditCheckIn] = useState('');
@@ -114,6 +122,11 @@ export function Attendance() {
     const monthEnd = endOfMonth(monthDate);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
+    const year = monthDate.getFullYear();
+    const storedAL = loadValuesForYear(year);
+    const rule = loadRule();
+    const ruleAsOf = new Date(year, 0, 1);
+
     return mockEmployees.filter(e => e.status === 'active').map(emp => {
       const empRecords: Record<string, AttendanceStatus> = {};
       let presentCount = 0, absentCount = 0, lateCount = 0, leaveCount = 0;
@@ -138,12 +151,16 @@ export function Attendance() {
         }
       });
 
-      const totalAL = 18; // Annual leave allocation
-      const remainAL = totalAL - leaveCount;
+      // Prefer the stored per-year value; fall back to applying the rule live.
+      const totalAL = storedAL[emp.id]?.totalAL
+        ?? daysForTenure(rule, tenureYears(emp.joinDate, ruleAsOf));
+      const remainAL = Math.max(0, totalAL - leaveCount);
 
       return { employee: emp, records: empRecords, presentCount, absentCount, lateCount, leaveCount, leaveRecords, totalAL, remainAL };
     });
-  }, [monthDate]);
+    // alVersion invalidates when AL values/rule change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthDate, alVersion]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -480,15 +497,7 @@ export function Attendance() {
                       return (
                         <TableRow key={record.id} className="hover:bg-gray-50">
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
-                                {emp?.name?.split(' ').map(n => n[0]).join('')}
-                              </div>
-                              <div>
-                                <p className="font-medium text-sm">{emp?.name}</p>
-                                <p className="text-xs text-gray-400">{emp?.id}</p>
-                              </div>
-                            </div>
+                            <EmployeeCell employee={emp} subtitle={emp?.id} />
                           </TableCell>
                           <TableCell className="text-sm">{emp?.department}</TableCell>
                           <TableCell className="text-center">{timeCell(record.morningIn, 'in')}</TableCell>
@@ -556,6 +565,10 @@ export function Attendance() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button variant="outline" size="sm" onClick={() => setAlDialogOpen(true)}>
+                <CalendarIcon className="mr-1.5 h-4 w-4" />
+                Annual Leave
+              </Button>
               <Button variant="outline" size="sm" onClick={() => toast.success('Exported monthly data')}>
                 <Download className="mr-1.5 h-4 w-4" />
                 Export
@@ -627,10 +640,10 @@ export function Attendance() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Employee</TableHead>
                       <TableHead className="text-center">Total AL</TableHead>
                       <TableHead className="text-center">Leave</TableHead>
                       <TableHead className="text-center">Remain</TableHead>
-                      <TableHead>Employee</TableHead>
                       <TableHead className="text-center">Present</TableHead>
                       <TableHead className="text-center">Absent</TableHead>
                       <TableHead className="text-center">Late</TableHead>
@@ -652,6 +665,9 @@ export function Attendance() {
                           className={`cursor-pointer hover:bg-gray-50 ${selectedEmployee === data.employee.id ? 'bg-blue-50' : ''}`}
                           onClick={() => setSelectedEmployee(selectedEmployee === data.employee.id ? null : data.employee.id)}
                         >
+                          <TableCell>
+                            <EmployeeCell employee={data.employee} />
+                          </TableCell>
                           <TableCell className="text-center">
                             <span className="inline-flex items-center justify-center h-7 min-w-[28px] rounded-full bg-blue-50 text-blue-700 text-sm font-medium">
                               {data.totalAL}
@@ -676,12 +692,6 @@ export function Attendance() {
                             <span className={`inline-flex items-center justify-center h-7 min-w-[28px] rounded-full text-sm font-medium ${data.remainAL > 5 ? 'bg-green-100 text-green-700' : data.remainAL > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
                               {data.remainAL}
                             </span>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-sm">{data.employee.name}</p>
-                              <p className="text-xs text-gray-400">{data.employee.department}</p>
-                            </div>
                           </TableCell>
                           <TableCell className="text-center">
                             <span className="inline-flex items-center justify-center h-7 min-w-[28px] rounded-full bg-green-100 text-green-700 text-sm font-medium">
@@ -972,6 +982,15 @@ export function Attendance() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Annual Leave setup */}
+      <AnnualLeaveSetup
+        open={alDialogOpen}
+        onOpenChange={setAlDialogOpen}
+        defaultYear={monthDate.getFullYear()}
+        employees={mockEmployees.map(e => ({ id: e.id, name: e.name, joinDate: e.joinDate, status: e.status }))}
+        onChanged={() => setAlVersion(v => v + 1)}
+      />
     </div>
   );
 }

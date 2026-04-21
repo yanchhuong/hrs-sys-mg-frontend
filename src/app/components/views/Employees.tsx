@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { mockEmployees, mockContracts } from '../../data/mockData';
-import { Contract } from '../../types/hrms';
+import { Contract, Employee } from '../../types/hrms';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -35,10 +35,16 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
+import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { EmployeeCell } from '../common/EmployeeCell';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -80,8 +86,203 @@ function hasUnsavedChanges(
   return JSON.stringify(original) !== JSON.stringify(edited);
 }
 
+// ---------------------------------------------------------------------------
+// Documents tab
+// ---------------------------------------------------------------------------
+const DOC_TYPES: { value: import('../../types/hrms').EmployeeDocumentType; label: string }[] = [
+  { value: 'contract',    label: 'Contract' },
+  { value: 'id_card',     label: 'ID Card' },
+  { value: 'passport',    label: 'Passport' },
+  { value: 'certificate', label: 'Certificate' },
+  { value: 'resume',      label: 'Resume / CV' },
+  { value: 'tax_form',    label: 'Tax Form' },
+  { value: 'other',       label: 'Other' },
+];
+
+const DOC_LIMIT_MB = 10;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function EmployeeDocuments({
+  employee,
+  onChange,
+}: {
+  employee: import('../../types/hrms').Employee;
+  onChange: (docs: import('../../types/hrms').EmployeeDocument[]) => void;
+}) {
+  const [uploadType, setUploadType] = useState<import('../../types/hrms').EmployeeDocumentType>('contract');
+  const [filter, setFilter] = useState<string>('all');
+
+  const docs = employee.documents ?? [];
+  const visible = filter === 'all' ? docs : docs.filter(d => d.type === filter);
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const next: import('../../types/hrms').EmployeeDocument[] = [...docs];
+    let rejected = 0;
+    Array.from(files).forEach(f => {
+      if (f.size > DOC_LIMIT_MB * 1024 * 1024) {
+        rejected++;
+        return;
+      }
+      next.push({
+        id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        employeeId: employee.id,
+        name: f.name,
+        type: uploadType,
+        mimeType: f.type || 'application/octet-stream',
+        sizeBytes: f.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: 'you',
+      });
+    });
+    onChange(next);
+    if (rejected > 0) toast.error(`${rejected} file(s) exceeded ${DOC_LIMIT_MB} MB and were skipped`);
+    else toast.success(`Uploaded ${files.length} file${files.length !== 1 ? 's' : ''}`);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Delete this document?')) return;
+    onChange(docs.filter(d => d.id !== id));
+    toast.success('Document deleted');
+  };
+
+  const handleDownload = (doc: import('../../types/hrms').EmployeeDocument) => {
+    toast.success(`Downloading ${doc.name}…`);
+    // In real backend this is a pre-signed URL from object storage.
+  };
+
+  const counts = DOC_TYPES.reduce((m, t) => {
+    m[t.value] = docs.filter(d => d.type === t.value).length;
+    return m;
+  }, {} as Record<string, number>);
+
+  return (
+    <div className="space-y-4">
+      {/* Upload */}
+      <div className="p-4 rounded-md border-2 border-dashed border-gray-300 space-y-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-[200px] space-y-1.5">
+            <Label className="text-xs text-gray-600">Document type</Label>
+            <select
+              value={uploadType}
+              onChange={(e) => setUploadType(e.target.value as typeof uploadType)}
+              className="w-full h-9 px-3 border rounded-md text-sm"
+            >
+              {DOC_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5 shrink-0">
+            <Label className="text-xs text-gray-600">&nbsp;</Label>
+            <input
+              type="file"
+              multiple
+              onChange={(e) => handleFiles(e.target.files)}
+              className="hidden"
+              id="doc-upload-input"
+            />
+            <label htmlFor="doc-upload-input">
+              <Button variant="outline" size="sm" asChild>
+                <span>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  Upload file(s)
+                </span>
+              </Button>
+            </label>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500">
+          PDF, images, or Office documents up to {DOC_LIMIT_MB} MB each. Drag-drop supported when you click Upload.
+        </p>
+      </div>
+
+      {/* Type filter */}
+      {docs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-2 py-1 rounded-md border ${filter === 'all' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 hover:bg-gray-50'}`}
+          >
+            All <span className="ml-1 text-gray-500">{docs.length}</span>
+          </button>
+          {DOC_TYPES.filter(t => counts[t.value] > 0).map(t => (
+            <button
+              key={t.value}
+              onClick={() => setFilter(t.value)}
+              className={`px-2 py-1 rounded-md border ${filter === t.value ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 hover:bg-gray-50'}`}
+            >
+              {t.label} <span className="ml-1 text-gray-500">{counts[t.value]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* List */}
+      {visible.length === 0 ? (
+        <div className="text-center py-10 border border-dashed rounded-md">
+          <FileText className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">No documents yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Upload contracts, ID scans, certificates, etc.</p>
+        </div>
+      ) : (
+        <ul className="divide-y border rounded-md">
+          {visible.map(doc => {
+            const label = DOC_TYPES.find(t => t.value === doc.type)?.label ?? doc.type;
+            return (
+              <li key={doc.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
+                <div className="h-9 w-9 rounded-md bg-blue-50 flex items-center justify-center shrink-0">
+                  <FileText className="h-4 w-4 text-blue-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{doc.name}</p>
+                  <p className="text-xs text-gray-500">
+                    <span className="capitalize">{label}</span> · {formatBytes(doc.sizeBytes)} · {format(new Date(doc.uploadedAt), 'MMM dd, yyyy')}
+                    {doc.uploadedBy && ` · ${doc.uploadedBy}`}
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(doc)} title="Download">
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                  onClick={() => handleDelete(doc.id)}
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function Employees() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  // Bump on create so re-read of mockEmployees refreshes the table.
+  const [, setRosterVersion] = useState(0);
+  const bumpRoster = () => setRosterVersion(v => v + 1);
+
+  const handleCreated = (emp: Employee) => {
+    mockEmployees.push(emp);
+    bumpRoster();
+  };
+  const handleImported = (rows: Employee[]) => {
+    rows.forEach(r => mockEmployees.push(r));
+    bumpRoster();
+  };
   const [selectedEmployee, setSelectedEmployee] = useState<typeof mockEmployees[0] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -217,12 +418,38 @@ export function Employees() {
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Employee
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Employee
+                <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Single Employee
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setBulkDialogOpen(true)}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Upload Bulk (Excel)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      <AddEmployeeDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onCreated={handleCreated}
+      />
+      <BulkUploadEmployeesDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        onImported={handleImported}
+      />
 
       <Card>
         <CardHeader>
@@ -262,7 +489,9 @@ export function Employees() {
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
                   <TableCell className="font-medium">{employee.id}</TableCell>
-                  <TableCell>{employee.name}</TableCell>
+                  <TableCell>
+                    <EmployeeCell employee={employee} nameOnly />
+                  </TableCell>
                   <TableCell className="text-sm">{employee.khmerName || '-'}</TableCell>
                   <TableCell className="capitalize">{employee.gender || '-'}</TableCell>
                   <TableCell>
@@ -342,9 +571,12 @@ export function Employees() {
               {/* Identity strip */}
               <div className="px-6 py-4 border-b shrink-0 flex items-center gap-4">
                 <div className="relative shrink-0">
-                  <Avatar className="h-16 w-16">
-                    <AvatarImage src={(isEditing ? editedEmployee : selectedEmployee)?.profileImage} />
-                    <AvatarFallback className="text-lg bg-blue-100 text-blue-600">
+                  <Avatar className="h-16 w-16 rounded-lg border border-gray-200">
+                    <AvatarImage
+                      src={(isEditing ? editedEmployee : selectedEmployee)?.profileImage}
+                      className="rounded-lg object-cover"
+                    />
+                    <AvatarFallback className="text-lg bg-blue-100 text-blue-600 rounded-lg">
                       {((isEditing ? editedEmployee : selectedEmployee)?.name || '').charAt(0)}
                     </AvatarFallback>
                   </Avatar>
@@ -352,7 +584,7 @@ export function Employees() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="absolute bottom-0 right-0 h-6 w-6 p-0 rounded-full"
+                      className="absolute -bottom-1.5 -right-1.5 h-6 w-6 p-0 rounded-full shadow-sm"
                       title="Upload avatar"
                     >
                       <Upload className="h-3 w-3" />
@@ -401,7 +633,7 @@ export function Employees() {
 
               {/* Tabs */}
               <Tabs defaultValue="profile" className="flex-1 flex flex-col min-h-0">
-                <TabsList className="mx-6 mt-3 shrink-0 grid grid-cols-3">
+                <TabsList className="mx-6 mt-3 shrink-0 grid grid-cols-4">
                   <TabsTrigger value="profile">
                     <User className="h-3.5 w-3.5 mr-1.5" />
                     Profile
@@ -415,6 +647,13 @@ export function Employees() {
                     Contracts
                     <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
                       {getEmployeeContracts(selectedEmployee.id).length}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="documents">
+                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
+                    Documents
+                    <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
+                      {(selectedEmployee.documents ?? []).length}
                     </Badge>
                   </TabsTrigger>
                 </TabsList>
@@ -631,6 +870,38 @@ export function Employees() {
                         )}
                       </FieldRow>
                     </div>
+
+                    <SectionHeading>Banking</SectionHeading>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FieldRow label="Bank Name" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.bankName || ''}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, bankName: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            <option value="">Select bank…</option>
+                            {['ABA', 'ACLEDA', 'Canadia', 'Chip Mong', 'Maybank', 'PPCB', 'Prince', 'SKB', 'Other'].map(b => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p>{selectedEmployee.bankName || '—'}</p>
+                        )}
+                      </FieldRow>
+                      <FieldRow label="Account Number" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <Input
+                            value={editedEmployee.bankAccount || ''}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, bankAccount: e.target.value })}
+                            className="h-9"
+                            placeholder="000-123-456"
+                          />
+                        ) : (
+                          <p className="font-mono text-sm">{selectedEmployee.bankAccount || '—'}</p>
+                        )}
+                      </FieldRow>
+                    </div>
                   </TabsContent>
 
                   {/* Contracts Tab */}
@@ -700,6 +971,18 @@ export function Employees() {
                         </>
                       );
                     })()}
+                  </TabsContent>
+
+                  {/* Documents Tab */}
+                  <TabsContent value="documents" className="mt-0">
+                    <EmployeeDocuments
+                      employee={selectedEmployee}
+                      onChange={(docs) => {
+                        const idx = mockEmployees.findIndex(e => e.id === selectedEmployee.id);
+                        if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], documents: docs };
+                        setSelectedEmployee({ ...selectedEmployee, documents: docs });
+                      }}
+                    />
                   </TabsContent>
                 </div>
               </Tabs>

@@ -28,6 +28,7 @@ import {
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -43,6 +44,7 @@ export function Payroll() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
+  const [batchType, setBatchType] = useState<'Salary' | 'Salary & Bonus' | '1st Salary' | '2nd Salary'>('Salary');
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
@@ -188,9 +190,9 @@ export function Payroll() {
   };
 
   const handleDownloadTemplate = () => {
-    // Get current month and year or use the upload dialog values
-    const month = periodStart ? format(new Date(periodStart), 'MM') : format(new Date(), 'MM');
-    const year = periodStart ? format(new Date(periodStart), 'yyyy') : format(new Date(), 'yyyy');
+    // Use the upload dialog MM/YYYY values, fall back to current month/year.
+    const month = periodStart ? String(periodStart).padStart(2, '0') : format(new Date(), 'MM');
+    const year = periodEnd || format(new Date(), 'yyyy');
     const monthYear = `${month}-${year}`;
 
     downloadPayrollTemplate(mockEmployees, monthYear);
@@ -251,41 +253,70 @@ export function Payroll() {
                 <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="batchName">Batch Name</Label>
+                      <Label htmlFor="batchName">
+                        Subject <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="batchName"
                         placeholder="e.g., April 2026 - 1st Half"
                         value={batchName}
                         onChange={(e) => setBatchName(e.target.value)}
+                        required
+                        aria-required="true"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Payroll Frequency</Label>
-                      <select className="w-full px-3 py-2 border rounded-md">
-                        <option>Twice per month</option>
-                        <option>Once per month</option>
+                      <Label htmlFor="batchType">Type</Label>
+                      <select
+                        id="batchType"
+                        value={batchType}
+                        onChange={(e) => setBatchType(e.target.value as typeof batchType)}
+                        className="w-full px-3 py-2 border rounded-md h-9"
+                      >
+                        <option value="Salary">Salary</option>
+                        <option value="Salary & Bonus">Salary &amp; Bonus</option>
+                        <option value="1st Salary">1st Salary</option>
+                        <option value="2nd Salary">2nd Salary</option>
                       </select>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="periodStart">Period Start</Label>
-                      <Input
-                        id="periodStart"
-                        type="date"
-                        value={periodStart}
-                        onChange={(e) => setPeriodStart(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="periodEnd">Period End</Label>
-                      <Input
-                        id="periodEnd"
-                        type="date"
-                        value={periodEnd}
-                        onChange={(e) => setPeriodEnd(e.target.value)}
-                      />
+                  <div className="space-y-2">
+                    <Label>
+                      Period <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          id="periodStart"
+                          type="number"
+                          min={1}
+                          max={12}
+                          placeholder="MM"
+                          value={periodStart}
+                          onChange={(e) => setPeriodStart(e.target.value)}
+                          className="text-center"
+                          required
+                          aria-required="true"
+                        />
+                        <span className="block text-xs text-gray-500 text-center">Month (MM)</span>
+                      </div>
+                      <span className="text-gray-400 text-lg font-medium self-start mt-2">-</span>
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          id="periodEnd"
+                          type="number"
+                          min={2000}
+                          max={2100}
+                          placeholder="YYYY"
+                          value={periodEnd}
+                          onChange={(e) => setPeriodEnd(e.target.value)}
+                          className="text-center"
+                          required
+                          aria-required="true"
+                        />
+                        <span className="block text-xs text-gray-500 text-center">Year (YYYY)</span>
+                      </div>
                     </div>
                   </div>
 
@@ -540,15 +571,6 @@ export function Payroll() {
                     >
                       Cancel
                     </Button>
-                    {previewData && previewData.employees.length > 0 && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setPreviewDialogOpen(true)}
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        View Fullscreen
-                      </Button>
-                    )}
                     <Button
                       onClick={handleUploadPayroll}
                       disabled={!previewData || previewData.errors.length > 0 || isParsingFile}
@@ -565,7 +587,7 @@ export function Payroll() {
             </Dialog>
 
             <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-              <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none p-8 flex flex-col gap-6">
+              <DialogContent className="!fixed !inset-0 !left-0 !top-0 !translate-x-0 !translate-y-0 !w-screen !h-screen !max-w-none sm:!max-w-none !max-h-none !m-0 !rounded-none p-8 flex flex-col gap-6">
                 <DialogHeader className="shrink-0">
                   <DialogTitle className="text-2xl">Payroll Preview</DialogTitle>
                   <DialogDescription>
@@ -1072,7 +1094,9 @@ export function Payroll() {
                   return (
                     <TableRow key={record.id}>
                       <TableCell>{record.employeeId}</TableCell>
-                      <TableCell className="font-medium">{employee?.name}</TableCell>
+                      <TableCell>
+                        <EmployeeCell employee={employee} nameOnly />
+                      </TableCell>
                       <TableCell>{employee?.position}</TableCell>
                       <TableCell>{employee?.department}</TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>

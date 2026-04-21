@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '../ui/table';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { EmployeeCell } from '../common/EmployeeCell';
 import { FileText, AlertCircle, Plus } from 'lucide-react';
 import { format, differenceInDays, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -192,7 +193,9 @@ export function Contracts() {
                 );
                 return (
                   <TableRow key={contract.id}>
-                    <TableCell className="font-medium">{employee?.name}</TableCell>
+                    <TableCell>
+                      <EmployeeCell employee={employee} />
+                    </TableCell>
                     <TableCell>{employee?.position}</TableCell>
                     <TableCell>{format(new Date(contract.startDate), 'MMM dd, yyyy')}</TableCell>
                     <TableCell>{format(new Date(contract.endDate), 'MMM dd, yyyy')}</TableCell>

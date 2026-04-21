@@ -224,6 +224,7 @@ export const mockDepartments: Department[] = departmentCatalog.map(d => ({
 
 // Users: keep legacy demo accounts + one user per manager + a few sample employee logins
 const usersSeed: User[] = [
+  { id: '0', email: 'platform@hrms.com', password: 'super123', role: 'super_admin', employeeId: '', createdAt: '2023-01-01T00:00:00', lastLogin: '2026-04-21T09:45:00', isActive: true },
   { id: '1', email: 'admin@company.com', password: 'admin123', role: 'admin', employeeId: 'EMP001', departmentId: 'DEPT002', createdAt: '2023-01-10T00:00:00', lastLogin: '2026-04-20T08:30:00', isActive: true },
   { id: '2', email: 'manager@company.com', password: 'manager123', role: 'manager', employeeId: 'EMP002', departmentId: 'DEPT001', createdAt: '2023-03-15T00:00:00', lastLogin: '2026-04-19T09:15:00', isActive: true },
   { id: '3', email: 'john@company.com', password: 'john123', role: 'employee', employeeId: 'EMP003', departmentId: 'DEPT001', createdAt: '2024-06-05T00:00:00', lastLogin: '2026-04-20T08:45:00', isActive: true },

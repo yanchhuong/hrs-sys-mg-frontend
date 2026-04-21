@@ -16,6 +16,7 @@ import { Deduction } from './components/views/Deduction';
 import { Increase } from './components/views/Increase';
 import { AttendanceSettings } from './components/views/AttendanceSettings';
 import { Reports } from './components/views/Reports';
+import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
 import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
@@ -24,6 +25,11 @@ function AppContent() {
 
   if (!currentUser) {
     return <LoginPage />;
+  }
+
+  // Super Admin operates the platform, not tenant data — give them a separate shell.
+  if (currentUser.role === 'super_admin') {
+    return <SuperAdminApp />;
   }
 
   const renderView = () => {
