@@ -12,6 +12,8 @@ import {
   ScrollText, Database, LogOut, Menu, X, UserCog,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
+import { LanguageSwitcher } from '../../common/LanguageSwitcher';
+import { useI18n } from '../../../i18n/I18nContext';
 
 export type SuperAdminView = 'dashboard' | 'companies' | 'users' | 'sync' | 'activity' | 'backups' | 'policy';
 
@@ -21,20 +23,22 @@ interface Props {
   onViewChange: (view: SuperAdminView) => void;
 }
 
-const MENU: { id: SuperAdminView; label: string; icon: typeof LayoutDashboard; description: string }[] = [
-  { id: 'dashboard', label: 'Dashboard',    icon: LayoutDashboard,    description: 'Platform overview' },
-  { id: 'companies', label: 'Companies',    icon: Building2,          description: 'Tenants and plans' },
-  { id: 'users',     label: 'Users',        icon: UsersRound,         description: 'Cross-tenant directory' },
-  { id: 'sync',      label: 'Connect & Sync', icon: Link2,            description: 'API keys and local installs' },
-  { id: 'activity',  label: 'Activity Log', icon: ScrollText,         description: 'Audit trail & sync errors' },
-  { id: 'backups',   label: 'Backups',      icon: Database,           description: 'Per-tenant snapshots & restore' },
-  { id: 'policy',    label: 'Policy',       icon: SlidersHorizontal,  description: 'Global security + features' },
+const MENU_ITEMS: { id: SuperAdminView; icon: typeof LayoutDashboard; tKey: string; tDesc: string }[] = [
+  { id: 'dashboard', icon: LayoutDashboard,   tKey: 'nav.platform.dashboard', tDesc: 'nav.platform.dashboard.desc' },
+  { id: 'companies', icon: Building2,         tKey: 'nav.platform.companies', tDesc: 'nav.platform.companies.desc' },
+  { id: 'users',     icon: UsersRound,        tKey: 'nav.platform.users',     tDesc: 'nav.platform.users.desc' },
+  { id: 'sync',      icon: Link2,             tKey: 'nav.platform.sync',      tDesc: 'nav.platform.sync.desc' },
+  { id: 'activity',  icon: ScrollText,        tKey: 'nav.platform.activity',  tDesc: 'nav.platform.activity.desc' },
+  { id: 'backups',   icon: Database,          tKey: 'nav.platform.backups',   tDesc: 'nav.platform.backups.desc' },
+  { id: 'policy',    icon: SlidersHorizontal, tKey: 'nav.platform.policy',    tDesc: 'nav.platform.policy.desc' },
 ];
 
 export function SuperAdminLayout({ children, currentView, onViewChange }: Props) {
   const { currentUser, logout } = useAuth();
+  const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const MENU = MENU_ITEMS.map(m => ({ ...m, label: t(m.tKey), description: t(m.tDesc) }));
 
   const handleNav = (id: SuperAdminView) => {
     onViewChange(id);
@@ -56,8 +60,8 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
             <Shield className="h-5 w-5 text-amber-400" />
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-sm">HRMS Platform</p>
-            <p className="text-[10px] uppercase tracking-wide text-amber-400">Super Admin</p>
+            <p className="font-semibold text-sm">{t('brand.platform')}</p>
+            <p className="text-[10px] uppercase tracking-wide text-amber-400">{t('header.super_admin')}</p>
           </div>
         </div>
 
@@ -118,9 +122,10 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
             </div>
 
             <div className="flex items-center gap-3">
+              <LanguageSwitcher />
               <Badge className="bg-amber-100 text-amber-900 border border-amber-300 gap-1">
                 <Shield className="h-3 w-3" />
-                PLATFORM
+                {t('header.platform')}
               </Badge>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -133,19 +138,19 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm">Super Admin</p>
+                      <p className="text-sm">{t('header.super_admin')}</p>
                       <p className="text-xs text-gray-500">{currentUser?.email}</p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                     <UserCog className="mr-2 h-4 w-4" />
-                    Your Profile
+                    {t('header.profile')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
-                    Log out
+                    {t('header.logout')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

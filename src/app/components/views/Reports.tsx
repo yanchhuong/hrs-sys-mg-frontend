@@ -23,10 +23,12 @@ import {
   exportAttendanceToExcel,
   exportPayrollToExcel,
 } from '../../utils/excelExport';
+import { useI18n } from '../../i18n/I18nContext';
 
 const TODAY = new Date('2026-04-20');
 
 export function Reports() {
+  const { t } = useI18n();
   const { currentUser } = useAuth();
 
   // Gate
@@ -45,8 +47,8 @@ export function Reports() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">Reports</h1>
-          <p className="text-gray-500">Generate and export attendance and payroll reports</p>
+          <h1 className="text-3xl font-bold">{t('page.reports.title')}</h1>
+          <p className="text-gray-500">{t('page.reports.description')}</p>
         </div>
         <Badge variant="secondary" className="text-sm">
           <TrendingUp className="h-3.5 w-3.5 mr-1.5" />

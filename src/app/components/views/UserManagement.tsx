@@ -45,6 +45,7 @@ import {
 import { Textarea } from '../ui/textarea';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
 
 // ---------------------------------------------------------------------------
 // Role + permission model
@@ -156,6 +157,7 @@ const slugifyRoleKey = (name: string, existing: string[]) => {
 // Main component
 // ---------------------------------------------------------------------------
 export function UserManagement() {
+  const { t } = useI18n();
   const [users, setUsers] = useState(mockUsers);
   const [customRoles, setCustomRoles] = useState<RoleDef[]>([]);
   const [permissions, setPermissions] = useState<PermissionMatrix>(() => buildDefaultMatrix());
@@ -386,8 +388,8 @@ export function UserManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">User Management</h1>
-          <p className="text-gray-500">Manage users, roles, and access permissions</p>
+          <h1 className="text-3xl font-bold">{t('page.usermgmt.title')}</h1>
+          <p className="text-gray-500">{t('page.usermgmt.description')}</p>
         </div>
       </div>
 

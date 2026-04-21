@@ -28,6 +28,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AnnualLeaveSetup } from '../common/AnnualLeaveSetup';
+import { useI18n } from '../../i18n/I18nContext';
 import {
   loadRule, daysForTenure, tenureYears, loadValuesForYear,
 } from '../../utils/annualLeave';
@@ -46,6 +47,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
 };
 
 export function Attendance() {
+  const { t } = useI18n();
   const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   const [selectedDate, setSelectedDate] = useState('2026-04-20');
@@ -232,8 +234,8 @@ export function Attendance() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Attendance Management</h1>
-          <p className="text-gray-500">Track and manage employee attendance</p>
+          <h1 className="text-3xl font-bold">{t('page.attendance.title')}</h1>
+          <p className="text-gray-500">{t('page.attendance.description')}</p>
         </div>
         <div className="flex gap-2">
           {/* View toggle */}

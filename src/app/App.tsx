@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { I18nProvider } from './i18n/I18nContext';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/views/Dashboard';
@@ -76,9 +77,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-      <Toaster />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <AppContent />
+        <Toaster />
+      </AuthProvider>
+    </I18nProvider>
   );
 }

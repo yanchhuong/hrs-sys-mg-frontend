@@ -33,8 +33,10 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { Plus, CalendarIcon, Check, X } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
 
 export function Overtime() {
+  const { t } = useI18n();
   const { currentUser } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [hours, setHours] = useState('');
@@ -144,8 +146,8 @@ export function Overtime() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Overtime Management</h1>
-          <p className="text-gray-500">Request and manage overtime hours</p>
+          <h1 className="text-3xl font-bold">{t('page.overtime.title')}</h1>
+          <p className="text-gray-500">{t('page.overtime.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />

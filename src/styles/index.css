@@ -1,3 +1,12 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Khmer script needs a looser line so superscript marks don't clip. */
+html.lang-km {
+  font-family: 'Noto Sans Khmer', 'Hanuman', 'Khmer OS', system-ui, sans-serif;
+  line-height: 1.55;
+}
+html.lang-km h1, html.lang-km h2, html.lang-km h3 {
+  line-height: 1.4;
+}

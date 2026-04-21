@@ -32,8 +32,10 @@ import { SalaryIncrease } from '../../types/timework';
 import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
 
 export function Increase() {
+  const { t } = useI18n();
   const [increases] = useState(mockIncreases);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
@@ -90,8 +92,8 @@ export function Increase() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Salary Increases</h1>
-          <p className="text-gray-500">Manage raises, bonuses, and promotions</p>
+          <h1 className="text-3xl font-bold">{t('page.increase.title')}</h1>
+          <p className="text-gray-500">{t('page.increase.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />

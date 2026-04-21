@@ -47,8 +47,10 @@ import {
   loadCloudConfig, saveCloudConfig, clearCloudConfig, deriveStatus,
   testCloudConnection, runSyncNow, CloudConfig, ConnectionStatus, TestResult,
 } from '../../utils/cloudSync';
+import { useI18n } from '../../i18n/I18nContext';
 
 export function Settings() {
+  const { t } = useI18n();
   const { currentUser, currentEmployee } = useAuth();
   const [rules, setRules] = useState(mockAttendanceRules);
   const [activeRule, setActiveRule] = useState(rules[0]);
@@ -66,19 +68,15 @@ export function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">System Settings</h1>
-        <p className="text-gray-500">Configure HRMS system preferences</p>
+        <h1 className="text-3xl font-bold">{t('page.settings.title')}</h1>
+        <p className="text-gray-500">{t('page.settings.description')}</p>
       </div>
 
-      <Tabs defaultValue="policy" className="space-y-6">
+      <Tabs defaultValue="general" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="policy">
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            Policy
-          </TabsTrigger>
           <TabsTrigger value="general">
             <SettingsIcon className="mr-2 h-4 w-4" />
-            General
+            Company
           </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="security">
@@ -86,6 +84,10 @@ export function Settings() {
               Security
             </TabsTrigger>
           )}
+          <TabsTrigger value="policy">
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Policy
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="policy" className="space-y-6">
@@ -234,27 +236,7 @@ export function Settings() {
         </TabsContent>
 
         <TabsContent value="general" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>General Settings</CardTitle>
-              <CardDescription>Company and system preferences</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Company Name</Label>
-                <Input defaultValue="My Company Inc." />
-              </div>
-              <div className="space-y-2">
-                <Label>Payroll Frequency</Label>
-                <select className="w-full px-3 py-2 border rounded-md">
-                  <option>Twice per month (1st-15th, 16th-31st)</option>
-                  <option>Once per month</option>
-                  <option>Weekly</option>
-                </select>
-              </div>
-            </CardContent>
-          </Card>
-
+          <CompanyInformationCard />
           {isAdmin && <CloudConnectionCard />}
         </TabsContent>
 
@@ -535,6 +517,145 @@ function guessDeviceLabel(): string {
   if (/iPhone|iPad/i.test(ua)) return 'iPhone / iPad';
   if (/Android/i.test(ua)) return 'Android device';
   return 'This device';
+}
+
+// ---------------------------------------------------------------------------
+// Company Information
+// ---------------------------------------------------------------------------
+interface CompanyInfo {
+  name: string;
+  contact: string;
+  email: string;
+  tin: string;
+  plan: 'free' | 'starter' | 'business' | 'enterprise';
+  address: string;
+}
+
+const COMPANY_INFO_KEY = 'hrms:companyInfo';
+const defaultCompanyInfo: CompanyInfo = {
+  name: 'My Company Inc.',
+  contact: '+855-23-000-0000',
+  email: 'hr@company.com',
+  tin: '',
+  plan: 'business',
+  address: '',
+};
+
+function loadCompanyInfo(): CompanyInfo {
+  try {
+    const raw = localStorage.getItem(COMPANY_INFO_KEY);
+    return raw ? { ...defaultCompanyInfo, ...(JSON.parse(raw) as Partial<CompanyInfo>) } : defaultCompanyInfo;
+  } catch {
+    return defaultCompanyInfo;
+  }
+}
+
+function CompanyInformationCard() {
+  const [info, setInfo] = useState<CompanyInfo>(() => loadCompanyInfo());
+  const [dirty, setDirty] = useState(false);
+
+  const patch = (p: Partial<CompanyInfo>) => { setInfo({ ...info, ...p }); setDirty(true); };
+
+  const handleSave = () => {
+    if (!info.name.trim()) { toast.error('Company name is required'); return; }
+    if (info.email && !/^\S+@\S+\.\S+$/.test(info.email)) { toast.error('Invalid email'); return; }
+    localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(info));
+    setDirty(false);
+    toast.success('Company information saved');
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Company Information</CardTitle>
+        <CardDescription>Public business details shown on payslips, tax reports, and invoices.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="ci-name">
+              Company Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="ci-name"
+              value={info.name}
+              onChange={(e) => patch({ name: e.target.value })}
+              placeholder="My Company Inc."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-contact">Contact</Label>
+            <Input
+              id="ci-contact"
+              value={info.contact}
+              onChange={(e) => patch({ contact: e.target.value })}
+              placeholder="+855-23-000-0000"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-email">Email</Label>
+            <Input
+              id="ci-email"
+              type="email"
+              value={info.email}
+              onChange={(e) => patch({ email: e.target.value })}
+              placeholder="hr@company.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-tin">TIN</Label>
+            <Input
+              id="ci-tin"
+              value={info.tin}
+              onChange={(e) => patch({ tin: e.target.value })}
+              placeholder="Taxpayer Identification Number"
+            />
+            <p className="text-xs text-gray-500">Printed on tax reports (TOS, annual summary).</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-plan">Plan</Label>
+            <select
+              id="ci-plan"
+              value={info.plan}
+              onChange={(e) => patch({ plan: e.target.value as CompanyInfo['plan'] })}
+              className="w-full px-3 py-2 border rounded-md h-9"
+            >
+              <option value="free">Free</option>
+              <option value="starter">Starter</option>
+              <option value="business">Business</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+            <p className="text-xs text-gray-500">Managed by the platform admin; read-only for tenant admins in production.</p>
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="ci-address">Address</Label>
+            <Input
+              id="ci-address"
+              value={info.address}
+              onChange={(e) => patch({ address: e.target.value })}
+              placeholder="Street, District, City, Country"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          {dirty && <span className="text-xs text-amber-700 mr-auto">Unsaved changes</span>}
+          <Button variant="outline" onClick={() => { setInfo(loadCompanyInfo()); setDirty(false); }} disabled={!dirty}>
+            Discard
+          </Button>
+          <Button onClick={handleSave} disabled={!dirty}>
+            <Save className="h-4 w-4 mr-2" />
+            Save
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------

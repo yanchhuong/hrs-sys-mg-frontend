@@ -43,8 +43,10 @@ import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel } from '../../utils/excelExport';
 import { getPolicyRequireBiometric, listEnrollments } from '../../utils/webauthn';
 import { BiometricGate } from '../common/BiometricGate';
+import { useI18n } from '../../i18n/I18nContext';
 
 export function Payroll() {
+  const { t } = useI18n();
   const { currentUser, currentEmployee } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -291,8 +293,8 @@ export function Payroll() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Payroll Management</h1>
-          <p className="text-gray-500">Manage employee compensation and payslips</p>
+          <h1 className="text-3xl font-bold">{t('page.payroll.title')}</h1>
+          <p className="text-gray-500">{t('page.payroll.description')}</p>
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-2">

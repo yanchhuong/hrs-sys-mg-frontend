@@ -32,8 +32,10 @@ import { SalaryDeduction } from '../../types/timework';
 import { Minus, Plus, Pencil, Save } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
 
 export function Deduction() {
+  const { t } = useI18n();
   const [deductions, setDeductions] = useState(mockDeductions);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SalaryDeduction | null>(null);
@@ -93,8 +95,8 @@ export function Deduction() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Salary Deductions</h1>
-          <p className="text-gray-500">Manage tax, insurance, loans, and other deductions</p>
+          <h1 className="text-3xl font-bold">{t('page.deduction.title')}</h1>
+          <p className="text-gray-500">{t('page.deduction.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />

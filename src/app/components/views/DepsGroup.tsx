@@ -26,6 +26,7 @@ import {
   FolderTree, UserCheck, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface DeptGroup extends Department {
   type: 'department' | 'group';
@@ -87,6 +88,7 @@ const emptyForm: Omit<DeptGroup, 'id'> = {
 };
 
 export function DepsGroup() {
+  const { t } = useI18n();
   const [items, setItems] = useState<DeptGroup[]>(initialDepts);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeptGroup | null>(null);
@@ -173,8 +175,8 @@ export function DepsGroup() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Deps/Group</h1>
-          <p className="text-gray-500">Manage departments and employee groups</p>
+          <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
+          <p className="text-gray-500">{t('page.depsgroup.description')}</p>
         </div>
         <Button onClick={openAdd}>
           <Plus className="mr-2 h-4 w-4" />

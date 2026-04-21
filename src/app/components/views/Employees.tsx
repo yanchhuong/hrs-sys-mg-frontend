@@ -41,6 +41,7 @@ import {
 } from '../ui/dropdown-menu';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
+import { useI18n } from '../../i18n/I18nContext';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -268,6 +269,7 @@ function EmployeeDocuments({
 }
 
 export function Employees() {
+  const { t } = useI18n();
   const [searchTerm, setSearchTerm] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -413,8 +415,8 @@ export function Employees() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Employee Management</h1>
-          <p className="text-gray-500">Manage all employee records</p>
+          <h1 className="text-3xl font-bold">{t('page.employees.title')}</h1>
+          <p className="text-gray-500">{t('page.employees.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />

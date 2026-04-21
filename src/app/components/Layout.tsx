@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { UserProfileDialog } from './common/UserProfileDialog';
+import { LanguageSwitcher } from './common/LanguageSwitcher';
+import { useI18n } from '../i18n/I18nContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,28 +42,29 @@ interface LayoutProps {
 
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { currentUser, currentEmployee, logout } = useAuth();
+  const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const isSettingsSubView = ['settings', 'user-management', 'attendance-settings', 'deps-group'].includes(currentView);
   const [settingsExpanded, setSettingsExpanded] = useState(isSettingsSubView);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Home', icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
-    { id: 'employees', label: 'Employee', icon: Users, roles: ['admin', 'manager'] },
-    { id: 'attendance', label: 'Attendance', icon: Clock, roles: ['admin', 'manager', 'employee'] },
-    { id: 'exception', label: 'Exception', icon: AlertCircle, roles: ['admin', 'manager'] },
-    { id: 'overtime', label: 'Overtime', icon: TimerIcon, roles: ['admin', 'manager', 'employee'] },
-    { id: 'deduction', label: 'Deduction', icon: Minus, roles: ['admin'] },
-    { id: 'increase', label: 'Increase', icon: TrendingUp, roles: ['admin'] },
-    { id: 'payroll', label: 'Payroll', icon: DollarSign, roles: ['admin', 'manager', 'employee'] },
-    { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'manager'] },
+    { id: 'dashboard', label: t('nav.home'),       icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
+    { id: 'employees', label: t('nav.employee'),   icon: Users,           roles: ['admin', 'manager'] },
+    { id: 'attendance', label: t('nav.attendance'),icon: Clock,           roles: ['admin', 'manager', 'employee'] },
+    { id: 'exception', label: t('nav.exception'),  icon: AlertCircle,     roles: ['admin', 'manager'] },
+    { id: 'overtime',  label: t('nav.overtime'),   icon: TimerIcon,       roles: ['admin', 'manager', 'employee'] },
+    { id: 'deduction', label: t('nav.deduction'),  icon: Minus,           roles: ['admin'] },
+    { id: 'increase',  label: t('nav.increase'),   icon: TrendingUp,      roles: ['admin'] },
+    { id: 'payroll',   label: t('nav.payroll'),    icon: DollarSign,      roles: ['admin', 'manager', 'employee'] },
+    { id: 'reports',   label: t('nav.reports'),    icon: BarChart3,       roles: ['admin', 'manager'] },
   ];
 
   const settingsSubMenuItems = [
-    { id: 'settings', label: 'General Settings', icon: Settings },
-    { id: 'attendance-settings', label: 'Attendance Settings', icon: Clock },
-    { id: 'deps-group', label: 'Deps/Group', icon: Users },
-    { id: 'user-management', label: 'User Management', icon: Users },
+    { id: 'settings',            label: t('nav.setting.general'),    icon: Settings },
+    { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock },
+    { id: 'deps-group',          label: t('nav.setting.depsgroup'),  icon: Users },
+    { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users },
   ];
 
   const filteredMenuItems = menuItems.filter(item =>
@@ -97,7 +100,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           <div className="p-2 bg-blue-600 rounded-lg">
             <LayoutDashboard className="h-5 w-5 text-white" />
           </div>
-          <span className="font-semibold text-lg">HRMS</span>
+          <span className="font-semibold text-lg">{t('brand.hrms')}</span>
         </div>
         <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
           {filteredMenuItems.map((item) => {
@@ -124,7 +127,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                 onClick={() => setSettingsExpanded(!settingsExpanded)}
               >
                 <Settings className="mr-2 h-4 w-4" />
-                Setting
+                {t('nav.setting')}
                 {settingsExpanded ? (
                   <ChevronDown className="ml-auto h-4 w-4" />
                 ) : (
@@ -172,9 +175,10 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               </Button>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
-                {currentUser?.role.toUpperCase()}
+                {t(`role.${currentUser?.role ?? 'employee'}`).toUpperCase()}
               </Badge>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -196,12 +200,12 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                     <UserCog className="mr-2 h-4 w-4" />
-                    <span>Your Profile</span>
+                    <span>{t('header.profile')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
+                    <span>{t('header.logout')}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

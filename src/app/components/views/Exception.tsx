@@ -28,12 +28,14 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { mockExceptions } from '../../data/timeworkData';
+import { useI18n } from '../../i18n/I18nContext';
 import { mockEmployees as employees } from '../../data/mockData';
 import { AlertCircle, Check, X, Plus } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 
 export function Exception() {
+  const { t } = useI18n();
   const { currentUser } = useAuth();
   const [exceptions] = useState(mockExceptions);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
@@ -146,10 +148,8 @@ export function Exception() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">Attendance Exceptions</h1>
-          <p className="text-gray-500">
-            Handle missed punches, late arrivals, and manual corrections
-          </p>
+          <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
+          <p className="text-gray-500">{t('page.exception.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
