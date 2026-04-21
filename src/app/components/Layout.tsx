@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -40,36 +40,79 @@ interface LayoutProps {
   onViewChange: (view: string) => void;
 }
 
+interface MenuNode {
+  id: string;
+  label: string;
+  icon: typeof LayoutDashboard;   // any lucide icon
+  roles?: string[];               // absent = visible to everyone
+  children?: MenuNode[];          // absent = leaf; present = group
+}
+
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { currentUser, currentEmployee, logout } = useAuth();
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const isSettingsSubView = ['settings', 'user-management', 'attendance-settings', 'deps-group'].includes(currentView);
-  const [settingsExpanded, setSettingsExpanded] = useState(isSettingsSubView);
 
-  const menuItems = [
-    { id: 'dashboard', label: t('nav.home'),       icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
-    { id: 'employees', label: t('nav.employee'),   icon: Users,           roles: ['admin', 'manager'] },
-    { id: 'attendance', label: t('nav.attendance'),icon: Clock,           roles: ['admin', 'manager', 'employee'] },
-    { id: 'exception', label: t('nav.exception'),  icon: AlertCircle,     roles: ['admin', 'manager'] },
-    { id: 'overtime',  label: t('nav.overtime'),   icon: TimerIcon,       roles: ['admin', 'manager', 'employee'] },
-    { id: 'deduction', label: t('nav.deduction'),  icon: Minus,           roles: ['admin'] },
-    { id: 'increase',  label: t('nav.increase'),   icon: TrendingUp,      roles: ['admin'] },
-    { id: 'payroll',   label: t('nav.payroll'),    icon: DollarSign,      roles: ['admin', 'manager', 'employee'] },
-    { id: 'reports',   label: t('nav.reports'),    icon: BarChart3,       roles: ['admin', 'manager'] },
-  ];
+  const userRole = currentUser?.role;
+  const visibleTree = useMemo<MenuNode[]>(() => {
+    const tree: MenuNode[] = [
+      { id: 'dashboard', label: t('nav.home'),     icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
+      { id: 'employees', label: t('nav.employee'), icon: Users,           roles: ['admin', 'manager'] },
+      {
+        id: 'time-tracking',
+        label: t('nav.time_tracking'),
+        icon: Clock,
+        children: [
+          { id: 'attendance', label: t('nav.attendance'), icon: Clock,       roles: ['admin', 'manager', 'employee'] },
+          { id: 'overtime',   label: t('nav.overtime'),   icon: TimerIcon,   roles: ['admin', 'manager', 'employee'] },
+          { id: 'exception',  label: t('nav.exception'),  icon: AlertCircle, roles: ['admin', 'manager'] },
+        ],
+      },
+      {
+        id: 'payroll-mgmt',
+        label: t('nav.payroll_mgmt'),
+        icon: DollarSign,
+        children: [
+          { id: 'payroll',   label: t('nav.payroll'),   icon: DollarSign, roles: ['admin', 'manager', 'employee'] },
+          { id: 'increase',  label: t('nav.increase'),  icon: TrendingUp, roles: ['admin'] },
+          { id: 'deduction', label: t('nav.deduction'), icon: Minus,      roles: ['admin'] },
+        ],
+      },
+      { id: 'reports', label: t('nav.reports'), icon: BarChart3, roles: ['admin', 'manager'] },
+      {
+        id: 'settings-group',
+        label: t('nav.setting'),
+        icon: Settings,
+        roles: ['admin'],
+        children: [
+          { id: 'settings',            label: t('nav.setting.general'),    icon: Settings,   roles: ['admin'] },
+          { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock,      roles: ['admin'] },
+          { id: 'deps-group',          label: t('nav.setting.depsgroup'),  icon: Users,      roles: ['admin'] },
+          { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users,      roles: ['admin'] },
+          { id: 'payroll-categories',  label: t('nav.setting.payrollcat'), icon: DollarSign, roles: ['admin'] },
+        ],
+      },
+    ];
+    const isVisible = (item: MenuNode) => !item.roles || (userRole && item.roles.includes(userRole));
+    return tree
+      .map(item => item.children
+        ? { ...item, children: item.children.filter(isVisible) }
+        : item)
+      .filter(item => item.children ? item.children.length > 0 : isVisible(item));
+  }, [userRole, t]);
 
-  const settingsSubMenuItems = [
-    { id: 'settings',            label: t('nav.setting.general'),    icon: Settings },
-    { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock },
-    { id: 'deps-group',          label: t('nav.setting.depsgroup'),  icon: Users },
-    { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users },
-  ];
-
-  const filteredMenuItems = menuItems.filter(item =>
-    currentUser && item.roles.includes(currentUser.role)
-  );
+  // Accordion behaviour: at most one group open at a time. Opening a different
+  // group closes whichever was previously open.
+  const [openGroup, setOpenGroup] = useState<string | null>(() => {
+    const match = visibleTree.find(g => g.children?.some(c => c.id === currentView));
+    return match ? match.id : null;
+  });
+  useEffect(() => {
+    const match = visibleTree.find(g => g.children?.some(c => c.id === currentView));
+    if (match) setOpenGroup(match.id);
+  }, [currentView, visibleTree]);
+  const toggleExpanded = (id: string) => setOpenGroup(prev => (prev === id ? null : id));
 
   const handleMenuClick = (itemId: string) => {
     onViewChange(itemId);
@@ -103,59 +146,60 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           <span className="font-semibold text-lg">{t('brand.hrms')}</span>
         </div>
         <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
-          {filteredMenuItems.map((item) => {
+          {visibleTree.map((item) => {
             const Icon = item.icon;
+            if (!item.children) {
+              return (
+                <Button
+                  key={item.id}
+                  variant={currentView === item.id ? 'secondary' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => handleMenuClick(item.id)}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {item.label}
+                </Button>
+              );
+            }
+            const isOpen = openGroup === item.id;
+            const hasActiveChild = item.children.some(c => c.id === currentView);
             return (
-              <Button
-                key={item.id}
-                variant={currentView === item.id ? 'secondary' : 'ghost'}
-                className="w-full justify-start"
-                onClick={() => handleMenuClick(item.id)}
-              >
-                <Icon className="mr-2 h-4 w-4" />
-                {item.label}
-              </Button>
+              <div key={item.id}>
+                <Button
+                  variant={isOpen || hasActiveChild ? 'secondary' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => toggleExpanded(item.id)}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {item.label}
+                  {isOpen ? (
+                    <ChevronDown className="ml-auto h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="ml-auto h-4 w-4" />
+                  )}
+                </Button>
+                {isOpen && (
+                  <div className="ml-4 mt-1 space-y-1">
+                    {item.children.map((sub) => {
+                      const SubIcon = sub.icon;
+                      return (
+                        <Button
+                          key={sub.id}
+                          variant={currentView === sub.id ? 'secondary' : 'ghost'}
+                          className="w-full justify-start text-sm"
+                          size="sm"
+                          onClick={() => handleMenuClick(sub.id)}
+                        >
+                          <SubIcon className="mr-2 h-3 w-3" />
+                          {sub.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
-
-          {/* Settings Menu with Submenu */}
-          {currentUser?.role === 'admin' && (
-            <div>
-              <Button
-                variant={settingsExpanded || ['settings', 'contracts', 'attendance-settings', 'deps-group'].includes(currentView) ? 'secondary' : 'ghost'}
-                className="w-full justify-start"
-                onClick={() => setSettingsExpanded(!settingsExpanded)}
-              >
-                <Settings className="mr-2 h-4 w-4" />
-                {t('nav.setting')}
-                {settingsExpanded ? (
-                  <ChevronDown className="ml-auto h-4 w-4" />
-                ) : (
-                  <ChevronRight className="ml-auto h-4 w-4" />
-                )}
-              </Button>
-
-              {settingsExpanded && (
-                <div className="ml-4 mt-1 space-y-1">
-                  {settingsSubMenuItems.map((subItem) => {
-                    const SubIcon = subItem.icon;
-                    return (
-                      <Button
-                        key={subItem.id}
-                        variant={currentView === subItem.id ? 'secondary' : 'ghost'}
-                        className="w-full justify-start text-sm"
-                        size="sm"
-                        onClick={() => handleMenuClick(subItem.id)}
-                      >
-                        <SubIcon className="mr-2 h-3 w-3" />
-                        {subItem.label}
-                      </Button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
         </nav>
       </aside>
 

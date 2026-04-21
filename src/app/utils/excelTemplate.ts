@@ -1,4 +1,6 @@
 import * as XLSX from 'xlsx';
+import { PayrollCategory } from '../types/settings';
+import { loadPayrollCategories } from './payrollCategories';
 
 interface Employee {
   id: string;
@@ -6,136 +8,146 @@ interface Employee {
   [key: string]: any;
 }
 
-export function downloadPayrollTemplate(employees: Employee[], monthYear: string = '04-2026') {
-  // Create a new workbook
-  const wb = XLSX.utils.book_new();
+// Column 0..3 are fixed identifiers / totals. Category amounts start at E.
+const CATEGORY_START_COL = 4;
 
-  // Create worksheet data with the WABOOKS format
+export function downloadPayrollTemplate(
+  employees: Employee[],
+  monthYear: string = '04-2026',
+  options: { categories?: PayrollCategory[] } = {},
+) {
+  const all = options.categories ?? loadPayrollCategories();
+  const earnings = all
+    .filter((c) => c.kind === 'earning' && c.enabled)
+    .sort((a, b) => a.order - b.order);
+  const deductions = all
+    .filter((c) => c.kind === 'deduction' && c.enabled)
+    .sort((a, b) => a.order - b.order);
+
+  // Earnings row and deductions row stack vertically — so the header block
+  // must be wide enough to fit whichever side has more columns.
+  const widest = Math.max(earnings.length, deductions.length);
+  const totalCols = CATEGORY_START_COL + widest; // columns 0..(CATEGORY_START_COL + widest - 1)
+
+  const wb = XLSX.utils.book_new();
   const wsData: any[][] = [];
 
-  // Parse month and year
   const [month, year] = monthYear.split('-');
 
-  // Row 1: Title
+  // Row 0: Title (merged across all columns)
   wsData.push([`${year} Year ${month} Month Payroll`]);
 
-  // Row 2-3: Two-row stacked headers
-  wsData.push([
+  // Row 1: Earnings header (shared Emp No/Name/Net cells merge into row 2)
+  const earningsHeader: any[] = [
     'Employee No.',
     'Employee Name',
     'Net Salary',
     'Total Earnings',
-    'Basic Salary',
-    'Position Allowance',
-    'OverTime',
-    'Annual Allowance',
-    'Seniority allowance',
-    'Bonus'
-  ]);
+    ...earnings.map((c) => c.label),
+  ];
+  // pad to totalCols so the columns align
+  while (earningsHeader.length < totalCols) earningsHeader.push('');
+  wsData.push(earningsHeader);
 
-  wsData.push([
+  // Row 2: Deductions header (Emp No/Name/Net are merged from above)
+  const deductionsHeader: any[] = [
     '', // Employee No. (merged)
     '', // Employee Name (merged)
     '', // Net Salary (merged)
     'Total Deductions',
-    'Withholding TAX',
-    'Advanced Payment',
-    'Loan',
-    'NSSF PENSION',
-    'Others',
-    '' // Empty
-  ]);
+    ...deductions.map((c) => c.label),
+  ];
+  while (deductionsHeader.length < totalCols) deductionsHeader.push('');
+  wsData.push(deductionsHeader);
 
-  // Add all employees from the staff list
+  // Employee data: 2 rows per employee
   employees.forEach((employee) => {
-    // Earnings row
-    wsData.push([
-      employee.id,           // Employee No.
-      employee.name,         // Employee Name
-      '',                    // Net Salary (will be calculated)
-      '',                    // Total Earnings (will be calculated)
-      0,                     // Basic Salary
-      0,                     // Position Allowance
-      0,                     // OverTime
-      0,                     // Annual Allowance
-      0,                     // Seniority allowance
-      0                      // Bonus
-    ]);
+    const earningsRow: any[] = [
+      employee.id,
+      employee.name,
+      '',                                         // Net Salary (formula)
+      '',                                         // Total Earnings (formula)
+      ...earnings.map((c) => c.defaultAmount || 0),
+    ];
+    while (earningsRow.length < totalCols) earningsRow.push('');
+    wsData.push(earningsRow);
 
-    // Deductions row
-    wsData.push([
-      '',                    // Employee No. (merged)
-      '',                    // Employee Name (merged)
-      '',                    // Net Salary (merged)
-      '',                    // Total Deductions (will be calculated)
-      0,                     // Withholding TAX
-      0,                     // Advanced Payment
-      0,                     // Loan
-      0,                     // NSSF PENSION
-      0,                     // Others
-      ''                     // Empty
-    ]);
+    const deductionsRow: any[] = [
+      '',
+      '',
+      '',
+      '',                                         // Total Deductions (formula)
+      ...deductions.map((c) => c.defaultAmount || 0),
+    ];
+    while (deductionsRow.length < totalCols) deductionsRow.push('');
+    wsData.push(deductionsRow);
   });
 
-  // Add Total row
-  wsData.push(['Total', `${employees.length} payroll(s)`, '', '', '', '', '', '', '', '']);
+  // Total row — just a bookmark for the parser to stop.
+  const totalRow: any[] = ['Total', `${employees.length} payroll(s)`];
+  while (totalRow.length < totalCols) totalRow.push('');
+  wsData.push(totalRow);
 
-  // Create worksheet from data
   const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-  // Set column widths
-  ws['!cols'] = [
+  // Column widths
+  const cols: { wch: number }[] = [
     { wch: 15 }, // A: Employee No.
     { wch: 20 }, // B: Employee Name
     { wch: 12 }, // C: Net Salary
-    { wch: 15 }, // D: Total Earnings/Deductions
-    { wch: 15 }, // E: Basic Salary/Tax
-    { wch: 18 }, // F: Position/Advanced
-    { wch: 12 }, // G: OT/Loan
-    { wch: 18 }, // H: Annual/NSSF
-    { wch: 18 }, // I: Seniority/Others
-    { wch: 12 }  // J: Bonus
+    { wch: 15 }, // D: Totals
   ];
+  for (let c = 0; c < widest; c++) {
+    const label =
+      earnings[c]?.label?.length ?? 0 > (deductions[c]?.label?.length ?? 0)
+        ? earnings[c]?.label ?? deductions[c]?.label ?? ''
+        : deductions[c]?.label ?? '';
+    cols.push({ wch: Math.max(12, (label?.length ?? 0) + 2) });
+  }
+  ws['!cols'] = cols;
 
-  // Merge cells for title (Row 1, A1:J1)
+  // Title row merged across all columns
   ws['!merges'] = ws['!merges'] || [];
-  ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
+  ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } });
 
-  // Merge cells for Employee No., Employee Name, Net Salary in header
-  ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }); // Employee No.
-  ws['!merges'].push({ s: { r: 1, c: 1 }, e: { r: 2, c: 1 } }); // Employee Name
-  ws['!merges'].push({ s: { r: 1, c: 2 }, e: { r: 2, c: 2 } }); // Net Salary
+  // Header merges: Emp No. / Name / Net span rows 1–2
+  ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 2, c: 0 } });
+  ws['!merges'].push({ s: { r: 1, c: 1 }, e: { r: 2, c: 1 } });
+  ws['!merges'].push({ s: { r: 1, c: 2 }, e: { r: 2, c: 2 } });
 
-  // Merge cells for each employee (columns A, B, C across 2 rows)
+  // Per-employee merges + total/net formulas
   for (let i = 0; i < employees.length; i++) {
-    const startRow = 3 + (i * 2); // Starting row for this employee (0-indexed)
-    ws['!merges'].push({ s: { r: startRow, c: 0 }, e: { r: startRow + 1, c: 0 } }); // Employee No.
-    ws['!merges'].push({ s: { r: startRow, c: 1 }, e: { r: startRow + 1, c: 1 } }); // Employee Name
-    ws['!merges'].push({ s: { r: startRow, c: 2 }, e: { r: startRow + 1, c: 2 } }); // Net Salary
+    const startRow = 3 + i * 2;                   // 0-indexed
+    const earningsRowExcel = startRow + 1;        // 1-indexed for Excel formulas
+    const deductionsRowExcel = startRow + 2;
 
-    // Add formulas for each employee
-    const earningsRow = startRow + 1; // Convert to 1-indexed for Excel
-    const deductionsRow = startRow + 2; // Convert to 1-indexed for Excel
+    ws['!merges'].push({ s: { r: startRow, c: 0 }, e: { r: startRow + 1, c: 0 } });
+    ws['!merges'].push({ s: { r: startRow, c: 1 }, e: { r: startRow + 1, c: 1 } });
+    ws['!merges'].push({ s: { r: startRow, c: 2 }, e: { r: startRow + 1, c: 2 } });
 
-    // Total Earnings = E+F+G+H+I+J
-    ws[XLSX.utils.encode_cell({ r: startRow, c: 3 })] = {
-      f: `E${earningsRow}+F${earningsRow}+G${earningsRow}+H${earningsRow}+I${earningsRow}+J${earningsRow}`
-    };
+    // Total Earnings = sum of earning columns (E..)
+    const earnStart = XLSX.utils.encode_col(CATEGORY_START_COL);
+    const earnEnd = XLSX.utils.encode_col(CATEGORY_START_COL + earnings.length - 1);
+    if (earnings.length > 0) {
+      ws[XLSX.utils.encode_cell({ r: startRow, c: 3 })] = {
+        f: `SUM(${earnStart}${earningsRowExcel}:${earnEnd}${earningsRowExcel})`,
+      };
+    }
 
-    // Total Deductions = E+F+G+H+I
-    ws[XLSX.utils.encode_cell({ r: startRow + 1, c: 3 })] = {
-      f: `E${deductionsRow}+F${deductionsRow}+G${deductionsRow}+H${deductionsRow}+I${deductionsRow}`
-    };
+    // Total Deductions = sum of deduction columns
+    if (deductions.length > 0) {
+      const dedEnd = XLSX.utils.encode_col(CATEGORY_START_COL + deductions.length - 1);
+      ws[XLSX.utils.encode_cell({ r: startRow + 1, c: 3 })] = {
+        f: `SUM(${earnStart}${deductionsRowExcel}:${dedEnd}${deductionsRowExcel})`,
+      };
+    }
 
-    // Net Salary = Total Earnings - Total Deductions
+    // Net Salary = Total Earnings - Total Deductions (cell D of the two rows)
     ws[XLSX.utils.encode_cell({ r: startRow, c: 2 })] = {
-      f: `D${earningsRow}-D${deductionsRow}`
+      f: `D${earningsRowExcel}-D${deductionsRowExcel}`,
     };
   }
 
-  // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, 'Payroll');
-
-  // Generate file and trigger download with format MM-YYYY-Payroll.xlsx
   XLSX.writeFile(wb, `${monthYear}-Payroll.xlsx`);
 }

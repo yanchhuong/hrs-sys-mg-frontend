@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { useAuth } from '../../context/AuthContext';
 import { mockPayroll, mockEmployees } from '../../data/mockData';
 import { mockPayrollBatches } from '../../data/settingsData';
@@ -74,6 +75,19 @@ export function Payroll() {
 
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+
+  // Dynamic payroll categories — reloaded each time the upload dialog opens
+  // so admin edits in Settings take effect without a page refresh.
+  const [categoriesVersion, setCategoriesVersion] = useState(0);
+  const payrollCategories = useMemo(() => loadPayrollCategories(), [categoriesVersion]);
+  const earningCategories = useMemo(
+    () => payrollCategories.filter((c) => c.kind === 'earning' && c.enabled).sort((a, b) => a.order - b.order),
+    [payrollCategories],
+  );
+  const deductionCategories = useMemo(
+    () => payrollCategories.filter((c) => c.kind === 'deduction' && c.enabled).sort((a, b) => a.order - b.order),
+    [payrollCategories],
+  );
 
   const months = [
     { value: 'all', label: 'All Months' },
@@ -166,6 +180,10 @@ export function Payroll() {
 
   const handleDialogOpenChange = (open: boolean) => {
     setUploadDialogOpen(open);
+    if (open) {
+      // Re-read categories so edits made in Settings during this session take effect.
+      setCategoriesVersion((v) => v + 1);
+    }
     if (!open) {
       // Reset all states when dialog closes
       setSelectedFile(null);
@@ -599,8 +617,8 @@ export function Payroll() {
                       WABOOKS Payroll Format (Two-Row Stacked):
                     </p>
                     <ul className="text-sm text-blue-800 space-y-1">
-                      <li>• Row 1: Earnings (Basic, Position, OT, Allowances, Bonus)</li>
-                      <li>• Row 2: Deductions (Tax, Advance, Loan, NSSF, Others)</li>
+                      <li>• Row 1: Earnings ({earningCategories.map(c => c.label).join(', ') || '—'})</li>
+                      <li>• Row 2: Deductions ({deductionCategories.map(c => c.label).join(', ') || '—'})</li>
                       <li>• Each employee takes 2 rows</li>
                       <li>• Columns A, B, C merged across both rows</li>
                     </ul>
@@ -708,18 +726,13 @@ export function Payroll() {
                               <th className="px-3 py-3 text-center font-semibold text-sm whitespace-nowrap bg-gray-100 w-12 sticky left-0 z-20">Status</th>
                               <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap border-r bg-gray-100 sticky left-[48px] z-20">Emp No.</th>
                               <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap border-r bg-gray-100 sticky left-[148px] z-20">Name</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Basic Salary</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Position Allow.</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Overtime</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Annual Allow.</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Seniority Allow.</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Bonus</th>
+                              {earningCategories.map((c) => (
+                                <th key={`eh-${c.id}`} className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">{c.label}</th>
+                              ))}
                               <th className="px-4 py-3 text-left font-bold text-sm whitespace-nowrap bg-green-100 border-l-2 border-green-300">Total Earnings</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Withholding Tax</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Advanced Pay</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Loan</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">NSSF Pension</th>
-                              <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">Others</th>
+                              {deductionCategories.map((c) => (
+                                <th key={`dh-${c.id}`} className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap">{c.label}</th>
+                              ))}
                               <th className="px-4 py-3 text-left font-bold text-sm whitespace-nowrap bg-red-100 border-l-2 border-red-300">Total Deductions</th>
                               <th className="px-4 py-3 text-left font-bold text-sm whitespace-nowrap bg-blue-100 border-l-2 border-blue-300">Net Salary</th>
                             </tr>
@@ -744,18 +757,13 @@ export function Payroll() {
                                 </td>
                                 <td className={`px-4 py-3 font-semibold text-sm border-r sticky left-[48px] ${rowBg}`}>{emp.employeeNo}</td>
                                 <td className={`px-4 py-3 text-sm border-r sticky left-[148px] ${rowBg}`}>{emp.employeeName}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.basicSalary.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.positionAllowance.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.overtime.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.annualAllowance.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.seniorityAllowance.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.bonus.toFixed(2)}</td>
+                                {earningCategories.map((c) => (
+                                  <td key={`e-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${(emp.earnings?.[c.code] ?? 0).toFixed(2)}</td>
+                                ))}
                                 <td className="px-4 py-3 text-sm font-bold text-green-700 whitespace-nowrap bg-green-50 border-l-2 border-green-300">${emp.totalEarnings.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.withholdingTax.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.advancedPayment.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.loan.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.nssfPension.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm whitespace-nowrap">${emp.others.toFixed(2)}</td>
+                                {deductionCategories.map((c) => (
+                                  <td key={`d-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${(emp.deductions?.[c.code] ?? 0).toFixed(2)}</td>
+                                ))}
                                 <td className="px-4 py-3 text-sm font-bold text-red-700 whitespace-nowrap bg-red-50 border-l-2 border-red-300">${emp.totalDeductions.toFixed(2)}</td>
                                 <td className={`px-4 py-3 text-sm font-bold whitespace-nowrap bg-blue-50 border-l-2 border-blue-300 ${emp.netSalary < 0 ? 'text-red-700' : 'text-blue-700'}`}>${emp.netSalary.toFixed(2)}</td>
                               </tr>

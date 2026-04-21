@@ -1,22 +1,18 @@
 import * as XLSX from 'xlsx';
+import { PayrollCategory } from '../types/settings';
+import { loadPayrollCategories } from './payrollCategories';
 
+// Dynamic payroll preview shape.
+// Earnings/deductions are keyed by category.code so admin-defined custom
+// categories flow through the pipeline the same way as built-ins.
 export interface PayrollPreviewData {
   employeeNo: string;
   employeeName: string;
   netSalary: number;
   totalEarnings: number;
-  basicSalary: number;
-  positionAllowance: number;
-  overtime: number;
-  annualAllowance: number;
-  seniorityAllowance: number;
-  bonus: number;
   totalDeductions: number;
-  withholdingTax: number;
-  advancedPayment: number;
-  loan: number;
-  nssfPension: number;
-  others: number;
+  earnings: Record<string, number>;     // { basic: 500, position: 100, ... }
+  deductions: Record<string, number>;   // { tax: 50, nssf: 10, ... }
   rowNumber?: number;        // 1-based Excel row
   errors?: string[];         // row-level errors (block upload)
   warnings?: string[];       // row-level warnings (allow upload)
@@ -28,13 +24,26 @@ export interface ParsedPayrollData {
   warnings: string[];        // non-blocking advisories
   totalEmployees: number;
   validEmployees: number;    // employees with no errors
+  /** Snapshot of the categories used to parse — so the UI can render using
+   *  the same ordering the file was interpreted with. */
+  categoriesAtParseTime: PayrollCategory[];
 }
 
 export interface ParsePayrollOptions {
   knownEmployeeIds?: string[]; // if provided, each empNo must appear in this list
+  /** Inject categories for testing; defaults to loadPayrollCategories() */
+  categories?: PayrollCategory[];
 }
 
 const MATH_TOLERANCE = 0.01;
+
+// Column layout inside each 2-row employee block:
+//   A (0): Employee No.   (merged across both rows)
+//   B (1): Employee Name  (merged across both rows)
+//   C (2): Net Salary     (merged across both rows, often empty)
+//   D (3): Total Earnings / Total Deductions (per row)
+//   E+ (4..): enabled earning or deduction amounts in category order
+const CATEGORY_START_COL = 4;
 
 export function parsePayrollExcel(
   file: File,
@@ -51,6 +60,14 @@ export function parsePayrollExcel(
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        const allCategories = options.categories ?? loadPayrollCategories();
+        const enabledEarnings = allCategories
+          .filter((c) => c.kind === 'earning' && c.enabled)
+          .sort((a, b) => a.order - b.order);
+        const enabledDeductions = allCategories
+          .filter((c) => c.kind === 'deduction' && c.enabled)
+          .sort((a, b) => a.order - b.order);
 
         const employees: PayrollPreviewData[] = [];
         const errors: string[] = [];
@@ -83,12 +100,10 @@ export function parsePayrollExcel(
           if (!employeeNo) rowErrors.push('Missing employee number');
           if (!employeeName) rowErrors.push('Missing employee name');
 
-          // Unknown employee
           if (employeeNo && knownIds && !knownIds.has(employeeNo.toUpperCase())) {
             rowErrors.push(`Unknown employee "${employeeNo}" — not in master list`);
           }
 
-          // Duplicate detection
           if (employeeNo) {
             const previousRow = seenEmpNos.get(employeeNo.toUpperCase());
             if (previousRow != null) {
@@ -98,7 +113,6 @@ export function parsePayrollExcel(
             }
           }
 
-          // Numeric parsing — detect invalid numbers separately from zero
           const parseNum = (v: any, label: string): number => {
             if (v === null || v === undefined || v === '') return 0;
             const n = typeof v === 'number' ? v : parseFloat(String(v));
@@ -112,26 +126,23 @@ export function parsePayrollExcel(
             return n;
           };
 
-          const basicSalary = parseNum(earningsRow[4], 'Basic salary');
-          const positionAllowance = parseNum(earningsRow[5], 'Position allowance');
-          const overtime = parseNum(earningsRow[6], 'Overtime');
-          const annualAllowance = parseNum(earningsRow[7], 'Annual allowance');
-          const seniorityAllowance = parseNum(earningsRow[8], 'Seniority allowance');
-          const bonus = parseNum(earningsRow[9], 'Bonus');
-          const declaredTotalEarnings = parseNum(earningsRow[3], 'Total earnings');
+          // Read each enabled earning from its mapped column.
+          const earnings: Record<string, number> = {};
+          enabledEarnings.forEach((cat, idx) => {
+            earnings[cat.code] = parseNum(earningsRow[CATEGORY_START_COL + idx], cat.label);
+          });
 
-          const withholdingTax = parseNum(deductionsRow[4], 'Withholding tax');
-          const advancedPayment = parseNum(deductionsRow[5], 'Advanced payment');
-          const loan = parseNum(deductionsRow[6], 'Loan');
-          const nssfPension = parseNum(deductionsRow[7], 'NSSF pension');
-          const others = parseNum(deductionsRow[8], 'Other deductions');
+          const deductions: Record<string, number> = {};
+          enabledDeductions.forEach((cat, idx) => {
+            deductions[cat.code] = parseNum(deductionsRow[CATEGORY_START_COL + idx], cat.label);
+          });
+
+          const declaredTotalEarnings = parseNum(earningsRow[3], 'Total earnings');
           const declaredTotalDeductions = parseNum(deductionsRow[3], 'Total deductions');
 
-          // Compute expected totals (authoritative)
-          const computedEarnings = +(basicSalary + positionAllowance + overtime + annualAllowance + seniorityAllowance + bonus).toFixed(2);
-          const computedDeductions = +(withholdingTax + advancedPayment + loan + nssfPension + others).toFixed(2);
+          const computedEarnings = +Object.values(earnings).reduce((s, n) => s + n, 0).toFixed(2);
+          const computedDeductions = +Object.values(deductions).reduce((s, n) => s + n, 0).toFixed(2);
 
-          // Math consistency check against declared totals (if user filled them in)
           if (declaredTotalEarnings > 0 && Math.abs(declaredTotalEarnings - computedEarnings) > MATH_TOLERANCE) {
             rowErrors.push(`Total earnings mismatch: file says $${declaredTotalEarnings.toFixed(2)}, components sum to $${computedEarnings.toFixed(2)}`);
           }
@@ -143,16 +154,13 @@ export function parsePayrollExcel(
           const totalDeductions = computedDeductions;
           const netSalary = +(totalEarnings - totalDeductions).toFixed(2);
 
-          // Warning: fully zero row
           if (totalEarnings === 0 && totalDeductions === 0) {
             rowWarnings.push('All amounts are zero');
           }
-          // Warning: negative net salary (deductions > earnings)
           if (netSalary < 0) {
             rowWarnings.push(`Negative net salary ($${netSalary.toFixed(2)}) — deductions exceed earnings`);
           }
 
-          // Accumulate into top-level lists, prefixed with row reference
           rowErrors.forEach(msg => errors.push(`Row ${rowNumber}: ${msg}`));
           rowWarnings.forEach(msg => warnings.push(`Row ${rowNumber}: ${msg}`));
 
@@ -161,18 +169,9 @@ export function parsePayrollExcel(
             employeeName,
             netSalary,
             totalEarnings,
-            basicSalary,
-            positionAllowance,
-            overtime,
-            annualAllowance,
-            seniorityAllowance,
-            bonus,
             totalDeductions,
-            withholdingTax,
-            advancedPayment,
-            loan,
-            nssfPension,
-            others,
+            earnings,
+            deductions,
             rowNumber,
             errors: rowErrors.length ? rowErrors : undefined,
             warnings: rowWarnings.length ? rowWarnings : undefined,
@@ -191,6 +190,7 @@ export function parsePayrollExcel(
           warnings,
           totalEmployees: employees.length,
           validEmployees,
+          categoriesAtParseTime: allCategories,
         });
       } catch (error) {
         reject(new Error(`Failed to parse Excel file: ${error}`));

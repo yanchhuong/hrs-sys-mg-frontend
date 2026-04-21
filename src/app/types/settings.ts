@@ -78,6 +78,24 @@ export interface OTSettings {
   calculationMode: 'factory' | 'office';
 }
 
+// ---------------------------------------------------------------------------
+// Payroll Categories (customizable earnings / deductions)
+// ---------------------------------------------------------------------------
+export type PayrollCategoryKind = 'earning' | 'deduction';
+export type PayrollCategoryValueType = 'flat' | 'percentage';
+
+export interface PayrollCategory {
+  id: string;
+  code: string;              // stable machine key (e.g. "basic", "nssf")
+  label: string;             // display name shown on payslip / UI
+  kind: PayrollCategoryKind;
+  valueType: PayrollCategoryValueType;
+  defaultAmount: number;     // seed for new payroll rows; 0 = no default
+  order: number;             // display / column order within its kind
+  enabled: boolean;          // toggled off = hidden from payroll but preserved for history
+  system: boolean;           // true = built-in seed row, cannot be deleted (only disabled/renamed)
+}
+
 export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';
 
 export interface PayrollBatch {
