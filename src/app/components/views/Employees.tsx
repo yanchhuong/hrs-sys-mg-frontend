@@ -42,6 +42,7 @@ import {
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { useI18n } from '../../i18n/I18nContext';
+import { useTeamScope } from '../../hooks/useTeamScope';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -270,6 +271,9 @@ function EmployeeDocuments({
 
 export function Employees() {
   const { t } = useI18n();
+  const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
+  // Add / Bulk-upload are admin+manager capabilities.
+  const canManageRoster = isAdmin || isManager;
   const [searchTerm, setSearchTerm] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
@@ -380,9 +384,10 @@ export function Employees() {
   };
 
   let filteredEmployees = mockEmployees.filter(emp =>
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchTerm.toLowerCase())
+    (isTenantWide || canViewEmployee(emp.id)) &&
+    (emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     emp.department.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Apply date filter based on joinDate
@@ -420,25 +425,28 @@ export function Employees() {
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Employee
-                <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Add Single Employee
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setBulkDialogOpen(true)}>
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Upload Bulk (Excel)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Add/Bulk-upload are admin+manager only — employees (if they reach this view) see a read-only, team-scoped roster. */}
+          {canManageRoster && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Employee
+                  <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Add Single Employee
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setBulkDialogOpen(true)}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Upload Bulk (Excel)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -30,13 +29,14 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { mockExceptions } from '../../data/timeworkData';
 import { useI18n } from '../../i18n/I18nContext';
 import { mockEmployees as employees } from '../../data/mockData';
-import { AlertCircle, Check, X, Plus } from 'lucide-react';
+import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
+import { ScopePicker } from '../common/ScopePicker';
+import { AlertCircle, Check, X, Plus, Search } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 
 export function Exception() {
   const { t } = useI18n();
-  const { currentUser } = useAuth();
   const [exceptions] = useState(mockExceptions);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
@@ -44,6 +44,7 @@ export function Exception() {
   });
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [search, setSearch] = useState('');
 
   // New-exception dialog state (employee only)
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -53,18 +54,16 @@ export function Exception() {
   const [newCorrectedIn, setNewCorrectedIn] = useState('');
   const [newCorrectedOut, setNewCorrectedOut] = useState('');
 
-  const role = currentUser?.role;
-  const isEmployee = role === 'employee';
-  // Admin can approve any leave. Manager can only approve leaves submitted by
-  // their own direct reports (employees where managerId === currentUser.employeeId).
-  const canApproveLeaveOf = (employeeId: string) => {
-    if (role === 'admin') return true;
-    if (role === 'manager') {
-      const target = employees.find(e => e.id === employeeId);
-      return !!target && target.managerId === currentUser?.employeeId;
-    }
-    return false;
-  };
+  const {
+    role,
+    isEmployee,
+    isManager,
+    isTenantWide,
+    showScopePicker,
+    matchesScope,
+    canApproveFor: canApproveLeaveOf,
+  } = useTeamScope();
+  const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
@@ -111,6 +110,12 @@ export function Exception() {
 
   let filteredExceptions = exceptions;
 
+  // Scope: admin sees everything; manager/employee see self + direct reports,
+  // optionally narrowed to `mine` or `team` via the ScopePicker.
+  if (!isTenantWide) {
+    filteredExceptions = filteredExceptions.filter(e => matchesScope(e.employeeId, scopeMode));
+  }
+
   // Apply date filter
   if (dateFilter.start || dateFilter.end) {
     filteredExceptions = filteredExceptions.filter(exc => {
@@ -126,6 +131,16 @@ export function Exception() {
         return excDate <= parseISO(dateFilter.end);
       }
       return true;
+    });
+  }
+
+  // Apply keyword search against employee name/ID/dept and the request reason.
+  const kw = search.trim().toLowerCase();
+  if (kw) {
+    filteredExceptions = filteredExceptions.filter(exc => {
+      const emp = employees.find(e => e.id === exc.employeeId);
+      const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''} ${exc.reason ?? ''}`.toLowerCase();
+      return hay.includes(kw);
     });
   }
 
@@ -151,7 +166,7 @@ export function Exception() {
 
   useEffect(() => {
     exceptionsPagination.resetPage();
-  }, [dateFilter, statusFilter]);
+  }, [dateFilter, statusFilter, scopeMode, search]);
 
   return (
     <div className="space-y-6">
@@ -160,7 +175,8 @@ export function Exception() {
           <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
           <p className="text-gray-500">{t('page.exception.description')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           {isEmployee && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -280,7 +296,7 @@ export function Exception() {
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <CardTitle>All Leave</CardTitle>
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
@@ -303,6 +319,25 @@ export function Exception() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+          </div>
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, ID, department or reason…"
+              className="h-8 pl-8 pr-8 text-sm"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -387,10 +422,14 @@ export function Exception() {
                             Reject
                           </Button>
                         </div>
-                      ) : isPending && role === 'manager' ? (
-                        <Badge variant="outline" className="text-[10px] text-gray-500" title="Only this employee's direct leader can approve.">
+                      ) : isPending && role !== 'admin' ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-gray-500"
+                          title="Only this employee's direct leader can approve."
+                        >
                           <X className="h-3 w-3 mr-1" />
-                          Not your team
+                          {isManager ? 'Not your team' : 'Awaiting leader'}
                         </Badge>
                       ) : (
                         <Button variant="ghost" size="sm" className="h-7 text-xs">

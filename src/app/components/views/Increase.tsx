@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -33,6 +33,19 @@ import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { loadPayrollCategories } from '../../utils/payrollCategories';
+import { PayrollCategory } from '../../types/settings';
+
+const CATEGORY_COLORS = [
+  'bg-green-100 text-green-800 hover:bg-green-100',
+  'bg-blue-100 text-blue-800 hover:bg-blue-100',
+  'bg-purple-100 text-purple-800 hover:bg-purple-100',
+  'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+  'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  'bg-pink-100 text-pink-800 hover:bg-pink-100',
+  'bg-indigo-100 text-indigo-800 hover:bg-indigo-100',
+  'bg-orange-100 text-orange-800 hover:bg-orange-100',
+];
 
 export function Increase() {
   const { t } = useI18n();
@@ -73,14 +86,37 @@ export function Increase() {
     });
   }
 
-  const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
-      raise: 'bg-green-100 text-green-800 hover:bg-green-100',
-      bonus: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
-      promotion: 'bg-purple-100 text-purple-800 hover:bg-purple-100',
-    };
-    return colors[type] || colors.raise;
-  };
+  const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
+  const earningCategories = useMemo(
+    () =>
+      categories
+        .filter((c) => c.kind === 'earning' && c.enabled)
+        .sort((a, b) => a.order - b.order),
+    [categories],
+  );
+
+  useEffect(() => {
+    const refresh = () => setCategories(loadPayrollCategories());
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+
+  const categoryLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    earningCategories.forEach((c) => m.set(c.code, c.label));
+    return m;
+  }, [earningCategories]);
+
+  const categoryColorMap = useMemo(() => {
+    const m = new Map<string, string>();
+    earningCategories.forEach((c, idx) => m.set(c.code, CATEGORY_COLORS[idx % CATEGORY_COLORS.length]));
+    return m;
+  }, [earningCategories]);
+
+  const getTypeColor = (type: string) =>
+    categoryColorMap.get(type) ?? 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+
+  const getTypeLabel = (type: string) => categoryLabelMap.get(type) ?? type;
 
   const increasePagination = usePagination(filteredIncreases, 10);
 
@@ -123,9 +159,11 @@ export function Increase() {
               <div className="space-y-2">
                 <Label>Type</Label>
                 <select className="w-full px-3 py-2 border rounded-md">
-                  <option value="raise">Raise</option>
-                  <option value="bonus">Bonus</option>
-                  <option value="promotion">Promotion</option>
+                  {earningCategories.map((c) => (
+                    <option key={c.id} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -159,15 +197,15 @@ export function Increase() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {['raise', 'bonus', 'promotion'].map((type) => {
-          const count = filteredIncreases.filter((i) => i.type === type).length;
+        {earningCategories.slice(0, 3).map((cat) => {
+          const count = filteredIncreases.filter((i) => i.type === cat.code).length;
           const total = filteredIncreases
-            .filter((i) => i.type === type)
+            .filter((i) => i.type === cat.code)
             .reduce((sum, i) => sum + (i.isPercentage ? 0 : i.amount), 0);
           return (
-            <Card key={type}>
+            <Card key={cat.id}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm capitalize">{type}s</CardTitle>
+                <CardTitle className="text-sm">{cat.label}</CardTitle>
                 <TrendingUp className="h-4 w-4 text-green-600" />
               </CardHeader>
               <CardContent>
@@ -209,7 +247,7 @@ export function Increase() {
                     </TableCell>
                     <TableCell>
                       <Badge className={getTypeColor(increase.type)}>
-                        {increase.type}
+                        {getTypeLabel(increase.type)}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-semibold text-green-600">
@@ -268,7 +306,7 @@ export function Increase() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <DetailRow label="Type">
-                    <Badge className={getTypeColor(detailsTarget.type)}>{detailsTarget.type}</Badge>
+                    <Badge className={getTypeColor(detailsTarget.type)}>{getTypeLabel(detailsTarget.type)}</Badge>
                   </DetailRow>
                   <DetailRow label="Amount">
                     <span className="font-semibold text-green-700">

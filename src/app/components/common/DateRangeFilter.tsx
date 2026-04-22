@@ -2,9 +2,6 @@ import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { Calendar as CalendarIcon, X } from 'lucide-react';
-import { format } from 'date-fns';
 
 interface DateRangeFilterProps {
   onFilterChange: (startDate: string | null, endDate: string | null) => void;
@@ -12,68 +9,73 @@ interface DateRangeFilterProps {
   defaultEndDate?: string;
 }
 
-export function DateRangeFilter({ onFilterChange, defaultStartDate, defaultEndDate }: DateRangeFilterProps) {
-  const [startDate, setStartDate] = useState(defaultStartDate || '');
-  const [endDate, setEndDate] = useState(defaultEndDate || '');
-  const [isOpen, setIsOpen] = useState(false);
+/**
+ * Inline From / To date pair. Emits on every change (no Apply button) —
+ * the caller receives `null` for empty bounds. A small Clear button is shown
+ * when at least one side is filled.
+ */
+export function DateRangeFilter({
+  onFilterChange,
+  defaultStartDate = '',
+  defaultEndDate = '',
+}: DateRangeFilterProps) {
+  const [startDate, setStartDate] = useState(defaultStartDate);
+  const [endDate, setEndDate] = useState(defaultEndDate);
 
-  const handleApply = () => {
-    onFilterChange(startDate || null, endDate || null);
-    setIsOpen(false);
+  const emit = (from: string, to: string) =>
+    onFilterChange(from || null, to || null);
+
+  const handleFromChange = (v: string) => {
+    setStartDate(v);
+    emit(v, endDate);
+  };
+
+  const handleToChange = (v: string) => {
+    setEndDate(v);
+    emit(startDate, v);
   };
 
   const handleClear = () => {
     setStartDate('');
     setEndDate('');
-    onFilterChange(null, null);
+    emit('', '');
   };
 
-  const hasFilter = startDate || endDate;
+  const hasFilter = !!(startDate || endDate);
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className="w-auto">
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {hasFilter
-            ? `${startDate ? format(new Date(startDate), 'MMM dd, yyyy') : 'Start'} - ${
-                endDate ? format(new Date(endDate), 'MMM dd, yyyy') : 'End'
-              }`
-            : 'Filter by date'}
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <Label className="text-sm whitespace-nowrap">From:</Label>
+        <Input
+          type="date"
+          value={startDate}
+          onChange={(e) => handleFromChange(e.target.value)}
+          max={endDate || undefined}
+          className="w-40 h-9"
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-sm whitespace-nowrap">To:</Label>
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(e) => handleToChange(e.target.value)}
+          min={startDate || undefined}
+          className="w-40 h-9"
+        />
+      </div>
+      {hasFilter && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-9 px-2 text-xs text-gray-500"
+          onClick={handleClear}
+          title="Clear date range"
+        >
+          Clear
         </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-4" align="end">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="start-date">Start Date</Label>
-            <Input
-              id="start-date"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="end-date">End Date</Label>
-            <Input
-              id="end-date"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleApply} className="flex-1">
-              Apply
-            </Button>
-            {hasFilter && (
-              <Button variant="outline" size="icon" onClick={handleClear}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   );
 }

@@ -92,6 +92,10 @@ export interface OTRequest {
   id: string;
   employeeId: string;
   date: string;
+  /** HH:mm. Optional for legacy rows that only carried total hours. */
+  startHour?: string;
+  /** HH:mm. Optional for legacy rows that only carried total hours. */
+  endHour?: string;
   hours: number;
   reason: string;
   status: OTStatus;

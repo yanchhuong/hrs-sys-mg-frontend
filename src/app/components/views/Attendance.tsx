@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
+import { ScopePicker } from '../common/ScopePicker';
 import { mockAttendance, mockEmployees } from '../../data/mockData';
 import { Attendance as AttendanceType, AttendanceStatus } from '../../types/hrms';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -50,11 +52,13 @@ export function Attendance() {
   const { t } = useI18n();
   const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
-  const [selectedDate, setSelectedDate] = useState('2026-04-20');
+  const [dateFrom, setDateFrom] = useState('2026-04-20');
+  const [dateTo, setDateTo] = useState('2026-04-20');
   const [monthDate, setMonthDate] = useState(new Date(2026, 3, 1)); // April 2026
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [monthlySearch, setMonthlySearch] = useState('');
+  const [dailySearch, setDailySearch] = useState('');
   const [monthlyStatusFilter, setMonthlyStatusFilter] = useState<'all' | 'late' | 'absent' | 'late_or_absent'>('all');
   const [alDialogOpen, setAlDialogOpen] = useState(false);
   // Bumped whenever the AL dialog applies/resets values so monthlyData re-reads storage.
@@ -77,15 +81,25 @@ export function Attendance() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
   const isEmployee = currentUser?.role === 'employee';
+  const { isTenantWide, matchesScope, showScopePicker } = useTeamScope();
+  const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
-  // Today's records
+  // Today's records — scoped to self + direct reports for the employee role.
   const todayRecords = useMemo(() => {
-    return mockAttendance.filter(a => a.date === selectedDate);
-  }, [selectedDate]);
+    // Range inclusive on both ends. Single-day behaviour is preserved when
+    // dateFrom === dateTo (the original experience).
+    const rows = mockAttendance.filter(a => {
+      if (dateFrom && a.date < dateFrom) return false;
+      if (dateTo && a.date > dateTo) return false;
+      return true;
+    });
+    return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode));
+  }, [dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
   // Summary counts for selected date
   const summary = useMemo(() => {
-    const totalEmployees = mockEmployees.filter(e => e.status === 'active').length;
+    const totalEmployees = mockEmployees
+      .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode))).length;
     const present = todayRecords.filter(r => r.status === 'present' || r.status === 'early_leave').length;
     const absent = todayRecords.filter(r => r.status === 'absent').length;
     const late = todayRecords.filter(r => r.status === 'late').length;
@@ -93,7 +107,7 @@ export function Attendance() {
     const noCheckout = todayRecords.filter(r => r.status === 'no_checkout').length;
     const leave = todayRecords.filter(r => r.status === 'leave').length;
     return { totalEmployees, present, absent, late, noCheckin, noCheckout, leave };
-  }, [todayRecords]);
+  }, [todayRecords, isTenantWide, matchesScope, scopeMode]);
 
   // Filtered records
   const filteredRecords = useMemo(() => {
@@ -107,8 +121,16 @@ export function Attendance() {
         return emp?.department === departmentFilter;
       });
     }
+    const kw = dailySearch.trim().toLowerCase();
+    if (kw) {
+      records = records.filter(r => {
+        const emp = mockEmployees.find(e => e.id === r.employeeId);
+        const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''}`.toLowerCase();
+        return hay.includes(kw);
+      });
+    }
     return records;
-  }, [todayRecords, activeFilter, departmentFilter]);
+  }, [todayRecords, activeFilter, departmentFilter, dailySearch]);
 
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
@@ -116,7 +138,7 @@ export function Attendance() {
   // Reset pagination when filters change
   useEffect(() => {
     dailyPagination.resetPage();
-  }, [activeFilter, departmentFilter, selectedDate]);
+  }, [activeFilter, departmentFilter, dateFrom, dateTo, dailySearch]);
 
   // Monthly data
   const monthlyData = useMemo(() => {
@@ -129,7 +151,9 @@ export function Attendance() {
     const rule = loadRule();
     const ruleAsOf = new Date(year, 0, 1);
 
-    return mockEmployees.filter(e => e.status === 'active').map(emp => {
+    return mockEmployees
+      .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
+      .map(emp => {
       const empRecords: Record<string, AttendanceStatus> = {};
       let presentCount = 0, absentCount = 0, lateCount = 0, leaveCount = 0;
       const leaveRecords: { date: string; reason: string }[] = [];
@@ -162,7 +186,7 @@ export function Attendance() {
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion]);
+  }, [monthDate, alVersion, isTenantWide, matchesScope, scopeMode]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -237,7 +261,8 @@ export function Attendance() {
           <h1 className="text-3xl font-bold">{t('page.attendance.title')}</h1>
           <p className="text-gray-500">{t('page.attendance.description')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
           {/* View toggle */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <Button
@@ -393,16 +418,38 @@ export function Attendance() {
           <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <Label className="text-sm whitespace-nowrap">Date:</Label>
+                    <Label className="text-sm whitespace-nowrap">From:</Label>
                     <Input
                       type="date"
-                      value={selectedDate}
-                      onChange={e => setSelectedDate(e.target.value)}
-                      className="w-44 h-8"
+                      value={dateFrom}
+                      onChange={e => setDateFrom(e.target.value)}
+                      max={dateTo || undefined}
+                      className="w-40 h-8"
                     />
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm whitespace-nowrap">To:</Label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={e => setDateTo(e.target.value)}
+                      min={dateFrom || undefined}
+                      className="w-40 h-8"
+                    />
+                  </div>
+                  {(dateFrom || dateTo) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-xs text-gray-500"
+                      onClick={() => { setDateFrom(''); setDateTo(''); }}
+                      title="Clear date range"
+                    >
+                      Clear
+                    </Button>
+                  )}
                   <div className="flex items-center gap-2">
                     <Label className="text-sm whitespace-nowrap">Dept:</Label>
                     <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
@@ -416,6 +463,25 @@ export function Attendance() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="relative w-60">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                    <Input
+                      value={dailySearch}
+                      onChange={(e) => setDailySearch(e.target.value)}
+                      placeholder="Search name, ID, department…"
+                      className="h-8 pl-8 pr-8 text-sm"
+                    />
+                    {dailySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setDailySearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        title="Clear search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => toast.success('Exported attendance data')}>
@@ -454,6 +520,7 @@ export function Attendance() {
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Dept</TableHead>
+                    {dateFrom !== dateTo && <TableHead>Date</TableHead>}
                     <TableHead className="text-center">
                       <div className="text-xs">Morning</div>
                       <div className="text-xs text-green-600">In</div>
@@ -480,7 +547,7 @@ export function Attendance() {
                 <TableBody>
                   {dailyPagination.paginatedItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isAdmin ? 11 : 10} className="text-center py-12 text-gray-400">
+                      <TableCell colSpan={(isAdmin ? 11 : 10) + (dateFrom !== dateTo ? 1 : 0)} className="text-center py-12 text-gray-400">
                         No records found for the selected filters
                       </TableCell>
                     </TableRow>
@@ -502,6 +569,11 @@ export function Attendance() {
                             <EmployeeCell employee={emp} subtitle={emp?.id} />
                           </TableCell>
                           <TableCell className="text-sm">{emp?.department}</TableCell>
+                          {dateFrom !== dateTo && (
+                            <TableCell className="text-sm whitespace-nowrap">
+                              {format(parseISO(record.date), 'MMM dd')}
+                            </TableCell>
+                          )}
                           <TableCell className="text-center">{timeCell(record.morningIn, 'in')}</TableCell>
                           <TableCell className="text-center">{timeCell(record.morningOut, 'out')}</TableCell>
                           <TableCell className="text-center">{timeCell(record.noonIn, 'in')}</TableCell>
@@ -832,7 +904,11 @@ export function Attendance() {
                 <CardContent className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-500">Total Employees</span>
-                    <span className="font-medium">{mockEmployees.filter(e => e.status === 'active').length}</span>
+                    <span className="font-medium">
+                      {mockEmployees
+                        .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
+                        .length}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-500">Avg. Attendance Rate</span>

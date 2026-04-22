@@ -58,6 +58,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const visibleTree = useMemo<MenuNode[]>(() => {
     const tree: MenuNode[] = [
       { id: 'dashboard', label: t('nav.home'),     icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
+      // Employees menu is admin/manager only — employees don't need a roster view.
       { id: 'employees', label: t('nav.employee'), icon: Users,           roles: ['admin', 'manager'] },
       {
         id: 'time-tracking',
@@ -66,7 +67,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
         children: [
           { id: 'attendance', label: t('nav.attendance'), icon: Clock,       roles: ['admin', 'manager', 'employee'] },
           { id: 'overtime',   label: t('nav.overtime'),   icon: TimerIcon,   roles: ['admin', 'manager', 'employee'] },
-          { id: 'exception',  label: t('nav.exception'),  icon: AlertCircle, roles: ['admin', 'manager'] },
+          // Leave (exception) open to employees too — they see self + reports.
+          { id: 'exception',  label: t('nav.exception'),  icon: AlertCircle, roles: ['admin', 'manager', 'employee'] },
         ],
       },
       {

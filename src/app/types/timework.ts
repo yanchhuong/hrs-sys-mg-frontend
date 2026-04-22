@@ -58,7 +58,8 @@ export interface SalaryDeduction {
   id: string;
   employeeId: string;
   name: string;
-  type: 'tax' | 'insurance' | 'loan' | 'fine' | 'other';
+  /** References a PayrollCategory.code where kind === 'deduction'. */
+  type: string;
   amount: number;
   isPercentage: boolean;
   startDate: string;
@@ -70,7 +71,8 @@ export interface SalaryDeduction {
 export interface SalaryIncrease {
   id: string;
   employeeId: string;
-  type: 'raise' | 'bonus' | 'promotion';
+  /** References a PayrollCategory.code where kind === 'earning'. */
+  type: string;
   amount: number;
   isPercentage: boolean;
   effectiveDate: string;

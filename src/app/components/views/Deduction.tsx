@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -29,10 +29,25 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { mockDeductions } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
 import { SalaryDeduction } from '../../types/timework';
-import { Minus, Plus, Pencil, Save } from 'lucide-react';
+import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare } from 'lucide-react';
+import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { loadPayrollCategories } from '../../utils/payrollCategories';
+import { PayrollCategory } from '../../types/settings';
+
+// Rotating palette so newly-added deduction categories still get a distinct badge.
+const CATEGORY_COLORS = [
+  'bg-red-100 text-red-800 hover:bg-red-100',
+  'bg-blue-100 text-blue-800 hover:bg-blue-100',
+  'bg-orange-100 text-orange-800 hover:bg-orange-100',
+  'bg-purple-100 text-purple-800 hover:bg-purple-100',
+  'bg-emerald-100 text-emerald-800 hover:bg-emerald-100',
+  'bg-pink-100 text-pink-800 hover:bg-pink-100',
+  'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  'bg-indigo-100 text-indigo-800 hover:bg-indigo-100',
+];
 
 export function Deduction() {
   const { t } = useI18n();
@@ -44,6 +59,38 @@ export function Deduction() {
     start: null,
     end: null,
   });
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | SalaryDeduction['status']>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<SalaryDeduction['status']>('active');
+
+  const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
+  const deductionCategories = useMemo(
+    () =>
+      categories
+        .filter((c) => c.kind === 'deduction' && c.enabled)
+        .sort((a, b) => a.order - b.order),
+    [categories],
+  );
+
+  // Re-sync on focus so changes made in Payroll Categories settings propagate.
+  useEffect(() => {
+    const refresh = () => setCategories(loadPayrollCategories());
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+
+  const categoryLabelMap = useMemo(() => {
+    const m = new Map<string, string>();
+    deductionCategories.forEach((c) => m.set(c.code, c.label));
+    return m;
+  }, [deductionCategories]);
+
+  const categoryColorMap = useMemo(() => {
+    const m = new Map<string, string>();
+    deductionCategories.forEach((c, idx) => m.set(c.code, CATEGORY_COLORS[idx % CATEGORY_COLORS.length]));
+    return m;
+  }, [deductionCategories]);
 
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
@@ -74,22 +121,63 @@ export function Deduction() {
     });
   }
 
-  const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
-      tax: 'bg-red-100 text-red-800 hover:bg-red-100',
-      insurance: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
-      loan: 'bg-orange-100 text-orange-800 hover:bg-orange-100',
-      fine: 'bg-purple-100 text-purple-800 hover:bg-purple-100',
-      other: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
-    };
-    return colors[type] || colors.other;
-  };
+  // Type + Status filters
+  if (typeFilter !== 'all') {
+    filteredDeductions = filteredDeductions.filter(d => d.type === typeFilter);
+  }
+  if (statusFilter !== 'all') {
+    filteredDeductions = filteredDeductions.filter(d => d.status === statusFilter);
+  }
+
+  const getTypeColor = (type: string) =>
+    categoryColorMap.get(type) ?? 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+
+  const getTypeLabel = (type: string) => categoryLabelMap.get(type) ?? type;
 
   const deductionsPagination = usePagination(filteredDeductions, 10);
 
   useEffect(() => {
     deductionsPagination.resetPage();
-  }, [dateFilter]);
+    setSelectedIds(new Set());
+  }, [dateFilter, typeFilter, statusFilter]);
+
+  const visibleIds = deductionsPagination.paginatedItems.map(d => d.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+  const someVisibleSelected = visibleIds.some(id => selectedIds.has(id)) && !allVisibleSelected;
+
+  const toggleSelectAllVisible = (checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        visibleIds.forEach(id => next.add(id));
+      } else {
+        visibleIds.forEach(id => next.delete(id));
+      }
+      return next;
+    });
+  };
+
+  const toggleRowSelection = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleBulkUpdateStatus = () => {
+    if (selectedIds.size === 0) return;
+    setDeductions(prev => prev.map(d => (selectedIds.has(d.id) ? { ...d, status: bulkStatus } : d)));
+    toast.success(`Updated ${selectedIds.size} deduction(s) to ${bulkStatus}`);
+    setSelectedIds(new Set());
+  };
+
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setStatusFilter('all');
+  };
+
+  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all';
 
   return (
     <div className="space-y-6">
@@ -98,7 +186,38 @@ export function Deduction() {
           <h1 className="text-3xl font-bold">{t('page.deduction.title')}</h1>
           <p className="text-gray-500">{t('page.deduction.description')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-1.5">
+            <Filter className="h-4 w-4 text-gray-500" />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-9 px-2 border rounded-md text-sm bg-white"
+            >
+              <option value="all">All Types</option>
+              {deductionCategories.map((c) => (
+                <option key={c.id} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 px-2 border rounded-md text-sm bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 px-2">
+                <X className="h-3.5 w-3.5 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -126,11 +245,11 @@ export function Deduction() {
               <div className="space-y-2">
                 <Label>Deduction Type</Label>
                 <select className="w-full px-3 py-2 border rounded-md">
-                  <option value="tax">Tax</option>
-                  <option value="insurance">Insurance</option>
-                  <option value="loan">Loan</option>
-                  <option value="fine">Fine</option>
-                  <option value="other">Other</option>
+                  {deductionCategories.map((c) => (
+                    <option key={c.id} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-2">
@@ -174,15 +293,15 @@ export function Deduction() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {['tax', 'insurance', 'loan', 'fine'].map((type) => {
-          const count = filteredDeductions.filter((d) => d.type === type && d.status === 'active').length;
+        {deductionCategories.slice(0, 4).map((cat) => {
+          const count = filteredDeductions.filter((d) => d.type === cat.code && d.status === 'active').length;
           const total = filteredDeductions
-            .filter((d) => d.type === type && d.status === 'active')
+            .filter((d) => d.type === cat.code && d.status === 'active')
             .reduce((sum, d) => sum + (d.isPercentage ? 0 : d.amount), 0);
           return (
-            <Card key={type}>
+            <Card key={cat.id}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm capitalize">{type}</CardTitle>
+                <CardTitle className="text-sm">{cat.label}</CardTitle>
                 <Minus className="h-4 w-4 text-red-600" />
               </CardHeader>
               <CardContent>
@@ -197,13 +316,47 @@ export function Deduction() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>All Deductions</CardTitle>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 rounded-md border bg-blue-50 px-3 py-1.5">
+              <CheckSquare className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-900">
+                {selectedIds.size} selected
+              </span>
+              <select
+                value={bulkStatus}
+                onChange={(e) => setBulkStatus(e.target.value as SalaryDeduction['status'])}
+                className="h-8 px-2 border rounded-md text-sm bg-white"
+              >
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <Button size="sm" onClick={handleBulkUpdateStatus}>
+                Update {selectedIds.size} row{selectedIds.size > 1 ? 's' : ''}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                    onCheckedChange={(v) => toggleSelectAllVisible(v === true)}
+                    aria-label="Select all visible"
+                  />
+                </TableHead>
                 <TableHead>Employee</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
@@ -217,15 +370,23 @@ export function Deduction() {
             <TableBody>
               {deductionsPagination.paginatedItems.map((deduction) => {
                 const employee = mockEmployees.find((e) => e.id === deduction.employeeId);
+                const isSelected = selectedIds.has(deduction.id);
                 return (
-                  <TableRow key={deduction.id}>
+                  <TableRow key={deduction.id} data-state={isSelected ? 'selected' : undefined}>
+                    <TableCell>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(v) => toggleRowSelection(deduction.id, v === true)}
+                        aria-label={`Select ${deduction.name}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <EmployeeCell employee={employee} />
                     </TableCell>
                     <TableCell>{deduction.name}</TableCell>
                     <TableCell>
                       <Badge className={getTypeColor(deduction.type)}>
-                        {deduction.type}
+                        {getTypeLabel(deduction.type)}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-semibold text-red-600">
@@ -314,14 +475,18 @@ export function Deduction() {
                     <Label>Type</Label>
                     <select
                       value={editForm.type}
-                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value as SalaryDeduction['type'] })}
+                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                       className="w-full h-9 px-3 border rounded-md text-sm"
                     >
-                      <option value="tax">Tax</option>
-                      <option value="insurance">Insurance</option>
-                      <option value="loan">Loan</option>
-                      <option value="fine">Fine</option>
-                      <option value="other">Other</option>
+                      {/* Keep the historical value visible even if its category was later disabled. */}
+                      {!deductionCategories.some((c) => c.code === editForm.type) && editForm.type && (
+                        <option value={editForm.type}>{editForm.type} (inactive)</option>
+                      )}
+                      {deductionCategories.map((c) => (
+                        <option key={c.id} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="space-y-1.5">
