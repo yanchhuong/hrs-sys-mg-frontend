@@ -50,7 +50,16 @@ export function Overtime() {
 
   const isEmployee = currentUser?.role === 'employee';
   const isManager = currentUser?.role === 'manager';
-  const canApprove = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  // Admin can approve any OT. Manager can only approve requests from their
+  // direct reports. This matches the leave-approval policy in Exception.tsx.
+  const canApproveOTOf = (employeeId: string) => {
+    if (currentUser?.role === 'admin') return true;
+    if (currentUser?.role === 'manager') {
+      const target = mockEmployees.find(e => e.id === employeeId);
+      return !!target && target.managerId === currentUser?.employeeId;
+    }
+    return false;
+  };
 
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
@@ -244,6 +253,8 @@ export function Overtime() {
             <TableHeader>
               <TableRow>
                 {!isEmployee && <TableHead>Employee</TableHead>}
+                {!isEmployee && <TableHead>Dept/Group</TableHead>}
+                {!isEmployee && <TableHead>Leader</TableHead>}
                 <TableHead>Date</TableHead>
                 <TableHead>Hours</TableHead>
                 <TableHead>Rate</TableHead>
@@ -257,22 +268,42 @@ export function Overtime() {
             <TableBody>
               {overtimePagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isEmployee ? 7 : 9} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={isEmployee ? 7 : 11} className="text-center text-sm text-gray-400 py-10">
                     No OT requests in this status.
                   </TableCell>
                 </TableRow>
               )}
               {overtimePagination.paginatedItems.map((request) => {
                 const employee = mockEmployees.find(e => e.id === request.employeeId);
+                const leader = employee?.managerId
+                  ? mockEmployees.find(e => e.id === employee.managerId)
+                  : null;
                 const approver = request.approvedBy
                   ? mockEmployees.find(e => e.id === request.approvedBy)
                   : null;
                 const isPending = request.status === 'pending';
+                const canActOnThis = isPending && canApproveOTOf(request.employeeId);
                 return (
                   <TableRow key={request.id} className={isPending ? 'bg-yellow-50/50' : ''}>
                     {!isEmployee && (
                       <TableCell>
                         <EmployeeCell employee={employee} />
+                      </TableCell>
+                    )}
+                    {!isEmployee && (
+                      <TableCell className="text-sm">
+                        {employee?.department
+                          ? <Badge variant="outline" className="font-normal">{employee.department}</Badge>
+                          : <span className="text-gray-400">—</span>}
+                      </TableCell>
+                    )}
+                    {!isEmployee && (
+                      <TableCell>
+                        {leader ? (
+                          <EmployeeCell employee={leader} subtitle={leader.position} />
+                        ) : (
+                          <span className="text-xs text-gray-400">No leader assigned</span>
+                        )}
                       </TableCell>
                     )}
                     <TableCell>{format(new Date(request.date), 'MMM dd, yyyy')}</TableCell>
@@ -295,7 +326,7 @@ export function Overtime() {
                       <TableCell className="text-sm">{approver?.name || '-'}</TableCell>
                     )}
                     <TableCell className="text-right">
-                      {isPending && canApprove ? (
+                      {canActOnThis ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
                             size="sm"
@@ -316,6 +347,11 @@ export function Overtime() {
                             Reject
                           </Button>
                         </div>
+                      ) : isPending && isManager ? (
+                        <Badge variant="outline" className="text-[10px] text-gray-500" title="Only this employee's direct leader can approve.">
+                          <X className="h-3 w-3 mr-1" />
+                          Not your team
+                        </Badge>
                       ) : (
                         <span className="text-xs text-gray-400">—</span>
                       )}

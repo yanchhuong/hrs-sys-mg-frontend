@@ -55,7 +55,16 @@ export function Exception() {
 
   const role = currentUser?.role;
   const isEmployee = role === 'employee';
-  const canApprove = role === 'admin' || role === 'manager';
+  // Admin can approve any leave. Manager can only approve leaves submitted by
+  // their own direct reports (employees where managerId === currentUser.employeeId).
+  const canApproveLeaveOf = (employeeId: string) => {
+    if (role === 'admin') return true;
+    if (role === 'manager') {
+      const target = employees.find(e => e.id === employeeId);
+      return !!target && target.managerId === currentUser?.employeeId;
+    }
+    return false;
+  };
 
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
@@ -158,12 +167,12 @@ export function Exception() {
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
-                  New Exception
+                  New Leave Request
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Submit Attendance Exception</DialogTitle>
+                  <DialogTitle>Submit Leave Request</DialogTitle>
                   <DialogDescription>
                     Your manager will review and approve this request
                   </DialogDescription>
@@ -273,7 +282,7 @@ export function Exception() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>Exceptions</CardTitle>
+            <CardTitle>All Leave</CardTitle>
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <TabsList>
                 <TabsTrigger value="all">
@@ -301,6 +310,8 @@ export function Exception() {
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
+                <TableHead>Dept/Group</TableHead>
+                <TableHead>Leader</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Reason</TableHead>
@@ -312,18 +323,34 @@ export function Exception() {
             <TableBody>
               {exceptionsPagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No exceptions in this status.
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
+                    No leaves in this status.
                   </TableCell>
                 </TableRow>
               )}
               {exceptionsPagination.paginatedItems.map((exception) => {
                 const employee = employees.find((e) => e.id === exception.employeeId);
+                const leader = employee?.managerId
+                  ? employees.find((e) => e.id === employee.managerId)
+                  : null;
                 const isPending = exception.status === 'pending';
+                const canActOnThis = isPending && canApproveLeaveOf(exception.employeeId);
                 return (
                   <TableRow key={exception.id} className={isPending ? 'bg-yellow-50/50' : ''}>
                     <TableCell>
                       <EmployeeCell employee={employee} />
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {employee?.department
+                        ? <Badge variant="outline" className="font-normal">{employee.department}</Badge>
+                        : <span className="text-gray-400">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {leader ? (
+                        <EmployeeCell employee={leader} subtitle={leader.position} />
+                      ) : (
+                        <span className="text-xs text-gray-400">No leader assigned</span>
+                      )}
                     </TableCell>
                     <TableCell>{format(new Date(exception.date), 'MMM dd, yyyy')}</TableCell>
                     <TableCell>
@@ -339,7 +366,7 @@ export function Exception() {
                       {format(new Date(exception.submittedAt), 'MMM dd, HH:mm')}
                     </TableCell>
                     <TableCell className="text-right">
-                      {isPending && canApprove ? (
+                      {canActOnThis ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
                             size="sm"
@@ -360,6 +387,11 @@ export function Exception() {
                             Reject
                           </Button>
                         </div>
+                      ) : isPending && role === 'manager' ? (
+                        <Badge variant="outline" className="text-[10px] text-gray-500" title="Only this employee's direct leader can approve.">
+                          <X className="h-3 w-3 mr-1" />
+                          Not your team
+                        </Badge>
                       ) : (
                         <Button variant="ghost" size="sm" className="h-7 text-xs">
                           View
