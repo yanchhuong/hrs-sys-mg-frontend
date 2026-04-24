@@ -274,11 +274,13 @@ function EmployeeDocuments({
 }
 
 // Adapts a backend Employee (api/employees.Employee) to the front-end mock
-// Employee shape used throughout the UI. Until dept-name resolution lands,
-// we surface the raw departmentId in the `department` field.
+// Employee shape used throughout the UI. The user-facing `id` holds the
+// human-readable empNo ("EMP001"); the backend UUID is kept on `apiId` and
+// used only when calling mutating endpoints.
 function adaptApiEmployee(e: employeesApi.Employee): Employee {
   return {
-    id: e.id,
+    id: e.empNo,
+    apiId: e.id,
     name: e.name,
     khmerName: e.khmerName ?? undefined,
     email: e.email,
@@ -472,15 +474,18 @@ export function Employees() {
     }
 
     try {
-      const { id: _id, status: _status, department, ...rest } = editedEmployee;
-      void _id; void _status;
+      const { id: empNo, apiId, status: _status, department, ...rest } = editedEmployee;
+      void _status;
       // UI field `department` holds the departmentId in live mode — map it
       // back to the field name the backend DTO expects.
       const body: employeesApi.CreateEmployeeRequest = {
-        ...(rest as unknown as Omit<employeesApi.CreateEmployeeRequest, 'departmentId'>),
+        ...(rest as unknown as Omit<employeesApi.CreateEmployeeRequest, 'departmentId' | 'empNo'>),
+        empNo,
         departmentId: department && department !== '-' ? department : null,
       };
-      await employeesApi.update(editedEmployee.id, body);
+      // The mutating endpoint is keyed by the backend UUID, not the human empNo.
+      const targetId = apiId ?? empNo;
+      await employeesApi.update(targetId, body);
       toast.success('Employee updated successfully');
       setSelectedEmployee(editedEmployee);
       setIsEditing(false);
@@ -982,14 +987,19 @@ export function Employees() {
                             className="w-full px-3 py-2 border rounded-md text-sm h-9"
                           >
                             <option value="">No Manager</option>
-                            {employees.filter(e => e.id !== editedEmployee.id).map(emp => (
-                              <option key={emp.id} value={emp.id}>{emp.name} — {emp.position}</option>
-                            ))}
+                            {employees.filter(e => e.id !== editedEmployee.id).map(emp => {
+                              // Value carries whatever identifier the backend stores
+                              // on managerId (UUID in live mode, empNo in mock mode).
+                              const val = emp.apiId ?? emp.id;
+                              return (
+                                <option key={val} value={val}>{emp.name} — {emp.position}</option>
+                              );
+                            })}
                           </select>
                         ) : (
                           <p>
                             {selectedEmployee.managerId
-                              ? employees.find(e => e.id === selectedEmployee.managerId)?.name || '—'
+                              ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee.managerId)?.name || '—'
                               : 'No manager'}
                           </p>
                         )}

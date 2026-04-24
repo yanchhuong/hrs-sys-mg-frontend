@@ -23,7 +23,10 @@ export interface User {
 }
 
 export interface Employee {
+  /** Human-readable Employee ID — what the user sees and types in Excel (e.g. "EMP001"). */
   id: string;
+  /** Backend primary-key UUID — populated in live mode only, used for API calls. */
+  apiId?: string;
   name: string;
   khmerName?: string;
   email: string;
