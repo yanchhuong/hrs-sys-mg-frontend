@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { mockEmployees, mockContracts } from '../../data/mockData';
 import { Contract, Employee } from '../../types/hrms';
+import * as employeesApi from '../../api/employees';
+import * as contractsApi from '../../api/contracts';
+import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -269,6 +272,52 @@ function EmployeeDocuments({
   );
 }
 
+// Adapts a backend Employee (api/employees.Employee) to the front-end mock
+// Employee shape used throughout the UI. Until dept-name resolution lands,
+// we surface the raw departmentId in the `department` field.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Adapts a backend Contract to the front-end mock Contract shape. The mock
+// shape has extra fields (`contractType`, `salary`) we fill with placeholders;
+// renewal calls still use the backend shape (`{endDate, baseSalary}`).
+function adaptApiContract(c: contractsApi.Contract): Contract {
+  const status: Contract['status'] =
+    c.status === 'active' ? 'active' : 'expired';
+  return {
+    id: c.id,
+    employeeId: c.employeeId,
+    startDate: c.startDate,
+    endDate: c.endDate,
+    status,
+    contractType: c.position ?? '-',
+    salary: c.baseSalary,
+    notes: c.notes,
+    createdAt: c.createdAt ?? new Date().toISOString(),
+  };
+}
+
 export function Employees() {
   const { t } = useI18n();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
@@ -277,17 +326,68 @@ export function Employees() {
   const [searchTerm, setSearchTerm] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
   // Bump on create so re-read of mockEmployees refreshes the table.
   const [, setRosterVersion] = useState(0);
   const bumpRoster = () => setRosterVersion(v => v + 1);
 
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 200 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  const loadContracts = async () => {
+    if (USE_MOCKS) {
+      setContracts([...mockContracts]);
+      return;
+    }
+    try {
+      const res = await contractsApi.list({ size: 500 });
+      setContracts(res.data.map(adaptApiContract));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load contracts');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadEmployees(), loadContracts()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const handleCreated = (emp: Employee) => {
-    mockEmployees.push(emp);
-    bumpRoster();
+    if (USE_MOCKS) {
+      mockEmployees.push(emp);
+      setEmployees([...mockEmployees]);
+      bumpRoster();
+    } else {
+      // AddEmployeeDialog is expected to perform the API create; just refetch.
+      loadEmployees();
+    }
   };
   const handleImported = (rows: Employee[]) => {
-    rows.forEach(r => mockEmployees.push(r));
-    bumpRoster();
+    if (USE_MOCKS) {
+      rows.forEach(r => mockEmployees.push(r));
+      setEmployees([...mockEmployees]);
+      bumpRoster();
+    } else {
+      // BulkUploadEmployeesDialog is expected to perform API creates; just refetch.
+      loadEmployees();
+    }
   };
   const [selectedEmployee, setSelectedEmployee] = useState<typeof mockEmployees[0] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -331,7 +431,7 @@ export function Employees() {
     setEditedEmployee(null);
   };
 
-  const handleSaveEmployee = () => {
+  const handleSaveEmployee = async () => {
     if (!editedEmployee) return;
 
     // Validation
@@ -340,11 +440,27 @@ export function Employees() {
       return;
     }
 
-    // Update the employee (in a real app, this would be an API call)
-    setSelectedEmployee(editedEmployee);
-    toast.success('Employee updated successfully');
-    setIsEditing(false);
-    setEditedEmployee(null);
+    if (USE_MOCKS) {
+      setSelectedEmployee(editedEmployee);
+      setEmployees(prev => prev.map(e => e.id === editedEmployee.id ? editedEmployee : e));
+      toast.success('Employee updated successfully');
+      setIsEditing(false);
+      setEditedEmployee(null);
+      return;
+    }
+
+    try {
+      const { id: _id, status: _status, ...rest } = editedEmployee;
+      void _id; void _status;
+      await employeesApi.update(editedEmployee.id, rest as unknown as employeesApi.CreateEmployeeRequest);
+      toast.success('Employee updated successfully');
+      setSelectedEmployee(editedEmployee);
+      setIsEditing(false);
+      setEditedEmployee(null);
+      await loadEmployees();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update employee');
+    }
   };
 
   const handleRenewContract = (contract: Contract) => {
@@ -359,17 +475,31 @@ export function Employees() {
     setRenewDialogOpen(true);
   };
 
-  const handleSaveRenewal = () => {
+  const handleSaveRenewal = async () => {
     if (!renewalData.startDate || !renewalData.endDate) {
       toast.error('Please fill in all required fields');
       return;
     }
-    toast.success('Contract renewed successfully');
-    setRenewDialogOpen(false);
+    if (USE_MOCKS || !selectedContract) {
+      toast.success('Contract renewed successfully');
+      setRenewDialogOpen(false);
+      return;
+    }
+    try {
+      await contractsApi.renew(selectedContract.id, {
+        endDate: renewalData.endDate,
+        baseSalary: renewalData.salary,
+      });
+      toast.success('Contract renewed successfully');
+      setRenewDialogOpen(false);
+      await loadContracts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to renew contract');
+    }
   };
 
   const getEmployeeContracts = (employeeId: string) => {
-    return mockContracts
+    return contracts
       .filter(c => c.employeeId === employeeId)
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
   };
@@ -383,7 +513,7 @@ export function Employees() {
     return <Badge className={colors[status]}>{status}</Badge>;
   };
 
-  let filteredEmployees = mockEmployees.filter(emp =>
+  let filteredEmployees = employees.filter(emp =>
     (isTenantWide || canViewEmployee(emp.id)) &&
     (emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
      emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -411,10 +541,10 @@ export function Employees() {
   // Pagination
   const employeePagination = usePagination(filteredEmployees, 10);
 
-  // Reset pagination when search or filter changes
+  // Reset pagination when search, filter, or data changes.
   useEffect(() => {
     employeePagination.resetPage();
-  }, [searchTerm, dateFilter]);
+  }, [searchTerm, dateFilter, employees.length]);
 
   return (
     <div className="space-y-6">
@@ -808,14 +938,14 @@ export function Employees() {
                             className="w-full px-3 py-2 border rounded-md text-sm h-9"
                           >
                             <option value="">No Manager</option>
-                            {mockEmployees.filter(e => e.id !== editedEmployee.id).map(emp => (
+                            {employees.filter(e => e.id !== editedEmployee.id).map(emp => (
                               <option key={emp.id} value={emp.id}>{emp.name} — {emp.position}</option>
                             ))}
                           </select>
                         ) : (
                           <p>
                             {selectedEmployee.managerId
-                              ? mockEmployees.find(e => e.id === selectedEmployee.managerId)?.name || '—'
+                              ? employees.find(e => e.id === selectedEmployee.managerId)?.name || '—'
                               : 'No manager'}
                           </p>
                         )}
@@ -988,8 +1118,11 @@ export function Employees() {
                     <EmployeeDocuments
                       employee={selectedEmployee}
                       onChange={(docs) => {
-                        const idx = mockEmployees.findIndex(e => e.id === selectedEmployee.id);
-                        if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], documents: docs };
+                        // TODO: wire EmployeeDocument upload/list/delete to the backend API.
+                        if (USE_MOCKS) {
+                          const idx = mockEmployees.findIndex(e => e.id === selectedEmployee.id);
+                          if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], documents: docs };
+                        }
                         setSelectedEmployee({ ...selectedEmployee, documents: docs });
                       }}
                     />
