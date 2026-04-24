@@ -3,6 +3,7 @@ import { mockEmployees, mockContracts } from '../../data/mockData';
 import { Contract, Employee } from '../../types/hrms';
 import * as employeesApi from '../../api/employees';
 import * as contractsApi from '../../api/contracts';
+import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -328,7 +329,16 @@ export function Employees() {
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
+  const [departments, setDepartments] = useState<departmentsApi.Department[]>([]);
   const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+
+  // departmentId → name lookup. In mock mode the adapter stores the name
+  // directly, so the map just round-trips through the same string.
+  const deptNameById = new Map<string, string>(departments.map(d => [d.id, d.name]));
+  const deptName = (idOrName: string | undefined): string => {
+    if (!idOrName) return '-';
+    return deptNameById.get(idOrName) ?? idOrName;
+  };
   // Bump on create so re-read of mockEmployees refreshes the table.
   const [, setRosterVersion] = useState(0);
   const bumpRoster = () => setRosterVersion(v => v + 1);
@@ -359,11 +369,21 @@ export function Employees() {
     }
   };
 
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try {
+      setDepartments(await departmentsApi.list());
+    } catch (err) {
+      // Non-fatal — without the map, dept cells fall back to the raw id.
+      console.warn('Could not load departments', err);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadEmployees(), loadContracts()]);
+      await Promise.all([loadEmployees(), loadContracts(), loadDepartments()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -450,9 +470,15 @@ export function Employees() {
     }
 
     try {
-      const { id: _id, status: _status, ...rest } = editedEmployee;
+      const { id: _id, status: _status, department, ...rest } = editedEmployee;
       void _id; void _status;
-      await employeesApi.update(editedEmployee.id, rest as unknown as employeesApi.CreateEmployeeRequest);
+      // UI field `department` holds the departmentId in live mode — map it
+      // back to the field name the backend DTO expects.
+      const body: employeesApi.CreateEmployeeRequest = {
+        ...(rest as unknown as Omit<employeesApi.CreateEmployeeRequest, 'departmentId'>),
+        departmentId: department && department !== '-' ? department : null,
+      };
+      await employeesApi.update(editedEmployee.id, body);
       toast.success('Employee updated successfully');
       setSelectedEmployee(editedEmployee);
       setIsEditing(false);
@@ -517,7 +543,7 @@ export function Employees() {
     (isTenantWide || canViewEmployee(emp.id)) &&
     (emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
      emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     emp.department.toLowerCase().includes(searchTerm.toLowerCase()))
+     deptName(emp.department).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Apply date filter based on joinDate
@@ -638,7 +664,7 @@ export function Employees() {
                     {employee.dateOfBirth ? format(new Date(employee.dateOfBirth), 'MMM dd, yyyy') : '-'}
                   </TableCell>
                   <TableCell>{employee.position}</TableCell>
-                  <TableCell>{employee.department}</TableCell>
+                  <TableCell>{deptName(employee.department)}</TableCell>
                   <TableCell>{calculateExperience(employee.joinDate)}</TableCell>
                   <TableCell>{employee.contactNumber}</TableCell>
                   <TableCell>{employee.nffNo || '-'}</TableCell>
@@ -765,7 +791,7 @@ export function Employees() {
                     </span>
                     <span className="inline-flex items-center gap-1 text-gray-600">
                       <Building2 className="h-3 w-3" />
-                      {selectedEmployee.department}
+                      {deptName(selectedEmployee.department)}
                     </span>
                   </div>
                 </div>
@@ -921,13 +947,26 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Department" required={isEditing} isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            value={editedEmployee.department}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, department: e.target.value })}
-                            className="h-9"
-                          />
+                          USE_MOCKS ? (
+                            <Input
+                              value={editedEmployee.department}
+                              onChange={(e) => setEditedEmployee({ ...editedEmployee, department: e.target.value })}
+                              className="h-9"
+                            />
+                          ) : (
+                            <select
+                              className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                              value={editedEmployee.department}
+                              onChange={(e) => setEditedEmployee({ ...editedEmployee, department: e.target.value })}
+                            >
+                              <option value="">—</option>
+                              {departments.map((d) => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
+                            </select>
+                          )
                         ) : (
-                          <p>{selectedEmployee.department}</p>
+                          <p>{deptName(selectedEmployee.department)}</p>
                         )}
                       </FieldRow>
                       <FieldRow label="Reports To" isEditing={isEditing} full>

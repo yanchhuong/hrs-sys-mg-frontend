@@ -3,7 +3,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { mockAttendance, mockEmployees } from '../../data/mockData';
-import { Attendance as AttendanceType, AttendanceStatus } from '../../types/hrms';
+import { Attendance as AttendanceType, AttendanceStatus, Employee } from '../../types/hrms';
+import * as attendanceApi from '../../api/attendance';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -48,6 +52,56 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
   early_leave: { label: 'Early Leave', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', shortLabel: 'EL' },
 };
 
+// Adapts a backend AttendanceEntry to the front-end Attendance shape used
+// throughout the UI. Morning/noon punches are not modelled on the backend DTO
+// yet; we leave those fields undefined so the table renders "--:--".
+function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
+  const status = ([
+    'present', 'late', 'early_leave', 'absent',
+    'no_checkin', 'no_checkout', 'leave',
+  ] as const).includes(a.status as AttendanceStatus)
+    ? (a.status as AttendanceStatus)
+    : 'present';
+  return {
+    id: a.id,
+    employeeId: a.employeeId,
+    date: a.date,
+    checkIn: a.checkIn ?? '',
+    checkOut: a.checkOut ?? undefined,
+    workHours: a.hoursWorked,
+    otHours: a.overtimeHours,
+    status,
+    notes: a.notes,
+  };
+}
+
+// Adapts a backend Employee to the front-end Employee shape. `department` in
+// live mode carries the departmentId UUID; a deptName() helper in the component
+// resolves it to a display name via the departments list.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
 export function Attendance() {
   const { t } = useI18n();
   const { currentUser } = useAuth();
@@ -91,21 +145,87 @@ export function Attendance() {
   const { isTenantWide, matchesScope, showScopePicker } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
+  // Live data — falls back to mock arrays when VITE_USE_MOCKS is on.
+  const [attendance, setAttendance] = useState<AttendanceType[]>(USE_MOCKS ? mockAttendance : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (id: string | undefined): string => {
+    if (!id) return '-';
+    return deptNameById.get(id) ?? id;
+  };
+
+  const loadAttendance = async () => {
+    if (USE_MOCKS) {
+      setAttendance([...mockAttendance]);
+      return;
+    }
+    try {
+      const res = await attendanceApi.list({
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+        size: 500,
+      });
+      setAttendance(res.data.map(adaptApiAttendance));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 200 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try {
+      setDeptList(await departmentsApi.list());
+    } catch (err) {
+      // Non-fatal — department cells fall back to the raw UUID.
+      console.warn('Could not load departments', err);
+    }
+  };
+
+  // Initial load on mount.
+  useEffect(() => {
+    void loadEmployees();
+    void loadDepartments();
+    void loadAttendance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reload attendance when the date range changes (live mode only — mock data
+  // is already loaded and filtered client-side).
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    void loadAttendance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
+
   // Today's records — scoped to self + direct reports for the employee role.
   const todayRecords = useMemo(() => {
     // Range inclusive on both ends. Single-day behaviour is preserved when
     // dateFrom === dateTo (the original experience).
-    const rows = mockAttendance.filter(a => {
+    const rows = attendance.filter(a => {
       if (dateFrom && a.date < dateFrom) return false;
       if (dateTo && a.date > dateTo) return false;
       return true;
     });
     return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode));
-  }, [dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
+  }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
   // Summary counts for selected date
   const summary = useMemo(() => {
-    const totalEmployees = mockEmployees
+    const totalEmployees = employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode))).length;
     const present = todayRecords.filter(r => r.status === 'present' || r.status === 'early_leave').length;
     const absent = todayRecords.filter(r => r.status === 'absent').length;
@@ -114,7 +234,7 @@ export function Attendance() {
     const noCheckout = todayRecords.filter(r => r.status === 'no_checkout').length;
     const leave = todayRecords.filter(r => r.status === 'leave').length;
     return { totalEmployees, present, absent, late, noCheckin, noCheckout, leave };
-  }, [todayRecords, isTenantWide, matchesScope, scopeMode]);
+  }, [todayRecords, employees, isTenantWide, matchesScope, scopeMode]);
 
   // Filtered records
   const filteredRecords = useMemo(() => {
@@ -124,20 +244,22 @@ export function Attendance() {
     }
     if (departmentFilter !== 'all') {
       records = records.filter(r => {
-        const emp = mockEmployees.find(e => e.id === r.employeeId);
-        return emp?.department === departmentFilter;
+        const emp = employees.find(e => e.id === r.employeeId);
+        return deptName(emp?.department) === departmentFilter;
       });
     }
     const kw = dailySearch.trim().toLowerCase();
     if (kw) {
       records = records.filter(r => {
-        const emp = mockEmployees.find(e => e.id === r.employeeId);
-        const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''}`.toLowerCase();
+        const emp = employees.find(e => e.id === r.employeeId);
+        const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)}`.toLowerCase();
         return hay.includes(kw);
       });
     }
     return records;
-  }, [todayRecords, activeFilter, departmentFilter, dailySearch]);
+    // deptName is derived from deptList, tracked via employees.length/deptList upstream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayRecords, employees, activeFilter, departmentFilter, dailySearch]);
 
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
@@ -158,7 +280,7 @@ export function Attendance() {
     const rule = loadRule();
     const ruleAsOf = new Date(year, 0, 1);
 
-    return mockEmployees
+    return employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
       .map(emp => {
       const empRecords: Record<string, AttendanceStatus> = {};
@@ -170,7 +292,7 @@ export function Attendance() {
         const dayOfWeek = getDay(day);
         if (dayOfWeek === 0 || dayOfWeek === 6) return;
 
-        const record = mockAttendance.find(a => a.employeeId === emp.id && a.date === dateStr);
+        const record = attendance.find(a => a.employeeId === emp.id && a.date === dateStr);
         if (record) {
           empRecords[dateStr] = record.status;
           if (record.status === 'present' || record.status === 'early_leave') presentCount++;
@@ -193,7 +315,7 @@ export function Attendance() {
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion, isTenantWide, matchesScope, scopeMode]);
+  }, [monthDate, alVersion, attendance, employees, isTenantWide, matchesScope, scopeMode]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -203,7 +325,11 @@ export function Attendance() {
       .slice(0, 5);
   }, [monthlyData]);
 
-  const departments = [...new Set(mockEmployees.map(e => e.department))];
+  // In mock mode `e.department` is a human-readable name; in live mode it's a
+  // departmentId UUID, so we prefer the loaded departments list for the picker.
+  const departments = USE_MOCKS
+    ? [...new Set(employees.map(e => e.department))]
+    : deptList.map(d => d.name);
 
   const filterTabs: { key: FilterTab; label: string; count: number; icon: React.ReactNode }[] = [
     { key: 'all', label: 'All', count: todayRecords.length, icon: <Users className="h-4 w-4" /> },
@@ -238,10 +364,26 @@ export function Attendance() {
     setEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
-    const emp = mockEmployees.find(e => e.id === editRecord?.employeeId);
-    toast.success(`Attendance updated for ${emp?.name}`);
-    setEditDialogOpen(false);
+  const handleSaveEdit = async () => {
+    const emp = employees.find(e => e.id === editRecord?.employeeId);
+    if (USE_MOCKS || !editRecord) {
+      toast.success(`Attendance updated for ${emp?.name}`);
+      setEditDialogOpen(false);
+      return;
+    }
+    try {
+      await attendanceApi.update(editRecord.id, {
+        checkIn: editCheckIn || null,
+        checkOut: editCheckOut || null,
+        status: editStatus,
+        notes: editRemark || undefined,
+      });
+      toast.success(`Attendance updated for ${emp?.name}`);
+      setEditDialogOpen(false);
+      await loadAttendance();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update attendance');
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -648,7 +790,7 @@ export function Attendance() {
                     </TableRow>
                   ) : (
                     dailyPagination.paginatedItems.map(record => {
-                      const emp = mockEmployees.find(e => e.id === record.employeeId);
+                      const emp = employees.find(e => e.id === record.employeeId);
                       const timeCell = (val?: string, icon?: 'in' | 'out') => {
                         if (!val) return <span className="text-gray-300 text-center block">--:--</span>;
                         return (
@@ -663,7 +805,7 @@ export function Attendance() {
                           <TableCell>
                             <EmployeeCell employee={emp} subtitle={emp?.id} />
                           </TableCell>
-                          <TableCell className="text-sm">{emp?.department}</TableCell>
+                          <TableCell className="text-sm">{deptName(emp?.department)}</TableCell>
                           {dateFrom !== dateTo && (
                             <TableCell className="text-sm whitespace-nowrap">
                               {format(parseISO(record.date), 'MMM dd')}
@@ -795,9 +937,9 @@ export function Attendance() {
                 {(() => {
                   const kw = monthlySearch.trim().toLowerCase();
                   const filteredRows = monthlyData.filter(d => {
-                    if (departmentFilter !== 'all' && d.employee.department !== departmentFilter) return false;
+                    if (departmentFilter !== 'all' && deptName(d.employee.department) !== departmentFilter) return false;
                     if (kw) {
-                      const hay = `${d.employee.name} ${d.employee.id} ${d.employee.department}`.toLowerCase();
+                      const hay = `${d.employee.name} ${d.employee.id} ${deptName(d.employee.department)}`.toLowerCase();
                       if (!hay.includes(kw)) return false;
                     }
                     if (monthlyStatusFilter === 'late' && d.lateCount === 0) return false;
@@ -898,7 +1040,7 @@ export function Attendance() {
                       <span>{selectedEmpData.employee.name}</span>
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedEmployee(null)}>Close</Button>
                     </CardTitle>
-                    <p className="text-xs text-gray-400">{selectedEmpData.employee.department} - {format(monthDate, 'MMMM yyyy')}</p>
+                    <p className="text-xs text-gray-400">{deptName(selectedEmpData.employee.department)} - {format(monthDate, 'MMMM yyyy')}</p>
                   </CardHeader>
                   <CardContent>
                     {/* Mini calendar grid */}
@@ -973,7 +1115,7 @@ export function Attendance() {
                             </span>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{data.employee.name}</p>
-                              <p className="text-xs text-gray-400">{data.employee.department}</p>
+                              <p className="text-xs text-gray-400">{deptName(data.employee.department)}</p>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-sm font-semibold text-red-600">{data.absentCount}</span>
@@ -1000,7 +1142,7 @@ export function Attendance() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-500">Total Employees</span>
                     <span className="font-medium">
-                      {mockEmployees
+                      {employees
                         .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
                         .length}
                     </span>
@@ -1093,7 +1235,7 @@ export function Attendance() {
           <DialogHeader>
             <DialogTitle>Edit Attendance</DialogTitle>
             <DialogDescription>
-              {editRecord && `Update attendance for ${mockEmployees.find(e => e.id === editRecord.employeeId)?.name} on ${editRecord.date}`}
+              {editRecord && `Update attendance for ${employees.find(e => e.id === editRecord.employeeId)?.name} on ${editRecord.date}`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1161,7 +1303,7 @@ export function Attendance() {
         open={alDialogOpen}
         onOpenChange={setAlDialogOpen}
         defaultYear={monthDate.getFullYear()}
-        employees={mockEmployees.map(e => ({ id: e.id, name: e.name, joinDate: e.joinDate, status: e.status }))}
+        employees={employees.map(e => ({ id: e.id, name: e.name, joinDate: e.joinDate, status: e.status }))}
         onChanged={() => setAlVersion(v => v + 1)}
       />
     </div>
