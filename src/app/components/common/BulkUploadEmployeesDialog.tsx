@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import { Progress } from '../ui/progress';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -110,6 +111,22 @@ export function BulkUploadEmployeesDialog({
   const [progress, setProgress] = useState<Map<number, RowProgress>>(new Map());
   const [finalResult, setFinalResult] = useState<{ ok: number; failed: number } | null>(null);
 
+  // View filter + per-row selection. Passed rows start checked; failed rows
+  // are uncheckable — the rule is "upload Green only".
+  type ViewFilter = 'all' | 'passed' | 'failed';
+  const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+
+  // Seed selection whenever a fresh parse lands: all currently-valid rows
+  // are selected by default; the user can deselect any of them.
+  useEffect(() => {
+    if (!parsed) {
+      setSelectedRows(new Set());
+      return;
+    }
+    setSelectedRows(new Set(parsed.employees.filter(r => r.errors.length === 0).map(r => r.rowNumber)));
+  }, [parsed]);
+
   const reset = () => {
     setFile(null);
     setParsed(null);
@@ -117,6 +134,8 @@ export function BulkUploadEmployeesDialog({
     setImporting(false);
     setProgress(new Map());
     setFinalResult(null);
+    setViewFilter('all');
+    setSelectedRows(new Set());
   };
 
   const resolvedExistingEmpNos = existingEmpNos ?? (USE_MOCKS ? mockEmployees.map(e => e.id) : []);
@@ -151,15 +170,21 @@ export function BulkUploadEmployeesDialog({
 
   const handleImport = async () => {
     if (!parsed) return;
-    const rowsWithErrors = parsed.employees.filter(r => r.errors.length > 0).length;
-    if (rowsWithErrors > 0) {
-      toast.error(`Fix ${rowsWithErrors} error row${rowsWithErrors !== 1 ? 's' : ''} before importing.`);
+
+    // Import only the rows the user has ticked (defaults to all valid rows).
+    // Ticking a failed row is prevented in the UI, but belt-and-suspenders
+    // the filter here too.
+    const rowsToImport = parsed.employees.filter(
+      r => selectedRows.has(r.rowNumber) && r.errors.length === 0,
+    );
+    if (rowsToImport.length === 0) {
+      toast.error('Select at least one valid row to import.');
       return;
     }
 
     // ----- Mock mode: no backend — just hand rows back to the parent. -----
     if (USE_MOCKS) {
-      const newRows: Employee[] = parsed.employees.map(r => ({
+      const newRows: Employee[] = rowsToImport.map(r => ({
         ...r.data,
         status: r.data.status ?? 'active',
       } as Employee));
@@ -174,7 +199,6 @@ export function BulkUploadEmployeesDialog({
     const deptByLowerName = new Map<string, string>(
       (departments ?? []).map(d => [d.name.toLowerCase(), d.id]),
     );
-    const rowsToImport = parsed.employees;
 
     // Seed progress map so the UI can render state straight away.
     const initial = new Map<number, RowProgress>(
@@ -248,7 +272,7 @@ export function BulkUploadEmployeesDialog({
   } : null;
 
   const doneCount = Array.from(progress.values()).filter(p => p.status === 'created' || p.status === 'failed').length;
-  const progressPct = parsed && parsed.totalRows > 0 ? Math.round((doneCount / parsed.totalRows) * 100) : 0;
+  const progressPct = selectedRows.size > 0 ? Math.round((doneCount / selectedRows.size) * 100) : 0;
 
   return (
     <Dialog open={open} onOpenChange={(o) => {
@@ -320,9 +344,14 @@ export function BulkUploadEmployeesDialog({
                   {summary.errors > 0 ? (
                     <>
                       <p className="font-medium text-red-900">
-                        {summary.errors} error{summary.errors !== 1 ? 's' : ''} across {summary.errorRows} row{summary.errorRows !== 1 ? 's' : ''} — cannot import
+                        {summary.errors} error{summary.errors !== 1 ? 's' : ''} across {summary.errorRows} row{summary.errorRows !== 1 ? 's' : ''}
+                        {summary.valid > 0 ? ` · ${summary.valid} row${summary.valid !== 1 ? 's' : ''} still importable` : ' — nothing to import'}
                       </p>
-                      <p className="text-sm text-red-800">Fix the highlighted rows in your spreadsheet and re-upload.</p>
+                      <p className="text-sm text-red-800">
+                        {summary.valid > 0
+                          ? 'Switch to the Passed tab to review and import the green rows. Fix the failed rows in Excel and re-upload separately.'
+                          : 'Fix the highlighted rows in your spreadsheet and re-upload.'}
+                      </p>
                     </>
                   ) : summary.warnings > 0 ? (
                     <>
@@ -348,7 +377,7 @@ export function BulkUploadEmployeesDialog({
                 <RefreshCw className="h-5 w-5 text-blue-600 shrink-0 mt-0.5 animate-spin" />
                 <div className="flex-1 min-w-0 space-y-2">
                   <p className="font-medium text-blue-900">
-                    Importing {doneCount} of {parsed?.totalRows ?? 0}…
+                    Importing {doneCount} of {selectedRows.size}…
                   </p>
                   <Progress value={progressPct} className="h-1.5" />
                 </div>
@@ -383,92 +412,180 @@ export function BulkUploadEmployeesDialog({
             </div>
           )}
 
-          {/* Preview table */}
-          {parsed && parsed.employees.length > 0 && (
-            <div className="rounded-md border overflow-auto max-h-[360px]">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-gray-100 z-10">
-                  <tr>
-                    <th className="px-2 py-2 w-10 text-center">Status</th>
-                    <th className="sticky left-0 bg-gray-100 text-left px-3 py-2 font-medium">ID</th>
-                    <th className="text-left px-3 py-2 font-medium">Name</th>
-                    <th className="text-left px-3 py-2 font-medium">Email</th>
-                    <th className="text-left px-3 py-2 font-medium">Position</th>
-                    <th className="text-left px-3 py-2 font-medium">Department</th>
-                    <th className="text-right px-3 py-2 font-medium">Salary</th>
-                    <th className="text-left px-3 py-2 font-medium">Bank</th>
-                    <th className="text-left px-3 py-2 font-medium">Issues</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsed.employees.map(row => {
-                    const prog = progress.get(row.rowNumber);
-                    const hasErr = row.errors.length > 0;
-                    const hasWarn = !hasErr && row.warnings.length > 0;
+          {/* Preview: tabbed view + per-row checkboxes */}
+          {parsed && parsed.employees.length > 0 && (() => {
+            const passedRows = parsed.employees.filter(r => r.errors.length === 0);
+            const failedRows = parsed.employees.filter(r => r.errors.length > 0);
+            const visibleRows = viewFilter === 'passed' ? passedRows
+              : viewFilter === 'failed' ? failedRows
+              : parsed.employees;
+            const visibleSelectable = visibleRows.filter(r => r.errors.length === 0);
+            const visibleSelectedCount = visibleSelectable.filter(r => selectedRows.has(r.rowNumber)).length;
+            const allVisibleSelected = visibleSelectable.length > 0 && visibleSelectedCount === visibleSelectable.length;
+            const someVisibleSelected = visibleSelectedCount > 0 && !allVisibleSelected;
 
-                    // Post-import row state overrides the parse state.
-                    const isCreated = prog?.status === 'created';
-                    const isFailed = prog?.status === 'failed';
-                    const isCreating = prog?.status === 'creating';
+            const toggleAllVisible = () => {
+              setSelectedRows(prev => {
+                const next = new Set(prev);
+                if (allVisibleSelected) {
+                  visibleSelectable.forEach(r => next.delete(r.rowNumber));
+                } else {
+                  visibleSelectable.forEach(r => next.add(r.rowNumber));
+                }
+                return next;
+              });
+            };
+            const toggleOne = (rowNumber: number) => {
+              setSelectedRows(prev => {
+                const next = new Set(prev);
+                if (next.has(rowNumber)) next.delete(rowNumber);
+                else next.add(rowNumber);
+                return next;
+              });
+            };
 
-                    const rowBg = isFailed ? 'bg-red-50'
-                      : isCreated ? 'bg-green-50'
-                      : isCreating ? 'bg-blue-50'
-                      : hasErr ? 'bg-red-50'
-                      : hasWarn ? 'bg-amber-50'
-                      : '';
+            const tabBtn = (key: ViewFilter, label: string, count: number, tone: 'neutral' | 'green' | 'red') => {
+              const active = viewFilter === key;
+              const color = tone === 'green' ? 'text-green-700' : tone === 'red' ? 'text-red-700' : 'text-gray-700';
+              return (
+                <button
+                  type="button"
+                  onClick={() => setViewFilter(key)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-white shadow-sm border ' + color
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {tone === 'green' && <CheckCircle className="h-3.5 w-3.5 text-green-600" />}
+                  {tone === 'red' && <AlertCircle className="h-3.5 w-3.5 text-red-600" />}
+                  {label}
+                  <span className={`ml-1 rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
+                    active ? 'bg-gray-100' : 'bg-gray-200/70'
+                  }`}>{count}</span>
+                </button>
+              );
+            };
 
-                    const primaryIssue = isFailed ? (prog?.message ?? 'Failed')
-                      : row.errors[0] ?? row.warnings[0] ?? '';
+            return (
+              <div className="space-y-2">
+                {/* Tab bar */}
+                <div className="flex items-center justify-between">
+                  <div className="inline-flex gap-1 rounded-lg bg-gray-100 p-1">
+                    {tabBtn('all', 'All', parsed.employees.length, 'neutral')}
+                    {tabBtn('passed', 'Passed', passedRows.length, 'green')}
+                    {tabBtn('failed', 'Failed', failedRows.length, 'red')}
+                  </div>
+                  <div className="text-xs text-gray-600 tabular-nums">
+                    {selectedRows.size} of {passedRows.length} selected
+                  </div>
+                </div>
 
-                    return (
-                      <tr key={row.rowNumber} className={`border-t ${rowBg}`} title={[prog?.message, ...row.errors, ...row.warnings].filter(Boolean).join('\n') || undefined}>
-                        <td className={`px-2 py-2 text-center ${rowBg}`}>
-                          {isCreated ? <CheckCircle className="h-4 w-4 text-green-600 inline" />
-                            : isFailed ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
-                            : isCreating ? <RefreshCw className="h-4 w-4 text-blue-600 inline animate-spin" />
-                            : hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
-                            : hasWarn ? <AlertTriangle className="h-4 w-4 text-amber-600 inline" />
-                            : <CheckCircle className="h-4 w-4 text-green-600 inline" />}
-                        </td>
-                        <td className={`sticky left-0 px-3 py-2 font-medium ${rowBg || 'bg-white'}`}>{row.data.id ?? ''}</td>
-                        <td className="px-3 py-2">{row.data.name ?? ''}</td>
-                        <td className="px-3 py-2">{row.data.email ?? ''}</td>
-                        <td className="px-3 py-2">{row.data.position ?? ''}</td>
-                        <td className="px-3 py-2">{row.data.department ?? ''}</td>
-                        <td className="text-right px-3 py-2 tabular-nums">
-                          {row.data.baseSalary != null ? `$${row.data.baseSalary.toLocaleString()}` : ''}
-                        </td>
-                        <td className="px-3 py-2">
-                          {row.data.bankName ? `${row.data.bankName} ${row.data.bankAccount ? '· ' + row.data.bankAccount : ''}` : ''}
-                        </td>
-                        <td className="px-3 py-2 max-w-[240px]">
-                          {isFailed ? (
-                            <span className="text-red-700 block truncate" title={prog?.message}>
-                              {prog?.message ?? 'Failed'}
-                            </span>
-                          ) : isCreated ? (
-                            <span className="text-green-700 block">Imported</span>
-                          ) : row.errors.length > 0 ? (
-                            <span className="text-red-700 block truncate" title={row.errors.join('\n')}>
-                              {row.errors[0]}
-                              {row.errors.length > 1 ? ` (+${row.errors.length - 1})` : ''}
-                            </span>
-                          ) : row.warnings.length > 0 ? (
-                            <span className="text-amber-700 block truncate" title={row.warnings.join('\n')}>
-                              {row.warnings[0]}
-                              {row.warnings.length > 1 ? ` (+${row.warnings.length - 1})` : ''}
-                            </span>
-                          ) : null}
-                          {primaryIssue === '' && null}
-                        </td>
+                <div className="rounded-md border overflow-auto max-h-[360px]">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-gray-100 z-10">
+                      <tr>
+                        <th className="px-2 py-2 w-10 text-center">
+                          <Checkbox
+                            checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                            onCheckedChange={toggleAllVisible}
+                            disabled={visibleSelectable.length === 0 || importing}
+                            aria-label="Select all passed rows"
+                          />
+                        </th>
+                        <th className="px-2 py-2 w-10 text-center">Status</th>
+                        <th className="sticky left-0 bg-gray-100 text-left px-3 py-2 font-medium">ID</th>
+                        <th className="text-left px-3 py-2 font-medium">Name</th>
+                        <th className="text-left px-3 py-2 font-medium">Email</th>
+                        <th className="text-left px-3 py-2 font-medium">Position</th>
+                        <th className="text-left px-3 py-2 font-medium">Department</th>
+                        <th className="text-right px-3 py-2 font-medium">Salary</th>
+                        <th className="text-left px-3 py-2 font-medium">Bank</th>
+                        <th className="text-left px-3 py-2 font-medium">Issues</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    </thead>
+                    <tbody>
+                      {visibleRows.length === 0 && (
+                        <tr>
+                          <td colSpan={10} className="text-center py-8 text-gray-400">
+                            {viewFilter === 'passed' ? 'No rows passed validation yet.' : 'No rows with issues.'}
+                          </td>
+                        </tr>
+                      )}
+                      {visibleRows.map(row => {
+                        const prog = progress.get(row.rowNumber);
+                        const hasErr = row.errors.length > 0;
+                        const hasWarn = !hasErr && row.warnings.length > 0;
+                        const isCreated = prog?.status === 'created';
+                        const isFailed = prog?.status === 'failed';
+                        const isCreating = prog?.status === 'creating';
+
+                        const rowBg = isFailed ? 'bg-red-50'
+                          : isCreated ? 'bg-green-50'
+                          : isCreating ? 'bg-blue-50'
+                          : hasErr ? 'bg-red-50'
+                          : hasWarn ? 'bg-amber-50'
+                          : '';
+
+                        const checked = selectedRows.has(row.rowNumber);
+
+                        return (
+                          <tr key={row.rowNumber} className={`border-t ${rowBg}`} title={[prog?.message, ...row.errors, ...row.warnings].filter(Boolean).join('\n') || undefined}>
+                            <td className={`px-2 py-2 text-center ${rowBg}`}>
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={() => toggleOne(row.rowNumber)}
+                                disabled={hasErr || importing || isCreated}
+                                aria-label={`Select row ${row.rowNumber}`}
+                              />
+                            </td>
+                            <td className={`px-2 py-2 text-center ${rowBg}`}>
+                              {isCreated ? <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                                : isFailed ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
+                                : isCreating ? <RefreshCw className="h-4 w-4 text-blue-600 inline animate-spin" />
+                                : hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
+                                : hasWarn ? <AlertTriangle className="h-4 w-4 text-amber-600 inline" />
+                                : <CheckCircle className="h-4 w-4 text-green-600 inline" />}
+                            </td>
+                            <td className={`sticky left-0 px-3 py-2 font-medium ${rowBg || 'bg-white'}`}>{row.data.id ?? ''}</td>
+                            <td className="px-3 py-2">{row.data.name ?? ''}</td>
+                            <td className="px-3 py-2">{row.data.email ?? ''}</td>
+                            <td className="px-3 py-2">{row.data.position ?? ''}</td>
+                            <td className="px-3 py-2">{row.data.department ?? ''}</td>
+                            <td className="text-right px-3 py-2 tabular-nums">
+                              {row.data.baseSalary != null ? `$${row.data.baseSalary.toLocaleString()}` : ''}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.data.bankName ? `${row.data.bankName} ${row.data.bankAccount ? '· ' + row.data.bankAccount : ''}` : ''}
+                            </td>
+                            <td className="px-3 py-2 max-w-[240px]">
+                              {isFailed ? (
+                                <span className="text-red-700 block truncate" title={prog?.message}>
+                                  {prog?.message ?? 'Failed'}
+                                </span>
+                              ) : isCreated ? (
+                                <span className="text-green-700 block">Imported</span>
+                              ) : row.errors.length > 0 ? (
+                                <span className="text-red-700 block truncate" title={row.errors.join('\n')}>
+                                  {row.errors[0]}
+                                  {row.errors.length > 1 ? ` (+${row.errors.length - 1})` : ''}
+                                </span>
+                              ) : row.warnings.length > 0 ? (
+                                <span className="text-amber-700 block truncate" title={row.warnings.join('\n')}>
+                                  {row.warnings[0]}
+                                  {row.warnings.length > 1 ? ` (+${row.warnings.length - 1})` : ''}
+                                </span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {!parsed && (
             <div className="text-center text-sm text-gray-400 py-8">
@@ -485,17 +602,18 @@ export function BulkUploadEmployeesDialog({
                 {finalResult.ok} imported · {finalResult.failed} failed
               </span>
             ) : summary ? (
-              summary.errors > 0 ? (
-                <span className="inline-flex items-center gap-1 text-red-700 font-medium">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  {summary.errors} error{summary.errors !== 1 ? 's' : ''} · {summary.valid}/{summary.total} valid
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+              <span className="inline-flex items-center gap-1 font-medium">
+                {summary.errors > 0 && (
+                  <span className="inline-flex items-center gap-1 text-red-700 mr-3">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {summary.errorRows} failed
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 text-green-700">
                   <CheckCircle className="h-3.5 w-3.5" />
-                  {summary.valid} ready to import
+                  {selectedRows.size} selected · {summary.valid} valid of {summary.total}
                 </span>
-              )
+              </span>
             ) : (
               <span className="text-gray-400">Pick a file to preview</span>
             )}
@@ -517,19 +635,19 @@ export function BulkUploadEmployeesDialog({
             {!finalResult && (
               <Button
                 onClick={handleImport}
-                disabled={!parsed || parsed.totalRows === 0 || (summary?.errors ?? 0) > 0 || importing}
+                disabled={!parsed || parsed.totalRows === 0 || selectedRows.size === 0 || importing}
               >
                 {importing ? (
                   <>
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Importing… ({doneCount}/{parsed?.totalRows ?? 0})
+                    Importing… ({doneCount}/{selectedRows.size})
                   </>
                 ) : (
                   <>
                     <Upload className="h-4 w-4 mr-2" />
-                    {summary?.errors && summary.errors > 0
-                      ? `Fix ${summary.errors} Error${summary.errors !== 1 ? 's' : ''} to Import`
-                      : `Import ${summary?.valid ?? 0} Employee${(summary?.valid ?? 0) !== 1 ? 's' : ''}`}
+                    {selectedRows.size === 0
+                      ? 'No rows selected'
+                      : `Import ${selectedRows.size} Selected${selectedRows.size !== 1 ? '' : ''}`}
                   </>
                 )}
               </Button>
