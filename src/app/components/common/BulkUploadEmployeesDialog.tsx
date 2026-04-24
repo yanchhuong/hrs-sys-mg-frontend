@@ -95,7 +95,7 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
             Upload Bulk Employees
           </DialogTitle>
           <DialogDescription>
-            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Department, Join Date, Base Salary.
+            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Join Date, Base Salary. Department is optional. Blank rows are skipped automatically.
           </DialogDescription>
         </DialogHeader>
 

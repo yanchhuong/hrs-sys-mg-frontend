@@ -90,6 +90,15 @@ export function parseEmployeesExcel(
 
         rows.forEach((raw, i) => {
           const rowNumber = i + 2; // +1 for header, +1 for 1-based numbering
+
+          // Skip blank rows — Excel often contains empty rows interleaved with
+          // data or at the bottom of a sheet. A row is blank when every cell is
+          // empty / whitespace.
+          const hasAnyValue = Object.values(raw).some(
+            v => v !== '' && v != null && String(v).trim() !== '',
+          );
+          if (!hasAnyValue) return;
+
           const rowErrors: string[] = [];
           const rowWarnings: string[] = [];
           const parsed: Partial<Employee> = {};
@@ -114,15 +123,16 @@ export function parseEmployeesExcel(
             }
           }
 
-          // Mandatory fields
+          // Mandatory fields. Department is optional — left blank, the row
+          // imports without a department and can be assigned later.
           if (!parsed.id) rowErrors.push('Employee ID is missing');
           if (!parsed.name) rowErrors.push('Name is missing');
           if (!parsed.email) rowErrors.push('Email is missing');
           else if (!/^\S+@\S+\.\S+$/.test(parsed.email)) rowErrors.push('Email is not valid');
           if (!parsed.position) rowErrors.push('Position is missing');
-          if (!parsed.department) rowErrors.push('Department is missing');
           if (!parsed.joinDate) rowErrors.push('Join Date is missing');
           if (parsed.baseSalary == null) rowErrors.push('Base Salary is missing');
+          if (!parsed.department) rowWarnings.push('No department — can be assigned later');
 
           // Duplicate / collision checks
           if (parsed.id) {
