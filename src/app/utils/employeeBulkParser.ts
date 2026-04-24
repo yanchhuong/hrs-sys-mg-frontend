@@ -91,9 +91,7 @@ export function parseEmployeesExcel(
         rows.forEach((raw, i) => {
           const rowNumber = i + 2; // +1 for header, +1 for 1-based numbering
 
-          // Skip blank rows — Excel often contains empty rows interleaved with
-          // data or at the bottom of a sheet. A row is blank when every cell is
-          // empty / whitespace.
+          // Cheap upfront skip — raw row has no cell with real content at all.
           const hasAnyValue = Object.values(raw).some(
             v => v !== '' && v != null && String(v).trim() !== '',
           );
@@ -108,6 +106,7 @@ export function parseEmployeesExcel(
             const key = COLUMN_MAP[header.trim()];
             if (!key) continue;
             if (value === '' || value == null) continue;
+            if (typeof value === 'string' && value.trim() === '') continue;
             if (key === 'baseSalary') {
               const n = typeof value === 'number' ? value : parseFloat(String(value));
               if (!Number.isFinite(n)) rowErrors.push(`Base Salary "${value}" is not a number`);
@@ -122,6 +121,11 @@ export function parseEmployeesExcel(
               (parsed as any)[key] = String(value).trim();
             }
           }
+
+          // Second-chance skip: after column mapping, if no identifying field
+          // was populated, the row was effectively blank — leftover formatting,
+          // hidden cells, or formulas that resolved to nothing. Skip silently.
+          if (!parsed.id && !parsed.name && !parsed.email && !parsed.position) return;
 
           // Mandatory fields. Department is optional — left blank, the row
           // imports without a department and can be assigned later.
