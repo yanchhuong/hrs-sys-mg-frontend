@@ -46,20 +46,71 @@ const COLUMN_MAP: Record<string, keyof Employee> = {
   'Bank Account': 'bankAccount',
 };
 
-function normaliseDate(v: any): string | undefined {
+/**
+ * Returns an ISO `YYYY-MM-DD` string, or `null` if the input is
+ * present but unparseable (so the caller can emit a row-level error).
+ * Returns `undefined` for genuinely empty input.
+ *
+ * Formats accepted:
+ *   - Excel serial number (number)
+ *   - ISO YYYY-MM-DD  (with optional time suffix, e.g. "2014-01-02T00:00:00Z")
+ *   - DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY  ← what most Khmer/European Excel exports use
+ *   - MM/DD/YYYY      (US Excel default — disambiguated: only when the first
+ *     segment can't be a day, e.g. 13/04/2020 stays DD/MM, but 04/13/2020 is MM/DD)
+ *   - JS Date-parseable strings, as a last resort
+ */
+function normaliseDate(v: any): string | null | undefined {
   if (v == null || v === '') return undefined;
+
+  // 1. Excel serial date
   if (typeof v === 'number') {
-    // Excel serial date
     const date = XLSX.SSF?.parse_date_code(v);
     if (date) {
       const mm = String(date.m).padStart(2, '0');
       const dd = String(date.d).padStart(2, '0');
       return `${date.y}-${mm}-${dd}`;
     }
+    return null;
   }
-  const d = new Date(v);
+
+  const raw = String(v).trim();
+  if (!raw) return undefined;
+
+  // 2. ISO YYYY-MM-DD (bare or with a time suffix)
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(raw);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+
+  // 3. DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY — and a best-effort US fallback
+  const parts = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/.exec(raw);
+  if (parts) {
+    const [, aStr, bStr, yStr] = parts;
+    let year = parseInt(yStr, 10);
+    if (year < 100) year += (year >= 70 ? 1900 : 2000);   // 2-digit year heuristic
+    let a = parseInt(aStr, 10);
+    let b = parseInt(bStr, 10);
+
+    // Prefer day-first (DD/MM) when both parts are valid days — this repo's
+    // Excel exports are Khmer/European. Flip to month-first only if the
+    // first part clearly can't be a day (e.g. 13/04 → day=13, month=04).
+    let day: number, month: number;
+    if (a > 12 && b <= 12)        { day = a; month = b; }  // unambiguous DD/MM
+    else if (b > 12 && a <= 12)   { day = b; month = a; }  // unambiguous MM/DD
+    else                          { day = a; month = b; }  // ambiguous → DD/MM
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day) {
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+    return null;
+  }
+
+  // 4. Last resort — let JS Date have a go
+  const d = new Date(raw);
   if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return String(v);
+
+  return null;
 }
 
 export function parseEmployeesExcel(
@@ -113,7 +164,17 @@ export function parseEmployeesExcel(
               else if (n < 0) rowErrors.push('Base Salary cannot be negative');
               else (parsed as any)[key] = n;
             } else if (key === 'joinDate' || key === 'dateOfBirth' || key === 'contractExpireDate') {
-              (parsed as any)[key] = normaliseDate(value);
+              const iso = normaliseDate(value);
+              if (iso === null) {
+                // Present but unparseable — emit a visible error rather than
+                // sending garbage to the backend (which would 400 the POST).
+                const label = key === 'joinDate' ? 'Join Date'
+                  : key === 'dateOfBirth' ? 'Date of Birth'
+                  : 'Contract Expire';
+                rowErrors.push(`${label} "${value}" is not a valid date (use YYYY-MM-DD or DD-MM-YYYY)`);
+              } else if (iso !== undefined) {
+                (parsed as any)[key] = iso;
+              }
             } else if (key === 'gender') {
               const v = String(value).toLowerCase();
               (parsed as any)[key] = v === 'male' || v === 'female' ? v : undefined;
