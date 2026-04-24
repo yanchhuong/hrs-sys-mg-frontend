@@ -72,6 +72,25 @@ export async function update(id: string, req: Partial<AttendanceEntry>): Promise
   return apiJson(`/api/v1/attendance/${id}`, { method: 'PATCH', json: req });
 }
 
+/**
+ * Creates or updates the attendance row keyed by (employeeId, date).
+ * Used when editing a "synthetic" row the UI conjured for an employee
+ * with no record on that day — first save creates it, subsequent saves
+ * update it.
+ */
+export async function upsert(req: {
+  employeeId: string;
+  date: string;
+  morningIn?: string | null;
+  morningOut?: string | null;
+  noonIn?: string | null;
+  noonOut?: string | null;
+  status?: string;
+  notes?: string | null;
+}): Promise<AttendanceEntry> {
+  return apiJson('/api/v1/attendance', { method: 'POST', json: req });
+}
+
 export async function submitPunches(
   records: { employeeId: string; timestamp: string; punchState: number }[],
 ): Promise<{ accepted: number }> {
@@ -89,6 +108,14 @@ export interface FingerprintImportResult {
     punchState: number;
     verifyMode: number;
   }[];
+  /** What happened when the pulled punches were upserted into the attendance table. */
+  persisted?: {
+    inserted: number;
+    updated: number;
+    unchanged: number;
+    unmatchedUsers: number;
+    unmatchedUserIds: string[];
+  };
 }
 
 export async function importFingerprint(args: {

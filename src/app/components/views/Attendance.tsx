@@ -80,7 +80,8 @@ function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
 // resolves it to a display name via the departments list.
 function adaptApiEmployee(e: employeesApi.Employee): Employee {
   return {
-    id: e.id,
+    id: e.empNo,
+    apiId: e.id,
     name: e.name,
     khmerName: e.khmerName ?? undefined,
     email: e.email,
@@ -428,24 +429,50 @@ export function Attendance() {
   };
 
   const handleSaveEdit = async () => {
-    const emp = employees.find(e => e.id === editRecord?.employeeId);
-    if (USE_MOCKS || !editRecord) {
+    if (!editRecord) return;
+    const emp = employees.find(
+      e => e.id === editRecord.employeeId || (e as any).apiId === editRecord.employeeId,
+    );
+    if (USE_MOCKS) {
       toast.success(`Attendance updated for ${emp?.name}`);
       setEditDialogOpen(false);
       return;
     }
+
+    const isSynthetic = editRecord.id.startsWith('synthetic:');
     try {
-      await attendanceApi.update(editRecord.id, {
-        checkIn: editCheckIn || null,
-        checkOut: editCheckOut || null,
-        status: editStatus,
-        notes: editRemark || undefined,
-      });
-      toast.success(`Attendance updated for ${emp?.name}`);
+      if (isSynthetic) {
+        // The row doesn't exist in the DB yet — create it via the
+        // (employeeId, date) upsert endpoint. The backend employee key is
+        // the UUID (apiId), not the empNo the user sees in the table.
+        const employeeId = ((emp as any)?.apiId ?? editRecord.employeeId) as string;
+        await attendanceApi.upsert({
+          employeeId,
+          date: editRecord.date,
+          morningIn: editMorningIn || null,
+          morningOut: editMorningOut || null,
+          noonIn: editNoonIn || null,
+          noonOut: editNoonOut || null,
+          status: editStatus,
+          notes: editRemark || null,
+        });
+      } else {
+        await attendanceApi.update(editRecord.id, {
+          // The backend PATCH schema accepts the four named punch fields
+          // directly — these are the columns the fingerprint sync fills in.
+          ...(editMorningIn  ? { morningIn:  editMorningIn  } : {}),
+          ...(editMorningOut ? { morningOut: editMorningOut } : {}),
+          ...(editNoonIn     ? { noonIn:     editNoonIn     } : {}),
+          ...(editNoonOut    ? { noonOut:    editNoonOut    } : {}),
+          status: editStatus,
+          notes: editRemark || undefined,
+        } as any);
+      }
+      toast.success(`Attendance updated for ${emp?.name ?? 'employee'}`);
       setEditDialogOpen(false);
       await loadAttendance();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update attendance');
+      toast.error(err instanceof Error ? err.message : 'Failed to save attendance');
     }
   };
 
@@ -613,7 +640,21 @@ export function Attendance() {
                               commKey: 0,
                               timeoutMs: 15000,
                             });
-                            toast.success(`Imported ${res.recordCount} punch${res.recordCount === 1 ? '' : 'es'} from ${fpIp}:${fpPort}`);
+                            const p = res.persisted;
+                            if (p) {
+                              const bits: string[] = [];
+                              if (p.inserted) bits.push(`${p.inserted} new`);
+                              if (p.updated) bits.push(`${p.updated} updated`);
+                              if (p.unchanged) bits.push(`${p.unchanged} unchanged`);
+                              const body = `${res.recordCount} punch${res.recordCount === 1 ? '' : 'es'} pulled — ${bits.length ? bits.join(', ') : 'nothing to save'}`;
+                              if (p.unmatchedUsers > 0) {
+                                toast.warning(`${body}. ${p.unmatchedUsers} device user${p.unmatchedUsers === 1 ? '' : 's'} didn't match any employee: ${p.unmatchedUserIds.slice(0, 5).join(', ')}${p.unmatchedUserIds.length > 5 ? '…' : ''}`, { duration: 8000 });
+                              } else {
+                                toast.success(body);
+                              }
+                            } else {
+                              toast.success(`Imported ${res.recordCount} punches from ${fpIp}:${fpPort}`);
+                            }
                             // Pull fresh attendance so the new check-ins/outs
                             // land in the roster-driven table immediately.
                             await loadAttendance();
@@ -914,13 +955,9 @@ export function Attendance() {
                           </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              {isSynthetic ? (
-                                <span className="text-gray-300">—</span>
-                              ) : (
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEdit(record)}>
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                              )}
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEdit(record)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
                             </TableCell>
                           )}
                         </TableRow>
