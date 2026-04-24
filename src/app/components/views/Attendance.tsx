@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react';
-import { format } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
