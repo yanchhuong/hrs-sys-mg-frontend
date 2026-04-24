@@ -19,11 +19,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-On first boot the backend container runs `prisma migrate deploy` automatically. Seed demo tenants once:
-
-```bash
-docker compose exec backend npm run prisma:seed
-```
+On first boot the backend container applies Flyway migrations (`HRM System API/src/main/resources/db/migration/`) automatically and seeds the built-in roles, default tenants, and admin user.
 
 Visit `https://PUBLIC_HOST/` → login with `admin@example.com` / `admin123` using the `acme` tenant slug.
 
@@ -36,11 +32,8 @@ docker compose logs -f backend
 # Get a shell in the API container
 docker compose exec backend sh
 
-# Apply pending migrations manually
-docker compose exec backend npx prisma migrate deploy
-
-# Open Prisma Studio (bind to host port first: add "ports: - '5555:5555'" to backend temporarily)
-docker compose exec backend npx prisma studio
+# Flyway migrations apply on startup — to re-run manually, restart the backend
+docker compose restart backend
 
 # Back up the database
 docker compose exec db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/$(date +%Y%m%d).sql

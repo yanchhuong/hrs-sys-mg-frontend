@@ -3,8 +3,9 @@
 # Same codebase as cloud, single-tenant mode.
 # Runs on a laptop / on-prem server. Syncs with cloud when online.
 #
+# Backend: Spring Boot JAR built from ../../../HRM System API.
+#
 # Start:   docker compose --env-file ./.env up -d --build
-# Seed:    docker compose exec backend npm run prisma:seed
 # Stop:    docker compose down
 
 name: hrms-local
@@ -27,20 +28,21 @@ services:
 
   backend:
     build:
-      context: ../../backend
+      context: ../../../HRM System API
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
-      PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms}:${POSTGRES_PASSWORD:-hrms}@db:5432/${POSTGRES_DB:-hrms}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SPRING_PROFILES_ACTIVE: local
       DEPLOYMENT_MODE: local
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-hrms}
+      DATABASE_USER: ${POSTGRES_USER:-hrms}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-hrms}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       LOCAL_TENANT_SLUG: ${LOCAL_TENANT_SLUG:-local-site}
       LOCAL_TENANT_NAME: ${LOCAL_TENANT_NAME:-Local Branch}
-      LOCAL_API_KEY: ${LOCAL_API_KEY}
+      LOCAL_API_KEY: ${LOCAL_API_KEY:-}
       CORS_ORIGINS: http://localhost:8080
     expose:
       - "4000"
@@ -66,26 +68,6 @@ services:
     depends_on:
       - frontend
       - backend
-
-  # Sync worker — pushes local changes to the cloud, pulls remote changes.
-  # Commented out by default until CLOUD_API_URL is configured.
-  sync:
-    build:
-      context: ../../backend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms}:${POSTGRES_PASSWORD:-hrms}@db:5432/${POSTGRES_DB:-hrms}
-      CLOUD_API_URL: ${CLOUD_API_URL:-}
-      CLOUD_API_KEY: ${CLOUD_API_KEY:-}
-      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-60}
-    # Replace the default CMD with the sync-worker entrypoint once implemented.
-    # For now the container exits so the worker stays paused until you wire it.
-    command: ["node", "-e", "console.log('Sync worker placeholder — configure CLOUD_API_URL and implement src/sync-worker.ts'); setInterval(() => {}, 1 << 30)"]
-    profiles:
-      - sync
 
 volumes:
   db-data:

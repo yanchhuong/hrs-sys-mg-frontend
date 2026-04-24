@@ -10,16 +10,15 @@ Multi-tenant Human Resource Management System. One codebase, two deployment targ
 ```
 .
 ├── src/                  Frontend (React + Vite + TailwindCSS + Radix UI)
-├── backend/              Node 20 + Express + Prisma 5 (shared by cloud and local)
-│   ├── src/              Routes, middleware, server entry
-│   └── prisma/           Schema + seed script
 ├── deploy/
 │   ├── cloud/            docker-compose + Caddy reverse proxy + TLS
-│   ├── local/            docker-compose + optional sync worker
+│   ├── local/            docker-compose + nginx edge proxy
 │   └── nginx/            Static asset nginx config (used by frontend container)
 ├── Dockerfile.frontend   Multi-stage build of the SPA into an nginx image
 └── docs/ guidelines/     Product & design docs
 ```
+
+The backend lives in a sibling folder: [`../HRM System API`](../HRM%20System%20API/) (Spring Boot 3.3 + Java 21 + PostgreSQL 16).
 
 ## Quickstart — Frontend only (legacy dev mode)
 
@@ -36,10 +35,9 @@ No backend required — the UI runs against the mock data bundled under `src/app
 cd deploy/cloud
 cp .env.example .env          # set PUBLIC_HOST, passwords, JWT_SECRET
 docker compose up -d --build
-docker compose exec backend npm run prisma:seed
 ```
 
-Full guide: [`deploy/cloud/README.md`](deploy/cloud/README.md).
+Flyway migrations run automatically on backend startup. Full guide: [`deploy/cloud/README.md`](deploy/cloud/README.md).
 
 ## Quickstart — Local deployment
 
@@ -47,29 +45,25 @@ Full guide: [`deploy/cloud/README.md`](deploy/cloud/README.md).
 cd deploy/local
 cp .env.example .env          # set JWT_SECRET; tweak LOCAL_PORT if 8080 is busy
 docker compose up -d --build
-docker compose exec backend npm run prisma:seed
 ```
 
 Full guide: [`deploy/local/README.md`](deploy/local/README.md).
 
 ## Backend — standalone dev
 
-When you're working on API code outside Docker:
+When you're working on API code outside Docker, run it from the sibling `HRM System API` folder:
 
 ```bash
-cd backend
-cp .env.example .env          # set DATABASE_URL + JWT_SECRET
+cd "../HRM System API"
 
 # Bring up just Postgres via compose
-docker compose -f ../deploy/local/docker-compose.yml up -d db
+docker compose -f "../HRM System Frontend/deploy/local/docker-compose.yml" up -d db
 
-npm install
-npx prisma migrate dev
-npm run prisma:seed
-npm run dev                   # API @ http://localhost:4000
+export JWT_SECRET=dev-secret-change-me
+./mvnw spring-boot:run         # API @ http://localhost:4000/api/v1
 ```
 
-Then run the frontend as usual (`npm run dev` from repo root) — set `VITE_API_URL=http://localhost:4000/api` in a local `.env` so the SPA talks to the live API instead of the bundled mocks.
+Then run the frontend as usual (`npm run dev` from repo root) — set `VITE_API_URL=http://localhost:4000/api/v1` in a local `.env` so the SPA talks to the live API instead of the bundled mocks.
 
 ## Architecture at a glance
 
@@ -84,7 +78,7 @@ Then run the frontend as usual (`npm run dev` from repo root) — set `VITE_API_
 - Every backend record is scoped by `tenantId`.
 - The **cloud** resolves the tenant from the signed JWT on every request.
 - The **local install** has `DEPLOYMENT_MODE=local` and is pinned to exactly one tenant via `LOCAL_TENANT_SLUG` — users never pick a company at login.
-- Local-to-cloud sync uses `X-API-Key` over HTTPS (see `backend/src/routes/sync.ts`). The worker itself is a stub you can implement once your data-model is finalised.
+- Local-to-cloud sync uses `X-API-Key` over HTTPS (see `SyncController` in `HRM System API`). The worker itself is implemented on the Spring Boot side.
 
 ## Demo credentials (seeded)
 
@@ -103,4 +97,4 @@ git pull
 docker compose up -d --build
 ```
 
-Schema changes are applied by the backend container via `prisma migrate deploy` on startup.
+Schema changes are applied by the backend container via Flyway on startup.

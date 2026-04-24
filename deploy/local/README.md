@@ -16,8 +16,9 @@ cp .env.example .env
 # …edit .env: set JWT_SECRET (required), tweak LOCAL_PORT if 8080 is busy…
 
 docker compose up -d --build
-docker compose exec backend npm run prisma:seed
 ```
+
+Flyway migrations (in `HRM System API/src/main/resources/db/migration/`) run automatically on backend startup and seed the default tenant, admin user, and built-in roles.
 
 Open `http://localhost:8080/` → sign in with `admin@example.com` / `admin123`.
 
@@ -34,16 +35,9 @@ If this site should sync with the cloud HRMS:
    CLOUD_API_KEY=the-long-random-key-from-your-admin
    LOCAL_API_KEY=${CLOUD_API_KEY}
    ```
-3. Start the sync worker:
-   ```bash
-   docker compose --profile sync up -d sync
-   ```
-4. Verify:
-   ```bash
-   docker compose logs -f sync
-   ```
+3. Restart the backend: `docker compose up -d backend`.
 
-The sync worker is intentionally a stub in this checkout — it logs a placeholder and idles. Implement `backend/src/sync-worker.ts` (see `backend/src/routes/sync.ts` for the cloud-side endpoints) and point the compose `command` at it.
+Sync is implemented inside the Spring Boot service (`SyncController` / scheduled task) and activates when `CLOUD_API_URL` + `LOCAL_API_KEY` are present — no separate worker container is needed.
 
 ## Common operations
 
@@ -73,12 +67,12 @@ docker compose down -v
 | TLS             | Caddy + Let's Encrypt                   | HTTP only on `localhost`                  |
 | Tenants         | Many; selected at login                 | One; pinned via `LOCAL_TENANT_SLUG`        |
 | Public port     | 80 / 443                                | `LOCAL_PORT` (default 8080) on loopback    |
-| Sync worker     | Not applicable                           | Optional, pushes/pulls to cloud            |
+| Sync            | Not applicable                           | Optional; runs inside the Spring Boot container |
 | Database        | Hardened password, offsite backups      | Default creds OK (DB not publicly reachable) |
 
 ## Troubleshooting
 
 - **`docker compose` isn't a recognised command** → upgrade to Docker Compose v2 or use `docker-compose` (v1) with adjusted syntax.
 - **Port 8080 already in use** → set `LOCAL_PORT=9000` in `.env` and restart.
-- **Login says "Invalid credentials"** → you haven't run `prisma:seed` yet, or you changed `LOCAL_TENANT_SLUG` after seeding.
-- **Sync worker won't start** → make sure `CLOUD_API_URL` and `CLOUD_API_KEY` are set, then start with `--profile sync`.
+- **Login says "Invalid credentials"** → the Flyway seed hasn't run yet (check `docker compose logs backend`), or you changed `LOCAL_TENANT_SLUG` after the first startup.
+- **Sync is idle** → make sure `CLOUD_API_URL` and `LOCAL_API_KEY` are set in `.env`, then restart the backend container.

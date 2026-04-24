@@ -3,11 +3,10 @@
 # Services:
 #   caddy     — TLS terminator + reverse proxy (auto HTTPS via Let's Encrypt)
 #   frontend  — nginx serving the Vite build
-#   backend   — Node/Express + Prisma
+#   backend   — Spring Boot API (built from ../../../HRM System API)
 #   db        — Postgres 16
 #
 # Start:   docker compose --env-file ./.env up -d --build
-# Seed:    docker compose exec backend npx prisma migrate deploy && docker compose exec backend npm run prisma:seed
 # Logs:    docker compose logs -f backend
 
 name: hrms-cloud
@@ -30,17 +29,18 @@ services:
 
   backend:
     build:
-      context: ../../backend
+      context: ../../../HRM System API
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
-      PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-hrms}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SPRING_PROFILES_ACTIVE: cloud
       DEPLOYMENT_MODE: cloud
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-hrms}
+      DATABASE_USER: ${POSTGRES_USER:-hrms}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ORIGINS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
     expose:
       - "4000"
