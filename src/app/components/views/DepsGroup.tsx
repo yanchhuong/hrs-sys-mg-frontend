@@ -87,7 +87,14 @@ const emptyForm: Omit<DeptGroup, 'id'> = {
   color: 'blue',
 };
 
-export function DepsGroup() {
+interface DepsGroupProps {
+  /** When true, skip the page-level title/description header so the view can
+      render inside an existing page (e.g. a tab). The Add button moves into
+      the first card header instead. */
+  embedded?: boolean;
+}
+
+export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const { t } = useI18n();
   const [items, setItems] = useState<DeptGroup[]>(initialDepts);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -172,17 +179,27 @@ export function DepsGroup() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
-          <p className="text-gray-500">{t('page.depsgroup.description')}</p>
+      {/* Page header — hidden when embedded in another page's tab */}
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
+            <p className="text-gray-500">{t('page.depsgroup.description')}</p>
+          </div>
+          <Button onClick={openAdd}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add New
+          </Button>
         </div>
-        <Button onClick={openAdd}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add New
-        </Button>
-      </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end">
+          <Button onClick={openAdd} size="sm">
+            <Plus className="mr-2 h-4 w-4" />
+            Add New
+          </Button>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

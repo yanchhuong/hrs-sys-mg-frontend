@@ -27,27 +27,18 @@ import {
 import { mockAttendanceRules } from '../../data/settingsData';
 import { Badge } from '../ui/badge';
 import {
-  Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Trash2, Plus,
+  Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, Link2, Link2Off,
   RefreshCw, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
-  enrollCredential,
-  listEnrollments,
-  revokeCredential,
-  isWebAuthnSupported,
-  isPlatformAuthenticatorAvailable,
-  getPolicyRequireBiometric,
-  setPolicyRequireBiometric,
-  EnrolledCredential,
-} from '../../utils/webauthn';
-import {
   loadCloudConfig, saveCloudConfig, clearCloudConfig, deriveStatus,
   testCloudConnection, runSyncNow, CloudConfig, ConnectionStatus, TestResult,
 } from '../../utils/cloudSync';
 import { useI18n } from '../../i18n/I18nContext';
+import { DevicesCard } from '../common/DevicesCard';
 
 export function Settings() {
   const { t } = useI18n();
@@ -242,11 +233,7 @@ export function Settings() {
 
         {isAdmin && currentUser && (
           <TabsContent value="security" className="space-y-6">
-            <SecuritySettings
-              userId={currentUser.employeeId}
-              userEmail={currentUser.email}
-              displayName={currentEmployee?.name || currentUser.email}
-            />
+            <DevicesCard />
           </TabsContent>
         )}
       </Tabs>
@@ -254,270 +241,6 @@ export function Settings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Security / Biometric settings
-// ---------------------------------------------------------------------------
-interface SecuritySettingsProps {
-  userId: string;
-  userEmail: string;
-  displayName: string;
-}
-
-function SecuritySettings({ userId, userEmail, displayName }: SecuritySettingsProps) {
-  const [supported, setSupported] = useState<boolean | null>(null);
-  const [platformAvailable, setPlatformAvailable] = useState<boolean | null>(null);
-  const [enrollments, setEnrollments] = useState<EnrolledCredential[]>(() => listEnrollments(userId));
-  const [requireBiometric, setRequireBiometric] = useState(() => getPolicyRequireBiometric(userId));
-
-  const [enrollOpen, setEnrollOpen] = useState(false);
-  const [deviceLabel, setDeviceLabel] = useState('');
-  const [enrolling, setEnrolling] = useState(false);
-  const [enrollError, setEnrollError] = useState<string | null>(null);
-
-  const [revokeTarget, setRevokeTarget] = useState<EnrolledCredential | null>(null);
-
-  useEffect(() => {
-    setSupported(isWebAuthnSupported());
-    isPlatformAuthenticatorAvailable().then(setPlatformAvailable);
-  }, []);
-
-  const refresh = () => setEnrollments(listEnrollments(userId));
-
-  const handleOpenEnroll = () => {
-    setDeviceLabel(guessDeviceLabel());
-    setEnrollError(null);
-    setEnrollOpen(true);
-  };
-
-  const handleEnroll = async () => {
-    if (!deviceLabel.trim()) {
-      setEnrollError('Give this device a name');
-      return;
-    }
-    setEnrolling(true);
-    setEnrollError(null);
-    try {
-      await enrollCredential({
-        userId,
-        userName: userEmail,
-        displayName,
-        deviceLabel: deviceLabel.trim(),
-      });
-      toast.success('Device enrolled');
-      refresh();
-      setEnrollOpen(false);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Enrollment failed';
-      setEnrollError(msg);
-    } finally {
-      setEnrolling(false);
-    }
-  };
-
-  const handleRevoke = () => {
-    if (!revokeTarget) return;
-    revokeCredential(userId, revokeTarget.id);
-    toast.success(`Revoked ${revokeTarget.deviceLabel}`);
-    setRevokeTarget(null);
-    refresh();
-    // If no enrollments left, disable policy automatically
-    if (listEnrollments(userId).length === 0 && requireBiometric) {
-      setPolicyRequireBiometric(userId, false);
-      setRequireBiometric(false);
-    }
-  };
-
-  const handleTogglePolicy = (checked: boolean) => {
-    if (checked && enrollments.length === 0) {
-      toast.error('Enroll at least one device before enabling this policy');
-      return;
-    }
-    setPolicyRequireBiometric(userId, checked);
-    setRequireBiometric(checked);
-    toast.success(checked ? 'Biometric step-up enabled' : 'Biometric step-up disabled');
-  };
-
-  return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Fingerprint className="h-5 w-5" />
-            Biometric Authentication
-          </CardTitle>
-          <CardDescription>
-            Enroll this device's fingerprint, Face ID, or Windows Hello to step up authentication for sensitive admin actions.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Browser capability banner */}
-          {supported === false ? (
-            <div className="flex items-start gap-3 p-3 rounded-md bg-red-50 border border-red-200">
-              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-red-800">
-                This browser does not support WebAuthn. Use a recent version of Chrome, Edge, Safari, or Firefox.
-              </div>
-            </div>
-          ) : platformAvailable === false ? (
-            <div className="flex items-start gap-3 p-3 rounded-md bg-amber-50 border border-amber-200">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-800">
-                No built-in biometric authenticator detected on this device. You can still enroll an external security key (USB/NFC).
-              </div>
-            </div>
-          ) : platformAvailable === true ? (
-            <div className="flex items-start gap-3 p-3 rounded-md bg-green-50 border border-green-200">
-              <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-green-800">
-                Platform authenticator detected (Touch ID, Face ID, Windows Hello, or equivalent).
-              </div>
-            </div>
-          ) : null}
-
-          {/* Policy toggle */}
-          <div className="flex items-start justify-between gap-4 p-4 rounded-md border">
-            <div className="space-y-0.5">
-              <p className="font-medium text-sm">Require biometric for sensitive actions</p>
-              <p className="text-xs text-gray-500">
-                Confirm payroll uploads, role changes, and deletes with a biometric prompt.
-              </p>
-            </div>
-            <Switch
-              checked={requireBiometric}
-              onCheckedChange={handleTogglePolicy}
-              disabled={supported === false}
-            />
-          </div>
-
-          {/* Enrolled devices */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-sm">Enrolled Devices ({enrollments.length})</h3>
-              <Button
-                size="sm"
-                onClick={handleOpenEnroll}
-                disabled={supported === false}
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Enroll this device
-              </Button>
-            </div>
-
-            {enrollments.length === 0 ? (
-              <div className="text-center py-8 border border-dashed rounded-md">
-                <Fingerprint className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No devices enrolled yet.</p>
-                <p className="text-xs text-gray-400 mt-1">Enroll this device to start using biometric verification.</p>
-              </div>
-            ) : (
-              <ul className="divide-y border rounded-md">
-                {enrollments.map((e) => (
-                  <li key={e.id} className="flex items-center gap-3 p-3">
-                    <div className="h-9 w-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                      <Fingerprint className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{e.deviceLabel}</p>
-                      <p className="text-xs text-gray-500">
-                        Enrolled {format(new Date(e.createdAt), 'MMM dd, yyyy')}
-                        {e.lastUsedAt && ` · Last used ${format(new Date(e.lastUsedAt), 'MMM dd, HH:mm')}`}
-                        {e.transports && e.transports.length > 0 && ` · ${e.transports.join(', ')}`}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => setRevokeTarget(e)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Credentials are bound to this origin ({typeof window !== 'undefined' ? window.location.hostname : ''}) and stored locally.
-            In production, attestation and assertion verification must happen server-side.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Enroll dialog */}
-      <Dialog open={enrollOpen} onOpenChange={(o) => !enrolling && setEnrollOpen(o)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Fingerprint className="h-5 w-5" />
-              Enroll this device
-            </DialogTitle>
-            <DialogDescription>
-              Give this authenticator a name you'll recognize, then approve the prompt from your device.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="device-label">Device name</Label>
-              <Input
-                id="device-label"
-                value={deviceLabel}
-                onChange={(e) => setDeviceLabel(e.target.value)}
-                placeholder="e.g. Work laptop (Windows Hello)"
-                disabled={enrolling}
-              />
-            </div>
-            {enrollError && (
-              <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 border border-red-200">
-                <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800">{enrollError}</p>
-              </div>
-            )}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" onClick={() => setEnrollOpen(false)} disabled={enrolling}>
-              Cancel
-            </Button>
-            <Button onClick={handleEnroll} disabled={enrolling}>
-              <Fingerprint className="h-4 w-4 mr-2" />
-              {enrolling ? 'Waiting for device…' : 'Enroll'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Revoke confirmation */}
-      <AlertDialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this authenticator?</AlertDialogTitle>
-            <AlertDialogDescription>
-              "{revokeTarget?.deviceLabel}" will no longer be able to confirm biometric actions.
-              You can re-enroll it later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRevoke} className="bg-red-600 hover:bg-red-700">
-              Revoke
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
-}
-
-function guessDeviceLabel(): string {
-  if (typeof navigator === 'undefined') return 'This device';
-  const ua = navigator.userAgent;
-  if (/Windows/i.test(ua)) return 'Windows (Windows Hello)';
-  if (/Mac OS X/i.test(ua)) return 'Mac (Touch ID)';
-  if (/iPhone|iPad/i.test(ua)) return 'iPhone / iPad';
-  if (/Android/i.test(ua)) return 'Android device';
-  return 'This device';
-}
 
 // ---------------------------------------------------------------------------
 // Company Information

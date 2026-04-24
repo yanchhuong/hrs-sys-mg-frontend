@@ -6,24 +6,45 @@ export interface BreakTime {
   autoDeduct: boolean;
 }
 
+export type ScanMode = 'two' | 'four';
+
 export interface AttendanceRule {
   id: string;
   name: string;
+
+  // -- Scan rule -------------------------------------------------------------
+  /** 2-scan (morning-in + evening-out) or 4-scan (morning + afternoon sessions). */
+  mode: ScanMode;
+  /** Morning check-in target — also `standardCheckIn` / session "in" in 2-scan mode. */
   standardCheckIn: string;
+  /** Evening check-out target — also `standardCheckOut` / session "out" in 2-scan mode. */
   standardCheckOut: string;
+  /** Lunch-out target; only meaningful in 4-scan mode. */
+  morningOut?: string;
+  /** Lunch-return target; only meaningful in 4-scan mode. */
+  afternoonIn?: string;
+  /**
+   * Grace minutes AFTER {@link standardCheckIn} that still count as on-time.
+   * Historic alias: {@link lateThresholdMinutes}. The evaluator reads this
+   * field when present and falls back to {@link lateThresholdMinutes} otherwise.
+   */
+  graceInMinutes?: number;
+  /** Grace minutes BEFORE {@link standardCheckOut} that still count as on-time. */
+  graceOutMinutes?: number;
+  /** 2-scan only: approved half-day leave → skip the absent half. */
+  halfDayCountsAsHalfScan?: boolean;
+  /** Exactly one rule per tenant should be marked default — the fallback for unassigned employees. */
+  isDefault?: boolean;
+
+  // -- Existing fields -------------------------------------------------------
   lateThresholdMinutes: number;
   otCalculationMode: 'auto' | 'manual';
   isActive: boolean;
-  // Break settings
   breakTime: BreakTime;
-  // Work settings
   minimumWorkHours: number;
   allowMultiplePunch: boolean;
-  // Early leave
   earlyLeaveEnabled: boolean;
-  // Absent rule
   autoMarkAbsent: boolean;
-  // Department/shift
   department?: string;
   shiftType?: string;
 }

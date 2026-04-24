@@ -29,13 +29,20 @@ import {
 } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  ScanMode, ScanRule, DEFAULT_SCAN_RULE,
+  loadScanRule, saveScanRule,
+  evaluate, previewScenarios, EvaluatedSession,
+} from '../../utils/scanRule';
+import { FlexibleWorkCard } from '../common/FlexibleWorkCard';
 
 export function AttendanceSettings() {
-  const [shifts, setShifts] = useState<AttendanceRule[]>(mockAttendanceRules);
+  // Kept for OT-tab cross-references (activeShift) — no per-shift UI anymore;
+  // per-employee work schedules are assigned on the Employee record.
+  const [shifts] = useState<AttendanceRule[]>(mockAttendanceRules);
   const [otSettings, setOtSettings] = useState<OTSettings>(defaultOTSettings);
-  const [editingShift, setEditingShift] = useState<AttendanceRule | null>(null);
-  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('schedule');
+  const [scanRule, setScanRule] = useState<ScanRule>(() => loadScanRule());
+  const [activeTab, setActiveTab] = useState('scan');
   const [otSubTab, setOtSubTab] = useState('workday');
   const [deptAssignDialogOpen, setDeptAssignDialogOpen] = useState(false);
   const [newDeptAssign, setNewDeptAssign] = useState({ department: '', ruleLabel: '', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 });
@@ -89,48 +96,7 @@ export function AttendanceSettings() {
     holidaysPagination.resetPage();
   }, [dateFilter]);
 
-  const openAddShift = () => {
-    setEditingShift({
-      ...defaultAttendanceRule,
-      id: `RULE${String(shifts.length + 1).padStart(3, '0')}`,
-      name: '',
-      isActive: true,
-    });
-    setShiftDialogOpen(true);
-  };
-
-  const openEditShift = (shift: AttendanceRule) => {
-    setEditingShift({ ...shift });
-    setShiftDialogOpen(true);
-  };
-
-  const handleSaveShift = () => {
-    if (!editingShift) return;
-    if (!editingShift.name.trim()) {
-      toast.error('Please enter a shift name');
-      return;
-    }
-    const exists = shifts.find(s => s.id === editingShift.id);
-    if (exists) {
-      setShifts(shifts.map(s => s.id === editingShift.id ? editingShift : s));
-      toast.success(`"${editingShift.name}" shift updated`);
-    } else {
-      setShifts([...shifts, editingShift]);
-      toast.success(`"${editingShift.name}" shift added`);
-    }
-    setShiftDialogOpen(false);
-  };
-
-  const handleDeleteShift = (id: string) => {
-    setShifts(shifts.filter(s => s.id !== id));
-    toast.success('Shift deleted');
-  };
-
-  const toggleShiftActive = (id: string) => {
-    setShifts(shifts.map(s => s.id === id ? { ...s, isActive: !s.isActive } : s));
-  };
-
-  // Calculate example for live preview
+  // OT tab uses the currently-active shift as reference for sample calculations.
   const activeShift = shifts.find(s => s.isActive) || shifts[0];
 
   const addGrace = (time: string, minutes: number) => {
@@ -153,10 +119,14 @@ export function AttendanceSettings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-xl grid-cols-4">
-          <TabsTrigger value="schedule" className="gap-1.5">
-            <Clock className="h-4 w-4" />
-            Work Schedule
+        <TabsList className="grid w-full max-w-2xl grid-cols-5">
+          <TabsTrigger value="scan" className="gap-1.5">
+            <ArrowRightLeft className="h-4 w-4" />
+            Scan Rule
+          </TabsTrigger>
+          <TabsTrigger value="flexible" className="gap-1.5">
+            <Users className="h-4 w-4" />
+            Flexible Work
           </TabsTrigger>
           <TabsTrigger value="ot" className="gap-1.5">
             <Timer className="h-4 w-4" />
@@ -172,242 +142,19 @@ export function AttendanceSettings() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ═══════════════ WORK SCHEDULE TAB ═══════════════ */}
-        <TabsContent value="schedule" className="space-y-6">
-          {/* Shifts list */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5" />
-                    Shifts / Schedules
-                  </CardTitle>
-                  <CardDescription>Define work schedules for different departments or groups</CardDescription>
-                </div>
-                <Button onClick={openAddShift} size="sm">
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Add Shift
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {shifts.map(shift => (
-                  <div
-                    key={shift.id}
-                    className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${
-                      shift.isActive ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <Switch
-                        checked={shift.isActive}
-                        onCheckedChange={() => toggleShiftActive(shift.id)}
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm">{shift.name}</p>
-                          {shift.isActive && (
-                            <Badge className="bg-green-50 text-green-700 border-0 text-xs">Active</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {shift.standardCheckIn} - {shift.standardCheckOut}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Coffee className="h-3 w-3" />
-                            {shift.breakTime.startTime} - {shift.breakTime.endTime}
-                          </span>
-                          <span>Grace: {shift.lateThresholdMinutes}min</span>
-                          {shift.department && shift.department !== 'All' && (
-                            <Badge variant="outline" className="text-xs h-5">{shift.department}</Badge>
-                          )}
-                          {shift.allowMultiplePunch && (
-                            <span className="flex items-center gap-1">
-                              <ArrowRightLeft className="h-3 w-3" />
-                              Multi-punch
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEditShift(shift)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {shifts.length > 1 && (
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600" onClick={() => handleDeleteShift(shift.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Attendance Rules Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Zap className="h-5 w-5" />
-                Detection Rules
-              </CardTitle>
-              <CardDescription>How the system automatically evaluates attendance status</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Late Rule */}
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="h-4 w-4 text-yellow-600" />
-                    <p className="font-medium text-sm text-yellow-800">Late Detection</p>
-                  </div>
-                  <div className="bg-white rounded p-3 font-mono text-xs text-yellow-900">
-                    <p>if check-in {'>'} {activeShift?.standardCheckIn} + {activeShift?.lateThresholdMinutes}min</p>
-                    <p className="text-yellow-600 mt-1">→ Status = <strong>LATE</strong></p>
-                  </div>
-                  <p className="text-xs text-yellow-700 mt-2">
-                    Check-in after {addGrace(activeShift?.standardCheckIn || '08:00', activeShift?.lateThresholdMinutes || 15)} is marked late
-                  </p>
-                </div>
-
-                {/* Early Leave Rule */}
-                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle className="h-4 w-4 text-orange-600" />
-                    <p className="font-medium text-sm text-orange-800">Early Leave Detection</p>
-                  </div>
-                  <div className="bg-white rounded p-3 font-mono text-xs text-orange-900">
-                    <p>if check-out {'<'} {activeShift?.standardCheckOut}</p>
-                    <p className="text-orange-600 mt-1">→ Status = <strong>EARLY_LEAVE</strong></p>
-                  </div>
-                  <p className="text-xs text-orange-700 mt-2">
-                    Check-out before {activeShift?.standardCheckOut} is flagged
-                  </p>
-                </div>
-
-                {/* Missing Punch */}
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <XCircle className="h-4 w-4 text-purple-600" />
-                    <p className="font-medium text-sm text-purple-800">Missing Punch</p>
-                  </div>
-                  <div className="bg-white rounded p-3 font-mono text-xs text-purple-900 space-y-1">
-                    <p>No check-in → <strong>NO_CHECKIN</strong></p>
-                    <p>No check-out → <strong>NO_CHECKOUT</strong></p>
-                  </div>
-                  <p className="text-xs text-purple-700 mt-2">
-                    System detects missing punches automatically
-                  </p>
-                </div>
-
-                {/* Absent Rule */}
-                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <XCircle className="h-4 w-4 text-red-600" />
-                    <p className="font-medium text-sm text-red-800">Absent Detection</p>
-                  </div>
-                  <div className="bg-white rounded p-3 font-mono text-xs text-red-900">
-                    <p>if no check-in AND no approved leave</p>
-                    <p className="text-red-600 mt-1">→ Status = <strong>ABSENT</strong></p>
-                  </div>
-                  <p className="text-xs text-red-700 mt-2">
-                    {generalSettings.autoMarkAbsent ? `Auto-marked after ${generalSettings.absentDeadlineTime}` : 'Manual marking required'}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Live Calculation Example */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Info className="h-5 w-5" />
-                Example Calculation
-              </CardTitle>
-              <CardDescription>How the system processes a sample scan day</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Step 1: Staff Scans</p>
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-2 font-mono text-sm">
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-green-100 text-green-700 border-0 text-xs">IN</Badge>
-                      <span>08:10</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-orange-100 text-orange-700 border-0 text-xs">OUT</Badge>
-                      <span>12:00</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-green-100 text-green-700 border-0 text-xs">IN</Badge>
-                      <span>13:00</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-orange-100 text-orange-700 border-0 text-xs">OUT</Badge>
-                      <span>18:30</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Step 2: System Evaluates</p>
-                  <div className="bg-blue-50 rounded-lg p-4 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Work Start</span>
-                      <span className="font-medium">{activeShift?.standardCheckIn}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Grace Period</span>
-                      <span className="font-medium">{activeShift?.lateThresholdMinutes} min</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">08:10 check-in</span>
-                      <Badge className="bg-green-100 text-green-700 border-0 text-xs">ON TIME</Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">18:30 check-out</span>
-                      <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">OT 1.5h</Badge>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Step 3: Final Result</p>
-                  <div className="bg-green-50 rounded-lg p-4 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Status</span>
-                      <Badge className="bg-green-100 text-green-700 border-0">PRESENT</Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Work Hours</span>
-                      <span className="font-semibold">8h</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Break</span>
-                      <span className="font-medium">1h</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Overtime</span>
-                      <span className="font-semibold text-blue-600">1.5h</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Net Hours</span>
-                      <span className="font-semibold">9.5h</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* ═══════════════ SCAN RULE TAB ═══════════════ */}
+        <TabsContent value="scan" className="space-y-6">
+          <ScanRuleCard
+            rule={scanRule}
+            onChange={(next) => setScanRule(next)}
+          />
         </TabsContent>
+
+        {/* ═══════════════ FLEXIBLE WORK TAB ═══════════════ */}
+        <TabsContent value="flexible" className="space-y-6">
+          <FlexibleWorkCard scanRule={scanRule} />
+        </TabsContent>
+
 
         {/* ═══════════════ OT RULES TAB ═══════════════ */}
         <TabsContent value="ot" className="space-y-6">
@@ -1196,163 +943,283 @@ export function AttendanceSettings() {
           </div>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
 
-      {/* Shift Add/Edit Dialog */}
-      <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingShift && shifts.find(s => s.id === editingShift.id) ? 'Edit Shift' : 'Add New Shift'}</DialogTitle>
-            <DialogDescription>Configure work schedule, break time, and rules</DialogDescription>
-          </DialogHeader>
-          {editingShift && (
-            <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-1">
-              {/* Shift Name */}
-              <div className="space-y-2">
-                <Label className="text-sm">Shift Name</Label>
-                <Input
-                  value={editingShift.name}
-                  onChange={e => setEditingShift({ ...editingShift, name: e.target.value })}
-                  placeholder="e.g., Office Hours, Night Shift"
-                  className="h-9"
-                />
-              </div>
+// ════════════════════════════════════════════════════════════════════════════
+// Helpers used by the Shift edit dialog (scan mode, grace, half-day, preview)
+// ════════════════════════════════════════════════════════════════════════════
 
-              {/* Work Time */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Work Time</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Start Time</Label>
-                    <Input
-                      type="time"
-                      value={editingShift.standardCheckIn}
-                      onChange={e => setEditingShift({ ...editingShift, standardCheckIn: e.target.value })}
-                      className="h-9"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm">End Time</Label>
-                    <Input
-                      type="time"
-                      value={editingShift.standardCheckOut}
-                      onChange={e => setEditingShift({ ...editingShift, standardCheckOut: e.target.value })}
-                      className="h-9"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Grace Period (min)</Label>
-                    <Input
-                      type="number"
-                      value={editingShift.lateThresholdMinutes}
-                      onChange={e => setEditingShift({ ...editingShift, lateThresholdMinutes: parseInt(e.target.value) || 0 })}
-                      className="h-9"
-                    />
-                    <p className="text-xs text-gray-400">Late after {addGrace(editingShift.standardCheckIn, editingShift.lateThresholdMinutes)}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm">Min Work Hours</Label>
-                    <Input
-                      type="number"
-                      value={editingShift.minimumWorkHours}
-                      onChange={e => setEditingShift({ ...editingShift, minimumWorkHours: parseInt(e.target.value) || 0 })}
-                      className="h-9"
-                    />
-                  </div>
-                </div>
-              </div>
+function clamp(n: number, min: number, max: number): number {
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : min;
+}
 
-              {/* Break Time */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Break Time (Lunch)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Break Start</Label>
-                    <Input
-                      type="time"
-                      value={editingShift.breakTime.startTime}
-                      onChange={e => setEditingShift({ ...editingShift, breakTime: { ...editingShift.breakTime, startTime: e.target.value } })}
-                      className="h-9"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm">Break End</Label>
-                    <Input
-                      type="time"
-                      value={editingShift.breakTime.endTime}
-                      onChange={e => setEditingShift({ ...editingShift, breakTime: { ...editingShift.breakTime, endTime: e.target.value } })}
-                      className="h-9"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-3">
-                  <div>
-                    <p className="text-sm">Auto Deduct Break</p>
-                    <p className="text-xs text-gray-400">Automatically subtract break from work hours</p>
-                  </div>
-                  <Switch
-                    checked={editingShift.breakTime.autoDeduct}
-                    onCheckedChange={v => setEditingShift({ ...editingShift, breakTime: { ...editingShift.breakTime, autoDeduct: v } })}
-                  />
-                </div>
-              </div>
+function TimeField({
+  label, value, onChange,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm">{label}</Label>
+      <Input type="time" value={value} onChange={e => onChange(e.target.value)} className="h-9" />
+    </div>
+  );
+}
+/**
+ * Inline editor for the tenant-wide scan rule. Everything (mode, target
+ * times, grace, half-day, preview) is visible on the Settings page instead
+ * of hidden behind a dialog. Changes are persisted on Save.
+ */
+function ScanRuleCard({
+  rule,
+  onChange,
+}: {
+  rule: ScanRule;
+  onChange: (next: ScanRule) => void;
+}) {
+  const [draft, setDraft] = useState<ScanRule>(rule);
+  useEffect(() => { setDraft(rule); }, [rule]);
 
-              {/* Department & Options */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Assignment & Options</p>
-                <div className="space-y-2 mb-3">
-                  <Label className="text-sm">Department</Label>
-                  <Select
-                    value={editingShift.department || 'All'}
-                    onValueChange={v => setEditingShift({ ...editingShift, department: v })}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="All">All Departments</SelectItem>
-                      {mockDepartments.map(d => (
-                        <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm">Allow Multiple Punch</p>
-                      <p className="text-xs text-gray-400">Staff can scan IN/OUT multiple times (lunch break)</p>
-                    </div>
-                    <Switch
-                      checked={editingShift.allowMultiplePunch}
-                      onCheckedChange={v => setEditingShift({ ...editingShift, allowMultiplePunch: v })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm">Early Leave Detection</p>
-                      <p className="text-xs text-gray-400">Flag check-out before end time</p>
-                    </div>
-                    <Switch
-                      checked={editingShift.earlyLeaveEnabled}
-                      onCheckedChange={v => setEditingShift({ ...editingShift, earlyLeaveEnabled: v })}
-                    />
-                  </div>
-                </div>
-              </div>
+  const dirty = JSON.stringify(draft) !== JSON.stringify(rule);
+  const setMode = (mode: ScanMode) => setDraft({ ...draft, mode });
 
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleSaveShift}>
-                  <Save className="mr-1.5 h-4 w-4" />
-                  Save Shift
-                </Button>
-              </div>
+  const addGrace = (time: string, minutes: number) => {
+    const [h, m] = time.split(':').map(Number);
+    const total = h * 60 + m + (minutes || 0);
+    return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
+
+  const handleSave = () => {
+    const saved = saveScanRule(draft);
+    onChange(saved);
+    toast.success(
+      draft.mode === 'two' ? 'Scan rule saved: 2 scans per day' : 'Scan rule saved: 4 scans per day',
+    );
+  };
+
+  const handleReset = () => {
+    const saved = saveScanRule(DEFAULT_SCAN_RULE);
+    onChange(saved);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5 text-blue-600" />
+              Punch Scan Rule
+            </CardTitle>
+            <CardDescription>
+              How many times per day employees are expected to punch, and the
+              target times that determine on-time / late / early status.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {dirty && <span className="text-[11px] text-amber-600 font-medium">Unsaved changes</span>}
+            <Badge variant="outline" className="text-[11px]">
+              Last updated {format(new Date(rule.updatedAt), 'MMM dd, HH:mm')}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Mode selector */}
+        <div>
+          <Label className="text-sm font-semibold">Scan mode</Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+            <ScanModeOption
+              active={draft.mode === 'two'}
+              title="2 scans per day"
+              subtitle="Morning check-in + evening check-out (one continuous session)"
+              onClick={() => setMode('two')}
+            />
+            <ScanModeOption
+              active={draft.mode === 'four'}
+              title="4 scans per day"
+              subtitle="Morning in/out + afternoon in/out (two sessions)"
+              onClick={() => setMode('four')}
+            />
+          </div>
+        </div>
+
+        {/* Target times */}
+        <div className="space-y-3">
+          <Label className="text-sm font-semibold">Target times</Label>
+          {draft.mode === 'four' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <TimeField
+                label="Morning check-in (on or before)"
+                value={draft.morningIn}
+                onChange={v => setDraft({ ...draft, morningIn: v })}
+              />
+              <TimeField
+                label="Morning check-out (on or after)"
+                value={draft.morningOut}
+                onChange={v => setDraft({ ...draft, morningOut: v })}
+              />
+              <TimeField
+                label="Afternoon check-in (on or before)"
+                value={draft.afternoonIn}
+                onChange={v => setDraft({ ...draft, afternoonIn: v })}
+              />
+              <TimeField
+                label="Evening check-out (on or after)"
+                value={draft.eveningOut}
+                onChange={v => setDraft({ ...draft, eveningOut: v })}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <TimeField
+                label="Morning check-in (on or before)"
+                value={draft.morningIn}
+                onChange={v => setDraft({ ...draft, morningIn: v })}
+              />
+              <TimeField
+                label="Evening check-out (on or after)"
+                value={draft.eveningOut}
+                onChange={v => setDraft({ ...draft, eveningOut: v })}
+              />
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </div>
+
+        {/* Grace window */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-600">Grace minutes after IN</Label>
+            <Input
+              type="number"
+              min={0}
+              max={60}
+              value={draft.graceInMinutes}
+              onChange={e => setDraft({ ...draft, graceInMinutes: clamp(Number(e.target.value), 0, 60) })}
+            />
+            <p className="text-[11px] text-gray-500">
+              Late after {addGrace(draft.morningIn, draft.graceInMinutes)}.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-600">Grace minutes before OUT</Label>
+            <Input
+              type="number"
+              min={0}
+              max={60}
+              value={draft.graceOutMinutes}
+              onChange={e => setDraft({ ...draft, graceOutMinutes: clamp(Number(e.target.value), 0, 60) })}
+            />
+            <p className="text-[11px] text-gray-500">A check-out this many minutes early still counts as on-time.</p>
+          </div>
+        </div>
+
+        {/* Half-day toggle (2-scan only) */}
+        {draft.mode === 'two' && (
+          <div className="flex items-start justify-between gap-4 p-3 rounded-md border bg-gray-50">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Half-day leave counts as half-scan</p>
+              <p className="text-[11px] text-gray-500">
+                When an employee has approved half-day leave (AM or PM), skip the absent half
+                and only evaluate the half they worked.
+              </p>
+            </div>
+            <Switch
+              checked={draft.halfDayCountsAsHalfScan}
+              onCheckedChange={v => setDraft({ ...draft, halfDayCountsAsHalfScan: v })}
+            />
+          </div>
+        )}
+
+        {/* Live preview */}
+        <ScanRulePreview rule={draft} />
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          <Button variant="ghost" size="sm" onClick={handleReset}>
+            Reset to defaults
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!dirty}>
+            <Save className="h-4 w-4 mr-1.5" />
+            Save rule
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function ScanModeOption({
+  active, title, subtitle, onClick,
+}: {
+  active: boolean; title: string; subtitle: string; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left p-3 rounded-lg border transition-all ${
+        active
+          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+          : 'border-gray-200 hover:border-gray-300 bg-white'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-medium text-sm">{title}</p>
+        {active && <CheckCircle2 className="h-4 w-4 text-blue-600" />}
+      </div>
+      <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+    </button>
+  );
+}
+
+/** Canned-scenarios preview that runs against a ScanRule draft. */
+function ScanRulePreview({ rule }: { rule: ScanRule }) {
+  const scenarios = previewScenarios(rule.mode);
+  return (
+    <div className="rounded-md border bg-gray-50 p-3 space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Preview</p>
+      <div className="space-y-1.5">
+        {scenarios.map(sc => (
+          <div key={sc.label} className="flex items-start gap-3 text-xs">
+            <span className="w-40 shrink-0 text-gray-700 font-medium">{sc.label}</span>
+            <div className="flex-1 flex flex-wrap gap-2">
+              {evaluate(rule, sc.punches).map((s, i) => <VerdictChip key={i} session={s} />)}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function VerdictChip({ session }: { session: EvaluatedSession }) {
+  const style: Record<string, string> = {
+    on_time:        'bg-green-100 text-green-800',
+    late_in:        'bg-yellow-100 text-yellow-800',
+    early_out:      'bg-orange-100 text-orange-800',
+    late_and_early: 'bg-red-100 text-red-800',
+    no_in:          'bg-red-100 text-red-800',
+    no_out:         'bg-red-100 text-red-800',
+    missing:        'bg-gray-200 text-gray-700',
+  };
+  const label: Record<string, string> = {
+    on_time: 'On-time', late_in: 'Late in', early_out: 'Early out',
+    late_and_early: 'Late + early', no_in: 'No check-in', no_out: 'No check-out',
+    missing: 'No scan',
+  };
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] border bg-white">
+      <span className="text-gray-500">{session.label}:</span>
+      <span className={`rounded px-1.5 py-0.5 ${style[session.verdict]}`}>
+        {label[session.verdict]}
+      </span>
+      <span className="text-gray-400 font-mono">
+        {session.actualIn ?? '— —'} / {session.actualOut ?? '— —'}
+      </span>
+    </span>
   );
 }

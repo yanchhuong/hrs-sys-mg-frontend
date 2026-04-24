@@ -90,7 +90,6 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
         children: [
           { id: 'settings',            label: t('nav.setting.general'),    icon: Settings,   roles: ['admin'] },
           { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock,      roles: ['admin'] },
-          { id: 'deps-group',          label: t('nav.setting.depsgroup'),  icon: Users,      roles: ['admin'] },
           { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users,      roles: ['admin'] },
           { id: 'payroll-categories',  label: t('nav.setting.payrollcat'), icon: DollarSign, roles: ['admin'] },
         ],

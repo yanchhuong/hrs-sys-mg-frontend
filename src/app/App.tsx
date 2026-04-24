@@ -11,7 +11,6 @@ import { Payroll } from './components/views/Payroll';
 import { Contracts } from './components/views/Contracts';
 import { UserManagement } from './components/views/UserManagement';
 import { Settings } from './components/views/Settings';
-import { DepsGroup } from './components/views/DepsGroup';
 import { Exception } from './components/views/Exception';
 import { Deduction } from './components/views/Deduction';
 import { Increase } from './components/views/Increase';
@@ -40,8 +39,6 @@ function AppContent() {
         return <Dashboard />;
       case 'employees':
         return <Employees />;
-      case 'deps-group':
-        return <DepsGroup />;
       case 'attendance':
         return <Attendance />;
       case 'exception':

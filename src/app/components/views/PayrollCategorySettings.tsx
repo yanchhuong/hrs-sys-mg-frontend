@@ -36,6 +36,14 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -68,6 +76,8 @@ export function PayrollCategorySettings() {
   const [draft, setDraft] = useState<PayrollCategory | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PayrollCategory | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  // Dialog state for the "Add Category" popup. `null` → closed.
+  const [addDraft, setAddDraft] = useState<PayrollCategory | null>(null);
 
   const earnings = useMemo(
     () => categories.filter((c) => c.kind === 'earning').sort((a, b) => a.order - b.order),
@@ -84,10 +94,31 @@ export function PayrollCategorySettings() {
     savePayrollCategories(next);
   };
 
+  // Opens the Add Category popup pre-seeded for the given kind.
   const startAdd = (kind: PayrollCategoryKind) => {
-    const blank = createCategory(kind, categories);
-    setDraft(blank);
-    setEditingId(blank.id);
+    setAddDraft(createCategory(kind, categories));
+  };
+
+  const cancelAdd = () => setAddDraft(null);
+
+  const saveAddDraft = () => {
+    if (!addDraft) return;
+    if (!addDraft.label.trim()) {
+      toast.error('Label is required');
+      return;
+    }
+    if (!addDraft.code.trim()) {
+      toast.error('Code is required');
+      return;
+    }
+    const err = validateCategory(addDraft, categories);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    persist([...categories, addDraft]);
+    setAddDraft(null);
+    toast.success(`Added "${addDraft.label}"`);
   };
 
   const startEdit = (c: PayrollCategory) => {
@@ -395,6 +426,136 @@ export function PayrollCategorySettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add Category popup */}
+      <Dialog open={!!addDraft} onOpenChange={(open) => !open && cancelAdd()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {addDraft?.kind === 'earning' ? (
+                <DollarSign className="h-5 w-5 text-emerald-600" />
+              ) : (
+                <Minus className="h-5 w-5 text-rose-600" />
+              )}
+              Add {addDraft?.kind === 'earning' ? 'Earning' : 'Deduction'} Category
+            </DialogTitle>
+            <DialogDescription>
+              Create a new payroll category. Code must be lowercase letters, digits, and underscores
+              only, and unique within its kind.
+            </DialogDescription>
+          </DialogHeader>
+          {addDraft && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>
+                  Label <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  autoFocus
+                  value={addDraft.label}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    // Autofill code from the label while the user hasn't touched it yet.
+                    const autoCode = label
+                      .toLowerCase()
+                      .replace(/[^a-z0-9_]+/g, '_')
+                      .replace(/^_+|_+$/g, '');
+                    setAddDraft({
+                      ...addDraft,
+                      label,
+                      code: addDraft.code.trim() === '' || addDraft.code === autoPrev(addDraft.label)
+                        ? autoCode
+                        : addDraft.code,
+                    });
+                  }}
+                  placeholder="e.g. Transport Allowance"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Code <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={addDraft.code}
+                  onChange={(e) =>
+                    setAddDraft({ ...addDraft, code: e.target.value.toLowerCase() })
+                  }
+                  placeholder="transport_allowance"
+                />
+                <p className="text-[11px] text-gray-500">
+                  Stable machine key referenced by payroll items. Cannot be renamed later.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Value type</Label>
+                  <Select
+                    value={addDraft.valueType}
+                    onValueChange={(v: PayrollCategoryValueType) =>
+                      setAddDraft({ ...addDraft, valueType: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="flat">{t('payrollCat.type.flat')}</SelectItem>
+                      <SelectItem value="percentage">{t('payrollCat.type.percentage')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>
+                    Default {addDraft.valueType === 'percentage' ? '(%)' : '(amount)'}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={addDraft.defaultAmount}
+                    onChange={(e) =>
+                      setAddDraft({ ...addDraft, defaultAmount: parseFloat(e.target.value) || 0 })
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-md border bg-gray-50">
+                <div>
+                  <p className="text-sm font-medium">Enabled</p>
+                  <p className="text-[11px] text-gray-500">
+                    Disabled categories stay in the catalog but don't appear on new payroll items.
+                  </p>
+                </div>
+                <Switch
+                  checked={addDraft.enabled}
+                  onCheckedChange={(v) => setAddDraft({ ...addDraft, enabled: v })}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={cancelAdd}>
+              {t('action.cancel')}
+            </Button>
+            <Button onClick={saveAddDraft}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+/**
+ * Helper used by the Add dialog to decide whether the `code` field has been
+ * auto-generated from the label (and therefore should keep updating) vs.
+ * manually edited (leave alone).
+ */
+function autoPrev(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }

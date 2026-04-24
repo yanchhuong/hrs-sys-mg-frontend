@@ -42,8 +42,6 @@ import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel } from '../../utils/excelExport';
-import { getPolicyRequireBiometric, listEnrollments } from '../../utils/webauthn';
-import { BiometricGate } from '../common/BiometricGate';
 import { useI18n } from '../../i18n/I18nContext';
 
 export function Payroll() {
@@ -62,7 +60,6 @@ export function Payroll() {
   const [previewData, setPreviewData] = useState<ParsedPayrollData | null>(null);
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [biometricGateOpen, setBiometricGateOpen] = useState(false);
 
   // Batch workflow state — live list (so approvals mutate in place).
   const [batches, setBatches] = useState(mockPayrollBatches);
@@ -166,15 +163,6 @@ export function Payroll() {
       return;
     }
 
-    // Step-up auth: require biometric when policy enabled and user has enrollments
-    const userId = currentUser?.employeeId;
-    if (userId
-      && getPolicyRequireBiometric(userId)
-      && listEnrollments(userId).length > 0) {
-      setBiometricGateOpen(true);
-      return;
-    }
-
     commitPayrollUpload();
   };
 
@@ -244,12 +232,7 @@ export function Payroll() {
       return;
     }
     setPendingApprovalBatch(batch);
-    // Respect the biometric step-up policy for sensitive admin actions.
-    if (myUserEmpId && getPolicyRequireBiometric(myUserEmpId) && listEnrollments(myUserEmpId).length > 0) {
-      setBiometricGateOpen(true);
-    } else {
-      setApproveTarget(batch);
-    }
+    setApproveTarget(batch);
   };
 
   const performApproval = () => {
@@ -1438,27 +1421,6 @@ export function Payroll() {
             </Table>
           </CardContent>
         </Card>
-      )}
-
-      {currentUser && (
-        <BiometricGate
-          open={biometricGateOpen}
-          onOpenChange={(o) => { setBiometricGateOpen(o); if (!o) setPendingApprovalBatch(null); }}
-          userId={currentUser.employeeId}
-          title={pendingApprovalBatch ? 'Confirm payroll approval' : 'Confirm payroll upload'}
-          description={
-            pendingApprovalBatch
-              ? `Your admin policy requires biometric verification before approving "${pendingApprovalBatch.subject}".`
-              : `Your admin policy requires biometric verification before uploading ${previewData?.totalEmployees ?? 0} payroll records.`
-          }
-          onVerified={() => {
-            if (pendingApprovalBatch) {
-              setApproveTarget(pendingApprovalBatch);
-            } else {
-              commitPayrollUpload();
-            }
-          }}
-        />
       )}
 
       {/* Approve batch — confirmation */}

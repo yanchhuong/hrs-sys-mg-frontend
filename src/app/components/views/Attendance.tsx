@@ -75,6 +75,13 @@ export function Attendance() {
   const [editRemark, setEditRemark] = useState('');
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [fingerprintDialogOpen, setFingerprintDialogOpen] = useState(false);
+  const [fpIp, setFpIp] = useState(() => localStorage.getItem('hrms:fp:ip') ?? '192.168.178.243');
+  const [fpPort, setFpPort] = useState(() => localStorage.getItem('hrms:fp:port') ?? '80');
+  const [fpTesting, setFpTesting] = useState(false);
+  const [fpStatus, setFpStatus] = useState<'unknown' | 'reachable' | 'unreachable'>('unknown');
+  const [fpLastSyncAt, setFpLastSyncAt] = useState<string | null>(
+    () => localStorage.getItem('hrms:fp:lastSyncAt'),
+  );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [leaveDetailEmp, setLeaveDetailEmp] = useState<string | null>(null);
@@ -297,24 +304,112 @@ export function Attendance() {
                     <DialogDescription>Sync attendance data from fingerprint scanner</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
-                    <div className="border-2 border-dashed border-blue-300 bg-blue-50 rounded-lg p-8 text-center">
-                      <Fingerprint className="h-16 w-16 text-blue-600 mx-auto mb-4" />
-                      <h3 className="font-semibold text-lg mb-2">Fingerprint Device Connected</h3>
-                      <p className="text-sm text-gray-600 mb-4">Ready to import attendance records</p>
-                      <div className="text-xs text-gray-500 space-y-1">
-                        <p>Device: ZKTeco K50 | Status: Online | Last Sync: 10 min ago</p>
+                    <div className="rounded-lg border bg-blue-50/50 p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <Fingerprint className="h-8 w-8 text-blue-600 shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold">Device connection</p>
+                          <p className="text-xs text-gray-500">Saved to this browser. Rotate in production.</p>
+                        </div>
+                        <Badge
+                          className={
+                            fpStatus === 'reachable'
+                              ? 'bg-green-100 text-green-800 border-0'
+                              : fpStatus === 'unreachable'
+                              ? 'bg-red-100 text-red-800 border-0'
+                              : 'bg-gray-100 text-gray-700 border-0'
+                          }
+                        >
+                          {fpStatus === 'reachable'
+                            ? 'Reachable'
+                            : fpStatus === 'unreachable'
+                            ? 'Unreachable'
+                            : 'Unknown'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto] gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">IP address</Label>
+                          <Input
+                            value={fpIp}
+                            onChange={(e) => {
+                              setFpIp(e.target.value);
+                              setFpStatus('unknown');
+                              localStorage.setItem('hrms:fp:ip', e.target.value);
+                            }}
+                            placeholder="192.168.178.243"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">Port</Label>
+                          <Input
+                            value={fpPort}
+                            onChange={(e) => {
+                              setFpPort(e.target.value);
+                              setFpStatus('unknown');
+                              localStorage.setItem('hrms:fp:port', e.target.value);
+                            }}
+                            placeholder="80"
+                            className="h-8 w-24 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
+                        <span>
+                          Last sync: {fpLastSyncAt ? format(new Date(fpLastSyncAt), 'MMM d, HH:mm') : 'never'}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={fpTesting || !fpIp || !fpPort}
+                          onClick={async () => {
+                            setFpTesting(true);
+                            try {
+                              // Browser CORS blocks reading the response, but a successful fetch
+                              // in no-cors mode is enough to confirm the host responded.
+                              const ctrl = new AbortController();
+                              const t = setTimeout(() => ctrl.abort(), 3000);
+                              await fetch(`http://${fpIp}:${fpPort}/`, { mode: 'no-cors', signal: ctrl.signal });
+                              clearTimeout(t);
+                              setFpStatus('reachable');
+                              toast.success(`Device at ${fpIp}:${fpPort} responded`);
+                            } catch {
+                              setFpStatus('unreachable');
+                              toast.error(`Cannot reach ${fpIp}:${fpPort}`);
+                            } finally {
+                              setFpTesting(false);
+                            }
+                          }}
+                        >
+                          {fpTesting ? 'Testing…' : 'Test connection'}
+                        </Button>
                       </div>
                     </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <p className="text-sm font-medium text-green-900 mb-2">Auto-calculation Features:</p>
-                      <ul className="text-sm text-green-800 space-y-1">
-                        <li>Late check-in detection | Early check-out detection</li>
-                        <li>Overtime auto-calculation | Working hours computation</li>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <p className="text-sm font-medium text-green-900 mb-1">Auto-calculation</p>
+                      <ul className="text-xs text-green-800 space-y-0.5">
+                        <li>Late check-in / early check-out detection</li>
+                        <li>Overtime + working-hours computation</li>
                       </ul>
                     </div>
-                    <Button onClick={() => { toast.success('Fingerprint attendance imported - 25 records processed'); setFingerprintDialogOpen(false); }} className="w-full" size="lg">
+                    <Button
+                      onClick={() => {
+                        // Real device extraction lives on the backend (ZKTeco UDP 4370 SDK).
+                        // Here we simulate a pull against the configured host.
+                        const now = new Date().toISOString();
+                        localStorage.setItem('hrms:fp:lastSyncAt', now);
+                        setFpLastSyncAt(now);
+                        toast.success(`Imported attendance from ${fpIp}:${fpPort}`);
+                        setFingerprintDialogOpen(false);
+                      }}
+                      className="w-full"
+                      size="lg"
+                      disabled={!fpIp || !fpPort}
+                    >
                       <Fingerprint className="mr-2 h-5 w-5" />
-                      Import Attendance
+                      Import from {fpIp}:{fpPort}
                     </Button>
                   </div>
                 </DialogContent>
