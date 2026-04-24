@@ -224,22 +224,85 @@ export function Attendance() {
     return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode));
   }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
-  // Summary counts for selected date
+  // Roster-driven rows: one row per active employee per day in the range.
+  // A day with no attendance record shows a synthetic row marked `absent`
+  // with empty punches, which the fingerprint import flow then fills in.
+  const dailyRows = useMemo((): AttendanceType[] => {
+    const scopedEmployees = employees.filter(
+      e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)),
+    );
+    if (scopedEmployees.length === 0) return [];
+
+    const days: string[] = [];
+    if (dateFrom && dateTo) {
+      const start = parseISO(dateFrom);
+      const end = parseISO(dateTo);
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        days.push(format(cursor, 'yyyy-MM-dd'));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    } else {
+      days.push(format(new Date(), 'yyyy-MM-dd'));
+    }
+
+    // Attendance lookup: `date|employeeId` → record. Employee id can arrive
+    // as either empNo or backend UUID depending on mode, so we index on
+    // whatever the record carries.
+    const byKey = new Map<string, AttendanceType>();
+    todayRecords.forEach(r => byKey.set(`${r.date}|${r.employeeId}`, r));
+
+    const rows: AttendanceType[] = [];
+    for (const emp of scopedEmployees) {
+      for (const day of days) {
+        // Try matching on id and apiId (UUID) — attendance rows from the
+        // backend carry the employee UUID, not the empNo.
+        const apiId = (emp as any).apiId as string | undefined;
+        const rec = byKey.get(`${day}|${emp.id}`)
+          ?? (apiId ? byKey.get(`${day}|${apiId}`) : undefined)
+          ?? null;
+        if (rec) {
+          rows.push(rec);
+        } else {
+          rows.push({
+            id: `synthetic:${emp.id}:${day}`,
+            employeeId: emp.id,
+            date: day,
+            checkIn: '',
+            checkOut: undefined,
+            morningIn: undefined,
+            morningOut: undefined,
+            noonIn: undefined,
+            noonOut: undefined,
+            otHours: undefined,
+            workHours: undefined,
+            status: 'absent',
+            notes: '',
+          } satisfies AttendanceType);
+        }
+      }
+    }
+    return rows;
+  }, [employees, todayRecords, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
+
+  // Summary counts derived from the roster-driven rows so that employees
+  // without any punch for the day are still counted (as absent).
   const summary = useMemo(() => {
     const totalEmployees = employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode))).length;
-    const present = todayRecords.filter(r => r.status === 'present' || r.status === 'early_leave').length;
-    const absent = todayRecords.filter(r => r.status === 'absent').length;
-    const late = todayRecords.filter(r => r.status === 'late').length;
-    const noCheckin = todayRecords.filter(r => r.status === 'no_checkin').length;
-    const noCheckout = todayRecords.filter(r => r.status === 'no_checkout').length;
-    const leave = todayRecords.filter(r => r.status === 'leave').length;
+    const present = dailyRows.filter(r => r.status === 'present' || r.status === 'early_leave').length;
+    const absent = dailyRows.filter(r => r.status === 'absent').length;
+    const late = dailyRows.filter(r => r.status === 'late').length;
+    const noCheckin = dailyRows.filter(r => r.status === 'no_checkin').length;
+    const noCheckout = dailyRows.filter(r => r.status === 'no_checkout').length;
+    const leave = dailyRows.filter(r => r.status === 'leave').length;
     return { totalEmployees, present, absent, late, noCheckin, noCheckout, leave };
-  }, [todayRecords, employees, isTenantWide, matchesScope, scopeMode]);
+  }, [dailyRows, employees, isTenantWide, matchesScope, scopeMode]);
 
-  // Filtered records
+  // Filtered records — built on top of the roster-driven dailyRows so employees
+  // without any punch record still appear (as "absent" until fingerprint sync).
   const filteredRecords = useMemo(() => {
-    let records = todayRecords;
+    let records = dailyRows;
     if (activeFilter !== 'all') {
       records = records.filter(r => r.status === activeFilter);
     }
@@ -260,7 +323,7 @@ export function Attendance() {
     return records;
     // deptName is derived from deptList, tracked via employees.length/deptList upstream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayRecords, employees, activeFilter, departmentFilter, dailySearch]);
+  }, [dailyRows, employees, activeFilter, departmentFilter, dailySearch]);
 
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
@@ -538,21 +601,40 @@ export function Attendance() {
                       </ul>
                     </div>
                     <Button
-                      onClick={() => {
-                        // Real device extraction lives on the backend (ZKTeco UDP 4370 SDK).
-                        // Here we simulate a pull against the configured host.
-                        const now = new Date().toISOString();
-                        localStorage.setItem('hrms:fp:lastSyncAt', now);
-                        setFpLastSyncAt(now);
-                        toast.success(`Imported attendance from ${fpIp}:${fpPort}`);
-                        setFingerprintDialogOpen(false);
+                      onClick={async () => {
+                        try {
+                          setFpTesting(true);
+                          if (USE_MOCKS) {
+                            await new Promise(r => setTimeout(r, 400));
+                            toast.success(`Imported attendance from ${fpIp}:${fpPort} (mock)`);
+                          } else {
+                            const res = await attendanceApi.importFingerprint({
+                              ip: fpIp,
+                              port: Number(fpPort),
+                              commKey: 0,
+                              timeoutMs: 15000,
+                            });
+                            toast.success(`Imported ${res.recordCount} punch${res.recordCount === 1 ? '' : 'es'} from ${fpIp}:${fpPort}`);
+                            // Pull fresh attendance so the new check-ins/outs
+                            // land in the roster-driven table immediately.
+                            await loadAttendance();
+                          }
+                          const now = new Date().toISOString();
+                          localStorage.setItem('hrms:fp:lastSyncAt', now);
+                          setFpLastSyncAt(now);
+                          setFingerprintDialogOpen(false);
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Fingerprint import failed');
+                        } finally {
+                          setFpTesting(false);
+                        }
                       }}
                       className="w-full"
                       size="lg"
-                      disabled={!fpIp || !fpPort}
+                      disabled={!fpIp || !fpPort || fpTesting}
                     >
                       <Fingerprint className="mr-2 h-5 w-5" />
-                      Import from {fpIp}:{fpPort}
+                      {fpTesting ? 'Importing…' : `Import from ${fpIp}:${fpPort}`}
                     </Button>
                   </div>
                 </DialogContent>
@@ -791,7 +873,10 @@ export function Attendance() {
                     </TableRow>
                   ) : (
                     dailyPagination.paginatedItems.map(record => {
-                      const emp = employees.find(e => e.id === record.employeeId);
+                      const emp = employees.find(
+                        e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
+                      );
+                      const isSynthetic = record.id.startsWith('synthetic:');
                       const timeCell = (val?: string, icon?: 'in' | 'out') => {
                         if (!val) return <span className="text-gray-300 text-center block">--:--</span>;
                         return (
@@ -830,9 +915,13 @@ export function Attendance() {
                           </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEdit(record)}>
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
+                              {isSynthetic ? (
+                                <span className="text-gray-300">—</span>
+                              ) : (
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEdit(record)}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </TableCell>
                           )}
                         </TableRow>
