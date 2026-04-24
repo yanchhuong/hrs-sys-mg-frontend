@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
+import { Progress } from '../ui/progress';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -12,25 +11,116 @@ import { toast } from 'sonner';
 import { Employee } from '../../types/hrms';
 import { mockEmployees } from '../../data/mockData';
 import {
-  parseEmployeesExcel, downloadEmployeeTemplate, ParsedEmployeeData,
+  parseEmployeesExcel, downloadEmployeeTemplate, ParsedEmployeeData, ParsedEmployeeRow,
 } from '../../utils/employeeBulkParser';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported: (rows: Employee[]) => void;
+  /** Department roster used to map Excel's department name → departmentId. */
+  departments?: departmentsApi.Department[];
+  /** empNos already in the system — drives the duplicate-ID parser check. */
+  existingEmpNos?: string[];
+  /** emails already in the system — drives the duplicate-email parser check. */
+  existingEmails?: string[];
 }
 
-export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Props) {
+type RowStatus = 'pending' | 'creating' | 'created' | 'failed';
+interface RowProgress {
+  rowNumber: number;
+  status: RowStatus;
+  message?: string;
+}
+
+/**
+ * Maps a parsed row to the backend DTO. Department is resolved by
+ * case-insensitive exact match against the `departments` roster; unknown
+ * names fall through as null so the employee imports without a department.
+ */
+function buildCreateRequest(
+  row: ParsedEmployeeRow,
+  deptByLowerName: Map<string, string>,
+): employeesApi.CreateEmployeeRequest & { empNo: string } {
+  const d = row.data;
+  const deptName = d.department?.trim();
+  const departmentId = deptName ? deptByLowerName.get(deptName.toLowerCase()) ?? null : null;
+
+  return {
+    empNo: d.id as string,
+    name: d.name as string,
+    khmerName: d.khmerName,
+    email: d.email as string,
+    position: d.position as string,
+    departmentId,
+    joinDate: d.joinDate as string,
+    baseSalary: d.baseSalary as number,
+    managerId: undefined,
+    contactNumber: d.contactNumber,
+    gender: d.gender,
+    dateOfBirth: d.dateOfBirth,
+    placeOfBirth: d.placeOfBirth,
+    currentAddress: d.currentAddress,
+    nffNo: d.nffNo,
+    tid: d.tid,
+    contractExpireDate: d.contractExpireDate,
+  };
+}
+
+/** Pool-of-N concurrent async runner with progress callbacks. */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  worker: (item: T, index: number) => Promise<R>,
+  concurrency: number,
+  onEach?: (item: T, index: number, result: R | Error) => void,
+): Promise<(R | Error)[]> {
+  const results: (R | Error)[] = new Array(items.length);
+  let cursor = 0;
+  const take = async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      try {
+        const r = await worker(items[i], i);
+        results[i] = r;
+        onEach?.(items[i], i, r);
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        results[i] = e;
+        onEach?.(items[i], i, e);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, take));
+  return results;
+}
+
+export function BulkUploadEmployeesDialog({
+  open, onOpenChange, onImported, departments, existingEmpNos, existingEmails,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parsed, setParsed] = useState<ParsedEmployeeData | null>(null);
+
+  // Progress while POSTing to the backend.
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState<Map<number, RowProgress>>(new Map());
+  const [finalResult, setFinalResult] = useState<{ ok: number; failed: number } | null>(null);
 
   const reset = () => {
     setFile(null);
     setParsed(null);
     setParsing(false);
+    setImporting(false);
+    setProgress(new Map());
+    setFinalResult(null);
   };
+
+  const resolvedExistingEmpNos = existingEmpNos ?? (USE_MOCKS ? mockEmployees.map(e => e.id) : []);
+  const resolvedExistingEmails = existingEmails ?? (USE_MOCKS ? mockEmployees.map(e => e.email) : []);
 
   const handleSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -38,13 +128,11 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
     setFile(f);
     setParsing(true);
     setParsed(null);
+    setFinalResult(null);
+    setProgress(new Map());
 
     try {
-      const result = await parseEmployeesExcel(
-        f,
-        mockEmployees.map(e => e.id),
-        mockEmployees.map(e => e.email),
-      );
+      const result = await parseEmployeesExcel(f, resolvedExistingEmpNos, resolvedExistingEmails);
       setParsed(result);
       if (result.errors.length > 0) {
         toast.error(result.errors[0]);
@@ -61,21 +149,94 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
     }
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!parsed) return;
     const rowsWithErrors = parsed.employees.filter(r => r.errors.length > 0).length;
     if (rowsWithErrors > 0) {
       toast.error(`Fix ${rowsWithErrors} error row${rowsWithErrors !== 1 ? 's' : ''} before importing.`);
       return;
     }
-    const newRows: Employee[] = parsed.employees.map(r => ({
-      ...r.data,
-      status: r.data.status ?? 'active',
-    } as Employee));
-    onImported(newRows);
-    toast.success(`Imported ${newRows.length} employee${newRows.length !== 1 ? 's' : ''}`);
-    reset();
-    onOpenChange(false);
+
+    // ----- Mock mode: no backend — just hand rows back to the parent. -----
+    if (USE_MOCKS) {
+      const newRows: Employee[] = parsed.employees.map(r => ({
+        ...r.data,
+        status: r.data.status ?? 'active',
+      } as Employee));
+      onImported(newRows);
+      toast.success(`Imported ${newRows.length} employee${newRows.length !== 1 ? 's' : ''}`);
+      reset();
+      onOpenChange(false);
+      return;
+    }
+
+    // ----- Live mode: POST each row concurrently. -----
+    const deptByLowerName = new Map<string, string>(
+      (departments ?? []).map(d => [d.name.toLowerCase(), d.id]),
+    );
+    const rowsToImport = parsed.employees;
+
+    // Seed progress map so the UI can render state straight away.
+    const initial = new Map<number, RowProgress>(
+      rowsToImport.map(r => [r.rowNumber, { rowNumber: r.rowNumber, status: 'pending' as const }]),
+    );
+    setProgress(initial);
+    setImporting(true);
+
+    const created: Employee[] = [];
+    let okCount = 0;
+    let failCount = 0;
+
+    await runWithConcurrency(
+      rowsToImport,
+      async (row) => {
+        setProgress(prev => {
+          const next = new Map(prev);
+          next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'creating' });
+          return next;
+        });
+        const body = buildCreateRequest(row, deptByLowerName);
+        return employeesApi.create(body);
+      },
+      5, // 5 concurrent POSTs — gentle on the backend, fast enough for 300+ rows
+      (row, _i, result) => {
+        if (result instanceof Error) {
+          failCount++;
+          setProgress(prev => {
+            const next = new Map(prev);
+            next.set(row.rowNumber, {
+              rowNumber: row.rowNumber, status: 'failed', message: result.message,
+            });
+            return next;
+          });
+        } else {
+          okCount++;
+          created.push(result as unknown as Employee);
+          setProgress(prev => {
+            const next = new Map(prev);
+            next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'created' });
+            return next;
+          });
+        }
+      },
+    );
+
+    setImporting(false);
+    setFinalResult({ ok: okCount, failed: failCount });
+
+    if (okCount > 0) {
+      onImported(created);
+      toast.success(
+        failCount === 0
+          ? `Imported ${okCount} employee${okCount !== 1 ? 's' : ''}`
+          : `Imported ${okCount} of ${okCount + failCount} — ${failCount} failed`,
+        { duration: 6000 },
+      );
+    }
+    if (okCount === 0 && failCount > 0) {
+      toast.error('No employees imported — every row failed. See the table for details.', { duration: 8000 });
+    }
+    // Keep the dialog open so the user can see per-row outcomes.
   };
 
   const summary = parsed ? {
@@ -86,8 +247,20 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
     errorRows: parsed.employees.filter(r => r.errors.length > 0).length,
   } : null;
 
+  const doneCount = Array.from(progress.values()).filter(p => p.status === 'created' || p.status === 'failed').length;
+  const progressPct = parsed && parsed.totalRows > 0 ? Math.round((doneCount / parsed.totalRows) * 100) : 0;
+
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+    <Dialog open={open} onOpenChange={(o) => {
+      if (!o) {
+        if (importing) {
+          toast.error('Import still in progress — please wait');
+          return;
+        }
+        reset();
+      }
+      onOpenChange(o);
+    }}>
       <DialogContent className="max-w-4xl flex flex-col max-h-[90vh] p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -121,9 +294,10 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
                 onChange={handleSelect}
                 id="bulk-employees-file"
                 className="hidden"
+                disabled={importing}
               />
               <label htmlFor="bulk-employees-file">
-                <Button variant="outline" size="sm" asChild disabled={parsing}>
+                <Button variant="outline" size="sm" asChild disabled={parsing || importing}>
                   <span>{parsing ? 'Parsing…' : (file ? 'Replace File' : 'Select File')}</span>
                 </Button>
               </label>
@@ -132,7 +306,7 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
           </div>
 
           {/* Summary banner */}
-          {parsed && summary && (
+          {parsed && summary && !finalResult && !importing && (
             <div className={`rounded-md border p-3 ${
               summary.errors > 0 ? 'bg-red-50 border-red-200'
                 : summary.warnings > 0 ? 'bg-amber-50 border-amber-200'
@@ -167,6 +341,48 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
             </div>
           )}
 
+          {/* In-progress banner */}
+          {importing && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-start gap-3">
+                <RefreshCw className="h-5 w-5 text-blue-600 shrink-0 mt-0.5 animate-spin" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <p className="font-medium text-blue-900">
+                    Importing {doneCount} of {parsed?.totalRows ?? 0}…
+                  </p>
+                  <Progress value={progressPct} className="h-1.5" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Final result banner */}
+          {finalResult && !importing && (
+            <div className={`rounded-md border p-3 ${
+              finalResult.failed === 0 ? 'bg-green-50 border-green-200'
+                : finalResult.ok === 0 ? 'bg-red-50 border-red-200'
+                : 'bg-amber-50 border-amber-200'
+            }`}>
+              <div className="flex items-start gap-3">
+                {finalResult.failed === 0 ? <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+                  : finalResult.ok === 0 ? <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                  : <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">
+                    {finalResult.failed === 0
+                      ? `All ${finalResult.ok} employee${finalResult.ok !== 1 ? 's' : ''} imported successfully`
+                      : finalResult.ok === 0
+                        ? `No employees imported — all ${finalResult.failed} failed`
+                        : `${finalResult.ok} imported · ${finalResult.failed} failed`}
+                  </p>
+                  {finalResult.failed > 0 && (
+                    <p className="text-sm text-gray-700">Failed rows are highlighted below with the backend error message.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Preview table */}
           {parsed && parsed.employees.length > 0 && (
             <div className="rounded-md border overflow-auto max-h-[360px]">
@@ -186,14 +402,32 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
                 </thead>
                 <tbody>
                   {parsed.employees.map(row => {
+                    const prog = progress.get(row.rowNumber);
                     const hasErr = row.errors.length > 0;
                     const hasWarn = !hasErr && row.warnings.length > 0;
-                    const rowBg = hasErr ? 'bg-red-50' : hasWarn ? 'bg-amber-50' : '';
-                    const tip = [...row.errors, ...row.warnings].join('\n');
+
+                    // Post-import row state overrides the parse state.
+                    const isCreated = prog?.status === 'created';
+                    const isFailed = prog?.status === 'failed';
+                    const isCreating = prog?.status === 'creating';
+
+                    const rowBg = isFailed ? 'bg-red-50'
+                      : isCreated ? 'bg-green-50'
+                      : isCreating ? 'bg-blue-50'
+                      : hasErr ? 'bg-red-50'
+                      : hasWarn ? 'bg-amber-50'
+                      : '';
+
+                    const primaryIssue = isFailed ? (prog?.message ?? 'Failed')
+                      : row.errors[0] ?? row.warnings[0] ?? '';
+
                     return (
-                      <tr key={row.rowNumber} className={`border-t ${rowBg}`} title={tip || undefined}>
+                      <tr key={row.rowNumber} className={`border-t ${rowBg}`} title={[prog?.message, ...row.errors, ...row.warnings].filter(Boolean).join('\n') || undefined}>
                         <td className={`px-2 py-2 text-center ${rowBg}`}>
-                          {hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
+                          {isCreated ? <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                            : isFailed ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
+                            : isCreating ? <RefreshCw className="h-4 w-4 text-blue-600 inline animate-spin" />
+                            : hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
                             : hasWarn ? <AlertTriangle className="h-4 w-4 text-amber-600 inline" />
                             : <CheckCircle className="h-4 w-4 text-green-600 inline" />}
                         </td>
@@ -209,18 +443,24 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
                           {row.data.bankName ? `${row.data.bankName} ${row.data.bankAccount ? '· ' + row.data.bankAccount : ''}` : ''}
                         </td>
                         <td className="px-3 py-2 max-w-[240px]">
-                          {row.errors.length > 0 && (
+                          {isFailed ? (
+                            <span className="text-red-700 block truncate" title={prog?.message}>
+                              {prog?.message ?? 'Failed'}
+                            </span>
+                          ) : isCreated ? (
+                            <span className="text-green-700 block">Imported</span>
+                          ) : row.errors.length > 0 ? (
                             <span className="text-red-700 block truncate" title={row.errors.join('\n')}>
                               {row.errors[0]}
                               {row.errors.length > 1 ? ` (+${row.errors.length - 1})` : ''}
                             </span>
-                          )}
-                          {!row.errors.length && row.warnings.length > 0 && (
+                          ) : row.warnings.length > 0 ? (
                             <span className="text-amber-700 block truncate" title={row.warnings.join('\n')}>
                               {row.warnings[0]}
                               {row.warnings.length > 1 ? ` (+${row.warnings.length - 1})` : ''}
                             </span>
-                          )}
+                          ) : null}
+                          {primaryIssue === '' && null}
                         </td>
                       </tr>
                     );
@@ -239,7 +479,12 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
 
         <DialogFooter className="px-6 py-4 border-t shrink-0 bg-white sm:justify-between sm:items-center gap-3">
           <div className="text-xs">
-            {summary ? (
+            {finalResult ? (
+              <span className={`inline-flex items-center gap-1 font-medium ${finalResult.failed === 0 ? 'text-green-700' : finalResult.ok === 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                {finalResult.failed === 0 ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                {finalResult.ok} imported · {finalResult.failed} failed
+              </span>
+            ) : summary ? (
               summary.errors > 0 ? (
                 <span className="inline-flex items-center gap-1 text-red-700 font-medium">
                   <AlertCircle className="h-3.5 w-3.5" />
@@ -256,24 +501,39 @@ export function BulkUploadEmployeesDialog({ open, onOpenChange, onImported }: Pr
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
-            {parsed && (
+            {parsed && !importing && (
               <Button variant="outline" onClick={reset}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Reset
               </Button>
             )}
-            <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>
-              Cancel
-            </Button>
             <Button
-              onClick={handleImport}
-              disabled={!parsed || parsed.totalRows === 0 || (summary?.errors ?? 0) > 0}
+              variant="outline"
+              onClick={() => { if (!importing) { reset(); onOpenChange(false); } }}
+              disabled={importing}
             >
-              <Upload className="h-4 w-4 mr-2" />
-              {summary?.errors && summary.errors > 0
-                ? `Fix ${summary.errors} Error${summary.errors !== 1 ? 's' : ''} to Import`
-                : `Import ${summary?.valid ?? 0} Employee${(summary?.valid ?? 0) !== 1 ? 's' : ''}`}
+              {finalResult ? 'Close' : 'Cancel'}
             </Button>
+            {!finalResult && (
+              <Button
+                onClick={handleImport}
+                disabled={!parsed || parsed.totalRows === 0 || (summary?.errors ?? 0) > 0 || importing}
+              >
+                {importing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Importing… ({doneCount}/{parsed?.totalRows ?? 0})
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    {summary?.errors && summary.errors > 0
+                      ? `Fix ${summary.errors} Error${summary.errors !== 1 ? 's' : ''} to Import`
+                      : `Import ${summary?.valid ?? 0} Employee${(summary?.valid ?? 0) !== 1 ? 's' : ''}`}
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

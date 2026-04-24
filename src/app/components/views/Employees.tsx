@@ -328,6 +328,7 @@ export function Employees() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [rawEmployees, setRawEmployees] = useState<employeesApi.Employee[]>([]);
   const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
   const [departments, setDepartments] = useState<departmentsApi.Department[]>([]);
   const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
@@ -349,7 +350,8 @@ export function Employees() {
       return;
     }
     try {
-      const res = await employeesApi.list({ size: 200 });
+      const res = await employeesApi.list({ size: 500 });
+      setRawEmployees(res.content);
       setEmployees(res.content.map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
@@ -615,6 +617,9 @@ export function Employees() {
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
         onImported={handleImported}
+        departments={departments}
+        existingEmpNos={USE_MOCKS ? employees.map(e => e.id) : rawEmployees.map(e => e.empNo)}
+        existingEmails={USE_MOCKS ? employees.map(e => e.email) : rawEmployees.map(e => e.email)}
       />
 
       <Card>
