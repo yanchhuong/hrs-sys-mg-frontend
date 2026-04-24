@@ -82,21 +82,20 @@ function narrowExceptionType(t: string): AttendanceException['type'] {
 // Adapts a backend LeaveRequest to the front-end AttendanceException shape
 // rendered by this view. employeeName is derived from the loaded employees
 // list so the EmployeeCell can resolve department / manager / avatar.
-function adaptApiLeave(
-  r: leaveApi.LeaveRequest,
-  employees: Employee[],
-): AttendanceException {
-  const emp = employees.find(e => (e.apiId ?? e.id) === r.employeeId);
+function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
+  // Keep the backend UUID on employeeId. Render-side lookups now match on
+  // either `.id` (empNo) or `.apiId` (UUID), so we don't depend on the
+  // employees list having loaded before leaves.
   const status: AttendanceException['status'] =
     r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending';
   return {
     id: r.id,
-    employeeId: emp?.id ?? r.employeeId,
+    employeeId: r.employeeId,
     date: r.date,
     type: narrowExceptionType(r.type),
     reason: r.reason ?? '',
     status,
-    submittedBy: emp?.id ?? r.employeeId,
+    submittedBy: r.employeeId,
     submittedAt: r.submittedAt,
     approvedBy: r.approvedBy ?? undefined,
     approvedAt: r.approvedAt ?? undefined,
@@ -155,10 +154,7 @@ export function Exception() {
         to: dateFilter.end || undefined,
         size: 500,
       });
-      // Adapter closes over the latest employees list so employeeName lookups
-      // work correctly even on first load (useEffect order guarantees
-      // employees are loaded first).
-      setLeaves(res.data.map(r => adaptApiLeave(r, employees)));
+      setLeaves(res.data.map(adaptApiLeave));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load leave requests');
     } finally {
@@ -319,7 +315,7 @@ export function Exception() {
   const kw = search.trim().toLowerCase();
   if (kw) {
     filteredExceptions = filteredExceptions.filter(exc => {
-      const emp = employees.find(e => e.id === exc.employeeId);
+      const emp = employees.find(e => e.id === exc.employeeId || (e as any).apiId === exc.employeeId);
       const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''} ${exc.reason ?? ''}`.toLowerCase();
       return hay.includes(kw);
     });
@@ -545,9 +541,13 @@ export function Exception() {
                 </TableRow>
               )}
               {exceptionsPagination.paginatedItems.map((exception) => {
-                const employee = employees.find((e) => e.id === exception.employeeId);
+                const employee = employees.find(
+                  (e) => e.id === exception.employeeId || (e as any).apiId === exception.employeeId,
+                );
                 const leader = employee?.managerId
-                  ? employees.find((e) => e.id === employee.managerId)
+                  ? employees.find(
+                      (e) => e.id === employee.managerId || (e as any).apiId === employee.managerId,
+                    )
                   : null;
                 const isPending = exception.status === 'pending';
                 const canActOnThis = isPending && canApproveLeaveOf(exception.employeeId);

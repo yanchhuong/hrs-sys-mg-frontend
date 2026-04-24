@@ -7,6 +7,7 @@ import { Attendance as AttendanceType, AttendanceStatus, Employee } from '../../
 import * as attendanceApi from '../../api/attendance';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
+import * as leaveApi from '../../api/leave';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -150,6 +151,11 @@ export function Attendance() {
   const [attendance, setAttendance] = useState<AttendanceType[]>(USE_MOCKS ? mockAttendance : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  // Leaves for the selected range — merged into dailyRows so a pending or
+  // approved leave shows up on the Attendance page as status=leave with the
+  // reason in the Remark column, even if the backend sync didn't run when
+  // the leave was originally filed.
+  const [leaves, setLeaves] = useState<leaveApi.LeaveRequest[]>([]);
   const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
   const deptName = (id: string | undefined): string => {
     if (!id) return '-';
@@ -196,19 +202,37 @@ export function Attendance() {
     }
   };
 
+  const loadLeaves = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const res = await leaveApi.list({
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+        size: 500,
+      });
+      // Everything except rejected — pending leaves display the same as
+      // approved (per spec), and only rejection makes them disappear.
+      setLeaves(res.data.filter(r => r.status !== 'rejected'));
+    } catch (err) {
+      console.warn('Could not load leaves', err);
+    }
+  };
+
   // Initial load on mount.
   useEffect(() => {
     void loadEmployees();
     void loadDepartments();
     void loadAttendance();
+    void loadLeaves();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reload attendance when the date range changes (live mode only — mock data
-  // is already loaded and filtered client-side).
+  // Reload attendance + leaves when the date range changes (live mode only —
+  // mock data is already loaded and filtered client-side).
   useEffect(() => {
     if (USE_MOCKS) return;
     void loadAttendance();
+    void loadLeaves();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFrom, dateTo]);
 
@@ -252,19 +276,28 @@ export function Attendance() {
     const byKey = new Map<string, AttendanceType>();
     todayRecords.forEach(r => byKey.set(`${r.date}|${r.employeeId}`, r));
 
+    // Leave lookup: `date|employeeId (UUID)` → LeaveRequest. Non-rejected
+    // leaves only. Applied on top of the attendance row so a pending or
+    // approved leave shows up here even if the backend sync didn't run
+    // when the leave was originally filed.
+    const leaveByKey = new Map<string, leaveApi.LeaveRequest>();
+    leaves.forEach(l => leaveByKey.set(`${l.date}|${l.employeeId}`, l));
+
     const rows: AttendanceType[] = [];
     for (const emp of scopedEmployees) {
+      const apiId = (emp as any).apiId as string | undefined;
       for (const day of days) {
-        // Try matching on id and apiId (UUID) — attendance rows from the
-        // backend carry the employee UUID, not the empNo.
-        const apiId = (emp as any).apiId as string | undefined;
         const rec = byKey.get(`${day}|${emp.id}`)
           ?? (apiId ? byKey.get(`${day}|${apiId}`) : undefined)
           ?? null;
+        const leave = (apiId ? leaveByKey.get(`${day}|${apiId}`) : undefined)
+          ?? leaveByKey.get(`${day}|${emp.id}`);
+
+        let row: AttendanceType;
         if (rec) {
-          rows.push(rec);
+          row = rec;
         } else {
-          rows.push({
+          row = {
             id: `synthetic:${emp.id}:${day}`,
             employeeId: emp.id,
             date: day,
@@ -278,12 +311,25 @@ export function Attendance() {
             workHours: undefined,
             status: 'absent',
             notes: '',
-          } satisfies AttendanceType);
+          } satisfies AttendanceType;
         }
+
+        // Leave takes precedence over the attendance row's own status —
+        // the employee is definitively on leave that day. Remark shows
+        // the reason, with "(pending approval)" when the leave isn't
+        // approved yet.
+        if (leave) {
+          const remark = `Leave: ${leave.type}`
+            + (leave.reason ? ` — ${leave.reason}` : '')
+            + (leave.status === 'pending' ? ' (pending approval)' : '');
+          row = { ...row, status: 'leave' as AttendanceStatus, notes: remark };
+        }
+
+        rows.push(row);
       }
     }
     return rows;
-  }, [employees, todayRecords, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
+  }, [employees, todayRecords, leaves, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
   // Summary counts derived from the roster-driven rows so that employees
   // without any punch for the day are still counted (as absent).
@@ -470,7 +516,9 @@ export function Attendance() {
       }
       toast.success(`Attendance updated for ${emp?.name ?? 'employee'}`);
       setEditDialogOpen(false);
-      await loadAttendance();
+      // Status=leave creates a leave record on the backend, so re-read
+      // leaves too to keep the overlay in sync.
+      await Promise.all([loadAttendance(), loadLeaves()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save attendance');
     }
