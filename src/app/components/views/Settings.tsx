@@ -72,7 +72,7 @@ export function Settings() {
           {isAdmin && (
             <TabsTrigger value="security">
               <Fingerprint className="mr-2 h-4 w-4" />
-              Security
+              Device Management
             </TabsTrigger>
           )}
           <TabsTrigger value="policy">

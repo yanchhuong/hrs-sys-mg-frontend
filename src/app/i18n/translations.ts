@@ -159,7 +159,7 @@ export const dict: Dict = {
 
   // --- Settings tabs + Company Information ---------------------------------
   'settings.tab.company':        { en: 'Company',                     km: 'ក្រុមហ៊ុន',              zh: '公司' },
-  'settings.tab.security':       { en: 'Security',                    km: 'សុវត្ថិភាព',             zh: '安全' },
+  'settings.tab.security':       { en: 'Device Management',           km: 'ការគ្រប់គ្រងឧបករណ៍',   zh: '设备管理' },
   'settings.tab.policy':         { en: 'Policy',                      km: 'គោលការណ៍',             zh: '策略' },
   'settings.company.title':      { en: 'Company Information',         km: 'ព័ត៌មានក្រុមហ៊ុន',       zh: '公司信息' },
   'settings.company.description':{ en: 'Public business details shown on payslips, tax reports, and invoices.', km: 'ព័ត៌មានអាជីវកម្មសាធារណៈលើសន្លឹកបើកប្រាក់ របាយការណ៍ពន្ធ និងវិក្កយបត្រ។', zh: '显示在工资单、税务报表和发票上的公开公司信息。' },

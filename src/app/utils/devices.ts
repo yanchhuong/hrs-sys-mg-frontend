@@ -2,7 +2,7 @@
  * Fingerprint / attendance-terminal device registry.
  * Persisted in localStorage under `hrms:devices` so the list survives reloads
  * without a backend dependency. Status is updated in place by the "Test"
- * action in the Security tab.
+ * action in the Device Management tab.
  */
 
 const STORAGE_KEY = 'hrms:devices';
