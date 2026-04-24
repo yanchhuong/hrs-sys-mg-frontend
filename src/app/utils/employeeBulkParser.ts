@@ -190,7 +190,19 @@ export function parseEmployeesExcel(
 
           // Mandatory fields. Department is optional — left blank, the row
           // imports without a department and can be assigned later.
-          if (!parsed.id) rowErrors.push('Employee ID is missing');
+          // Employee ID is validated up-front (format + uniqueness) at parse
+          // time — not deferred to the Import button — so the user sees
+          // problems as soon as the file is read.
+          if (!parsed.id) {
+            rowErrors.push('Employee ID is missing');
+          } else {
+            if (parsed.id.length > 32) {
+              rowErrors.push(`Employee ID "${parsed.id}" exceeds 32 characters`);
+            }
+            if (!/^[A-Za-z0-9._\- ]+$/.test(parsed.id)) {
+              rowErrors.push(`Employee ID "${parsed.id}" contains invalid characters`);
+            }
+          }
           if (!parsed.name) rowErrors.push('Name is missing');
           if (!parsed.email) rowErrors.push('Email is missing');
           else if (!/^\S+@\S+\.\S+$/.test(parsed.email)) rowErrors.push('Email is not valid');

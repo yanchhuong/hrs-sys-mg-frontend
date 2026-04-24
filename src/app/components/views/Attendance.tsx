@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { format } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
@@ -161,12 +162,12 @@ export function Attendance() {
       return;
     }
     try {
-      const res = await attendanceApi.list({
-        from: dateFrom || undefined,
-        to: dateTo || undefined,
-        size: 500,
-      });
-      setAttendance(res.data.map(adaptApiAttendance));
+      // Backend serves attendance one day at a time; listRange fans the range
+      // out into per-day calls and stitches the results together.
+      const rows = dateFrom && dateTo
+        ? await attendanceApi.listRange({ from: dateFrom, to: dateTo, size: 500 })
+        : (await attendanceApi.list({ date: dateFrom || format(new Date(), 'yyyy-MM-dd'), size: 500 })).data;
+      setAttendance(rows.map(adaptApiAttendance));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
     }

@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
 import { mockOTRequests, mockEmployees } from '../../data/mockData';
+import { OTRequest } from '../../types/hrms';
+import { Employee } from '../../types/hrms';
+import * as overtimeApi from '../../api/overtime';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -36,6 +42,57 @@ import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 
+// Adapts a backend OtRequest to the front-end OTRequest shape used by the table.
+// `isWeekend`/`isHoliday` are not currently provided by the backend DTO — we
+// derive `isWeekend` locally from the date and default `isHoliday` to false so
+// the rate badge still renders.
+function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
+  const d = o.date ? new Date(o.date) : null;
+  const dow = d && !Number.isNaN(d.getTime()) ? d.getDay() : -1;
+  return {
+    id: o.id,
+    employeeId: o.employeeId,
+    date: o.date,
+    startHour: o.startHour,
+    endHour: o.endHour,
+    hours: o.hours,
+    reason: o.reason ?? '',
+    status: o.status,
+    requestedAt: o.submittedAt,
+    approvedBy: o.approvedBy ?? undefined,
+    approvedAt: o.approvedAt ?? undefined,
+    isWeekend: dow === 0 || dow === 6,
+    isHoliday: false,
+  };
+}
+
+// Adapts a backend Employee to the front-end Employee shape. Mirrors the
+// helper in Attendance.tsx — `department` carries the departmentId UUID in
+// live mode; the component resolves it via the loaded departments list.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
 export function Overtime() {
   const { t } = useI18n();
   const {
@@ -61,6 +118,72 @@ export function Overtime() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [search, setSearch] = useState('');
 
+  // Live data — falls back to the mock arrays when VITE_USE_MOCKS is on.
+  const [allOtRequests, setAllOtRequests] = useState<OTRequest[]>(USE_MOCKS ? mockOTRequests : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (id: string | undefined): string => {
+    if (!id) return '-';
+    return deptNameById.get(id) ?? id;
+  };
+
+  const loadOtRequests = async () => {
+    if (USE_MOCKS) {
+      setAllOtRequests([...mockOTRequests]);
+      return;
+    }
+    try {
+      const res = await overtimeApi.list({
+        from: dateFilter.start ?? undefined,
+        to: dateFilter.end ?? undefined,
+        size: 500,
+      });
+      setAllOtRequests(res.data.map(adaptApiOt));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load OT requests');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 200 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try {
+      setDeptList(await departmentsApi.list());
+    } catch (err) {
+      // Non-fatal — department cells fall back to the raw UUID.
+      console.warn('Could not load departments', err);
+    }
+  };
+
+  // Initial load on mount.
+  useEffect(() => {
+    void loadEmployees();
+    void loadDepartments();
+    void loadOtRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reload OT requests when the date range changes (live mode only — mock data
+  // is already loaded and filtered client-side).
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    void loadOtRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter.start, dateFilter.end]);
+
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
   };
@@ -68,8 +191,8 @@ export function Overtime() {
   // Admin sees the whole tenant. Manager / employee are scoped to self + direct
   // reports, then narrowed by the ScopePicker (`all` / `mine` / `team`).
   let otRequests = isTenantWide
-    ? mockOTRequests
-    : mockOTRequests.filter(req => matchesScope(req.employeeId, scopeMode));
+    ? allOtRequests
+    : allOtRequests.filter(req => matchesScope(req.employeeId, scopeMode));
 
   // Apply date filter
   if (dateFilter.start || dateFilter.end) {
@@ -93,8 +216,8 @@ export function Overtime() {
   const kw = search.trim().toLowerCase();
   if (kw) {
     otRequests = otRequests.filter(req => {
-      const emp = mockEmployees.find(e => e.id === req.employeeId);
-      const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''} ${req.reason ?? ''}`.toLowerCase();
+      const emp = employees.find(e => e.id === req.employeeId);
+      const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)} ${req.reason ?? ''}`.toLowerCase();
       return hay.includes(kw);
     });
   }
@@ -122,7 +245,7 @@ export function Overtime() {
     setHours((mins / 60).toFixed(2).replace(/\.00$/, ''));
   }, [startHour, endHour]);
 
-  const handleSubmitRequest = () => {
+  const handleSubmitRequest = async () => {
     if (!startHour || !endHour) {
       toast.error('Please provide start and end hours');
       return;
@@ -135,20 +258,61 @@ export function Overtime() {
       toast.error('Please provide a reason');
       return;
     }
-    toast.success('OT request submitted successfully');
-    setDialogOpen(false);
-    setStartHour('');
-    setEndHour('');
-    setHours('');
-    setReason('');
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    if (USE_MOCKS) {
+      toast.success('OT request submitted successfully');
+      setDialogOpen(false);
+      setStartHour('');
+      setEndHour('');
+      setHours('');
+      setReason('');
+      return;
+    }
+    try {
+      await overtimeApi.create({
+        date: dateStr,
+        startHour,
+        endHour,
+        reason: reason.trim(),
+      });
+      toast.success('OT request submitted successfully');
+      setDialogOpen(false);
+      setStartHour('');
+      setEndHour('');
+      setHours('');
+      setReason('');
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit OT request');
+    }
   };
 
-  const handleApprove = (id: string) => {
-    toast.success('OT request approved');
+  const handleApprove = async (id: string) => {
+    if (USE_MOCKS) {
+      toast.success('OT request approved');
+      return;
+    }
+    try {
+      await overtimeApi.approve(id);
+      toast.success('OT request approved');
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve OT request');
+    }
   };
 
-  const handleReject = (id: string) => {
-    toast.error('OT request rejected');
+  const handleReject = async (id: string) => {
+    if (USE_MOCKS) {
+      toast.error('OT request rejected');
+      return;
+    }
+    try {
+      await overtimeApi.reject(id);
+      toast.success('OT request rejected');
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reject OT request');
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -351,12 +515,12 @@ export function Overtime() {
                 </TableRow>
               )}
               {overtimePagination.paginatedItems.map((request) => {
-                const employee = mockEmployees.find(e => e.id === request.employeeId);
+                const employee = employees.find(e => e.id === request.employeeId);
                 const leader = employee?.managerId
-                  ? mockEmployees.find(e => e.id === employee.managerId)
+                  ? employees.find(e => e.id === employee.managerId)
                   : null;
                 const approver = request.approvedBy
-                  ? mockEmployees.find(e => e.id === request.approvedBy)
+                  ? employees.find(e => e.id === request.approvedBy)
                   : null;
                 const isPending = request.status === 'pending';
                 const canActOnThis = isPending && canApproveOTOf(request.employeeId);
@@ -367,7 +531,7 @@ export function Overtime() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {employee?.department
-                        ? <Badge variant="outline" className="font-normal">{employee.department}</Badge>
+                        ? <Badge variant="outline" className="font-normal">{deptName(employee.department)}</Badge>
                         : <span className="text-gray-400">—</span>}
                     </TableCell>
                     <TableCell>

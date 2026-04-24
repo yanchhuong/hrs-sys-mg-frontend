@@ -28,16 +28,91 @@ import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { mockExceptions } from '../../data/timeworkData';
 import { useI18n } from '../../i18n/I18nContext';
-import { mockEmployees as employees } from '../../data/mockData';
+import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { AlertCircle, Check, X, Plus, Search } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { AttendanceException, Employee } from '../../types/hrms';
+import * as leaveApi from '../../api/leave';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
+
+// Adapts a backend Employee to the front-end Employee shape used by this
+// view. Mirrors the pattern from Attendance.tsx / Employees.tsx — the
+// user-facing `id` holds the human-readable empNo and the backend UUID is
+// kept on `apiId` for mutating calls.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Narrows a free-form backend leave `type` string to the front-end union used
+// by getTypeLabel. Unknown values fall through to `manual_correction` so the
+// row still renders cleanly.
+function narrowExceptionType(t: string): AttendanceException['type'] {
+  const allowed: AttendanceException['type'][] = [
+    'missed_punch', 'late_arrival', 'early_leave', 'manual_correction',
+  ];
+  return (allowed as string[]).includes(t) ? (t as AttendanceException['type']) : 'manual_correction';
+}
+
+// Adapts a backend LeaveRequest to the front-end AttendanceException shape
+// rendered by this view. employeeName is derived from the loaded employees
+// list so the EmployeeCell can resolve department / manager / avatar.
+function adaptApiLeave(
+  r: leaveApi.LeaveRequest,
+  employees: Employee[],
+): AttendanceException {
+  const emp = employees.find(e => (e.apiId ?? e.id) === r.employeeId);
+  const status: AttendanceException['status'] =
+    r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending';
+  return {
+    id: r.id,
+    employeeId: emp?.id ?? r.employeeId,
+    date: r.date,
+    type: narrowExceptionType(r.type),
+    reason: r.reason ?? '',
+    status,
+    submittedBy: emp?.id ?? r.employeeId,
+    submittedAt: r.submittedAt,
+    approvedBy: r.approvedBy ?? undefined,
+    approvedAt: r.approvedAt ?? undefined,
+    correctedCheckIn: r.correctedCheckIn ?? undefined,
+    correctedCheckOut: r.correctedCheckOut ?? undefined,
+  };
+}
 
 export function Exception() {
   const { t } = useI18n();
-  const [exceptions] = useState(mockExceptions);
+  const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  // Retained for potential future department display; loaded alongside employees
+  // so the cell resolvers match the patterns used in Attendance.tsx.
+  const [, setDeptList] = useState<departmentsApi.Department[]>([]);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -69,24 +144,130 @@ export function Exception() {
     setDateFilter({ start: startDate, end: endDate });
   };
 
-  const handleApprove = (id: string) => {
-    toast.success('Exception approved');
+  const loadLeaves = async () => {
+    if (USE_MOCKS) {
+      setLeaves([...mockExceptions]);
+      return;
+    }
+    try {
+      const res = await leaveApi.list({
+        from: dateFilter.start || undefined,
+        to: dateFilter.end || undefined,
+        size: 500,
+      });
+      // Adapter closes over the latest employees list so employeeName lookups
+      // work correctly even on first load (useEffect order guarantees
+      // employees are loaded first).
+      setLeaves(res.data.map(r => adaptApiLeave(r, employees)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load leave requests');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleReject = (id: string) => {
-    toast.error('Exception rejected');
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 200 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
   };
 
-  const handleSubmitNew = () => {
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try {
+      setDeptList(await departmentsApi.list());
+    } catch (err) {
+      // Non-fatal — currently unused in rendering but kept for parity with
+      // Attendance.tsx in case department cells are added later.
+      console.warn('Could not load departments', err);
+    }
+  };
+
+  // Initial load on mount.
+  useEffect(() => {
+    void loadEmployees();
+    void loadDepartments();
+    void loadLeaves();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refetch leaves when the date-range filter changes (live mode only —
+  // mock data is filtered client-side downstream).
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    void loadLeaves();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter.start, dateFilter.end]);
+
+  const handleApprove = async (id: string) => {
+    if (USE_MOCKS) {
+      setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
+      toast.success('Leave approved');
+      return;
+    }
+    try {
+      await leaveApi.approve(id);
+      toast.success('Leave approved');
+      await loadLeaves();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve leave');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (USE_MOCKS) {
+      setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l));
+      toast.error('Leave rejected');
+      return;
+    }
+    try {
+      await leaveApi.reject(id);
+      toast.error('Leave rejected');
+      await loadLeaves();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reject leave');
+    }
+  };
+
+  const handleSubmitNew = async () => {
     if (!newReason.trim()) {
       toast.error('Please provide a reason');
       return;
     }
-    toast.success('Exception submitted for approval');
-    setDialogOpen(false);
-    setNewReason('');
-    setNewCorrectedIn('');
-    setNewCorrectedOut('');
+    if (USE_MOCKS) {
+      toast.success('Exception submitted for approval');
+      setDialogOpen(false);
+      setNewReason('');
+      setNewCorrectedIn('');
+      setNewCorrectedOut('');
+      return;
+    }
+    try {
+      await leaveApi.create({
+        date: newDate,
+        days: 1,
+        halfDay: false,
+        type: newType,
+        reason: newReason,
+        correctedCheckIn: newCorrectedIn || undefined,
+        correctedCheckOut: newCorrectedOut || undefined,
+      });
+      toast.success('Exception submitted for approval');
+      setDialogOpen(false);
+      setNewReason('');
+      setNewCorrectedIn('');
+      setNewCorrectedOut('');
+      await loadLeaves();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit leave request');
+    }
   };
 
   const getTypeLabel = (type: string) => {
@@ -108,7 +289,7 @@ export function Exception() {
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
 
-  let filteredExceptions = exceptions;
+  let filteredExceptions = leaves;
 
   // Scope: admin sees everything; manager/employee see self + direct reports,
   // optionally narrowed to `mine` or `team` via the ScopePicker.

@@ -15,9 +15,9 @@ export interface AttendanceEntry {
 }
 
 export interface ListParams {
+  /** Required by the backend — single day, YYYY-MM-DD. */
+  date: string;
   employeeId?: string;
-  from?: string;
-  to?: string;
   scope?: 'all' | 'mine' | 'team';
   q?: string;
   page?: number;
@@ -32,8 +32,32 @@ export interface PagedResponse<T> {
   totalElements: number;
 }
 
-export async function list(params: ListParams = {}): Promise<PagedResponse<AttendanceEntry>> {
+export async function list(params: ListParams): Promise<PagedResponse<AttendanceEntry>> {
   return apiJson('/api/v1/attendance', { query: { ...params } });
+}
+
+/**
+ * Hits the backend's single-day endpoint once per day in [from, to], then
+ * concatenates. Useful for UIs that expose a date range — back-end itself
+ * only serves per-day lists.
+ */
+export async function listRange(args: { from: string; to: string; size?: number }): Promise<AttendanceEntry[]> {
+  const start = new Date(args.from + 'T00:00:00');
+  const end = new Date(args.to + 'T00:00:00');
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+  const out: AttendanceEntry[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const iso = cursor.toISOString().slice(0, 10);
+    try {
+      const res = await list({ date: iso, size: args.size ?? 500 });
+      out.push(...res.data);
+    } catch {
+      // Partial failure of one day shouldn't take out the whole range.
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
 }
 
 export async function get(id: string): Promise<AttendanceEntry> {
