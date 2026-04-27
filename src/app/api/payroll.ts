@@ -4,24 +4,24 @@ export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';
 
 export interface PayrollBatch {
   id: string;
-  date: string;
+  batchDate: string;
   monthYear: string;
   type: string;
   subject: string;
   totalEmployees: number;
   currency: string;
-  netSalary: number;
+  netSalaryTotal: number;
   totalEarnings: number;
-  deductions: number;
+  totalDeductions: number;
   remarks?: string;
-  uploadedBy: string;
-  uploadedAt: string;
   status: PayrollBatchStatus;
-  approvedBy?: string | null;
+  uploadedById: string;
+  uploadedAt: string;
+  approvedById?: string | null;
   approvedAt?: string | null;
-  completedBy?: string | null;
+  completedById?: string | null;
   completedAt?: string | null;
-  rejectedBy?: string | null;
+  rejectedById?: string | null;
   rejectedAt?: string | null;
   rejectionReason?: string | null;
 }
@@ -30,23 +30,38 @@ export interface PayrollItem {
   id: string;
   batchId: string;
   employeeId: string;
-  employeeName: string;
+  employeeName?: string;
   month: string;
-  basicSalary: number;
+  baseSalary: number;
+  otHours?: number;
+  otPay?: number;
   totalEarnings: number;
   totalDeductions: number;
   netSalary: number;
-  extras?: Record<string, number>;
+  earnings?: Record<string, number>;
+  deductionsBreakdown?: Record<string, number>;
+  payrollAccount?: string;
+}
+
+export interface CreateBatchItem {
+  employeeId: string;
+  baseSalary?: number;
+  otHours?: number;
+  otPay?: number;
+  earnings?: Record<string, number>;
+  deductionsBreakdown?: Record<string, number>;
+  payrollAccount?: string;
 }
 
 export interface CreateBatchRequest {
-  date: string;
+  batchDate: string;
+  /** YYYY-MM */
   monthYear: string;
   type: string;
   subject: string;
-  currency: string;
+  currency?: string;
   remarks?: string;
-  items: Omit<PayrollItem, 'id' | 'batchId'>[];
+  items: CreateBatchItem[];
 }
 
 export interface ListBatchesParams {

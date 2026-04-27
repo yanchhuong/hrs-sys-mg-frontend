@@ -1,6 +1,6 @@
 import { apiJson, apiVoid } from './client';
 
-export type DeductionStatus = 'active' | 'stopped' | 'completed';
+export type DeductionStatus = 'active' | 'completed' | 'cancelled';
 
 export interface SalaryDeduction {
   id: string;
@@ -14,7 +14,6 @@ export interface SalaryDeduction {
   startDate: string;
   endDate?: string | null;
   status: DeductionStatus;
-  remarks?: string;
   createdAt: string;
 }
 
@@ -27,7 +26,7 @@ export interface CreateDeductionRequest {
   isRecurring?: boolean;
   startDate: string;
   endDate?: string | null;
-  remarks?: string;
+  status?: DeductionStatus;
 }
 
 export interface ListParams {
@@ -60,10 +59,18 @@ export async function update(id: string, req: CreateDeductionRequest): Promise<S
   return apiJson(`/api/v1/salary-deductions/${id}`, { method: 'PUT', json: req });
 }
 
-export async function setStatus(id: string, status: DeductionStatus): Promise<SalaryDeduction> {
-  return apiJson(`/api/v1/salary-deductions/${id}/status`, {
-    method: 'PATCH',
-    json: { status },
+/**
+ * Backend exposes status changes via the bulk endpoint. Pass a single id to
+ * change one row, or a list to change many in a single round-trip.
+ */
+export async function setStatus(
+  ids: string | string[],
+  status: DeductionStatus,
+): Promise<{ updated: number }> {
+  const idList = Array.isArray(ids) ? ids : [ids];
+  return apiJson('/api/v1/salary-deductions/bulk-status', {
+    method: 'POST',
+    json: { ids: idList, status },
   });
 }
 

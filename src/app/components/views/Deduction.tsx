@@ -29,6 +29,10 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { mockDeductions } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
 import { SalaryDeduction } from '../../types/timework';
+import { Employee } from '../../types/hrms';
+import * as deductionsApi from '../../api/deductions';
+import * as employeesApi from '../../api/employees';
+import { USE_MOCKS } from '../../api/client';
 import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -36,6 +40,60 @@ import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
+
+// Adapts a backend Employee to the front-end Employee shape (mirrors Employees.tsx /
+// Exception.tsx). The user-facing `id` carries the human-readable empNo and the
+// backend UUID stays on `apiId` for mutating calls.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Narrows backend status (which is already `active | completed | cancelled`) into
+// the front-end union. Older mock rows used `stopped` — map those to `cancelled`.
+function narrowDeductionStatus(s: string): SalaryDeduction['status'] {
+  if (s === 'active' || s === 'completed' || s === 'cancelled') return s;
+  if (s === 'stopped') return 'cancelled';
+  return 'active';
+}
+
+// Adapts a backend SalaryDeduction into the front-end timework shape rendered
+// throughout this view. The backend UUID stays on `employeeId`; render-side
+// lookups match either `.id` (empNo) or `.apiId` (UUID).
+function adaptApiDeduction(d: deductionsApi.SalaryDeduction): SalaryDeduction {
+  return {
+    id: d.id,
+    employeeId: d.employeeId,
+    name: d.name,
+    type: d.type,
+    amount: d.amount,
+    isPercentage: d.isPercentage ?? false,
+    isRecurring: d.isRecurring ?? false,
+    startDate: d.startDate,
+    endDate: d.endDate ?? undefined,
+    status: narrowDeductionStatus(d.status),
+  };
+}
 
 // Rotating palette so newly-added deduction categories still get a distinct badge.
 const CATEGORY_COLORS = [
@@ -51,7 +109,9 @@ const CATEGORY_COLORS = [
 
 export function Deduction() {
   const { t } = useI18n();
-  const [deductions, setDeductions] = useState(mockDeductions);
+  const [deductions, setDeductions] = useState<SalaryDeduction[]>(USE_MOCKS ? mockDeductions : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SalaryDeduction | null>(null);
   const [editForm, setEditForm] = useState<SalaryDeduction | null>(null);
@@ -63,6 +123,17 @@ export function Deduction() {
   const [statusFilter, setStatusFilter] = useState<'all' | SalaryDeduction['status']>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<SalaryDeduction['status']>('active');
+
+  // Add-deduction form state — moved out of the JSX so it can be submitted via
+  // the live API. Defaults to the first employee/category when those load.
+  const [newEmployeeId, setNewEmployeeId] = useState<string>('');
+  const [newType, setNewType] = useState<string>('');
+  const [newName, setNewName] = useState<string>('');
+  const [newAmount, setNewAmount] = useState<string>('');
+  const [newIsPercentage, setNewIsPercentage] = useState<boolean>(false);
+  const [newStartDate, setNewStartDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [newEndDate, setNewEndDate] = useState<string>('');
+  const [newIsRecurring, setNewIsRecurring] = useState<boolean>(false);
 
   const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
   const deductionCategories = useMemo(
@@ -80,6 +151,56 @@ export function Deduction() {
     return () => window.removeEventListener('focus', refresh);
   }, []);
 
+  const loadDeductions = async () => {
+    if (USE_MOCKS) {
+      setDeductions([...mockDeductions]);
+      return;
+    }
+    try {
+      const res = await deductionsApi.list({ size: 500 });
+      setDeductions(res.data.map(adaptApiDeduction));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load deductions');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 500 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  // Initial load.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadDeductions(), loadEmployees()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Default the dialog selectors once the data sources load.
+  useEffect(() => {
+    if (!newEmployeeId && employees.length > 0) {
+      setNewEmployeeId(employees[0].apiId ?? employees[0].id);
+    }
+  }, [employees, newEmployeeId]);
+  useEffect(() => {
+    if (!newType && deductionCategories.length > 0) {
+      setNewType(deductionCategories[0].code);
+    }
+  }, [deductionCategories, newType]);
+
   const categoryLabelMap = useMemo(() => {
     const m = new Map<string, string>();
     deductionCategories.forEach((c) => m.set(c.code, c.label));
@@ -96,9 +217,68 @@ export function Deduction() {
     setDateFilter({ start: startDate, end: endDate });
   };
 
-  const handleAddDeduction = () => {
-    toast.success('Deduction added successfully');
-    setDialogOpen(false);
+  const resetAddForm = () => {
+    setNewEmployeeId(employees[0]?.apiId ?? employees[0]?.id ?? '');
+    setNewType(deductionCategories[0]?.code ?? '');
+    setNewName('');
+    setNewAmount('');
+    setNewIsPercentage(false);
+    setNewStartDate(format(new Date(), 'yyyy-MM-dd'));
+    setNewEndDate('');
+    setNewIsRecurring(false);
+  };
+
+  const handleAddDeduction = async () => {
+    if (!newEmployeeId) { toast.error('Please pick an employee'); return; }
+    if (!newType) { toast.error('Please pick a deduction type'); return; }
+    if (!newName.trim()) { toast.error('Name is required'); return; }
+    const amt = parseFloat(newAmount);
+    if (!Number.isFinite(amt) || amt < 0) { toast.error('Amount must be ≥ 0'); return; }
+    if (!newStartDate) { toast.error('Start date is required'); return; }
+
+    if (USE_MOCKS) {
+      const emp = employees.find(e => e.id === newEmployeeId || e.apiId === newEmployeeId);
+      const newRow: SalaryDeduction = {
+        id: `ded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        employeeId: emp?.id ?? newEmployeeId,
+        name: newName.trim(),
+        type: newType,
+        amount: amt,
+        isPercentage: newIsPercentage,
+        isRecurring: newIsRecurring,
+        startDate: newStartDate,
+        endDate: newEndDate || undefined,
+        status: 'active',
+      };
+      setDeductions(prev => [newRow, ...prev]);
+      toast.success('Deduction added successfully');
+      setDialogOpen(false);
+      resetAddForm();
+      return;
+    }
+
+    try {
+      // Resolve to the backend UUID — the dropdown stores apiId for live mode,
+      // but in case the row only has empNo, fall back to that lookup.
+      const emp = employees.find(e => (e.apiId ?? e.id) === newEmployeeId);
+      const employeeIdForApi = emp?.apiId ?? emp?.id ?? newEmployeeId;
+      await deductionsApi.create({
+        employeeId: employeeIdForApi,
+        name: newName.trim(),
+        type: newType,
+        amount: amt,
+        isPercentage: newIsPercentage,
+        isRecurring: newIsRecurring,
+        startDate: newStartDate,
+        endDate: newEndDate || null,
+      });
+      toast.success('Deduction added successfully');
+      setDialogOpen(false);
+      resetAddForm();
+      await loadDeductions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add deduction');
+    }
   };
 
   let filteredDeductions = deductions;
@@ -165,11 +345,24 @@ export function Deduction() {
     });
   };
 
-  const handleBulkUpdateStatus = () => {
+  const handleBulkUpdateStatus = async () => {
     if (selectedIds.size === 0) return;
-    setDeductions(prev => prev.map(d => (selectedIds.has(d.id) ? { ...d, status: bulkStatus } : d)));
-    toast.success(`Updated ${selectedIds.size} deduction(s) to ${bulkStatus}`);
-    setSelectedIds(new Set());
+    if (USE_MOCKS) {
+      setDeductions(prev => prev.map(d => (selectedIds.has(d.id) ? { ...d, status: bulkStatus } : d)));
+      toast.success(`Updated ${selectedIds.size} deduction(s) to ${bulkStatus}`);
+      setSelectedIds(new Set());
+      return;
+    }
+    try {
+      const ids = Array.from(selectedIds);
+      // Single round-trip via the bulk-status endpoint.
+      await deductionsApi.setStatus(ids, bulkStatus);
+      toast.success(`Updated ${ids.length} deduction(s) to ${bulkStatus}`);
+      setSelectedIds(new Set());
+      await loadDeductions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update deductions');
+    }
   };
 
   const clearFilters = () => {
@@ -234,17 +427,30 @@ export function Deduction() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Employee</Label>
-                <select className="w-full px-3 py-2 border rounded-md">
-                  {mockEmployees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.id})
-                    </option>
-                  ))}
+                <select
+                  className="w-full px-3 py-2 border rounded-md"
+                  value={newEmployeeId}
+                  onChange={(e) => setNewEmployeeId(e.target.value)}
+                >
+                  {employees.map((emp) => {
+                    // Value carries whatever identifier the backend will accept:
+                    // UUID (apiId) in live mode, empNo in mock mode.
+                    const val = emp.apiId ?? emp.id;
+                    return (
+                      <option key={val} value={val}>
+                        {emp.name} ({emp.id})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="space-y-2">
                 <Label>Deduction Type</Label>
-                <select className="w-full px-3 py-2 border rounded-md">
+                <select
+                  className="w-full px-3 py-2 border rounded-md"
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value)}
+                >
                   {deductionCategories.map((c) => (
                     <option key={c.id} value={c.code}>
                       {c.label}
@@ -254,16 +460,29 @@ export function Deduction() {
               </div>
               <div className="space-y-2">
                 <Label>Name</Label>
-                <Input placeholder="e.g., Health Insurance" />
+                <Input
+                  placeholder="e.g., Health Insurance"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Amount</Label>
-                  <Input type="number" placeholder="100" />
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Type</Label>
-                  <select className="w-full px-3 py-2 border rounded-md">
+                  <select
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={newIsPercentage ? 'percentage' : 'fixed'}
+                    onChange={(e) => setNewIsPercentage(e.target.value === 'percentage')}
+                  >
                     <option value="fixed">Fixed Amount ($)</option>
                     <option value="percentage">Percentage (%)</option>
                   </select>
@@ -272,15 +491,28 @@ export function Deduction() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Start Date</Label>
-                  <Input type="date" />
+                  <Input
+                    type="date"
+                    value={newStartDate}
+                    onChange={(e) => setNewStartDate(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>End Date (Optional)</Label>
-                  <Input type="date" />
+                  <Input
+                    type="date"
+                    value={newEndDate}
+                    onChange={(e) => setNewEndDate(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <input type="checkbox" id="recurring" />
+                <input
+                  type="checkbox"
+                  id="recurring"
+                  checked={newIsRecurring}
+                  onChange={(e) => setNewIsRecurring(e.target.checked)}
+                />
                 <Label htmlFor="recurring">Recurring deduction</Label>
               </div>
               <Button onClick={handleAddDeduction} className="w-full">
@@ -369,7 +601,9 @@ export function Deduction() {
             </TableHeader>
             <TableBody>
               {deductionsPagination.paginatedItems.map((deduction) => {
-                const employee = mockEmployees.find((e) => e.id === deduction.employeeId);
+                const employee = employees.find(
+                  (e) => e.id === deduction.employeeId || e.apiId === deduction.employeeId,
+                );
                 const isSelected = selectedIds.has(deduction.id);
                 return (
                   <TableRow key={deduction.id} data-state={isSelected ? 'selected' : undefined}>
@@ -415,9 +649,19 @@ export function Deduction() {
                           variant="outline"
                           size="sm"
                           disabled={deduction.status !== 'active'}
-                          onClick={() => {
-                            setDeductions(prev => prev.map(d => d.id === deduction.id ? { ...d, status: 'cancelled' } : d));
-                            toast.success(`Stopped "${deduction.name}"`);
+                          onClick={async () => {
+                            if (USE_MOCKS) {
+                              setDeductions(prev => prev.map(d => d.id === deduction.id ? { ...d, status: 'cancelled' } : d));
+                              toast.success(`Stopped "${deduction.name}"`);
+                              return;
+                            }
+                            try {
+                              await deductionsApi.setStatus(deduction.id, 'cancelled');
+                              toast.success(`Stopped "${deduction.name}"`);
+                              await loadDeductions();
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to stop deduction');
+                            }
                           }}
                         >
                           Stop
@@ -454,7 +698,9 @@ export function Deduction() {
             <DialogDescription>Update the recurring or one-off deduction for this employee.</DialogDescription>
           </DialogHeader>
           {editTarget && editForm && (() => {
-            const employee = mockEmployees.find(e => e.id === editTarget.employeeId);
+            const employee = employees.find(
+              (e) => e.id === editTarget.employeeId || e.apiId === editTarget.employeeId,
+            );
             return (
               <div className="space-y-4">
                 <div className="p-3 rounded-md border">
@@ -569,14 +815,50 @@ export function Deduction() {
               Cancel
             </Button>
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (!editForm) return;
                 if (!editForm.name.trim()) { toast.error('Name is required'); return; }
                 if (!Number.isFinite(editForm.amount) || editForm.amount < 0) { toast.error('Amount must be ≥ 0'); return; }
-                setDeductions(prev => prev.map(d => d.id === editForm.id ? editForm : d));
-                toast.success(`Updated "${editForm.name}"`);
-                setEditTarget(null);
-                setEditForm(null);
+
+                if (USE_MOCKS) {
+                  setDeductions(prev => prev.map(d => d.id === editForm.id ? editForm : d));
+                  toast.success(`Updated "${editForm.name}"`);
+                  setEditTarget(null);
+                  setEditForm(null);
+                  return;
+                }
+
+                try {
+                  // Map row's `employeeId` (already a UUID in live mode) back to
+                  // the backend create/update DTO. Fall back via the employees
+                  // list in case the row originated client-side with empNo.
+                  const emp = employees.find(
+                    (e) => e.id === editForm.employeeId || e.apiId === editForm.employeeId,
+                  );
+                  const employeeIdForApi = emp?.apiId ?? emp?.id ?? editForm.employeeId;
+                  await deductionsApi.update(editForm.id, {
+                    employeeId: employeeIdForApi,
+                    name: editForm.name.trim(),
+                    type: editForm.type,
+                    amount: editForm.amount,
+                    isPercentage: editForm.isPercentage,
+                    isRecurring: editForm.isRecurring,
+                    startDate: editForm.startDate,
+                    endDate: editForm.endDate || null,
+                    status: editForm.status,
+                  });
+                  // PUT on this endpoint may not honour status — patch it
+                  // explicitly if the user changed it.
+                  if (editTarget && editTarget.status !== editForm.status) {
+                    await deductionsApi.setStatus(editForm.id, editForm.status);
+                  }
+                  toast.success(`Updated "${editForm.name}"`);
+                  setEditTarget(null);
+                  setEditForm(null);
+                  await loadDeductions();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to update deduction');
+                }
               }}
             >
               <Save className="h-4 w-4 mr-2" />

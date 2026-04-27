@@ -6,8 +6,10 @@ export interface SalaryIncrease {
   employeeName?: string;
   type: string;
   amount: number;
+  isPercentage?: boolean;
   effectiveDate: string;
-  reason?: string;
+  reason: string;
+  approvedBy?: string | null;
   createdAt: string;
 }
 
@@ -15,8 +17,10 @@ export interface CreateIncreaseRequest {
   employeeId: string;
   type: string;
   amount: number;
+  isPercentage?: boolean;
   effectiveDate: string;
-  reason?: string;
+  /** Backend marks @NotBlank — must be a non-empty string. */
+  reason: string;
 }
 
 export interface ListParams {

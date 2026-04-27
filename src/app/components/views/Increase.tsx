@@ -29,12 +29,62 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { mockIncreases } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
 import { SalaryIncrease } from '../../types/timework';
+import { Employee } from '../../types/hrms';
+import * as increasesApi from '../../api/increases';
+import * as employeesApi from '../../api/employees';
+import { USE_MOCKS } from '../../api/client';
 import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
+
+// Adapts a backend Employee to the front-end Employee shape used by this view.
+// Mirrors the pattern from Employees.tsx / Exception.tsx — `id` holds the
+// human-readable empNo and the backend UUID is kept on `apiId`.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Adapts a backend SalaryIncrease to the front-end SalaryIncrease shape.
+// We keep the backend UUID untouched on `employeeId`; render-side lookups
+// match on either `.id` (empNo) or `.apiId` (UUID), so we don't depend on the
+// employees list having loaded before increases.
+function adaptApiIncrease(r: increasesApi.SalaryIncrease): SalaryIncrease {
+  return {
+    id: r.id,
+    employeeId: r.employeeId,
+    type: r.type,
+    amount: r.amount,
+    isPercentage: r.isPercentage ?? false,
+    effectiveDate: r.effectiveDate,
+    reason: r.reason ?? '',
+    approvedBy: r.approvedBy ?? '',
+    approvedAt: r.createdAt ?? '',
+  };
+}
 
 const CATEGORY_COLORS = [
   'bg-green-100 text-green-800 hover:bg-green-100',
@@ -49,7 +99,9 @@ const CATEGORY_COLORS = [
 
 export function Increase() {
   const { t } = useI18n();
-  const [increases] = useState(mockIncreases);
+  const [increases, setIncreases] = useState<SalaryIncrease[]>(USE_MOCKS ? mockIncreases : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
@@ -57,13 +109,129 @@ export function Increase() {
     end: null,
   });
 
+  // Create-dialog form state
+  const [newEmployeeId, setNewEmployeeId] = useState<string>('');
+  const [newType, setNewType] = useState<string>('');
+  const [newAmount, setNewAmount] = useState<string>('');
+  const [newIsPercentage, setNewIsPercentage] = useState<boolean>(false);
+  const [newEffectiveDate, setNewEffectiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [newReason, setNewReason] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
+
   const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
     setDateFilter({ start: startDate, end: endDate });
   };
 
-  const handleAddIncrease = () => {
-    toast.success('Salary increase added successfully');
-    setDialogOpen(false);
+  const loadIncreases = async () => {
+    if (USE_MOCKS) {
+      setIncreases([...mockIncreases]);
+      return;
+    }
+    try {
+      const res = await increasesApi.list({ size: 500 });
+      setIncreases(res.data.map(adaptApiIncrease));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load salary increases');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 500 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadIncreases(), loadEmployees()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const resetForm = () => {
+    setNewEmployeeId('');
+    setNewType('');
+    setNewAmount('');
+    setNewIsPercentage(false);
+    setNewEffectiveDate(format(new Date(), 'yyyy-MM-dd'));
+    setNewReason('');
+  };
+
+  const handleAddIncrease = async () => {
+    if (!newEmployeeId) {
+      toast.error('Please select an employee');
+      return;
+    }
+    if (!newType) {
+      toast.error('Please select a type');
+      return;
+    }
+    const amt = parseFloat(newAmount);
+    if (Number.isNaN(amt) || amt <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+    if (!newEffectiveDate) {
+      toast.error('Please select an effective date');
+      return;
+    }
+    if (!newReason.trim()) {
+      toast.error('Please provide a reason');
+      return;
+    }
+
+    if (USE_MOCKS) {
+      const newRec: SalaryIncrease = {
+        id: `inc_${Date.now()}`,
+        employeeId: newEmployeeId,
+        type: newType,
+        amount: amt,
+        isPercentage: newIsPercentage,
+        effectiveDate: newEffectiveDate,
+        reason: newReason.trim(),
+        approvedBy: 'system',
+        approvedAt: new Date().toISOString(),
+      };
+      mockIncreases.push(newRec);
+      setIncreases([...mockIncreases]);
+      toast.success('Salary increase added successfully');
+      resetForm();
+      setDialogOpen(false);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // The chosen value is the employee's apiId (UUID) when available,
+      // falling back to id (empNo) for safety.
+      await increasesApi.create({
+        employeeId: newEmployeeId,
+        type: newType,
+        amount: amt,
+        isPercentage: newIsPercentage,
+        effectiveDate: newEffectiveDate,
+        reason: newReason.trim(),
+      });
+      toast.success('Salary increase added successfully');
+      resetForm();
+      setDialogOpen(false);
+      await loadIncreases();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add salary increase');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   let filteredIncreases = increases;
@@ -148,17 +316,33 @@ export function Increase() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Employee</Label>
-                <select className="w-full px-3 py-2 border rounded-md">
-                  {mockEmployees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.id})
-                    </option>
-                  ))}
+                <select
+                  className="w-full px-3 py-2 border rounded-md"
+                  value={newEmployeeId}
+                  onChange={(e) => setNewEmployeeId(e.target.value)}
+                >
+                  <option value="">Select employee…</option>
+                  {employees.map((emp) => {
+                    // In live mode the backend keys salary-increases by employee
+                    // UUID; in mock mode there's only the human empNo. Send
+                    // whichever is available so both modes work.
+                    const val = (emp as { apiId?: string }).apiId ?? emp.id;
+                    return (
+                      <option key={val} value={val}>
+                        {emp.name} ({emp.id})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="space-y-2">
                 <Label>Type</Label>
-                <select className="w-full px-3 py-2 border rounded-md">
+                <select
+                  className="w-full px-3 py-2 border rounded-md"
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value)}
+                >
+                  <option value="">Select type…</option>
                   {earningCategories.map((c) => (
                     <option key={c.id} value={c.code}>
                       {c.label}
@@ -169,11 +353,20 @@ export function Increase() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Amount</Label>
-                  <Input type="number" placeholder="500" />
+                  <Input
+                    type="number"
+                    placeholder="500"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Type</Label>
-                  <select className="w-full px-3 py-2 border rounded-md">
+                  <Label>Unit</Label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={newIsPercentage ? 'percentage' : 'fixed'}
+                    onChange={(e) => setNewIsPercentage(e.target.value === 'percentage')}
+                  >
                     <option value="fixed">Fixed Amount ($)</option>
                     <option value="percentage">Percentage (%)</option>
                   </select>
@@ -181,14 +374,25 @@ export function Increase() {
               </div>
               <div className="space-y-2">
                 <Label>Effective Date</Label>
-                <Input type="date" />
+                <Input
+                  type="date"
+                  value={newEffectiveDate}
+                  onChange={(e) => setNewEffectiveDate(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Reason</Label>
-                <Textarea placeholder="Annual performance review, promotion to senior role, etc." rows={3} />
+                <Label>
+                  Reason <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  placeholder="Annual performance review, promotion to senior role, etc."
+                  rows={3}
+                  value={newReason}
+                  onChange={(e) => setNewReason(e.target.value)}
+                />
               </div>
-              <Button onClick={handleAddIncrease} className="w-full">
-                Add Increase
+              <Button onClick={handleAddIncrease} className="w-full" disabled={submitting}>
+                {submitting ? 'Adding…' : 'Add Increase'}
               </Button>
             </div>
           </DialogContent>
@@ -238,8 +442,12 @@ export function Increase() {
             </TableHeader>
             <TableBody>
               {increasePagination.paginatedItems.map((increase) => {
-                const employee = mockEmployees.find((e) => e.id === increase.employeeId);
-                const approver = mockEmployees.find((e) => e.id === increase.approvedBy);
+                const employee = employees.find(
+                  (e) => e.id === increase.employeeId || (e as { apiId?: string }).apiId === increase.employeeId,
+                );
+                const approver = employees.find(
+                  (e) => e.id === increase.approvedBy || (e as { apiId?: string }).apiId === increase.approvedBy,
+                );
                 return (
                   <TableRow key={increase.id}>
                     <TableCell>
@@ -296,8 +504,12 @@ export function Increase() {
             <DialogDescription>Read-only record. Create a correction entry if anything here is wrong.</DialogDescription>
           </DialogHeader>
           {detailsTarget && (() => {
-            const employee = mockEmployees.find(e => e.id === detailsTarget.employeeId);
-            const approver = mockEmployees.find(e => e.id === detailsTarget.approvedBy);
+            const employee = employees.find(
+              (e) => e.id === detailsTarget.employeeId || (e as { apiId?: string }).apiId === detailsTarget.employeeId,
+            );
+            const approver = employees.find(
+              (e) => e.id === detailsTarget.approvedBy || (e as { apiId?: string }).apiId === detailsTarget.approvedBy,
+            );
             return (
               <div className="space-y-4">
                 <div className="p-3 rounded-md border">

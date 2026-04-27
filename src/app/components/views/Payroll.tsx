@@ -3,6 +3,11 @@ import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { useAuth } from '../../context/AuthContext';
 import { mockPayroll, mockEmployees } from '../../data/mockData';
 import { mockPayrollBatches } from '../../data/settingsData';
+import * as payrollApi from '../../api/payroll';
+import * as employeesApi from '../../api/employees';
+import { USE_MOCKS } from '../../api/client';
+import type { Employee } from '../../types/hrms';
+import type { PayrollBatch } from '../../types/settings';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -44,6 +49,69 @@ import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel } from '../../utils/excelExport';
 import { useI18n } from '../../i18n/I18nContext';
 
+// ---------------------------------------------------------------------------
+// API → UI adapters
+// ---------------------------------------------------------------------------
+// Adapts a backend Employee to the front-end mock shape used throughout the UI.
+// User-facing `id` holds the human-readable empNo; backend UUID is on `apiId`
+// and is what the create/approve/reject endpoints expect.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Adapts a backend PayrollBatch (api/payroll.PayrollBatch) to the front-end
+// PayrollBatch shape (types/settings). Note the field rename: backend sends
+// `batchDate`, the UI uses `date`.
+function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
+  // Backend names → front-end names. Backend ships `*ById` UUIDs and
+  // `netSalaryTotal` / `totalDeductions`; the UI shape uses `*By` and
+  // `netSalary` / `deductions`.
+  return {
+    id: b.id,
+    date: b.batchDate,
+    monthYear: b.monthYear,
+    type: b.type,
+    subject: b.subject,
+    totalEmployees: b.totalEmployees,
+    currency: b.currency,
+    netSalary: b.netSalaryTotal,
+    totalEarnings: b.totalEarnings,
+    deductions: b.totalDeductions,
+    remarks: b.remarks,
+    uploadedBy: b.uploadedById,
+    uploadedAt: b.uploadedAt,
+    status: b.status,
+    approvedBy: b.approvedById ?? undefined,
+    approvedAt: b.approvedAt ?? undefined,
+    completedBy: b.completedById ?? undefined,
+    completedAt: b.completedAt ?? undefined,
+    rejectedBy: b.rejectedById ?? undefined,
+    rejectedAt: b.rejectedAt ?? undefined,
+    rejectionReason: b.rejectionReason ?? undefined,
+  };
+}
+
 export function Payroll() {
   const { t } = useI18n();
   const { currentUser, currentEmployee } = useAuth();
@@ -56,19 +124,22 @@ export function Payroll() {
   const [periodEnd, setPeriodEnd] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
-  const [selectedBatch, setSelectedBatch] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
   const [previewData, setPreviewData] = useState<ParsedPayrollData | null>(null);
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
 
   // Batch workflow state — live list (so approvals mutate in place).
-  const [batches, setBatches] = useState(mockPayrollBatches);
+  const [batches, setBatches] = useState<PayrollBatch[]>(USE_MOCKS ? mockPayrollBatches : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [batchStatusTab, setBatchStatusTab] = useState<'all' | PayrollBatchStatus>('all');
-  const [approveTarget, setApproveTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [approveTarget, setApproveTarget] = useState<PayrollBatch | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<PayrollBatch | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [completeTarget, setCompleteTarget] = useState<typeof mockPayrollBatches[0] | null>(null);
-  const [pendingApprovalBatch, setPendingApprovalBatch] = useState<typeof mockPayrollBatches[0] | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<PayrollBatch | null>(null);
+  const [pendingApprovalBatch, setPendingApprovalBatch] = useState<PayrollBatch | null>(null);
 
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -85,6 +156,46 @@ export function Payroll() {
     () => payrollCategories.filter((c) => c.kind === 'deduction' && c.enabled).sort((a, b) => a.order - b.order),
     [payrollCategories],
   );
+
+  // ---------------------------------------------------------------------------
+  // Live data loaders
+  // ---------------------------------------------------------------------------
+  const loadBatches = async () => {
+    if (USE_MOCKS) {
+      setBatches([...mockPayrollBatches]);
+      return;
+    }
+    try {
+      const res = await payrollApi.listBatches({ size: 200 });
+      setBatches(res.data.map(adaptApiBatch));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load payroll batches');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 500 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadBatches(), loadEmployees()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const months = [
     { value: 'all', label: 'All Months' },
@@ -116,7 +227,7 @@ export function Payroll() {
 
       try {
         const parsed = await parsePayrollExcel(file, {
-          knownEmployeeIds: mockEmployees.map(e => e.id),
+          knownEmployeeIds: employees.map(e => e.id),
         });
         setPreviewData(parsed);
 
@@ -136,15 +247,61 @@ export function Payroll() {
     }
   };
 
-  const commitPayrollUpload = () => {
-    if (!previewData) return;
-    toast.success(`Payroll batch "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
+  const resetUploadDialog = () => {
     setUploadDialogOpen(false);
     setSelectedFile(null);
     setBatchName('');
     setPeriodStart('');
     setPeriodEnd('');
     setPreviewData(null);
+  };
+
+  const commitPayrollUpload = async () => {
+    if (!previewData) return;
+
+    if (USE_MOCKS) {
+      toast.success(`Payroll batch "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
+      resetUploadDialog();
+      return;
+    }
+
+    // Build the API request from parsed Excel preview rows. The backend
+    // expects ISO month (YYYY-MM); the dialog captures month + year separately.
+    const mm = String(periodStart).padStart(2, '0');
+    const yyyy = String(periodEnd);
+    const monthYear = `${yyyy}-${mm}`;
+    const batchDate = `${yyyy}-${mm}-01`;
+
+    // Map empNo (id) → backend UUID (apiId) for the request payload.
+    const empByNo = new Map<string, Employee>();
+    employees.forEach(e => empByNo.set(e.id, e));
+
+    const items: payrollApi.CreateBatchItem[] = previewData.employees.map(row => {
+      const emp = empByNo.get(row.employeeNo);
+      const employeeId = emp?.apiId ?? emp?.id ?? row.employeeNo;
+      return {
+        employeeId,
+        baseSalary: emp?.baseSalary,
+        earnings: row.earnings,
+        deductionsBreakdown: row.deductions,
+      };
+    });
+
+    try {
+      await payrollApi.createBatch({
+        batchDate,
+        monthYear,
+        type: batchType,
+        subject: batchName,
+        currency: 'USD',
+        items,
+      });
+      toast.success(`Payroll batch "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
+      resetUploadDialog();
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create payroll batch');
+    }
   };
 
   const handleUploadPayroll = () => {
@@ -163,7 +320,7 @@ export function Payroll() {
       return;
     }
 
-    commitPayrollUpload();
+    void commitPayrollUpload();
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -183,8 +340,15 @@ export function Payroll() {
     }
   };
 
+  // Per-employee payroll items aren't reachable via a single endpoint without
+  // picking a batch first — `getBatchItems(batchId)` returns items for one
+  // batch only. For now, the per-employee Payslips section continues to read
+  // `mockPayroll` even in live mode (so admin/manager see something useful);
+  // employee role will see an empty list when running against the real API.
+  // TODO: wire per-employee items in a follow-up using `getBatchItems(batchId)`
+  // (requires letting the user pick a batch, or aggregating across all batches).
   let payrollRecords = isEmployee
-    ? mockPayroll.filter(pay => pay.employeeId === currentUser.employeeId)
+    ? mockPayroll.filter(pay => pay.employeeId === currentUser?.employeeId)
     : mockPayroll;
 
   // Apply year and month filters
@@ -219,14 +383,16 @@ export function Payroll() {
   const myUserEmpId = currentUser?.employeeId ?? '';
 
   /** Segregation of duties: approver cannot be the uploader. */
-  const canApproveBatch = (b: typeof mockPayrollBatches[0]) =>
+  const canApproveBatch = (b: PayrollBatch) =>
     canApprove && b.status === 'pending' && b.uploadedBy !== myUserEmpId;
-  const canMarkDone = (b: typeof mockPayrollBatches[0]) =>
+  const canMarkDone = (b: PayrollBatch) =>
     canApprove && b.status === 'approved';
-  const canEdit = (b: typeof mockPayrollBatches[0]) =>
-    b.status === 'pending';   // once approved, immutable (corrections go to next run)
+  // Once approved, immutable (corrections go to next run). Currently unused
+  // but retained for parity with the mock implementation in case the UI later
+  // exposes an "edit pending batch" affordance.
+  // const canEdit = (b: PayrollBatch) => b.status === 'pending';
 
-  const requestApproval = (batch: typeof mockPayrollBatches[0]) => {
+  const requestApproval = (batch: PayrollBatch) => {
     if (batch.uploadedBy === myUserEmpId) {
       toast.error('Segregation of duties: you cannot approve a batch you uploaded.');
       return;
@@ -235,44 +401,85 @@ export function Payroll() {
     setApproveTarget(batch);
   };
 
-  const performApproval = () => {
+  const performApproval = async () => {
     const target = approveTarget ?? pendingApprovalBatch;
     if (!target) return;
-    const now = new Date().toISOString();
-    setBatches(prev => prev.map(b =>
-      b.id === target.id
-        ? { ...b, status: 'approved' as PayrollBatchStatus, approvedBy: myUserEmpId, approvedAt: now, rejectedBy: undefined, rejectedAt: undefined, rejectionReason: undefined }
-        : b
-    ));
-    toast.success(`Approved ${target.subject}`);
-    setApproveTarget(null);
-    setPendingApprovalBatch(null);
+
+    if (USE_MOCKS) {
+      const now = new Date().toISOString();
+      setBatches(prev => prev.map(b =>
+        b.id === target.id
+          ? { ...b, status: 'approved' as PayrollBatchStatus, approvedBy: myUserEmpId, approvedAt: now, rejectedBy: undefined, rejectedAt: undefined, rejectionReason: undefined }
+          : b
+      ));
+      toast.success(`Approved ${target.subject}`);
+      setApproveTarget(null);
+      setPendingApprovalBatch(null);
+      return;
+    }
+
+    try {
+      await payrollApi.approveBatch(target.id);
+      toast.success(`Approved ${target.subject}`);
+      setApproveTarget(null);
+      setPendingApprovalBatch(null);
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve batch');
+    }
   };
 
-  const performReject = () => {
+  const performReject = async () => {
     if (!rejectTarget) return;
     if (!rejectionReason.trim()) { toast.error('Provide a reason for rejection'); return; }
-    const now = new Date().toISOString();
-    setBatches(prev => prev.map(b =>
-      b.id === rejectTarget.id
-        ? { ...b, status: 'rejected' as PayrollBatchStatus, rejectedBy: myUserEmpId, rejectedAt: now, rejectionReason: rejectionReason.trim() }
-        : b
-    ));
-    toast.success(`Rejected ${rejectTarget.subject}`);
-    setRejectTarget(null);
-    setRejectionReason('');
+
+    if (USE_MOCKS) {
+      const now = new Date().toISOString();
+      setBatches(prev => prev.map(b =>
+        b.id === rejectTarget.id
+          ? { ...b, status: 'rejected' as PayrollBatchStatus, rejectedBy: myUserEmpId, rejectedAt: now, rejectionReason: rejectionReason.trim() }
+          : b
+      ));
+      toast.success(`Rejected ${rejectTarget.subject}`);
+      setRejectTarget(null);
+      setRejectionReason('');
+      return;
+    }
+
+    try {
+      await payrollApi.rejectBatch(rejectTarget.id, rejectionReason.trim());
+      toast.success(`Rejected ${rejectTarget.subject}`);
+      setRejectTarget(null);
+      setRejectionReason('');
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reject batch');
+    }
   };
 
-  const performMarkDone = () => {
+  const performMarkDone = async () => {
     if (!completeTarget) return;
-    const now = new Date().toISOString();
-    setBatches(prev => prev.map(b =>
-      b.id === completeTarget.id
-        ? { ...b, status: 'done' as PayrollBatchStatus, completedBy: myUserEmpId, completedAt: now }
-        : b
-    ));
-    toast.success(`Marked ${completeTarget.subject} as paid / done`);
-    setCompleteTarget(null);
+
+    if (USE_MOCKS) {
+      const now = new Date().toISOString();
+      setBatches(prev => prev.map(b =>
+        b.id === completeTarget.id
+          ? { ...b, status: 'done' as PayrollBatchStatus, completedBy: myUserEmpId, completedAt: now }
+          : b
+      ));
+      toast.success(`Marked ${completeTarget.subject} as paid / done`);
+      setCompleteTarget(null);
+      return;
+    }
+
+    try {
+      await payrollApi.completeBatch(completeTarget.id);
+      toast.success(`Marked ${completeTarget.subject} as paid / done`);
+      setCompleteTarget(null);
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to mark batch as done');
+    }
   };
 
   const handleDownloadTemplate = () => {
@@ -281,7 +488,7 @@ export function Payroll() {
     const year = periodEnd || format(new Date(), 'yyyy');
     const monthYear = `${month}-${year}`;
 
-    downloadPayrollTemplate(mockEmployees, monthYear);
+    downloadPayrollTemplate(employees, monthYear);
     toast.success('Payroll template downloaded successfully');
   };
 
@@ -770,7 +977,7 @@ export function Payroll() {
                   'All';
                 exportPayrollToExcel({
                   payrollItems: payrollRecords,
-                  employees: mockEmployees,
+                  employees: employees,
                   period: periodLabel,
                 });
                 toast.success(`Exported ${payrollRecords.length} payroll records`);
@@ -788,7 +995,26 @@ export function Payroll() {
         </div>
       </div>
 
-      {isAdminOrManager && !selectedBatch && (
+      {isAdminOrManager && !selectedBatch && (() => {
+        // In live mode, summary cards are sourced from the batches list — the
+        // backend DTO already exposes totalEarnings/deductions/netSalary per
+        // batch. Mock mode keeps the existing per-item rollup. Note: backend
+        // batches don't surface a separate "base salaries" or "OT payments"
+        // total, so those tiles fall back to 0 in live mode (deferred to a
+        // follow-up that aggregates `getBatchItems(batchId)`).
+        const totalPayroll = USE_MOCKS
+          ? mockPayroll.reduce((sum, p) => sum + p.totalPay, 0)
+          : batches.reduce((sum, b) => sum + b.netSalary, 0);
+        const totalBase = USE_MOCKS
+          ? mockPayroll.reduce((sum, p) => sum + p.baseSalary, 0)
+          : 0;
+        const totalOt = USE_MOCKS
+          ? mockPayroll.reduce((sum, p) => sum + p.otPay, 0)
+          : 0;
+        const totalDeductions = USE_MOCKS
+          ? mockPayroll.reduce((sum, p) => sum + p.deductions, 0)
+          : batches.reduce((sum, b) => sum + b.deductions, 0);
+        return (
         <Card>
           <CardHeader>
             <CardTitle>Payroll Summary</CardTitle>
@@ -798,31 +1024,32 @@ export function Payroll() {
               <div className="text-center p-4 bg-gray-50 rounded-lg">
                 <p className="text-sm text-gray-600">Total Payroll</p>
                 <p className="text-xl font-bold">
-                  ${mockPayroll.reduce((sum, p) => sum + p.totalPay, 0).toLocaleString()}
+                  ${totalPayroll.toLocaleString()}
                 </p>
               </div>
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <p className="text-sm text-gray-600">Base Salaries</p>
                 <p className="text-xl font-bold">
-                  ${mockPayroll.reduce((sum, p) => sum + p.baseSalary, 0).toLocaleString()}
+                  ${totalBase.toLocaleString()}
                 </p>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-gray-600">OT Payments</p>
                 <p className="text-xl font-bold">
-                  ${mockPayroll.reduce((sum, p) => sum + p.otPay, 0).toLocaleString()}
+                  ${totalOt.toLocaleString()}
                 </p>
               </div>
               <div className="text-center p-4 bg-red-50 rounded-lg">
                 <p className="text-sm text-gray-600">Total Deductions</p>
                 <p className="text-xl font-bold">
-                  ${mockPayroll.reduce((sum, p) => sum + p.deductions, 0).toLocaleString()}
+                  ${totalDeductions.toLocaleString()}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       {isEmployee && currentEmployee && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -943,10 +1170,12 @@ export function Payroll() {
                   </TableRow>
                 )}
                 {visibleBatches.map((batch) => {
-                  const uploader = mockEmployees.find(e => e.id === batch.uploadedBy);
-                  const approver = batch.approvedBy ? mockEmployees.find(e => e.id === batch.approvedBy) : null;
-                  const completer = batch.completedBy ? mockEmployees.find(e => e.id === batch.completedBy) : null;
-                  const rejecter = batch.rejectedBy ? mockEmployees.find(e => e.id === batch.rejectedBy) : null;
+                  const matchEmp = (uid: string | undefined) =>
+                    uid ? employees.find(e => e.id === uid || (e as Employee).apiId === uid) : undefined;
+                  const uploader = matchEmp(batch.uploadedBy);
+                  const approver = matchEmp(batch.approvedBy);
+                  const completer = matchEmp(batch.completedBy);
+                  const rejecter = matchEmp(batch.rejectedBy);
                   const rowTone =
                     batch.status === 'pending'  ? 'bg-yellow-50/40' :
                     batch.status === 'rejected' ? 'bg-red-50/40'    : '';
@@ -1102,7 +1331,7 @@ export function Payroll() {
                                   <p className="text-sm">
                                     <span className="text-gray-600">Name:</span>{' '}
                                     <span className="font-medium">
-                                      {mockEmployees.find(e => e.id === selectedPayslip.employeeId)?.name}
+                                      {employees.find(e => e.id === selectedPayslip.employeeId || (e as Employee).apiId === selectedPayslip.employeeId)?.name}
                                     </span>
                                   </p>
                                 </div>
@@ -1275,7 +1504,7 @@ export function Payroll() {
               </TableHeader>
               <TableBody>
                 {payrollRecords.map((record) => {
-                  const employee = mockEmployees.find(e => e.id === record.employeeId);
+                  const employee = employees.find(e => e.id === record.employeeId || (e as Employee).apiId === record.employeeId);
                   return (
                     <TableRow key={record.id}>
                       <TableCell>{record.employeeId}</TableCell>
@@ -1321,7 +1550,7 @@ export function Payroll() {
                                     <p className="text-sm">
                                       <span className="text-gray-600">Name:</span>{' '}
                                       <span className="font-medium">
-                                        {mockEmployees.find(e => e.id === selectedPayslip.employeeId)?.name}
+                                        {employees.find(e => e.id === selectedPayslip.employeeId || (e as Employee).apiId === selectedPayslip.employeeId)?.name}
                                       </span>
                                     </p>
                                   </div>
@@ -1439,7 +1668,7 @@ export function Payroll() {
                     <p><span className="text-gray-500">Period:</span> {approveTarget.monthYear} · {approveTarget.type}</p>
                     <p><span className="text-gray-500">Employees:</span> {approveTarget.totalEmployees}</p>
                     <p><span className="text-gray-500">Net Salary:</span> <strong>${approveTarget.netSalary.toLocaleString()}</strong></p>
-                    <p><span className="text-gray-500">Uploaded by:</span> {mockEmployees.find(e => e.id === approveTarget.uploadedBy)?.name ?? approveTarget.uploadedBy}</p>
+                    <p><span className="text-gray-500">Uploaded by:</span> {employees.find(e => e.id === approveTarget.uploadedBy || (e as Employee).apiId === approveTarget.uploadedBy)?.name ?? approveTarget.uploadedBy}</p>
                   </div>
                 )}
               </div>
