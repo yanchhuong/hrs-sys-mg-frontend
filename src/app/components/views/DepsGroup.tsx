@@ -21,6 +21,8 @@ import {
 } from '../ui/dropdown-menu';
 import { mockDepartments, mockEmployees } from '../../data/mockData';
 import { Department } from '../../types/hrms';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
 import {
   Plus, Pencil, Trash2, Save, Search, Users, Building2, MoreHorizontal,
   FolderTree, UserCheck, Info,
@@ -48,13 +50,19 @@ const COLORS = [
 
 const getColorClass = (color: string) => COLORS.find(c => c.value === color)?.class || COLORS[0].class;
 
-const initialDepts: DeptGroup[] = [
-  ...mockDepartments.map((d, i) => ({
-    ...d,
-    type: 'department' as const,
-    isActive: true,
-    color: COLORS[i % COLORS.length].value,
-  })),
+// Helper: turn a raw Department (from mocks or API) into the UI's DeptGroup shape.
+// The backend only persists {id, name, description}; managerId/employeeCount/
+// isActive/color are presentation-only and get sensible defaults on each load.
+const departmentToDeptGroup = (d: Department, index: number): DeptGroup => ({
+  ...d,
+  type: 'department',
+  isActive: true,
+  color: COLORS[index % COLORS.length].value,
+});
+
+// Local-only groups — the backend currently does not track sub-team / shift
+// groups, so these stay on mock data even when USE_MOCKS is false.
+const localGroups: DeptGroup[] = [
   {
     id: 'GRP001',
     name: 'Team Alpha',
@@ -77,6 +85,11 @@ const initialDepts: DeptGroup[] = [
   },
 ];
 
+const initialDepts: DeptGroup[] = [
+  ...mockDepartments.map((d, i) => departmentToDeptGroup(d, i)),
+  ...localGroups,
+];
+
 const emptyForm: Omit<DeptGroup, 'id'> = {
   name: '',
   managerId: '',
@@ -96,13 +109,47 @@ interface DepsGroupProps {
 
 export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const { t } = useI18n();
-  const [items, setItems] = useState<DeptGroup[]>(initialDepts);
+  // When USE_MOCKS, seed with the bundled mock departments + local groups.
+  // Otherwise start with just the local-only groups; departments are loaded
+  // from the API in `loadDepartments` below.
+  const [items, setItems] = useState<DeptGroup[]>(USE_MOCKS ? initialDepts : [...localGroups]);
+  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeptGroup | null>(null);
   const [form, setForm] = useState<Omit<DeptGroup, 'id'>>(emptyForm);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'department' | 'group'>('all');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // Load (or refresh) the department slice of `items`. Local-only groups are
+  // preserved across reloads because the backend has no concept of them.
+  const loadDepartments = async () => {
+    if (USE_MOCKS) {
+      setItems([
+        ...mockDepartments.map((d, i) => departmentToDeptGroup(d, i)),
+        ...localGroups,
+      ]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const apiDepts = await departmentsApi.list();
+      setItems(prev => [
+        ...apiDepts.map((d, i) => departmentToDeptGroup(d, i)),
+        // keep any items already in state that aren't departments (i.e. groups)
+        ...prev.filter(i => i.type !== 'department'),
+      ]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load departments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = items.filter(item => {
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -142,29 +189,93 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     setDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) {
       toast.error('Please enter a name');
       return;
     }
-    if (editing) {
-      setItems(items.map(i => i.id === editing.id ? { ...editing, ...form } : i));
-      toast.success(`"${form.name}" updated`);
-    } else {
-      const prefix = form.type === 'department' ? 'DEPT' : 'GRP';
-      const count = items.filter(i => i.type === form.type).length + 1;
-      const id = `${prefix}${String(count).padStart(3, '0')}`;
-      setItems([...items, { id, ...form }]);
-      toast.success(`"${form.name}" created`);
+
+    // Groups are local-only — no backend support for sub-teams yet.
+    if (form.type === 'group') {
+      if (editing) {
+        setItems(items.map(i => i.id === editing.id ? { ...editing, ...form } : i));
+        toast.success(`"${form.name}" updated`);
+      } else {
+        const count = items.filter(i => i.type === 'group').length + 1;
+        const id = `GRP${String(count).padStart(3, '0')}`;
+        setItems([...items, { id, ...form }]);
+        toast.success(`"${form.name}" created`);
+      }
+      setDialogOpen(false);
+      return;
     }
-    setDialogOpen(false);
+
+    // Department branch — backed by the API.
+    if (USE_MOCKS) {
+      if (editing) {
+        setItems(items.map(i => i.id === editing.id ? { ...editing, ...form } : i));
+        toast.success(`"${form.name}" updated`);
+      } else {
+        const count = items.filter(i => i.type === 'department').length + 1;
+        const id = `DEPT${String(count).padStart(3, '0')}`;
+        setItems([...items, { id, ...form }]);
+        toast.success(`"${form.name}" created`);
+      }
+      setDialogOpen(false);
+      return;
+    }
+
+    try {
+      if (editing) {
+        await departmentsApi.update(editing.id, {
+          name: form.name,
+          description: form.description || undefined,
+        });
+        toast.success(`"${form.name}" updated`);
+      } else {
+        await departmentsApi.create({
+          name: form.name,
+          description: form.description || undefined,
+        });
+        toast.success(`"${form.name}" created`);
+      }
+      await loadDepartments();
+      setDialogOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save department');
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const item = items.find(i => i.id === id);
-    setItems(items.filter(i => i.id !== id));
-    setDeleteConfirm(null);
-    toast.success(`"${item?.name}" deleted`);
+    if (!item) {
+      setDeleteConfirm(null);
+      return;
+    }
+
+    // Groups are local-only — backend doesn't track sub-groups yet.
+    if (item.type === 'group') {
+      setItems(items.filter(i => i.id !== id));
+      setDeleteConfirm(null);
+      toast.success(`"${item.name}" deleted`);
+      return;
+    }
+
+    if (USE_MOCKS) {
+      setItems(items.filter(i => i.id !== id));
+      setDeleteConfirm(null);
+      toast.success(`"${item.name}" deleted`);
+      return;
+    }
+
+    try {
+      await departmentsApi.remove(id);
+      toast.success(`"${item.name}" deleted`);
+      await loadDepartments();
+      setDeleteConfirm(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete department');
+    }
   };
 
   const toggleActive = (id: string) => {

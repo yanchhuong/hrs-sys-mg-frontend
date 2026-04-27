@@ -21,7 +21,8 @@ export async function create(req: CreateDepartmentRequest): Promise<Department> 
 }
 
 export async function update(id: string, req: CreateDepartmentRequest): Promise<Department> {
-  return apiJson<Department>(`/api/v1/departments/${id}`, { method: 'PUT', json: req });
+  // Backend uses PATCH (partial update), not PUT.
+  return apiJson<Department>(`/api/v1/departments/${id}`, { method: 'PATCH', json: req });
 }
 
 export async function remove(id: string): Promise<void> {

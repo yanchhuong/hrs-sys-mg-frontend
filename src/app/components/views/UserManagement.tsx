@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { mockUsers, mockEmployees, mockDepartments } from '../../data/mockData';
-import { User, UserRole } from '../../types/hrms';
+import { Employee, User, UserRole } from '../../types/hrms';
+import * as usersApi from '../../api/users';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -155,11 +159,116 @@ const slugifyRoleKey = (name: string, existing: string[]) => {
 };
 
 // ---------------------------------------------------------------------------
+// Adapters (live-mode → mock UI shape)
+// ---------------------------------------------------------------------------
+// Mirrors Employees.tsx: user-facing `id` holds the human empNo; backend UUID
+// is kept on `apiId` and used only for mutating API calls.
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+// Backend User → mock User shape. `password` and `permissions` aren't part of
+// the backend DTO — keep placeholders so legacy UI continues to type-check.
+function adaptApiUser(u: usersApi.User): User {
+  return {
+    id: u.id,
+    email: u.email,
+    password: '',
+    role: u.role as User['role'],
+    employeeId: u.employeeId ?? '',
+    departmentId: u.departmentId ?? undefined,
+    isActive: u.isActive,
+    lastLogin: u.lastLogin ?? undefined,
+    createdAt: u.createdAt ?? new Date().toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export function UserManagement() {
   const { t } = useI18n();
-  const [users, setUsers] = useState(mockUsers);
+  const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (id?: string): string => {
+    if (!id) return '';
+    return deptNameById.get(id) ?? (USE_MOCKS ? id : '');
+  };
+
+  const loadUsers = async () => {
+    if (USE_MOCKS) {
+      setUsers([...mockUsers]);
+      return;
+    }
+    try {
+      const res = await usersApi.list({ size: 200 });
+      setUsers(res.data.map(adaptApiUser));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load users');
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (USE_MOCKS) {
+      setEmployees([...mockEmployees]);
+      return;
+    }
+    try {
+      const res = await employeesApi.list({ size: 500 });
+      setEmployees(res.content.map(adaptApiEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+    }
+  };
+
+  const loadDepartments = async () => {
+    if (USE_MOCKS) {
+      setDeptList(mockDepartments.map(d => ({ id: d.id, name: d.name })));
+      return;
+    }
+    try {
+      setDeptList(await departmentsApi.list());
+    } catch (err) {
+      console.warn('Could not load departments', err);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadUsers(), loadEmployees(), loadDepartments()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [customRoles, setCustomRoles] = useState<RoleDef[]>([]);
   const [permissions, setPermissions] = useState<PermissionMatrix>(() => buildDefaultMatrix());
   const [roleDescriptions, setRoleDescriptions] = useState<Record<string, string>>(() =>
@@ -213,57 +322,132 @@ export function UserManagement() {
     setDialogOpen(true);
   };
 
-  const handleSaveUser = () => {
+  const handleSaveUser = async () => {
     if (!formData.email || !formData.employeeId || (!editingUser && !formData.password)) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    if (editingUser) {
-      setUsers(users.map(u =>
-        u.id === editingUser.id
-          ? {
-              ...u,
-              email: formData.email,
-              role: formData.role,
-              employeeId: formData.employeeId,
-              departmentId: formData.departmentId,
-              isActive: formData.isActive,
-              ...(formData.password ? { password: formData.password } : {}),
-            }
-          : u
-      ));
-      toast.success('User updated successfully');
-    } else {
-      const newUser: User = {
-        id: String(users.length + 1),
-        email: formData.email,
-        password: formData.password,
-        role: formData.role,
-        employeeId: formData.employeeId,
-        departmentId: formData.departmentId,
-        createdAt: new Date().toISOString(),
-        isActive: formData.isActive,
-      };
-      setUsers([...users, newUser]);
-      toast.success('User created successfully');
+    if (USE_MOCKS) {
+      if (editingUser) {
+        setUsers(users.map(u =>
+          u.id === editingUser.id
+            ? {
+                ...u,
+                email: formData.email,
+                role: formData.role,
+                employeeId: formData.employeeId,
+                departmentId: formData.departmentId,
+                isActive: formData.isActive,
+                ...(formData.password ? { password: formData.password } : {}),
+              }
+            : u
+        ));
+        toast.success('User updated successfully');
+      } else {
+        const newUser: User = {
+          id: String(users.length + 1),
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+          employeeId: formData.employeeId,
+          departmentId: formData.departmentId,
+          createdAt: new Date().toISOString(),
+          isActive: formData.isActive,
+        };
+        setUsers([...users, newUser]);
+        toast.success('User created successfully');
+      }
+      setDialogOpen(false);
+      return;
     }
 
-    setDialogOpen(false);
+    try {
+      if (editingUser) {
+        // PATCH semantics — only send fields whose value diverges from the
+        // current user record. Email change isn't supported by the backend
+        // PATCH DTO, so we leave it out.
+        const patch: usersApi.UpdateUserRequest = {};
+        if (formData.role !== editingUser.role) patch.role = formData.role as usersApi.UserRole;
+        if (formData.employeeId !== (editingUser.employeeId ?? '')) {
+          patch.employeeId = formData.employeeId || null;
+        }
+        if ((formData.departmentId || '') !== (editingUser.departmentId ?? '')) {
+          patch.departmentId = formData.departmentId || null;
+        }
+        await usersApi.update(editingUser.id, patch);
+        toast.success('User updated successfully');
+      } else {
+        await usersApi.create({
+          email: formData.email,
+          role: formData.role as usersApi.UserRole,
+          employeeId: formData.employeeId || undefined,
+          departmentId: formData.departmentId || undefined,
+          initialPassword: formData.password || undefined,
+        });
+        toast.success('User created successfully');
+      }
+      setDialogOpen(false);
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save user');
+    }
   };
 
-  const handleDeleteUser = (userId: string) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+
+    if (USE_MOCKS) {
       setUsers(users.filter(u => u.id !== userId));
       toast.success('User deleted successfully');
+      return;
+    }
+
+    try {
+      await usersApi.remove(userId);
+      toast.success('User deleted successfully');
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete user');
     }
   };
 
-  const handleToggleStatus = (userId: string) => {
-    setUsers(users.map(u =>
-      u.id === userId ? { ...u, isActive: !u.isActive } : u
-    ));
-    toast.success('User status updated');
+  const handleToggleStatus = async (userId: string) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+
+    if (USE_MOCKS) {
+      setUsers(users.map(u =>
+        u.id === userId ? { ...u, isActive: !u.isActive } : u
+      ));
+      toast.success('User status updated');
+      return;
+    }
+
+    try {
+      if (target.isActive) {
+        await usersApi.suspend(userId);
+      } else {
+        await usersApi.reactivate(userId);
+      }
+      toast.success('User status updated');
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update status');
+    }
+  };
+
+  const handleResetPassword = async (user: User) => {
+    if (USE_MOCKS) {
+      toast.success(`Reset link sent to ${user.email}`);
+      return;
+    }
+    try {
+      await usersApi.resetPassword(user.id);
+      toast.success(`Reset link sent to ${user.email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reset password');
+    }
   };
 
   const usersPagination = usePagination(users, 10);
@@ -517,11 +701,16 @@ export function UserManagement() {
                             className="w-full px-3 py-2 border rounded-md"
                           >
                             <option value="">Select Employee</option>
-                            {mockEmployees.map((emp) => (
-                              <option key={emp.id} value={emp.id}>
-                                {emp.id} - {emp.name}
-                              </option>
-                            ))}
+                            {employees.map((emp) => {
+                              const val = emp.apiId ?? emp.id;
+                              const dept = deptName(emp.department) || emp.department;
+                              return (
+                                <option key={val} value={val}>
+                                  {emp.name} — {emp.id}
+                                  {dept && dept !== '-' ? ` · ${dept}` : ''}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                         <div className="space-y-2">
@@ -533,7 +722,7 @@ export function UserManagement() {
                             className="w-full px-3 py-2 border rounded-md"
                           >
                             <option value="">Select Department</option>
-                            {mockDepartments.map((dept) => (
+                            {deptList.map((dept) => (
                               <option key={dept.id} value={dept.id}>
                                 {dept.name}
                               </option>
@@ -599,19 +788,20 @@ export function UserManagement() {
                 </TableHeader>
                 <TableBody>
                   {usersPagination.paginatedItems.map((user) => {
-                    const employee = mockEmployees.find(e => e.id === user.employeeId);
-                    const department = mockDepartments.find(d => d.id === user.departmentId);
+                    const employee = employees.find(
+                      e => e.id === user.employeeId || (e as Employee).apiId === user.employeeId
+                    );
                     return (
                       <TableRow key={user.id}>
                         <TableCell className="font-medium">{user.email}</TableCell>
                         <TableCell>
                           {employee ? (
-                            <EmployeeCell employee={employee} subtitle={user.employeeId} />
+                            <EmployeeCell employee={employee} subtitle={employee.id} />
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
                         </TableCell>
-                        <TableCell>{department?.name || '-'}</TableCell>
+                        <TableCell>{deptName(user.departmentId) || '—'}</TableCell>
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
                         <TableCell>
                           {user.isActive ? (
@@ -637,8 +827,17 @@ export function UserManagement() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleToggleStatus(user.id)}
+                              title={user.isActive ? 'Suspend' : 'Reactivate'}
                             >
                               {user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResetPassword(user)}
+                              title="Send password reset link"
+                            >
+                              <Key className="h-3 w-3" />
                             </Button>
                             <Button
                               variant="outline"

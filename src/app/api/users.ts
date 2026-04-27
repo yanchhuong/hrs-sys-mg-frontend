@@ -15,7 +15,9 @@ export interface User {
 
 export interface CreateUserRequest {
   email: string;
-  password: string;
+  /** Backend field name is `initialPassword`. Optional — server may
+   *  generate one if missing. */
+  initialPassword?: string;
   role: UserRole;
   employeeId?: string;
   departmentId?: string;
@@ -23,6 +25,7 @@ export interface CreateUserRequest {
 
 export interface UpdateUserRequest {
   role?: UserRole;
+  employeeId?: string | null;
   departmentId?: string | null;
   isActive?: boolean;
 }
@@ -55,7 +58,8 @@ export async function create(req: CreateUserRequest): Promise<User> {
 }
 
 export async function update(id: string, req: UpdateUserRequest): Promise<User> {
-  return apiJson(`/api/v1/users/${id}`, { method: 'PUT', json: req });
+  // Backend uses PATCH (partial update), not PUT.
+  return apiJson(`/api/v1/users/${id}`, { method: 'PATCH', json: req });
 }
 
 export async function suspend(id: string): Promise<User> {
@@ -66,8 +70,10 @@ export async function reactivate(id: string): Promise<User> {
   return apiJson(`/api/v1/users/${id}/reactivate`, { method: 'POST' });
 }
 
-export async function resetPassword(id: string): Promise<{ tempPassword: string }> {
-  return apiJson(`/api/v1/users/${id}/reset-password`, { method: 'POST' });
+/** Backend returns 202 Accepted with no body — it sends the reset link
+ *  out-of-band. Fire-and-forget. */
+export async function resetPassword(id: string): Promise<void> {
+  return apiVoid(`/api/v1/users/${id}/reset-password`, { method: 'POST' });
 }
 
 export async function remove(id: string): Promise<void> {
