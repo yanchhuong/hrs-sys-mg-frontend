@@ -16,6 +16,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Checkbox } from '../ui/checkbox';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
@@ -38,7 +39,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Clock, Check, X as XIcon, Lock, Wallet } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
 import {
@@ -165,6 +166,21 @@ export function Payroll() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [completeTarget, setCompleteTarget] = useState<PayrollBatch | null>(null);
   const [pendingApprovalBatch, setPendingApprovalBatch] = useState<PayrollBatch | null>(null);
+
+  // Per-row delivery selections inside the batch detail table — UI-only for
+  // now; bulk-action buttons toast a summary so admins can verify the right
+  // rows were picked. Wiring to actual mail/SMS/bank gateways is a backend
+  // follow-up. Cleared when the batch closes.
+  const [mailSelected, setMailSelected] = useState<Set<string>>(new Set());
+  const [smsSelected, setSmsSelected] = useState<Set<string>>(new Set());
+  const [bankSelected, setBankSelected] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedBatch) {
+      setMailSelected(new Set());
+      setSmsSelected(new Set());
+      setBankSelected(new Set());
+    }
+  }, [selectedBatch]);
 
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -1549,62 +1565,157 @@ export function Payroll() {
               </div>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Employee No.</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Position</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Payroll Account</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead>Net Salary</TableHead>
-                  <TableHead>Total Earnings</TableHead>
-                  <TableHead>Deductions</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(() => {
-                  // Inside a batch view: render the live items the backend
-                  // returned for THIS batch. Mock mode keeps the legacy
-                  // mockPayroll-derived list. The empty-state below this
-                  // handles "no items yet" / "still loading".
-                  const detailRows = USE_MOCKS ? payrollRecords : batchItems;
-                  if (batchItemsLoading) {
-                    return (
+            {(() => {
+              const detailRows = USE_MOCKS ? payrollRecords : batchItems;
+              const allIds = detailRows.map(r => r.id);
+              const allChecked = (s: Set<string>) =>
+                allIds.length > 0 && allIds.every(id => s.has(id));
+              const someChecked = (s: Set<string>) =>
+                !allChecked(s) && allIds.some(id => s.has(id));
+              const toggleAll = (s: Set<string>, set: (next: Set<string>) => void) => {
+                if (allChecked(s)) set(new Set());
+                else set(new Set(allIds));
+              };
+              const toggleOne = (s: Set<string>, set: (next: Set<string>) => void, id: string) => {
+                const next = new Set(s);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                set(next);
+              };
+              // Bulk action handlers — currently UI-only. Backend wiring is
+              // a follow-up (POST /payroll/batches/{id}/dispatch ?channel=mail).
+              const dispatch = (channel: 'mail' | 'sms' | 'bank', s: Set<string>) => {
+                if (s.size === 0) {
+                  toast.warning(`Tick at least one row before sending by ${channel}.`);
+                  return;
+                }
+                const labels: Record<typeof channel, string> = {
+                  mail: 'email',
+                  sms: 'SMS',
+                  bank: 'bank transfer',
+                };
+                toast.success(`Queued ${s.size} payslip${s.size === 1 ? '' : 's'} for ${labels[channel]}.`);
+              };
+              return (
+                <>
+                  <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
+                    <span className="text-gray-500">Bulk actions:</span>
+                    <Button size="sm" variant="outline" onClick={() => dispatch('mail', mailSelected)}>
+                      <Mail className="h-3.5 w-3.5 mr-1.5" />
+                      Send Mail ({mailSelected.size})
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => dispatch('sms', smsSelected)}>
+                      <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+                      Send SMS ({smsSelected.size})
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => dispatch('bank', bankSelected)}>
+                      <Landmark className="h-3.5 w-3.5 mr-1.5" />
+                      Push Bank Transfer ({bankSelected.size})
+                    </Button>
+                  </div>
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-gray-400">
-                          Loading payroll items…
-                        </TableCell>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Position / Department</TableHead>
+                        <TableHead>Payroll Account</TableHead>
+                        <TableHead>Currency</TableHead>
+                        <TableHead>Net Salary</TableHead>
+                        <TableHead>Total Earnings</TableHead>
+                        <TableHead>Deductions</TableHead>
+                        <TableHead className="text-center w-20">
+                          <div className="flex flex-col items-center gap-1">
+                            <Checkbox
+                              checked={allChecked(mailSelected) || (someChecked(mailSelected) ? 'indeterminate' : false)}
+                              onCheckedChange={() => toggleAll(mailSelected, setMailSelected)}
+                              disabled={allIds.length === 0}
+                              aria-label="Select all for Mail"
+                            />
+                            <span className="text-xs">Mail</span>
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center w-20">
+                          <div className="flex flex-col items-center gap-1">
+                            <Checkbox
+                              checked={allChecked(smsSelected) || (someChecked(smsSelected) ? 'indeterminate' : false)}
+                              onCheckedChange={() => toggleAll(smsSelected, setSmsSelected)}
+                              disabled={allIds.length === 0}
+                              aria-label="Select all for SMS"
+                            />
+                            <span className="text-xs">SMS</span>
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center w-24">
+                          <div className="flex flex-col items-center gap-1">
+                            <Checkbox
+                              checked={allChecked(bankSelected) || (someChecked(bankSelected) ? 'indeterminate' : false)}
+                              onCheckedChange={() => toggleAll(bankSelected, setBankSelected)}
+                              disabled={allIds.length === 0}
+                              aria-label="Select all for Bank Transfer"
+                            />
+                            <span className="text-xs">Bank Transfer</span>
+                          </div>
+                        </TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    );
-                  }
-                  if (detailRows.length === 0) {
-                    return (
-                      <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-gray-400">
-                          No items in this batch
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }
-                  return detailRows.map((record) => {
+                    </TableHeader>
+                    <TableBody>
+                      {batchItemsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={11} className="text-center py-8 text-gray-400">
+                            Loading payroll items…
+                          </TableCell>
+                        </TableRow>
+                      ) : detailRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={11} className="text-center py-8 text-gray-400">
+                            No items in this batch
+                          </TableCell>
+                        </TableRow>
+                      ) : detailRows.map((record) => {
                     const employee = employees.find(e => e.id === record.employeeId || (e as Employee).apiId === record.employeeId);
+                    const dept = deptName(employee?.department);
                     return (
                     <TableRow key={record.id}>
-                      {/* Show empNo (human-readable), never the backend UUID. */}
-                      <TableCell>{employee?.id ?? '—'}</TableCell>
+                      {/* Combined Employee No + Name. empNo never shows the UUID. */}
                       <TableCell>
-                        <EmployeeCell employee={employee} nameOnly />
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">{employee?.name ?? '—'}</span>
+                          <span className="text-[11px] text-gray-500">{employee?.id ?? '—'}</span>
+                        </div>
                       </TableCell>
-                      <TableCell>{employee?.position}</TableCell>
-                      <TableCell>{deptName(employee?.department) || '—'}</TableCell>
+                      {/* Combined Position + Department. */}
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm">{employee?.position ?? '—'}</span>
+                          <span className="text-[11px] text-gray-500">{dept || '—'}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
                       <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
                       <TableCell className="text-green-600">${record.totalEarnings.toLocaleString()}</TableCell>
                       <TableCell className="text-red-600">${record.deductions.toLocaleString()}</TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={mailSelected.has(record.id)}
+                          onCheckedChange={() => toggleOne(mailSelected, setMailSelected, record.id)}
+                          aria-label="Send by Mail"
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={smsSelected.has(record.id)}
+                          onCheckedChange={() => toggleOne(smsSelected, setSmsSelected, record.id)}
+                          aria-label="Send by SMS"
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={bankSelected.has(record.id)}
+                          onCheckedChange={() => toggleOne(bankSelected, setBankSelected, record.id)}
+                          aria-label="Push Bank Transfer"
+                        />
+                      </TableCell>
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>
@@ -1637,10 +1748,12 @@ export function Payroll() {
                       </TableCell>
                     </TableRow>
                   );
-                  });
-                })()}
-              </TableBody>
-            </Table>
+                      })}
+                    </TableBody>
+                  </Table>
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
       )}
