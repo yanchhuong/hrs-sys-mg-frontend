@@ -20,9 +20,17 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { mockDepartments, mockEmployees } from '../../data/mockData';
-import { Department } from '../../types/hrms';
+import { Department, Employee } from '../../types/hrms';
 import * as departmentsApi from '../../api/departments';
+import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '../ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '../ui/command';
+import { ChevronsUpDown, Check } from 'lucide-react';
 import {
   Plus, Pencil, Trash2, Save, Search, Users, Building2, MoreHorizontal,
   FolderTree, UserCheck, Info,
@@ -113,6 +121,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   // Otherwise start with just the local-only groups; departments are loaded
   // from the API in `loadDepartments` below.
   const [items, setItems] = useState<DeptGroup[]>(USE_MOCKS ? initialDepts : [...localGroups]);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeptGroup | null>(null);
@@ -146,8 +155,44 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     }
   };
 
+  // Employees populate the Manager / Lead picker. Loaded once on mount —
+  // department managers don't change so frequently that a refetch per save
+  // would be worth it.
+  const loadEmployees = async () => {
+    if (USE_MOCKS) { setEmployees([...mockEmployees]); return; }
+    try {
+      const res = await employeesApi.list({ size: 500 });
+      setEmployees(res.content.map(e => ({
+        id: e.empNo,
+        apiId: e.id,
+        name: e.name,
+        khmerName: e.khmerName ?? undefined,
+        email: e.email,
+        position: e.position,
+        department: e.departmentId ?? '-',
+        joinDate: e.joinDate,
+        status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+        contactNumber: e.contactNumber ?? '',
+        baseSalary: e.baseSalary,
+        managerId: e.managerId ?? undefined,
+        profileImage: e.profileImage ?? undefined,
+        gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+        dateOfBirth: e.dateOfBirth ?? undefined,
+        placeOfBirth: e.placeOfBirth ?? undefined,
+        currentAddress: e.currentAddress ?? undefined,
+        nffNo: e.nffNo ?? undefined,
+        tid: e.tid ?? undefined,
+        contractExpireDate: e.contractExpireDate ?? undefined,
+      })));
+    } catch (err) {
+      // Non-fatal — Manager picker just stays empty.
+      console.warn('Could not load employees for Manager picker', err);
+    }
+  };
+
   useEffect(() => {
     void loadDepartments();
+    void loadEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -284,7 +329,8 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
   const getManagerName = (managerId?: string) => {
     if (!managerId) return '-';
-    const emp = mockEmployees.find(e => e.id === managerId);
+    // managerId can be either empNo (mock-mode) or backend UUID (live-mode).
+    const emp = employees.find(e => e.id === managerId || (e as any).apiId === managerId);
     return emp?.name || '-';
   };
 
@@ -592,15 +638,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
             {/* Manager/Lead */}
             <div className="space-y-2">
               <Label className="text-sm">{form.type === 'department' ? 'Department Manager' : 'Group Lead'}</Label>
-              <Select value={form.managerId || 'none'} onValueChange={v => setForm({ ...form, managerId: v === 'none' ? '' : v })}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Select..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {mockEmployees.map(emp => (
-                    <SelectItem key={emp.id} value={emp.id}>{emp.name} ({emp.position})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ManagerPicker
+                employees={employees}
+                value={form.managerId || ''}
+                onChange={v => setForm({ ...form, managerId: v })}
+              />
             </div>
 
             {/* Description */}
@@ -654,5 +696,76 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Searchable employee picker for the Manager / Lead field. Filters to active
+ * employees, lets the admin type to narrow against name + empNo + position,
+ * and emits whatever identifier the backend stores (UUID in live mode,
+ * empNo in mock mode) via `e.apiId ?? e.id`. Empty value = "None".
+ */
+function ManagerPicker({
+  employees, value, onChange,
+}: {
+  employees: Employee[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = employees.filter(e => e.status === 'active');
+  const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
+  const label = selected ? `${selected.name} (${selected.position ?? '—'})` : 'None';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 w-full justify-between font-normal"
+        >
+          <span className={selected ? '' : 'text-gray-400'}>{label}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search name, ID, position…" />
+          <CommandList>
+            <CommandEmpty>No active employees match that.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__none__"
+                onSelect={() => { onChange(''); setOpen(false); }}
+              >
+                <Check className={`mr-2 h-4 w-4 ${!value ? 'opacity-100' : 'opacity-0'}`} />
+                <span className="text-gray-500 italic">None</span>
+              </CommandItem>
+              {active.map(e => {
+                const val = (e as any).apiId ?? e.id;
+                const haystack = `${e.name} ${e.id} ${e.position ?? ''}`;
+                return (
+                  <CommandItem
+                    key={val}
+                    value={haystack}
+                    onSelect={() => { onChange(val); setOpen(false); }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${value === val ? 'opacity-100' : 'opacity-0'}`} />
+                    <span className="flex-1 truncate">
+                      {e.name}
+                      <span className="text-gray-400"> — {e.id}</span>
+                      {e.position ? <span className="text-gray-400"> · {e.position}</span> : null}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
