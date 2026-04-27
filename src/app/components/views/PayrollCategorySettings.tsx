@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import * as categoriesApi from '../../api/payrollCategories';
+import { USE_MOCKS } from '../../api/client';
 import {
   ArrowDown,
   ArrowUp,
@@ -66,18 +68,55 @@ import {
   validateCategory,
 } from '../../utils/payrollCategories';
 
+function adaptApi(c: categoriesApi.PayrollCategory): PayrollCategory {
+  return {
+    id: c.id,
+    code: c.code,
+    label: c.label,
+    kind: c.kind,
+    valueType: c.valueType,
+    defaultAmount: c.defaultAmount,
+    order: (c as unknown as { displayOrder?: number }).displayOrder ?? c.order ?? 0,
+    enabled: c.enabled,
+    system: (c as unknown as { isSystem?: boolean }).isSystem ?? c.system ?? false,
+  };
+}
+
 export function PayrollCategorySettings() {
   const { t } = useI18n();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
 
-  const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
+  const [categories, setCategories] = useState<PayrollCategory[]>(() =>
+    USE_MOCKS ? loadPayrollCategories() : [],
+  );
+  const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PayrollCategory | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PayrollCategory | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   // Dialog state for the "Add Category" popup. `null` → closed.
   const [addDraft, setAddDraft] = useState<PayrollCategory | null>(null);
+
+  const loadCategories = async () => {
+    if (USE_MOCKS) {
+      setCategories(loadPayrollCategories());
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await categoriesApi.list();
+      setCategories(res.map(adaptApi));
+    } catch (err) {
+      toast.error(`Failed to load payroll categories: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCategories();
+  }, []);
 
   const earnings = useMemo(
     () => categories.filter((c) => c.kind === 'earning').sort((a, b) => a.order - b.order),
@@ -89,7 +128,7 @@ export function PayrollCategorySettings() {
   );
 
   // ---- mutations ---------------------------------------------------------
-  const persist = (next: PayrollCategory[]) => {
+  const persistLocal = (next: PayrollCategory[]) => {
     setCategories(next);
     savePayrollCategories(next);
   };
@@ -101,7 +140,7 @@ export function PayrollCategorySettings() {
 
   const cancelAdd = () => setAddDraft(null);
 
-  const saveAddDraft = () => {
+  const saveAddDraft = async () => {
     if (!addDraft) return;
     if (!addDraft.label.trim()) {
       toast.error('Label is required');
@@ -116,9 +155,28 @@ export function PayrollCategorySettings() {
       toast.error(err);
       return;
     }
-    persist([...categories, addDraft]);
-    setAddDraft(null);
-    toast.success(`Added "${addDraft.label}"`);
+    if (USE_MOCKS) {
+      persistLocal([...categories, addDraft]);
+      setAddDraft(null);
+      toast.success(`Added "${addDraft.label}"`);
+      return;
+    }
+    try {
+      await categoriesApi.create({
+        code: addDraft.code,
+        label: addDraft.label,
+        kind: addDraft.kind,
+        valueType: addDraft.valueType,
+        defaultAmount: addDraft.defaultAmount,
+        order: addDraft.order,
+        enabled: addDraft.enabled,
+      });
+      await loadCategories();
+      setAddDraft(null);
+      toast.success(`Added "${addDraft.label}"`);
+    } catch (e) {
+      toast.error(`Failed to add category: ${(e as Error).message}`);
+    }
   };
 
   const startEdit = (c: PayrollCategory) => {
@@ -131,7 +189,7 @@ export function PayrollCategorySettings() {
     setEditingId(null);
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draft) return;
     const err = validateCategory(draft, categories);
     if (err) {
@@ -139,38 +197,111 @@ export function PayrollCategorySettings() {
       return;
     }
     const exists = categories.some((c) => c.id === draft.id);
-    const next = exists
-      ? categories.map((c) => (c.id === draft.id ? draft : c))
-      : [...categories, draft];
-    persist(next);
-    setDraft(null);
-    setEditingId(null);
-    toast.success(exists ? 'Category updated' : 'Category added');
+    if (USE_MOCKS) {
+      const next = exists
+        ? categories.map((c) => (c.id === draft.id ? draft : c))
+        : [...categories, draft];
+      persistLocal(next);
+      setDraft(null);
+      setEditingId(null);
+      toast.success(exists ? 'Category updated' : 'Category added');
+      return;
+    }
+    try {
+      if (exists) {
+        await categoriesApi.update(draft.id, {
+          code: draft.code,
+          label: draft.label,
+          kind: draft.kind,
+          valueType: draft.valueType,
+          defaultAmount: draft.defaultAmount,
+          order: draft.order,
+          enabled: draft.enabled,
+        });
+      } else {
+        await categoriesApi.create({
+          code: draft.code,
+          label: draft.label,
+          kind: draft.kind,
+          valueType: draft.valueType,
+          defaultAmount: draft.defaultAmount,
+          order: draft.order,
+          enabled: draft.enabled,
+        });
+      }
+      await loadCategories();
+      setDraft(null);
+      setEditingId(null);
+      toast.success(exists ? 'Category updated' : 'Category added');
+    } catch (e) {
+      toast.error(`Failed to save category: ${(e as Error).message}`);
+    }
   };
 
-  const toggleEnabled = (c: PayrollCategory) => {
-    persist(categories.map((x) => (x.id === c.id ? { ...x, enabled: !x.enabled } : x)));
+  const toggleEnabled = async (c: PayrollCategory) => {
+    if (USE_MOCKS) {
+      persistLocal(
+        categories.map((x) => (x.id === c.id ? { ...x, enabled: !x.enabled } : x)),
+      );
+      return;
+    }
+    try {
+      await categoriesApi.update(c.id, { enabled: !c.enabled });
+      await loadCategories();
+    } catch (e) {
+      toast.error(`Failed to update category: ${(e as Error).message}`);
+    }
   };
 
-  const deleteCategory = (c: PayrollCategory) => {
-    persist(categories.filter((x) => x.id !== c.id));
-    toast.success(`Removed "${c.label}"`);
-    setConfirmDelete(null);
+  const deleteCategory = async (c: PayrollCategory) => {
+    if (USE_MOCKS) {
+      persistLocal(categories.filter((x) => x.id !== c.id));
+      toast.success(`Removed "${c.label}"`);
+      setConfirmDelete(null);
+      return;
+    }
+    try {
+      await categoriesApi.remove(c.id);
+      await loadCategories();
+      toast.success(`Removed "${c.label}"`);
+      setConfirmDelete(null);
+    } catch (e) {
+      toast.error(`Failed to delete category: ${(e as Error).message}`);
+    }
   };
 
-  const move = (c: PayrollCategory, dir: -1 | 1) => {
+  const move = async (c: PayrollCategory, dir: -1 | 1) => {
     const siblings = categories
       .filter((x) => x.kind === c.kind)
       .sort((a, b) => a.order - b.order);
     const idx = siblings.findIndex((x) => x.id === c.id);
     const swapWith = siblings[idx + dir];
     if (!swapWith) return;
-    const next = categories.map((x) => {
-      if (x.id === c.id) return { ...x, order: swapWith.order };
-      if (x.id === swapWith.id) return { ...x, order: c.order };
-      return x;
-    });
-    persist(next);
+    if (USE_MOCKS) {
+      const next = categories.map((x) => {
+        if (x.id === c.id) return { ...x, order: swapWith.order };
+        if (x.id === swapWith.id) return { ...x, order: c.order };
+        return x;
+      });
+      persistLocal(next);
+      return;
+    }
+    // Build new ordered id list across the affected kind, swapping c and swapWith.
+    const reordered = [...siblings];
+    reordered[idx] = swapWith;
+    reordered[idx + dir] = c;
+    // Include all categories (other kind preserved in their existing order) so
+    // the backend gets a complete ordering payload.
+    const otherKind = categories
+      .filter((x) => x.kind !== c.kind)
+      .sort((a, b) => a.order - b.order);
+    const ids = [...reordered, ...otherKind].map((x) => x.id);
+    try {
+      await categoriesApi.reorder(ids);
+      await loadCategories();
+    } catch (e) {
+      toast.error(`Failed to reorder categories: ${(e as Error).message}`);
+    }
   };
 
   const doReset = () => {

@@ -22,6 +22,8 @@ import { mockDepartments } from '../../data/mockData';
 import { mockHolidays } from '../../data/timeworkData';
 import { AttendanceRule, OTSettings } from '../../types/settings';
 import { Holiday } from '../../types/timework';
+import * as settingsApi from '../../api/settings';
+import { USE_MOCKS } from '../../api/client';
 import {
   Settings, Clock, Save, Coffee, ArrowRightLeft, AlertTriangle, Timer,
   Plus, Trash2, Pencil, CheckCircle2, XCircle, Info, Zap, Building2, CalendarDays,
@@ -36,11 +38,23 @@ import {
 } from '../../utils/scanRule';
 import { FlexibleWorkCard } from '../common/FlexibleWorkCard';
 
+function adaptHoliday(h: settingsApi.Holiday): Holiday {
+  return {
+    id: h.id,
+    name: h.name,
+    date: h.date,
+    type: h.type === 'company' ? 'company' : 'public',
+    isPaid: true, // backend doesn't track this yet — default true
+    description: h.description,
+  };
+}
+
 export function AttendanceSettings() {
   // Kept for OT-tab cross-references (activeShift) — no per-shift UI anymore;
   // per-employee work schedules are assigned on the Employee record.
   const [shifts] = useState<AttendanceRule[]>(mockAttendanceRules);
-  const [otSettings, setOtSettings] = useState<OTSettings>(defaultOTSettings);
+  const [otSettings, setOtSettings] = useState<OTSettings>(USE_MOCKS ? defaultOTSettings : { ...defaultOTSettings });
+  const [, setLoadingOt] = useState(false);
   const [scanRule, setScanRule] = useState<ScanRule>(() => loadScanRule());
   const [activeTab, setActiveTab] = useState('scan');
   const [otSubTab, setOtSubTab] = useState('workday');
@@ -48,10 +62,56 @@ export function AttendanceSettings() {
   const [newDeptAssign, setNewDeptAssign] = useState({ department: '', ruleLabel: '', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 });
 
   // Holiday state
-  const [holidays, setHolidays] = useState(mockHolidays);
+  const [holidays, setHolidays] = useState<Holiday[]>(USE_MOCKS ? mockHolidays : []);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
   const [newHoliday, setNewHoliday] = useState({ name: '', date: '', type: 'public' as 'public' | 'company', isPaid: true, description: '' });
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
+
+  const loadHolidays = async () => {
+    if (USE_MOCKS) {
+      setHolidays([...mockHolidays]);
+      return;
+    }
+    try {
+      const res = await settingsApi.listHolidays();
+      setHolidays(res.map(adaptHoliday));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load holidays');
+    }
+  };
+
+  const loadOtSettings = async () => {
+    if (USE_MOCKS) return;
+    setLoadingOt(true);
+    try {
+      const remote = await settingsApi.getOtSettings();
+      setOtSettings(prev => ({
+        ...prev,
+        otStartAfter: remote.otStartAfter?.slice(0, 5) ?? prev.otStartAfter,
+        minimumOTThresholdMinutes: remote.minimumOTThresholdMinutes ?? prev.minimumOTThresholdMinutes,
+        otRoundingMinutes: remote.otRoundingMinutes ?? prev.otRoundingMinutes,
+        weekdayRate: Number(remote.weekdayRate),
+        weekendRate: Number(remote.weekendRate),
+        holidayRate: Number(remote.holidayRate),
+        maxOTHoursPerDay: Number(remote.maxOTHoursPerDay),
+        requireApproval: remote.requireApproval,
+        calculationMode: remote.calculationMode as OTSettings['calculationMode'],
+        workdayRule: { ...prev.workdayRule, ...((remote.workdayRule as Partial<OTSettings['workdayRule']>) ?? {}) },
+        weekendRule: { ...prev.weekendRule, ...((remote.weekendRule as Partial<OTSettings['weekendRule']>) ?? {}) },
+        holidayRule: { ...prev.holidayRule, ...((remote.holidayRule as Partial<OTSettings['holidayRule']>) ?? {}) },
+      }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load OT settings');
+    } finally {
+      setLoadingOt(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHolidays();
+    loadOtSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // General settings state
   const [generalSettings, setGeneralSettings] = useState({
@@ -63,22 +123,72 @@ export function AttendanceSettings() {
     weekendDays: ['Saturday', 'Sunday'] as string[],
   });
 
-  const handleSave = () => {
-    toast.success('Attendance settings saved successfully');
+  const handleSave = async () => {
+    if (USE_MOCKS) {
+      toast.success('Attendance settings saved successfully');
+      return;
+    }
+    try {
+      await settingsApi.updateOtSettings({
+        otStartAfter: otSettings.otStartAfter.length === 5 ? otSettings.otStartAfter + ':00' : otSettings.otStartAfter,
+        minimumOTThresholdMinutes: otSettings.minimumOTThresholdMinutes,
+        otRoundingMinutes: otSettings.otRoundingMinutes,
+        weekdayRate: otSettings.weekdayRate,
+        weekendRate: otSettings.weekendRate,
+        holidayRate: otSettings.holidayRate,
+        maxOTHoursPerDay: otSettings.maxOTHoursPerDay,
+        requireApproval: otSettings.requireApproval,
+        calculationMode: otSettings.calculationMode,
+        workdayRule: otSettings.workdayRule as unknown as Record<string, unknown>,
+        weekendRule: otSettings.weekendRule as unknown as Record<string, unknown>,
+        holidayRule: otSettings.holidayRule as unknown as Record<string, unknown>,
+      });
+      toast.success('Attendance settings saved successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings');
+    }
   };
 
-  const handleAddHoliday = () => {
+  const handleAddHoliday = async () => {
     if (!newHoliday.name || !newHoliday.date) { toast.error('Please fill in name and date'); return; }
-    const holiday: Holiday = { id: `HOL${String(holidays.length + 1).padStart(3, '0')}`, ...newHoliday };
-    setHolidays([...holidays, holiday]);
-    setNewHoliday({ name: '', date: '', type: 'public', isPaid: true, description: '' });
-    setHolidayDialogOpen(false);
-    toast.success('Holiday added successfully');
+    if (USE_MOCKS) {
+      const holiday: Holiday = { id: `HOL${String(holidays.length + 1).padStart(3, '0')}`, ...newHoliday };
+      setHolidays([...holidays, holiday]);
+      setNewHoliday({ name: '', date: '', type: 'public', isPaid: true, description: '' });
+      setHolidayDialogOpen(false);
+      toast.success('Holiday added successfully');
+      return;
+    }
+    try {
+      await settingsApi.createHoliday({
+        name: newHoliday.name,
+        date: newHoliday.date,
+        // Backend validates the type pattern as `public|company` — no remap.
+        type: newHoliday.type,
+        description: newHoliday.description,
+      });
+      await loadHolidays();
+      setNewHoliday({ name: '', date: '', type: 'public', isPaid: true, description: '' });
+      setHolidayDialogOpen(false);
+      toast.success('Holiday added successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add holiday');
+    }
   };
 
-  const handleDeleteHoliday = (id: string) => {
-    setHolidays(holidays.filter(h => h.id !== id));
-    toast.success('Holiday deleted');
+  const handleDeleteHoliday = async (id: string) => {
+    if (USE_MOCKS) {
+      setHolidays(holidays.filter(h => h.id !== id));
+      toast.success('Holiday deleted');
+      return;
+    }
+    try {
+      await settingsApi.removeHoliday(id);
+      await loadHolidays();
+      toast.success('Holiday deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete holiday');
+    }
   };
 
   const filteredHolidays = holidays.filter(h => {

@@ -39,6 +39,8 @@ import {
 } from '../../utils/cloudSync';
 import { useI18n } from '../../i18n/I18nContext';
 import { DevicesCard } from '../common/DevicesCard';
+import * as settingsApi from '../../api/settings';
+import { USE_MOCKS } from '../../api/client';
 
 export function Settings() {
   const { t } = useI18n();
@@ -247,21 +249,27 @@ export function Settings() {
 // ---------------------------------------------------------------------------
 interface CompanyInfo {
   name: string;
-  contact: string;
-  email: string;
-  tin: string;
-  plan: 'free' | 'starter' | 'business' | 'enterprise';
-  address: string;
+  legalName?: string;
+  taxId?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  logoUrl?: string;
+  currency?: string;
 }
 
 const COMPANY_INFO_KEY = 'hrms:companyInfo';
 const defaultCompanyInfo: CompanyInfo = {
   name: 'My Company Inc.',
-  contact: '+855-23-000-0000',
-  email: 'hr@company.com',
-  tin: '',
-  plan: 'business',
+  legalName: '',
+  taxId: '',
   address: '',
+  phone: '+855-23-000-0000',
+  email: 'hr@company.com',
+  website: '',
+  logoUrl: '',
+  currency: 'USD',
 };
 
 function loadCompanyInfo(): CompanyInfo {
@@ -274,17 +282,84 @@ function loadCompanyInfo(): CompanyInfo {
 }
 
 function CompanyInformationCard() {
-  const [info, setInfo] = useState<CompanyInfo>(() => loadCompanyInfo());
+  const [info, setInfo] = useState<CompanyInfo>(
+    USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD' },
+  );
   const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const remote = await settingsApi.getCompanyInfo();
+        setInfo({
+          name: remote.name,
+          legalName: remote.legalName ?? '',
+          taxId: remote.taxId ?? '',
+          address: remote.address ?? '',
+          phone: remote.phone ?? '',
+          email: remote.email ?? '',
+          website: remote.website ?? '',
+          logoUrl: remote.logoUrl ?? '',
+          currency: remote.currency ?? 'USD',
+        });
+        setDirty(false);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load company info');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const patch = (p: Partial<CompanyInfo>) => { setInfo({ ...info, ...p }); setDirty(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!info.name.trim()) { toast.error('Company name is required'); return; }
     if (info.email && !/^\S+@\S+\.\S+$/.test(info.email)) { toast.error('Invalid email'); return; }
-    localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(info));
-    setDirty(false);
-    toast.success('Company information saved');
+    if (USE_MOCKS) {
+      localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(info));
+      setDirty(false);
+      toast.success('Company information saved');
+      return;
+    }
+    try {
+      await settingsApi.updateCompanyInfo(info);
+      setDirty(false);
+      toast.success('Company information saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save company info');
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (USE_MOCKS) {
+      setInfo(loadCompanyInfo());
+      setDirty(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const remote = await settingsApi.getCompanyInfo();
+      setInfo({
+        name: remote.name,
+        legalName: remote.legalName ?? '',
+        taxId: remote.taxId ?? '',
+        address: remote.address ?? '',
+        phone: remote.phone ?? '',
+        email: remote.email ?? '',
+        website: remote.website ?? '',
+        logoUrl: remote.logoUrl ?? '',
+        currency: remote.currency ?? 'USD',
+      });
+      setDirty(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reload company info');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -294,6 +369,12 @@ function CompanyInformationCard() {
         <CardDescription>Public business details shown on payslips, tax reports, and invoices.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {loading && (
+          <p className="text-xs text-gray-500 flex items-center gap-2">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            Loading company info…
+          </p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="ci-name">
@@ -304,16 +385,29 @@ function CompanyInformationCard() {
               value={info.name}
               onChange={(e) => patch({ name: e.target.value })}
               placeholder="My Company Inc."
+              disabled={loading}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ci-contact">Contact</Label>
+            <Label htmlFor="ci-legal">Legal Name</Label>
             <Input
-              id="ci-contact"
-              value={info.contact}
-              onChange={(e) => patch({ contact: e.target.value })}
+              id="ci-legal"
+              value={info.legalName ?? ''}
+              onChange={(e) => patch({ legalName: e.target.value })}
+              placeholder="Registered legal entity"
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-phone">Phone</Label>
+            <Input
+              id="ci-phone"
+              value={info.phone ?? ''}
+              onChange={(e) => patch({ phone: e.target.value })}
               placeholder="+855-23-000-0000"
+              disabled={loading}
             />
           </div>
 
@@ -322,56 +416,78 @@ function CompanyInformationCard() {
             <Input
               id="ci-email"
               type="email"
-              value={info.email}
+              value={info.email ?? ''}
               onChange={(e) => patch({ email: e.target.value })}
               placeholder="hr@company.com"
+              disabled={loading}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ci-tin">TIN</Label>
+            <Label htmlFor="ci-tax">Tax ID</Label>
             <Input
-              id="ci-tin"
-              value={info.tin}
-              onChange={(e) => patch({ tin: e.target.value })}
+              id="ci-tax"
+              value={info.taxId ?? ''}
+              onChange={(e) => patch({ taxId: e.target.value })}
               placeholder="Taxpayer Identification Number"
+              disabled={loading}
             />
             <p className="text-xs text-gray-500">Printed on tax reports (TOS, annual summary).</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ci-plan">Plan</Label>
-            <select
-              id="ci-plan"
-              value={info.plan}
-              onChange={(e) => patch({ plan: e.target.value as CompanyInfo['plan'] })}
-              className="w-full px-3 py-2 border rounded-md h-9"
-            >
-              <option value="free">Free</option>
-              <option value="starter">Starter</option>
-              <option value="business">Business</option>
-              <option value="enterprise">Enterprise</option>
-            </select>
-            <p className="text-xs text-gray-500">Managed by the platform admin; read-only for tenant admins in production.</p>
+            <Label htmlFor="ci-website">Website</Label>
+            <Input
+              id="ci-website"
+              type="url"
+              value={info.website ?? ''}
+              onChange={(e) => patch({ website: e.target.value })}
+              placeholder="https://example.com"
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-currency">Currency</Label>
+            <Input
+              id="ci-currency"
+              value={info.currency ?? ''}
+              onChange={(e) => patch({ currency: e.target.value })}
+              placeholder="USD"
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="ci-logo">Logo URL</Label>
+            <Input
+              id="ci-logo"
+              type="url"
+              value={info.logoUrl ?? ''}
+              onChange={(e) => patch({ logoUrl: e.target.value })}
+              placeholder="https://cdn.example.com/logo.png"
+              disabled={loading}
+            />
           </div>
 
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="ci-address">Address</Label>
             <Input
               id="ci-address"
-              value={info.address}
+              value={info.address ?? ''}
               onChange={(e) => patch({ address: e.target.value })}
               placeholder="Street, District, City, Country"
+              disabled={loading}
             />
           </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-2 border-t">
           {dirty && <span className="text-xs text-amber-700 mr-auto">Unsaved changes</span>}
-          <Button variant="outline" onClick={() => { setInfo(loadCompanyInfo()); setDirty(false); }} disabled={!dirty}>
+          <Button variant="outline" onClick={handleDiscard} disabled={!dirty || loading}>
             Discard
           </Button>
-          <Button onClick={handleSave} disabled={!dirty}>
+          <Button onClick={handleSave} disabled={!dirty || loading}>
             <Save className="h-4 w-4 mr-2" />
             Save
           </Button>

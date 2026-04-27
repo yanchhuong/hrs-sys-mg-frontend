@@ -67,16 +67,16 @@ export async function removeHoliday(id: string): Promise<void> {
   return apiVoid(`/api/v1/settings/holidays/${id}`, { method: 'DELETE' });
 }
 
-// ---- Company info / general -----------------------------------------------
+// ---- Company info ----------------------------------------------------------
 export interface CompanyInfo {
   name: string;
-  legalName?: string;
-  taxId?: string;
-  address?: string;
-  phone?: string;
-  email?: string;
-  website?: string;
-  logoUrl?: string;
+  legalName?: string | null;
+  taxId?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  logoUrl?: string | null;
   currency?: string;
 }
 
@@ -84,6 +84,34 @@ export async function getCompanyInfo(): Promise<CompanyInfo> {
   return apiJson('/api/v1/settings/company');
 }
 
-export async function updateCompanyInfo(req: Partial<CompanyInfo>): Promise<CompanyInfo> {
+export async function updateCompanyInfo(req: CompanyInfo): Promise<CompanyInfo> {
   return apiJson('/api/v1/settings/company', { method: 'PUT', json: req });
+}
+
+// ---- OT settings -----------------------------------------------------------
+// Singleton per tenant. Backend exposes `GET/PUT /api/v1/settings/ot`.
+// `workdayRule`, `weekendRule`, `holidayRule` are free-form JSON (Map<String,Object>)
+// the UI fills in — backend stores them verbatim.
+export interface OtSettings {
+  otStartAfter: string;            // HH:mm (LocalTime)
+  minimumOTThresholdMinutes: number;
+  otRoundingMinutes: number;
+  weekdayRate: number;
+  weekendRate: number;
+  holidayRate: number;
+  maxOTHoursPerDay: number;
+  requireApproval: boolean;
+  calculationMode: 'factory' | 'office' | string;
+  workdayRule?: Record<string, unknown>;
+  weekendRule?: Record<string, unknown>;
+  holidayRule?: Record<string, unknown>;
+  departmentAssignments?: unknown;
+}
+
+export async function getOtSettings(): Promise<OtSettings> {
+  return apiJson('/api/v1/settings/ot');
+}
+
+export async function updateOtSettings(req: OtSettings): Promise<OtSettings> {
+  return apiJson('/api/v1/settings/ot', { method: 'PUT', json: req });
 }
