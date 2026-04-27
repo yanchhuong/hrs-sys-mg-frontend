@@ -31,6 +31,7 @@ import {
   ChevronRight,
   BarChart3,
   UserCog,
+  Briefcase,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 
@@ -90,6 +91,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
         children: [
           { id: 'settings',            label: t('nav.setting.general'),    icon: Settings,   roles: ['admin'] },
           { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock,      roles: ['admin'] },
+          { id: 'employee-settings',   label: t('nav.setting.empset'),     icon: Briefcase,  roles: ['admin'] },
           { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users,      roles: ['admin'] },
           { id: 'payroll-categories',  label: t('nav.setting.payrollcat'), icon: DollarSign, roles: ['admin'] },
         ],

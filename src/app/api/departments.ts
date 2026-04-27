@@ -4,12 +4,20 @@ export interface Department {
   id: string;
   name: string;
   description?: string | null;
+  /** Backend UUID of the assigned department manager (an employee). */
+  managerId?: string | null;
+  /** Backend UUID of the parent department/group. null = top-level. */
+  parentId?: string | null;
   createdAt?: string;
 }
 
 export interface CreateDepartmentRequest {
   name: string;
   description?: string;
+  /** Pass the manager's backend UUID (employee.apiId), or null to clear. */
+  managerId?: string | null;
+  /** Pass another department's UUID to nest, or null for top-level. */
+  parentId?: string | null;
 }
 
 export async function list(): Promise<Department[]> {

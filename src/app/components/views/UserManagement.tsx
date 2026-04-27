@@ -51,10 +51,9 @@ import {
 } from '../ui/command';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, FolderTree, ChevronsUpDown, Check,
+  Save, AlertTriangle, ChevronsUpDown, Check,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import { DepsGroup } from './DepsGroup';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -769,10 +768,6 @@ export function UserManagement() {
             <Lock className="mr-2 h-4 w-4" />
             Permissions
           </TabsTrigger>
-          <TabsTrigger value="departments">
-            <FolderTree className="mr-2 h-4 w-4" />
-            Department/Group
-          </TabsTrigger>
         </TabsList>
 
         {/* Users tab */}
@@ -1159,10 +1154,6 @@ export function UserManagement() {
           </Card>
         </TabsContent>
 
-        {/* Department / Group tab */}
-        <TabsContent value="departments" className="space-y-4">
-          <DepsGroup embedded />
-        </TabsContent>
       </Tabs>
 
       {/* Add Custom Role dialog */}

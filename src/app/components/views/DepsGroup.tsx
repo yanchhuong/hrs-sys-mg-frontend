@@ -42,7 +42,7 @@ interface DeptGroup extends Department {
   type: 'department' | 'group';
   isActive: boolean;
   color: string;
-  parentId?: string;
+  // parentId is inherited from Department (string | null | undefined).
 }
 
 const COLORS = [
@@ -103,6 +103,7 @@ const initialDepts: DeptGroup[] = [
 const emptyForm: Omit<DeptGroup, 'id'> = {
   name: '',
   managerId: '',
+  parentId: '',
   employeeCount: 0,
   description: '',
   type: 'department',
@@ -227,6 +228,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     setForm({
       name: item.name,
       managerId: item.managerId || '',
+      parentId: item.parentId || '',
       employeeCount: item.employeeCount || 0,
       description: item.description || '',
       type: item.type,
@@ -277,12 +279,16 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         await departmentsApi.update(editing.id, {
           name: form.name,
           description: form.description || undefined,
+          managerId: form.managerId || null,
+          parentId: form.parentId || null,
         });
         toast.success(`"${form.name}" updated`);
       } else {
         await departmentsApi.create({
           name: form.name,
           description: form.description || undefined,
+          managerId: form.managerId || null,
+          parentId: form.parentId || null,
         });
         toast.success(`"${form.name}" created`);
       }
@@ -335,6 +341,38 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     const emp = employees.find(e => e.id === managerId || (e as any).apiId === managerId);
     return emp?.name || '-';
   };
+
+  const getParentName = (parentId?: string | null) => {
+    if (!parentId) return '-';
+    return items.find(i => i.id === parentId)?.name ?? '-';
+  };
+
+  /**
+   * Set of ids that descend from `rootId` (direct + transitive children).
+   * Used to keep the Parent picker from offering self or a descendant, which
+   * would create a cycle. Walks the items list iteratively to avoid recursion
+   * stack issues when cycles already exist (defensive).
+   */
+  const descendantIds = (rootId: string): Set<string> => {
+    const out = new Set<string>();
+    const queue = [rootId];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      for (const child of items) {
+        if (child.parentId === cur && !out.has(child.id)) {
+          out.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
+    return out;
+  };
+
+  // Heuristic: hide an id subtitle that looks like a raw UUID (8-4-4-4-12).
+  // Backend departments expose UUIDs as ids; surfacing them would violate
+  // the project's "no UUIDs in user-facing fields" rule.
+  const isUuid = (s?: string) =>
+    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
   return (
     <div className="space-y-6">
@@ -444,6 +482,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Parent</TableHead>
                 <TableHead>Manager / Lead</TableHead>
                 <TableHead className="text-center">Members</TableHead>
                 <TableHead>Status</TableHead>
@@ -454,7 +493,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-gray-400">
+                  <TableCell colSpan={8} className="text-center py-12 text-gray-400">
                     <FolderTree className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No departments or groups found</p>
                   </TableCell>
@@ -476,7 +515,9 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                         }`} />
                         <div>
                           <p className="font-medium text-sm">{item.name}</p>
-                          <p className="text-xs text-gray-400">{item.id}</p>
+                          {!isUuid(item.id) && (
+                            <p className="text-xs text-gray-400">{item.id}</p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -486,6 +527,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                       }`}>
                         {item.type === 'department' ? 'Department' : 'Group'}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {item.parentId
+                        ? <span className="text-gray-700">{getParentName(item.parentId)}</span>
+                        : <span className="text-xs text-gray-400">Top-level</span>}
                     </TableCell>
                     <TableCell className="text-sm">{getManagerName(item.managerId)}</TableCell>
                     <TableCell className="text-center">
@@ -647,6 +693,28 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
               />
             </div>
 
+            {/* Parent */}
+            <div className="space-y-2">
+              <Label className="text-sm">Parent</Label>
+              <ParentPicker
+                items={items}
+                value={form.parentId || ''}
+                onChange={v => setForm({ ...form, parentId: v })}
+                excludeIds={
+                  // Forbid self + descendants when editing — would cycle.
+                  // Departments must have a department parent (backend FK).
+                  // Groups can nest under anything (local-only).
+                  editing
+                    ? new Set<string>([editing.id, ...descendantIds(editing.id)])
+                    : new Set<string>()
+                }
+                allowedTypes={form.type === 'department' ? ['department'] : ['department', 'group']}
+              />
+              <p className="text-xs text-gray-400">
+                Leave blank for a top-level {form.type}.
+              </p>
+            </div>
+
             {/* Description */}
             <div className="space-y-2">
               <Label className="text-sm">Description</Label>
@@ -765,6 +833,79 @@ function ManagerPicker({
                       {e.name}
                       <span className="text-gray-400"> — {e.id}</span>
                       {e.position ? <span className="text-gray-400"> · {e.position}</span> : null}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Searchable picker for the optional Parent (Department or Group). Empty
+ * value = top-level. Items in `excludeIds` (self + descendants) are filtered
+ * out to prevent cycles. `allowedTypes` lets a Department restrict to other
+ * Departments only — Groups are local-only and can't be backend parents.
+ */
+function ParentPicker({
+  items, value, onChange, excludeIds, allowedTypes,
+}: {
+  items: DeptGroup[];
+  value: string;
+  onChange: (v: string) => void;
+  excludeIds: Set<string>;
+  allowedTypes: ('department' | 'group')[];
+}) {
+  const [open, setOpen] = useState(false);
+  const eligible = items.filter(i =>
+    allowedTypes.includes(i.type) && !excludeIds.has(i.id) && i.isActive
+  );
+  const selected = items.find(i => i.id === value);
+  const label = selected ? selected.name : 'None (top-level)';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 w-full justify-between font-normal"
+        >
+          <span className={selected ? '' : 'text-gray-400'}>{label}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search parent…" />
+          <CommandList>
+            <CommandEmpty>No eligible parent found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__none__"
+                onSelect={() => { onChange(''); setOpen(false); }}
+              >
+                <Check className={`mr-2 h-4 w-4 ${!value ? 'opacity-100' : 'opacity-0'}`} />
+                <span className="text-gray-500 italic">None (top-level)</span>
+              </CommandItem>
+              {eligible.map(p => {
+                const haystack = `${p.name} ${p.description ?? ''}`;
+                return (
+                  <CommandItem
+                    key={p.id}
+                    value={haystack}
+                    onSelect={() => { onChange(p.id); setOpen(false); }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${value === p.id ? 'opacity-100' : 'opacity-0'}`} />
+                    <span className="flex-1 truncate">
+                      {p.name}
+                      <span className="text-gray-400"> · {p.type === 'department' ? 'Dept' : 'Group'}</span>
                     </span>
                   </CommandItem>
                 );

@@ -15,6 +15,7 @@ import { Exception } from './components/views/Exception';
 import { Deduction } from './components/views/Deduction';
 import { Increase } from './components/views/Increase';
 import { AttendanceSettings } from './components/views/AttendanceSettings';
+import { EmployeeSettings } from './components/views/EmployeeSettings';
 import { PayrollCategorySettings } from './components/views/PayrollCategorySettings';
 import { Reports } from './components/views/Reports';
 import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
@@ -61,6 +62,8 @@ function AppContent() {
         return <Settings />;
       case 'attendance-settings':
         return <AttendanceSettings />;
+      case 'employee-settings':
+        return <EmployeeSettings />;
       case 'payroll-categories':
         return <PayrollCategorySettings />;
       default:

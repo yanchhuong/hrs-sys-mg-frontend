@@ -47,7 +47,14 @@ export const dict: Dict = {
   'nav.setting.attendance':   { en: 'Attendance Settings',  km: 'ការកំណត់វត្តមាន',   zh: '考勤设置' },
   'nav.setting.depsgroup':    { en: 'Deps/Group',           km: 'នាយកដ្ឋាន/ក្រុម',   zh: '部门/组' },
   'nav.setting.usermgmt':     { en: 'User Management',      km: 'គ្រប់គ្រងអ្នកប្រើ',    zh: '用户管理' },
+  'nav.setting.empset':       { en: 'Employee Settings',    km: 'ការកំណត់បុគ្គលិក',  zh: '员工设置' },
   'nav.setting.payrollcat':   { en: 'Payroll Categories',   km: 'ប្រភេទប្រាក់ខែ',      zh: '薪资类别' },
+
+  // --- Employee Settings page --------------------------------------------
+  'page.employeeSettings.title':           { en: 'Employee Settings',    km: 'ការកំណត់បុគ្គលិក',           zh: '员工设置' },
+  'page.employeeSettings.description':     { en: 'Manage positions, departments and groups used across HR records.', km: 'គ្រប់គ្រងតួនាទី នាយកដ្ឋាន និងក្រុមដែលប្រើក្នុងកំណត់ត្រាបុគ្គលិក។', zh: '管理在人事记录中使用的职位、部门和小组。' },
+  'page.employeeSettings.tab.positions':   { en: 'Positions',            km: 'តួនាទី',                    zh: '职位' },
+  'page.employeeSettings.tab.departments': { en: 'Departments / Groups', km: 'នាយកដ្ឋាន / ក្រុម',         zh: '部门 / 小组' },
 
   // --- Payroll Categories settings page ----------------------------------
   'payrollCat.title':         { en: 'Payroll Categories',                                 km: 'ប្រភេទប្រាក់ខែ',                       zh: '薪资类别' },
