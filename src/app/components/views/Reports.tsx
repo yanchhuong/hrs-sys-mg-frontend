@@ -13,16 +13,22 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Calendar, Clock, DollarSign, Download, FileText,
+  Calendar, Clock, DollarSign, Download, FileText, Eye,
   TrendingUp, Users, Building2, AlertCircle,
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { mockAttendance, mockEmployees, mockPayroll, mockDepartments } from '../../data/mockData';
+import { Attendance, Employee, PayrollItem } from '../../types/hrms';
 import {
   exportAttendanceToExcel,
   exportPayrollToExcel,
 } from '../../utils/excelExport';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '../ui/dialog';
+import { Pagination } from '../common/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 import { useI18n } from '../../i18n/I18nContext';
 
 const TODAY = new Date('2026-04-20');
@@ -88,6 +94,7 @@ function AttendanceReport() {
   const [endDate, setEndDate] = useState(format(TODAY, 'yyyy-MM-dd'));
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
 
   const employees = useMemo(() => {
     return departmentFilter === 'all'
@@ -268,7 +275,7 @@ function AttendanceReport() {
           </CardContent>
         </Card>
 
-        {/* Top Absent */}
+        {/* Top Absent — clickable rows open the per-employee detail dialog */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Top Absent Employees</CardTitle>
@@ -279,19 +286,42 @@ function AttendanceReport() {
             ) : (
               <div className="space-y-2">
                 {topAbsent.map(({ employee, count }, i) => (
-                  <div key={employee?.id || i} className="flex items-center justify-between py-2 border-b last:border-b-0">
+                  <button
+                    key={employee?.id || i}
+                    type="button"
+                    onClick={() => employee && setDetailEmployee(employee)}
+                    className="w-full flex items-center justify-between py-2 border-b last:border-b-0 hover:bg-gray-50 -mx-2 px-2 rounded transition-colors text-left"
+                  >
                     <div>
                       <p className="text-sm font-medium">{employee?.name}</p>
                       <p className="text-xs text-gray-400">{employee?.department}</p>
                     </div>
-                    <Badge className="bg-red-50 text-red-700 border-0">{count} days</Badge>
-                  </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-red-50 text-red-700 border-0">{count} days</Badge>
+                      <Eye className="h-3.5 w-3.5 text-gray-400" />
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Detailed records — full table of filtered attendance entries */}
+      <AttendanceDetailTable
+        records={filtered}
+        employees={mockEmployees}
+        onPickEmployee={setDetailEmployee}
+      />
+
+      <AttendanceEmployeeDialog
+        employee={detailEmployee}
+        records={filtered}
+        startDate={startDate}
+        endDate={endDate}
+        onClose={() => setDetailEmployee(null)}
+      />
 
       {/* Export */}
       <Card>
@@ -322,6 +352,7 @@ function PayrollReport() {
 
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [detailDept, setDetailDept] = useState<string | null>(null);
 
   const employees = useMemo(() => {
     return departmentFilter === 'all'
@@ -451,8 +482,17 @@ function PayrollReport() {
               </TableHeader>
               <TableBody>
                 {byDept.map(([dept, v]) => (
-                  <TableRow key={dept}>
-                    <TableCell className="font-medium">{dept}</TableCell>
+                  <TableRow
+                    key={dept}
+                    className="cursor-pointer hover:bg-gray-50"
+                    onClick={() => setDetailDept(dept)}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {dept}
+                        <Eye className="h-3.5 w-3.5 text-gray-400" />
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">{v.count}</TableCell>
                     <TableCell className="text-right text-green-700">
                       ${v.earn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -471,6 +511,21 @@ function PayrollReport() {
         </CardContent>
       </Card>
 
+      {/* Detailed records — full per-employee payroll breakdown */}
+      <PayrollDetailTable
+        records={filtered}
+        employees={mockEmployees}
+        period={monthFilter === 'all' ? 'All Months' : format(parseISO(monthFilter + '-01'), 'MMMM yyyy')}
+      />
+
+      <PayrollDeptDialog
+        department={detailDept}
+        records={filtered}
+        employees={mockEmployees}
+        period={monthFilter === 'all' ? 'All Months' : format(parseISO(monthFilter + '-01'), 'MMMM yyyy')}
+        onClose={() => setDetailDept(null)}
+      />
+
       {/* Export */}
       <Card>
         <CardContent className="py-5 flex items-center justify-between flex-wrap gap-3">
@@ -487,6 +542,414 @@ function PayrollReport() {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Detail components — Attendance
+// ---------------------------------------------------------------------------
+function AttendanceDetailTable({
+  records, employees, onPickEmployee,
+}: {
+  records: Attendance[];
+  employees: Employee[];
+  onPickEmployee: (e: Employee) => void;
+}) {
+  // Most-recent first so the user sees today's entries on page 1.
+  const sorted = useMemo(
+    () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
+    [records],
+  );
+  const empById = useMemo(
+    () => new Map(employees.map(e => [e.id, e])),
+    [employees],
+  );
+  const pagination = usePagination(sorted, 25);
+
+  const statusBadgeCls = (status: string) =>
+    ({
+      present: 'bg-green-50 text-green-700',
+      late: 'bg-yellow-50 text-yellow-700',
+      early_leave: 'bg-orange-50 text-orange-700',
+      leave: 'bg-blue-50 text-blue-700',
+      absent: 'bg-red-50 text-red-700',
+      no_checkin: 'bg-purple-50 text-purple-700',
+      no_checkout: 'bg-indigo-50 text-indigo-700',
+    } as Record<string, string>)[status] || 'bg-gray-100 text-gray-700';
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          Detailed Records
+          <Badge variant="secondary" className="ml-1 font-normal">{records.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No attendance records in the selected range</p>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Check-in</TableHead>
+                  <TableHead>Check-out</TableHead>
+                  <TableHead className="text-right">Work Hours</TableHead>
+                  <TableHead className="text-right">OT</TableHead>
+                  <TableHead className="w-12"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pagination.paginatedItems.map(a => {
+                  const emp = empById.get(a.employeeId);
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-xs">{format(new Date(a.date), 'MMM dd, yyyy')}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="text-sm font-medium">{emp?.name ?? a.employeeId}</p>
+                          <p className="text-xs text-gray-400">{emp?.department ?? ''}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={`${statusBadgeCls(a.status)} border-0 capitalize`}>
+                          {a.status.replace(/_/g, ' ')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">{a.morningIn ?? a.checkIn ?? '-'}</TableCell>
+                      <TableCell className="text-xs font-mono">{a.noonOut ?? a.checkOut ?? '-'}</TableCell>
+                      <TableCell className="text-right text-xs">{a.workHours?.toFixed(1) ?? '-'}</TableCell>
+                      <TableCell className="text-right text-xs">{a.otHours?.toFixed(1) ?? '-'}</TableCell>
+                      <TableCell>
+                        {emp && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            title={`View all entries for ${emp.name}`}
+                            onClick={() => onPickEmployee(emp)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {sorted.length > 25 && (
+              <div className="mt-4">
+                <Pagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  onPageChange={pagination.setPage}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AttendanceEmployeeDialog({
+  employee, records, startDate, endDate, onClose,
+}: {
+  employee: Employee | null;
+  records: Attendance[];
+  startDate: string;
+  endDate: string;
+  onClose: () => void;
+}) {
+  const myRecords = useMemo(() => {
+    if (!employee) return [];
+    return records
+      .filter(r => r.employeeId === employee.id)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [employee, records]);
+
+  const stats = useMemo(() => {
+    const byStatus: Record<string, number> = {};
+    let ot = 0, work = 0;
+    myRecords.forEach(r => {
+      byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+      ot += r.otHours || 0;
+      work += r.workHours || 0;
+    });
+    return { byStatus, ot, work };
+  }, [myRecords]);
+
+  return (
+    <Dialog open={!!employee} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Attendance Detail — {employee?.name}</DialogTitle>
+          <DialogDescription>
+            {format(new Date(startDate), 'MMM dd, yyyy')} – {format(new Date(endDate), 'MMM dd, yyyy')} ·{' '}
+            {employee?.department} · {employee?.position}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Total Days</p>
+              <p className="text-lg font-semibold">{myRecords.length}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Work Hours</p>
+              <p className="text-lg font-semibold">{stats.work.toFixed(1)}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">OT Hours</p>
+              <p className="text-lg font-semibold">{stats.ot.toFixed(1)}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Absences</p>
+              <p className="text-lg font-semibold text-red-600">{stats.byStatus['absent'] ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-white">
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Check-in</TableHead>
+                  <TableHead>Check-out</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
+                  <TableHead className="text-right">OT</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {myRecords.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">
+                      No records in this range
+                    </TableCell>
+                  </TableRow>
+                ) : myRecords.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell className="text-xs">{format(new Date(r.date), 'MMM dd')}</TableCell>
+                    <TableCell className="text-xs capitalize">{r.status.replace(/_/g, ' ')}</TableCell>
+                    <TableCell className="text-xs font-mono">{r.morningIn ?? r.checkIn ?? '-'}</TableCell>
+                    <TableCell className="text-xs font-mono">{r.noonOut ?? r.checkOut ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-right">{r.workHours?.toFixed(1) ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-right">{r.otHours?.toFixed(1) ?? '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Detail components — Payroll
+// ---------------------------------------------------------------------------
+function PayrollDetailTable({
+  records, employees, period,
+}: {
+  records: PayrollItem[];
+  employees: Employee[];
+  period: string;
+}) {
+  const empById = useMemo(
+    () => new Map(employees.map(e => [e.id, e])),
+    [employees],
+  );
+  const sorted = useMemo(
+    () => [...records].sort((a, b) => b.month.localeCompare(a.month) || a.employeeId.localeCompare(b.employeeId)),
+    [records],
+  );
+  const pagination = usePagination(sorted, 25);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          Detailed Records
+          <Badge variant="secondary" className="ml-1 font-normal">{records.length}</Badge>
+          <span className="ml-auto text-xs font-normal text-gray-400">{period}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">No payroll records in the selected range</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Month</TableHead>
+                    <TableHead className="text-right">Basic</TableHead>
+                    <TableHead className="text-right">OT</TableHead>
+                    <TableHead className="text-right">Allowance</TableHead>
+                    <TableHead className="text-right">Earnings</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">NSSF</TableHead>
+                    <TableHead className="text-right">Other Ded.</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagination.paginatedItems.map(p => {
+                    const emp = empById.get(p.employeeId);
+                    const allowance = (p.positionAllowance ?? 0) + (p.evaluationAllowance ?? 0);
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <p className="text-sm font-medium">{emp?.name ?? p.employeeId}</p>
+                          <p className="text-xs text-gray-400">{emp?.department ?? ''}</p>
+                        </TableCell>
+                        <TableCell className="text-xs">{p.month}</TableCell>
+                        <TableCell className="text-right text-xs">${p.baseSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">${p.otPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">${allowance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs text-green-700">${p.totalEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">${(p.taxOnSalary ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">${(p.nssfPension ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">${(p.otherDeductions ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">${p.totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            {sorted.length > 25 && (
+              <div className="mt-4">
+                <Pagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  onPageChange={pagination.setPage}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PayrollDeptDialog({
+  department, records, employees, period, onClose,
+}: {
+  department: string | null;
+  records: PayrollItem[];
+  employees: Employee[];
+  period: string;
+  onClose: () => void;
+}) {
+  const empById = useMemo(
+    () => new Map(employees.map(e => [e.id, e])),
+    [employees],
+  );
+
+  const myRecords = useMemo(() => {
+    if (!department) return [];
+    return records.filter(p => {
+      const emp = empById.get(p.employeeId);
+      return (emp?.department ?? 'Unknown') === department;
+    });
+  }, [department, records, empById]);
+
+  const totals = useMemo(() => {
+    let earn = 0, ded = 0, net = 0;
+    myRecords.forEach(p => { earn += p.totalEarnings; ded += p.deductions; net += p.totalPay; });
+    return { earn, ded, net };
+  }, [myRecords]);
+
+  return (
+    <Dialog open={!!department} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Payroll Detail — {department}</DialogTitle>
+          <DialogDescription>
+            {period} · {myRecords.length} record{myRecords.length !== 1 ? 's' : ''}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Total Earnings</p>
+              <p className="text-lg font-semibold text-green-700">
+                ${totals.earn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Total Deductions</p>
+              <p className="text-lg font-semibold text-red-700">
+                ${totals.ded.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-xs text-gray-500">Net Salary</p>
+              <p className="text-lg font-semibold">
+                ${totals.net.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+
+          <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-white">
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Month</TableHead>
+                  <TableHead className="text-right">Earnings</TableHead>
+                  <TableHead className="text-right">Deductions</TableHead>
+                  <TableHead className="text-right">Net</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {myRecords.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-sm text-gray-400 py-6">
+                      No records
+                    </TableCell>
+                  </TableRow>
+                ) : myRecords.map(p => {
+                  const emp = empById.get(p.employeeId);
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        <p className="text-sm font-medium">{emp?.name ?? p.employeeId}</p>
+                        <p className="text-xs text-gray-400">{emp?.position ?? ''}</p>
+                      </TableCell>
+                      <TableCell className="text-xs">{p.month}</TableCell>
+                      <TableCell className="text-right text-xs text-green-700">
+                        ${p.totalEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-red-700">
+                        ${p.deductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right text-sm font-semibold">
+                        ${p.totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

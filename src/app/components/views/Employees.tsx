@@ -4,6 +4,7 @@ import { Contract, Employee } from '../../types/hrms';
 import * as employeesApi from '../../api/employees';
 import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
+import * as positionsApi from '../../api/positions';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -45,6 +46,7 @@ import {
 } from '../ui/dropdown-menu';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
+import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
@@ -302,20 +304,28 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
   };
 }
 
-// Adapts a backend Contract to the front-end mock Contract shape. The mock
-// shape has extra fields (`contractType`, `salary`) we fill with placeholders;
-// renewal calls still use the backend shape (`{endDate, baseSalary}`).
+// Adapts a backend Contract to the front-end mock Contract shape.
 function adaptApiContract(c: contractsApi.Contract): Contract {
-  const status: Contract['status'] =
-    c.status === 'active' ? 'active' : 'expired';
+  const today = new Date().toISOString().slice(0, 10);
+  // The UI distinguishes 'expiring' (active and within 60d of end) — backend
+  // only stores active|expired|terminated.
+  let status: Contract['status'];
+  if (c.status === 'expired' || c.status === 'terminated') {
+    status = 'expired';
+  } else {
+    const daysToEnd = Math.ceil(
+      (new Date(c.endDate).getTime() - new Date(today).getTime()) / 86_400_000,
+    );
+    status = daysToEnd <= 60 && daysToEnd >= 0 ? 'expiring' : 'active';
+  }
   return {
     id: c.id,
     employeeId: c.employeeId,
     startDate: c.startDate,
     endDate: c.endDate,
     status,
-    contractType: c.position ?? '-',
-    salary: c.baseSalary,
+    contractType: c.contractType || 'Fixed Term',
+    salary: c.salary,
     notes: c.notes,
     createdAt: c.createdAt ?? new Date().toISOString(),
   };
@@ -333,6 +343,7 @@ export function Employees() {
   const [rawEmployees, setRawEmployees] = useState<employeesApi.Employee[]>([]);
   const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
   const [departments, setDepartments] = useState<departmentsApi.Department[]>([]);
+  const [positions, setPositions] = useState<positionsApi.Position[]>([]);
   const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
 
   // departmentId → name lookup. In mock mode the adapter stores the name
@@ -383,11 +394,22 @@ export function Employees() {
     }
   };
 
+  // Positions feed the Position picker on the Employee form. Loaded once on
+  // mount; positions are managed in Settings → Employee Settings → Positions.
+  const loadPositions = async () => {
+    if (USE_MOCKS) return;
+    try {
+      setPositions(await positionsApi.list());
+    } catch (err) {
+      console.warn('Could not load positions', err);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadEmployees(), loadContracts(), loadDepartments()]);
+      await Promise.all([loadEmployees(), loadContracts(), loadDepartments(), loadPositions()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -417,15 +439,19 @@ export function Employees() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedEmployee, setEditedEmployee] = useState<typeof mockEmployees[0] | null>(null);
-  const [renewDialogOpen, setRenewDialogOpen] = useState(false);
+  // Single dialog handles add / edit / renew. `selectedContract` is the row
+  // being edited or renewed; null when adding.
+  const [contractDialogOpen, setContractDialogOpen] = useState(false);
+  const [contractMode, setContractMode] = useState<'add' | 'edit' | 'renew'>('add');
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [renewalData, setRenewalData] = useState({
+  const [contractForm, setContractForm] = useState({
     startDate: '',
     endDate: '',
     salary: 0,
-    contractType: '',
+    contractType: 'Fixed Term',
     notes: '',
   });
+  const [savingContract, setSavingContract] = useState(false);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -496,38 +522,136 @@ export function Employees() {
     }
   };
 
-  const handleRenewContract = (contract: Contract) => {
+  const handleAddContract = () => {
+    if (!selectedEmployee) return;
+    setContractMode('add');
+    setSelectedContract(null);
+    setContractForm({
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: '',
+      salary: selectedEmployee.baseSalary || 0,
+      contractType: 'Fixed Term',
+      notes: '',
+    });
+    setContractDialogOpen(true);
+  };
+
+  const handleEditContract = (contract: Contract) => {
+    setContractMode('edit');
     setSelectedContract(contract);
-    setRenewalData({
+    setContractForm({
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      salary: contract.salary || 0,
+      contractType: contract.contractType,
+      notes: contract.notes || '',
+    });
+    setContractDialogOpen(true);
+  };
+
+  const handleRenewContract = (contract: Contract) => {
+    setContractMode('renew');
+    setSelectedContract(contract);
+    setContractForm({
       startDate: contract.endDate,
       endDate: '',
       salary: contract.salary || 0,
       contractType: contract.contractType,
       notes: '',
     });
-    setRenewDialogOpen(true);
+    setContractDialogOpen(true);
   };
 
-  const handleSaveRenewal = async () => {
-    if (!renewalData.startDate || !renewalData.endDate) {
-      toast.error('Please fill in all required fields');
+  const handleSaveContract = async () => {
+    if (!contractForm.startDate || !contractForm.endDate) {
+      toast.error('Start date and end date are required');
       return;
     }
-    if (USE_MOCKS || !selectedContract) {
-      toast.success('Contract renewed successfully');
-      setRenewDialogOpen(false);
+    if (new Date(contractForm.endDate) <= new Date(contractForm.startDate)) {
+      toast.error('End date must be after start date');
       return;
     }
+    if (!contractForm.contractType.trim()) {
+      toast.error('Contract type is required');
+      return;
+    }
+
+    if (USE_MOCKS || !selectedEmployee) {
+      // Mock mode mutates the local list — no backend round-trip.
+      const today = new Date().toISOString().slice(0, 10);
+      if (contractMode === 'edit' && selectedContract) {
+        setContracts(contracts.map(c => c.id === selectedContract.id ? {
+          ...c,
+          startDate: contractForm.startDate,
+          endDate: contractForm.endDate,
+          contractType: contractForm.contractType,
+          salary: contractForm.salary,
+          notes: contractForm.notes,
+        } : c));
+        toast.success('Contract updated');
+      } else if (contractMode === 'renew' && selectedContract) {
+        const renewed: Contract = {
+          id: `CON-${Date.now()}`,
+          employeeId: selectedContract.employeeId,
+          startDate: contractForm.startDate,
+          endDate: contractForm.endDate,
+          status: 'active',
+          contractType: contractForm.contractType,
+          salary: contractForm.salary,
+          notes: contractForm.notes,
+          createdAt: today,
+        };
+        setContracts([
+          renewed,
+          ...contracts.map(c => c.id === selectedContract.id ? { ...c, status: 'expired' as const } : c),
+        ]);
+        toast.success('Contract renewed');
+      } else {
+        const created: Contract = {
+          id: `CON-${Date.now()}`,
+          employeeId: selectedEmployee.id,
+          startDate: contractForm.startDate,
+          endDate: contractForm.endDate,
+          status: 'active',
+          contractType: contractForm.contractType,
+          salary: contractForm.salary,
+          notes: contractForm.notes,
+          createdAt: today,
+        };
+        setContracts([created, ...contracts]);
+        toast.success('Contract created');
+      }
+      setContractDialogOpen(false);
+      return;
+    }
+
+    setSavingContract(true);
     try {
-      await contractsApi.renew(selectedContract.id, {
-        endDate: renewalData.endDate,
-        baseSalary: renewalData.salary,
-      });
-      toast.success('Contract renewed successfully');
-      setRenewDialogOpen(false);
+      const payload: contractsApi.ContractRequest = {
+        startDate: contractForm.startDate,
+        endDate: contractForm.endDate,
+        contractType: contractForm.contractType.trim(),
+        salary: contractForm.salary || null,
+        notes: contractForm.notes || undefined,
+      };
+      if (contractMode === 'add') {
+        // Live mode needs the backend employee UUID, not empNo.
+        const employeeApiId = selectedEmployee.apiId ?? selectedEmployee.id;
+        await contractsApi.create(employeeApiId, payload);
+        toast.success('Contract created');
+      } else if (contractMode === 'edit' && selectedContract) {
+        await contractsApi.update(selectedContract.id, payload);
+        toast.success('Contract updated');
+      } else if (contractMode === 'renew' && selectedContract) {
+        await contractsApi.renew(selectedContract.id, payload);
+        toast.success('Contract renewed');
+      }
+      setContractDialogOpen(false);
       await loadContracts();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to renew contract');
+      toast.error(err instanceof Error ? err.message : 'Failed to save contract');
+    } finally {
+      setSavingContract(false);
     }
   };
 
@@ -617,6 +741,9 @@ export function Employees() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onCreated={handleCreated}
+        positions={positions}
+        departments={departments}
+        employees={employees}
       />
       <BulkUploadEmployeesDialog
         open={bulkDialogOpen}
@@ -946,10 +1073,26 @@ export function Employees() {
                     <div className="grid grid-cols-2 gap-4">
                       <FieldRow label="Position" required={isEditing} isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
+                          <SearchablePicker
+                            options={positions
+                              // Show positions in the chosen department first; cross-dept
+                              // positions (no departmentId) always pass through.
+                              .filter(p => !editedEmployee.department
+                                || !p.departmentId
+                                || p.departmentId === editedEmployee.department)
+                              .map(p => ({
+                                value: p.name,
+                                label: p.name,
+                                secondary: p.departmentId ? deptName(p.departmentId) : undefined,
+                              }))}
                             value={editedEmployee.position}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, position: e.target.value })}
-                            className="h-9"
+                            onChange={v => setEditedEmployee({ ...editedEmployee, position: v })}
+                            placeholder="Select position…"
+                            searchPlaceholder="Search position…"
+                            emptyOptionsHint={
+                              <>No positions defined yet — add some in <span className="font-medium">Settings → Employee Settings → Positions</span>.</>
+                            }
+                            allowClear={false}
                           />
                         ) : (
                           <p>{selectedEmployee.position}</p>
@@ -957,45 +1100,39 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Department" required={isEditing} isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          USE_MOCKS ? (
-                            <Input
-                              value={editedEmployee.department}
-                              onChange={(e) => setEditedEmployee({ ...editedEmployee, department: e.target.value })}
-                              className="h-9"
-                            />
-                          ) : (
-                            <select
-                              className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                              value={editedEmployee.department}
-                              onChange={(e) => setEditedEmployee({ ...editedEmployee, department: e.target.value })}
-                            >
-                              <option value="">—</option>
-                              {departments.map((d) => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                              ))}
-                            </select>
-                          )
+                          <SearchablePicker
+                            options={(USE_MOCKS
+                              ? departments.map(d => ({ value: d.name, label: d.name }))
+                              : departments.map(d => ({ value: d.id, label: d.name })))}
+                            value={editedEmployee.department}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, department: v })}
+                            placeholder="Select department…"
+                            searchPlaceholder="Search department…"
+                            allowClear={false}
+                          />
                         ) : (
                           <p>{deptName(selectedEmployee.department)}</p>
                         )}
                       </FieldRow>
                       <FieldRow label="Reports To" isEditing={isEditing} full>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <SearchablePicker
+                            options={employees
+                              .filter(e => e.id !== editedEmployee.id && e.status === 'active')
+                              .map(emp => ({
+                                // Value carries whatever the backend stores on managerId
+                                // (UUID in live mode, empNo in mock mode).
+                                value: emp.apiId ?? emp.id,
+                                label: emp.name,
+                                secondary: emp.position,
+                                searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''}`,
+                              }))}
                             value={editedEmployee.managerId || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, managerId: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                          >
-                            <option value="">No Manager</option>
-                            {employees.filter(e => e.id !== editedEmployee.id).map(emp => {
-                              // Value carries whatever identifier the backend stores
-                              // on managerId (UUID in live mode, empNo in mock mode).
-                              const val = emp.apiId ?? emp.id;
-                              return (
-                                <option key={val} value={val}>{emp.name} — {emp.position}</option>
-                              );
-                            })}
-                          </select>
+                            onChange={v => setEditedEmployee({ ...editedEmployee, managerId: v })}
+                            placeholder="Select manager…"
+                            emptyLabel="No manager"
+                            searchPlaceholder="Search by name, ID, position…"
+                          />
                         ) : (
                           <p>
                             {selectedEmployee.managerId
@@ -1108,6 +1245,15 @@ export function Employees() {
                         .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime())[0];
                       return (
                         <>
+                          <div className="flex items-center justify-between gap-3">
+                            <SectionHeading>Contract History</SectionHeading>
+                            {canManageRoster && (
+                              <Button size="sm" onClick={handleAddContract} className="h-7 text-xs">
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add Contract
+                              </Button>
+                            )}
+                          </div>
                           <div className="grid grid-cols-3 gap-3">
                             <div className="p-3 bg-gray-50 rounded-md">
                               <p className="text-xs text-gray-500">Total Contracts</p>
@@ -1133,28 +1279,47 @@ export function Employees() {
                                   <TableHead className="text-xs py-2">End</TableHead>
                                   <TableHead className="text-xs py-2">Salary</TableHead>
                                   <TableHead className="text-xs py-2">Status</TableHead>
-                                  <TableHead className="text-xs py-2">Actions</TableHead>
+                                  <TableHead className="text-xs py-2 text-right">Actions</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {contracts.map((contract) => (
+                                {contracts.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={6} className="text-center py-6 text-xs text-gray-400">
+                                      No contracts yet. {canManageRoster && 'Click "Add Contract" to create one.'}
+                                    </TableCell>
+                                  </TableRow>
+                                ) : contracts.map((contract) => (
                                   <TableRow key={contract.id} className={`text-xs ${contract.id === activeContract?.id ? 'bg-blue-50/50' : ''}`}>
                                     <TableCell className="py-2 font-medium">{contract.contractType}</TableCell>
                                     <TableCell className="py-2">{format(new Date(contract.startDate), 'MMM dd, yyyy')}</TableCell>
                                     <TableCell className="py-2">{format(new Date(contract.endDate), 'MMM dd, yyyy')}</TableCell>
                                     <TableCell className="py-2">${contract.salary?.toLocaleString() || '-'}</TableCell>
                                     <TableCell className="py-2">{getContractStatusBadge(contract.status)}</TableCell>
-                                    <TableCell className="py-2">
-                                      {(contract.status === 'active' || contract.status === 'expiring') && (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-6 text-xs px-2"
-                                          onClick={() => handleRenewContract(contract)}
-                                        >
-                                          <RefreshCw className="h-3 w-3 mr-1" />
-                                          Renew
-                                        </Button>
+                                    <TableCell className="py-2 text-right">
+                                      {canManageRoster && (
+                                        <div className="flex justify-end gap-1.5">
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-xs px-2"
+                                            onClick={() => handleEditContract(contract)}
+                                          >
+                                            <Edit className="h-3 w-3 mr-1" />
+                                            Edit
+                                          </Button>
+                                          {(contract.status === 'active' || contract.status === 'expiring') && (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-6 text-xs px-2"
+                                              onClick={() => handleRenewContract(contract)}
+                                            >
+                                              <RefreshCw className="h-3 w-3 mr-1" />
+                                              Renew
+                                            </Button>
+                                          )}
+                                        </div>
                                       )}
                                     </TableCell>
                                   </TableRow>
@@ -1223,17 +1388,23 @@ export function Employees() {
         </SheetContent>
       </Sheet>
 
-      {/* Contract Renewal Dialog */}
-      <Dialog open={renewDialogOpen} onOpenChange={setRenewDialogOpen}>
+      {/* Contract Add / Edit / Renew Dialog */}
+      <Dialog open={contractDialogOpen} onOpenChange={setContractDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Renew Contract</DialogTitle>
+            <DialogTitle>
+              {contractMode === 'add' ? 'Add Contract'
+                : contractMode === 'edit' ? 'Edit Contract'
+                : 'Renew Contract'}
+            </DialogTitle>
             <DialogDescription>
-              Create a new contract renewal for {selectedEmployee?.name}
+              {contractMode === 'add' && `Create a new contract for ${selectedEmployee?.name}.`}
+              {contractMode === 'edit' && `Update the contract details for ${selectedEmployee?.name}.`}
+              {contractMode === 'renew' && `Renewing creates a new active contract and marks the current one expired.`}
             </DialogDescription>
           </DialogHeader>
-          {selectedContract && (
-            <div className="space-y-4">
+          <div className="space-y-4">
+            {contractMode === 'renew' && selectedContract && (
               <div className="p-4 bg-gray-50 rounded-lg">
                 <p className="text-sm font-medium mb-2">Current Contract</p>
                 <div className="grid grid-cols-3 gap-3 text-sm">
@@ -1247,80 +1418,96 @@ export function Employees() {
                   </div>
                   <div>
                     <p className="text-gray-600">Current Salary</p>
-                    <p className="font-medium">${selectedContract.salary?.toLocaleString()}</p>
+                    <p className="font-medium">${selectedContract.salary?.toLocaleString() || '-'}</p>
                   </div>
                 </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">New Start Date *</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={renewalData.startDate}
-                    onChange={(e) => setRenewalData({ ...renewalData, startDate: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">New End Date *</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={renewalData.endDate}
-                    onChange={(e) => setRenewalData({ ...renewalData, endDate: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="contractType">Contract Type *</Label>
-                  <select
-                    id="contractType"
-                    value={renewalData.contractType}
-                    onChange={(e) => setRenewalData({ ...renewalData, contractType: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-md"
-                  >
-                    <option value="Fixed Term">Fixed Term</option>
-                    <option value="Permanent">Permanent</option>
-                    <option value="Probation">Probation</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="salary">Salary ($)</Label>
-                  <Input
-                    id="salary"
-                    type="number"
-                    value={renewalData.salary}
-                    onChange={(e) => setRenewalData({ ...renewalData, salary: parseFloat(e.target.value) })}
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <textarea
-                  id="notes"
-                  rows={3}
-                  value={renewalData.notes}
-                  onChange={(e) => setRenewalData({ ...renewalData, notes: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-md"
-                  placeholder="Add any notes about this renewal..."
+                <Label htmlFor="contractStart">
+                  {contractMode === 'renew' ? 'New Start Date' : 'Start Date'} *
+                </Label>
+                <Input
+                  id="contractStart"
+                  type="date"
+                  value={contractForm.startDate}
+                  onChange={(e) => setContractForm({ ...contractForm, startDate: e.target.value })}
                 />
               </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setRenewDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveRenewal}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Renew Contract
-                </Button>
+              <div className="space-y-2">
+                <Label htmlFor="contractEnd">
+                  {contractMode === 'renew' ? 'New End Date' : 'End Date'} *
+                </Label>
+                <Input
+                  id="contractEnd"
+                  type="date"
+                  value={contractForm.endDate}
+                  onChange={(e) => setContractForm({ ...contractForm, endDate: e.target.value })}
+                />
               </div>
             </div>
-          )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="contractType">Contract Type *</Label>
+                <select
+                  id="contractType"
+                  value={contractForm.contractType}
+                  onChange={(e) => setContractForm({ ...contractForm, contractType: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                >
+                  <option value="Fixed Term">Fixed Term</option>
+                  <option value="Permanent">Permanent</option>
+                  <option value="Probation">Probation</option>
+                  <option value="Contract">Contract</option>
+                  <option value="Internship">Internship</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contractSalary">Salary ($)</Label>
+                <Input
+                  id="contractSalary"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={contractForm.salary}
+                  onChange={(e) => setContractForm({ ...contractForm, salary: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="contractNotes">Notes</Label>
+              <textarea
+                id="contractNotes"
+                rows={3}
+                value={contractForm.notes}
+                onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+                placeholder={
+                  contractMode === 'renew' ? 'Reason for renewal, salary change rationale…'
+                    : 'Optional notes about this contract…'
+                }
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setContractDialogOpen(false)} disabled={savingContract}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveContract} disabled={savingContract}>
+                {contractMode === 'renew' && <RefreshCw className="mr-2 h-4 w-4" />}
+                {contractMode === 'add' && <Plus className="mr-2 h-4 w-4" />}
+                {contractMode === 'edit' && <Edit className="mr-2 h-4 w-4" />}
+                {savingContract ? 'Saving…'
+                  : contractMode === 'add' ? 'Create Contract'
+                  : contractMode === 'edit' ? 'Save Changes'
+                  : 'Renew Contract'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -7,19 +7,22 @@ export interface Contract {
   employeeId: string;
   startDate: string;
   endDate: string;
-  status: ContractStatus;
-  position?: string;
-  baseSalary?: number;
+  status: ContractStatus | string;
+  /** Free-text role/position label, e.g. "Permanent", "Fixed Term", "Probation". */
+  contractType: string;
+  salary?: number;
   notes?: string;
+  /** ID of the contract this one renewed (set by the backend renew endpoint). */
+  renewedFromId?: string | null;
   createdAt?: string;
 }
 
-export interface CreateContractRequest {
-  employeeId: string;
+/** Body shape for create / update / renew — backend accepts the same record. */
+export interface ContractRequest {
   startDate: string;
   endDate: string;
-  position?: string;
-  baseSalary?: number;
+  contractType: string;
+  salary?: number | null;
   notes?: string;
 }
 
@@ -46,11 +49,24 @@ export async function byEmployee(employeeId: string): Promise<Contract[]> {
   return apiJson(`/api/v1/employees/${employeeId}/contracts`);
 }
 
-export async function create(req: CreateContractRequest): Promise<Contract> {
-  return apiJson('/api/v1/contracts', { method: 'POST', json: req });
+/**
+ * Create a new contract for the given employee. Backend route is
+ * `POST /api/v1/employees/{id}/contracts`.
+ */
+export async function create(employeeId: string, req: ContractRequest): Promise<Contract> {
+  return apiJson(`/api/v1/employees/${employeeId}/contracts`, { method: 'POST', json: req });
 }
 
-export async function renew(id: string, req: { endDate: string; baseSalary?: number }): Promise<Contract> {
+/** Update an existing contract in place (PATCH). */
+export async function update(id: string, req: ContractRequest): Promise<Contract> {
+  return apiJson(`/api/v1/contracts/${id}`, { method: 'PATCH', json: req });
+}
+
+/**
+ * Renew creates a new contract row and marks the previous one expired. The
+ * backend reuses the same request shape; pass full new-contract data.
+ */
+export async function renew(id: string, req: ContractRequest): Promise<Contract> {
   return apiJson(`/api/v1/contracts/${id}/renew`, { method: 'POST', json: req });
 }
 

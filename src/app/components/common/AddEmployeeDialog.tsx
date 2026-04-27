@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -9,12 +9,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { User, Briefcase, CreditCard, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Employee } from '../../types/hrms';
-import { mockEmployees, mockDepartments } from '../../data/mockData';
+import { mockEmployees } from '../../data/mockData';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import * as positionsApi from '../../api/positions';
+import { USE_MOCKS } from '../../api/client';
+import { SearchablePicker } from './SearchablePicker';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (emp: Employee) => void;
+  /** Live-mode source-of-truth lists. In mock mode the dialog falls back to
+   *  bundled mocks so it still works standalone. */
+  positions?: positionsApi.Position[];
+  departments?: departmentsApi.Department[];
+  employees?: Employee[];
 }
 
 const blank: Partial<Employee> = {
@@ -33,13 +43,29 @@ const blank: Partial<Employee> = {
   bankAccount: '',
 };
 
-export function AddEmployeeDialog({ open, onOpenChange, onCreated }: Props) {
+export function AddEmployeeDialog({
+  open, onOpenChange, onCreated,
+  positions = [], departments = [], employees,
+}: Props) {
   const [tab, setTab] = useState<'personal' | 'employment' | 'banking'>('personal');
   const [form, setForm] = useState<Partial<Employee>>(blank);
+  const [submitting, setSubmitting] = useState(false);
 
   const patch = (p: Partial<Employee>) => setForm({ ...form, ...p });
 
-  const reset = () => { setForm(blank); setTab('personal'); };
+  const reset = () => { setForm(blank); setTab('personal'); setSubmitting(false); };
+
+  // Reports-To options: active employees minus the one being created. In
+  // mock mode fall back to bundled mocks.
+  const candidateManagers = useMemo<Employee[]>(() => {
+    const src = employees ?? (USE_MOCKS ? mockEmployees as Employee[] : []);
+    return src.filter(e => e.status === 'active' && e.id !== form.id);
+  }, [employees, form.id]);
+
+  const deptNameById = useMemo(
+    () => new Map(departments.map(d => [d.id, d.name])),
+    [departments],
+  );
 
   const validateRequired = (): string | null => {
     if (!form.id?.trim())        return 'Employee ID is required';
@@ -53,29 +79,89 @@ export function AddEmployeeDialog({ open, onOpenChange, onCreated }: Props) {
     return null;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const err = validateRequired();
     if (err) { toast.error(err); return; }
 
-    if (mockEmployees.some(e => e.id === form.id)) {
-      toast.error(`Employee ID "${form.id}" already exists`);
-      return;
-    }
-    if (mockEmployees.some(e => e.email.toLowerCase() === form.email!.toLowerCase())) {
-      toast.error(`Email "${form.email}" is already used`);
+    if (USE_MOCKS) {
+      if (mockEmployees.some(e => e.id === form.id)) {
+        toast.error(`Employee ID "${form.id}" already exists`);
+        return;
+      }
+      if (mockEmployees.some(e => e.email.toLowerCase() === form.email!.toLowerCase())) {
+        toast.error(`Email "${form.email}" is already used`);
+        return;
+      }
+      const emp: Employee = {
+        ...blank,
+        ...form,
+        status: (form.status ?? 'active') as Employee['status'],
+      } as Employee;
+      onCreated(emp);
+      toast.success(`Employee ${emp.id} created`);
+      reset();
+      onOpenChange(false);
       return;
     }
 
-    const emp: Employee = {
-      ...blank,
-      ...form,
-      status: (form.status ?? 'active') as Employee['status'],
-    } as Employee;
-    onCreated(emp);
-    toast.success(`Employee ${emp.id} created`);
-    reset();
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      // Adapter Employee.department holds the department UUID in live mode.
+      const created = await employeesApi.create({
+        empNo: form.id!.trim(),
+        name: form.name!.trim(),
+        khmerName: form.khmerName?.trim() || undefined,
+        email: form.email!.trim(),
+        position: form.position!.trim(),
+        departmentId: form.department || null,
+        joinDate: form.joinDate!,
+        contactNumber: form.contactNumber?.trim() || undefined,
+        baseSalary: form.baseSalary as number,
+        managerId: form.managerId || null,
+        gender: form.gender || undefined,
+        dateOfBirth: form.dateOfBirth || undefined,
+        placeOfBirth: form.placeOfBirth?.trim() || undefined,
+        currentAddress: form.currentAddress?.trim() || undefined,
+        nffNo: form.nffNo?.trim() || undefined,
+        tid: form.tid?.trim() || undefined,
+        contractExpireDate: form.contractExpireDate || undefined,
+        status: form.status || 'active',
+      } as employeesApi.CreateEmployeeRequest);
+      toast.success(`Employee ${created.empNo} created`);
+      // Pass a minimal Employee shape — parent refetches the live list anyway.
+      onCreated({ ...(form as Employee), id: created.empNo, status: created.status as Employee['status'] });
+      reset();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create employee');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  // Position options scope to the chosen department; cross-dept positions
+  // (no departmentId) always pass through. In mock mode there's no API list,
+  // so the picker is empty and the user falls back to typing freely — but
+  // in mock mode the picker still renders the helper hint.
+  const positionOptions = useMemo(() => {
+    return positions
+      .filter(p => !form.department || !p.departmentId || p.departmentId === form.department)
+      .map(p => ({
+        value: p.name,
+        label: p.name,
+        secondary: p.departmentId ? deptNameById.get(p.departmentId) : undefined,
+      }));
+  }, [positions, form.department, deptNameById]);
+
+  const departmentOptions = useMemo(() => {
+    if (USE_MOCKS) {
+      // mock mode: department is stored as the name. Fall back to bundled
+      // catalog when no live list is available.
+      const list = departments.length > 0 ? departments : [];
+      return list.map(d => ({ value: d.name, label: d.name }));
+    }
+    return departments.map(d => ({ value: d.id, label: d.name }));
+  }, [departments]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
@@ -190,24 +276,28 @@ export function AddEmployeeDialog({ open, onOpenChange, onCreated }: Props) {
           {/* Employment */}
           <TabsContent value="employment" className="space-y-4 pt-4">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Position" required>
-                <Input
-                  value={form.position ?? ''}
-                  onChange={(e) => patch({ position: e.target.value })}
-                  placeholder="Junior Developer"
+              <Field label="Department" required>
+                <SearchablePicker
+                  options={departmentOptions}
+                  value={form.department ?? ''}
+                  onChange={v => patch({ department: v })}
+                  placeholder="Select department…"
+                  searchPlaceholder="Search department…"
+                  allowClear={false}
                 />
               </Field>
-              <Field label="Department" required>
-                <select
-                  value={form.department ?? ''}
-                  onChange={(e) => patch({ department: e.target.value })}
-                  className="w-full h-9 px-3 border rounded-md text-sm"
-                >
-                  <option value="">Select…</option>
-                  {mockDepartments.map(d => (
-                    <option key={d.id} value={d.name}>{d.name}</option>
-                  ))}
-                </select>
+              <Field label="Position" required>
+                <SearchablePicker
+                  options={positionOptions}
+                  value={form.position ?? ''}
+                  onChange={v => patch({ position: v })}
+                  placeholder="Select position…"
+                  searchPlaceholder="Search position…"
+                  emptyOptionsHint={
+                    <>No positions defined yet — add some in <span className="font-medium">Settings → Employee Settings → Positions</span>.</>
+                  }
+                  allowClear={false}
+                />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -237,18 +327,19 @@ export function AddEmployeeDialog({ open, onOpenChange, onCreated }: Props) {
                 />
               </Field>
               <Field label="Reports To">
-                <select
+                <SearchablePicker
+                  options={candidateManagers.map(m => ({
+                    value: m.apiId ?? m.id,
+                    label: m.name,
+                    secondary: m.position,
+                    searchKey: `${m.name} ${m.id} ${m.position ?? ''}`,
+                  }))}
                   value={form.managerId ?? ''}
-                  onChange={(e) => patch({ managerId: e.target.value || undefined })}
-                  className="w-full h-9 px-3 border rounded-md text-sm"
-                >
-                  <option value="">No manager</option>
-                  {mockEmployees
-                    .filter(e => e.status === 'active')
-                    .map(m => (
-                      <option key={m.id} value={m.id}>{m.name} — {m.position}</option>
-                    ))}
-                </select>
+                  onChange={v => patch({ managerId: v || undefined })}
+                  placeholder="Select manager…"
+                  emptyLabel="No manager"
+                  searchPlaceholder="Search by name, ID, position…"
+                />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -299,15 +390,15 @@ export function AddEmployeeDialog({ open, onOpenChange, onCreated }: Props) {
         </Tabs>
 
         <DialogFooter className="px-6 py-4 border-t bg-gray-50 gap-2">
-          <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
+          <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }} disabled={submitting}>Cancel</Button>
           {tab !== 'banking' && (
-            <Button variant="outline" onClick={() => setTab(tab === 'personal' ? 'employment' : 'banking')}>
+            <Button variant="outline" onClick={() => setTab(tab === 'personal' ? 'employment' : 'banking')} disabled={submitting}>
               Next
             </Button>
           )}
-          <Button onClick={handleSubmit}>
+          <Button onClick={handleSubmit} disabled={submitting}>
             <UserPlus className="h-4 w-4 mr-2" />
-            Create Employee
+            {submitting ? 'Creating…' : 'Create Employee'}
           </Button>
         </DialogFooter>
       </DialogContent>
