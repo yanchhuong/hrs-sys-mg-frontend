@@ -44,8 +44,14 @@ import {
 } from '../ui/alert-dialog';
 import { EmployeeCell } from '../common/EmployeeCell';
 import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '../ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '../ui/command';
+import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, FolderTree,
+  Save, AlertTriangle, FolderTree, ChevronsUpDown, Check,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { DepsGroup } from './DepsGroup';
@@ -819,24 +825,12 @@ export function UserManagement() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="employeeId">Employee *</Label>
-                          <select
-                            id="employeeId"
+                          <UserEmployeePicker
+                            employees={employees}
+                            deptName={deptName}
                             value={formData.employeeId}
-                            onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md"
-                          >
-                            <option value="">Select Employee</option>
-                            {employees.map((emp) => {
-                              const val = emp.apiId ?? emp.id;
-                              const dept = deptName(emp.department) || emp.department;
-                              return (
-                                <option key={val} value={val}>
-                                  {emp.name} — {emp.id}
-                                  {dept && dept !== '-' ? ` · ${dept}` : ''}
-                                </option>
-                              );
-                            })}
-                          </select>
+                            onChange={v => setFormData({ ...formData, employeeId: v })}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="departmentId">Department</Label>
@@ -865,9 +859,16 @@ export function UserManagement() {
                             onChange={(e) => setFormData({ ...formData, role: e.target.value as User['role'] })}
                             className="w-full px-3 py-2 border rounded-md"
                           >
-                            <option value="employee">Employee</option>
-                            <option value="manager">Manager</option>
-                            <option value="admin">Admin</option>
+                            {/* Built-in + custom roles, sorted with built-ins first. */}
+                            {roles
+                              .slice()
+                              .sort((a, b) => Number(b.builtIn) - Number(a.builtIn))
+                              .map(role => (
+                                <option key={role.key} value={role.key}>
+                                  {role.name}
+                                  {role.builtIn ? '' : ' (custom)'}
+                                </option>
+                              ))}
                           </select>
                         </div>
                         <div className="space-y-2">
@@ -1265,5 +1266,74 @@ export function UserManagement() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * Searchable employee picker for the Create/Edit User dialog. Mirrors the
+ * ApproverPicker / FlexibleWorkCard patterns: cmdk-powered fuzzy match
+ * across name + empNo + department, active employees only, and the value
+ * emitted is whatever the backend stores (UUID in live mode, empNo in
+ * mock mode) via `e.apiId ?? e.id`.
+ */
+function UserEmployeePicker({
+  employees, deptName, value, onChange,
+}: {
+  employees: Employee[];
+  deptName: (id?: string) => string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = employees.filter(e => e.status === 'active');
+  const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
+  const selectedDept = deptName(selected?.department) || (selected?.department === '-' ? '' : selected?.department ?? '');
+  const selectedLabel = selected
+    ? `${selected.name} — ${selected.id}${selectedDept ? ` · ${selectedDept}` : ''}`
+    : 'Select Employee';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+        >
+          <span className={selected ? '' : 'text-gray-400'}>{selectedLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search name, ID, department…" />
+          <CommandList>
+            <CommandEmpty>No active employees match that.</CommandEmpty>
+            <CommandGroup>
+              {active.map(e => {
+                const val = (e as any).apiId ?? e.id;
+                const dept = deptName(e.department) || (e.department === '-' ? '' : e.department);
+                const haystack = `${e.name} ${e.id} ${dept}`;
+                return (
+                  <CommandItem
+                    key={val}
+                    value={haystack}
+                    onSelect={() => { onChange(val); setOpen(false); }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${value === val ? 'opacity-100' : 'opacity-0'}`} />
+                    <span className="flex-1 truncate">
+                      {e.name} <span className="text-gray-400">— {e.id}</span>
+                      {dept ? <span className="text-gray-400"> · {dept}</span> : null}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
