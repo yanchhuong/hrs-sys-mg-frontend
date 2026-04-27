@@ -272,6 +272,12 @@ export function Payroll() {
       try {
         const parsed = await parsePayrollExcel(file, {
           knownEmployeeIds: employees.map(e => e.id),
+          // Use the live category roster (same source the template generator
+          // reads). Without this the parser falls back to the localStorage
+          // helper, which can be shorter/stale than the backend list and
+          // leads to "Total earnings mismatch" because the last few columns
+          // get ignored when summing components.
+          categories: payrollCategories,
         });
         setPreviewData(parsed);
 
