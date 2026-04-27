@@ -69,12 +69,14 @@ const departmentToDeptGroup = (d: Department, index: number): DeptGroup => ({
 });
 
 // Local-only groups — the backend currently does not track sub-team / shift
-// groups, so these stay on mock data even when USE_MOCKS is false.
+// groups, so these stay on mock data even when USE_MOCKS is false. managerId
+// is intentionally blank in the seed so the picker doesn't get pre-loaded
+// with empNos that don't exist in the live roster.
 const localGroups: DeptGroup[] = [
   {
     id: 'GRP001',
     name: 'Team Alpha',
-    managerId: 'EMP002',
+    managerId: '',
     employeeCount: 2,
     description: 'Cross-functional project team for product launch',
     type: 'group',
@@ -84,7 +86,7 @@ const localGroups: DeptGroup[] = [
   {
     id: 'GRP002',
     name: 'Night Shift',
-    managerId: 'EMP001',
+    managerId: '',
     employeeCount: 0,
     description: 'Night shift workers group',
     type: 'group',
@@ -714,7 +716,12 @@ function ManagerPicker({
 }) {
   const [open, setOpen] = useState(false);
   const active = employees.filter(e => e.status === 'active');
-  const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
+  // Match either field independently so the picker recognises a value
+  // regardless of whether it came from the empNo path (mock) or the UUID
+  // path (live). Mirrors getManagerName().
+  const selected = employees.find(
+    e => e.id === value || (e as any).apiId === value,
+  );
   const label = selected ? `${selected.name} (${selected.position ?? '—'})` : 'None';
 
   return (
