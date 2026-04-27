@@ -6,9 +6,10 @@ import { mockPayrollBatches } from '../../data/settingsData';
 import * as payrollApi from '../../api/payroll';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
+import * as categoriesApi from '../../api/payrollCategories';
 import { USE_MOCKS } from '../../api/client';
 import type { Employee } from '../../types/hrms';
-import type { PayrollBatch } from '../../types/settings';
+import type { PayrollBatch, PayrollCategory } from '../../types/settings';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -154,10 +155,37 @@ export function Payroll() {
   const isEmployee = currentUser?.role === 'employee';
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
-  // Dynamic payroll categories — reloaded each time the upload dialog opens
-  // so admin edits in Settings take effect without a page refresh.
+  // Dynamic payroll categories — backed by /payroll-categories in live mode
+  // and the localStorage helper in mock mode. The Excel template + upload
+  // preview both read from this so admin edits in Settings → Payroll
+  // Categories drive the columns shown to the user.
   const [categoriesVersion, setCategoriesVersion] = useState(0);
-  const payrollCategories = useMemo(() => loadPayrollCategories(), [categoriesVersion]);
+  const [payrollCategories, setPayrollCategories] = useState<PayrollCategory[]>(
+    USE_MOCKS ? loadPayrollCategories() : [],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (USE_MOCKS) {
+        setPayrollCategories(loadPayrollCategories());
+        return;
+      }
+      try {
+        const res = await categoriesApi.list();
+        if (cancelled) return;
+        setPayrollCategories(res.map(c => ({
+          id: c.id, code: c.code, label: c.label, kind: c.kind,
+          valueType: c.valueType, defaultAmount: c.defaultAmount,
+          order: (c as any).displayOrder ?? c.order ?? 0,
+          enabled: c.enabled, system: (c as any).isSystem ?? c.system ?? false,
+        })));
+      } catch {
+        // Non-fatal — template / preview just falls back to localStorage.
+        setPayrollCategories(loadPayrollCategories());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [categoriesVersion]);
   const earningCategories = useMemo(
     () => payrollCategories.filter((c) => c.kind === 'earning' && c.enabled).sort((a, b) => a.order - b.order),
     [payrollCategories],
@@ -504,7 +532,9 @@ export function Payroll() {
     const year = periodEnd || format(new Date(), 'yyyy');
     const monthYear = `${month}-${year}`;
 
-    downloadPayrollTemplate(employees, monthYear);
+    // Pass the live category roster so the Excel columns match what the
+    // admin actually configured under Settings → Payroll Categories.
+    downloadPayrollTemplate(employees, monthYear, { categories: payrollCategories });
     toast.success('Payroll template downloaded successfully');
   };
 
