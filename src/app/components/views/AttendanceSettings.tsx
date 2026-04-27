@@ -39,12 +39,13 @@ import {
 import { FlexibleWorkCard } from '../common/FlexibleWorkCard';
 
 function adaptHoliday(h: settingsApi.Holiday): Holiday {
+  // The Holiday Calendar's job is to mark non-working dates so the
+  // attendance evaluator skips them — pay status is irrelevant here.
   return {
     id: h.id,
     name: h.name,
     date: h.date,
     type: h.type === 'company' ? 'company' : 'public',
-    isPaid: true, // backend doesn't track this yet — default true
     description: h.description,
   };
 }
@@ -64,7 +65,7 @@ export function AttendanceSettings() {
   // Holiday state
   const [holidays, setHolidays] = useState<Holiday[]>(USE_MOCKS ? mockHolidays : []);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
-  const [newHoliday, setNewHoliday] = useState({ name: '', date: '', type: 'public' as 'public' | 'company', isPaid: true, description: '' });
+  const [newHoliday, setNewHoliday] = useState({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
 
   const loadHolidays = async () => {
@@ -154,7 +155,7 @@ export function AttendanceSettings() {
     if (USE_MOCKS) {
       const holiday: Holiday = { id: `HOL${String(holidays.length + 1).padStart(3, '0')}`, ...newHoliday };
       setHolidays([...holidays, holiday]);
-      setNewHoliday({ name: '', date: '', type: 'public', isPaid: true, description: '' });
+      setNewHoliday({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
       setHolidayDialogOpen(false);
       toast.success('Holiday added successfully');
       return;
@@ -168,7 +169,7 @@ export function AttendanceSettings() {
         description: newHoliday.description,
       });
       await loadHolidays();
-      setNewHoliday({ name: '', date: '', type: 'public', isPaid: true, description: '' });
+      setNewHoliday({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
       setHolidayDialogOpen(false);
       toast.success('Holiday added successfully');
     } catch (err) {
@@ -839,10 +840,6 @@ export function AttendanceSettings() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Switch checked={newHoliday.isPaid} onCheckedChange={v => setNewHoliday({ ...newHoliday, isPaid: v })} />
-                          <Label>Paid Holiday</Label>
-                        </div>
                         <div className="space-y-2">
                           <Label>Description (Optional)</Label>
                           <Input placeholder="Additional notes" value={newHoliday.description} onChange={e => setNewHoliday({ ...newHoliday, description: e.target.value })} />
@@ -861,7 +858,6 @@ export function AttendanceSettings() {
                     <TableHead>Date</TableHead>
                     <TableHead>Holiday Name</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Paid</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="w-20">Actions</TableHead>
                   </TableRow>
@@ -869,7 +865,7 @@ export function AttendanceSettings() {
                 <TableBody>
                   {filteredHolidays.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-gray-400">No holidays found</TableCell>
+                      <TableCell colSpan={5} className="text-center py-8 text-gray-400">No holidays found</TableCell>
                     </TableRow>
                   ) : (
                     holidaysPagination.paginatedItems.map(holiday => (
@@ -878,13 +874,6 @@ export function AttendanceSettings() {
                         <TableCell className="text-sm">{holiday.name}</TableCell>
                         <TableCell>
                           <Badge variant={holiday.type === 'public' ? 'default' : 'secondary'}>{holiday.type}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {holiday.isPaid ? (
-                            <Badge className="bg-green-100 text-green-800 border-0">Paid</Badge>
-                          ) : (
-                            <Badge variant="outline">Unpaid</Badge>
-                          )}
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">{holiday.description || '-'}</TableCell>
                         <TableCell>

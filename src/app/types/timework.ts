@@ -33,7 +33,9 @@ export interface Holiday {
   name: string;
   date: string;
   type: 'public' | 'company';
-  isPaid: boolean;
+  /** @deprecated kept for legacy mock data; the Holiday Calendar marks
+   *  non-working dates only — payroll handles compensation separately. */
+  isPaid?: boolean;
   description?: string;
 }
 
