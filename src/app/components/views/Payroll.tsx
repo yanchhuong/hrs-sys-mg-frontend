@@ -8,7 +8,7 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as categoriesApi from '../../api/payrollCategories';
 import { USE_MOCKS } from '../../api/client';
-import type { Employee } from '../../types/hrms';
+import type { Employee, PayrollItem } from '../../types/hrms';
 import type { PayrollBatch, PayrollCategory } from '../../types/settings';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -127,6 +127,11 @@ export function Payroll() {
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
+  // Items belonging to the currently-opened batch — fetched on demand from
+  // `/payroll/batches/{id}/items`. Adapted to the local PayrollItem shape so
+  // the existing detail table + payslip dialog keep rendering as before.
+  const [batchItems, setBatchItems] = useState<PayrollItem[]>([]);
+  const [batchItemsLoading, setBatchItemsLoading] = useState(false);
   const [previewData, setPreviewData] = useState<ParsedPayrollData | null>(null);
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
@@ -240,6 +245,50 @@ export function Payroll() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the admin opens a batch's detail page we need its actual items —
+  // mockPayroll won't match the live employees so the table shows "—" in
+  // every identifying column. Fetch the real items, map them onto the
+  // local PayrollItem shape, and clear when the batch closes.
+  useEffect(() => {
+    if (!selectedBatch) {
+      setBatchItems([]);
+      return;
+    }
+    if (USE_MOCKS) {
+      // In mock mode, fall through to the existing mockPayroll-derived list.
+      setBatchItems([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBatchItemsLoading(true);
+      try {
+        const items = await payrollApi.getBatchItems(selectedBatch.id);
+        if (cancelled) return;
+        setBatchItems(items.map((it): PayrollItem => ({
+          id: it.id,
+          employeeId: it.employeeId,
+          month: it.month ?? selectedBatch.monthYear,
+          baseSalary: Number(it.baseSalary ?? 0),
+          otHours: Number(it.otHours ?? 0),
+          otPay: Number(it.otPay ?? 0),
+          deductions: Number(it.deductions ?? 0),
+          totalPay: Number(it.netSalary ?? 0),
+          totalEarnings: Number(it.totalEarnings ?? 0),
+          // The detail dialog reads these breakdown buckets if present.
+          extras: (it as any).earnings as Record<string, number> | undefined,
+          deductionsExtras: (it as any).deductionsBreakdown as Record<string, number> | undefined,
+          payrollAccount: (it as any).payrollAccount,
+        } as unknown as PayrollItem)));
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load batch items');
+      } finally {
+        if (!cancelled) setBatchItemsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedBatch]);
 
   const months = [
     { value: 'all', label: 'All Months' },
@@ -1555,9 +1604,33 @@ export function Payroll() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {payrollRecords.map((record) => {
-                  const employee = employees.find(e => e.id === record.employeeId || (e as Employee).apiId === record.employeeId);
-                  return (
+                {(() => {
+                  // Inside a batch view: render the live items the backend
+                  // returned for THIS batch. Mock mode keeps the legacy
+                  // mockPayroll-derived list. The empty-state below this
+                  // handles "no items yet" / "still loading".
+                  const detailRows = USE_MOCKS ? payrollRecords : batchItems;
+                  if (batchItemsLoading) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-8 text-gray-400">
+                          Loading payroll items…
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  if (detailRows.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-8 text-gray-400">
+                          No items in this batch
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return detailRows.map((record) => {
+                    const employee = employees.find(e => e.id === record.employeeId || (e as Employee).apiId === record.employeeId);
+                    return (
                     <TableRow key={record.id}>
                       {/* Show empNo (human-readable), never the backend UUID. */}
                       <TableCell>{employee?.id ?? '—'}</TableCell>
@@ -1698,7 +1771,8 @@ export function Payroll() {
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                  });
+                })()}
               </TableBody>
             </Table>
           </CardContent>

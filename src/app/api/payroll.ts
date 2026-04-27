@@ -36,11 +36,14 @@ export interface PayrollItem {
   otHours?: number;
   otPay?: number;
   totalEarnings: number;
-  totalDeductions: number;
+  /** Total of all deductions on the row. Backend field name. */
+  deductions: number;
   netSalary: number;
+  currency?: string;
   earnings?: Record<string, number>;
   deductionsBreakdown?: Record<string, number>;
   payrollAccount?: string;
+  generatedAt?: string;
 }
 
 export interface CreateBatchItem {
@@ -88,7 +91,9 @@ export async function getBatch(id: string): Promise<PayrollBatch> {
 }
 
 export async function getBatchItems(id: string): Promise<PayrollItem[]> {
-  return apiJson(`/api/v1/payroll/batches/${id}/items`);
+  // Backend wraps items in a paged envelope `{data, page, size, ...}`.
+  const res = await apiJson<PagedResponse<PayrollItem>>(`/api/v1/payroll/batches/${id}/items`);
+  return res.data;
 }
 
 export async function createBatch(req: CreateBatchRequest): Promise<PayrollBatch> {
