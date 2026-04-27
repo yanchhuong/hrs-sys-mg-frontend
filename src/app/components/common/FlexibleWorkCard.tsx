@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { Switch } from '../ui/switch';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -18,15 +17,69 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { UserCog, Plus, Pencil, Trash2, Search, X } from 'lucide-react';
+import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { mockEmployees } from '../../data/mockData';
+import { Employee } from '../../types/hrms';
 import {
   FlexibleSchedule, listFlexibleSchedules, upsertFlexibleSchedule,
   deleteFlexibleSchedule,
 } from '../../utils/flexibleSchedule';
 import { ScanRule, ScanMode } from '../../utils/scanRule';
+import * as flexApi from '../../api/flexibleSchedules';
+import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
+
+// ---------------------------------------------------------------------------
+// Adapters: backend wire shape ↔ local mock shape
+// ---------------------------------------------------------------------------
+
+function adaptApiEmployee(e: employeesApi.Employee): Employee {
+  return {
+    id: e.empNo,
+    apiId: e.id,
+    name: e.name,
+    khmerName: e.khmerName ?? undefined,
+    email: e.email,
+    position: e.position,
+    department: e.departmentId ?? '-',
+    joinDate: e.joinDate,
+    status: (e.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+    contactNumber: e.contactNumber ?? '',
+    baseSalary: e.baseSalary,
+    managerId: e.managerId ?? undefined,
+    profileImage: e.profileImage ?? undefined,
+    gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    dateOfBirth: e.dateOfBirth ?? undefined,
+    placeOfBirth: e.placeOfBirth ?? undefined,
+    currentAddress: e.currentAddress ?? undefined,
+    nffNo: e.nffNo ?? undefined,
+    tid: e.tid ?? undefined,
+    contractExpireDate: e.contractExpireDate ?? undefined,
+  };
+}
+
+/** Map backend FlexibleSchedule (UUID employeeId, nullable fields) to the
+ * local mock shape — same field names, just normalises null → undefined and
+ * fills in updatedAt as a string for the existing renderer. */
+function adaptApiSchedule(r: flexApi.FlexibleSchedule): FlexibleSchedule {
+  return {
+    id: r.id,
+    employeeId: r.employeeId,
+    mode: r.mode === 'two' || r.mode === 'four' ? r.mode : undefined,
+    morningIn: r.morningIn ?? undefined,
+    morningOut: r.morningOut ?? undefined,
+    afternoonIn: r.afternoonIn ?? undefined,
+    eveningOut: r.eveningOut ?? undefined,
+    graceInMinutes: r.graceInMinutes ?? undefined,
+    graceOutMinutes: r.graceOutMinutes ?? undefined,
+    halfDayCountsAsHalfScan: r.halfDayCountsAsHalfScan ?? undefined,
+    note: r.note ?? undefined,
+    updatedAt: r.updatedAt ?? new Date().toISOString(),
+  };
+}
 
 interface Props {
   scanRule: ScanRule;
@@ -62,23 +115,80 @@ function empty(rule: ScanRule): FormState {
 }
 
 export function FlexibleWorkCard({ scanRule }: Props) {
-  const [rows, setRows] = useState<FlexibleSchedule[]>(() => listFlexibleSchedules());
+  const [rows, setRows] = useState<FlexibleSchedule[]>(USE_MOCKS ? listFlexibleSchedules() : []);
+  const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  const [loading, setLoading] = useState(!USE_MOCKS);
   const [q, setQ] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => empty(scanRule));
   const [deleteTarget, setDeleteTarget] = useState<FlexibleSchedule | null>(null);
 
-  const refresh = () => setRows(listFlexibleSchedules());
+  // Resolve departmentId → name. The adapter stores the UUID on
+  // `employee.department`; we never want to leak that into the UI.
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (idOrName: string | undefined): string => {
+    if (!idOrName || idOrName === '-') return '';
+    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
+  };
+
+  const refresh = async () => {
+    if (USE_MOCKS) {
+      setRows(listFlexibleSchedules());
+      return;
+    }
+    try {
+      const list = await flexApi.list();
+      setRows(list.map(adaptApiSchedule));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load overrides');
+    }
+  };
+
+  // Initial load — overrides + employee roster + departments. The roster
+  // and departments unlock the "Pick an employee" dropdown and the
+  // table's name + dept resolution.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        if (USE_MOCKS) {
+          setRows(listFlexibleSchedules());
+          return;
+        }
+        const [list, emps, deps] = await Promise.all([
+          flexApi.list(),
+          employeesApi.list({ size: 500 }),
+          departmentsApi.list(),
+        ]);
+        if (cancelled) return;
+        setRows(list.map(adaptApiSchedule));
+        setEmployees(emps.content.map(adaptApiEmployee));
+        setDeptList(deps);
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load flexible work');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const findEmp = (id: string | undefined): Employee | undefined =>
+    id ? employees.find(e => e.id === id || (e as any).apiId === id) : undefined;
 
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
     if (!kw) return rows;
     return rows.filter(r => {
-      const e = mockEmployees.find(x => x.id === r.employeeId);
-      const hay = `${e?.name ?? ''} ${e?.id ?? ''} ${e?.department ?? ''}`.toLowerCase();
+      const e = findEmp(r.employeeId);
+      const hay = `${e?.name ?? ''} ${e?.id ?? ''} ${deptName(e?.department)}`.toLowerCase();
       return hay.includes(kw);
     });
-  }, [rows, q]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, q, employees, deptList]);
 
   const openCreate = () => {
     setForm(empty(scanRule));
@@ -104,13 +214,13 @@ export function FlexibleWorkCard({ scanRule }: Props) {
     setDialogOpen(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.employeeId) {
       toast.error('Pick an employee');
       return;
     }
-    // Only persist fields that actually differ from the default — this keeps
-    // the override minimal and makes "inherit" truly inherit on later edits.
+    // Only persist fields that actually differ from the default — keeps the
+    // override minimal so "inherit" truly inherits on later edits.
     const effectiveMode = form.mode === 'inherit' ? scanRule.mode : form.mode;
     const override = {
       employeeId: form.employeeId,
@@ -126,22 +236,64 @@ export function FlexibleWorkCard({ scanRule }: Props) {
       note: form.note.trim() || undefined,
     };
 
-    upsertFlexibleSchedule(override);
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
-    toast.success(form.id
-      ? `Override updated for ${emp?.name ?? form.employeeId}`
-      : `Override saved for ${emp?.name ?? form.employeeId}`);
-    setDialogOpen(false);
-    refresh();
+    const emp = findEmp(form.employeeId);
+    const empLabel = emp?.name ?? form.employeeId;
+
+    if (USE_MOCKS) {
+      upsertFlexibleSchedule(override);
+      toast.success(form.id
+        ? `Override updated for ${empLabel}`
+        : `Override saved for ${empLabel}`);
+      setDialogOpen(false);
+      void refresh();
+      return;
+    }
+
+    // Live mode: backend POST is upsert-by-(tenant, employee), so we always
+    // POST regardless of whether the dialog is "create" or "edit". Backend
+    // expects empty strings for blank fields, not undefined.
+    try {
+      await flexApi.upsert({
+        employeeId: form.employeeId,
+        mode: override.mode ?? '' as any,
+        morningIn: override.morningIn ?? '',
+        morningOut: override.morningOut ?? '',
+        afternoonIn: override.afternoonIn ?? '',
+        eveningOut: override.eveningOut ?? '',
+        graceInMinutes: override.graceInMinutes ?? null,
+        graceOutMinutes: override.graceOutMinutes ?? null,
+        halfDayCountsAsHalfScan: override.halfDayCountsAsHalfScan ?? null,
+        note: override.note ?? '',
+      });
+      toast.success(form.id
+        ? `Override updated for ${empLabel}`
+        : `Override saved for ${empLabel}`);
+      setDialogOpen(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save override');
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteFlexibleSchedule(deleteTarget.id);
-    const emp = mockEmployees.find(e => e.id === deleteTarget.employeeId);
-    toast.success(`Override removed for ${emp?.name ?? deleteTarget.employeeId}`);
-    setDeleteTarget(null);
-    refresh();
+    const emp = findEmp(deleteTarget.employeeId);
+    const empLabel = emp?.name ?? deleteTarget.employeeId;
+    if (USE_MOCKS) {
+      deleteFlexibleSchedule(deleteTarget.id);
+      toast.success(`Override removed for ${empLabel}`);
+      setDeleteTarget(null);
+      void refresh();
+      return;
+    }
+    try {
+      await flexApi.remove(deleteTarget.id);
+      toast.success(`Override removed for ${empLabel}`);
+      setDeleteTarget(null);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete override');
+    }
   };
 
   const effectiveMode: ScanMode = form.mode === 'inherit' ? scanRule.mode : form.mode;
@@ -186,7 +338,12 @@ export function FlexibleWorkCard({ scanRule }: Props) {
         </div>
       </CardHeader>
       <CardContent>
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center gap-2 justify-center py-10 text-sm text-gray-500">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            Loading overrides…
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-10 text-sm text-gray-400">
             {rows.length === 0
               ? 'No overrides yet. Click "Add override" to set custom hours for a specific employee.'
@@ -210,15 +367,16 @@ export function FlexibleWorkCard({ scanRule }: Props) {
             </TableHeader>
             <TableBody>
               {filtered.map(row => {
-                const emp = mockEmployees.find(e => e.id === row.employeeId);
+                const emp = findEmp(row.employeeId);
                 const rowMode = row.mode ?? scanRule.mode;
+                const dept = deptName(emp?.department);
                 return (
                   <TableRow key={row.id}>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-medium text-sm">{emp?.name ?? row.employeeId}</span>
+                        <span className="font-medium text-sm">{emp?.name ?? '—'}</span>
                         <span className="text-[11px] text-gray-500">
-                          {emp?.id ?? ''}{emp?.department ? ` · ${emp.department}` : ''}
+                          {emp?.id ?? ''}{dept ? ` · ${dept}` : ''}
                         </span>
                       </div>
                     </TableCell>
@@ -295,11 +453,17 @@ export function FlexibleWorkCard({ scanRule }: Props) {
                   <SelectValue placeholder="Pick an employee" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockEmployees.map(e => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.name} — {e.id}{e.department ? ` · ${e.department}` : ''}
-                    </SelectItem>
-                  ))}
+                  {employees.map(e => {
+                    // value carries whatever the backend stores for employeeId:
+                    // empNo in mock mode, UUID in live mode.
+                    const value = (e as any).apiId ?? e.id;
+                    const dept = deptName(e.department);
+                    return (
+                      <SelectItem key={value} value={value}>
+                        {e.name} — {e.id}{dept ? ` · ${dept}` : ''}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
