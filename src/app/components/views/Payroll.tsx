@@ -1419,108 +1419,13 @@ export function Payroll() {
                             </DialogDescription>
                           </DialogHeader>
                           {selectedPayslip && (
-                            <div className="space-y-6">
-                              <div className="text-center border-b pb-4">
-                                <h3 className="font-semibold text-lg mb-4">
-                                  Year {format(new Date(selectedPayslip.month + '-01'), 'yyyy')} Month {format(new Date(selectedPayslip.month + '-01'), 'MM')} Salary
-                                </h3>
-                                <div className="text-left space-y-1">
-                                  <p className="text-sm">
-                                    <span className="text-gray-600">Employee No.:</span>{' '}
-                                    <span className="font-medium">{selectedPayslip.employeeId}</span>
-                                  </p>
-                                  <p className="text-sm">
-                                    <span className="text-gray-600">Name:</span>{' '}
-                                    <span className="font-medium">
-                                      {employees.find(e => e.id === selectedPayslip.employeeId || (e as Employee).apiId === selectedPayslip.employeeId)?.name}
-                                    </span>
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="space-y-3">
-                                <h4 className="text-sm font-semibold text-gray-600">Earnings</h4>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between text-sm">
-                                    <span className="text-gray-700">Basic Salary</span>
-                                    <span className="font-medium">${selectedPayslip.baseSalary.toFixed(2)}</span>
-                                  </div>
-                                  {selectedPayslip.positionAllowance && selectedPayslip.positionAllowance > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Position Allowance</span>
-                                      <span className="font-medium">${selectedPayslip.positionAllowance.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {selectedPayslip.evaluationAllowance && selectedPayslip.evaluationAllowance > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Evaluation Allowance</span>
-                                      <span className="font-medium">${selectedPayslip.evaluationAllowance.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {selectedPayslip.otPay > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Overtime Pay</span>
-                                      <span className="font-medium">${selectedPayslip.otPay.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  <div className="border-t pt-2 flex justify-between font-semibold">
-                                    <span>Total Earnings</span>
-                                    <span>${selectedPayslip.totalEarnings.toFixed(2)}</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-3">
-                                <h4 className="text-sm font-semibold text-gray-600">Deductions</h4>
-                                <div className="space-y-2">
-                                  {selectedPayslip.firstSalaryDeduction && selectedPayslip.firstSalaryDeduction > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">1st Salary</span>
-                                      <span className="font-medium">${selectedPayslip.firstSalaryDeduction.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {selectedPayslip.nssfPension && selectedPayslip.nssfPension > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">NSSF Pension 2%</span>
-                                      <span className="font-medium">${selectedPayslip.nssfPension.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {selectedPayslip.taxOnSalary && selectedPayslip.taxOnSalary > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Tax on Salary (TOS)</span>
-                                      <span className="font-medium">${selectedPayslip.taxOnSalary.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {selectedPayslip.otherDeductions && selectedPayslip.otherDeductions > 0 && (
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Other Deductions</span>
-                                      <span className="font-medium">${selectedPayslip.otherDeductions.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  <div className="border-t pt-2 flex justify-between font-semibold">
-                                    <span>Total Deductions</span>
-                                    <span>${selectedPayslip.deductions.toFixed(2)}</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="border-t pt-4">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-lg font-semibold">Net Salary</span>
-                                  <span className="text-2xl font-bold text-blue-600">
-                                    ${selectedPayslip.totalPay.toFixed(2)}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <Button
-                                onClick={() => handleDownloadPayslip(selectedPayslip.id)}
-                                className="w-full"
-                              >
-                                <Download className="mr-2 h-4 w-4" />
-                                Download PDF
-                              </Button>
-                            </div>
+                            <PayslipBody
+                              payslip={selectedPayslip as unknown as AnyPayslip}
+                              employees={employees}
+                              earningCategories={earningCategories}
+                              deductionCategories={deductionCategories}
+                              onDownload={handleDownloadPayslip}
+                            />
                           )}
                         </DialogContent>
                       </Dialog>
@@ -1663,108 +1568,13 @@ export function Payroll() {
                               </DialogDescription>
                             </DialogHeader>
                             {selectedPayslip && (
-                              <div className="space-y-6">
-                                <div className="text-center border-b pb-4">
-                                  <h3 className="font-semibold text-lg mb-4">
-                                    Year {format(new Date(selectedPayslip.month + '-01'), 'yyyy')} Month {format(new Date(selectedPayslip.month + '-01'), 'MM')} Salary
-                                  </h3>
-                                  <div className="text-left space-y-1">
-                                    <p className="text-sm">
-                                      <span className="text-gray-600">Employee No.:</span>{' '}
-                                      <span className="font-medium">{selectedPayslip.employeeId}</span>
-                                    </p>
-                                    <p className="text-sm">
-                                      <span className="text-gray-600">Name:</span>{' '}
-                                      <span className="font-medium">
-                                        {employees.find(e => e.id === selectedPayslip.employeeId || (e as Employee).apiId === selectedPayslip.employeeId)?.name}
-                                      </span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                  <h4 className="text-sm font-semibold text-gray-600">Earnings</h4>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                      <span className="text-gray-700">Basic Salary</span>
-                                      <span className="font-medium">${selectedPayslip.baseSalary.toFixed(2)}</span>
-                                    </div>
-                                    {selectedPayslip.positionAllowance && selectedPayslip.positionAllowance > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">Position Allowance</span>
-                                        <span className="font-medium">${selectedPayslip.positionAllowance.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    {selectedPayslip.evaluationAllowance && selectedPayslip.evaluationAllowance > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">Evaluation Allowance</span>
-                                        <span className="font-medium">${selectedPayslip.evaluationAllowance.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    {selectedPayslip.otPay > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">Overtime Pay</span>
-                                        <span className="font-medium">${selectedPayslip.otPay.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    <div className="border-t pt-2 flex justify-between font-semibold">
-                                      <span>Total Earnings</span>
-                                      <span>${selectedPayslip.totalEarnings.toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                  <h4 className="text-sm font-semibold text-gray-600">Deductions</h4>
-                                  <div className="space-y-2">
-                                    {selectedPayslip.firstSalaryDeduction && selectedPayslip.firstSalaryDeduction > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">1st Salary</span>
-                                        <span className="font-medium">${selectedPayslip.firstSalaryDeduction.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    {selectedPayslip.nssfPension && selectedPayslip.nssfPension > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">NSSF Pension 2%</span>
-                                        <span className="font-medium">${selectedPayslip.nssfPension.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    {selectedPayslip.taxOnSalary && selectedPayslip.taxOnSalary > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">Tax on Salary (TOS)</span>
-                                        <span className="font-medium">${selectedPayslip.taxOnSalary.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    {selectedPayslip.otherDeductions && selectedPayslip.otherDeductions > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-700">Other Deductions</span>
-                                        <span className="font-medium">${selectedPayslip.otherDeductions.toFixed(2)}</span>
-                                      </div>
-                                    )}
-                                    <div className="border-t pt-2 flex justify-between font-semibold">
-                                      <span>Total Deductions</span>
-                                      <span>${selectedPayslip.deductions.toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="border-t pt-4">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-lg font-semibold">Net Salary</span>
-                                    <span className="text-2xl font-bold text-blue-600">
-                                      ${selectedPayslip.totalPay.toFixed(2)}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <Button
-                                  onClick={() => handleDownloadPayslip(selectedPayslip.id)}
-                                  className="w-full"
-                                >
-                                  <Download className="mr-2 h-4 w-4" />
-                                  Download PDF
-                                </Button>
-                              </div>
+                              <PayslipBody
+                                payslip={selectedPayslip as unknown as AnyPayslip}
+                                employees={employees}
+                                earningCategories={earningCategories}
+                                deductionCategories={deductionCategories}
+                                onDownload={handleDownloadPayslip}
+                              />
                             )}
                           </DialogContent>
                         </Dialog>
@@ -1865,6 +1675,158 @@ export function Payroll() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payslip detail body — drives line items off the live PayrollCategories
+// list so the displayed earnings + deductions exactly match what the admin
+// configured. Falls back to the legacy fixed allowance fields when the
+// item came from mockPayroll (no `extras` / `deductionsExtras` present).
+// ---------------------------------------------------------------------------
+
+type AnyPayslip = {
+  id: string;
+  employeeId: string;
+  month: string;
+  baseSalary: number;
+  otPay: number;
+  totalEarnings: number;
+  deductions: number;
+  totalPay: number;
+  // Backend buckets — present when the item came from getBatchItems().
+  extras?: Record<string, number>;
+  deductionsExtras?: Record<string, number>;
+  // Mock-only legacy fields.
+  positionAllowance?: number;
+  evaluationAllowance?: number;
+  firstSalaryDeduction?: number;
+  nssfPension?: number;
+  taxOnSalary?: number;
+  otherDeductions?: number;
+};
+
+function derivePayslipLines(
+  payslip: AnyPayslip,
+  earningCategories: PayrollCategory[],
+  deductionCategories: PayrollCategory[],
+): { earnings: { label: string; amount: number }[]; deductions: { label: string; amount: number }[] } {
+  const earnings: { label: string; amount: number }[] = [];
+  const deductions: { label: string; amount: number }[] = [];
+
+  if (payslip.extras) {
+    // Live mode: walk the configured categories in display order; only show
+    // rows that are non-zero. Codes the admin removed/disabled don't appear.
+    earningCategories.forEach(c => {
+      const v = Number(payslip.extras![c.code] ?? 0);
+      if (v !== 0) earnings.push({ label: c.label, amount: v });
+    });
+  } else {
+    if (payslip.baseSalary > 0)              earnings.push({ label: 'Basic Salary',         amount: payslip.baseSalary });
+    if ((payslip.positionAllowance ?? 0) > 0)   earnings.push({ label: 'Position Allowance',   amount: payslip.positionAllowance! });
+    if ((payslip.evaluationAllowance ?? 0) > 0) earnings.push({ label: 'Evaluation Allowance', amount: payslip.evaluationAllowance! });
+    if ((payslip.otPay ?? 0) > 0)               earnings.push({ label: 'Overtime Pay',         amount: payslip.otPay });
+  }
+
+  if (payslip.deductionsExtras) {
+    deductionCategories.forEach(c => {
+      const v = Number(payslip.deductionsExtras![c.code] ?? 0);
+      if (v !== 0) deductions.push({ label: c.label, amount: v });
+    });
+  } else {
+    if ((payslip.firstSalaryDeduction ?? 0) > 0) deductions.push({ label: '1st Salary',          amount: payslip.firstSalaryDeduction! });
+    if ((payslip.nssfPension ?? 0) > 0)          deductions.push({ label: 'NSSF Pension 2%',     amount: payslip.nssfPension! });
+    if ((payslip.taxOnSalary ?? 0) > 0)          deductions.push({ label: 'Tax on Salary (TOS)', amount: payslip.taxOnSalary! });
+    if ((payslip.otherDeductions ?? 0) > 0)      deductions.push({ label: 'Other Deductions',    amount: payslip.otherDeductions! });
+  }
+  return { earnings, deductions };
+}
+
+function PayslipBody({
+  payslip, employees, earningCategories, deductionCategories, onDownload,
+}: {
+  payslip: AnyPayslip;
+  employees: Employee[];
+  earningCategories: PayrollCategory[];
+  deductionCategories: PayrollCategory[];
+  onDownload: (id: string) => void;
+}) {
+  const employee = employees.find(
+    e => e.id === payslip.employeeId || (e as Employee).apiId === payslip.employeeId,
+  );
+  // empNo is the human-readable identifier — never show the raw UUID.
+  const empNo = employee?.id ?? '—';
+  const empName = employee?.name ?? '—';
+  const { earnings, deductions } = derivePayslipLines(payslip, earningCategories, deductionCategories);
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center border-b pb-4">
+        <h3 className="font-semibold text-lg mb-4">
+          Year {format(new Date(payslip.month + '-01'), 'yyyy')} Month {format(new Date(payslip.month + '-01'), 'MM')} Salary
+        </h3>
+        <div className="text-left space-y-1">
+          <p className="text-sm">
+            <span className="text-gray-600">Employee No.:</span>{' '}
+            <span className="font-medium">{empNo}</span>
+          </p>
+          <p className="text-sm">
+            <span className="text-gray-600">Name:</span>{' '}
+            <span className="font-medium">{empName}</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold text-gray-600">Earnings</h4>
+        <div className="space-y-2">
+          {earnings.length === 0 && (
+            <p className="text-sm text-gray-400 italic">No earnings recorded.</p>
+          )}
+          {earnings.map((line, i) => (
+            <div key={`e-${i}-${line.label}`} className="flex justify-between text-sm">
+              <span className="text-gray-700">{line.label}</span>
+              <span className="font-medium">${line.amount.toFixed(2)}</span>
+            </div>
+          ))}
+          <div className="border-t pt-2 flex justify-between font-semibold">
+            <span>Total Earnings</span>
+            <span>${payslip.totalEarnings.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold text-gray-600">Deductions</h4>
+        <div className="space-y-2">
+          {deductions.length === 0 && (
+            <p className="text-sm text-gray-400 italic">No deductions recorded.</p>
+          )}
+          {deductions.map((line, i) => (
+            <div key={`d-${i}-${line.label}`} className="flex justify-between text-sm">
+              <span className="text-gray-700">{line.label}</span>
+              <span className="font-medium">${line.amount.toFixed(2)}</span>
+            </div>
+          ))}
+          <div className="border-t pt-2 flex justify-between font-semibold">
+            <span>Total Deductions</span>
+            <span>${payslip.deductions.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t pt-4">
+        <div className="flex justify-between items-center">
+          <span className="text-lg font-semibold">Net Salary</span>
+          <span className="text-2xl font-bold text-blue-600">${payslip.totalPay.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <Button onClick={() => onDownload(payslip.id)} className="w-full">
+        <Download className="mr-2 h-4 w-4" />
+        Download PDF
+      </Button>
     </div>
   );
 }
