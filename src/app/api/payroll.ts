@@ -24,6 +24,8 @@ export interface PayrollBatch {
   rejectedById?: string | null;
   rejectedAt?: string | null;
   rejectionReason?: string | null;
+  /** UUIDs of users the uploader nominated as approvers. Empty = any admin. */
+  approverIds?: string[];
 }
 
 export interface PayrollItem {
@@ -64,6 +66,9 @@ export interface CreateBatchRequest {
   subject: string;
   currency?: string;
   remarks?: string;
+  /** Optional. Up to 3 user UUIDs the uploader has nominated as approvers.
+   *  Empty / omitted = any admin (other than uploader) may approve. */
+  approverIds?: string[];
   items: CreateBatchItem[];
 }
 

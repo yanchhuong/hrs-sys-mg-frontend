@@ -7,6 +7,7 @@ import * as payrollApi from '../../api/payroll';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as categoriesApi from '../../api/payrollCategories';
+import * as usersApi from '../../api/users';
 import { USE_MOCKS } from '../../api/client';
 import type { Employee, PayrollItem } from '../../types/hrms';
 import type { PayrollBatch, PayrollCategory } from '../../types/settings';
@@ -111,6 +112,7 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
     rejectedBy: b.rejectedById ?? undefined,
     rejectedAt: b.rejectedAt ?? undefined,
     rejectionReason: b.rejectionReason ?? undefined,
+    approverIds: b.approverIds ?? [],
   };
 }
 
@@ -124,6 +126,10 @@ export function Payroll() {
   const [batchType, setBatchType] = useState<'Salary' | 'Salary & Bonus' | '1st Salary' | '2nd Salary'>('Salary');
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
+  // Designated approvers (UUIDs in live mode). Optional, max 3. Empty = any
+  // admin (other than uploader) may approve.
+  const [batchApproverIds, setBatchApproverIds] = useState<string[]>([]);
+  const APPROVER_LIMIT = 3;
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
@@ -140,6 +146,9 @@ export function Payroll() {
   const [batches, setBatches] = useState<PayrollBatch[]>(USE_MOCKS ? mockPayrollBatches : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  // Admin users — drive the Approver picker on the Upload Bulk dialog. Only
+  // admins have payroll write/approve permission today.
+  const [adminUsers, setAdminUsers] = useState<usersApi.User[]>([]);
   // departmentId → name lookup. Adapter stores the raw UUID on
   // `employee.department`; resolve to the readable name everywhere we
   // render to avoid leaking foreign keys into the UI.
@@ -235,11 +244,21 @@ export function Payroll() {
     catch { /* dept cells fall back to empty if this fails */ }
   };
 
+  const loadAdminUsers = async () => {
+    if (USE_MOCKS) return;
+    try {
+      // Backend filters by exact role string; admins are the only role with
+      // payroll read+write today, so the picker is exactly that list.
+      const res = await usersApi.list({ role: 'admin', size: 100 });
+      setAdminUsers(res.data.filter(u => u.isActive));
+    } catch { /* picker just shows an empty state if this fails */ }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadBatches(), loadEmployees(), loadDepartments()]);
+      await Promise.all([loadBatches(), loadEmployees(), loadDepartments(), loadAdminUsers()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -352,6 +371,7 @@ export function Payroll() {
     setBatchName('');
     setPeriodStart('');
     setPeriodEnd('');
+    setBatchApproverIds([]);
     setPreviewData(null);
   };
 
@@ -393,6 +413,7 @@ export function Payroll() {
         type: batchType,
         subject: batchName,
         currency: 'USD',
+        approverIds: batchApproverIds.length > 0 ? batchApproverIds : undefined,
         items,
       });
       toast.success(`Payroll batch "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
@@ -480,10 +501,28 @@ export function Payroll() {
   // ---------------------------------------------------------------------------
   const canApprove = currentUser?.role === 'admin';
   const myUserEmpId = currentUser?.employeeId ?? '';
+  const myUserId = currentUser?.id ?? '';
 
-  /** Segregation of duties: approver cannot be the uploader. */
-  const canApproveBatch = (b: PayrollBatch) =>
-    canApprove && b.status === 'pending' && b.uploadedBy !== myUserEmpId;
+  /**
+   * Approve / Reject visibility rules:
+   *   - Status must be pending.
+   *   - Caller must have role-level approve permission (admin).
+   *   - Segregation of duties: caller is not the uploader.
+   *   - If the uploader nominated specific approvers, caller must be in
+   *     that list. Empty list = open to any other admin.
+   * The backend enforces the same checks; this just hides buttons that
+   * would only error out.
+   */
+  const canApproveBatch = (b: PayrollBatch) => {
+    if (!canApprove) return false;
+    if (b.status !== 'pending') return false;
+    // The local PayrollBatch shape uses `uploadedBy` for the user id.
+    if (b.uploadedBy === myUserId || b.uploadedBy === myUserEmpId) return false;
+    if (Array.isArray(b.approverIds) && b.approverIds.length > 0) {
+      return b.approverIds.includes(myUserId);
+    }
+    return true;
+  };
   const canMarkDone = (b: PayrollBatch) =>
     canApprove && b.status === 'approved';
   // Once approved, immutable (corrections go to next run). Currently unused
@@ -712,6 +751,23 @@ export function Payroll() {
                         <span className="block text-xs text-gray-500 text-center">Year (YYYY)</span>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>
+                      Approvers <span className="text-xs font-normal text-gray-500">(optional, up to {APPROVER_LIMIT})</span>
+                    </Label>
+                    <ApproverPicker
+                      adminUsers={adminUsers}
+                      employees={employees}
+                      uploaderUserId={currentUser?.id}
+                      value={batchApproverIds}
+                      onChange={setBatchApproverIds}
+                      max={APPROVER_LIMIT}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch. Leave empty to let any admin (other than yourself) handle it.
+                    </p>
                   </div>
 
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
@@ -1827,6 +1883,105 @@ function PayslipBody({
         <Download className="mr-2 h-4 w-4" />
         Download PDF
       </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Approver picker — multi-select dropdown bound to active admin users.
+// Filters out the uploader (segregation of duties), shows the linked
+// employee name when available so the admin recognises faces, not UUIDs.
+// ---------------------------------------------------------------------------
+function ApproverPicker({
+  adminUsers, employees, uploaderUserId, value, onChange, max,
+}: {
+  adminUsers: usersApi.User[];
+  employees: Employee[];
+  uploaderUserId: string | undefined;
+  value: string[];
+  onChange: (next: string[]) => void;
+  max: number;
+}) {
+  const candidates = adminUsers.filter(u => u.id !== uploaderUserId);
+  const empByUserId = new Map<string, Employee | undefined>();
+  candidates.forEach(u => {
+    const link = u.employeeId
+      ? employees.find(e => (e as any).apiId === u.employeeId || e.id === u.employeeId)
+      : undefined;
+    empByUserId.set(u.id, link);
+  });
+
+  const toggle = (id: string) => {
+    if (value.includes(id)) {
+      onChange(value.filter(x => x !== id));
+      return;
+    }
+    if (value.length >= max) return;
+    onChange([...value, id]);
+  };
+
+  const labelFor = (u: usersApi.User) => {
+    const emp = empByUserId.get(u.id);
+    return emp?.name ?? u.email;
+  };
+
+  if (candidates.length === 0) {
+    return (
+      <p className="text-xs text-gray-400 italic px-3 py-2 border rounded-md">
+        No other active admins available.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {value.map(id => {
+            const u = adminUsers.find(x => x.id === id);
+            if (!u) return null;
+            return (
+              <Badge key={id} variant="secondary" className="gap-1 pr-1">
+                {labelFor(u)}
+                <button
+                  type="button"
+                  className="ml-1 rounded hover:bg-gray-200 px-1"
+                  onClick={() => toggle(id)}
+                  aria-label={`Remove ${labelFor(u)}`}
+                >
+                  <XIcon className="h-3 w-3" />
+                </button>
+              </Badge>
+            );
+          })}
+        </div>
+      )}
+      <div className="max-h-40 overflow-y-auto border rounded-md divide-y">
+        {candidates.map(u => {
+          const checked = value.includes(u.id);
+          const disabled = !checked && value.length >= max;
+          return (
+            <label
+              key={u.id}
+              className={`flex items-start gap-2 px-3 py-2 text-sm cursor-pointer ${
+                disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => toggle(u.id)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{labelFor(u)}</p>
+                <p className="text-xs text-gray-500 truncate">{u.email}</p>
+              </div>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }

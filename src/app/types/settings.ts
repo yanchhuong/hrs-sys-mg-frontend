@@ -145,4 +145,6 @@ export interface PayrollBatch {
   rejectedBy?: string;
   rejectedAt?: string;
   rejectionReason?: string;
+  /** Designated approvers (user IDs). Up to 3. Empty = any admin may approve. */
+  approverIds?: string[];
 }
