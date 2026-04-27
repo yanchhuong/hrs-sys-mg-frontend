@@ -14,10 +14,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '../ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '../ui/command';
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw } from 'lucide-react';
+import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw, ChevronsUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { mockEmployees } from '../../data/mockData';
@@ -444,28 +450,13 @@ export function FlexibleWorkCard({ scanRule }: Props) {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Employee <span className="text-red-500">*</span></Label>
-              <Select
+              <EmployeePicker
+                employees={employees}
+                deptName={deptName}
                 value={form.employeeId}
-                onValueChange={v => setForm({ ...form, employeeId: v })}
+                onChange={v => setForm({ ...form, employeeId: v })}
                 disabled={!!form.id}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pick an employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map(e => {
-                    // value carries whatever the backend stores for employeeId:
-                    // empNo in mock mode, UUID in live mode.
-                    const value = (e as any).apiId ?? e.id;
-                    const dept = deptName(e.department);
-                    return (
-                      <SelectItem key={value} value={value}>
-                        {e.name} — {e.id}{dept ? ` · ${dept}` : ''}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             <div className="space-y-1.5">
@@ -587,6 +578,83 @@ export function FlexibleWorkCard({ scanRule }: Props) {
 // ---------------------------------------------------------------------------
 // Small helpers (private)
 // ---------------------------------------------------------------------------
+
+/**
+ * Searchable employee picker. Filters to active employees only and lets the
+ * admin type to narrow the list — name, empNo, and department are all matched
+ * by cmdk's fuzzy filter.
+ *
+ * `value` is whatever the backend stores on `employeeId` (UUID in live mode,
+ * empNo in mock mode), so `e.apiId ?? e.id` is what we emit.
+ */
+function EmployeePicker({
+  employees, deptName, value, onChange, disabled,
+}: {
+  employees: Employee[];
+  deptName: (d: string | undefined) => string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = employees.filter(e => e.status === 'active');
+
+  const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
+  const selectedLabel = selected
+    ? `${selected.name} — ${selected.id}${deptName(selected.department) ? ` · ${deptName(selected.department)}` : ''}`
+    : 'Pick an employee';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="w-full justify-between font-normal"
+        >
+          <span className={selected ? '' : 'text-gray-400'}>{selectedLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search name, ID, department…" />
+          <CommandList>
+            <CommandEmpty>No active employees match that.</CommandEmpty>
+            <CommandGroup>
+              {active.map(e => {
+                const val = (e as any).apiId ?? e.id;
+                const dept = deptName(e.department);
+                // `value` for cmdk is what gets matched against the search
+                // string — concatenate name + empNo + dept so all three match.
+                const haystack = `${e.name} ${e.id} ${dept}`;
+                return (
+                  <CommandItem
+                    key={val}
+                    value={haystack}
+                    onSelect={() => {
+                      onChange(val);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${value === val ? 'opacity-100' : 'opacity-0'}`} />
+                    <span className="flex-1 truncate">
+                      {e.name} <span className="text-gray-400">— {e.id}</span>
+                      {dept ? <span className="text-gray-400"> · {dept}</span> : null}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function OverrideCell({
   value, fallback, visible = true,
