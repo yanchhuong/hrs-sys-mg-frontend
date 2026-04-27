@@ -4,6 +4,7 @@ import { Employee, User, UserRole } from '../../types/hrms';
 import * as usersApi from '../../api/users';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
+import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -258,22 +259,88 @@ export function UserManagement() {
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await Promise.all([loadUsers(), loadEmployees(), loadDepartments()]);
-      if (!cancelled) setLoading(false);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const [customRoles, setCustomRoles] = useState<RoleDef[]>([]);
   const [permissions, setPermissions] = useState<PermissionMatrix>(() => buildDefaultMatrix());
   const [roleDescriptions, setRoleDescriptions] = useState<Record<string, string>>(() =>
     Object.fromEntries(BUILT_IN_ROLES.map(r => [r.key, r.description]))
   );
+
+  /**
+   * Load roles + their permission grids from the backend and merge into local
+   * state. Custom roles (isBuiltin=false) become entries in `customRoles`.
+   * Built-in roles only contribute their description and grid.
+   */
+  const loadRolesAndPermissions = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const apiRoles = await rolesApi.list();
+      // Pull every grid in parallel; one failure shouldn't kill the others.
+      const grids = await Promise.all(apiRoles.map(async r => {
+        try { return [r.key, await rolesApi.getPermissions(r.key)] as const; }
+        catch { return [r.key, [] as rolesApi.RolePermission[]] as const; }
+      }));
+      const gridMap = new Map(grids);
+
+      // Custom roles → RoleDef list. Use the rotating colour palette so
+      // each custom role gets a distinct icon tint.
+      const customs: RoleDef[] = [];
+      apiRoles.filter(r => !r.isBuiltin).forEach((r, i) => {
+        const palette = CUSTOM_PALETTE[i % CUSTOM_PALETTE.length];
+        customs.push({
+          key: r.key,
+          name: r.name,
+          description: r.description ?? 'Custom role',
+          icon: Key,
+          badgeClass: palette.badgeClass,
+          iconColor: palette.iconColor,
+          builtIn: false,
+        });
+      });
+      setCustomRoles(customs);
+
+      // Merge grids into the permission matrix. Start from the default
+      // built-in matrix so missing keys still resolve.
+      setPermissions(() => {
+        const next = buildDefaultMatrix();
+        for (const r of apiRoles) {
+          const grid = gridMap.get(r.key) ?? [];
+          for (const mod of MODULES) {
+            if (!next[mod.key]) next[mod.key] = {};
+            if (!next[mod.key][r.key]) {
+              next[mod.key][r.key] = { view: false, create: false, update: false, delete: false };
+            }
+          }
+          for (const p of grid) {
+            const m = next[p.module];
+            if (!m) continue;
+            if (!m[r.key]) m[r.key] = { view: false, create: false, update: false, delete: false };
+            m[r.key][p.action as Action] = !!p.granted;
+          }
+        }
+        return next;
+      });
+
+      // Description map covers built-in + custom roles.
+      setRoleDescriptions(prev => {
+        const next = { ...prev };
+        apiRoles.forEach(r => { next[r.key] = r.description ?? next[r.key] ?? ''; });
+        return next;
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load roles');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadUsers(), loadEmployees(), loadDepartments(), loadRolesAndPermissions()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const roles: RoleDef[] = [...BUILT_IN_ROLES, ...customRoles];
 
@@ -486,14 +553,45 @@ export function UserManagement() {
     }));
   };
 
-  const handleSavePermissions = () => {
-    toast.success('Permissions saved');
+  const handleSavePermissions = async () => {
+    if (USE_MOCKS) {
+      toast.success('Permissions saved');
+      return;
+    }
+    // PUT one grid per role (admin row is always full access — backend
+    // rejects writes against admin, so skip it client-side too).
+    const targets = roles.filter(r => r.key !== 'admin');
+    try {
+      await Promise.all(targets.map(role => {
+        const grid: rolesApi.RolePermission[] = [];
+        for (const mod of MODULES) {
+          for (const action of ACTIONS) {
+            grid.push({
+              module: mod.key as rolesApi.PermissionModule,
+              action: action as rolesApi.PermissionAction,
+              granted: !!permissions[mod.key]?.[role.key]?.[action],
+            });
+          }
+        }
+        return rolesApi.replacePermissions(role.key, grid);
+      }));
+      toast.success(`Saved permissions for ${targets.length} role${targets.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save permissions');
+    }
   };
 
   const handleResetPermissions = () => {
-    setPermissions(buildDefaultMatrix());
-    setCustomRoles([]);
-    toast.info('Permissions reset to defaults');
+    // Local-only — re-fetch is the way to discard unsaved tweaks against
+    // the backend; for live mode we re-pull the saved grids.
+    if (USE_MOCKS) {
+      setPermissions(buildDefaultMatrix());
+      setCustomRoles([]);
+      toast.info('Permissions reset to defaults');
+      return;
+    }
+    void loadRolesAndPermissions();
+    toast.info('Reverted to last saved permissions');
   };
 
   const userCountByRole = (role: string) => users.filter(u => u.role === role).length;
@@ -506,7 +604,7 @@ export function UserManagement() {
     setCustomRoleDialogOpen(true);
   };
 
-  const handleCreateCustomRole = () => {
+  const handleCreateCustomRole = async () => {
     const trimmedName = newRoleName.trim();
     if (!trimmedName) {
       setNewRoleError('Role name is required');
@@ -520,53 +618,80 @@ export function UserManagement() {
     const existingKeys = roles.map(r => r.key);
     const key = slugifyRoleKey(trimmedName, existingKeys);
     const palette = CUSTOM_PALETTE[customRoles.length % CUSTOM_PALETTE.length];
-    const def: RoleDef = {
-      key,
-      name: trimmedName,
-      description: newRoleDescription.trim() || 'Custom role',
-      icon: Key,
-      badgeClass: palette.badgeClass,
-      iconColor: palette.iconColor,
-      builtIn: false,
-    };
+    const description = newRoleDescription.trim() || 'Custom role';
+    const baseRole: 'employee' | 'manager' | undefined =
+      newRoleBase === 'blank' ? undefined : newRoleBase;
 
-    // Seed permissions for the new role
-    setPermissions(prev => {
-      const next = { ...prev };
-      for (const mod of MODULES) {
-        const seed: Record<Action, boolean> =
-          newRoleBase === 'blank'
-            ? { view: false, create: false, update: false, delete: false }
-            : { ...(prev[mod.key]?.[newRoleBase] ?? { view: false, create: false, update: false, delete: false }) };
-        next[mod.key] = { ...(prev[mod.key] ?? {}), [key]: seed };
-      }
-      return next;
-    });
+    if (USE_MOCKS) {
+      const def: RoleDef = {
+        key, name: trimmedName, description,
+        icon: Key, badgeClass: palette.badgeClass, iconColor: palette.iconColor,
+        builtIn: false,
+      };
+      // Seed permissions locally for the new role.
+      setPermissions(prev => {
+        const next = { ...prev };
+        for (const mod of MODULES) {
+          const seed: Record<Action, boolean> =
+            newRoleBase === 'blank'
+              ? { view: false, create: false, update: false, delete: false }
+              : { ...(prev[mod.key]?.[newRoleBase] ?? { view: false, create: false, update: false, delete: false }) };
+          next[mod.key] = { ...(prev[mod.key] ?? {}), [key]: seed };
+        }
+        return next;
+      });
+      setCustomRoles([...customRoles, def]);
+      setRoleDescriptions(prev => ({ ...prev, [key]: description }));
+      setCustomRoleDialogOpen(false);
+      toast.success(`Custom role "${trimmedName}" created`);
+      return;
+    }
 
-    setCustomRoles([...customRoles, def]);
-    setRoleDescriptions(prev => ({ ...prev, [key]: def.description }));
-    setCustomRoleDialogOpen(false);
-    toast.success(`Custom role "${trimmedName}" created`);
+    // Live mode — backend persists role + seeds permissions from baseRole.
+    try {
+      await rolesApi.create({ key, name: trimmedName, description, baseRole });
+      await loadRolesAndPermissions();
+      setCustomRoleDialogOpen(false);
+      toast.success(`Custom role "${trimmedName}" created`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create role';
+      setNewRoleError(msg);
+      toast.error(msg);
+    }
   };
 
-  const handleDeleteCustomRole = () => {
+  const handleDeleteCustomRole = async () => {
     if (!deleteRoleTarget || deleteRoleTarget.builtIn) return;
     const key = deleteRoleTarget.key;
-    setCustomRoles(customRoles.filter(r => r.key !== key));
-    setPermissions(prev => {
-      const next: PermissionMatrix = {};
-      for (const [modKey, roleMap] of Object.entries(prev)) {
-        const { [key]: _removed, ...rest } = roleMap;
-        next[modKey] = rest;
-      }
-      return next;
-    });
-    setRoleDescriptions(prev => {
-      const { [key]: _removed, ...rest } = prev;
-      return rest;
-    });
-    toast.success(`Custom role "${deleteRoleTarget.name}" deleted`);
-    setDeleteRoleTarget(null);
+    const name = deleteRoleTarget.name;
+
+    if (USE_MOCKS) {
+      setCustomRoles(customRoles.filter(r => r.key !== key));
+      setPermissions(prev => {
+        const next: PermissionMatrix = {};
+        for (const [modKey, roleMap] of Object.entries(prev)) {
+          const { [key]: _removed, ...rest } = roleMap;
+          next[modKey] = rest;
+        }
+        return next;
+      });
+      setRoleDescriptions(prev => {
+        const { [key]: _removed, ...rest } = prev;
+        return rest;
+      });
+      toast.success(`Custom role "${name}" deleted`);
+      setDeleteRoleTarget(null);
+      return;
+    }
+
+    try {
+      await rolesApi.remove(key);
+      await loadRolesAndPermissions();
+      toast.success(`Custom role "${name}" deleted`);
+      setDeleteRoleTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete role');
+    }
   };
 
   return (

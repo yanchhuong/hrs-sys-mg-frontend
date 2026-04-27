@@ -1572,6 +1572,12 @@ export function Payroll() {
             {(() => {
               const detailRows = USE_MOCKS ? payrollRecords : batchItems;
               const allIds = detailRows.map(r => r.id);
+              // Mail / SMS / Bank Transfer dispatch is only meaningful once
+              // a batch is approved. For pending / rejected / done batches we
+              // hide the toolbar, selection checkbox, and the three Yes/No
+              // columns — the action wouldn't fire anyway and the columns
+              // would just confuse admins reviewing a draft.
+              const dispatchEnabled = selectedBatch?.status === 'approved';
               const allChecked = allIds.length > 0 && allIds.every(id => selectedRowIds.has(id));
               const someChecked = !allChecked && allIds.some(id => selectedRowIds.has(id));
               const toggleAll = () => {
@@ -1635,6 +1641,17 @@ export function Payroll() {
 
               return (
                 <>
+                  {!dispatchEnabled && (
+                    <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <span>
+                        Payslip delivery (Mail / SMS / Bank Transfer) becomes available
+                        once this batch is <strong>approved</strong>. Current status:&nbsp;
+                        <strong>{selectedBatch?.status ?? 'pending'}</strong>.
+                      </span>
+                    </div>
+                  )}
+                  {dispatchEnabled && (
                   <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
                     <span className="text-gray-500">
                       {selectedRowIds.size > 0
@@ -1667,17 +1684,20 @@ export function Payroll() {
                       );
                     })()}
                   </div>
+                  )}
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-10 text-center">
-                          <Checkbox
-                            checked={allChecked || (someChecked ? 'indeterminate' : false)}
-                            onCheckedChange={toggleAll}
-                            disabled={allIds.length === 0}
-                            aria-label="Select all rows"
-                          />
-                        </TableHead>
+                        {dispatchEnabled && (
+                          <TableHead className="w-10 text-center">
+                            <Checkbox
+                              checked={allChecked || (someChecked ? 'indeterminate' : false)}
+                              onCheckedChange={toggleAll}
+                              disabled={allIds.length === 0}
+                              aria-label="Select all rows"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Employee</TableHead>
                         <TableHead>Position / Department</TableHead>
                         <TableHead>Payroll Account</TableHead>
@@ -1685,22 +1705,22 @@ export function Payroll() {
                         <TableHead>Net Salary</TableHead>
                         <TableHead>Total Earnings</TableHead>
                         <TableHead>Deductions</TableHead>
-                        <TableHead className="text-center">Mail</TableHead>
-                        <TableHead className="text-center">SMS</TableHead>
-                        <TableHead className="text-center">Bank Transfer</TableHead>
+                        {dispatchEnabled && <TableHead className="text-center">Mail</TableHead>}
+                        {dispatchEnabled && <TableHead className="text-center">SMS</TableHead>}
+                        {dispatchEnabled && <TableHead className="text-center">Bank Transfer</TableHead>}
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {batchItemsLoading ? (
                         <TableRow>
-                          <TableCell colSpan={12} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 12 : 8} className="text-center py-8 text-gray-400">
                             Loading payroll items…
                           </TableCell>
                         </TableRow>
                       ) : detailRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={12} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 12 : 8} className="text-center py-8 text-gray-400">
                             No items in this batch
                           </TableCell>
                         </TableRow>
@@ -1709,14 +1729,16 @@ export function Payroll() {
                     const dept = deptName(employee?.department);
                     const checked = selectedRowIds.has(record.id);
                     return (
-                    <TableRow key={record.id} className={checked ? 'bg-blue-50/40' : undefined}>
-                      <TableCell className="text-center">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => toggleOne(record.id)}
-                          aria-label={`Select ${employee?.name ?? record.employeeId}`}
-                        />
-                      </TableCell>
+                    <TableRow key={record.id} className={dispatchEnabled && checked ? 'bg-blue-50/40' : undefined}>
+                      {dispatchEnabled && (
+                        <TableCell className="text-center">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => toggleOne(record.id)}
+                            aria-label={`Select ${employee?.name ?? record.employeeId}`}
+                          />
+                        </TableCell>
+                      )}
                       {/* Combined Employee No + Name. empNo never shows the UUID. */}
                       <TableCell>
                         <div className="flex flex-col">
@@ -1736,9 +1758,9 @@ export function Payroll() {
                       <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
                       <TableCell className="text-green-600">${record.totalEarnings.toLocaleString()}</TableCell>
                       <TableCell className="text-red-600">${record.deductions.toLocaleString()}</TableCell>
-                      <TableCell className="text-center">{yesNo(sentMail.has(record.id))}</TableCell>
-                      <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>
-                      <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>
+                      {dispatchEnabled && <TableCell className="text-center">{yesNo(sentMail.has(record.id))}</TableCell>}
+                      {dispatchEnabled && <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>}
+                      {dispatchEnabled && <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>}
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>
