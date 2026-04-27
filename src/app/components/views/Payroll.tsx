@@ -168,14 +168,22 @@ export function Payroll() {
   const [pendingApprovalBatch, setPendingApprovalBatch] = useState<PayrollBatch | null>(null);
 
   // Single-row selection inside the batch detail table. The Mail / SMS /
-  // Bank Transfer columns are read-only Yes/No flags showing which channels
-  // are reachable for each employee (email on file, phone on file, bank
-  // account on file). After ticking rows, the admin picks a bulk action —
-  // only rows whose channel is "Yes" actually fire; the rest are skipped
-  // and reported back. Cleared when the batch closes.
+  // Bank Transfer columns flip from "No" to "Yes" once that row has been
+  // dispatched on that channel — bulk dispatch always skips rows already
+  // marked Yes, so admins can't accidentally double-send. State is
+  // frontend-only for now (resets on page reload); backend persistence is
+  // a follow-up (a `payroll_dispatches` log table).
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [sentMail, setSentMail] = useState<Set<string>>(new Set());
+  const [sentSms, setSentSms] = useState<Set<string>>(new Set());
+  const [sentBank, setSentBank] = useState<Set<string>>(new Set());
   useEffect(() => {
-    if (!selectedBatch) setSelectedRowIds(new Set());
+    if (!selectedBatch) {
+      setSelectedRowIds(new Set());
+      setSentMail(new Set());
+      setSentSms(new Set());
+      setSentBank(new Set());
+    }
   }, [selectedBatch]);
 
   const isEmployee = currentUser?.role === 'employee';
@@ -1576,53 +1584,48 @@ export function Payroll() {
                 setSelectedRowIds(next);
               };
 
-              // Per-row channel availability — Yes if the employee has the
-              // channel on file. Drives the columns + filters bulk actions.
+              // Resolve each row to its employee once.
               const empByRowId = new Map<string, Employee | undefined>();
               detailRows.forEach(r => {
                 empByRowId.set(r.id, employees.find(
                   e => e.id === r.employeeId || (e as Employee).apiId === r.employeeId,
                 ));
               });
-              const hasMail = (id: string) => !!empByRowId.get(id)?.email;
-              const hasSms = (id: string) => {
-                const c = empByRowId.get(id)?.contactNumber;
-                return !!c && c.trim().length > 0;
-              };
-              const hasBank = (id: string) => {
-                const r = detailRows.find(x => x.id === id) as PayrollItem | undefined;
-                if (r?.payrollAccount) return true;
-                const e = empByRowId.get(id);
-                return !!(e?.bankName && e?.bankAccount);
-              };
 
-              // Bulk dispatch — fires on the union of (selected ∩ has-channel).
-              // UI-only for now; backend wiring (POST .../dispatch?channel=...)
-              // is a follow-up.
+              // Yes = already dispatched on that channel. Yes rows are
+              // excluded from any subsequent bulk send.
+              const sentByChannel = { mail: sentMail, sms: sentSms, bank: sentBank } as const;
+              const setSentByChannel = { mail: setSentMail, sms: setSentSms, bank: setSentBank } as const;
+
               const dispatch = (channel: 'mail' | 'sms' | 'bank') => {
                 if (selectedRowIds.size === 0) {
                   toast.warning('Tick at least one row first.');
                   return;
                 }
                 const labels = { mail: 'email', sms: 'SMS', bank: 'bank transfer' } as const;
-                const eligible = (id: string) =>
-                  channel === 'mail' ? hasMail(id)
-                  : channel === 'sms' ? hasSms(id)
-                  : hasBank(id);
-                const targets = Array.from(selectedRowIds).filter(eligible);
-                const skipped = selectedRowIds.size - targets.length;
+                const sentSet = sentByChannel[channel];
+                // Skip rows already marked Yes for this channel — never
+                // double-send.
+                const targets = Array.from(selectedRowIds).filter(id => !sentSet.has(id));
+                const alreadySent = selectedRowIds.size - targets.length;
                 if (targets.length === 0) {
-                  toast.error(`None of the ${selectedRowIds.size} selected rows have ${labels[channel]} on file.`);
+                  toast.warning(`All ${selectedRowIds.size} selected row${selectedRowIds.size === 1 ? ' is' : 's are'} already sent by ${labels[channel]}.`);
                   return;
                 }
-                if (skipped > 0) {
-                  toast.success(
-                    `Queued ${targets.length} payslip${targets.length === 1 ? '' : 's'} for ${labels[channel]} — ${skipped} skipped (no ${labels[channel]} on file).`,
-                    { duration: 6000 },
-                  );
-                } else {
-                  toast.success(`Queued ${targets.length} payslip${targets.length === 1 ? '' : 's'} for ${labels[channel]}.`);
-                }
+                // Mark as Yes locally — backend wiring (POST
+                // .../dispatch?channel=…) is a follow-up.
+                setSentByChannel[channel](prev => {
+                  const next = new Set(prev);
+                  targets.forEach(id => next.add(id));
+                  return next;
+                });
+                const note = alreadySent > 0
+                  ? ` — ${alreadySent} already sent earlier and skipped.`
+                  : '';
+                toast.success(
+                  `Queued ${targets.length} payslip${targets.length === 1 ? '' : 's'} for ${labels[channel]}${note}`,
+                  { duration: 6000 },
+                );
               };
 
               const yesNo = (yes: boolean) =>
@@ -1638,18 +1641,31 @@ export function Payroll() {
                         ? `${selectedRowIds.size} selected`
                         : 'Tick rows then choose a delivery channel:'}
                     </span>
-                    <Button size="sm" variant="outline" disabled={selectedRowIds.size === 0} onClick={() => dispatch('mail')}>
-                      <Mail className="h-3.5 w-3.5 mr-1.5" />
-                      Send by Mail
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={selectedRowIds.size === 0} onClick={() => dispatch('sms')}>
-                      <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
-                      Send by SMS
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={selectedRowIds.size === 0} onClick={() => dispatch('bank')}>
-                      <Landmark className="h-3.5 w-3.5 mr-1.5" />
-                      Push Bank Transfer
-                    </Button>
+                    {(() => {
+                      // Count how many selected rows would actually fire on
+                      // each channel (selected and not yet sent).
+                      const eligibleCount = (sent: Set<string>) =>
+                        Array.from(selectedRowIds).filter(id => !sent.has(id)).length;
+                      const m = eligibleCount(sentMail);
+                      const s = eligibleCount(sentSms);
+                      const b = eligibleCount(sentBank);
+                      return (
+                        <>
+                          <Button size="sm" variant="outline" disabled={m === 0} onClick={() => dispatch('mail')}>
+                            <Mail className="h-3.5 w-3.5 mr-1.5" />
+                            Send by Mail{selectedRowIds.size > 0 ? ` (${m})` : ''}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={s === 0} onClick={() => dispatch('sms')}>
+                            <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+                            Send by SMS{selectedRowIds.size > 0 ? ` (${s})` : ''}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={b === 0} onClick={() => dispatch('bank')}>
+                            <Landmark className="h-3.5 w-3.5 mr-1.5" />
+                            Push Bank Transfer{selectedRowIds.size > 0 ? ` (${b})` : ''}
+                          </Button>
+                        </>
+                      );
+                    })()}
                   </div>
                   <Table>
                     <TableHeader>
@@ -1720,9 +1736,9 @@ export function Payroll() {
                       <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
                       <TableCell className="text-green-600">${record.totalEarnings.toLocaleString()}</TableCell>
                       <TableCell className="text-red-600">${record.deductions.toLocaleString()}</TableCell>
-                      <TableCell className="text-center">{yesNo(hasMail(record.id))}</TableCell>
-                      <TableCell className="text-center">{yesNo(hasSms(record.id))}</TableCell>
-                      <TableCell className="text-center">{yesNo(hasBank(record.id))}</TableCell>
+                      <TableCell className="text-center">{yesNo(sentMail.has(record.id))}</TableCell>
+                      <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>
+                      <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>

@@ -95,9 +95,13 @@ export async function getBatch(id: string): Promise<PayrollBatch> {
   return apiJson(`/api/v1/payroll/batches/${id}`);
 }
 
-export async function getBatchItems(id: string): Promise<PayrollItem[]> {
-  // Backend wraps items in a paged envelope `{data, page, size, ...}`.
-  const res = await apiJson<PagedResponse<PayrollItem>>(`/api/v1/payroll/batches/${id}/items`);
+export async function getBatchItems(id: string, params: { size?: number } = {}): Promise<PayrollItem[]> {
+  // Backend wraps items in a paged envelope `{data, page, size, ...}`. Default
+  // page size on the server is 25; bump to 500 so the batch detail page
+  // shows every employee in one shot. (If a batch ever exceeds 500 we'll
+  // need to add real pagination.)
+  const size = params.size ?? 500;
+  const res = await apiJson<PagedResponse<PayrollItem>>(`/api/v1/payroll/batches/${id}/items`, { query: { size } });
   return res.data;
 }
 
