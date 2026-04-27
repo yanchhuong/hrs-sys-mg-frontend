@@ -5,6 +5,7 @@ import { mockPayroll, mockEmployees } from '../../data/mockData';
 import { mockPayrollBatches } from '../../data/settingsData';
 import * as payrollApi from '../../api/payroll';
 import * as employeesApi from '../../api/employees';
+import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
 import type { Employee } from '../../types/hrms';
 import type { PayrollBatch } from '../../types/settings';
@@ -132,6 +133,15 @@ export function Payroll() {
   // Batch workflow state — live list (so approvals mutate in place).
   const [batches, setBatches] = useState<PayrollBatch[]>(USE_MOCKS ? mockPayrollBatches : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  // departmentId → name lookup. Adapter stores the raw UUID on
+  // `employee.department`; resolve to the readable name everywhere we
+  // render to avoid leaking foreign keys into the UI.
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (idOrName: string | undefined): string => {
+    if (!idOrName || idOrName === '-') return '';
+    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
+  };
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [batchStatusTab, setBatchStatusTab] = useState<'all' | PayrollBatchStatus>('all');
@@ -186,11 +196,17 @@ export function Payroll() {
     }
   };
 
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try { setDeptList(await departmentsApi.list()); }
+    catch { /* dept cells fall back to empty if this fails */ }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadBatches(), loadEmployees()]);
+      await Promise.all([loadBatches(), loadEmployees(), loadDepartments()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -1200,7 +1216,7 @@ export function Payroll() {
                         ${batch.netSalary.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-[11px] text-gray-600 leading-snug">
-                        <p>📥 {uploader?.name ?? batch.uploadedBy} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
+                        <p>📥 {uploader?.name ?? '—'} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
                         {approver && batch.approvedAt && (
                           <p>✅ {approver.name} · {format(new Date(batch.approvedAt), 'MMM dd HH:mm')}</p>
                         )}
@@ -1507,12 +1523,13 @@ export function Payroll() {
                   const employee = employees.find(e => e.id === record.employeeId || (e as Employee).apiId === record.employeeId);
                   return (
                     <TableRow key={record.id}>
-                      <TableCell>{record.employeeId}</TableCell>
+                      {/* Show empNo (human-readable), never the backend UUID. */}
+                      <TableCell>{employee?.id ?? '—'}</TableCell>
                       <TableCell>
                         <EmployeeCell employee={employee} nameOnly />
                       </TableCell>
                       <TableCell>{employee?.position}</TableCell>
-                      <TableCell>{employee?.department}</TableCell>
+                      <TableCell>{deptName(employee?.department) || '—'}</TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
                       <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
@@ -1668,7 +1685,7 @@ export function Payroll() {
                     <p><span className="text-gray-500">Period:</span> {approveTarget.monthYear} · {approveTarget.type}</p>
                     <p><span className="text-gray-500">Employees:</span> {approveTarget.totalEmployees}</p>
                     <p><span className="text-gray-500">Net Salary:</span> <strong>${approveTarget.netSalary.toLocaleString()}</strong></p>
-                    <p><span className="text-gray-500">Uploaded by:</span> {employees.find(e => e.id === approveTarget.uploadedBy || (e as Employee).apiId === approveTarget.uploadedBy)?.name ?? approveTarget.uploadedBy}</p>
+                    <p><span className="text-gray-500">Uploaded by:</span> {employees.find(e => e.id === approveTarget.uploadedBy || (e as Employee).apiId === approveTarget.uploadedBy)?.name ?? '—'}</p>
                   </div>
                 )}
               </div>

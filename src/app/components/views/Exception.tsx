@@ -109,9 +109,14 @@ export function Exception() {
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
-  // Retained for potential future department display; loaded alongside employees
-  // so the cell resolvers match the patterns used in Attendance.tsx.
-  const [, setDeptList] = useState<departmentsApi.Department[]>([]);
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  // departmentId → name lookup. Adapter stores the raw UUID on
+  // `employee.department`; resolve to the readable name everywhere we render.
+  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
+  const deptName = (idOrName: string | undefined): string => {
+    if (!idOrName || idOrName === '-') return '';
+    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
+  };
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -316,7 +321,7 @@ export function Exception() {
   if (kw) {
     filteredExceptions = filteredExceptions.filter(exc => {
       const emp = employees.find(e => e.id === exc.employeeId || (e as any).apiId === exc.employeeId);
-      const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${emp?.department ?? ''} ${exc.reason ?? ''}`.toLowerCase();
+      const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)} ${exc.reason ?? ''}`.toLowerCase();
       return hay.includes(kw);
     });
   }
@@ -554,11 +559,12 @@ export function Exception() {
                 return (
                   <TableRow key={exception.id} className={isPending ? 'bg-yellow-50/50' : ''}>
                     <TableCell>
-                      <EmployeeCell employee={employee} />
+                      {/* Subtitle = empNo (human-readable). Never the UUID. */}
+                      <EmployeeCell employee={employee} subtitle={employee?.id} />
                     </TableCell>
                     <TableCell className="text-sm">
-                      {employee?.department
-                        ? <Badge variant="outline" className="font-normal">{employee.department}</Badge>
+                      {deptName(employee?.department)
+                        ? <Badge variant="outline" className="font-normal">{deptName(employee?.department)}</Badge>
                         : <span className="text-gray-400">—</span>}
                     </TableCell>
                     <TableCell>
