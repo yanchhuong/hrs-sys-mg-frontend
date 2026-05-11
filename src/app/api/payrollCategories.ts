@@ -47,3 +47,10 @@ export async function reorder(ids: string[]): Promise<PayrollCategory[]> {
     json: { ids },
   });
 }
+
+/** Wipe user-added categories and reset the system defaults on the
+ *  backend. Returns the full post-restore list so the page can swap
+ *  state in one round trip. */
+export async function restoreDefaults(): Promise<PayrollCategory[]> {
+  return apiJson('/api/v1/payroll-categories/restore-defaults', { method: 'POST' });
+}

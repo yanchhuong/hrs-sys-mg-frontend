@@ -73,6 +73,104 @@ export function deriveStatus(cfg: CloudConfig): ConnectionStatus {
   return 'disconnected';
 }
 
+// ---------------------------------------------------------------------------
+// Heartbeat — local install reports its row counts to the cloud so the
+// Super Admin Dashboard can flag drift. Returns the cloud's view (its own
+// counts + the diff per table) so the local UI can also show "100% in sync"
+// or "behind by N rows" without a second round-trip.
+// ---------------------------------------------------------------------------
+export interface HeartbeatRequest {
+  tables: Record<string, number>;
+  /** Optional. Per-table latest local updated_at ISO string. */
+  lastUpdatedAt?: Record<string, string>;
+}
+
+export interface HeartbeatTableState {
+  table: string;
+  localCount: number;
+  cloudCount: number;
+  drift: number;
+}
+
+export interface HeartbeatResponse {
+  tenantId: string;
+  heartbeatAt: string;
+  inSync: boolean;
+  totalDrift: number;
+  tables: HeartbeatTableState[];
+}
+
+// ---------------------------------------------------------------------------
+// Data push — pump rows from the local DB up to the cloud.
+// The cloud overwrites tenant_id and nullifies created_by_id/updated_by_id
+// so audit attribution doesn't leak across deployments.
+// ---------------------------------------------------------------------------
+export interface PushTableResult {
+  table: string;
+  upserted: number;
+  skipped: number;
+}
+
+export async function pushTable(
+  serverUrl: string,
+  apiKey: string,
+  table: string,
+  records: Array<Record<string, unknown>>,
+  timeoutMs = 60000,
+): Promise<PushTableResult> {
+  const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
+  const target = `${cleanUrl}/api/v1/local/sync/push`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey.trim(),
+      },
+      body: JSON.stringify({ table, records }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Push ${table} HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return await res.json() as PushTableResult;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function sendHeartbeat(
+  serverUrl: string,
+  apiKey: string,
+  body: HeartbeatRequest,
+  timeoutMs = 10000,
+): Promise<HeartbeatResponse> {
+  const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
+  const target = `${cleanUrl}/api/v1/local/sync/heartbeat`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey.trim(),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Heartbeat HTTP ${res.status}`);
+    }
+    return await res.json() as HeartbeatResponse;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Hit the cloud health endpoint with the tenant API key. The cloud
  * `/api/health` endpoint is unauthenticated, but we also send the key so a
@@ -84,35 +182,70 @@ export async function testCloudConnection(
   timeoutMs = 8000,
 ): Promise<TestResult> {
   const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
-  const target = `${cleanUrl}/api/health`;
+  // Two-step verification:
+  //   1. /api/v1/health proves the URL is reachable and the cloud is up.
+  //   2. /api/v1/local/sync/heartbeat (empty payload) proves the key is
+  //      ALSO valid — /health is permitAll so a bad key still 200s there
+  //      and admins were getting "Cloud is reachable" with a key the
+  //      cloud silently rejected. The heartbeat probe with an empty
+  //      tables map is a no-op write that auths via X-API-Key.
+  const healthTarget = `${cleanUrl}/api/v1/health`;
+  const probeTarget  = `${cleanUrl}/api/v1/local/sync/heartbeat`;
   const started = performance.now();
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(target, {
+    const healthRes = await fetch(healthTarget, {
       method: 'GET',
       headers: apiKey ? { 'X-API-Key': apiKey.trim() } : undefined,
       signal: controller.signal,
     });
     const latencyMs = Math.round(performance.now() - started);
 
-    if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
-      if (res.status === 401) msg = 'Invalid API key';
-      if (res.status === 404) msg = 'No health endpoint at this URL';
-      if (res.status === 403) msg = 'API key rejected for this tenant';
-      return { ok: false, status: res.status, error: msg, latencyMs };
+    if (!healthRes.ok) {
+      let msg = `HTTP ${healthRes.status}`;
+      if (healthRes.status === 404) msg = 'No health endpoint at this URL';
+      return { ok: false, status: healthRes.status, error: msg, latencyMs };
     }
 
-    const body: { ok?: boolean; mode?: string; ts?: string } = await res.json().catch(() => ({}));
+    const body: { ok?: boolean; mode?: string; ts?: string } = await healthRes.json().catch(() => ({}));
     if (!body.ok) {
-      return { ok: false, status: res.status, error: 'Health check responded without ok=true', latencyMs };
+      return { ok: false, status: healthRes.status, error: 'Health check responded without ok=true', latencyMs };
     }
+
+    // Now probe an auth-required endpoint. A 403 here means the URL is
+    // right but the key isn't recognized — friendlier hint than push
+    // failing later.
+    if (apiKey) {
+      const probe = await fetch(probeTarget, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey.trim() },
+        body: JSON.stringify({ tables: {} }),
+        signal: controller.signal,
+      });
+      if (probe.status === 403 || probe.status === 401) {
+        return {
+          ok: false,
+          status: probe.status,
+          error: 'API key not recognized — generate a new one in Super Admin → Connect & Sync, or use the tenant master key.',
+          latencyMs,
+        };
+      }
+      if (!probe.ok) {
+        return {
+          ok: false,
+          status: probe.status,
+          error: `Heartbeat probe HTTP ${probe.status}`,
+          latencyMs,
+        };
+      }
+    }
+
     return {
       ok: true,
-      status: res.status,
+      status: healthRes.status,
       mode: body.mode,
       serverTime: body.ts,
       latencyMs,

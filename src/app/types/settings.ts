@@ -133,16 +133,21 @@ export interface PayrollBatch {
   remarks?: string;
   /** Who created the batch. Segregation-of-duties requires approver ≠ uploader. */
   uploadedBy: string;
+  /** Display name resolved server-side via user→employee. */
+  uploadedByName?: string;
   uploadedAt: string;
   status: PayrollBatchStatus;
   /** Admin who approved. Must differ from uploadedBy. */
   approvedBy?: string;
+  approvedByName?: string;
   approvedAt?: string;
   /** Admin who marked the batch paid / done. */
   completedBy?: string;
+  completedByName?: string;
   completedAt?: string;
   /** Audit for rejections — rejected batches can be re-submitted as a new run. */
   rejectedBy?: string;
+  rejectedByName?: string;
   rejectedAt?: string;
   rejectionReason?: string;
   /** Designated approvers (user IDs). Up to 3. Empty = any admin may approve. */

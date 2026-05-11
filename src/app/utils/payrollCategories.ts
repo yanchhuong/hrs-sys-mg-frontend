@@ -12,6 +12,8 @@ export const DEFAULT_EARNINGS: Omit<PayrollCategory, 'id'>[] = [
   { code: 'ot',         label: 'OT',         kind: 'earning', valueType: 'flat', defaultAmount: 0, order: 3, enabled: true, system: true },
   { code: 'allowances', label: 'Allowances', kind: 'earning', valueType: 'flat', defaultAmount: 0, order: 4, enabled: true, system: true },
   { code: 'bonus',      label: 'Bonus',      kind: 'earning', valueType: 'flat', defaultAmount: 0, order: 5, enabled: true, system: true },
+  { code: 'meal',       label: 'Meal',       kind: 'earning', valueType: 'flat', defaultAmount: 0, order: 6, enabled: true, system: true },
+  { code: 'petrol',     label: 'Petrol',     kind: 'earning', valueType: 'flat', defaultAmount: 0, order: 7, enabled: true, system: true },
 ];
 
 export const DEFAULT_DEDUCTIONS: Omit<PayrollCategory, 'id'>[] = [

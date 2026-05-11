@@ -8,6 +8,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { User, Briefcase, CreditCard, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { notify } from '../../utils/notify';
 import { Employee } from '../../types/hrms';
 import { mockEmployees } from '../../data/mockData';
 import * as employeesApi from '../../api/employees';
@@ -81,15 +82,15 @@ export function AddEmployeeDialog({
 
   const handleSubmit = async () => {
     const err = validateRequired();
-    if (err) { toast.error(err); return; }
+    if (err) { notify.validate(err); return; }
 
     if (USE_MOCKS) {
       if (mockEmployees.some(e => e.id === form.id)) {
-        toast.error(`Employee ID "${form.id}" already exists`);
+        notify.validate(`Employee ID "${form.id}" already exists`);
         return;
       }
       if (mockEmployees.some(e => e.email.toLowerCase() === form.email!.toLowerCase())) {
-        toast.error(`Email "${form.email}" is already used`);
+        notify.validate(`Email "${form.email}" is already used`);
         return;
       }
       const emp: Employee = {

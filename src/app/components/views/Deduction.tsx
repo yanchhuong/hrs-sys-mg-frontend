@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { AuditCell } from '../common/AuditCell';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { usePagination } from '../../hooks/usePagination';
@@ -26,6 +28,7 @@ import {
 import { Switch } from '../ui/switch';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { SearchablePicker } from '../common/SearchablePicker';
 import { mockDeductions } from '../../data/timeworkData';
 import { mockEmployees } from '../../data/mockData';
 import { SalaryDeduction } from '../../types/timework';
@@ -109,6 +112,12 @@ const CATEGORY_COLORS = [
 
 export function Deduction() {
   const { t } = useI18n();
+  // Permission gates per the matrix in Settings → User Management → Permissions.
+  // A role with V-only on 'deduction' will hide every mutating control here.
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  const canAdd = canCreate('deduction');
+  const canEdit = canUpdate('deduction');
+  const canRemove = canDelete('deduction');
   const [deductions, setDeductions] = useState<SalaryDeduction[]>(USE_MOCKS ? mockDeductions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
@@ -412,7 +421,7 @@ export function Deduction() {
             )}
           </div>
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -427,22 +436,26 @@ export function Deduction() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Employee</Label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md"
+                {/* Same searchable picker as Salary Increase / Manager-Lead.
+                    Inactive employees are filtered out of the list. */}
+                <SearchablePicker
+                  options={employees
+                    .filter(e => e.status === 'active')
+                    .map(emp => {
+                      const val = emp.apiId ?? emp.id;
+                      return {
+                        value: val,
+                        label: emp.name,
+                        secondary: `${emp.id} · ${emp.position ?? ''}`,
+                        searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+                      };
+                    })}
                   value={newEmployeeId}
-                  onChange={(e) => setNewEmployeeId(e.target.value)}
-                >
-                  {employees.map((emp) => {
-                    // Value carries whatever identifier the backend will accept:
-                    // UUID (apiId) in live mode, empNo in mock mode.
-                    const val = emp.apiId ?? emp.id;
-                    return (
-                      <option key={val} value={val}>
-                        {emp.name} ({emp.id})
-                      </option>
-                    );
-                  })}
-                </select>
+                  onChange={setNewEmployeeId}
+                  placeholder="Select employee…"
+                  searchPlaceholder="Search by name, ID, or position…"
+                  allowClear={false}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Deduction Type</Label>
@@ -520,7 +533,7 @@ export function Deduction() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
         </div>
       </div>
 
@@ -596,6 +609,8 @@ export function Deduction() {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Modifier</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -636,16 +651,28 @@ export function Deduction() {
                       </Badge>
                     </TableCell>
                     <TableCell>
+                      <AuditCell
+                        name={(deduction as any).createdByName}
+                        at={(deduction as any).createdAt}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <AuditCell
+                        name={(deduction as any).updatedByName}
+                        at={(deduction as any).updatedAt}
+                      />
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-2">
-                        <Button
+                        {canEdit && <Button
                           variant="outline"
                           size="sm"
                           onClick={() => { setEditTarget(deduction); setEditForm({ ...deduction }); }}
                         >
                           <Pencil className="h-3.5 w-3.5 mr-1" />
                           Edit
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canRemove && <Button
                           variant="outline"
                           size="sm"
                           disabled={deduction.status !== 'active'}
@@ -665,7 +692,7 @@ export function Deduction() {
                           }}
                         >
                           Stop
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>

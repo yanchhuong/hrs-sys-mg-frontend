@@ -6,6 +6,7 @@ import * as overtimeApi from '../../api/overtime';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -53,13 +54,16 @@ function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
     id: o.id,
     employeeId: o.employeeId,
     date: o.date,
-    startHour: o.startHour,
-    endHour: o.endHour,
+    // Backend doesn't persist the time range; show "—" via the row fallback.
+    startHour: o.startHour ?? '',
+    endHour: o.endHour ?? '',
     hours: o.hours,
     reason: o.reason ?? '',
     status: o.status,
-    requestedAt: o.submittedAt,
-    approvedBy: o.approvedBy ?? undefined,
+    // Backend's field is `requestedAt`. Fall back to `submittedAt` only so old
+    // mock fixtures with the legacy field name still render.
+    requestedAt: o.requestedAt ?? (o as { submittedAt?: string }).submittedAt ?? new Date().toISOString(),
+    approvedBy: o.approvedById ?? undefined,
     approvedAt: o.approvedAt ?? undefined,
     isWeekend: dow === 0 || dow === 6,
     isHoliday: false,
@@ -71,7 +75,11 @@ function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
 // live mode; the component resolves it via the loaded departments list.
 function adaptApiEmployee(e: employeesApi.Employee): Employee {
   return {
-    id: e.id,
+    // empNo is the human-readable id (e.g. "1003"); the backend UUID lives
+    // on `apiId`. Other pages follow this convention so EmployeeCell falls
+    // back to the empNo subtitle and the Manager/Lead resolver works.
+    id: e.empNo,
+    apiId: e.id,
     name: e.name,
     khmerName: e.khmerName ?? undefined,
     email: e.email,
@@ -122,11 +130,7 @@ export function Overtime() {
   const [allOtRequests, setAllOtRequests] = useState<OTRequest[]>(USE_MOCKS ? mockOTRequests : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (id: string | undefined): string => {
-    if (!id) return '-';
-    return deptNameById.get(id) ?? id;
-  };
+  const deptName = makeDeptName(deptList, '-');
 
   const loadOtRequests = async () => {
     if (USE_MOCKS) {
@@ -151,7 +155,7 @@ export function Overtime() {
       return;
     }
     try {
-      const res = await employeesApi.list({ size: 200 });
+      const res = await employeesApi.list({ size: 500 });
       setEmployees(res.content.map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
@@ -190,9 +194,11 @@ export function Overtime() {
 
   // Admin sees the whole tenant. Manager / employee are scoped to self + direct
   // reports, then narrowed by the ScopePicker (`all` / `mine` / `team`).
+  // Pass the live employees roster so a Manager's "self + direct reports"
+  // set resolves from real data (mockEmployees doesn't have the live UUIDs).
   let otRequests = isTenantWide
     ? allOtRequests
-    : allOtRequests.filter(req => matchesScope(req.employeeId, scopeMode));
+    : allOtRequests.filter(req => matchesScope(req.employeeId, scopeMode, employees));
 
   // Apply date filter
   if (dateFilter.start || dateFilter.end) {
@@ -216,7 +222,7 @@ export function Overtime() {
   const kw = search.trim().toLowerCase();
   if (kw) {
     otRequests = otRequests.filter(req => {
-      const emp = employees.find(e => e.id === req.employeeId);
+      const emp = employees.find(e => e.id === req.employeeId || (e as any).apiId === req.employeeId);
       const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)} ${req.reason ?? ''}`.toLowerCase();
       return hay.includes(kw);
     });
@@ -268,9 +274,19 @@ export function Overtime() {
       setReason('');
       return;
     }
+    // Hours is the canonical value the backend persists. Parse from the
+    // (auto-computed) hours state — already shown in the dialog under
+    // "Hours (auto)". Reject anything ≤ 0 so the user gets a clear error
+    // before the round-trip rather than a generic "Validation failed".
+    const hoursNum = Number(hours);
+    if (!Number.isFinite(hoursNum) || hoursNum <= 0) {
+      toast.error('Hours must be greater than 0 — check Start / End hour');
+      return;
+    }
     try {
       await overtimeApi.create({
         date: dateStr,
+        hours: hoursNum,
         startHour,
         endHour,
         reason: reason.trim(),
@@ -328,6 +344,24 @@ export function Overtime() {
     if (isHoliday) return '3x';
     if (isWeekend) return '2x';
     return '1.5x';
+  };
+
+  /**
+   * OT pay amount for a single request. Mirrors the formula used in
+   * Payroll: hourly = base / 160 (20 working days × 8 hours), then
+   * scaled by the rate multiplier (weekday 1.5×, weekend 2×, holiday 3×).
+   * Returns 0 when the employee can't be matched (e.g. roster still
+   * loading) so the cell stays usable.
+   */
+  const calculateOTAmount = (
+    baseSalary: number | undefined,
+    hours: number,
+    isWeekend: boolean,
+    isHoliday: boolean,
+  ): number => {
+    if (!baseSalary || !hours) return 0;
+    const multiplier = isHoliday ? 3 : isWeekend ? 2 : 1.5;
+    return (baseSalary / 160) * hours * multiplier;
   };
 
   // Pending first, then newest by requested date
@@ -499,9 +533,11 @@ export function Overtime() {
                 <TableHead className="text-center">End</TableHead>
                 <TableHead className="text-center">Hours</TableHead>
                 <TableHead>Rate</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Requested At</TableHead>
+                <TableHead>Submitted By</TableHead>
                 <TableHead>Approved By</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -515,15 +551,17 @@ export function Overtime() {
                 </TableRow>
               )}
               {overtimePagination.paginatedItems.map((request) => {
-                const employee = employees.find(e => e.id === request.employeeId);
+                const employee = employees.find(e => e.id === request.employeeId || (e as any).apiId === request.employeeId);
                 const leader = employee?.managerId
-                  ? employees.find(e => e.id === employee.managerId)
+                  ? employees.find(e => e.id === employee.managerId || (e as any).apiId === employee.managerId)
                   : null;
-                const approver = request.approvedBy
-                  ? employees.find(e => e.id === request.approvedBy)
-                  : null;
+                // The backend resolves the approver's display name on
+                // the OT DTO (`approvedByName`). Front-end lookups would
+                // miss because `approvedById` is a USER UUID, not an
+                // employee id, and the row data doesn't include users.
+                const approverName = request.approvedByName ?? null;
                 const isPending = request.status === 'pending';
-                const canActOnThis = isPending && canApproveOTOf(request.employeeId);
+                const canActOnThis = isPending && canApproveOTOf(request.employeeId, employees);
                 return (
                   <TableRow key={request.id} className={isPending ? 'bg-yellow-50/50' : ''}>
                     <TableCell>
@@ -541,7 +579,13 @@ export function Overtime() {
                         <span className="text-xs text-gray-400">No leader assigned</span>
                       )}
                     </TableCell>
-                    <TableCell>{format(new Date(request.date), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell>{(() => {
+                      // Guard against invalid date strings — date-fns
+                      // `format()` throws RangeError on Invalid Date which
+                      // would unmount the whole page.
+                      const d = request.date ? new Date(request.date) : null;
+                      return d && !Number.isNaN(d.getTime()) ? format(d, 'MMM dd, yyyy') : '—';
+                    })()}</TableCell>
                     <TableCell className="text-center text-sm">
                       {request.startHour || <span className="text-gray-300">—</span>}
                     </TableCell>
@@ -554,6 +598,19 @@ export function Overtime() {
                         {calculateOTRate(request.isWeekend, request.isHoliday)}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right tabular-nums text-sm">
+                      {(() => {
+                        const amount = calculateOTAmount(
+                          employee?.baseSalary,
+                          Number(request.hours) || 0,
+                          request.isWeekend,
+                          request.isHoliday,
+                        );
+                        return amount > 0
+                          ? `$${amount.toFixed(2)}`
+                          : <span className="text-gray-300">—</span>;
+                      })()}
+                    </TableCell>
                     <TableCell className="max-w-xs truncate" title={request.reason}>{request.reason}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(request.status)}>
@@ -561,9 +618,13 @@ export function Overtime() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {format(new Date(request.requestedAt), 'MMM dd, HH:mm')}
+                      {(() => {
+                        const d = request.requestedAt ? new Date(request.requestedAt) : null;
+                        return d && !Number.isNaN(d.getTime()) ? format(d, 'MMM dd, HH:mm') : '—';
+                      })()}
                     </TableCell>
-                    <TableCell className="text-sm">{approver?.name || '-'}</TableCell>
+                    <TableCell className="text-sm">{request.submittedByName || '-'}</TableCell>
+                    <TableCell className="text-sm">{approverName || '-'}</TableCell>
                     <TableCell className="text-right">
                       {canActOnThis ? (
                         <div className="flex items-center justify-end gap-1.5">

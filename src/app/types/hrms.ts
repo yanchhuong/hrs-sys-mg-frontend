@@ -27,6 +27,11 @@ export interface Employee {
   id: string;
   /** Backend primary-key UUID — populated in live mode only, used for API calls. */
   apiId?: string;
+  /**
+   * Explicit Employee Number for views that key `id` to a backend UUID
+   * (e.g. Reports). Populated in live mode; in mock mode it equals `id`.
+   */
+  empNo?: string;
   name: string;
   khmerName?: string;
   email: string;
@@ -39,12 +44,25 @@ export interface Employee {
   managerId?: string;
   profileImage?: string;
   gender?: 'male' | 'female';
+  /** Drives the dependents count for Cambodia TOS (KHR 150,000 each). */
+  maritalStatus?: 'single' | 'married';
+  /** Children claimed as dependents. Only meaningful when married. */
+  numberOfChildren?: number;
   dateOfBirth?: string;
   placeOfBirth?: string;
   currentAddress?: string;
   nffNo?: string;
   tid?: string;
   contractExpireDate?: string;
+  /** Resign / termination date. Empty = still employed. */
+  resignDate?: string;
+  /**
+   * False = "Exception" — employee opted out of attendance counting
+   * (field engineers, remote staff). Defaults to true.
+   */
+  attendanceYn?: boolean;
+  /** Monthly allowance — separate from baseSalary. Defaults to 0. */
+  allowance?: number;
   // Banking
   bankName?: string;
   bankAccount?: string;
@@ -112,6 +130,10 @@ export interface OTRequest {
 export interface PayrollItem {
   id: string;
   employeeId: string;
+  /** Server-resolved name. In live mode the backend joins user→employee
+   *  and sends this so the UI doesn't need a separate lookup; useful as a
+   *  fallback when the local employee list misses (e.g. terminated). */
+  employeeName?: string;
   month: string;
   baseSalary: number;
   positionAllowance?: number;
@@ -129,6 +151,14 @@ export interface PayrollItem {
   currency: string;
   generatedAt: string;
   approvedBy?: string;
+  /**
+   * Per-category earnings keyed by PayrollCategory.code (e.g. {basic: 500,
+   * position: 100}). Lets reports render columns that match the user's
+   * configured Payroll Categories without baking field names into the UI.
+   */
+  earnings?: Record<string, number>;
+  /** Per-category deductions keyed by PayrollCategory.code. */
+  deductionsBreakdown?: Record<string, number>;
 }
 
 export interface Contract {

@@ -24,6 +24,9 @@ export interface ActivityEvent {
   installId?: string;      // Links sync errors to a local install
   message?: string;        // Detail line / error body
   acknowledged: boolean;
+  /** Source IP recorded by the audit pipeline. Surfaces in the IP column
+   *  so admins can correlate suspicious activity to a network origin. */
+  ipAddress?: string | null;
 }
 
 /**

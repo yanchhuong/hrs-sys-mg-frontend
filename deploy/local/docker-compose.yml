@@ -44,6 +44,14 @@ services:
       LOCAL_TENANT_NAME: ${LOCAL_TENANT_NAME:-Local Branch}
       LOCAL_API_KEY: ${LOCAL_API_KEY:-}
       CORS_ORIGINS: http://localhost:8080
+      # First-boot bootstrap: wipe the V2 demo tenants ('acme' + 'local-site')
+      # and create a super_admin in a 'platform' tenant. Both are idempotent
+      # — safe to leave on for every restart. Comment them out (or set to
+      # blank) once the stack has been seeded if you'd rather not have the
+      # bootstrapper running every boot.
+      HRMS_BOOTSTRAP_WIPE_DEMO_DATA: ${HRMS_BOOTSTRAP_WIPE_DEMO_DATA:-true}
+      HRMS_BOOTSTRAP_SUPER_ADMIN_EMAIL: ${HRMS_BOOTSTRAP_SUPER_ADMIN_EMAIL:-superadmin@hrms.local}
+      HRMS_BOOTSTRAP_SUPER_ADMIN_PASSWORD: ${HRMS_BOOTSTRAP_SUPER_ADMIN_PASSWORD:?set HRMS_BOOTSTRAP_SUPER_ADMIN_PASSWORD in .env}
     expose:
       - "4000"
 

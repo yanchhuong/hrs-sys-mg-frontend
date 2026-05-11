@@ -9,8 +9,9 @@ import * as attendanceApi from '../../api/attendance';
 import * as overtimeApi from '../../api/overtime';
 import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
+import * as leaveApi from '../../api/leave';
 import { USE_MOCKS } from '../../api/client';
-import { Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle, RefreshCw, CalendarDays } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -34,6 +35,9 @@ export function Dashboard() {
   const [otRequests, setOtRequests] = useState(USE_MOCKS ? mockOTRequests : []);
   const [contracts, setContracts] = useState(USE_MOCKS ? mockContracts : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
+  // Pending leave requests — surfaces alongside OT in Recent Alerts so
+  // tenant-wide roles (admin + custom) can act on them at a glance.
+  const [pendingLeaves, setPendingLeaves] = useState<leaveApi.LeaveRequest[]>([]);
   const [loading, setLoading] = useState(!USE_MOCKS);
 
   useEffect(() => {
@@ -42,12 +46,13 @@ export function Dashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [empRes, attRes, otRes, contractsRes, deps] = await Promise.all([
+        const [empRes, attRes, otRes, contractsRes, deps, leaveRes] = await Promise.all([
           employeesApi.list({ size: 500 }),
           attendanceApi.list({ date: todayISO(), size: 500 }),
           overtimeApi.list({ status: 'pending', size: 200 }),
           contractsApi.list({ status: 'active', size: 500 }),
           departmentsApi.list(),
+          leaveApi.list({ status: 'pending', size: 200 }),
         ]);
         if (cancelled) return;
         // Stash raw API shapes — the dashboard reads them directly, matching
@@ -57,6 +62,7 @@ export function Dashboard() {
         setOtRequests(otRes.data as any);
         setContracts(contractsRes.data as any);
         setDeptList(deps);
+        setPendingLeaves(leaveRes.data);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to load dashboard');
       } finally {
@@ -125,7 +131,7 @@ export function Dashboard() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Home Dashboard</h1>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
         <div className="rounded-md border border-blue-200 bg-blue-50 p-6 flex items-center gap-3">
@@ -136,16 +142,20 @@ export function Dashboard() {
     );
   }
 
-  // ---------- Admin view
-  if (currentUser?.role === 'admin') {
+  // ---------- Admin view (also drives custom roles, since they're seeded
+  // from the Admin base and expect tenant-wide visibility).
+  if (currentUser?.role === 'admin'
+      || (currentUser?.role
+          && currentUser.role !== 'manager'
+          && currentUser.role !== 'employee')) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Home Dashboard</h1>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">Total Employees</CardTitle>
@@ -178,6 +188,17 @@ export function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold">{pendingOT.length}</div>
               <p className="text-xs text-gray-500">Require approval</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm">Pending Leave Requests</CardTitle>
+              <CalendarDays className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{pendingLeaves.length}</div>
+              <p className="text-xs text-gray-500">Awaiting approval</p>
             </CardContent>
           </Card>
 
@@ -228,7 +249,21 @@ export function Dashboard() {
                     </div>
                   );
                 })}
-                {expiringContracts.length === 0 && pendingOT.length === 0 && (
+                {pendingLeaves.slice(0, 3).map((lr) => {
+                  const employee = findEmployee(lr.employeeId);
+                  return (
+                    <div key={lr.id} className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
+                      <CalendarDays className="h-5 w-5 text-purple-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">Pending Leave Approval</p>
+                        <p className="text-sm text-gray-600">
+                          {(employee?.name ?? lr.employeeName) ?? '—'} – {lr.type.replace('_', ' ')} on {format(parseISO(lr.date), 'MMM dd, yyyy')}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+                {expiringContracts.length === 0 && pendingOT.length === 0 && pendingLeaves.length === 0 && (
                   <p className="text-sm text-gray-500 text-center py-6">Nothing needs your attention right now.</p>
                 )}
               </div>
@@ -271,7 +306,7 @@ export function Dashboard() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Home Dashboard</h1>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
@@ -344,7 +379,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Home Dashboard</h1>
+        <h1 className="text-3xl font-bold">Dashboard</h1>
         <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
       </div>
 

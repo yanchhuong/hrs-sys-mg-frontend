@@ -15,6 +15,12 @@ export interface SalaryDeduction {
   endDate?: string | null;
   status: DeductionStatus;
   createdAt: string;
+  /** Author + modifier audit. Display names resolved server-side via user→employee. */
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CreateDeductionRequest {

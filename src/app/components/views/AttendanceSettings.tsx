@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -19,7 +20,9 @@ import {
 } from '../ui/table';
 import { mockAttendanceRules, defaultOTSettings, defaultAttendanceRule } from '../../data/settingsData';
 import { mockDepartments } from '../../data/mockData';
+import * as departmentsApi from '../../api/departments';
 import { mockHolidays } from '../../data/timeworkData';
+import { Holiday as HolidayView } from './Holiday';
 import { AttendanceRule, OTSettings } from '../../types/settings';
 import { Holiday } from '../../types/timework';
 import * as settingsApi from '../../api/settings';
@@ -51,6 +54,11 @@ function adaptHoliday(h: settingsApi.Holiday): Holiday {
 }
 
 export function AttendanceSettings() {
+  // Update permission on the 'settings' module gates the Save All button.
+  // Roles that only have View on settings still see the page (helpful as a
+  // read-only reference) but can't persist changes.
+  const { canUpdate } = useAuth();
+  const canEditSettings = canUpdate('settings');
   // Kept for OT-tab cross-references (activeShift) — no per-shift UI anymore;
   // per-employee work schedules are assigned on the Employee record.
   const [shifts] = useState<AttendanceRule[]>(mockAttendanceRules);
@@ -61,6 +69,13 @@ export function AttendanceSettings() {
   const [otSubTab, setOtSubTab] = useState('workday');
   const [deptAssignDialogOpen, setDeptAssignDialogOpen] = useState(false);
   const [newDeptAssign, setNewDeptAssign] = useState({ department: '', ruleLabel: '', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 });
+  // Live Department / Group / Team list. Drives the picker in the Assign
+  // OT Rule dialog so admins can scope a custom OT multiplier to a Group
+  // or Team in addition to formal Departments. Falls back to mock data
+  // until the API responds (or in mock mode).
+  const [deptList, setDeptList] = useState<departmentsApi.Department[]>(
+    USE_MOCKS ? mockDepartments.map(d => ({ id: d.id, name: d.name, type: 'department' })) : [],
+  );
 
   // Holiday state
   const [holidays, setHolidays] = useState<Holiday[]>(USE_MOCKS ? mockHolidays : []);
@@ -100,6 +115,12 @@ export function AttendanceSettings() {
         workdayRule: { ...prev.workdayRule, ...((remote.workdayRule as Partial<OTSettings['workdayRule']>) ?? {}) },
         weekendRule: { ...prev.weekendRule, ...((remote.weekendRule as Partial<OTSettings['weekendRule']>) ?? {}) },
         holidayRule: { ...prev.holidayRule, ...((remote.holidayRule as Partial<OTSettings['holidayRule']>) ?? {}) },
+        // Department assignments persist as a JSON list on the backend.
+        // Coerce to the typed array if present, otherwise keep the empty
+        // default so the rendered table still iterates safely.
+        departmentAssignments: Array.isArray(remote.departmentAssignments)
+          ? (remote.departmentAssignments as OTSettings['departmentAssignments'])
+          : prev.departmentAssignments,
       }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load OT settings');
@@ -111,8 +132,21 @@ export function AttendanceSettings() {
   useEffect(() => {
     loadHolidays();
     loadOtSettings();
+    loadGeneralSettings();
+    loadDepartments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Pull the full Department / Group / Team list once on mount. */
+  const loadDepartments = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const list = await departmentsApi.list();
+      setDeptList(list);
+    } catch (err) {
+      console.warn('Could not load departments for OT rule picker', err);
+    }
+  };
 
   // General settings state
   const [generalSettings, setGeneralSettings] = useState({
@@ -124,26 +158,68 @@ export function AttendanceSettings() {
     weekendDays: ['Saturday', 'Sunday'] as string[],
   });
 
+  // Backend stores 3-letter codes ("Sat"); the chip UI expects long names
+  // ("Saturday"). Convert at the wire boundary so the picker stays simple.
+  const SHORT_TO_LONG: Record<string, string> = {
+    Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday',
+    Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday',
+  };
+  const LONG_TO_SHORT: Record<string, string> = Object.fromEntries(
+    Object.entries(SHORT_TO_LONG).map(([s, l]) => [l, s]),
+  );
+
+  const loadGeneralSettings = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const remote = await settingsApi.getGeneralAttendanceSettings();
+      setGeneralSettings({
+        autoMarkAbsent: remote.autoMarkAbsent,
+        absentDeadlineTime: remote.absentDeadlineTime,
+        trackMissingPunch: remote.trackMissingCheckout,
+        notifyManager: remote.notifyManager,
+        notifyEmployee: remote.notifyEmployee,
+        weekendDays: (remote.weekendDays || []).map(d => SHORT_TO_LONG[d] ?? d),
+      });
+    } catch (err) {
+      console.warn('Could not load General attendance settings', err);
+    }
+  };
+
   const handleSave = async () => {
     if (USE_MOCKS) {
       toast.success('Attendance settings saved successfully');
       return;
     }
     try {
-      await settingsApi.updateOtSettings({
-        otStartAfter: otSettings.otStartAfter.length === 5 ? otSettings.otStartAfter + ':00' : otSettings.otStartAfter,
-        minimumOTThresholdMinutes: otSettings.minimumOTThresholdMinutes,
-        otRoundingMinutes: otSettings.otRoundingMinutes,
-        weekdayRate: otSettings.weekdayRate,
-        weekendRate: otSettings.weekendRate,
-        holidayRate: otSettings.holidayRate,
-        maxOTHoursPerDay: otSettings.maxOTHoursPerDay,
-        requireApproval: otSettings.requireApproval,
-        calculationMode: otSettings.calculationMode,
-        workdayRule: otSettings.workdayRule as unknown as Record<string, unknown>,
-        weekendRule: otSettings.weekendRule as unknown as Record<string, unknown>,
-        holidayRule: otSettings.holidayRule as unknown as Record<string, unknown>,
-      });
+      await Promise.all([
+        settingsApi.updateOtSettings({
+          otStartAfter: otSettings.otStartAfter.length === 5 ? otSettings.otStartAfter + ':00' : otSettings.otStartAfter,
+          minimumOTThresholdMinutes: otSettings.minimumOTThresholdMinutes,
+          otRoundingMinutes: otSettings.otRoundingMinutes,
+          weekdayRate: otSettings.weekdayRate,
+          weekendRate: otSettings.weekendRate,
+          holidayRate: otSettings.holidayRate,
+          maxOTHoursPerDay: otSettings.maxOTHoursPerDay,
+          requireApproval: otSettings.requireApproval,
+          calculationMode: otSettings.calculationMode,
+          workdayRule: otSettings.workdayRule as unknown as Record<string, unknown>,
+          weekendRule: otSettings.weekendRule as unknown as Record<string, unknown>,
+          holidayRule: otSettings.holidayRule as unknown as Record<string, unknown>,
+          // Persist the per-department/group/team OT rule list. Backend
+          // stores it as a JSON column verbatim (Object → list of rows
+          // with id/department/ruleLabel/weekdayRate/weekendRate/holidayRate).
+          departmentAssignments: otSettings.departmentAssignments,
+        }),
+        settingsApi.updateGeneralAttendanceSettings({
+          autoMarkAbsent: generalSettings.autoMarkAbsent,
+          absentDeadlineTime: generalSettings.absentDeadlineTime,
+          trackMissingCheckout: generalSettings.trackMissingPunch,
+          notifyManager: generalSettings.notifyManager,
+          notifyEmployee: generalSettings.notifyEmployee,
+          // Convert long day names back to the 3-letter codes the backend stores.
+          weekendDays: generalSettings.weekendDays.map(d => LONG_TO_SHORT[d] ?? d),
+        }),
+      ]);
       toast.success('Attendance settings saved successfully');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save settings');
@@ -223,10 +299,12 @@ export function AttendanceSettings() {
           <h1 className="text-3xl font-bold">Attendance Settings</h1>
           <p className="text-gray-500">Configure check-in/out rules, schedules, and overtime calculation</p>
         </div>
-        <Button onClick={handleSave}>
-          <Save className="mr-2 h-4 w-4" />
-          Save All Settings
-        </Button>
+        {canEditSettings && (
+          <Button onClick={handleSave}>
+            <Save className="mr-2 h-4 w-4" />
+            Save All Settings
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -654,10 +732,28 @@ export function AttendanceSettings() {
                     </DialogHeader>
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Department</Label>
+                        <Label>Department / Group / Team</Label>
                         <Select value={newDeptAssign.department} onValueChange={v => setNewDeptAssign({ ...newDeptAssign, department: v })}>
-                          <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-                          <SelectContent>{mockDepartments.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}</SelectContent>
+                          <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                          <SelectContent>
+                            {/* "All" — applies the rule tenant-wide for the
+                                Workday / Weekend / Holiday default rates. */}
+                            <SelectItem value="__all__">All (every department, group, team)</SelectItem>
+                            {(['department', 'group', 'team'] as const).flatMap(t => {
+                              const bucket = deptList
+                                .filter(d => ((d as { type?: string }).type ?? 'department') === t)
+                                .sort((a, b) => a.name.localeCompare(b.name));
+                              if (bucket.length === 0) return [];
+                              const label = t === 'department' ? 'Departments'
+                                : t === 'group' ? 'Groups' : 'Teams';
+                              return [
+                                <div key={`${t}-hdr`} className="px-2 py-1 text-[11px] uppercase tracking-wide text-gray-400">{label}</div>,
+                                ...bucket.map(d => (
+                                  <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                                )),
+                              ];
+                            })}
+                          </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
@@ -753,149 +849,11 @@ export function AttendanceSettings() {
         </TabsContent>
 
         {/* ═══════════════ HOLIDAY TAB ═══════════════ */}
+        {/* Embedded the rich Holiday view (clone, year filter, search,
+            calendar modal) so the in-tab and standalone routes stay in
+            sync — was previously a bare-bones table that diverged. */}
         <TabsContent value="holiday" className="space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm">Total Holidays</CardTitle>
-                <CalendarDays className="h-4 w-4 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{filteredHolidays.length}</div>
-                <p className="text-xs text-gray-500">Configured holidays</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm">Public Holidays</CardTitle>
-                <CalendarDays className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{filteredHolidays.filter(h => h.type === 'public').length}</div>
-                <p className="text-xs text-gray-500">National holidays</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm">Company Holidays</CardTitle>
-                <CalendarDays className="h-4 w-4 text-purple-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{filteredHolidays.filter(h => h.type === 'company').length}</div>
-                <p className="text-xs text-gray-500">Internal holidays</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">Holiday Calendar</CardTitle>
-                  <CardDescription>Manage public and company holidays</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    className="h-8 w-36"
-                    placeholder="From"
-                    onChange={e => setDateFilter({ ...dateFilter, start: e.target.value || null })}
-                  />
-                  <span className="text-xs text-gray-400">to</span>
-                  <Input
-                    type="date"
-                    className="h-8 w-36"
-                    placeholder="To"
-                    onChange={e => setDateFilter({ ...dateFilter, end: e.target.value || null })}
-                  />
-                  <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm">
-                        <Plus className="mr-1.5 h-4 w-4" />
-                        Add Holiday
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add New Holiday</DialogTitle>
-                        <DialogDescription>Configure a new public or company holiday</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Holiday Name</Label>
-                          <Input placeholder="e.g., Independence Day" value={newHoliday.name} onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Date</Label>
-                          <Input type="date" value={newHoliday.date} onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Type</Label>
-                          <Select value={newHoliday.type} onValueChange={v => setNewHoliday({ ...newHoliday, type: v as 'public' | 'company' })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="public">Public Holiday</SelectItem>
-                              <SelectItem value="company">Company Holiday</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Description (Optional)</Label>
-                          <Input placeholder="Additional notes" value={newHoliday.description} onChange={e => setNewHoliday({ ...newHoliday, description: e.target.value })} />
-                        </div>
-                        <Button onClick={handleAddHoliday} className="w-full">Add Holiday</Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Holiday Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-20">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredHolidays.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-gray-400">No holidays found</TableCell>
-                    </TableRow>
-                  ) : (
-                    holidaysPagination.paginatedItems.map(holiday => (
-                      <TableRow key={holiday.id}>
-                        <TableCell className="font-medium text-sm">{format(new Date(holiday.date), 'MMM dd, yyyy')}</TableCell>
-                        <TableCell className="text-sm">{holiday.name}</TableCell>
-                        <TableCell>
-                          <Badge variant={holiday.type === 'public' ? 'default' : 'secondary'}>{holiday.type}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-gray-600">{holiday.description || '-'}</TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => handleDeleteHoliday(holiday.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-              <Pagination
-                currentPage={holidaysPagination.currentPage}
-                totalPages={holidaysPagination.totalPages}
-                onPageChange={holidaysPagination.goToPage}
-                startIndex={holidaysPagination.startIndex}
-                endIndex={holidaysPagination.endIndex}
-                totalItems={holidaysPagination.totalItems}
-              />
-            </CardContent>
-          </Card>
+          <HolidayView embedded />
         </TabsContent>
 
         {/* ═══════════════ GENERAL TAB ═══════════════ */}

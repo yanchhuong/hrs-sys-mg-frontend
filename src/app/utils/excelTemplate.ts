@@ -11,12 +11,41 @@ interface Employee {
 // Column 0..3 are fixed identifiers / totals. Category amounts start at E.
 const CATEGORY_START_COL = 4;
 
+/**
+ * Per-employee, per-category amount overrides. Outer key is the employee
+ * lookup id (caller's choice — we just match against whatever key the
+ * caller used to build the maps). Inner key is the {@link PayrollCategory}
+ * `code`. When an override is missing for a (employee, code) pair the
+ * cell falls back to {@code category.defaultAmount}.
+ */
+export type AmountOverrides = Record<string, Record<string, number>>;
+
 export function downloadPayrollTemplate(
   employees: Employee[],
   monthYear: string = '04-2026',
-  options: { categories?: PayrollCategory[] } = {},
+  options: {
+    categories?: PayrollCategory[];
+    /** Map from {@link Employee.id} → {category.code → amount}. */
+    earningsByEmployee?: AmountOverrides;
+    /** Same shape as {@code earningsByEmployee} but for the deduction half. */
+    deductionsByEmployee?: AmountOverrides;
+  } = {},
 ) {
   const all = options.categories ?? loadPayrollCategories();
+  const earningsByEmployee = options.earningsByEmployee ?? {};
+  const deductionsByEmployee = options.deductionsByEmployee ?? {};
+
+  const cellAmount = (
+    map: AmountOverrides,
+    empId: string,
+    code: string,
+    fallback: number,
+  ): number => {
+    const row = map[empId];
+    if (!row) return fallback;
+    const v = row[code];
+    return typeof v === 'number' ? v : fallback;
+  };
   const earnings = all
     .filter((c) => c.kind === 'earning' && c.enabled)
     .sort((a, b) => a.order - b.order);
@@ -67,7 +96,7 @@ export function downloadPayrollTemplate(
       employee.name,
       '',                                         // Net Salary (formula)
       '',                                         // Total Earnings (formula)
-      ...earnings.map((c) => c.defaultAmount || 0),
+      ...earnings.map((c) => cellAmount(earningsByEmployee, employee.id, c.code, c.defaultAmount || 0)),
     ];
     while (earningsRow.length < totalCols) earningsRow.push('');
     wsData.push(earningsRow);
@@ -77,7 +106,7 @@ export function downloadPayrollTemplate(
       '',
       '',
       '',                                         // Total Deductions (formula)
-      ...deductions.map((c) => c.defaultAmount || 0),
+      ...deductions.map((c) => cellAmount(deductionsByEmployee, employee.id, c.code, c.defaultAmount || 0)),
     ];
     while (deductionsRow.length < totalCols) deductionsRow.push('');
     wsData.push(deductionsRow);

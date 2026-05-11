@@ -33,6 +33,9 @@ import {
   Plus, Pencil, Trash2, Search, Briefcase, MoreHorizontal, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { notify } from '../../utils/notify';
+import { makeDeptName } from '../../utils/deptName';
+import { useAuth } from '../../context/AuthContext';
 
 interface Position {
   id: string;
@@ -80,6 +83,12 @@ interface PositionsProps {
 }
 
 export function Positions({ embedded = false }: PositionsProps = {}) {
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  // Positions are managed under Settings → Employee Settings, so they gate
+  // on the `settings` module's actions in the permission matrix.
+  const canCreatePos = canCreate('settings');
+  const canUpdatePos = canUpdate('settings');
+  const canDeletePos = canDelete('settings');
   const [positions, setPositions] = useState<Position[]>(USE_MOCKS ? buildMockSeed() : []);
   const [departments, setDepartments] = useState<Department[]>(USE_MOCKS ? mockDepartments : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
@@ -140,10 +149,9 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const deptName = (id?: string) => {
-    if (!id) return 'Unassigned';
-    return departments.find(d => d.id === id)?.name ?? id;
-  };
+  // Position rows where the dept was deleted should read "Unassigned"
+  // rather than expose the orphan UUID.
+  const deptName = makeDeptName(departments, 'Unassigned');
 
   // Per-position headcount: match by exact name (case-insensitive). Position
   // is a free-text field on Employee today, so name is the only join key.
@@ -185,7 +193,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
   const handleSave = async () => {
     const name = form.name.trim();
     if (!name) {
-      toast.error('Please enter a position name');
+      notify.validate('Please enter a position name');
       return;
     }
 
@@ -197,7 +205,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         (p.departmentId || '') === (form.departmentId || '')
       );
       if (dup) {
-        toast.error('A position with this name already exists in that department');
+        notify.validate('A position with this name already exists in that department');
         return;
       }
       if (editing) {
@@ -262,13 +270,15 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
             <h1 className="text-3xl font-bold">Positions</h1>
             <p className="text-gray-500">Manage job positions and titles used when assigning employees.</p>
           </div>
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Position
-          </Button>
+          {canCreatePos && (
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Position
+            </Button>
+          )}
         </div>
       )}
-      {embedded && (
+      {embedded && canCreatePos && (
         <div className="flex justify-end">
           <Button onClick={openAdd} size="sm">
             <Plus className="mr-2 h-4 w-4" />
@@ -277,7 +287,11 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary cards — hidden when embedded in Employee Settings, which
+          renders its own global KPI strip above the tabs to avoid the
+          duplicate "Total Positions" cards visible when both layers
+          rendered. The standalone Positions page keeps them. */}
+      {!embedded && (
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -314,6 +328,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Filters & Table */}
       <Card>
@@ -397,27 +412,33 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(p)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-600"
-                              onClick={() => setDeleteConfirm(p)}
-                              disabled={count > 0}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {(canUpdatePos || canDeletePos) ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {canUpdatePos && (
+                                <DropdownMenuItem onClick={() => openEdit(p)}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Edit
+                                </DropdownMenuItem>
+                              )}
+                              {canDeletePos && (
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => setDeleteConfirm(p)}
+                                  disabled={count > 0}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   );
@@ -431,7 +452,10 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
-                onPageChange={pagination.setPage}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
               />
             </div>
           )}

@@ -7,21 +7,41 @@ export interface OtRequest {
   employeeId: string;
   employeeName?: string;
   date: string;
-  startHour: string;
-  endHour: string;
+  /** Optional HH:mm labels persisted alongside {@link hours} (since V20). */
+  startHour?: string;
+  endHour?: string;
   hours: number;
   reason?: string;
   status: OtStatus;
-  approvedBy?: string | null;
+  /** Backend sends submitter / approver as UUIDs. */
+  submittedById?: string | null;
+  /** Display name of the original filer — resolved server-side via
+   *  user→employee. Lets the FE show "submitted by HR Admin" even for
+   *  on-behalf rows that auto-approved without a separate approval click. */
+  submittedByName?: string | null;
+  approvedById?: string | null;
+  /** Display name of the approver — resolved server-side from
+   *  user→employee. Empty when the row is still pending or when the
+   *  approver's user account has no linked employee profile. */
+  approvedByName?: string | null;
   approvedAt?: string | null;
-  submittedAt: string;
+  /** ISO timestamp of when the request was filed. */
+  requestedAt: string;
 }
 
 export interface CreateOtRequest {
+  /** Backend UUID of the target employee. Omit to file for the
+   *  authenticated caller (the original employee self-submit flow);
+   *  set to file on behalf of someone else (admin / leader flow). */
+  employeeId?: string;
   date: string;
-  startHour: string;
-  endHour: string;
+  /** Total OT hours, e.g. 3 for 17:00 → 20:00. Backend persists this; the
+      hour-range fields are FE-only labels and not part of the create body. */
+  hours: number;
   reason?: string;
+  /** Optional HH:mm labels surfaced in the OT Request History (since V20). */
+  startHour?: string;
+  endHour?: string;
 }
 
 export interface ListParams {

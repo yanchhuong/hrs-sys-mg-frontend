@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -22,6 +22,44 @@ import { mockCompanies } from '../../../data/platformData';
 import {
   ActivityEvent, EventCategory, Severity, buildActivityLog,
 } from './activityLogData';
+import { USE_MOCKS } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
+
+// Adapter: map a live PlatformAuditEntry to the page's ActivityEvent shape so
+// the existing JSX, filters and severity tabs keep working without churn.
+function toActivityEvent(
+  e: platformApi.PlatformAuditEntry,
+  tenantNameById: Map<string, string>,
+): ActivityEvent {
+  const action = e.action ?? '';
+  const lc = action.toLowerCase();
+  const category: EventCategory =
+      lc.includes('sync') || lc.includes('local.connect') ? 'sync'
+    : lc.includes('login') || lc.includes('auth')      ? 'auth'
+    : lc.includes('policy')                            ? 'policy'
+    : lc.includes('backup') || lc.includes('system')   ? 'system'
+    : lc.includes('tenant') || lc.includes('company')  ? 'tenant'
+                                                       : 'admin';
+  const severity: Severity =
+      lc.includes('fail') || lc.includes('error')      ? 'error'
+    : lc.includes('warn') || lc.includes('expired')
+      || lc.includes('drift') || lc.includes('mismatch') ? 'warning'
+                                                       : 'info';
+  return {
+    id: e.id,
+    at: e.createdAt,
+    severity,
+    category,
+    action,
+    actor: e.actorEmail ?? e.actorUserId ?? 'system',
+    target: e.targetId ?? e.targetType ?? '—',
+    tenantId: e.tenantId ?? undefined,
+    tenantName: e.tenantId ? tenantNameById.get(e.tenantId) : undefined,
+    message: e.payload ? JSON.stringify(e.payload) : undefined,
+    acknowledged: !!e.acknowledgedAt,
+    ipAddress: e.ipAddress ?? undefined,
+  };
+}
 
 const SEVERITIES: { key: 'all' | Severity; label: string; cls: string }[] = [
   { key: 'all',     label: 'All',     cls: 'bg-gray-100 text-gray-700' },
@@ -52,13 +90,61 @@ const SEVERITY_TONE: Record<Severity, string> = {
 };
 
 export function ActivityLog() {
-  const [events, setEvents] = useState<ActivityEvent[]>(() => buildActivityLog());
+  const [events, setEvents] = useState<ActivityEvent[]>(
+    USE_MOCKS ? buildActivityLog() : [],
+  );
+  const [tenantOptions, setTenantOptions] = useState<{ id: string; name: string }[]>(
+    USE_MOCKS ? mockCompanies.map(c => ({ id: c.id, name: c.name })) : [],
+  );
   const [search, setSearch] = useState('');
   const [severityTab, setSeverityTab] = useState<'all' | Severity>('all');
   const [category, setCategory] = useState<'all' | EventCategory>('all');
   const [tenant, setTenant] = useState<string>('all');
   const [onlyUnack, setOnlyUnack] = useState(false);
   const [detail, setDetail] = useState<ActivityEvent | null>(null);
+
+  // Tenant name index used by the audit-entry adapter.
+  const tenantNameById = useMemo(
+    () => new Map(tenantOptions.map(t => [t.id, t.name])),
+    [tenantOptions],
+  );
+
+  // Load events from the platform API. Re-runs whenever a server-side filter
+  // changes (tenant + onlyUnack); search/severity/category are still applied
+  // in-memory below so the existing UX stays snappy.
+  const loadEvents = async () => {
+    if (USE_MOCKS) {
+      setEvents(buildActivityLog());
+      return;
+    }
+    try {
+      const list = await platformApi.activity.list({
+        tenantId: tenant !== 'all' ? tenant : undefined,
+        unacked: onlyUnack || undefined,
+      });
+      setEvents(list.map(e => toActivityEvent(e, tenantNameById)));
+    } catch { /* leave previous events in place */ }
+  };
+
+  // Initial fetch — tenants for the dropdown + first events page.
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ts = await platformApi.tenants.list();
+        if (cancelled) return;
+        setTenantOptions(ts.map(t => ({ id: t.id, name: t.name })));
+      } catch { /* fall back to whatever is already in state */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Re-load whenever the server-side filters change.
+  useEffect(() => {
+    loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, onlyUnack, tenantNameById]);
 
   const counts = useMemo(() => ({
     all:     events.length,
@@ -88,7 +174,7 @@ export function ActivityLog() {
 
   const activeFilters = [
     category !== 'all' && `category: ${category}`,
-    tenant !== 'all' && `tenant: ${mockCompanies.find(c => c.id === tenant)?.name ?? tenant}`,
+    tenant !== 'all' && `tenant: ${tenantOptions.find(c => c.id === tenant)?.name ?? tenant}`,
     onlyUnack && 'unacknowledged only',
   ].filter(Boolean);
 
@@ -100,18 +186,41 @@ export function ActivityLog() {
     setOnlyUnack(false);
   };
 
-  const handleAcknowledge = (ev: ActivityEvent) => {
-    setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, acknowledged: true } : e));
-    toast.success('Event acknowledged');
+  const handleAcknowledge = async (ev: ActivityEvent) => {
+    if (USE_MOCKS) {
+      setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, acknowledged: true } : e));
+      toast.success('Event acknowledged');
+      return;
+    }
+    try {
+      await platformApi.activity.acknowledge(ev.id);
+      toast.success('Event acknowledged');
+      await loadEvents();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Acknowledge failed';
+      toast.error(msg);
+    }
   };
-  const handleAcknowledgeAllVisible = () => {
-    const ids = new Set(filtered.filter(e => !e.acknowledged).map(e => e.id));
-    if (ids.size === 0) {
+  const handleAcknowledgeAllVisible = async () => {
+    const ids = filtered.filter(e => !e.acknowledged).map(e => e.id);
+    if (ids.length === 0) {
       toast.info('Nothing to acknowledge');
       return;
     }
-    setEvents(prev => prev.map(e => ids.has(e.id) ? { ...e, acknowledged: true } : e));
-    toast.success(`Acknowledged ${ids.size} event${ids.size !== 1 ? 's' : ''}`);
+    if (USE_MOCKS) {
+      const set = new Set(ids);
+      setEvents(prev => prev.map(e => set.has(e.id) ? { ...e, acknowledged: true } : e));
+      toast.success(`Acknowledged ${ids.length} event${ids.length !== 1 ? 's' : ''}`);
+      return;
+    }
+    try {
+      await Promise.all(ids.map(id => platformApi.activity.acknowledge(id)));
+      toast.success(`Acknowledged ${ids.length} event${ids.length !== 1 ? 's' : ''}`);
+      await loadEvents();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Acknowledge failed';
+      toast.error(msg);
+    }
   };
   const handleRetry = (ev: ActivityEvent) => {
     toast.success(`Retrying sync for ${ev.actor}…`);
@@ -207,7 +316,7 @@ export function ActivityLog() {
               className="h-9 px-3 border rounded-md text-sm min-w-[180px]"
             >
               <option value="all">All tenants</option>
-              {mockCompanies.map(c => (
+              {tenantOptions.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -244,13 +353,14 @@ export function ActivityLog() {
                 <TableHead>Event</TableHead>
                 <TableHead>Tenant</TableHead>
                 <TableHead>Actor</TableHead>
+                <TableHead className="w-[130px]">IP</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
                     No events match these filters.
                   </TableCell>
                 </TableRow>
@@ -287,6 +397,9 @@ export function ActivityLog() {
                     </TableCell>
                     <TableCell className="text-xs text-gray-600 truncate max-w-[160px]" title={ev.actor}>
                       {ev.actor}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-gray-600">
+                      {ev.ipAddress ?? <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">

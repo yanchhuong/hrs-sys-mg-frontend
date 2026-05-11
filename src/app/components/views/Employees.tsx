@@ -5,6 +5,7 @@ import * as employeesApi from '../../api/employees';
 import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
 import * as positionsApi from '../../api/positions';
+import * as documentsApi from '../../api/documents';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -49,8 +50,12 @@ import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
+import { useAuth } from '../../context/AuthContext';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
+import { notify } from '../../utils/notify';
+import { makeDeptName } from '../../utils/deptName';
+import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
 
@@ -120,24 +125,69 @@ function EmployeeDocuments({
   onChange,
 }: {
   employee: import('../../types/hrms').Employee;
-  onChange: (docs: import('../../types/hrms').EmployeeDocument[]) => void;
+  /** Mock-mode hook so the parent can persist into mockEmployees. Ignored in live mode. */
+  onChange?: (docs: import('../../types/hrms').EmployeeDocument[]) => void;
 }) {
-  const [uploadType, setUploadType] = useState<import('../../types/hrms').EmployeeDocumentType>('contract');
+  const [uploadType, setUploadType] = useState<documentsApi.EmployeeDocumentType>('contract');
   const [filter, setFilter] = useState<string>('all');
+  // Live-mode state. In USE_MOCKS we read straight from `employee.documents`
+  // and bypass this state entirely.
+  const [liveDocs, setLiveDocs] = useState<documentsApi.EmployeeDocument[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  const docs = employee.documents ?? [];
+  // Backend keys documents by the employee UUID (apiId), not empNo.
+  const employeeApiId = (employee as any).apiId ?? employee.id;
+
+  const refresh = async () => {
+    if (USE_MOCKS) return;
+    setLoading(true);
+    try {
+      setLiveDocs(await documentsApi.listForEmployee(employeeApiId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!USE_MOCKS) void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeApiId]);
+
+  // Adapter so the rest of the component renders the same shape regardless
+  // of mode. Mock docs use `uploadedBy` (string), live docs don't carry it.
+  const docs: import('../../types/hrms').EmployeeDocument[] = USE_MOCKS
+    ? (employee.documents ?? [])
+    : liveDocs.map(d => ({
+        id: d.id,
+        employeeId: d.employeeId,
+        name: d.name,
+        type: d.type as import('../../types/hrms').EmployeeDocumentType,
+        mimeType: d.mimeType,
+        sizeBytes: d.sizeBytes,
+        uploadedAt: d.uploadedAt,
+        notes: d.notes ?? undefined,
+      }));
   const visible = filter === 'all' ? docs : docs.filter(d => d.type === filter);
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const next: import('../../types/hrms').EmployeeDocument[] = [...docs];
+
+    // Client-side size guard mirrors the server's multipart limit.
+    const eligible: File[] = [];
     let rejected = 0;
     Array.from(files).forEach(f => {
-      if (f.size > DOC_LIMIT_MB * 1024 * 1024) {
-        rejected++;
-        return;
-      }
-      next.push({
+      if (f.size > DOC_LIMIT_MB * 1024 * 1024) rejected++;
+      else eligible.push(f);
+    });
+    if (rejected > 0) notify.validate(`${rejected} file(s) exceeded ${DOC_LIMIT_MB} MB and were skipped`);
+    if (eligible.length === 0) return;
+
+    if (USE_MOCKS) {
+      const next: import('../../types/hrms').EmployeeDocument[] = [...docs];
+      eligible.forEach(f => next.push({
         id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         employeeId: employee.id,
         name: f.name,
@@ -146,22 +196,66 @@ function EmployeeDocuments({
         sizeBytes: f.size,
         uploadedAt: new Date().toISOString(),
         uploadedBy: 'you',
-      });
-    });
-    onChange(next);
-    if (rejected > 0) toast.error(`${rejected} file(s) exceeded ${DOC_LIMIT_MB} MB and were skipped`);
-    else toast.success(`Uploaded ${files.length} file${files.length !== 1 ? 's' : ''}`);
+      }));
+      onChange?.(next);
+      toast.success(`Uploaded ${eligible.length} file${eligible.length !== 1 ? 's' : ''}`);
+      return;
+    }
+
+    setUploading(true);
+    let succeeded = 0;
+    try {
+      // Sequential upload — keeps the failure mode obvious if one file is
+      // rejected by the server (e.g. wrong MIME) and avoids slamming the
+      // backend with parallel multipart streams.
+      for (const f of eligible) {
+        try {
+          await documentsApi.upload(employeeApiId, f, uploadType);
+          succeeded++;
+        } catch (err) {
+          toast.error(`Failed to upload ${f.name}: ${err instanceof Error ? err.message : 'unknown'}`);
+        }
+      }
+      if (succeeded > 0) {
+        toast.success(`Uploaded ${succeeded} file${succeeded !== 1 ? 's' : ''}`);
+        await refresh();
+      }
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Delete this document?')) return;
-    onChange(docs.filter(d => d.id !== id));
-    toast.success('Document deleted');
+    if (USE_MOCKS) {
+      onChange?.(docs.filter(d => d.id !== id));
+      toast.success('Document deleted');
+      return;
+    }
+    try {
+      await documentsApi.remove(id);
+      toast.success('Document deleted');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
-  const handleDownload = (doc: import('../../types/hrms').EmployeeDocument) => {
-    toast.success(`Downloading ${doc.name}…`);
-    // In real backend this is a pre-signed URL from object storage.
+  const handleDownload = async (doc: import('../../types/hrms').EmployeeDocument) => {
+    if (USE_MOCKS) {
+      toast.success(`Downloading ${doc.name}…`);
+      return;
+    }
+    try {
+      // Build a thin live-doc shape — only id and name are read by download().
+      await documentsApi.download({
+        id: doc.id, employeeId: doc.employeeId, name: doc.name,
+        type: doc.type, mimeType: doc.mimeType, sizeBytes: doc.sizeBytes,
+        uploadedAt: doc.uploadedAt,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to download');
+    }
   };
 
   const counts = DOC_TYPES.reduce((m, t) => {
@@ -191,15 +285,16 @@ function EmployeeDocuments({
             <input
               type="file"
               multiple
-              onChange={(e) => handleFiles(e.target.files)}
+              onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }}
               className="hidden"
               id="doc-upload-input"
+              disabled={uploading}
             />
             <label htmlFor="doc-upload-input">
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" asChild disabled={uploading}>
                 <span>
                   <Upload className="h-3.5 w-3.5 mr-1.5" />
-                  Upload file(s)
+                  {uploading ? 'Uploading…' : 'Upload file(s)'}
                 </span>
               </Button>
             </label>
@@ -235,8 +330,10 @@ function EmployeeDocuments({
       {visible.length === 0 ? (
         <div className="text-center py-10 border border-dashed rounded-md">
           <FileText className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">No documents yet.</p>
-          <p className="text-xs text-gray-400 mt-1">Upload contracts, ID scans, certificates, etc.</p>
+          <p className="text-sm text-gray-500">{loading ? 'Loading…' : 'No documents yet.'}</p>
+          {!loading && (
+            <p className="text-xs text-gray-400 mt-1">Upload contracts, ID scans, certificates, etc.</p>
+          )}
         </div>
       ) : (
         <ul className="divide-y border rounded-md">
@@ -295,13 +392,31 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     managerId: e.managerId ?? undefined,
     profileImage: e.profileImage ?? undefined,
     gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
+    maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married') ? e.maritalStatus : undefined,
+    numberOfChildren: e.numberOfChildren ?? 0,
     dateOfBirth: e.dateOfBirth ?? undefined,
     placeOfBirth: e.placeOfBirth ?? undefined,
     currentAddress: e.currentAddress ?? undefined,
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
-  };
+    resignDate: e.resignDate ?? undefined,
+    // Default true when the backend hasn't sent the field (older rows
+    // before V15) so existing employees stay counted in attendance.
+    attendanceYn: e.attendanceYn ?? true,
+    allowance: e.allowance ?? 0,
+    // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
+    // the Author/Modifier columns can read them. Cast to a dynamic
+    // shape since the FE Employee type doesn't declare them yet.
+    ...{
+      createdAt: e.createdAt ?? undefined,
+      createdById: e.createdById ?? undefined,
+      createdByName: e.createdByName ?? undefined,
+      updatedAt: e.updatedAt ?? undefined,
+      updatedById: e.updatedById ?? undefined,
+      updatedByName: e.updatedByName ?? undefined,
+    },
+  } as Employee;
 }
 
 // Adapts a backend Contract to the front-end mock Contract shape.
@@ -334,9 +449,43 @@ function adaptApiContract(c: contractsApi.Contract): Contract {
 export function Employees() {
   const { t } = useI18n();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
-  // Add / Bulk-upload are admin+manager capabilities.
-  const canManageRoster = isAdmin || isManager;
+  const { currentUser } = useAuth();
+  void isAdmin; void isManager;
+  // Live-data visibility resolver. The mock-backed canViewEmployee can't
+  // see live employee UUIDs, so a manager logging into a fresh DB sees
+  // an empty list. We derive the allowed set locally from the loaded
+  // employees: self + everyone whose managerId points at me. Falls back
+  // to the mock helper only when employees haven't loaded yet.
+  const myEmpId = currentUser?.employeeId ?? '';
+  const canSeeEmployee = (emp: Employee) => {
+    if (isTenantWide) return true;
+    if (!myEmpId) return false;
+    const empApiId = (emp as { apiId?: string }).apiId;
+    // Self
+    if (emp.id === myEmpId || empApiId === myEmpId) return true;
+    // Direct report — this employee's manager is me
+    if (emp.managerId && emp.managerId === myEmpId) return true;
+    // Mock-mode safety net for any data that lives only in mockEmployees
+    return canViewEmployee(emp.id);
+  };
+  // Permission-matrix helpers — canManageRoster is true if the role can
+  // create or update employees. Granular create/update/delete are exposed
+  // separately so individual buttons (Edit, Delete, Bulk Upload) can gate
+  // independently per the matrix the admin configured.
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  const canCreateEmp = canCreate('employees');
+  const canUpdateEmp = canUpdate('employees');
+  const canDeleteEmp = canDelete('employees');
+  const canCreateContract = canCreate('contracts');
+  const canUpdateContract = canUpdate('contracts');
+  const canManageRoster = canCreateEmp || canUpdateEmp;
   const [searchTerm, setSearchTerm] = useState('');
+  // Default to "Active" — administrators almost always work with the
+  // current roster; inactive/expired rows are a deliberate lookup.
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
+  // Department filter — value is either 'all' or a deptId. Cleared via the
+  // "All Departments" option. Persisted only in component state.
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
@@ -348,11 +497,7 @@ export function Employees() {
 
   // departmentId → name lookup. In mock mode the adapter stores the name
   // directly, so the map just round-trips through the same string.
-  const deptNameById = new Map<string, string>(departments.map(d => [d.id, d.name]));
-  const deptName = (idOrName: string | undefined): string => {
-    if (!idOrName) return '-';
-    return deptNameById.get(idOrName) ?? idOrName;
-  };
+  const deptName = makeDeptName(departments, '-');
   // Bump on create so re-read of mockEmployees refreshes the table.
   const [, setRosterVersion] = useState(0);
   const bumpRoster = () => setRosterVersion(v => v + 1);
@@ -363,9 +508,22 @@ export function Employees() {
       return;
     }
     try {
-      const res = await employeesApi.list({ size: 500 });
-      setRawEmployees(res.content);
-      setEmployees(res.content.map(adaptApiEmployee));
+      // Page through results so a tenant with > 1 page of employees never
+      // silently truncates. Concrete bug we hit: an admin couldn't find
+      // empNo 6160 (loaded after the backend's first-page cap), and got a
+      // confusing "already exists" error when trying to re-add them.
+      const PAGE_SIZE = 500;
+      let page = 0;
+      let res = await employeesApi.list({ size: PAGE_SIZE, page });
+      let acc = [...res.content];
+      const total = res.totalPages ?? 1;
+      while ((page + 1) < total) {
+        page += 1;
+        res = await employeesApi.list({ size: PAGE_SIZE, page });
+        acc = acc.concat(res.content);
+      }
+      setRawEmployees(acc);
+      setEmployees(acc.map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
     }
@@ -377,8 +535,20 @@ export function Employees() {
       return;
     }
     try {
-      const res = await contractsApi.list({ size: 500 });
-      setContracts(res.data.map(adaptApiContract));
+      // Backend caps page size at 200 (ContractService#search). For tenants
+      // with more than 200 contracts we'd silently lose the tail — including
+      // freshly-created contracts the user just clicked save on. Walk every
+      // page until totalPages, with a safety cap so a misbehaving server
+      // can't loop us forever.
+      const PAGE_SIZE = 200;
+      const SAFETY_PAGES = 50; // 10 000 contracts hard ceiling
+      const all: Contract[] = [];
+      for (let p = 0; p < SAFETY_PAGES; p++) {
+        const res = await contractsApi.list({ size: PAGE_SIZE, page: p });
+        all.push(...res.data.map(adaptApiContract));
+        if (p + 1 >= (res.totalPages ?? 1)) break;
+      }
+      setContracts(all);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load contracts');
     }
@@ -452,6 +622,14 @@ export function Employees() {
     notes: '',
   });
   const [savingContract, setSavingContract] = useState(false);
+
+  // Profile image: in live mode the API's storage path isn't a browser-
+  // loadable URL, so we fetch the bytes via apiFetch (carries the bearer)
+  // and stash the blob URL for AvatarImage. Cache-bust counter forces a
+  // refetch right after upload.
+  const [avatarSrc, setAvatarSrc] = useState<string | undefined>(undefined);
+  const [avatarVersion, setAvatarVersion] = useState(0);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -486,7 +664,7 @@ export function Employees() {
 
     // Validation
     if (!editedEmployee.name || !editedEmployee.email || !editedEmployee.contactNumber) {
-      toast.error('Please fill in all required fields');
+      notify.validate('Please fill in all required fields');
       return;
     }
 
@@ -500,14 +678,14 @@ export function Employees() {
     }
 
     try {
-      const { id: empNo, apiId, status: _status, department, ...rest } = editedEmployee;
-      void _status;
+      const { id: empNo, apiId, status, department, ...rest } = editedEmployee;
       // UI field `department` holds the departmentId in live mode — map it
       // back to the field name the backend DTO expects.
       const body: employeesApi.CreateEmployeeRequest = {
         ...(rest as unknown as Omit<employeesApi.CreateEmployeeRequest, 'departmentId' | 'empNo'>),
         empNo,
         departmentId: department && department !== '-' ? department : null,
+        status,
       };
       // The mutating endpoint is keyed by the backend UUID, not the human empNo.
       const targetId = apiId ?? empNo;
@@ -519,6 +697,102 @@ export function Employees() {
       await loadEmployees();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update employee');
+    }
+  };
+
+  /**
+   * Inline single-field update from the row picker — currently used for
+   * Position and Department. Optimistically swaps the field locally, fires
+   * the PUT (the only mutating verb the employees endpoint exposes), and
+   * rolls the row back if the request fails. Avoids a full reload so other
+   * inline edits in flight don't get clobbered.
+   *
+   * When the dept changes, the employee's "Reports To" (managerId) is
+   * auto-flipped to the new dept's PIC — but only when the current value
+   * is unset OR still tracking the old dept's PIC. A managerId that was
+   * manually overridden by HR (i.e. doesn't match either dept's PIC) is
+   * left alone, mirroring the details-sheet edit flow.
+   */
+  const handleQuickFieldUpdate = async (
+    employee: Employee,
+    patch: { position?: string; department?: string | null },
+  ) => {
+    // Compute the auto-managerId follow-through up-front so both the
+    // mock-mode short-circuit and the live PUT path apply it consistently.
+    let managerPatch: { managerId?: string | null } = {};
+    if (patch.department !== undefined) {
+      const newDeptKey = patch.department && patch.department !== '-' ? patch.department : null;
+      const newDept = newDeptKey
+        ? departments.find(d => (USE_MOCKS ? d.name === newDeptKey : d.id === newDeptKey))
+        : undefined;
+      const oldDeptKey = employee.department && employee.department !== '-' ? employee.department : null;
+      const oldDept = oldDeptKey
+        ? departments.find(d => (USE_MOCKS ? d.name === oldDeptKey : d.id === oldDeptKey))
+        : undefined;
+      const newPic = newDept?.managerId ?? null;
+      const oldPic = oldDept?.managerId ?? null;
+      const currentReports = employee.managerId ?? null;
+      const reportsFollowsDeptPic = !currentReports || currentReports === oldPic;
+      if (reportsFollowsDeptPic && newPic !== currentReports) {
+        managerPatch = { managerId: newPic };
+      }
+    }
+
+    if (USE_MOCKS) {
+      setEmployees(prev => prev.map(e =>
+        e.id === employee.id
+          ? { ...e, ...patch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
+          : e,
+      ));
+      toast.success('Updated');
+      return;
+    }
+    const raw = rawEmployees.find(r => r.id === employee.apiId || r.empNo === employee.id);
+    if (!raw) {
+      toast.error('Could not locate the employee record to update');
+      return;
+    }
+    // Snapshot for rollback if the API call rejects.
+    const before = employee;
+    setEmployees(prev => prev.map(e =>
+      e.id === employee.id
+        ? { ...e, ...patch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
+        : e,
+    ));
+    try {
+      const body: employeesApi.CreateEmployeeRequest = {
+        empNo: raw.empNo,
+        name: raw.name,
+        khmerName: raw.khmerName ?? null,
+        email: raw.email,
+        position: patch.position ?? raw.position,
+        departmentId: patch.department === undefined
+          ? (raw.departmentId ?? null)
+          : (patch.department && patch.department !== '-' ? patch.department : null),
+        joinDate: raw.joinDate,
+        status: raw.status,
+        contactNumber: raw.contactNumber ?? null,
+        baseSalary: raw.baseSalary,
+        managerId: managerPatch.managerId !== undefined ? managerPatch.managerId : (raw.managerId ?? null),
+        gender: raw.gender ?? null,
+        dateOfBirth: raw.dateOfBirth ?? null,
+        placeOfBirth: raw.placeOfBirth ?? null,
+        currentAddress: raw.currentAddress ?? null,
+        nffNo: raw.nffNo ?? null,
+        tid: raw.tid ?? null,
+        contractExpireDate: raw.contractExpireDate ?? null,
+        resignDate: raw.resignDate ?? null,
+        attendanceYn: raw.attendanceYn,
+        allowance: raw.allowance,
+      };
+      const updated = await employeesApi.update(raw.id, body);
+      // Refresh the raw cache so subsequent edits see the new value.
+      setRawEmployees(prev => prev.map(r => r.id === updated.id ? updated : r));
+      toast.success('Updated');
+    } catch (err) {
+      // Rollback on failure.
+      setEmployees(prev => prev.map(e => e.id === employee.id ? before : e));
+      toast.error(err instanceof Error ? err.message : 'Failed to update');
     }
   };
 
@@ -564,15 +838,15 @@ export function Employees() {
 
   const handleSaveContract = async () => {
     if (!contractForm.startDate || !contractForm.endDate) {
-      toast.error('Start date and end date are required');
+      notify.validate('Start date and end date are required');
       return;
     }
     if (new Date(contractForm.endDate) <= new Date(contractForm.startDate)) {
-      toast.error('End date must be after start date');
+      notify.validate('End date must be after start date');
       return;
     }
     if (!contractForm.contractType.trim()) {
-      toast.error('Contract type is required');
+      notify.validate('Contract type is required');
       return;
     }
 
@@ -655,10 +929,33 @@ export function Employees() {
     }
   };
 
-  const getEmployeeContracts = (employeeId: string) => {
+  /**
+   * Returns contracts owned by the given employee. In mock mode `Employee.id`
+   * is the empNo; in live mode it's still the empNo while `apiId` is the
+   * backend UUID — so we match against both. Otherwise live-mode contract
+   * lookups always come back empty because the API stores `employeeId` as
+   * the UUID.
+   */
+  const getEmployeeContracts = (emp: Employee) => {
+    const ids = new Set([emp.id, emp.apiId].filter(Boolean) as string[]);
     return contracts
-      .filter(c => c.employeeId === employeeId)
+      .filter(c => ids.has(c.employeeId))
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  };
+
+  /**
+   * Latest contract end date for an employee — i.e. the farthest-out endDate
+   * across all of their contracts. Falls back to `Employee.contractExpireDate`
+   * (the field stored directly on the employee record) when no contracts
+   * exist yet, so freshly-imported employees still surface a sensible value.
+   */
+  const getLatestContractEnd = (emp: Employee): string | undefined => {
+    const list = getEmployeeContracts(emp);
+    if (list.length === 0) return emp.contractExpireDate;
+    return list.reduce((best, c) =>
+      !best || new Date(c.endDate) > new Date(best) ? c.endDate : best,
+      undefined as string | undefined,
+    ) ?? emp.contractExpireDate;
   };
 
   const getContractStatusBadge = (status: Contract['status']) => {
@@ -670,12 +967,37 @@ export function Employees() {
     return <Badge className={colors[status]}>{status}</Badge>;
   };
 
-  let filteredEmployees = employees.filter(emp =>
-    (isTenantWide || canViewEmployee(emp.id)) &&
-    (emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     deptName(emp.department).toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Multi-field wildcard search: split the input on whitespace and require
+  // every token to appear as a substring of at least one searchable field.
+  // Searchable fields: English name, Khmer name, employee id (empNo), phone,
+  // email, department. Khmer is matched case-insensitively too — toLowerCase
+  // is a no-op on Khmer script but keeps the comparison uniform.
+  const tokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Visible roster (after permission scope) is the basis for both the
+  // status-chip counts and the filtered list, so the badges always reflect
+  // what the current user is allowed to see.
+  const visibleEmployees = employees.filter(canSeeEmployee);
+  const statusCounts = {
+    all: visibleEmployees.length,
+    active: visibleEmployees.filter(e => e.status === 'active').length,
+    inactive: visibleEmployees.filter(e => e.status !== 'active').length,
+  };
+  let filteredEmployees = visibleEmployees.filter(emp => {
+    if (statusFilter === 'active' && emp.status !== 'active') return false;
+    if (statusFilter === 'inactive' && emp.status === 'active') return false;
+    if (departmentFilter !== 'all' && emp.department !== departmentFilter) return false;
+    if (tokens.length === 0) return true;
+    const haystack = [
+      emp.name,
+      emp.khmerName,
+      emp.id,
+      emp.empNo,
+      emp.contactNumber,
+      emp.email,
+      deptName(emp.department),
+    ].filter(Boolean).join(' ').toLowerCase();
+    return tokens.every(tok => haystack.includes(tok));
+  });
 
   // Apply date filter based on joinDate
   if (dateFilter.start || dateFilter.end) {
@@ -701,7 +1023,72 @@ export function Employees() {
   // Reset pagination when search, filter, or data changes.
   useEffect(() => {
     employeePagination.resetPage();
-  }, [searchTerm, dateFilter, employees.length]);
+  }, [searchTerm, dateFilter, statusFilter, departmentFilter, employees.length]);
+
+  // Load the employee's profile image whenever the selected row changes (or
+  // a fresh upload bumps the version). Mock mode uses profileImage as-is.
+  useEffect(() => {
+    if (USE_MOCKS) {
+      setAvatarSrc(selectedEmployee?.profileImage);
+      return;
+    }
+    const empApiId = (selectedEmployee as any)?.apiId ?? selectedEmployee?.id;
+    if (!empApiId) {
+      setAvatarSrc(undefined);
+      return;
+    }
+    let cancelled = false;
+    let activeUrl: string | null = null;
+    (async () => {
+      try {
+        const url = await documentsApi.fetchProfileImageBlobUrl(empApiId);
+        if (cancelled) {
+          if (url) URL.revokeObjectURL(url);
+          return;
+        }
+        activeUrl = url;
+        setAvatarSrc(url ?? undefined);
+      } catch {
+        if (!cancelled) setAvatarSrc(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (activeUrl) URL.revokeObjectURL(activeUrl);
+    };
+  }, [selectedEmployee?.id, (selectedEmployee as any)?.apiId, avatarVersion]);
+
+  const handleProfileImageUpload = async (file: File) => {
+    if (!selectedEmployee) return;
+    if (!file.type.startsWith('image/')) {
+      notify.validate('Please select an image file');
+      return;
+    }
+    if (USE_MOCKS) {
+      // Mock mode: read the file as a data URL and stick it on the local row.
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = reader.result as string;
+        setSelectedEmployee({ ...selectedEmployee, profileImage: url });
+        if (editedEmployee) setEditedEmployee({ ...editedEmployee, profileImage: url });
+        toast.success('Profile photo updated');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const empApiId = (selectedEmployee as any).apiId ?? selectedEmployee.id;
+      await documentsApi.uploadProfileImage(empApiId, file);
+      toast.success('Profile photo updated');
+      // Bump version so the effect above re-fetches the new image.
+      setAvatarVersion(v => v + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -755,16 +1142,81 @@ export function Employees() {
       />
 
       <Card>
-        <CardHeader>
+        <CardHeader className="space-y-3">
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search employees..."
+                placeholder="Search by name, Khmer name, ID, or phone…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
+            </div>
+          </div>
+          {/* Status filter chips — counts derived from the permission-scoped
+              roster, so they always agree with what the user can see in the
+              table below. The Department dropdown stacks alongside on a wide
+              screen, wraps to a new line on narrow ones. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {([
+              { key: 'all',      label: 'All' },
+              { key: 'active',   label: 'Active' },
+              { key: 'inactive', label: 'Inactive' },
+            ] as const).map(chip => {
+              const isActive = statusFilter === chip.key;
+              const count = statusCounts[chip.key];
+              return (
+                <Button
+                  key={chip.key}
+                  variant={isActive ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setStatusFilter(chip.key)}
+                  className={
+                    isActive
+                      ? chip.key === 'active'
+                        ? 'bg-green-600 hover:bg-green-700 text-white border-0'
+                        : chip.key === 'inactive'
+                          ? 'bg-gray-700 hover:bg-gray-800 text-white border-0'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white border-0'
+                      : ''
+                  }
+                >
+                  {chip.label}
+                  <Badge
+                    variant="secondary"
+                    className={`ml-2 ${isActive ? 'bg-white/20 text-white' : ''}`}
+                  >
+                    {count}
+                  </Badge>
+                </Button>
+              );
+            })}
+            <div className="flex items-center gap-2 ml-auto">
+              <Building2 className="h-4 w-4 text-gray-400" />
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="h-8 px-2 pr-8 text-sm border rounded-md bg-white max-w-[220px]"
+              >
+                <option value="all">All Departments ({visibleEmployees.length})</option>
+                {departments.map(d => {
+                  const n = visibleEmployees.filter(e => e.department === d.id).length;
+                  return (
+                    <option key={d.id} value={d.id}>{d.name} ({n})</option>
+                  );
+                })}
+              </select>
+              {departmentFilter !== 'all' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setDepartmentFilter('all')}
+                >
+                  Clear
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -785,6 +1237,8 @@ export function Employees() {
                 <TableHead>TID</TableHead>
                 <TableHead>Contract Expire</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Modifier</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -800,34 +1254,106 @@ export function Employees() {
                   <TableCell>
                     {employee.dateOfBirth ? format(new Date(employee.dateOfBirth), 'MMM dd, yyyy') : '-'}
                   </TableCell>
-                  <TableCell>{employee.position}</TableCell>
-                  <TableCell>{deptName(employee.department)}</TableCell>
+                  <TableCell className="min-w-[180px]">
+                    {canUpdateEmp ? (
+                      <SearchablePicker
+                        options={(() => {
+                          const filtered = positions
+                            .filter(p => !employee.department
+                              || employee.department === '-'
+                              || !p.departmentId
+                              || p.departmentId === employee.department)
+                            .map(p => ({
+                              value: p.name,
+                              label: p.name,
+                              secondary: p.departmentId ? deptName(p.departmentId) : undefined,
+                            }));
+                          // If the row's current position isn't in the
+                          // filtered list (deleted, or in a different dept),
+                          // prepend it as a synthetic option so the trigger
+                          // still shows the real value instead of "None".
+                          if (employee.position && !filtered.some(o => o.value === employee.position)) {
+                            filtered.unshift({ value: employee.position, label: employee.position });
+                          }
+                          return filtered;
+                        })()}
+                        value={employee.position}
+                        onChange={v => {
+                          if (v === employee.position) return;
+                          void handleQuickFieldUpdate(employee, { position: v });
+                        }}
+                        placeholder="Set position…"
+                        searchPlaceholder="Search position…"
+                        allowClear={false}
+                      />
+                    ) : (
+                      employee.position
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-[180px]">
+                    {canUpdateEmp ? (
+                      <SearchablePicker
+                        options={(USE_MOCKS
+                          ? departments.map(d => ({ value: d.name, label: d.name }))
+                          : departments.map(d => ({ value: d.id, label: d.name })))}
+                        value={employee.department === '-' ? '' : employee.department ?? ''}
+                        onChange={v => {
+                          const next = v || null;
+                          const current = employee.department === '-' ? null : (employee.department ?? null);
+                          if (next === current) return;
+                          void handleQuickFieldUpdate(employee, { department: v || '-' });
+                        }}
+                        placeholder="Set department…"
+                        searchPlaceholder="Search department…"
+                        allowClear
+                      />
+                    ) : (
+                      deptName(employee.department)
+                    )}
+                  </TableCell>
                   <TableCell>{calculateExperience(employee.joinDate)}</TableCell>
                   <TableCell>{employee.contactNumber}</TableCell>
                   <TableCell>{employee.nffNo || '-'}</TableCell>
                   <TableCell>{employee.tid || '-'}</TableCell>
                   <TableCell>
-                    {employee.contractExpireDate ? (
-                      <span className={
-                        new Date(employee.contractExpireDate) < new Date()
-                          ? 'text-red-600 font-medium'
-                          : new Date(employee.contractExpireDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-                          ? 'text-orange-600 font-medium'
-                          : ''
-                      }>
-                        {format(new Date(employee.contractExpireDate), 'MMM dd, yyyy')}
-                      </span>
-                    ) : '-'}
+                    {(() => {
+                      const expire = getLatestContractEnd(employee);
+                      if (!expire) return '-';
+                      const cls = new Date(expire) < new Date()
+                        ? 'text-red-600 font-medium'
+                        : new Date(expire) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                        ? 'text-orange-600 font-medium'
+                        : '';
+                      return <span className={cls}>{format(new Date(expire), 'MMM dd, yyyy')}</span>;
+                    })()}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={employee.status === 'active' ? 'default' : 'secondary'}>
+                    <Badge
+                      className={
+                        employee.status === 'active'
+                          ? 'bg-green-100 text-green-800 hover:bg-green-100 border-0 capitalize'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-100 border-0 capitalize'
+                      }
+                    >
                       {employee.status}
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    <AuditCell
+                      name={(employee as any).createdByName}
+                      at={(employee as any).createdAt}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <AuditCell
+                      name={(employee as any).updatedByName}
+                      at={(employee as any).updatedAt}
+                    />
+                  </TableCell>
+                  <TableCell>
                     <Button
-                      variant="outline"
                       size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
                       onClick={() => {
                         setSelectedEmployee(employee);
                         setSheetOpen(true);
@@ -876,7 +1402,7 @@ export function Employees() {
                 <div className="relative shrink-0">
                   <Avatar className="h-16 w-16 rounded-lg border border-gray-200">
                     <AvatarImage
-                      src={(isEditing ? editedEmployee : selectedEmployee)?.profileImage}
+                      src={avatarSrc}
                       className="rounded-lg object-cover"
                     />
                     <AvatarFallback className="text-lg bg-blue-100 text-blue-600 rounded-lg">
@@ -884,14 +1410,33 @@ export function Employees() {
                     </AvatarFallback>
                   </Avatar>
                   {isEditing && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="absolute -bottom-1.5 -right-1.5 h-6 w-6 p-0 rounded-full shadow-sm"
-                      title="Upload avatar"
-                    >
-                      <Upload className="h-3 w-3" />
-                    </Button>
+                    <>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void handleProfileImageUpload(f);
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                        id="avatar-upload-input"
+                        disabled={uploadingAvatar}
+                      />
+                      <label htmlFor="avatar-upload-input">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          className="absolute -bottom-1.5 -right-1.5 h-6 w-6 p-0 rounded-full shadow-sm cursor-pointer"
+                          title={uploadingAvatar ? 'Uploading…' : 'Upload avatar'}
+                        >
+                          <span>
+                            <Upload className="h-3 w-3" />
+                          </span>
+                        </Button>
+                      </label>
+                    </>
                   )}
                 </div>
                 <div className="flex-1 min-w-0 space-y-1">
@@ -919,7 +1464,13 @@ export function Employees() {
                   )}
                   <div className="flex items-center gap-2 flex-wrap text-xs">
                     <span className="text-gray-500 font-medium">{selectedEmployee.id}</span>
-                    <Badge variant={selectedEmployee.status === 'active' ? 'default' : 'secondary'}>
+                    <Badge
+                      className={
+                        selectedEmployee.status === 'active'
+                          ? 'bg-green-100 text-green-800 hover:bg-green-100 border-0 capitalize'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-100 border-0 capitalize'
+                      }
+                    >
                       {selectedEmployee.status}
                     </Badge>
                     <span className="inline-flex items-center gap-1 text-gray-600">
@@ -949,7 +1500,7 @@ export function Employees() {
                     <FileText className="h-3.5 w-3.5 mr-1.5" />
                     Contracts
                     <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
-                      {getEmployeeContracts(selectedEmployee.id).length}
+                      {getEmployeeContracts(selectedEmployee).length}
                     </Badge>
                   </TabsTrigger>
                   <TabsTrigger value="documents">
@@ -981,6 +1532,54 @@ export function Employees() {
                           <p className="capitalize">{selectedEmployee.gender || '—'}</p>
                         )}
                       </FieldRow>
+                      {/* Marital status drives the Cambodia TOS dependents
+                          deduction. When Married, surface the children
+                          count input; when Single (or unset), hide it and
+                          force the count to 0 so the dependent count never
+                          accidentally inflates. */}
+                      <FieldRow label="Marital Status" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.maritalStatus || ''}
+                            onChange={(e) => {
+                              const v = e.target.value as '' | 'single' | 'married';
+                              setEditedEmployee({
+                                ...editedEmployee,
+                                maritalStatus: v === '' ? undefined : v,
+                                numberOfChildren: v === 'married' ? (editedEmployee.numberOfChildren ?? 0) : 0,
+                              });
+                            }}
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            <option value="">Select</option>
+                            <option value="single">Single</option>
+                            <option value="married">Married</option>
+                          </select>
+                        ) : (
+                          <p className="capitalize">{selectedEmployee.maritalStatus || '—'}</p>
+                        )}
+                      </FieldRow>
+                      {(isEditing
+                        ? editedEmployee?.maritalStatus === 'married'
+                        : selectedEmployee.maritalStatus === 'married') && (
+                        <FieldRow label="Number of Children" isEditing={isEditing}>
+                          {isEditing && editedEmployee ? (
+                            <Input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={editedEmployee.numberOfChildren ?? 0}
+                              onChange={(e) => setEditedEmployee({
+                                ...editedEmployee,
+                                numberOfChildren: Math.max(0, Number(e.target.value) || 0),
+                              })}
+                              className="h-9"
+                            />
+                          ) : (
+                            <p>{selectedEmployee.numberOfChildren ?? 0}</p>
+                          )}
+                        </FieldRow>
+                      )}
                       <FieldRow label="Date of Birth" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <Input
@@ -1105,7 +1704,32 @@ export function Employees() {
                               ? departments.map(d => ({ value: d.name, label: d.name }))
                               : departments.map(d => ({ value: d.id, label: d.name })))}
                             value={editedEmployee.department}
-                            onChange={v => setEditedEmployee({ ...editedEmployee, department: v })}
+                            onChange={v => {
+                              // When the department/team is changed, auto-suggest its
+                              // PIC (managerId) as the employee's "Reports To". Only
+                              // overwrites the existing managerId if the picked dept
+                              // actually has a PIC AND the user hasn't manually set
+                              // a different reports-to that doesn't match the old
+                              // dept's PIC. This is the same convention HR uses
+                              // verbally — "you report to your dept lead unless told
+                              // otherwise."
+                              const pickedDept = departments.find(d =>
+                                (USE_MOCKS ? d.name === v : d.id === v),
+                              );
+                              const pickedPic = pickedDept?.managerId ?? '';
+                              const oldDept = departments.find(d =>
+                                (USE_MOCKS ? d.name === editedEmployee.department : d.id === editedEmployee.department),
+                              );
+                              const oldPic = oldDept?.managerId ?? '';
+                              const currentReports = editedEmployee.managerId ?? '';
+                              const reportsFollowsDeptPic =
+                                !currentReports || currentReports === oldPic;
+                              setEditedEmployee({
+                                ...editedEmployee,
+                                department: v,
+                                ...(reportsFollowsDeptPic ? { managerId: pickedPic || undefined } : {}),
+                              });
+                            }}
                             placeholder="Select department…"
                             searchPlaceholder="Search department…"
                             allowClear={false}
@@ -1172,6 +1796,21 @@ export function Employees() {
                           <p>${selectedEmployee.baseSalary.toLocaleString()}</p>
                         )}
                       </FieldRow>
+                      <FieldRow label="Allowance ($)" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={editedEmployee.allowance ?? 0}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, allowance: parseFloat(e.target.value) || 0 })}
+                            className="h-9"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <p>${(selectedEmployee.allowance ?? 0).toLocaleString()}</p>
+                        )}
+                      </FieldRow>
                       <FieldRow label="Status" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <select
@@ -1183,12 +1822,18 @@ export function Employees() {
                             <option value="inactive">Inactive</option>
                           </select>
                         ) : (
-                          <Badge variant={selectedEmployee.status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                          <Badge
+                            className={
+                              selectedEmployee.status === 'active'
+                                ? 'bg-green-100 text-green-800 hover:bg-green-100 border-0 capitalize'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-100 border-0 capitalize'
+                            }
+                          >
                             {selectedEmployee.status}
                           </Badge>
                         )}
                       </FieldRow>
-                      <FieldRow label="Contract Expire" isEditing={isEditing} full>
+                      <FieldRow label="Contract Expire" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <Input
                             type="date"
@@ -1196,8 +1841,47 @@ export function Employees() {
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, contractExpireDate: e.target.value })}
                             className="h-9"
                           />
+                        ) : (() => {
+                          const expire = getLatestContractEnd(selectedEmployee);
+                          return <p>{expire ? format(new Date(expire), 'MMM dd, yyyy') : '—'}</p>;
+                        })()}
+                      </FieldRow>
+                      <FieldRow label="Resign Date" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <Input
+                            type="date"
+                            value={editedEmployee.resignDate || ''}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, resignDate: e.target.value })}
+                            className="h-9"
+                          />
                         ) : (
-                          <p>{selectedEmployee.contractExpireDate ? format(new Date(selectedEmployee.contractExpireDate), 'MMM dd, yyyy') : '—'}</p>
+                          <p className={selectedEmployee.resignDate ? 'text-red-600 font-medium' : ''}>
+                            {selectedEmployee.resignDate
+                              ? format(new Date(selectedEmployee.resignDate), 'MMM dd, yyyy')
+                              : '—'}
+                          </p>
+                        )}
+                      </FieldRow>
+                      <FieldRow label="Count in Attendance" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.attendanceYn === false ? 'no' : 'yes'}
+                            onChange={(e) =>
+                              setEditedEmployee({ ...editedEmployee, attendanceYn: e.target.value === 'yes' })
+                            }
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            <option value="yes">Yes — counted normally</option>
+                            <option value="no">No — Exception (field / remote, not counted)</option>
+                          </select>
+                        ) : selectedEmployee.attendanceYn === false ? (
+                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0">
+                            Exception · not counted
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-0">
+                            Yes
+                          </Badge>
                         )}
                       </FieldRow>
                     </div>
@@ -1238,7 +1922,7 @@ export function Employees() {
                   {/* Contracts Tab */}
                   <TabsContent value="contracts" className="mt-0 space-y-4">
                     {(() => {
-                      const contracts = getEmployeeContracts(selectedEmployee.id);
+                      const contracts = getEmployeeContracts(selectedEmployee);
                       const activeContract = contracts.find(c => c.status === 'active' || c.status === 'expiring');
                       const nextExpiry = contracts
                         .filter(c => c.status !== 'expired')
@@ -1247,7 +1931,7 @@ export function Employees() {
                         <>
                           <div className="flex items-center justify-between gap-3">
                             <SectionHeading>Contract History</SectionHeading>
-                            {canManageRoster && (
+                            {canCreateContract && (
                               <Button size="sm" onClick={handleAddContract} className="h-7 text-xs">
                                 <Plus className="h-3 w-3 mr-1" />
                                 Add Contract
@@ -1286,7 +1970,7 @@ export function Employees() {
                                 {contracts.length === 0 ? (
                                   <TableRow>
                                     <TableCell colSpan={6} className="text-center py-6 text-xs text-gray-400">
-                                      No contracts yet. {canManageRoster && 'Click "Add Contract" to create one.'}
+                                      No contracts yet. {canCreateContract && 'Click "Add Contract" to create one.'}
                                     </TableCell>
                                   </TableRow>
                                 ) : contracts.map((contract) => (
@@ -1297,18 +1981,20 @@ export function Employees() {
                                     <TableCell className="py-2">${contract.salary?.toLocaleString() || '-'}</TableCell>
                                     <TableCell className="py-2">{getContractStatusBadge(contract.status)}</TableCell>
                                     <TableCell className="py-2 text-right">
-                                      {canManageRoster && (
+                                      {(canUpdateContract || canCreateContract) && (
                                         <div className="flex justify-end gap-1.5">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 text-xs px-2"
-                                            onClick={() => handleEditContract(contract)}
-                                          >
-                                            <Edit className="h-3 w-3 mr-1" />
-                                            Edit
-                                          </Button>
-                                          {(contract.status === 'active' || contract.status === 'expiring') && (
+                                          {canUpdateContract && (
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-6 text-xs px-2"
+                                              onClick={() => handleEditContract(contract)}
+                                            >
+                                              <Edit className="h-3 w-3 mr-1" />
+                                              Edit
+                                            </Button>
+                                          )}
+                                          {canCreateContract && (contract.status === 'active' || contract.status === 'expiring') && (
                                             <Button
                                               size="sm"
                                               variant="outline"
@@ -1363,10 +2049,12 @@ export function Employees() {
                 </div>
                 <div className="flex gap-2">
                   {!isEditing ? (
-                    <Button size="sm" onClick={handleEditEmployee}>
-                      <Edit className="h-3 w-3 mr-2" />
-                      Edit
-                    </Button>
+                    canUpdateEmp && (
+                      <Button size="sm" onClick={handleEditEmployee}>
+                        <Edit className="h-3 w-3 mr-2" />
+                        Edit
+                      </Button>
+                    )
                   ) : (
                     <>
                       <Button size="sm" variant="outline" onClick={handleCancelEdit}>
@@ -1423,6 +2111,56 @@ export function Employees() {
                 </div>
               </div>
             )}
+
+            {/* Duration presets — auto-fill end date relative to start. The
+                user can still pick a custom end date manually below. */}
+            <div className="space-y-2">
+              <Label className="text-xs text-gray-600">Duration</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: '3 Months', months: 3 },
+                  { label: '6 Months', months: 6 },
+                  { label: '1 Year', months: 12 },
+                  { label: '2 Years', months: 24 },
+                ].map(p => (
+                  <Button
+                    key={p.months}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      if (!contractForm.startDate) {
+                        notify.validate('Pick a start date first');
+                        return;
+                      }
+                      const start = new Date(contractForm.startDate);
+                      // setMonth handles year roll-over and clamps day for
+                      // shorter months (e.g. Jan 31 + 1 month → Feb 28/29).
+                      const end = new Date(start);
+                      end.setMonth(end.getMonth() + p.months);
+                      // Subtract 1 day so a "1 Year" contract starting Apr 28
+                      // ends Apr 27 next year, not Apr 28 — standard contract
+                      // term convention.
+                      end.setDate(end.getDate() - 1);
+                      setContractForm({ ...contractForm, endDate: end.toISOString().slice(0, 10) });
+                    }}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-gray-500"
+                  onClick={() => setContractForm({ ...contractForm, endDate: '' })}
+                  title="Clear end date and pick custom"
+                >
+                  Custom
+                </Button>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

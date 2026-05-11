@@ -15,25 +15,16 @@ import {
 } from './ui/dropdown-menu';
 import {
   LayoutDashboard,
-  Users,
-  Clock,
-  TimerIcon,
-  DollarSign,
-  FileText,
-  Settings,
-  AlertCircle,
-  Minus,
-  TrendingUp,
   LogOut,
   Menu,
   X,
   ChevronDown,
   ChevronRight,
-  BarChart3,
   UserCog,
-  Briefcase,
+  type LucideIcon,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
+import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
 
 interface LayoutProps {
   children: ReactNode;
@@ -44,66 +35,87 @@ interface LayoutProps {
 interface MenuNode {
   id: string;
   label: string;
-  icon: typeof LayoutDashboard;   // any lucide icon
-  roles?: string[];               // absent = visible to everyone
+  icon: LucideIcon;
+  /** Permission module key (matches backend `role_permissions.module`). */
+  module?: string;
   children?: MenuNode[];          // absent = leaf; present = group
 }
 
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
-  const { currentUser, currentEmployee, logout } = useAuth();
+  const { currentUser, currentEmployee, canView, logout } = useAuth();
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const userRole = currentUser?.role;
   const visibleTree = useMemo<MenuNode[]>(() => {
-    const tree: MenuNode[] = [
-      { id: 'dashboard', label: t('nav.home'),     icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
-      // Employees menu is admin/manager only — employees don't need a roster view.
-      { id: 'employees', label: t('nav.employee'), icon: Users,           roles: ['admin', 'manager'] },
-      {
-        id: 'time-tracking',
-        label: t('nav.time_tracking'),
-        icon: Clock,
-        children: [
-          { id: 'attendance', label: t('nav.attendance'), icon: Clock,       roles: ['admin', 'manager', 'employee'] },
-          { id: 'overtime',   label: t('nav.overtime'),   icon: TimerIcon,   roles: ['admin', 'manager', 'employee'] },
-          // Leave (exception) open to employees too — they see self + reports.
-          { id: 'exception',  label: t('nav.exception'),  icon: AlertCircle, roles: ['admin', 'manager', 'employee'] },
-        ],
-      },
-      {
-        id: 'payroll-mgmt',
-        label: t('nav.payroll_mgmt'),
-        icon: DollarSign,
-        children: [
-          { id: 'payroll',   label: t('nav.payroll'),   icon: DollarSign, roles: ['admin', 'manager', 'employee'] },
-          { id: 'increase',  label: t('nav.increase'),  icon: TrendingUp, roles: ['admin'] },
-          { id: 'deduction', label: t('nav.deduction'), icon: Minus,      roles: ['admin'] },
-        ],
-      },
-      { id: 'reports', label: t('nav.reports'), icon: BarChart3, roles: ['admin', 'manager'] },
-      {
-        id: 'settings-group',
-        label: t('nav.setting'),
-        icon: Settings,
-        roles: ['admin'],
-        children: [
-          { id: 'settings',            label: t('nav.setting.general'),    icon: Settings,   roles: ['admin'] },
-          { id: 'attendance-settings', label: t('nav.setting.attendance'), icon: Clock,      roles: ['admin'] },
-          { id: 'employee-settings',   label: t('nav.setting.empset'),     icon: Briefcase,  roles: ['admin'] },
-          { id: 'user-management',     label: t('nav.setting.usermgmt'),   icon: Users,      roles: ['admin'] },
-          { id: 'payroll-categories',  label: t('nav.setting.payrollcat'), icon: DollarSign, roles: ['admin'] },
-        ],
-      },
-    ];
-    const isVisible = (item: MenuNode) => !item.roles || (userRole && item.roles.includes(userRole));
-    return tree
-      .map(item => item.children
-        ? { ...item, children: item.children.filter(isVisible) }
-        : item)
-      .filter(item => item.children ? item.children.length > 0 : isVisible(item));
-  }, [userRole, t]);
+    // Each leaf maps to a permission `module` matching the role-permissions
+    // matrix configured in User Management → Permissions. Group nodes
+    // (parents) are auto-hidden when none of their children are visible.
+    //
+    // Source of truth is `config/nav.ts` — both Layout and App consume the
+    // same registry so the sidebar, the routing, and the access guards can
+    // never drift apart.
+    const groupOrder = NAV_GROUPS.map(g => g.id);
+    const groupedLeaves = NAV_GROUPS.reduce((acc, g) => {
+      acc[g.id] = [];
+      return acc;
+    }, {} as Record<string, MenuNode[]>);
+    const topLeaves: MenuNode[] = [];
+
+    NAV_LEAVES.forEach(l => {
+      if (!canView(l.module)) return;
+      const node: MenuNode = {
+        id: l.id,
+        label: t(l.labelKey),
+        icon: l.icon,
+        module: l.module,
+      };
+      if (l.group && groupedLeaves[l.group]) groupedLeaves[l.group].push(node);
+      else topLeaves.push(node);
+    });
+
+    // Interleave top-level leaves and groups in the original NAV_LEAVES order
+    // so the sidebar reads naturally. Each group is emitted once at the
+    // position of its first child.
+    const seenGroups = new Set<string>();
+    const ordered: MenuNode[] = [];
+    NAV_LEAVES.forEach(l => {
+      if (!canView(l.module)) return;
+      if (l.group) {
+        if (seenGroups.has(l.group)) return;
+        seenGroups.add(l.group);
+        const groupMeta = NAV_GROUPS.find(g => g.id === l.group);
+        if (!groupMeta) return;
+        const children = groupedLeaves[l.group];
+        if (children.length === 0) return;
+        ordered.push({
+          id: groupMeta.id,
+          label: t(groupMeta.labelKey),
+          icon: groupMeta.icon,
+          children,
+        });
+      } else {
+        const found = topLeaves.find(t => t.id === l.id);
+        if (found) ordered.push(found);
+      }
+    });
+    void groupOrder;
+    return ordered;
+  }, [canView, t]);
+
+  // If the user lands on a view they're not allowed to see (default
+  // 'dashboard' when their role doesn't grant it), redirect them to the
+  // first leaf they CAN see. Avoids the empty-page-with-403-toast confusion
+  // the screenshot showed for the Approver role.
+  useEffect(() => {
+    if (visibleTree.length === 0) return;
+    const allLeaves = visibleTree.flatMap(item => item.children ?? [item]);
+    const firstAllowed = allLeaves[0];
+    if (!firstAllowed) return;
+    const matchesCurrent = allLeaves.some(l => l.id === currentView);
+    if (!matchesCurrent) onViewChange(firstAllowed.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleTree.length]);
 
   // Accordion behaviour: at most one group open at a time. Opening a different
   // group closes whichever was previously open.

@@ -15,12 +15,34 @@ export interface Employee {
   managerId?: string | null;
   profileImage?: string | null;
   gender?: 'male' | 'female' | 'other' | string | null;
+  /** "single" | "married" | null. Drives the Cambodia TOS dependents count. */
+  maritalStatus?: 'single' | 'married' | string | null;
+  /** Children claimed as dependents. Only meaningful when married. */
+  numberOfChildren?: number | null;
   dateOfBirth?: string | null;
   placeOfBirth?: string | null;
   currentAddress?: string | null;
   nffNo?: string | null;
   tid?: string | null;
   contractExpireDate?: string | null;
+  /** Resign / termination date. null = still employed. */
+  resignDate?: string | null;
+  /**
+   * When false the employee is opted out of attendance ("Exception").
+   * Field engineers, remote contractors, and similar non-punching roles
+   * should sit at false so they don't pollute compliance metrics or the
+   * daily roster's absent count.
+   */
+  attendanceYn?: boolean;
+  /** Monthly allowance bucket — added to by Increase rows of type 'allowance'. */
+  allowance?: number;
+  /** Author + modifier audit. Display names resolved server-side. */
+  createdAt?: string | null;
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export type CreateEmployeeRequest = Omit<Employee, 'id' | 'status' | 'profileImage'> & {

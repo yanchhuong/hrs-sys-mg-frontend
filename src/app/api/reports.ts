@@ -28,6 +28,19 @@ export interface PayrollReportRow {
   netSalary: number;
 }
 
+export interface ComplianceRow {
+  employeeId: string;
+  empNo: string;
+  name: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  scannedDays: number;
+  completeDays: number;
+  singleScanDays: number;
+  absentDays: number;
+  compliancePct: number;
+}
+
 export async function headcount(): Promise<HeadcountReportRow[]> {
   return apiJson('/api/v1/reports/headcount');
 }
@@ -38,4 +51,8 @@ export async function attendance(params: { from: string; to: string; departmentI
 
 export async function payroll(params: { from: string; to: string }): Promise<PayrollReportRow[]> {
   return apiJson('/api/v1/reports/payroll', { query: { ...params } });
+}
+
+export async function compliance(params: { from: string; to: string; departmentId?: string }): Promise<ComplianceRow[]> {
+  return apiJson('/api/v1/reports/attendance/compliance', { query: { ...params } });
 }

@@ -8,9 +8,19 @@ export interface SalaryIncrease {
   amount: number;
   isPercentage?: boolean;
   effectiveDate: string;
+  /** "once" = single payroll cycle, "monthly" = recurring through effectiveUntil. */
+  recurrence?: 'once' | 'monthly';
+  /** Inclusive end-date for monthly recurrence. Null = open-ended. Ignored when recurrence='once'. */
+  effectiveUntil?: string | null;
   reason: string;
   approvedBy?: string | null;
   createdAt: string;
+  /** Author + modifier audit. Display names resolved server-side. */
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CreateIncreaseRequest {
@@ -19,6 +29,9 @@ export interface CreateIncreaseRequest {
   amount: number;
   isPercentage?: boolean;
   effectiveDate: string;
+  /** Defaults to 'once' on the server when omitted. */
+  recurrence?: 'once' | 'monthly';
+  effectiveUntil?: string | null;
   /** Backend marks @NotBlank — must be a non-empty string. */
   reason: string;
 }

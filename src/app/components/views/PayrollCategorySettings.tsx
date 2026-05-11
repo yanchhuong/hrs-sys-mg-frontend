@@ -304,12 +304,24 @@ export function PayrollCategorySettings() {
     }
   };
 
-  const doReset = () => {
-    const seeded = resetPayrollCategories();
-    setCategories(seeded);
-    setConfirmReset(false);
-    cancelEdit();
-    toast.success('Restored default categories');
+  const doReset = async () => {
+    if (USE_MOCKS) {
+      const seeded = resetPayrollCategories();
+      setCategories(seeded);
+      setConfirmReset(false);
+      cancelEdit();
+      toast.success('Restored default categories');
+      return;
+    }
+    try {
+      const restored = await categoriesApi.restoreDefaults();
+      setCategories(restored.map(adaptApi));
+      setConfirmReset(false);
+      cancelEdit();
+      toast.success('Restored default categories');
+    } catch (e) {
+      toast.error(`Failed to restore defaults: ${(e as Error).message}`);
+    }
   };
 
   // ---- render ------------------------------------------------------------
@@ -522,8 +534,12 @@ export function PayrollCategorySettings() {
         )}
       </div>
 
-      {renderSection('earning', earnings)}
-      {renderSection('deduction', deductions)}
+      {/* Side-by-side on wide screens (≥xl), stacked on narrower viewports
+          so the table columns don't get cramped past the responsive break. */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {renderSection('earning', earnings)}
+        {renderSection('deduction', deductions)}
+      </div>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

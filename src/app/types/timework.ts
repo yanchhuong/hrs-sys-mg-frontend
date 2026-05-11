@@ -39,16 +39,25 @@ export interface Holiday {
   description?: string;
 }
 
+/**
+ * Leave / attendance-exception entry. The `type` was historically the
+ * exception kind ("missed_punch" etc.); the leave UI now uses the
+ * coarser leave-shaped enum (full / half_morning / half_noon). Older
+ * values are still accepted on the wire — display code maps them.
+ */
 export interface AttendanceException {
   id: string;
   employeeId: string;
   date: string;
-  type: 'missed_punch' | 'late_arrival' | 'early_leave' | 'manual_correction';
+  type: 'full' | 'half_morning' | 'half_noon'
+      | 'missed_punch' | 'late_arrival' | 'early_leave' | 'manual_correction';
   originalCheckIn?: string;
   originalCheckOut?: string;
   correctedCheckIn?: string;
   correctedCheckOut?: string;
   reason: string;
+  /** Free-form remark — typically the approver's note or HR follow-up text. */
+  notes?: string;
   status: 'pending' | 'approved' | 'rejected';
   submittedBy: string;
   approvedBy?: string;
@@ -78,6 +87,10 @@ export interface SalaryIncrease {
   amount: number;
   isPercentage: boolean;
   effectiveDate: string;
+  /** "once" = single payroll cycle (default), "monthly" = recurring. */
+  recurrence?: 'once' | 'monthly';
+  /** Inclusive end-date for monthly recurrence. Empty = open-ended. */
+  effectiveUntil?: string;
   reason: string;
   approvedBy: string;
   approvedAt: string;

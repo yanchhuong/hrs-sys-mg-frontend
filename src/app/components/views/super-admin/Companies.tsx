@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -17,7 +17,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUpDown, HardDrive, UsersRound,
-  AlertTriangle,
+  AlertTriangle, Shield, Calendar, FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -25,12 +25,65 @@ import {
   mockCompanies, mockLocalInstalls, Company, PlanTier, CompanyStatus,
   PLAN_LIMITS, computeUsage,
 } from '../../../data/platformData';
+import { USE_MOCKS } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
 import { StatusBadge } from './PlatformDashboard';
+import { SyncStatusBadge } from './SyncStatusBadge';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 
+// Adapter: PlatformTenant lacks usage/cost fields the JSX consumes (employeeCount,
+// storageMb, monthlyCostUsd, userCount, lastActiveAt). Fill with 0 / createdAt
+// fallbacks so existing renderers and computeUsage() keep working unchanged.
+function toLegacyCompany(t: platformApi.PlatformTenant): Company {
+  return {
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    contactEmail: t.contactEmail,
+    contactPhone: t.contactPhone,
+    country: t.country,
+    planTier: t.planTier as PlanTier,
+    status: t.status as CompanyStatus,
+    // Live counts from the backend tenants list endpoint. Fall through
+    // to 0 for create/update responses (those don't compute counts; the
+    // next list refresh fills them in).
+    userCount: t.userCount ?? 0,
+    employeeCount: t.employeeCount ?? 0,
+    attendanceCount: t.attendanceCount ?? 0,
+    payrollItemCount: t.payrollItemCount ?? 0,
+    storageMb: 0,
+    monthlyCostUsd: PLAN_LIMITS[(t.planTier as PlanTier)]?.monthlyPriceUsd ?? 0,
+    createdAt: t.createdAt,
+    lastActiveAt: t.updatedAt ?? t.createdAt,
+    notes: t.notes,
+  };
+}
+
+// Inverse adapter for mock mode — keeps the in-memory mockCompanies seed usable
+// as a PlatformTenant list when USE_MOCKS is on.
+function toTenant(c: Company): platformApi.PlatformTenant {
+  return {
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    planTier: c.planTier,
+    status: c.status,
+    contactEmail: c.contactEmail,
+    contactPhone: c.contactPhone ?? '',
+    country: c.country,
+    notes: c.notes ?? '',
+    suspendedAt: c.status === 'suspended' ? c.lastActiveAt : null,
+    cancelledAt: c.status === 'cancelled' ? c.lastActiveAt : null,
+    createdAt: c.createdAt,
+    updatedAt: c.lastActiveAt,
+  };
+}
+
 export function Companies() {
-  const [companies, setCompanies] = useState<Company[]>(mockCompanies);
+  const [companies, setCompanies] = useState<platformApi.PlatformTenant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<'all' | CompanyStatus>('all');
   const [planFilter, setPlanFilter] = useState<'all' | PlanTier>('all');
@@ -43,23 +96,60 @@ export function Companies() {
   const [planChangeTarget, setPlanChangeTarget] = useState<Company | null>(null);
   const [newPlan, setNewPlan] = useState<PlanTier>('starter');
 
+  // Project the tenant list down to the legacy Company shape the JSX consumes.
+  const companiesView: Company[] = useMemo(
+    () => companies.map(toLegacyCompany),
+    [companies],
+  );
+
+  // Loader — backend filters server-side; mock mode reuses the seed array and
+  // applies the same filters client-side via the existing `filtered` memo.
+  const loadCompanies = async () => {
+    if (USE_MOCKS) {
+      setCompanies(mockCompanies.map(toTenant));
+      return;
+    }
+    setLoading(true);
+    try {
+      const list = await platformApi.tenants.list({
+        q: search.trim() || undefined,
+        status: statusTab !== 'all' ? statusTab : undefined,
+        planTier: planFilter !== 'all' ? planFilter : undefined,
+      });
+      setCompanies(list);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load companies';
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reload on mount and whenever filters change. Server-side filtering is the
+  // source of truth in API mode; the client-side `filtered` memo below is kept
+  // so mock mode and search-as-you-type still narrow without a round-trip.
+  useEffect(() => {
+    loadCompanies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusTab, planFilter]);
+
   const counts = useMemo(() => ({
-    all:       companies.length,
-    active:    companies.filter(c => c.status === 'active').length,
-    trial:     companies.filter(c => c.status === 'trial').length,
-    suspended: companies.filter(c => c.status === 'suspended').length,
-    cancelled: companies.filter(c => c.status === 'cancelled').length,
-  }), [companies]);
+    all:       companiesView.length,
+    active:    companiesView.filter(c => c.status === 'active').length,
+    trial:     companiesView.filter(c => c.status === 'trial').length,
+    suspended: companiesView.filter(c => c.status === 'suspended').length,
+    cancelled: companiesView.filter(c => c.status === 'cancelled').length,
+  }), [companiesView]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return companies.filter(c => {
+    return companiesView.filter(c => {
       if (statusTab !== 'all' && c.status !== statusTab) return false;
       if (planFilter !== 'all' && c.planTier !== planFilter) return false;
       if (q && !`${c.name} ${c.slug} ${c.contactEmail} ${c.country}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [companies, search, statusTab, planFilter]);
+  }, [companiesView, search, statusTab, planFilter]);
 
   const pager = usePagination(filtered, 10);
 
@@ -74,61 +164,161 @@ export function Companies() {
     setForm({ ...c });
     setDialogOpen(true);
   };
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name || !form.slug || !form.contactEmail) {
       toast.error('Name, slug, and contact email are required');
       return;
     }
-    if (editing) {
-      setCompanies(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } as Company : c));
-      toast.success(`Updated ${form.name}`);
-    } else {
-      const newId = `T${String(companies.length + 1).padStart(3, '0')}`;
-      const now = new Date().toISOString();
-      setCompanies(prev => [...prev, {
-        id: newId,
-        name: form.name!,
-        slug: form.slug!,
-        contactEmail: form.contactEmail!,
-        contactPhone: form.contactPhone,
-        country: form.country ?? '',
-        planTier: (form.planTier as PlanTier) ?? 'free',
-        status: (form.status as CompanyStatus) ?? 'trial',
-        userCount: 0,
-        employeeCount: 0,
-        storageMb: 0,
-        monthlyCostUsd: 0,
-        createdAt: now,
-        lastActiveAt: now,
-        notes: form.notes,
-      }]);
-      toast.success(`Created ${form.name}`);
+
+    if (USE_MOCKS) {
+      // Preserve the original in-memory mock mutation behavior.
+      if (editing) {
+        setCompanies(prev => prev.map(t =>
+          t.id === editing.id ? toTenant({ ...toLegacyCompany(t), ...form } as Company) : t
+        ));
+        toast.success(`Updated ${form.name}`);
+      } else {
+        const newId = `T${String(companies.length + 1).padStart(3, '0')}`;
+        const now = new Date().toISOString();
+        const seed: Company = {
+          id: newId,
+          name: form.name!,
+          slug: form.slug!,
+          contactEmail: form.contactEmail!,
+          contactPhone: form.contactPhone,
+          country: form.country ?? '',
+          planTier: (form.planTier as PlanTier) ?? 'free',
+          status: (form.status as CompanyStatus) ?? 'trial',
+          userCount: 0,
+          employeeCount: 0,
+          storageMb: 0,
+          monthlyCostUsd: 0,
+          createdAt: now,
+          lastActiveAt: now,
+          notes: form.notes,
+        };
+        setCompanies(prev => [...prev, toTenant(seed)]);
+        toast.success(`Created ${form.name}`);
+      }
+      setDialogOpen(false);
+      return;
     }
-    setDialogOpen(false);
+
+    setSubmitting(true);
+    try {
+      if (editing) {
+        await platformApi.tenants.update(editing.id, {
+          name: form.name,
+          contactEmail: form.contactEmail,
+          contactPhone: form.contactPhone ?? undefined,
+          country: form.country ?? undefined,
+          notes: form.notes ?? undefined,
+          planTier: form.planTier ?? undefined,
+        });
+        toast.success(`Updated ${form.name}`);
+      } else {
+        await platformApi.tenants.create({
+          name: form.name!,
+          slug: form.slug!,
+          planTier: (form.planTier as PlanTier) ?? 'starter',
+          contactEmail: form.contactEmail!,
+          contactPhone: form.contactPhone ?? null,
+          country: form.country ?? null,
+          notes: form.notes ?? null,
+        });
+        toast.success('Company created');
+      }
+      setDialogOpen(false);
+      await loadCompanies();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
-  const handleSuspendToggle = () => {
+  const handleSuspendToggle = async () => {
     if (!suspendTarget) return;
-    const next: CompanyStatus = suspendTarget.status === 'suspended' ? 'active' : 'suspended';
-    setCompanies(prev => prev.map(c => c.id === suspendTarget.id ? { ...c, status: next } : c));
-    toast.success(next === 'suspended' ? `Suspended ${suspendTarget.name}` : `Reactivated ${suspendTarget.name}`);
-    setSuspendTarget(null);
+    const willSuspend = suspendTarget.status !== 'suspended';
+
+    if (USE_MOCKS) {
+      const next: CompanyStatus = willSuspend ? 'suspended' : 'active';
+      setCompanies(prev => prev.map(t =>
+        t.id === suspendTarget.id ? { ...t, status: next } : t
+      ));
+      toast.success(willSuspend ? `Suspended ${suspendTarget.name}` : `Reactivated ${suspendTarget.name}`);
+      setSuspendTarget(null);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (willSuspend) {
+        await platformApi.tenants.suspend(suspendTarget.id);
+        toast.success(`Suspended ${suspendTarget.name}`);
+      } else {
+        await platformApi.tenants.reactivate(suspendTarget.id);
+        toast.success(`Reactivated ${suspendTarget.name}`);
+      }
+      setSuspendTarget(null);
+      await loadCompanies();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Action failed';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    setCompanies(prev => prev.filter(c => c.id !== deleteTarget.id));
-    toast.success(`Deleted ${deleteTarget.name}`);
-    setDeleteTarget(null);
+
+    if (USE_MOCKS) {
+      setCompanies(prev => prev.filter(t => t.id !== deleteTarget.id));
+      toast.success(`Deleted ${deleteTarget.name}`);
+      setDeleteTarget(null);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await platformApi.tenants.remove(deleteTarget.id);
+      toast.success(`Deleted ${deleteTarget.name}`);
+      setDeleteTarget(null);
+      await loadCompanies();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Delete failed';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
-  const handleConfirmPlanChange = () => {
+  const handleConfirmPlanChange = async () => {
     if (!planChangeTarget) return;
-    const limits = PLAN_LIMITS[newPlan];
-    setCompanies(prev => prev.map(c =>
-      c.id === planChangeTarget.id
-        ? { ...c, planTier: newPlan, monthlyCostUsd: limits.monthlyPriceUsd }
-        : c
-    ));
-    toast.success(`${planChangeTarget.name} moved to ${newPlan}`);
-    setPlanChangeTarget(null);
+
+    if (USE_MOCKS) {
+      const limits = PLAN_LIMITS[newPlan];
+      setCompanies(prev => prev.map(t =>
+        t.id === planChangeTarget.id
+          ? { ...t, planTier: newPlan, monthlyCostUsd: limits.monthlyPriceUsd } as platformApi.PlatformTenant
+          : t
+      ));
+      toast.success(`${planChangeTarget.name} moved to ${newPlan}`);
+      setPlanChangeTarget(null);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await platformApi.tenants.changePlan(planChangeTarget.id, newPlan);
+      toast.success(`${planChangeTarget.name} moved to ${newPlan}`);
+      setPlanChangeTarget(null);
+      await loadCompanies();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Plan change failed';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -233,8 +423,8 @@ export function Companies() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
+              <Button onClick={handleSave} disabled={submitting}>{editing ? 'Save' : 'Create'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -282,7 +472,7 @@ export function Companies() {
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No companies match these filters.
+                    {loading ? 'Loading companies…' : 'No companies match these filters.'}
                   </TableCell>
                 </TableRow>
               )}
@@ -308,6 +498,7 @@ export function Companies() {
                   <TableCell>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <StatusBadge status={c.status} />
+                      <SyncStatusBadge tenantId={c.id} />
                       {overQuota && (
                         <Badge className="bg-red-100 text-red-800 gap-1">
                           <AlertTriangle className="h-3 w-3" />
@@ -317,9 +508,31 @@ export function Companies() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="space-y-1.5">
+                    {/* Live counts from the backend, replacing the
+                        previously-mocked Storage / Employees rows.
+                        Employees still uses the plan-limit comparison
+                        (UsageRow) so over-quota stays visible; the
+                        other three are absolute numbers since plan
+                        caps don't apply to them today. */}
+                    <div className="space-y-1.5 text-xs">
                       <UsageRow icon={UsersRound} label="Employees" used={usage.employees.used} cap={usage.employees.cap} pct={usage.employees.pct} over={usage.employees.over} format={formatNumber} />
-                      <UsageRow icon={HardDrive} label="Storage" used={usage.storage.used} cap={usage.storage.cap} pct={usage.storage.pct} over={usage.storage.over} format={formatMb} />
+                      <div className="flex items-center gap-3 text-gray-600">
+                        <span className="inline-flex items-center gap-1">
+                          <Shield className="h-3 w-3 text-blue-500" />
+                          <span className="font-medium">{(c.userCount ?? 0).toLocaleString()}</span>
+                          <span className="text-gray-400">users</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="h-3 w-3 text-emerald-500" />
+                          <span className="font-medium">{(c.attendanceCount ?? 0).toLocaleString()}</span>
+                          <span className="text-gray-400">attendance</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <FileText className="h-3 w-3 text-amber-500" />
+                          <span className="font-medium">{(c.payrollItemCount ?? 0).toLocaleString()}</span>
+                          <span className="text-gray-400">payroll</span>
+                        </span>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-sm">
@@ -439,10 +652,10 @@ export function Companies() {
             );
           })()}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPlanChangeTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPlanChangeTarget(null)} disabled={submitting}>Cancel</Button>
             <Button
               onClick={handleConfirmPlanChange}
-              disabled={planChangeTarget?.planTier === newPlan}
+              disabled={planChangeTarget?.planTier === newPlan || submitting}
             >
               Apply plan change
             </Button>

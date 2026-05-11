@@ -2,11 +2,27 @@
 @import './tailwind.css';
 @import './theme.css';
 
-/* Khmer script needs a looser line so superscript marks don't clip. */
+/* Khmer typography.
+   Body text uses Battambang — readable at small sizes, has full diacritic
+   coverage. Titles use Moul, the traditional Khmer display script, which
+   reads as a strong brand-style serif. Both are loaded from Google Fonts
+   in index.html; Noto Sans Khmer + Hanuman are wide-coverage fallbacks. */
 html.lang-km {
-  font-family: 'Noto Sans Khmer', 'Hanuman', 'Khmer OS', system-ui, sans-serif;
-  line-height: 1.55;
+  font-family: 'Battambang', 'Noto Sans Khmer', 'Hanuman', 'Khmer OS', system-ui, sans-serif;
+  line-height: 1.65;
 }
-html.lang-km h1, html.lang-km h2, html.lang-km h3 {
-  line-height: 1.4;
+html.lang-km h1,
+html.lang-km h2,
+html.lang-km h3,
+html.lang-km h4 {
+  font-family: 'Moul', 'Khmer OS Muol Light', 'Battambang', serif;
+  /* Moul is a single-weight display face — synthesised bold makes it look
+     muddy. Force normal weight so Tailwind's font-bold class doesn't double-bold. */
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
 }
+/* Inline brand text in <h*> that should stay in the Latin gradient style
+   (e.g. the gradient sub-headline) still wants Moul when in Khmer mode. */
+html.lang-km .km-title { font-family: 'Moul', serif; font-weight: 400; }
+html.lang-km .km-body  { font-family: 'Battambang', sans-serif; }

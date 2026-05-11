@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -28,10 +28,63 @@ import {
 } from '../../../data/platformData';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { USE_MOCKS, API_BASE } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
+
+// Adapter: map a live Backup (api/platform.ts) to the page's mock Backup shape
+// so the existing JSX, status icons and badges keep working without churn.
+// Live "manual" → page "on-demand"; live "tenant"/"department"/"custom" scope
+// is collapsed to "full" since the page only renders full vs incremental.
+function toPageBackup(b: platformApi.Backup): Backup {
+  const type: BackupType = b.type === 'manual' ? 'on-demand' : 'scheduled';
+  return {
+    id: b.id,
+    tenantId: b.tenantId,
+    type,
+    scope: 'full',
+    status: b.status === 'pending' ? 'in_progress' : (b.status as BackupStatus),
+    sizeBytes: b.sizeBytes ?? 0,
+    createdAt: b.createdAt,
+    completedAt: b.completedAt ?? undefined,
+    retentionDays: b.retentionDays,
+    expiresAt: b.expiresAt ?? undefined,
+    storageTarget: (b.storageTarget === 'azure' ? 'gcs' : b.storageTarget === 'local' ? 'local-volume' : b.storageTarget) as StorageTarget,
+    storageUri: b.storageUri ?? '',
+    encryptionAlg: 'aes-256-gcm',
+    checksumSha256: b.checksumSha256 ?? undefined,
+    triggeredBy: b.triggeredByUserId ?? 'scheduler',
+    error: b.error ?? undefined,
+    progressPercent: b.progressPercent ?? undefined,
+    phase: b.phase ?? undefined,
+    estimatedCompletionAt: b.estimatedCompletionAt ?? undefined,
+  };
+}
+
+// Adapter: map a live BackupSchedule to the page's mock BackupSchedule shape.
+function toPageSchedule(s: platformApi.BackupSchedule): BackupSchedule {
+  return {
+    tenantId: s.tenantId,
+    enabled: s.enabled,
+    frequency: s.frequency,
+    runAtUtc: s.runAtUtc,
+    retentionDays: s.retentionDays,
+    scope: 'full',
+    storageTarget: (s.storageTarget === 'azure' ? 'gcs' : s.storageTarget === 'local' ? 'local-volume' : s.storageTarget) as StorageTarget,
+    storageUri: s.storageUri ?? '',
+    encryptionKeyRef: s.encryptionKeyRef ?? undefined,
+    lastRunAt: s.lastRunAt ?? undefined,
+    nextRunAt: s.nextRunAt ?? undefined,
+  };
+}
 
 export function Backups() {
-  const [backups, setBackups] = useState<Backup[]>(mockBackups);
-  const [schedules, setSchedules] = useState<BackupSchedule[]>(mockBackupSchedules);
+  const [backups, setBackups] = useState<Backup[]>(USE_MOCKS ? mockBackups : []);
+  const [schedules, setSchedules] = useState<BackupSchedule[]>(
+    USE_MOCKS ? mockBackupSchedules : [],
+  );
+  const [companies, setCompanies] = useState(
+    USE_MOCKS ? mockCompanies : [] as typeof mockCompanies,
+  );
 
   const [search, setSearch] = useState('');
   const [tenantFilter, setTenantFilter] = useState<string>('all');
@@ -47,7 +100,76 @@ export function Backups() {
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [restoreConfirm, setRestoreConfirm] = useState('');
 
-  const companyById = useMemo(() => new Map(mockCompanies.map(c => [c.id, c])), []);
+  const companyById = useMemo(() => new Map(companies.map(c => [c.id, c])), [companies]);
+
+  // Reload backups + schedules from the API. Re-runs when the server-side
+  // filters (tenant + status tab) change; search is still applied in-memory.
+  const loadBackups = async () => {
+    if (USE_MOCKS) {
+      setBackups(mockBackups);
+      return;
+    }
+    try {
+      const list = await platformApi.backups.list({
+        tenantId: tenantFilter !== 'all' ? tenantFilter : undefined,
+        status: statusTab !== 'all'
+          ? (statusTab as platformApi.BackupStatus)
+          : undefined,
+      });
+      setBackups(list.map(toPageBackup));
+    } catch { /* leave previous backups in place */ }
+  };
+
+  const loadSchedules = async () => {
+    if (USE_MOCKS) {
+      setSchedules(mockBackupSchedules);
+      return;
+    }
+    try {
+      const list = await platformApi.backups.schedules.list();
+      setSchedules(list.map(toPageSchedule));
+    } catch { /* leave previous schedules in place */ }
+  };
+
+  // Initial fetch — tenants for the picker + the two collections.
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ts = await platformApi.tenants.list();
+        if (cancelled) return;
+        // Cast through unknown — page JSX only reads fields that exist on
+        // PlatformTenant (id, name, slug, planTier, status). Storage/cost
+        // figures fall back to undefined and the table simply renders dashes.
+        setCompanies(ts as unknown as typeof mockCompanies);
+      } catch { /* fall back to empty list */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    loadBackups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantFilter, statusTab]);
+
+  useEffect(() => {
+    loadSchedules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Poll while any backup is running so the progress bar advances. The
+  // worker updates progress_percent / phase / estimated_completion_at in
+  // its own REQUIRES_NEW transactions, so a 1.5s GET on /backups picks
+  // up each per-table tick. Stops as soon as nothing is in_progress.
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    const anyRunning = backups.some(b => b.status === 'in_progress');
+    if (!anyRunning) return;
+    const t = setInterval(() => { void loadBackups(); }, 1500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backups]);
 
   const stats = useMemo(() => {
     const completed = backups.filter(b => b.status === 'completed');
@@ -92,81 +214,146 @@ export function Backups() {
   const pager = usePagination(filtered, 10);
 
   // ---------------------------------------------------------------------------
-  const handleTriggerBackup = () => {
+  const handleTriggerBackup = async () => {
     if (!bkTenant) {
       toast.error('Pick a tenant');
       return;
     }
     const company = companyById.get(bkTenant);
-    const now = new Date();
-    const id = `B${String(backups.length + 100).padStart(3, '0')}`;
-    const newBackup: Backup = {
-      id,
-      tenantId: bkTenant,
-      type: 'on-demand',
-      scope: bkScope,
-      status: 'in_progress',
-      sizeBytes: 0,
-      createdAt: now.toISOString(),
-      retentionDays: BACKUP_PLAN_POLICY[company?.planTier ?? 'free'].maxRetentionDays,
-      storageTarget: 's3',
-      storageUri: `s3://hrms-backups/${company?.slug ?? 'tenant'}/${now.toISOString()}-manual.tar.zst`,
-      encryptionAlg: 'aes-256-gcm',
-      triggeredBy: 'platform@hrms.com',
-    };
-    setBackups(prev => [newBackup, ...prev]);
-    setBackupDialog(false);
-    toast.success(`Backup started for ${company?.name}`);
-
-    // Simulate completion after a moment
-    setTimeout(() => {
-      setBackups(prev => prev.map(b =>
-        b.id === id
-          ? {
-              ...b,
-              status: 'completed',
-              completedAt: new Date().toISOString(),
-              sizeBytes: (bkScope === 'full' ? (company?.storageMb ?? 0) : 150) * 1024 * 1024,
-              checksumSha256: `sha256:${Math.random().toString(16).slice(2).padStart(64, '0').slice(0, 64)}`,
-              expiresAt: new Date(Date.now() + b.retentionDays * 86400_000).toISOString(),
-            }
-          : b
-      ));
-      toast.success(`Backup completed for ${company?.name}`);
-    }, 2500);
+    if (USE_MOCKS) {
+      const now = new Date();
+      const id = `B${String(backups.length + 100).padStart(3, '0')}`;
+      const newBackup: Backup = {
+        id,
+        tenantId: bkTenant,
+        type: 'on-demand',
+        scope: bkScope,
+        status: 'in_progress',
+        sizeBytes: 0,
+        createdAt: now.toISOString(),
+        retentionDays: BACKUP_PLAN_POLICY[company?.planTier ?? 'free'].maxRetentionDays,
+        storageTarget: 's3',
+        storageUri: `s3://hrms-backups/${company?.slug ?? 'tenant'}/${now.toISOString()}-manual.tar.zst`,
+        encryptionAlg: 'aes-256-gcm',
+        triggeredBy: 'platform@hrms.com',
+      };
+      setBackups(prev => [newBackup, ...prev]);
+      setBackupDialog(false);
+      toast.success(`Backup started for ${company?.name}`);
+      // Simulate completion after a moment
+      setTimeout(() => {
+        setBackups(prev => prev.map(b =>
+          b.id === id
+            ? {
+                ...b,
+                status: 'completed',
+                completedAt: new Date().toISOString(),
+                sizeBytes: (bkScope === 'full' ? (company?.storageMb ?? 0) : 150) * 1024 * 1024,
+                checksumSha256: `sha256:${Math.random().toString(16).slice(2).padStart(64, '0').slice(0, 64)}`,
+                expiresAt: new Date(Date.now() + b.retentionDays * 86400_000).toISOString(),
+              }
+            : b
+        ));
+        toast.success(`Backup completed for ${company?.name}`);
+      }, 2500);
+      return;
+    }
+    try {
+      const retentionDays = BACKUP_PLAN_POLICY[company?.planTier ?? 'free'].maxRetentionDays;
+      await platformApi.backups.create({
+        tenantId: bkTenant,
+        scope: 'tenant',
+        retentionDays,
+        storageTarget: 's3',
+      });
+      setBackupDialog(false);
+      toast.success(`Backup started for ${company?.name ?? bkTenant}`);
+      await loadBackups();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to start backup';
+      toast.error(msg);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    setBackups(prev => prev.filter(b => b.id !== deleteTarget.id));
-    toast.success('Backup deleted');
-    setDeleteTarget(null);
+    if (USE_MOCKS) {
+      setBackups(prev => prev.filter(b => b.id !== deleteTarget.id));
+      toast.success('Backup deleted');
+      setDeleteTarget(null);
+      return;
+    }
+    try {
+      await platformApi.backups.remove(deleteTarget.id);
+      toast.success('Backup deleted');
+      setDeleteTarget(null);
+      await loadBackups();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete backup';
+      toast.error(msg);
+    }
   };
 
   const handleDownload = (b: Backup) => {
-    toast.success(`Generating download link for ${b.id}…`);
-    // In a real backend: POST /platform/backups/{id}/download-url → pre-signed URL, open it.
+    if (USE_MOCKS) {
+      toast.success(`Generating download link for ${b.id}…`);
+      return;
+    }
+    // Admins are already authenticated via Bearer token; opening in a new
+    // window lets the browser stream the archive directly from the API.
+    const url = `${API_BASE}${platformApi.backups.downloadUrl(b.id)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const handleRestore = () => {
+  const handleRestore = async () => {
     if (!restoreTarget) return;
     const company = companyById.get(restoreTarget.tenantId);
     if (restoreConfirm.trim() !== company?.name) {
       toast.error('Tenant name did not match — restore cancelled');
       return;
     }
-    toast.success(`Restore of "${company?.name}" from ${format(new Date(restoreTarget.createdAt), 'MMM dd, HH:mm')} started. Tenant will be suspended for 2-5 minutes.`);
-    setRestoreTarget(null);
-    setRestoreConfirm('');
+    if (USE_MOCKS) {
+      toast.success(`Restore of "${company?.name}" from ${format(new Date(restoreTarget.createdAt), 'MMM dd, HH:mm')} started. Tenant will be suspended for 2-5 minutes.`);
+      setRestoreTarget(null);
+      setRestoreConfirm('');
+      return;
+    }
+    try {
+      await platformApi.backups.restore(restoreTarget.id);
+      toast.success(`Restore of "${company?.name}" from ${format(new Date(restoreTarget.createdAt), 'MMM dd, HH:mm')} started. Tenant will be suspended for 2-5 minutes.`);
+      setRestoreTarget(null);
+      setRestoreConfirm('');
+      await loadBackups();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to start restore';
+      toast.error(msg);
+    }
   };
 
-  const handleRetry = (b: Backup) => {
-    setBackups(prev => prev.map(x =>
-      x.id === b.id
-        ? { ...x, status: 'in_progress', error: undefined, createdAt: new Date().toISOString() }
-        : x
-    ));
-    toast.success(`Retrying backup ${b.id}…`);
+  const handleRetry = async (b: Backup) => {
+    if (USE_MOCKS) {
+      setBackups(prev => prev.map(x =>
+        x.id === b.id
+          ? { ...x, status: 'in_progress', error: undefined, createdAt: new Date().toISOString() }
+          : x
+      ));
+      toast.success(`Retrying backup ${b.id}…`);
+      return;
+    }
+    try {
+      // Live retry = create a fresh backup with the same tenant + retention.
+      await platformApi.backups.create({
+        tenantId: b.tenantId,
+        scope: 'tenant',
+        retentionDays: b.retentionDays,
+        storageTarget: 's3',
+      });
+      toast.success(`Retrying backup for ${companyById.get(b.tenantId)?.name ?? b.tenantId}`);
+      await loadBackups();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to retry backup';
+      toast.error(msg);
+    }
   };
 
   const handleRunSchedule = (tenantId: string) => {
@@ -177,11 +364,36 @@ export function Backups() {
     setBackupDialog(true);
   };
 
-  const handleToggleSchedule = (tenantId: string, enabled: boolean) => {
-    setSchedules(prev => prev.map(s =>
-      s.tenantId === tenantId ? { ...s, enabled } : s
-    ));
-    toast.success(enabled ? 'Schedule enabled' : 'Schedule paused');
+  const handleToggleSchedule = async (tenantId: string, enabled: boolean) => {
+    const current = schedules.find(s => s.tenantId === tenantId);
+    if (USE_MOCKS) {
+      setSchedules(prev => prev.map(s =>
+        s.tenantId === tenantId ? { ...s, enabled } : s
+      ));
+      toast.success(enabled ? 'Schedule enabled' : 'Schedule paused');
+      return;
+    }
+    if (!current) {
+      toast.error('Schedule not found');
+      return;
+    }
+    try {
+      await platformApi.backups.schedules.upsert(tenantId, {
+        enabled,
+        frequency: current.frequency,
+        runAtUtc: current.runAtUtc,
+        retentionDays: current.retentionDays,
+        scope: 'tenant',
+        storageTarget: (current.storageTarget === 'local-volume' ? 'local' : current.storageTarget) as platformApi.StorageTarget,
+        storageUri: current.storageUri || null,
+        encryptionKeyRef: current.encryptionKeyRef ?? null,
+      });
+      toast.success(enabled ? 'Schedule enabled' : 'Schedule paused');
+      await loadSchedules();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update schedule';
+      toast.error(msg);
+    }
   };
 
   return (
@@ -254,7 +466,7 @@ export function Backups() {
               className="h-9 px-3 border rounded-md text-sm min-w-[180px]"
             >
               <option value="all">All tenants</option>
-              {mockCompanies.map(c => (
+              {companies.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -293,6 +505,25 @@ export function Backups() {
                     <TableCell>
                       <p className="font-medium text-sm">{company?.name ?? '—'}</p>
                       <p className="text-xs text-gray-400">{b.triggeredBy}</p>
+                      {b.status === 'in_progress' && (
+                        <div className="mt-1.5 space-y-1 max-w-[280px]">
+                          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-500"
+                              style={{ width: `${b.progressPercent ?? 0}%` }}
+                            />
+                          </div>
+                          <p className="text-[11px] text-gray-600 flex items-center gap-1.5">
+                            <span className="font-mono tabular-nums">{b.progressPercent ?? 0}%</span>
+                            {b.phase && <span className="text-gray-500 truncate" title={b.phase}>· {b.phase}</span>}
+                            {b.estimatedCompletionAt && (
+                              <span className="text-gray-500 ml-auto whitespace-nowrap">
+                                · {formatRemaining(b.estimatedCompletionAt)}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1 flex-wrap">
@@ -474,7 +705,7 @@ export function Backups() {
                 className="w-full h-9 px-3 border rounded-md text-sm"
               >
                 <option value="">Select a tenant…</option>
-                {mockCompanies.filter(c => c.status !== 'cancelled').map(c => (
+                {companies.filter(c => c.status !== 'cancelled').map(c => (
                   <option key={c.id} value={c.id}>{c.name} ({c.planTier})</option>
                 ))}
               </select>
@@ -588,6 +819,22 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
   return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+}
+
+/**
+ * Format an ETA timestamp as "X min remaining" / "X sec remaining".
+ * Returns "almost done" when within 5 seconds (avoids "0 min remaining"
+ * flicker right before status flips to completed).
+ */
+function formatRemaining(eta: string): string {
+  const ms = new Date(eta).getTime() - Date.now();
+  if (ms <= 5_000) return 'almost done';
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `~${sec}s remaining`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `~${min} min remaining`;
+  const hr = Math.round(min / 60);
+  return `~${hr}h remaining`;
 }
 
 function StatusIcon({ status }: { status: BackupStatus }) {

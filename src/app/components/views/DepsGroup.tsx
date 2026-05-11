@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -8,7 +8,7 @@ import { Switch } from '../ui/switch';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -33,17 +33,33 @@ import {
 import { ChevronsUpDown, Check } from 'lucide-react';
 import {
   Plus, Pencil, Trash2, Save, Search, Users, Building2, MoreHorizontal,
-  FolderTree, UserCheck, Info,
+  FolderTree, UserCheck, Info, UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { notify } from '../../utils/notify';
+import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 
+type DeptGroupType = 'department' | 'group' | 'team';
+
 interface DeptGroup extends Department {
-  type: 'department' | 'group';
+  type: DeptGroupType;
   isActive: boolean;
   color: string;
   // parentId is inherited from Department (string | null | undefined).
 }
+
+/** UI labels — keep here so the JSX stays terse. */
+const TYPE_LABEL: Record<DeptGroupType, string> = {
+  department: 'Department',
+  group: 'Group',
+  team: 'Team',
+};
+const TYPE_SHORT: Record<DeptGroupType, string> = {
+  department: 'Dept',
+  group: 'Group',
+  team: 'Team',
+};
 
 const COLORS = [
   { value: 'blue', label: 'Blue', class: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -58,15 +74,22 @@ const COLORS = [
 
 const getColorClass = (color: string) => COLORS.find(c => c.value === color)?.class || COLORS[0].class;
 
+
 // Helper: turn a raw Department (from mocks or API) into the UI's DeptGroup shape.
-// The backend only persists {id, name, description}; managerId/employeeCount/
-// isActive/color are presentation-only and get sensible defaults on each load.
-const departmentToDeptGroup = (d: Department, index: number): DeptGroup => ({
-  ...d,
-  type: 'department',
-  isActive: true,
-  color: COLORS[index % COLORS.length].value,
-});
+// The backend persists {id, name, description, parentId, managerId, type}.
+// employeeCount / isActive / color are presentation-only and get sensible
+// defaults on each load.
+const departmentToDeptGroup = (d: Department, index: number): DeptGroup => {
+  const apiType = (d as { type?: string }).type;
+  const type: DeptGroupType =
+    apiType === 'group' || apiType === 'team' ? apiType : 'department';
+  return {
+    ...d,
+    type,
+    isActive: true,
+    color: COLORS[index % COLORS.length].value,
+  };
+};
 
 // Local-only groups — the backend currently does not track sub-team / shift
 // groups, so these stay on mock data even when USE_MOCKS is false. managerId
@@ -120,6 +143,11 @@ interface DepsGroupProps {
 
 export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const { t } = useI18n();
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  // Departments / Groups live under Settings → Employee Settings.
+  const canCreateDept = canCreate('settings');
+  const canUpdateDept = canUpdate('settings');
+  const canDeleteDept = canDelete('settings');
   // When USE_MOCKS, seed with the bundled mock departments + local groups.
   // Otherwise start with just the local-only groups; departments are loaded
   // from the API in `loadDepartments` below.
@@ -130,11 +158,17 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const [editing, setEditing] = useState<DeptGroup | null>(null);
   const [form, setForm] = useState<Omit<DeptGroup, 'id'>>(emptyForm);
   const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'department' | 'group'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'department' | 'group' | 'team'>('all');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // Add-member dialog state. When set, opens a picker that lists every
+  // employee not already in this dept/group/team and assigns the picked one.
+  const [addMemberFor, setAddMemberFor] = useState<DeptGroup | null>(null);
+  const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [addingMemberId, setAddingMemberId] = useState<string | null>(null);
 
-  // Load (or refresh) the department slice of `items`. Local-only groups are
-  // preserved across reloads because the backend has no concept of them.
+  // Load (or refresh) all items — departments, groups, and teams now share
+  // the same backend table (V17). Mock mode falls back to the static seed
+  // because no API is available.
   const loadDepartments = async () => {
     if (USE_MOCKS) {
       setItems([
@@ -146,11 +180,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     setLoading(true);
     try {
       const apiDepts = await departmentsApi.list();
-      setItems(prev => [
-        ...apiDepts.map((d, i) => departmentToDeptGroup(d, i)),
-        // keep any items already in state that aren't departments (i.e. groups)
-        ...prev.filter(i => i.type !== 'department'),
-      ]);
+      setItems(apiDepts.map((d, i) => departmentToDeptGroup(d, i)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load departments');
     } finally {
@@ -208,10 +238,58 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
   const departments = items.filter(i => i.type === 'department');
   const groups = items.filter(i => i.type === 'group');
+  const teams = items.filter(i => i.type === 'team');
   const activeCount = items.filter(i => i.isActive).length;
-  const totalMembers = items.reduce((sum, i) => sum + (i.employeeCount || 0), 0);
+  // Live count of employees per department/group/team — drives the Members
+  // column and the "X total members" headline. Employees attached to a
+  // department that no longer exists (orphaned by a delete with SET NULL)
+  // are silently ignored. In live mode `e.department` carries the UUID;
+  // in mock mode it's the dept name and the ids are slugs, so the keys
+  // happen to match the way mock data was authored.
+  const memberCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of employees) {
+      if (!e.department || e.department === '-') continue;
+      map.set(e.department, (map.get(e.department) ?? 0) + 1);
+    }
+    return map;
+  }, [employees]);
+  const totalMembers = items.reduce(
+    (sum, i) => sum + (memberCountById.get(i.id) ?? 0), 0,
+  );
 
-  const depsPagination = usePagination(filtered, 10);
+  // Hierarchical ordering: each parent followed by its children, with the
+  // depth captured so the table cell can render an indent + arrow prefix.
+  // Items whose parent is filtered out (or has none) sort at depth 0
+  // alongside genuine top-level rows. Within a level, sort by name.
+  const sortedFiltered = useMemo<(DeptGroup & { _depth: number })[]>(() => {
+    const visibleIds = new Set(filtered.map(i => i.id));
+    const sortByName = (a: DeptGroup, b: DeptGroup) => a.name.localeCompare(b.name);
+    const childrenByParent = new Map<string | null, DeptGroup[]>();
+    for (const item of filtered) {
+      const key = item.parentId && visibleIds.has(item.parentId) ? item.parentId : null;
+      const bucket = childrenByParent.get(key) ?? [];
+      bucket.push(item);
+      childrenByParent.set(key, bucket);
+    }
+    for (const bucket of childrenByParent.values()) bucket.sort(sortByName);
+
+    const out: (DeptGroup & { _depth: number })[] = [];
+    const walk = (parentKey: string | null, depth: number) => {
+      const kids = childrenByParent.get(parentKey) ?? [];
+      for (const k of kids) {
+        out.push({ ...k, _depth: depth });
+        walk(k.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    // Safety: if some items got skipped (cycle / unreachable), append them at depth 0.
+    const present = new Set(out.map(o => o.id));
+    for (const item of filtered) if (!present.has(item.id)) out.push({ ...item, _depth: 0 });
+    return out;
+  }, [filtered]);
+
+  const depsPagination = usePagination(sortedFiltered, 10);
 
   useEffect(() => {
     depsPagination.resetPage();
@@ -240,33 +318,19 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
   const handleSave = async () => {
     if (!form.name.trim()) {
-      toast.error('Please enter a name');
+      notify.validate('Please enter a name');
       return;
     }
 
-    // Groups are local-only — no backend support for sub-teams yet.
-    if (form.type === 'group') {
-      if (editing) {
-        setItems(items.map(i => i.id === editing.id ? { ...editing, ...form } : i));
-        toast.success(`"${form.name}" updated`);
-      } else {
-        const count = items.filter(i => i.type === 'group').length + 1;
-        const id = `GRP${String(count).padStart(3, '0')}`;
-        setItems([...items, { id, ...form }]);
-        toast.success(`"${form.name}" created`);
-      }
-      setDialogOpen(false);
-      return;
-    }
-
-    // Department branch — backed by the API.
+    // Mock mode: still local-only since no API to call.
     if (USE_MOCKS) {
       if (editing) {
         setItems(items.map(i => i.id === editing.id ? { ...editing, ...form } : i));
         toast.success(`"${form.name}" updated`);
       } else {
-        const count = items.filter(i => i.type === 'department').length + 1;
-        const id = `DEPT${String(count).padStart(3, '0')}`;
+        const prefix = form.type === 'department' ? 'DEPT' : form.type === 'group' ? 'GRP' : 'TEAM';
+        const count = items.filter(i => i.type === form.type).length + 1;
+        const id = `${prefix}${String(count).padStart(3, '0')}`;
         setItems([...items, { id, ...form }]);
         toast.success(`"${form.name}" created`);
       }
@@ -274,6 +338,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       return;
     }
 
+    // Live mode: every type lives in the same `departments` table now.
     try {
       if (editing) {
         await departmentsApi.update(editing.id, {
@@ -281,6 +346,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
           description: form.description || undefined,
           managerId: form.managerId || null,
           parentId: form.parentId || null,
+          type: form.type,
         });
         toast.success(`"${form.name}" updated`);
       } else {
@@ -289,6 +355,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
           description: form.description || undefined,
           managerId: form.managerId || null,
           parentId: form.parentId || null,
+          type: form.type,
         });
         toast.success(`"${form.name}" created`);
       }
@@ -303,14 +370,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     const item = items.find(i => i.id === id);
     if (!item) {
       setDeleteConfirm(null);
-      return;
-    }
-
-    // Groups are local-only — backend doesn't track sub-groups yet.
-    if (item.type === 'group') {
-      setItems(items.filter(i => i.id !== id));
-      setDeleteConfirm(null);
-      toast.success(`"${item.name}" deleted`);
       return;
     }
 
@@ -333,6 +392,64 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
   const toggleActive = (id: string) => {
     setItems(items.map(i => i.id === id ? { ...i, isActive: !i.isActive } : i));
+  };
+
+  /**
+   * Move the picked employee in or out of {@code addMemberFor} by PATCHing
+   * their employee record. Pass {@code null} as {@code newDeptId} to remove
+   * the employee from any department/group/team. Two-way sync — the
+   * Members count refreshes next render, and the Employees page picks up
+   * the new departmentId immediately. Mocks just mutate local state.
+   */
+  const handleMoveMember = async (emp: Employee, newDeptId: string | null) => {
+    const targetEmployeeId = (emp as { apiId?: string }).apiId ?? emp.id;
+    const targetDept = newDeptId ? items.find(i => i.id === newDeptId) : null;
+    setAddingMemberId(emp.id);
+    try {
+      if (USE_MOCKS) {
+        setEmployees(prev => prev.map(e =>
+          e.id === emp.id ? { ...e, department: newDeptId ?? '-' } : e,
+        ));
+        toast.success(newDeptId
+          ? `${emp.name} moved to "${targetDept?.name ?? newDeptId}"`
+          : `${emp.name} removed`);
+        return;
+      }
+      // Backend's PUT /employees/{id} overwrites every field, so round-trip
+      // the existing record with only departmentId changed.
+      await employeesApi.update(targetEmployeeId, {
+        empNo: emp.id,
+        name: emp.name,
+        khmerName: emp.khmerName,
+        email: emp.email,
+        position: emp.position,
+        departmentId: newDeptId,
+        joinDate: emp.joinDate,
+        baseSalary: emp.baseSalary,
+        managerId: emp.managerId ?? null,
+        gender: emp.gender,
+        dateOfBirth: emp.dateOfBirth,
+        placeOfBirth: emp.placeOfBirth,
+        contactNumber: emp.contactNumber,
+        currentAddress: emp.currentAddress,
+        nffNo: emp.nffNo,
+        tid: emp.tid,
+        contractExpireDate: emp.contractExpireDate,
+        resignDate: emp.resignDate,
+        status: emp.status,
+      });
+      // Optimistic update so the Members count refreshes immediately.
+      setEmployees(prev => prev.map(e =>
+        e.id === emp.id ? { ...e, department: newDeptId ?? '-' } : e,
+      ));
+      toast.success(newDeptId
+        ? `${emp.name} moved to "${targetDept?.name ?? newDeptId}"`
+        : `${emp.name} removed`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update member');
+    } finally {
+      setAddingMemberId(null);
+    }
   };
 
   const getManagerName = (managerId?: string) => {
@@ -383,13 +500,15 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
             <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
             <p className="text-gray-500">{t('page.depsgroup.description')}</p>
           </div>
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add New
-          </Button>
+          {canCreateDept && (
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add New
+            </Button>
+          )}
         </div>
       )}
-      {embedded && (
+      {embedded && canCreateDept && (
         <div className="flex justify-end">
           <Button onClick={openAdd} size="sm">
             <Plus className="mr-2 h-4 w-4" />
@@ -398,8 +517,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Summary Cards — hidden when embedded in Employee Settings, which
+          renders its own KPI strip above the tabs. Standalone page keeps
+          the detailed Departments / Groups / Teams / Active breakdown. */}
+      {!embedded && (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm">Total</CardTitle>
@@ -432,6 +554,16 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Teams</CardTitle>
+            <UserCheck className="h-4 w-4 text-teal-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{teams.length}</div>
+            <p className="text-xs text-gray-500">Project / squad teams</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm">Active</CardTitle>
             <UserCheck className="h-4 w-4 text-green-600" />
           </CardHeader>
@@ -441,6 +573,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Filters & Table */}
       <Card>
@@ -461,7 +594,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                 />
               </div>
               <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
-                {(['all', 'department', 'group'] as const).map(t => (
+                {(['all', 'department', 'group', 'team'] as const).map(t => (
                   <button
                     key={t}
                     onClick={() => setFilterType(t)}
@@ -469,7 +602,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                       filterType === t ? 'bg-white shadow-sm font-medium text-gray-900' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    {t === 'all' ? 'All' : t === 'department' ? 'Departments' : 'Groups'}
+                    {t === 'all' ? 'All' : t === 'department' ? 'Departments' : t === 'group' ? 'Groups' : 'Teams'}
                   </button>
                 ))}
               </div>
@@ -483,7 +616,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Parent</TableHead>
-                <TableHead>Manager / Lead</TableHead>
+                <TableHead title="Person In Charge">PIC</TableHead>
                 <TableHead className="text-center">Members</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Description</TableHead>
@@ -503,7 +636,18 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                   <TableRow key={item.id} className={!item.isActive ? 'opacity-50' : ''}>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
-                        <div className={`h-2.5 w-2.5 rounded-full ${
+                        {/* Indent + branching arrow per nesting depth so the
+                            parent → child relationship is obvious at a glance. */}
+                        {item._depth > 0 && (
+                          <span
+                            className="text-gray-300 select-none font-mono text-xs"
+                            style={{ paddingLeft: `${(item._depth - 1) * 18}px` }}
+                            aria-hidden="true"
+                          >
+                            └─
+                          </span>
+                        )}
+                        <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${
                           item.color === 'blue' ? 'bg-blue-500' :
                           item.color === 'green' ? 'bg-green-500' :
                           item.color === 'purple' ? 'bg-purple-500' :
@@ -523,9 +667,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-xs ${
-                        item.type === 'department' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-purple-50 text-purple-700 border-purple-200'
+                        item.type === 'department' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : item.type === 'group'    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                        : 'bg-teal-50 text-teal-700 border-teal-200'
                       }`}>
-                        {item.type === 'department' ? 'Department' : 'Group'}
+                        {TYPE_LABEL[item.type]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">
@@ -535,7 +681,16 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                     </TableCell>
                     <TableCell className="text-sm">{getManagerName(item.managerId)}</TableCell>
                     <TableCell className="text-center">
-                      <span className="text-sm font-medium">{item.employeeCount || 0}</span>
+                      {/* Clickable count opens the same Manage Members dialog
+                          so admins can adjust membership without going
+                          through the kebab menu. */}
+                      <button
+                        onClick={() => { setAddMemberFor(item); setAddMemberSearch(''); }}
+                        className="inline-flex items-center justify-center min-w-[28px] h-7 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 hover:ring-2 hover:ring-blue-200 text-sm font-medium transition-all"
+                        title="Click to manage members"
+                      >
+                        {memberCountById.get(item.id) ?? 0}
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Switch
@@ -547,26 +702,38 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                       <p className="text-xs text-gray-500 max-w-[200px] truncate">{item.description || '-'}</p>
                     </TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(item)}>
-                            <Pencil className="mr-2 h-3.5 w-3.5" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => setDeleteConfirm(item.id)}
-                          >
-                            <Trash2 className="mr-2 h-3.5 w-3.5" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {(canUpdateDept || canDeleteDept) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {canUpdateDept && (
+                              <DropdownMenuItem onClick={() => openEdit(item)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                Edit
+                              </DropdownMenuItem>
+                            )}
+                            {canUpdateDept && (
+                              <DropdownMenuItem onClick={() => { setAddMemberFor(item); setAddMemberSearch(''); }}>
+                                <UserPlus className="mr-2 h-3.5 w-3.5" />
+                                Manage Members
+                              </DropdownMenuItem>
+                            )}
+                            {canDeleteDept && (
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={() => setDeleteConfirm(item.id)}
+                              >
+                                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                Delete
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -604,44 +771,59 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? `Edit ${form.type === 'department' ? 'Department' : 'Group'}` : 'Add New Department / Group'}</DialogTitle>
+            <DialogTitle>{editing ? `Edit ${TYPE_LABEL[form.type]}` : 'Add New Department / Group / Team'}</DialogTitle>
             <DialogDescription>
               {editing ? 'Update the details below' : 'Create a new department or group for your organization'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-5">
-            {/* Type Selection */}
-            {!editing && (
-              <div className="space-y-2">
-                <Label className="text-sm">Type</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setForm({ ...form, type: 'department' })}
-                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                      form.type === 'department' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Building2 className={`h-4 w-4 ${form.type === 'department' ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <p className="font-medium text-sm">Department</p>
-                    </div>
-                    <p className="text-xs text-gray-500">Formal org unit</p>
-                  </button>
-                  <button
-                    onClick={() => setForm({ ...form, type: 'group' })}
-                    className={`p-4 rounded-lg border-2 text-left transition-all ${
-                      form.type === 'group' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Users className={`h-4 w-4 ${form.type === 'group' ? 'text-purple-600' : 'text-gray-400'}`} />
-                      <p className="font-medium text-sm">Group</p>
-                    </div>
-                    <p className="text-xs text-gray-500">Flexible team / shift</p>
-                  </button>
-                </div>
+            {/* Type Selection — also editable when updating an existing entry. */}
+            <div className="space-y-2">
+              <Label className="text-sm">Type</Label>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => setForm({ ...form, type: 'department' })}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    form.type === 'department' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Building2 className={`h-4 w-4 ${form.type === 'department' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <p className="font-medium text-sm">Department</p>
+                  </div>
+                  <p className="text-xs text-gray-500">Formal org unit</p>
+                </button>
+                <button
+                  onClick={() => setForm({ ...form, type: 'group' })}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    form.type === 'group' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className={`h-4 w-4 ${form.type === 'group' ? 'text-purple-600' : 'text-gray-400'}`} />
+                    <p className="font-medium text-sm">Group</p>
+                  </div>
+                  <p className="text-xs text-gray-500">Cross-dept / shift</p>
+                </button>
+                <button
+                  onClick={() => setForm({ ...form, type: 'team' })}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    form.type === 'team' ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <UserCheck className={`h-4 w-4 ${form.type === 'team' ? 'text-teal-600' : 'text-gray-400'}`} />
+                    <p className="font-medium text-sm">Team</p>
+                  </div>
+                  <p className="text-xs text-gray-500">Project / squad</p>
+                </button>
               </div>
-            )}
+              {editing && editing.type !== form.type && (
+                <p className="text-xs text-amber-600">
+                  Changing type from <b>{TYPE_LABEL[editing.type]}</b> to <b>{TYPE_LABEL[form.type]}</b>.
+                </p>
+              )}
+            </div>
 
             {/* Name */}
             <div className="space-y-2">
@@ -649,7 +831,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
               <Input
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder={form.type === 'department' ? 'e.g., Engineering' : 'e.g., Night Shift Team'}
+                placeholder={
+                  form.type === 'department' ? 'e.g., Engineering'
+                  : form.type === 'group'    ? 'e.g., Night Shift Group'
+                  : 'e.g., Mobile App Team'
+                }
                 className="h-9"
               />
             </div>
@@ -685,7 +871,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
             {/* Manager/Lead */}
             <div className="space-y-2">
-              <Label className="text-sm">{form.type === 'department' ? 'Department Manager' : 'Group Lead'}</Label>
+              <Label className="text-sm">{
+                form.type === 'department' ? 'Department Manager'
+                : form.type === 'group'    ? 'Group Lead'
+                : 'Team Lead'
+              }</Label>
               <ManagerPicker
                 employees={employees}
                 value={form.managerId || ''}
@@ -708,10 +898,10 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                     ? new Set<string>([editing.id, ...descendantIds(editing.id)])
                     : new Set<string>()
                 }
-                allowedTypes={form.type === 'department' ? ['department'] : ['department', 'group']}
+                allowedTypes={form.type === 'department' ? ['department'] : ['department', 'group', 'team']}
               />
               <p className="text-xs text-gray-400">
-                Leave blank for a top-level {form.type}.
+                Leave blank for a top-level {TYPE_LABEL[form.type].toLowerCase()}.
               </p>
             </div>
 
@@ -763,6 +953,161 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
               Delete
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Members Dialog — side-by-side: current members on the left,
+          everyone else on the right. PATCHes employee.departmentId on each
+          action, two-way syncing with the Employees page. */}
+      <Dialog
+        open={!!addMemberFor}
+        onOpenChange={(open) => { if (!open) { setAddMemberFor(null); setAddMemberSearch(''); } }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-600" />
+              Manage Members · "{addMemberFor?.name}"
+            </DialogTitle>
+            <DialogDescription>
+              Move employees in or out of this {addMemberFor ? TYPE_LABEL[addMemberFor.type].toLowerCase() : 'unit'}.
+              The single search filters both sides.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                value={addMemberSearch}
+                onChange={(e) => setAddMemberSearch(e.target.value)}
+                placeholder="Search by name, ID, or position…"
+                className="pl-10 h-9"
+                autoFocus
+              />
+            </div>
+            {(() => {
+              if (!addMemberFor) return null;
+              const tokens = addMemberSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+              const matches = (e: Employee) => {
+                if (tokens.length === 0) return true;
+                const hay = [
+                  e.name, e.khmerName, e.id, (e as { empNo?: string }).empNo,
+                  e.position, e.contactNumber,
+                ].filter(Boolean).join(' ').toLowerCase();
+                return tokens.every(t => hay.includes(t));
+              };
+              const inHere = employees
+                .filter(e => e.status === 'active' && e.department === addMemberFor.id && matches(e));
+              const elsewhere = employees
+                .filter(e => e.status === 'active' && e.department !== addMemberFor.id && matches(e))
+                .slice(0, 200);
+
+              const renderRow = (emp: Employee, action: 'add' | 'remove') => {
+                const currentDept = emp.department && emp.department !== '-'
+                  ? items.find(i => i.id === emp.department)?.name
+                  : null;
+                const isBusy = addingMemberId === emp.id;
+                const isAdd = action === 'add';
+                // "Add" when the employee has no department yet, "Move"
+                // when reassigning from another one. The arrow on the
+                // right pane points left (toward the Members pane) since
+                // the action drags them in that direction.
+                const inLabel = currentDept ? 'Move' : 'Add';
+                const action_node = (
+                  <span className={`text-xs shrink-0 ${
+                    isAdd ? 'text-blue-600' : 'text-red-600'
+                  }`}>
+                    {isBusy ? '…' : isAdd ? `← ${inLabel}` : 'Remove →'}
+                  </span>
+                );
+                const info_node = (
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{emp.name}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {emp.id} · {emp.position}
+                      {isAdd && currentDept && (
+                        <span className="text-gray-400"> · currently {currentDept}</span>
+                      )}
+                    </p>
+                  </div>
+                );
+                return (
+                  <button
+                    key={emp.id}
+                    onClick={() => handleMoveMember(emp, isAdd ? addMemberFor.id : null)}
+                    disabled={!!addingMemberId}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {/* Left pane: Members → action on the RIGHT, info on the LEFT.
+                        Right pane: Other Employees → action on the LEFT, info on the RIGHT
+                        so the arrow visually points toward the Members pane. */}
+                    {isAdd ? (
+                      <>
+                        {action_node}
+                        {info_node}
+                      </>
+                    ) : (
+                      <>
+                        {info_node}
+                        {action_node}
+                      </>
+                    )}
+                  </button>
+                );
+              };
+
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Left — current members */}
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <Label className="text-xs uppercase tracking-wide text-gray-500">
+                        Members of {addMemberFor.name}
+                      </Label>
+                      <Badge variant="outline" className="text-xs">
+                        {inHere.length}
+                      </Badge>
+                    </div>
+                    <div className="h-80 overflow-y-auto border rounded-md divide-y bg-blue-50/30">
+                      {inHere.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-sm text-gray-400">
+                          {employees.length === 0 ? 'Loading…' : 'No members yet'}
+                        </div>
+                      ) : (
+                        inHere.map(e => renderRow(e, 'remove'))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right — everyone else */}
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <Label className="text-xs uppercase tracking-wide text-gray-500">
+                        Other employees
+                      </Label>
+                      <Badge variant="outline" className="text-xs">
+                        {elsewhere.length}
+                      </Badge>
+                    </div>
+                    <div className="h-80 overflow-y-auto border rounded-md divide-y">
+                      {elsewhere.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-sm text-gray-400">
+                          No matching employees
+                        </div>
+                      ) : (
+                        elsewhere.map(e => renderRow(e, 'add'))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddMemberFor(null); setAddMemberSearch(''); }}>
+              Done
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -905,7 +1250,7 @@ function ParentPicker({
                     <Check className={`mr-2 h-4 w-4 ${value === p.id ? 'opacity-100' : 'opacity-0'}`} />
                     <span className="flex-1 truncate">
                       {p.name}
-                      <span className="text-gray-400"> · {p.type === 'department' ? 'Dept' : 'Group'}</span>
+                      <span className="text-gray-400"> · {TYPE_SHORT[p.type]}</span>
                     </span>
                   </CommandItem>
                 );

@@ -16,14 +16,26 @@ export interface PayrollBatch {
   remarks?: string;
   status: PayrollBatchStatus;
   uploadedById: string;
+  /** Display name resolved server-side via user→employee. Falls back to
+   *  the user's email when the user has no linked employee profile. */
+  uploadedByName?: string | null;
   uploadedAt: string;
   approvedById?: string | null;
+  approvedByName?: string | null;
   approvedAt?: string | null;
   completedById?: string | null;
+  completedByName?: string | null;
   completedAt?: string | null;
   rejectedById?: string | null;
+  rejectedByName?: string | null;
   rejectedAt?: string | null;
   rejectionReason?: string | null;
+  /** Author + modifier audit (separate from the workflow uploader/approver fields). */
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
   /** UUIDs of users the uploader nominated as approvers. Empty = any admin. */
   approverIds?: string[];
 }
@@ -46,6 +58,12 @@ export interface PayrollItem {
   deductionsBreakdown?: Record<string, number>;
   payrollAccount?: string;
   generatedAt?: string;
+  /** Per-channel dispatch state. ISO timestamp = sent on that channel.
+   *  Null/missing = not yet sent. Once stamped server-side the timestamp
+   *  is preserved across re-dispatch attempts (idempotent). */
+  mailSentAt?: string | null;
+  smsSentAt?: string | null;
+  bankSentAt?: string | null;
 }
 
 export interface CreateBatchItem {
@@ -95,6 +113,17 @@ export async function getBatch(id: string): Promise<PayrollBatch> {
   return apiJson(`/api/v1/payroll/batches/${id}`);
 }
 
+/**
+ * All payroll items for a given month (YYYY-MM), optionally scoped to one
+ * employee. Used by the Reports page — pulls together every item across
+ * batches for the period, so the UI can produce its own aggregations.
+ */
+export async function listItemsByMonth(month: string, employeeId?: string): Promise<PayrollItem[]> {
+  return apiJson<PayrollItem[]>('/api/v1/payroll/items', {
+    query: { month, employeeId },
+  });
+}
+
 export async function getBatchItems(id: string, params: { size?: number } = {}): Promise<PayrollItem[]> {
   // Backend wraps items in a paged envelope `{data, page, size, ...}`. Default
   // page size on the server is 25; bump to 500 so the batch detail page
@@ -126,4 +155,25 @@ export async function completeBatch(id: string): Promise<PayrollBatch> {
 
 export async function removeBatch(id: string): Promise<void> {
   return apiVoid(`/api/v1/payroll/batches/${id}`, { method: 'DELETE' });
+}
+
+/** Mark batch items as dispatched on a channel. Idempotent — items already
+ *  stamped on this channel are left alone. Returns counts so the caller
+ *  can show "X queued, Y already sent and skipped". */
+export interface DispatchResponse {
+  channel: 'mail' | 'sms' | 'bank';
+  requested: number;
+  dispatched: number;
+  skipped: number;
+}
+
+export async function dispatchBatchItems(
+  batchId: string,
+  channel: 'mail' | 'sms' | 'bank',
+  itemIds: string[],
+): Promise<DispatchResponse> {
+  return apiJson<DispatchResponse>(`/api/v1/payroll/batches/${batchId}/dispatch`, {
+    method: 'POST',
+    json: { channel, itemIds },
+  });
 }

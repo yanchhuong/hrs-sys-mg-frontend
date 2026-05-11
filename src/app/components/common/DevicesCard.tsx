@@ -16,15 +16,15 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { Fingerprint, Plus, Pencil, Trash2, Wifi, WifiOff, HelpCircle, Zap, Download } from 'lucide-react';
+import { Fingerprint, Plus, Pencil, Trash2, Wifi, WifiOff, HelpCircle, Zap, Download, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import {
-  listDevices, createDevice, updateDevice, deleteDevice, recordTestResult,
-  recordSyncSuccess, recordSyncFailure,
-  testDeviceReachable, Device, DeviceInput, DeviceStatus, CommType, COMM_TYPES,
-} from '../../utils/devices';
+import * as devicesApi from '../../api/attendanceDevices';
 import { importFingerprint } from '../../utils/apiClient';
+
+const COMM_TYPES = ['Ethernet', 'RS-232', 'RS-485', 'USB'] as const;
+type CommType = (typeof COMM_TYPES)[number];
+type DeviceStatus = 'connected' | 'disconnected' | 'unknown';
 
 type FormState = {
   id?: string;
@@ -43,7 +43,7 @@ const EMPTY: FormState = {
   commType: 'Ethernet', machineNo: '1', baudRate: '115200',
 };
 
-function statusBadge(status: DeviceStatus) {
+function statusBadge(status: string) {
   if (status === 'connected') {
     return (
       <Badge className="bg-green-100 text-green-800 border-0 gap-1">
@@ -65,23 +65,100 @@ function statusBadge(status: DeviceStatus) {
   );
 }
 
+/**
+ * Cross-origin TCP reachability check used by the "Test" button. The browser
+ * cannot read the device's body (no CORS), but a successful no-cors fetch
+ * confirms a TCP response reached us. Timeout 3 s — generous for a LAN device.
+ */
+async function testDeviceReachable(ip: string, port: number): Promise<boolean> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    await fetch(`http://${ip}:${port}/`, { mode: 'no-cors', signal: ctrl.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function DevicesCard() {
-  const [devices, setDevices] = useState<Device[]>(() => listDevices());
+  const [devices, setDevices] = useState<devicesApi.AttendanceDevice[]>([]);
+  const [loading, setLoading] = useState(false);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
-  const [deleteTarget, setDeleteTarget] = useState<Device | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<devicesApi.AttendanceDevice | null>(null);
+  // Per-device secret-key UI state. The secret is shown masked by
+  // default; clicking the eye toggles plaintext for that one row.
+  // `regenerateTarget` opens a confirm dialog before rotating the key.
+  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set());
+  const [regenerateTarget, setRegenerateTarget] = useState<devicesApi.AttendanceDevice | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
-  const refresh = () => setDevices(listDevices());
+  const toggleReveal = (id: string) => {
+    setRevealedSecrets(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const copySecret = async (key: string | undefined) => {
+    if (!key) return;
+    try {
+      await navigator.clipboard.writeText(key);
+      toast.success('Secret key copied to clipboard');
+    } catch {
+      toast.error('Could not copy — your browser blocked clipboard access');
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!regenerateTarget) return;
+    setRegenerating(true);
+    try {
+      const updated = await devicesApi.regenerateSecret(regenerateTarget.id);
+      setDevices(prev => prev.map(x => x.id === updated.id ? updated : x));
+      // Auto-reveal the new key so the admin can copy it immediately;
+      // they're already authenticated as admin, no extra friction needed.
+      setRevealedSecrets(prev => new Set(prev).add(updated.id));
+      toast.success('Secret key rotated — copy and paste into the worker config');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to regenerate secret');
+    } finally {
+      setRegenerating(false);
+      setRegenerateTarget(null);
+    }
+  };
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const rows = await devicesApi.list();
+      setDevices(rows);
+    } catch (e) {
+      toast.error(`Failed to load devices: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openCreate = () => {
     setForm(EMPTY);
     setDialogOpen(true);
   };
 
-  const openEdit = (d: Device) => {
+  const openEdit = (d: devicesApi.AttendanceDevice) => {
     setForm({
       id: d.id,
       name: d.name,
@@ -89,14 +166,14 @@ export function DevicesCard() {
       port: String(d.port),
       commKey: d.commKey != null ? String(d.commKey) : '',
       location: d.location ?? '',
-      commType: d.commType,
+      commType: (COMM_TYPES.includes(d.commType as CommType) ? d.commType : 'Ethernet') as CommType,
       machineNo: String(d.machineNo),
       baudRate: d.baudRate != null ? String(d.baudRate) : '115200',
     });
     setDialogOpen(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const port = Number(form.port);
     const machineNo = Number(form.machineNo);
     if (!form.name.trim() || !form.ip.trim()) {
@@ -112,32 +189,45 @@ export function DevicesCard() {
       return;
     }
     const isSerial = form.commType === 'RS-232' || form.commType === 'RS-485';
-    const input: DeviceInput = {
-      name: form.name,
-      ip: form.ip,
+    const body: devicesApi.DeviceRequest = {
+      name: form.name.trim(),
+      ip: form.ip.trim(),
       port,
-      commKey: form.commKey.trim() ? Number(form.commKey) : undefined,
-      location: form.location,
+      commKey: form.commKey.trim() ? Number(form.commKey) : null,
+      location: form.location.trim() || null,
       commType: form.commType,
       machineNo,
-      baudRate: isSerial && form.baudRate.trim() ? Number(form.baudRate) : undefined,
+      baudRate: isSerial && form.baudRate.trim() ? Number(form.baudRate) : null,
     };
-    if (form.id) {
-      updateDevice(form.id, input);
-      toast.success(`Updated "${form.name}"`);
-    } else {
-      createDevice(input);
-      toast.success(`Added "${form.name}"`);
+    setSubmitting(true);
+    try {
+      if (form.id) {
+        await devicesApi.update(form.id, body);
+        toast.success(`Updated "${form.name}"`);
+      } else {
+        await devicesApi.create(body);
+        toast.success(`Added "${form.name}"`);
+      }
+      setDialogOpen(false);
+      await refresh();
+    } catch (e) {
+      toast.error(`Save failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSubmitting(false);
     }
-    setDialogOpen(false);
-    refresh();
   };
 
-  const handleTest = async (d: Device) => {
+  const handleTest = async (d: devicesApi.AttendanceDevice) => {
     setTestingIds(prev => new Set(prev).add(d.id));
     try {
       const ok = await testDeviceReachable(d.ip, d.port);
-      recordTestResult(d.id, ok ? 'connected' : 'disconnected');
+      const status: DeviceStatus = ok ? 'connected' : 'disconnected';
+      await devicesApi.update(d.id, {
+        lastStatus: status,
+        lastTestedAt: new Date().toISOString(),
+        // On success drop any stale error; on failure leave existing for context.
+        ...(ok ? { lastSyncError: '' } : {}),
+      });
       toast[ok ? 'success' : 'error'](
         ok ? `${d.name} responded at ${d.ip}:${d.port}` : `Cannot reach ${d.ip}:${d.port}`,
       );
@@ -147,11 +237,11 @@ export function DevicesCard() {
         next.delete(d.id);
         return next;
       });
-      refresh();
+      void refresh();
     }
   };
 
-  const handleSync = async (d: Device) => {
+  const handleSync = async (d: devicesApi.AttendanceDevice) => {
     setSyncingIds(prev => new Set(prev).add(d.id));
     try {
       const result = await importFingerprint({
@@ -160,13 +250,25 @@ export function DevicesCard() {
         commKey: d.commKey ?? 0,
         timeoutMs: 15000,
       });
-      recordSyncSuccess(d.id, result.recordCount);
+      await devicesApi.update(d.id, {
+        lastStatus: 'connected',
+        lastSyncedAt: new Date().toISOString(),
+        lastTestedAt: new Date().toISOString(),
+        lastRecordCount: result.recordCount,
+        lastSyncError: '',
+      });
       toast.success(
         `Imported ${result.recordCount} record${result.recordCount === 1 ? '' : 's'} from ${d.name}`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      recordSyncFailure(d.id, msg);
+      try {
+        await devicesApi.update(d.id, {
+          lastStatus: 'disconnected',
+          lastTestedAt: new Date().toISOString(),
+          lastSyncError: msg.slice(0, 500),
+        });
+      } catch { /* status update is best-effort */ }
       toast.error(`Import failed: ${msg}`);
     } finally {
       setSyncingIds(prev => {
@@ -174,7 +276,7 @@ export function DevicesCard() {
         next.delete(d.id);
         return next;
       });
-      refresh();
+      void refresh();
     }
   };
 
@@ -186,30 +288,17 @@ export function DevicesCard() {
     }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteDevice(deleteTarget.id);
-    toast.success(`Removed "${deleteTarget.name}"`);
-    setDeleteTarget(null);
-    refresh();
+    try {
+      await devicesApi.remove(deleteTarget.id);
+      toast.success(`Removed "${deleteTarget.name}"`);
+      setDeleteTarget(null);
+      await refresh();
+    } catch (e) {
+      toast.error(`Delete failed: ${e instanceof Error ? e.message : e}`);
+    }
   };
-
-  // Auto-test everything with an unknown status once per mount, so the first
-  // glance at the tab shows live statuses instead of a wall of grey "Unknown".
-  useEffect(() => {
-    const stale = devices.filter(d => d.lastStatus === 'unknown');
-    if (stale.length === 0) return;
-    (async () => {
-      for (const d of stale) {
-        // eslint-disable-next-line no-await-in-loop
-        const ok = await testDeviceReachable(d.ip, d.port);
-        recordTestResult(d.id, ok ? 'connected' : 'disconnected');
-      }
-      refresh();
-    })();
-    // Intentionally only on first mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <Card>
@@ -236,7 +325,9 @@ export function DevicesCard() {
         </div>
       </CardHeader>
       <CardContent>
-        {devices.length === 0 ? (
+        {loading && devices.length === 0 ? (
+          <div className="text-center py-10 text-sm text-gray-400">Loading devices…</div>
+        ) : devices.length === 0 ? (
           <div className="text-center py-10 text-sm text-gray-400">
             No devices registered yet. Click <span className="font-medium">Add Device</span> to configure one.
           </div>
@@ -250,6 +341,9 @@ export function DevicesCard() {
                 <TableHead>Comm Type</TableHead>
                 <TableHead>IP : Port</TableHead>
                 <TableHead>Comm Key</TableHead>
+                <TableHead title="API key the Device Integration worker uses to authenticate sync POSTs. Survives admin password changes.">
+                  Secret Key
+                </TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last synced</TableHead>
                 <TableHead>Last tested</TableHead>
@@ -272,23 +366,65 @@ export function DevicesCard() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{d.ip}:{d.port}</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {d.commKey === undefined ? <span className="text-gray-400">not set</span> : '••••'}
+                      {d.commKey == null ? <span className="text-gray-400">not set</span> : '••••'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {d.secretKey ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-700 select-all">
+                            {revealedSecrets.has(d.id)
+                              ? d.secretKey
+                              : `${d.secretKey.slice(0, 4)}••••••••${d.secretKey.slice(-4)}`}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0 ml-0.5"
+                            title={revealedSecrets.has(d.id) ? 'Hide' : 'Reveal'}
+                            onClick={() => toggleReveal(d.id)}
+                          >
+                            {revealedSecrets.has(d.id)
+                              ? <EyeOff className="h-3 w-3" />
+                              : <Eye className="h-3 w-3" />}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0"
+                            title="Copy to clipboard"
+                            onClick={() => copySecret(d.secretKey)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0 text-amber-600 hover:text-amber-700"
+                            title="Regenerate (old key stops working immediately)"
+                            onClick={() => setRegenerateTarget(d)}
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </TableCell>
                     <TableCell>{statusBadge(d.lastStatus)}</TableCell>
                     <TableCell className="text-xs">
-                      {d.lastSyncAt ? (
+                      {d.lastSyncedAt ? (
                         <div
                           className="flex flex-col leading-tight"
                           title={
-                            format(new Date(d.lastSyncAt), 'PPpp')
+                            format(new Date(d.lastSyncedAt), 'PPpp')
                             + (d.lastSyncError ? `\n\nLast error: ${d.lastSyncError}` : '')
                           }
                         >
                           <span className="text-gray-900">
-                            {format(new Date(d.lastSyncAt), 'MMM dd, HH:mm')}
+                            {format(new Date(d.lastSyncedAt), 'MMM dd, HH:mm')}
                           </span>
                           <span className="text-gray-500 text-[10px]">
-                            {formatDistanceToNow(new Date(d.lastSyncAt), { addSuffix: true })}
+                            {formatDistanceToNow(new Date(d.lastSyncedAt), { addSuffix: true })}
                             {d.lastRecordCount != null && ` · ${d.lastRecordCount} rec`}
                           </span>
                         </div>
@@ -450,8 +586,10 @@ export function DevicesCard() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmit}>{form.id ? 'Save changes' : 'Add device'}</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Saving…' : (form.id ? 'Save changes' : 'Add device')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -469,6 +607,31 @@ export function DevicesCard() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={confirmDelete}>
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Secret-key rotation confirmation */}
+      <AlertDialog open={!!regenerateTarget} onOpenChange={(open) => !open && setRegenerateTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rotate secret key?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Generates a new key for <strong>{regenerateTarget?.name}</strong>. The old key
+              stops working immediately — update the worker config (or any
+              other consumer) with the new value or syncs from this device
+              will fail until you do.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={handleRegenerate}
+              disabled={regenerating}
+            >
+              {regenerating ? 'Rotating…' : 'Rotate key'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

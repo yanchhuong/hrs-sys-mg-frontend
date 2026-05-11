@@ -49,6 +49,9 @@ export interface Holiday {
   type: 'national' | 'company' | string;
   isRecurring?: boolean;
   description?: string;
+  /** Set when this row was cloned from another holiday — used to show
+   *  a "cloned" badge in the table and surface the source date on hover. */
+  clonedFromId?: string | null;
 }
 
 export async function listHolidays(params: { year?: number; type?: string } = {}): Promise<Holiday[]> {
@@ -114,4 +117,77 @@ export async function getOtSettings(): Promise<OtSettings> {
 
 export async function updateOtSettings(req: OtSettings): Promise<OtSettings> {
   return apiJson('/api/v1/settings/ot', { method: 'PUT', json: req });
+}
+
+/**
+ * General attendance settings — drive the "Absent & Missing Punch Rules",
+ * notifications, and weekend chips in the Attendance Settings → General tab.
+ * One row per tenant; the GET auto-creates a defaults row on first read.
+ */
+export interface GeneralAttendanceSettings {
+  autoMarkAbsent: boolean;
+  /** "HH:mm" 24-hour. */
+  absentDeadlineTime: string;
+  trackMissingCheckout: boolean;
+  notifyManager: boolean;
+  notifyEmployee: boolean;
+  /** 3-letter day codes: Mon, Tue, Wed, Thu, Fri, Sat, Sun. */
+  weekendDays: string[];
+}
+
+export async function getGeneralAttendanceSettings(): Promise<GeneralAttendanceSettings> {
+  return apiJson('/api/v1/settings/attendance/general');
+}
+
+export async function updateGeneralAttendanceSettings(
+  req: Partial<GeneralAttendanceSettings>,
+): Promise<GeneralAttendanceSettings> {
+  return apiJson('/api/v1/settings/attendance/general', { method: 'PUT', json: req });
+}
+
+// ---- Payroll tax brackets (Cambodia TOS) -----------------------------------
+// Backs the "Tax Brackets" tab on Employee Settings. Backend bundles the
+// per-tenant KHR/USD fixed exchange rate + the ordered progressive bracket
+// list into one GET / PUT to keep the UI simple. PUT is a full replace.
+//
+// Bracket interpretation:
+//   • fromAmount / toAmount are in KHR (Riels).
+//   • toAmount null = open-ended top bracket ("Over 12,500,000").
+//   • Tax payable per row = (monthlyTaxableKhr × ratePercent / 100) − excessAmount
+export interface TaxBracket {
+  /** Backend UUID — undefined for rows the UI just created locally. */
+  id?: string;
+  /** KHR. */
+  fromAmount: number;
+  /** KHR. Null/undefined on the last row (open-ended). */
+  toAmount?: number | null;
+  /** 0..100. */
+  ratePercent: number;
+  /** KHR. The fixed deduction in the formula. */
+  excessAmount: number;
+  /** 1-based rank — backend re-numbers on save, but the UI may set this
+   *  for stable list ordering pre-save. */
+  sortOrder: number;
+}
+
+export interface PayrollTaxSettings {
+  /** Riels per 1 USD; HR updates monthly per the NBC published rate. */
+  khrPerUsd: number;
+  brackets: TaxBracket[];
+}
+
+export async function getPayrollTaxSettings(): Promise<PayrollTaxSettings> {
+  return apiJson('/api/v1/settings/tax');
+}
+
+export async function updatePayrollTaxSettings(
+  req: Partial<PayrollTaxSettings>,
+): Promise<PayrollTaxSettings> {
+  return apiJson('/api/v1/settings/tax', { method: 'PUT', json: req });
+}
+
+/** Resets the tenant's brackets to the canonical NBC default schedule.
+ *  Doesn't touch the FX rate. */
+export async function resetPayrollTaxDefaults(): Promise<PayrollTaxSettings> {
+  return apiJson('/api/v1/settings/tax/reset-defaults', { method: 'POST' });
 }

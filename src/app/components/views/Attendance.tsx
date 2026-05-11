@@ -8,6 +8,8 @@ import * as attendanceApi from '../../api/attendance';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as leaveApi from '../../api/leave';
+import * as overtimeApi from '../../api/overtime';
+import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -21,13 +23,17 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../ui/alert-dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
   Clock, CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
   CheckCircle2, XCircle, AlertTriangle, LogIn, LogOut, Users,
   ChevronLeft, ChevronRight, Pencil, Download, AlertCircle, BarChart3,
-  Search, X,
+  Search, X, UserMinus,
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isToday as isTodayFn, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
@@ -39,6 +45,9 @@ import { useI18n } from '../../i18n/I18nContext';
 import {
   loadRule, daysForTenure, tenureYears, loadValuesForYear,
 } from '../../utils/annualLeave';
+import { makeDeptName } from '../../utils/deptName';
+import { downloadAttendanceTemplate } from '../../utils/attendanceTemplate';
+import { parseAttendanceExcel } from '../../utils/attendanceParser';
 
 type ViewMode = 'daily' | 'monthly';
 type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'absent' | 'present' | 'leave';
@@ -54,8 +63,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
 };
 
 // Adapts a backend AttendanceEntry to the front-end Attendance shape used
-// throughout the UI. Morning/noon punches are not modelled on the backend DTO
-// yet; we leave those fields undefined so the table renders "--:--".
+// throughout the UI. The fingerprint sync writes morning/noon punches; carry
+// them through so the daily grid shows real check-in / check-out times.
 function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
   const status = ([
     'present', 'late', 'early_leave', 'absent',
@@ -63,14 +72,52 @@ function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
   ] as const).includes(a.status as AttendanceStatus)
     ? (a.status as AttendanceStatus)
     : 'present';
+
+  // Single-scan reclassification.
+  //
+  // The fingerprint sync sometimes lands a lone punch in the wrong bucket
+  // (e.g. an employee who only scanned once at 14:16 ends up under
+  // "Noon Out" because the device assigned the latest read of the day to
+  // the closing slot). A single scan should always be treated as a
+  // check-IN, not a check-out. Pick the slot by the wall-clock time:
+  //   • before 11:00       → Morning In  (start of day)
+  //   • 11:00 – 13:59      → Noon In     (return from lunch / late start)
+  //   • 14:00 onwards      → Noon In     (came back, missing morning)
+  // This is purely a UI re-shuffle; the original raw scan is unchanged on
+  // the server, so admins editing the row see and edit the same value.
+  let morningIn  = a.morningIn  ?? undefined;
+  let morningOut = a.morningOut ?? undefined;
+  let noonIn     = a.noonIn     ?? undefined;
+  let noonOut    = a.noonOut    ?? undefined;
+  const punches = [morningIn, morningOut, noonIn, noonOut].filter(Boolean) as string[];
+  if (punches.length === 1) {
+    const only = punches[0];
+    const minutes = (() => {
+      const m = /^(\d{1,2}):(\d{2})/.exec(only);
+      return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+    })();
+    morningIn = morningOut = noonIn = noonOut = undefined;
+    if (Number.isFinite(minutes) && minutes < 11 * 60) morningIn = only;
+    else                                                noonIn    = only;
+  }
+
   return {
     id: a.id,
     employeeId: a.employeeId,
     date: a.date,
-    checkIn: a.checkIn ?? '',
-    checkOut: a.checkOut ?? undefined,
-    workHours: a.hoursWorked,
-    otHours: a.overtimeHours,
+    // morningIn is the canonical "first punch of the day" produced by the
+    // fingerprint sync. Mirror it into the legacy `checkIn` field so older
+    // table rows that still read `checkIn` keep working.
+    checkIn: morningIn ?? a.checkIn ?? '',
+    checkOut: noonOut ?? a.checkOut ?? undefined,
+    morningIn,
+    morningOut,
+    noonIn,
+    noonOut,
+    // Backend now sends `workHours` (rule-aware, deducts lunch). Fall back
+    // to the legacy `hoursWorked` so older rows / mock fixtures still render.
+    workHours: a.workHours != null ? Number(a.workHours) : a.hoursWorked,
+    otHours: a.otHours != null ? Number(a.otHours) : a.overtimeHours,
     status,
     notes: a.notes,
   };
@@ -101,6 +148,9 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
+    // Older rows (pre-V15) don't carry the field — default to true so they
+    // continue to be counted in attendance.
+    attendanceYn: e.attendanceYn ?? true,
   };
 }
 
@@ -108,10 +158,33 @@ export function Attendance() {
   const { t } = useI18n();
   const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
-  const [dateFrom, setDateFrom] = useState('2026-04-20');
-  const [dateTo, setDateTo] = useState('2026-04-20');
-  const [monthDate, setMonthDate] = useState(new Date(2026, 3, 1)); // April 2026
+  // Default filter to TODAY so the page lands on a date that has data right
+  // after a fingerprint sync. Hardcoding the seed date meant April 28's
+  // synced rows looked invisible because the page was stuck on April 20.
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
+  const [monthDate, setMonthDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
+  /**
+   * Hours-fulfillment filter — independent of the activeFilter chips.
+   *   • 'all'       — no constraint (default)
+   *   • 'fulfilled' — only rows with workHours >= 8h
+   *   • 'short'     — only rows with 0 < workHours < 8h
+   * Rows without any workHours at all (no scan) are excluded from both
+   * 'fulfilled' and 'short' so the picker stays meaningful.
+   */
+  const [hoursFilter, setHoursFilter] = useState<'all' | 'fulfilled' | 'short'>('all');
+  /**
+   * View mode for the daily attendance card. 'roster' is the default
+   * employee-per-row aggregation; 'history' flattens each row's punches
+   * into a per-scan event log so admins can see exactly who tapped
+   * which device when.
+   */
+  const [dailyViewMode, setDailyViewMode] = useState<'roster' | 'history'>('roster');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [monthlySearch, setMonthlySearch] = useState('');
   const [dailySearch, setDailySearch] = useState('');
@@ -129,23 +202,99 @@ export function Attendance() {
   const [editNoonOut, setEditNoonOut] = useState('');
   const [editStatus, setEditStatus] = useState<AttendanceStatus>('present');
   const [editRemark, setEditRemark] = useState('');
+  // Sub-type when {@link editStatus} is "leave". The dialog defaults this
+  // from the punch pattern (single-scan-morning ⇒ half_noon, etc.) but
+  // lets the admin override before saving.
+  const [editLeaveType, setEditLeaveType] = useState<'full' | 'half_morning' | 'half_noon'>('full');
+  // Optional "Apply OT for this employee on this date" branch in the
+  // Edit Attendance dialog. Pre-filled from the day's punches: free-style
+  // days suggest the full work hours; weekday rows skip the section.
+  // The admin can adjust before saving — submitted alongside the
+  // attendance update via overtimeApi.create() with the target employee's
+  // UUID.
+  const [editApplyOt, setEditApplyOt] = useState(false);
+  const [editOtHours, setEditOtHours] = useState('');
+  const [editOtReason, setEditOtReason] = useState('');
+  const [editOtAlreadyFiled, setEditOtAlreadyFiled] = useState(false);
+  // Locks the Save button while a save is in flight — without it, a slow
+  // round-trip plus an impatient double-click fires two PATCHes for the
+  // same row.
+  const [editSaving, setEditSaving] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [fingerprintDialogOpen, setFingerprintDialogOpen] = useState(false);
-  const [fpIp, setFpIp] = useState(() => localStorage.getItem('hrms:fp:ip') ?? '192.168.178.243');
-  const [fpPort, setFpPort] = useState(() => localStorage.getItem('hrms:fp:port') ?? '80');
-  const [fpTesting, setFpTesting] = useState(false);
-  const [fpStatus, setFpStatus] = useState<'unknown' | 'reachable' | 'unreachable'>('unknown');
-  const [fpLastSyncAt, setFpLastSyncAt] = useState<string | null>(
-    () => localStorage.getItem('hrms:fp:lastSyncAt'),
-  );
+  // Read-only status of the Node Device-Integration worker's last push.
+  // Polled every 30 s while the page is mounted.
+  const [fpSyncStatus, setFpSyncStatus] = useState<attendanceApi.FingerprintSyncStatus | null>(null);
+  // Re-render every 15 s so the "x s ago" relative label stays fresh between
+  // the slower 30 s status polls.
+  const [, setFpTick] = useState(0);
+  /**
+   * Per-tenant General attendance settings — drive weekend skipping and the
+   * "auto-mark absent" deadline. Loaded once on mount; defaults match the
+   * backend's seed values so the page stays usable while the request flies.
+   */
+  const [generalSettings, setGeneralSettings] = useState<{
+    autoMarkAbsent: boolean;
+    absentDeadlineTime: string;
+    trackMissingCheckout: boolean;
+    weekendDays: string[];
+  }>({
+    autoMarkAbsent: true,
+    absentDeadlineTime: '10:00',
+    trackMissingCheckout: true,
+    weekendDays: ['Sat', 'Sun'],
+  });
+  /**
+   * Set of public-holiday dates (YYYY-MM-DD) for the displayed period.
+   * Treated the same as weekends — no synthetic absent row, no
+   * compliance penalty. Loaded from /settings/holidays on mount and
+   * whenever the year changes. Live punches on these days still
+   * surface (and feed OT at 3× rate via the OT module's isHoliday flag).
+   */
+  const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
+  /**
+   * Set of (date|employeeApiId) keys for which a non-rejected OT
+   * request already exists. Used to dim the OT badge in the daily
+   * table — once an admin or employee has filed an OT request for that
+   * day, the badge greys out so it's clear no new request is needed.
+   */
+  const [otRequestKeys, setOtRequestKeys] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProcessing, setUploadProcessing] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [leaveDetailEmp, setLeaveDetailEmp] = useState<string | null>(null);
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  // Reads as "isAdmin" but really gates admin-level Attendance UI: Upload
+  // Excel, Mark Exception, Edit punches, etc. Built-in admin + manager get
+  // it, plus every custom role (created from the Admin base) — those roles
+  // already pass `isTenantWide` in useTeamScope, so they expect admin UI.
+  // The Permission Matrix toggles can still revoke individual actions.
+  const isAdmin = currentUser?.role === 'admin'
+    || currentUser?.role === 'manager'
+    || (!!currentUser?.role
+        && currentUser.role !== 'employee');
   const isEmployee = currentUser?.role === 'employee';
   const { isTenantWide, matchesScope, showScopePicker } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
+
+  /**
+   * Classify a date as work / weekend / holiday — used by the daily
+   * table's Day column, by the late→present override on free-style
+   * days, and by the OT auto-fill (free-style hours all count as OT).
+   * Reads weekend days from the tenant's General settings; holidays
+   * come from {@link holidayDates} (loaded by loadHolidays()).
+   */
+  type DayKind = 'work' | 'weekend' | 'holiday';
+  const WEEKEND_CODE: Record<number, string> = {
+    0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
+  };
+  const dayKindOf = (dateStr: string): DayKind => {
+    if (holidayDates.has(dateStr)) return 'holiday';
+    try {
+      const dow = parseISO(dateStr).getDay();
+      if (generalSettings.weekendDays.includes(WEEKEND_CODE[dow])) return 'weekend';
+    } catch { /* fall through */ }
+    return 'work';
+  };
 
   // Live data — falls back to mock arrays when VITE_USE_MOCKS is on.
   const [attendance, setAttendance] = useState<AttendanceType[]>(USE_MOCKS ? mockAttendance : []);
@@ -156,11 +305,13 @@ export function Attendance() {
   // reason in the Remark column, even if the backend sync didn't run when
   // the leave was originally filed.
   const [leaves, setLeaves] = useState<leaveApi.LeaveRequest[]>([]);
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (id: string | undefined): string => {
-    if (!id) return '-';
-    return deptNameById.get(id) ?? id;
-  };
+  // Leaves scoped to the Monthly Summary's displayed month — independent of
+  // the daily From/To filter, so changing the monthly cursor (April,
+  // March, …) re-pulls the right window. Without this the monthly Leave
+  // column sees only the daily-filter window (today by default) and shows
+  // 0 for every employee even when leaves are clearly approved.
+  const [monthlyLeaves, setMonthlyLeaves] = useState<leaveApi.LeaveRequest[]>([]);
+  const deptName = makeDeptName(deptList, '-');
 
   const loadAttendance = async () => {
     if (USE_MOCKS) {
@@ -185,7 +336,7 @@ export function Attendance() {
       return;
     }
     try {
-      const res = await employeesApi.list({ size: 200 });
+      const res = await employeesApi.list({ size: 500 });
       setEmployees(res.content.map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
@@ -218,12 +369,105 @@ export function Attendance() {
     }
   };
 
+  /**
+   * Pull every non-rejected leave that overlaps the Monthly Summary's
+   * displayed month. Independent of the daily From/To filter so the Leave
+   * column reflects the actual month being viewed. Backend caps page size,
+   * so we walk pages defensively up to a sane ceiling.
+   */
+  const loadMonthlyLeaves = async (target: Date) => {
+    if (USE_MOCKS) return;
+    const monthStart = format(startOfMonth(target), 'yyyy-MM-dd');
+    const monthEnd = format(endOfMonth(target), 'yyyy-MM-dd');
+    try {
+      const PAGE_SIZE = 500;
+      const SAFETY_PAGES = 20;
+      const all: leaveApi.LeaveRequest[] = [];
+      for (let p = 0; p < SAFETY_PAGES; p++) {
+        const res = await leaveApi.list({
+          from: monthStart,
+          to: monthEnd,
+          size: PAGE_SIZE,
+          page: p,
+        });
+        all.push(...res.data);
+        if (p + 1 >= (res.totalPages ?? 1)) break;
+      }
+      setMonthlyLeaves(all.filter(r => r.status !== 'rejected'));
+    } catch (err) {
+      console.warn('Could not load monthly leaves', err);
+    }
+  };
+
+  // Pull the public-holiday calendar for the current and previous year
+  // (covers any cross-year date filter the user might pick) and store the
+  // dates as a Set for O(1) lookup in the synthetic-row generator.
+  const loadHolidays = async () => {
+    if (USE_MOCKS) return;
+    const now = new Date();
+    const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() + 1];
+    try {
+      const lists = await Promise.all(
+        years.map(y => settingsApi.listHolidays({ year: y }).catch(() => [])),
+      );
+      const dates = new Set<string>();
+      for (const list of lists) for (const h of list) if (h.date) dates.add(h.date);
+      setHolidayDates(dates);
+    } catch (err) {
+      console.warn('Could not load holidays', err);
+    }
+  };
+
+  /**
+   * Load every non-rejected OT request that overlaps the daily date
+   * range and stash a Set of `date|employeeId` keys. The table render
+   * uses that set to dim the OT badge for rows whose employee has
+   * already filed (or had filed for them) an OT request that day.
+   */
+  const loadOtRequests = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const res = await overtimeApi.list({
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+        size: 500,
+      });
+      const keys = new Set<string>();
+      for (const r of res.data) {
+        if (r.status === 'rejected') continue;
+        keys.add(`${r.date}|${r.employeeId}`);
+      }
+      setOtRequestKeys(keys);
+    } catch (err) {
+      console.warn('Could not load OT requests', err);
+    }
+  };
+
   // Initial load on mount.
   useEffect(() => {
     void loadEmployees();
     void loadDepartments();
     void loadAttendance();
     void loadLeaves();
+    void loadHolidays();
+    void loadOtRequests();
+    // Pull the General attendance settings (weekend days, auto-mark absent
+    // deadline, missing-checkout tracking). Failures fall back to defaults.
+    if (!USE_MOCKS) {
+      void (async () => {
+        try {
+          const remote = await settingsApi.getGeneralAttendanceSettings();
+          setGeneralSettings({
+            autoMarkAbsent: remote.autoMarkAbsent,
+            absentDeadlineTime: remote.absentDeadlineTime,
+            trackMissingCheckout: remote.trackMissingCheckout,
+            weekendDays: remote.weekendDays || [],
+          });
+        } catch (err) {
+          console.warn('Could not load general attendance settings', err);
+        }
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -233,8 +477,43 @@ export function Attendance() {
     if (USE_MOCKS) return;
     void loadAttendance();
     void loadLeaves();
+    void loadOtRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFrom, dateTo]);
+
+  // Re-pull leaves whenever the Monthly Summary's month cursor changes so
+  // the Leave column stays in sync with the displayed month. Also covers
+  // the initial mount and the daily↔monthly toggle.
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    void loadMonthlyLeaves(monthDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthDate]);
+
+  // Poll the fingerprint sync status (Node worker → backend pushes) every 30 s
+  // and re-render the relative-time label every 15 s. Admin-only — non-admins
+  // never see the pill so we skip the network traffic for them.
+  useEffect(() => {
+    if (!isAdmin || USE_MOCKS) return;
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const s = await attendanceApi.getFingerprintSyncStatus();
+        if (!cancelled) setFpSyncStatus(s);
+      } catch {
+        if (!cancelled) setFpSyncStatus(null);
+      }
+    };
+    void fetchStatus();
+    const pollId = window.setInterval(fetchStatus, 30_000);
+    const tickId = window.setInterval(() => setFpTick(t => t + 1), 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollId);
+      window.clearInterval(tickId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   // Today's records — scoped to self + direct reports for the employee role.
   const todayRecords = useMemo(() => {
@@ -245,7 +524,7 @@ export function Attendance() {
       if (dateTo && a.date > dateTo) return false;
       return true;
     });
-    return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode));
+    return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode, employees));
   }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
   // Roster-driven rows: one row per active employee per day in the range.
@@ -253,7 +532,15 @@ export function Attendance() {
   // with empty punches, which the fingerprint import flow then fills in.
   const dailyRows = useMemo((): AttendanceType[] => {
     const scopedEmployees = employees.filter(
-      e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)),
+      // Exception employees (attendanceYn === false) are skipped here so they
+      // never appear in the daily roster, summary chip counts, or the
+      // synthetic-absent augmentation. See Employees → Employment tab.
+      // matchesScope compares against the auth context's employeeId, which
+      // is a UUID in live mode and the empNo in mocks. Pass the apiId
+      // (UUID) when present so live-mode employees match correctly.
+      e => e.status === 'active'
+        && e.attendanceYn !== false
+        && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)),
     );
     if (scopedEmployees.length === 0) return [];
 
@@ -283,6 +570,30 @@ export function Attendance() {
     const leaveByKey = new Map<string, leaveApi.LeaveRequest>();
     leaves.forEach(l => leaveByKey.set(`${l.date}|${l.employeeId}`, l));
 
+    // Settings-driven gates for the synthetic-absent rows that get
+    // injected for employees with no punch on a given day:
+    //   • Weekend days are skipped entirely (no row at all).
+    //   • For "today", the absent row is suppressed until the deadline
+    //     time is reached, so an admin opening the page at 09:00 doesn't
+    //     see everyone marked absent before they've had a chance to scan in.
+    //   • If autoMarkAbsent is off, the synthetic row uses status "no_checkin"
+    //     instead of "absent" so the totals don't lie.
+    const WEEKEND_CODE: Record<number, string> = {
+      0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
+    };
+    const isWeekend = (dateStr: string) => {
+      const dow = parseISO(dateStr).getDay();
+      return generalSettings.weekendDays.includes(WEEKEND_CODE[dow]);
+    };
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const deadlineReachedToday = (() => {
+      const [h, m] = generalSettings.absentDeadlineTime.split(':').map(Number);
+      const now = new Date();
+      const cutoff = new Date(now);
+      cutoff.setHours(h || 0, m || 0, 0, 0);
+      return now >= cutoff;
+    })();
+
     const rows: AttendanceType[] = [];
     for (const emp of scopedEmployees) {
       const apiId = (emp as any).apiId as string | undefined;
@@ -297,6 +608,17 @@ export function Attendance() {
         if (rec) {
           row = rec;
         } else {
+          // Skip synthetic rows on weekends and public holidays — those
+          // days don't require attendance. A real punch on a holiday
+          // still surfaces (the row exists in `byKey`); only the
+          // would-be-absent placeholder is suppressed. OT scans on
+          // holidays already pick up the 3× rate via OtRequest.isHoliday.
+          if ((isWeekend(day) || holidayDates.has(day)) && !leave) continue;
+          // For today, hold off on flagging absent until the deadline has passed.
+          const isToday = day === todayStr;
+          const beforeDeadline = isToday && !deadlineReachedToday;
+          const syntheticStatus =
+            generalSettings.autoMarkAbsent && !beforeDeadline ? 'absent' : 'no_checkin';
           row = {
             id: `synthetic:${emp.id}:${day}`,
             employeeId: emp.id,
@@ -309,7 +631,7 @@ export function Attendance() {
             noonOut: undefined,
             otHours: undefined,
             workHours: undefined,
-            status: 'absent',
+            status: syntheticStatus,
             notes: '',
           } satisfies AttendanceType;
         }
@@ -329,18 +651,23 @@ export function Attendance() {
       }
     }
     return rows;
-  }, [employees, todayRecords, leaves, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
+  }, [employees, todayRecords, leaves, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
 
   // Summary counts derived from the roster-driven rows so that employees
   // without any punch for the day are still counted (as absent).
   const summary = useMemo(() => {
     const totalEmployees = employees
-      .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode))).length;
+      .filter(e => e.status === 'active' && e.attendanceYn !== false && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees))).length;
     const present = dailyRows.filter(r => r.status === 'present' || r.status === 'early_leave').length;
     const absent = dailyRows.filter(r => r.status === 'absent').length;
     const late = dailyRows.filter(r => r.status === 'late').length;
-    const noCheckin = dailyRows.filter(r => r.status === 'no_checkin').length;
-    const noCheckout = dailyRows.filter(r => r.status === 'no_checkout').length;
+    // "No Check-in" / "No Check-out" are surfaced by field presence rather
+    // than the strict status enum, so an absent employee (morning + noon both
+    // null) is counted under both — matches what an admin scanning the
+    // table sees: blank Morning In column → "no check-in". Counts overlap
+    // with Absent intentionally; these are filter views, not exclusive buckets.
+    const noCheckin = dailyRows.filter(r => !r.morningIn && r.status !== 'leave').length;
+    const noCheckout = dailyRows.filter(r => !r.noonOut && r.status !== 'leave').length;
     const leave = dailyRows.filter(r => r.status === 'leave').length;
     return { totalEmployees, present, absent, late, noCheckin, noCheckout, leave };
   }, [dailyRows, employees, isTenantWide, matchesScope, scopeMode]);
@@ -350,34 +677,155 @@ export function Attendance() {
   const filteredRecords = useMemo(() => {
     let records = dailyRows;
     if (activeFilter !== 'all') {
-      records = records.filter(r => r.status === activeFilter);
+      // Match the same predicates the chip badges count by — "no_checkin" and
+      // "no_checkout" filter on the *field*, not the strict status enum, so
+      // they include absent rows where the column is blank.
+      if (activeFilter === 'no_checkin') {
+        records = records.filter(r => !r.morningIn && r.status !== 'leave');
+      } else if (activeFilter === 'no_checkout') {
+        records = records.filter(r => !r.noonOut && r.status !== 'leave');
+      } else {
+        records = records.filter(r => r.status === activeFilter);
+      }
     }
+    if (hoursFilter !== 'all') {
+      records = records.filter(r => {
+        const wh = Number(r.workHours);
+        if (!Number.isFinite(wh) || wh <= 0) return false;
+        return hoursFilter === 'fulfilled' ? wh >= 8 : wh < 8;
+      });
+    }
+    // Live mode keys attendance.employeeId by the backend UUID, so we have to
+    // try both `e.id` (empNo / 4-digit) and `(e as any).apiId` (UUID) when
+    // resolving the row to its employee — otherwise the lookup always misses
+    // and the filters appear to do nothing.
+    const findEmp = (employeeId: string) =>
+      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+
     if (departmentFilter !== 'all') {
       records = records.filter(r => {
-        const emp = employees.find(e => e.id === r.employeeId);
+        const emp = findEmp(r.employeeId);
         return deptName(emp?.department) === departmentFilter;
       });
     }
-    const kw = dailySearch.trim().toLowerCase();
-    if (kw) {
+    // Multi-token wildcard search across name, Khmer name, empNo, phone,
+    // department, and device — matches the Employees page convention plus
+    // the fingerprint-device label parsed from `notes` ("fingerprint:Lobby"
+    // → "Lobby"), so admins can slice the roster by terminal too.
+    const tokens = dailySearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
       records = records.filter(r => {
-        const emp = employees.find(e => e.id === r.employeeId);
-        const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)}`.toLowerCase();
-        return hay.includes(kw);
+        const emp = findEmp(r.employeeId);
+        const note = r.notes ?? '';
+        const device = note.startsWith('fingerprint:')
+          ? note.slice('fingerprint:'.length)
+          : (note === 'fingerprint' ? 'fingerprint' : '');
+        const hay = [
+          emp?.name,
+          emp?.khmerName,
+          emp?.id,
+          emp?.empNo,
+          emp?.contactNumber,
+          deptName(emp?.department),
+          device,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return tokens.every(tok => hay.includes(tok));
       });
     }
     return records;
     // deptName is derived from deptList, tracked via employees.length/deptList upstream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyRows, employees, activeFilter, departmentFilter, dailySearch]);
+  }, [dailyRows, employees, activeFilter, hoursFilter, departmentFilter, dailySearch]);
 
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
 
+  // Scan History — flattens each row's four punches (morningIn / morningOut /
+  // noonIn / noonOut) into individual scan events. Reuses the dept + search
+  // filters from the roster pipeline (skipping status / hours filters since
+  // those are aggregate concepts that don't apply to a single tap), then
+  // sorts newest-first so the latest activity bubbles to the top.
+  const scanEvents = useMemo(() => {
+    const findEmp = (employeeId: string) =>
+      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+
+    let rows = dailyRows;
+    if (departmentFilter !== 'all') {
+      rows = rows.filter(r => {
+        const emp = findEmp(r.employeeId);
+        return deptName(emp?.department) === departmentFilter;
+      });
+    }
+    const tokens = dailySearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      rows = rows.filter(r => {
+        const emp = findEmp(r.employeeId);
+        const note = r.notes ?? '';
+        const device = note.startsWith('fingerprint:')
+          ? note.slice('fingerprint:'.length)
+          : (note === 'fingerprint' ? 'fingerprint' : '');
+        const hay = [
+          emp?.name, emp?.khmerName, emp?.id, emp?.empNo,
+          emp?.contactNumber, deptName(emp?.department), device,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return tokens.every(tok => hay.includes(tok));
+      });
+    }
+
+    type ScanEvent = {
+      key: string;
+      employeeId: string;
+      date: string;
+      time: string;
+      kind: 'Morning In' | 'Morning Out' | 'Noon In' | 'Noon Out';
+      direction: 'in' | 'out';
+      device: string;
+      notes?: string;
+    };
+    const events: ScanEvent[] = [];
+    for (const r of rows) {
+      const note = r.notes ?? '';
+      const isFp = note === 'fingerprint' || note.startsWith('fingerprint:');
+      const device = isFp
+        ? (note.startsWith('fingerprint:') ? note.slice('fingerprint:'.length) : 'Fingerprint')
+        : '';
+      const push = (
+        time: string | undefined,
+        kind: ScanEvent['kind'],
+        direction: ScanEvent['direction'],
+      ) => {
+        if (!time) return;
+        events.push({
+          key: `${r.id}|${kind}`,
+          employeeId: r.employeeId,
+          date: r.date,
+          time,
+          kind,
+          direction,
+          device,
+          notes: r.notes,
+        });
+      };
+      push(r.morningIn, 'Morning In', 'in');
+      push(r.morningOut, 'Morning Out', 'out');
+      push(r.noonIn, 'Noon In', 'in');
+      push(r.noonOut, 'Noon Out', 'out');
+    }
+    events.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return b.time.localeCompare(a.time);
+    });
+    return events;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyRows, employees, departmentFilter, dailySearch]);
+
+  const scanPagination = usePagination(scanEvents, 20);
+
   // Reset pagination when filters change
   useEffect(() => {
     dailyPagination.resetPage();
-  }, [activeFilter, departmentFilter, dateFrom, dateTo, dailySearch]);
+    scanPagination.resetPage();
+  }, [activeFilter, departmentFilter, dateFrom, dateTo, dailySearch, hoursFilter, dailyViewMode]);
 
   // Monthly data
   const monthlyData = useMemo(() => {
@@ -390,31 +838,77 @@ export function Attendance() {
     const rule = loadRule();
     const ruleAsOf = new Date(year, 0, 1);
 
+    // Pre-aggregate non-rejected leaves for the month, keyed by both empNo
+    // and apiId so the per-employee lookup below matches in either mode.
+    // Half-day leaves count 0.5; full-day count 1. The backend already
+    // populates {@code leave.days} but we fall back to the type when not.
+    //
+    // Source = {@link monthlyLeaves} (fetched per displayed month) rather
+    // than {@link leaves} (scoped to the daily From/To filter). Without
+    // this swap the Leave column always reflected the daily filter — so a
+    // user viewing the April monthly summary saw 0 leaves even when the
+    // daily filter was already on a different day.
+    const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+    const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
+    type LeaveAgg = { days: number; rows: { date: string; reason: string }[] };
+    const leavesByEmp = new Map<string, LeaveAgg>();
+    const addLeave = (key: string, days: number, row: { date: string; reason: string }) => {
+      const cur = leavesByEmp.get(key) ?? { days: 0, rows: [] };
+      cur.days += days;
+      cur.rows.push(row);
+      leavesByEmp.set(key, cur);
+    };
+    // Mock mode still uses the legacy `leaves` array (mock leaves are
+    // global). Live mode prefers the month-scoped slice so freshly
+    // approved rows show up immediately when the loader refires.
+    const sourceLeaves = USE_MOCKS ? leaves : monthlyLeaves;
+    for (const lv of sourceLeaves) {
+      if (lv.status === 'rejected') continue;
+      if (lv.date < monthStartStr || lv.date > monthEndStr) continue;
+      const isHalf = lv.type === 'half_morning' || lv.type === 'half_noon' || lv.halfDay === true;
+      const days =
+        typeof lv.days === 'number' && lv.days > 0
+          ? lv.days
+          : isHalf ? 0.5 : 1;
+      const reason = `${lv.type ?? 'leave'}${lv.reason ? ` — ${lv.reason}` : ''}`
+        + (lv.status === 'pending' ? ' (pending)' : '');
+      // Index by both forms; the lookup tries each in order below.
+      addLeave(lv.employeeId, days, { date: lv.date, reason });
+    }
+
     return employees
-      .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
+      .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
       .map(emp => {
       const empRecords: Record<string, AttendanceStatus> = {};
-      let presentCount = 0, absentCount = 0, lateCount = 0, leaveCount = 0;
-      const leaveRecords: { date: string; reason: string }[] = [];
+      let presentCount = 0, absentCount = 0, lateCount = 0;
 
       days.forEach(day => {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
         if (dayOfWeek === 0 || dayOfWeek === 6) return;
 
-        const record = attendance.find(a => a.employeeId === emp.id && a.date === dateStr);
+        const record = attendance.find(a =>
+          (a.employeeId === emp.id || a.employeeId === (emp as any).apiId)
+          && a.date === dateStr);
         if (record) {
           empRecords[dateStr] = record.status;
           if (record.status === 'present' || record.status === 'early_leave') presentCount++;
           else if (record.status === 'absent' || record.status === 'no_checkin') absentCount++;
           else if (record.status === 'late') { lateCount++; presentCount++; }
           else if (record.status === 'no_checkout') presentCount++;
-          else if (record.status === 'leave') {
-            leaveCount++;
-            leaveRecords.push({ date: dateStr, reason: record.notes || 'No reason provided' });
-          }
+          // 'leave' status on attendance is superseded by the dedicated
+          // leaves aggregation below — don't double-count.
         }
       });
+
+      // Pull aggregated leaves for this employee. Try every id variant so
+      // the lookup matches whether the leave row stored UUID or empNo.
+      const leaveAgg =
+        leavesByEmp.get(emp.id)
+        ?? ((emp as any).apiId ? leavesByEmp.get((emp as any).apiId) : undefined)
+        ?? { days: 0, rows: [] as { date: string; reason: string }[] };
+      const leaveCount = leaveAgg.days;
+      const leaveRecords = leaveAgg.rows;
 
       // Prefer the stored per-year value; fall back to applying the rule live.
       const totalAL = storedAL[emp.id]?.totalAL
@@ -425,7 +919,7 @@ export function Attendance() {
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion, attendance, employees, isTenantWide, matchesScope, scopeMode]);
+  }, [monthDate, alVersion, attendance, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -442,7 +936,10 @@ export function Attendance() {
     : deptList.map(d => d.name);
 
   const filterTabs: { key: FilterTab; label: string; count: number; icon: React.ReactNode }[] = [
-    { key: 'all', label: 'All', count: todayRecords.length, icon: <Users className="h-4 w-4" /> },
+    // Count the roster-augmented `dailyRows` (which includes synthetic absent
+    // rows), not the raw API list — otherwise "All" undercounts and disagrees
+    // with the bucket badges and the "Showing X of Y" pagination footer.
+    { key: 'all', label: 'All', count: dailyRows.length, icon: <Users className="h-4 w-4" /> },
     { key: 'present', label: 'Present', count: summary.present, icon: <CheckCircle2 className="h-4 w-4" /> },
     { key: 'no_checkin', label: 'No Check-in', count: summary.noCheckin, icon: <AlertTriangle className="h-4 w-4" /> },
     { key: 'no_checkout', label: 'No Check-out', count: summary.noCheckout, icon: <AlertCircle className="h-4 w-4" /> },
@@ -471,11 +968,157 @@ export function Attendance() {
     setEditNoonOut(record.noonOut || '');
     setEditStatus(record.status);
     setEditRemark(record.notes || '');
+    setEditLeaveType(suggestLeaveType(
+      record.morningIn || '', record.morningOut || '',
+      record.noonIn || '',    record.noonOut || '',
+    ));
+    // Pre-fill the optional "Apply OT" branch from the row.
+    //   • Free-style days (weekend / holiday) → suggest the full
+    //     work-hours value.
+    //   • Weekday rows → suggest 0 (admin can still type a value).
+    //   • Only auto-check the box when there are eligible OT hours
+    //     AND no OT request has been filed yet for this (employee, date).
+    const kind = dayKindOf(record.date);
+    const isFreeStyle = kind === 'weekend' || kind === 'holiday';
+    const suggestedOt = isFreeStyle && record.workHours ? Number(record.workHours) : 0;
+    const empForOt = employees.find(
+      e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
+    );
+    const otApiId = (empForOt as any)?.apiId ?? record.employeeId;
+    const alreadyFiled = !!otApiId && otRequestKeys.has(`${record.date}|${otApiId}`);
+    setEditOtAlreadyFiled(alreadyFiled);
+    setEditOtHours(suggestedOt > 0 ? String(suggestedOt) : '');
+    setEditOtReason('');
+    setEditApplyOt(false); // explicit opt-in even when hours suggest OT
     setEditDialogOpen(true);
+  };
+
+  /**
+   * Pick a default leave sub-type from the punch pattern. The admin can
+   * override it in the dialog, but the suggestion follows the rule the
+   * user described: under-six-hours of scanned time ⇒ half day, no scans
+   * at all ⇒ full day.
+   *
+   *   • no scans of any kind          → "full"
+   *   • only morning side has scans   → "half_noon"     (afternoon is leave)
+   *   • only noon side has scans      → "half_morning"  (morning is leave)
+   *   • both sides scanned but the
+   *     first→last span is < 6h       → infer from where the first scan
+   *                                     sits: morning ⇒ left early ⇒
+   *                                     "half_noon"; otherwise
+   *                                     "half_morning"
+   *   • both sides scanned, ≥ 6h      → "full" (atypical for status=leave
+   *                                     but a safe fallback)
+   */
+  const suggestLeaveType = (
+    mIn: string, mOut: string, nIn: string, nOut: string,
+  ): 'full' | 'half_morning' | 'half_noon' => {
+    const hasMorning = !!(mIn || mOut);
+    const hasNoon    = !!(nIn || nOut);
+    if (!hasMorning && !hasNoon) return 'full';
+    if (hasMorning && !hasNoon)  return 'half_noon';
+    if (!hasMorning && hasNoon)  return 'half_morning';
+
+    const toMin = (hhmm: string): number | null => {
+      if (!hhmm || !/^\d{1,2}:\d{2}/.test(hhmm)) return null;
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const candidates = [mIn, mOut, nIn, nOut].map(toMin).filter((v): v is number => v !== null);
+    const first = Math.min(...candidates);
+    const last  = Math.max(...candidates);
+    const span  = last - first;
+    if (span < 6 * 60) {
+      // First scan in the morning slot (before 12:00) → worked morning,
+      // afternoon is the leave half. Otherwise the morning is the leave.
+      return first < 12 * 60 ? 'half_noon' : 'half_morning';
+    }
+    return 'full';
+  };
+
+  /**
+   * Two-step "Mark as Exception" flow.
+   *
+   * The row's UserMinus button calls {@link requestMarkException} which
+   * just stages the target {@link Employee}. The shared AlertDialog at the
+   * bottom of the page renders the confirm prompt and, on accept, fires
+   * {@link confirmMarkException} which actually PATCHes the employee.
+   *
+   * Once flipped, the employee:
+   *   • disappears from the daily roster augmentation (no synthetic absent)
+   *   • is excluded from the summary chip counts
+   *   • is skipped in the Compliance report on the backend
+   * They stay opted out until an admin flips them back via Employees →
+   * Employment → "Count in Attendance".
+   */
+  const [markExceptionTarget, setMarkExceptionTarget] = useState<Employee | null>(null);
+  const [markExceptionBusy, setMarkExceptionBusy] = useState(false);
+
+  const requestMarkException = (record: AttendanceType) => {
+    const emp = employees.find(
+      e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
+    );
+    if (!emp) {
+      toast.error('Could not resolve employee for this row');
+      return;
+    }
+    setMarkExceptionTarget(emp);
+  };
+
+  const confirmMarkException = async () => {
+    const emp = markExceptionTarget;
+    if (!emp) return;
+    setMarkExceptionBusy(true);
+    try {
+      if (USE_MOCKS) {
+        setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: false } : e));
+        toast.success(`${emp.name} marked as Exception`);
+        setMarkExceptionTarget(null);
+        return;
+      }
+      // Backend's PUT overwrites every field, so we have to round-trip the
+      // current employee instead of just sending {attendanceYn: false}.
+      const targetId = (emp as any).apiId ?? emp.id;
+      const body: employeesApi.CreateEmployeeRequest = {
+        empNo: emp.id,
+        name: emp.name,
+        khmerName: emp.khmerName,
+        email: emp.email,
+        position: emp.position,
+        departmentId: emp.department && emp.department !== '-' ? emp.department : null,
+        joinDate: emp.joinDate,
+        baseSalary: emp.baseSalary,
+        managerId: emp.managerId ?? null,
+        gender: emp.gender,
+        dateOfBirth: emp.dateOfBirth,
+        placeOfBirth: emp.placeOfBirth,
+        contactNumber: emp.contactNumber,
+        currentAddress: emp.currentAddress,
+        nffNo: emp.nffNo,
+        tid: emp.tid,
+        contractExpireDate: emp.contractExpireDate,
+        resignDate: emp.resignDate,
+        status: emp.status,
+        attendanceYn: false,
+      };
+      await employeesApi.update(targetId, body);
+      // Optimistically update local state so the row vanishes immediately —
+      // dailyRows already filters on attendanceYn, so the row disappears
+      // and chip counts refresh on the next render.
+      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: false } : e));
+      toast.success(`${emp.name} marked as Exception`);
+      setMarkExceptionTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to mark as Exception');
+    } finally {
+      setMarkExceptionBusy(false);
+    }
   };
 
   const handleSaveEdit = async () => {
     if (!editRecord) return;
+    // Re-entrancy guard — bail out if the previous click is still in flight.
+    if (editSaving) return;
     const emp = employees.find(
       e => e.id === editRecord.employeeId || (e as any).apiId === editRecord.employeeId,
     );
@@ -486,6 +1129,10 @@ export function Attendance() {
     }
 
     const isSynthetic = editRecord.id.startsWith('synthetic:');
+    // Only forward the leave sub-type when the admin actually picked
+    // "leave" — for any other status the backend ignores it anyway.
+    const leaveTypePatch = editStatus === 'leave' ? { leaveType: editLeaveType } : {};
+    setEditSaving(true);
     try {
       if (isSynthetic) {
         // The row doesn't exist in the DB yet — create it via the
@@ -501,6 +1148,7 @@ export function Attendance() {
           noonOut: editNoonOut || null,
           status: editStatus,
           notes: editRemark || null,
+          ...leaveTypePatch,
         });
       } else {
         await attendanceApi.update(editRecord.id, {
@@ -512,15 +1160,51 @@ export function Attendance() {
           ...(editNoonOut    ? { noonOut:    editNoonOut    } : {}),
           status: editStatus,
           notes: editRemark || undefined,
+          ...leaveTypePatch,
         } as any);
       }
+      // Optional OT request — admin can opt in via the dialog. Filed
+      // after the attendance update succeeds so a server-side reject
+      // doesn't leave dangling OT rows. Failures here are non-fatal:
+      // the attendance edit still stuck, the toast just notes the
+      // partial outcome and the admin can retry from the OT page.
+      if (editApplyOt) {
+        const otHoursNum = Number(editOtHours);
+        const targetEmpId = ((emp as any)?.apiId ?? editRecord.employeeId) as string;
+        if (!Number.isFinite(otHoursNum) || otHoursNum <= 0) {
+          toast.error('OT hours must be greater than 0');
+        } else if (!editOtReason.trim()) {
+          toast.error('OT reason is required');
+        } else {
+          try {
+            await overtimeApi.create({
+              employeeId: targetEmpId,
+              date: editRecord.date,
+              hours: otHoursNum,
+              reason: editOtReason.trim(),
+            });
+            toast.success(`OT request filed for ${emp?.name ?? 'employee'} (${otHoursNum}h)`);
+            // Refresh the (date, emp) → OT key set so the badge greys
+            // out immediately on the row that just had OT filed.
+            void loadOtRequests();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Attendance saved, but OT request failed');
+          }
+        }
+      }
+
       toast.success(`Attendance updated for ${emp?.name ?? 'employee'}`);
       setEditDialogOpen(false);
       // Status=leave creates a leave record on the backend, so re-read
-      // leaves too to keep the overlay in sync.
-      await Promise.all([loadAttendance(), loadLeaves()]);
+      // leaves too to keep the overlay in sync. Both the daily-scoped
+      // and the monthly-scoped slices are reloaded so the Monthly
+      // Summary's Leave column flips immediately.
+      await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate)]);
     } catch (err) {
+      console.error('attendance save failed', err);
       toast.error(err instanceof Error ? err.message : 'Failed to save attendance');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -571,162 +1255,7 @@ export function Attendance() {
           </div>
           {isAdmin && (
             <>
-              <Dialog open={fingerprintDialogOpen} onOpenChange={setFingerprintDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Fingerprint className="mr-1.5 h-4 w-4" />
-                    Import Fingerprint
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Import from Fingerprint Device</DialogTitle>
-                    <DialogDescription>Sync attendance data from fingerprint scanner</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="rounded-lg border bg-blue-50/50 p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Fingerprint className="h-8 w-8 text-blue-600 shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold">Device connection</p>
-                          <p className="text-xs text-gray-500">Saved to this browser. Rotate in production.</p>
-                        </div>
-                        <Badge
-                          className={
-                            fpStatus === 'reachable'
-                              ? 'bg-green-100 text-green-800 border-0'
-                              : fpStatus === 'unreachable'
-                              ? 'bg-red-100 text-red-800 border-0'
-                              : 'bg-gray-100 text-gray-700 border-0'
-                          }
-                        >
-                          {fpStatus === 'reachable'
-                            ? 'Reachable'
-                            : fpStatus === 'unreachable'
-                            ? 'Unreachable'
-                            : 'Unknown'}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-[1fr_auto] gap-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-gray-500">IP address</Label>
-                          <Input
-                            value={fpIp}
-                            onChange={(e) => {
-                              setFpIp(e.target.value);
-                              setFpStatus('unknown');
-                              localStorage.setItem('hrms:fp:ip', e.target.value);
-                            }}
-                            placeholder="192.168.178.243"
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-gray-500">Port</Label>
-                          <Input
-                            value={fpPort}
-                            onChange={(e) => {
-                              setFpPort(e.target.value);
-                              setFpStatus('unknown');
-                              localStorage.setItem('hrms:fp:port', e.target.value);
-                            }}
-                            placeholder="80"
-                            className="h-8 w-24 text-sm"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
-                        <span>
-                          Last sync: {fpLastSyncAt ? format(new Date(fpLastSyncAt), 'MMM d, HH:mm') : 'never'}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={fpTesting || !fpIp || !fpPort}
-                          onClick={async () => {
-                            setFpTesting(true);
-                            try {
-                              // Browser CORS blocks reading the response, but a successful fetch
-                              // in no-cors mode is enough to confirm the host responded.
-                              const ctrl = new AbortController();
-                              const t = setTimeout(() => ctrl.abort(), 3000);
-                              await fetch(`http://${fpIp}:${fpPort}/`, { mode: 'no-cors', signal: ctrl.signal });
-                              clearTimeout(t);
-                              setFpStatus('reachable');
-                              toast.success(`Device at ${fpIp}:${fpPort} responded`);
-                            } catch {
-                              setFpStatus('unreachable');
-                              toast.error(`Cannot reach ${fpIp}:${fpPort}`);
-                            } finally {
-                              setFpTesting(false);
-                            }
-                          }}
-                        >
-                          {fpTesting ? 'Testing…' : 'Test connection'}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="bg-green-50 p-3 rounded-lg">
-                      <p className="text-sm font-medium text-green-900 mb-1">Auto-calculation</p>
-                      <ul className="text-xs text-green-800 space-y-0.5">
-                        <li>Late check-in / early check-out detection</li>
-                        <li>Overtime + working-hours computation</li>
-                      </ul>
-                    </div>
-                    <Button
-                      onClick={async () => {
-                        try {
-                          setFpTesting(true);
-                          if (USE_MOCKS) {
-                            await new Promise(r => setTimeout(r, 400));
-                            toast.success(`Imported attendance from ${fpIp}:${fpPort} (mock)`);
-                          } else {
-                            const res = await attendanceApi.importFingerprint({
-                              ip: fpIp,
-                              port: Number(fpPort),
-                              commKey: 0,
-                              timeoutMs: 15000,
-                            });
-                            const p = res.persisted;
-                            if (p) {
-                              const bits: string[] = [];
-                              if (p.inserted) bits.push(`${p.inserted} new`);
-                              if (p.updated) bits.push(`${p.updated} updated`);
-                              if (p.unchanged) bits.push(`${p.unchanged} unchanged`);
-                              const body = `${res.recordCount} punch${res.recordCount === 1 ? '' : 'es'} pulled — ${bits.length ? bits.join(', ') : 'nothing to save'}`;
-                              if (p.unmatchedUsers > 0) {
-                                toast.warning(`${body}. ${p.unmatchedUsers} device user${p.unmatchedUsers === 1 ? '' : 's'} didn't match any employee: ${p.unmatchedUserIds.slice(0, 5).join(', ')}${p.unmatchedUserIds.length > 5 ? '…' : ''}`, { duration: 8000 });
-                              } else {
-                                toast.success(body);
-                              }
-                            } else {
-                              toast.success(`Imported ${res.recordCount} punches from ${fpIp}:${fpPort}`);
-                            }
-                            // Pull fresh attendance so the new check-ins/outs
-                            // land in the roster-driven table immediately.
-                            await loadAttendance();
-                          }
-                          const now = new Date().toISOString();
-                          localStorage.setItem('hrms:fp:lastSyncAt', now);
-                          setFpLastSyncAt(now);
-                          setFingerprintDialogOpen(false);
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : 'Fingerprint import failed');
-                        } finally {
-                          setFpTesting(false);
-                        }
-                      }}
-                      className="w-full"
-                      size="lg"
-                      disabled={!fpIp || !fpPort || fpTesting}
-                    >
-                      <Fingerprint className="mr-2 h-5 w-5" />
-                      {fpTesting ? 'Importing…' : `Import from ${fpIp}:${fpPort}`}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <FingerprintSyncPill status={fpSyncStatus} />
 
               <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
                 <DialogTrigger asChild>
@@ -741,6 +1270,32 @@ export function Attendance() {
                     <DialogDescription>Upload Excel file with attendance data</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
+                    {/* Sample download — generates a pre-filled template
+                        with active employees + 3 example rows so HR can
+                        see exactly which columns/formats are expected
+                        before they fill the file. Uses the chosen "from"
+                        date so the date column is sensible by default. */}
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-3">
+                      <FileSpreadsheet className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900">First time? Download the sample.</p>
+                        <p className="text-xs text-blue-700 mt-0.5">
+                          Pre-filled with active employees + 3 example rows showing full-day, single-scan, and leave shapes.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-white"
+                        onClick={() => {
+                          downloadAttendanceTemplate(employees, dateFrom);
+                          toast.success('Sample template downloaded');
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1.5" />
+                        Download Sample
+                      </Button>
+                    </div>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                       <FileSpreadsheet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                       <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="hidden" id="att-upload" />
@@ -749,9 +1304,62 @@ export function Attendance() {
                       </label>
                       {selectedFile && <p className="mt-2 text-sm text-gray-600">{selectedFile.name}</p>}
                     </div>
-                    <Button onClick={() => { toast.success(`Uploaded ${selectedFile?.name || 'file'} - records processed`); setUploadDialogOpen(false); setSelectedFile(null); }} className="w-full">
+                    <Button
+                      onClick={async () => {
+                        if (!selectedFile) {
+                          toast.error('Pick a file first.');
+                          return;
+                        }
+                        setUploadProcessing(true);
+                        try {
+                          // 1) Parse the workbook on the client. Errors at
+                          //    this stage (malformed file, missing header,
+                          //    bad status enum) never hit the network.
+                          const parsed = await parseAttendanceExcel(selectedFile);
+                          if (parsed.errors.length > 0 && parsed.rows.length === 0) {
+                            toast.error(`File rejected — ${parsed.errors.length} error(s). First: ${parsed.errors[0]}`);
+                            return;
+                          }
+                          if (parsed.rows.length === 0) {
+                            toast.warning('No data rows found in the file.');
+                            return;
+                          }
+
+                          // 2) Mock mode just acknowledges — no live API.
+                          if (USE_MOCKS) {
+                            toast.success(`Parsed ${parsed.rows.length} rows (mock — not persisted)`);
+                            setUploadDialogOpen(false);
+                            setSelectedFile(null);
+                            return;
+                          }
+
+                          // 3) Live mode — POST the parsed batch and
+                          //    surface the per-row outcome counts. The
+                          //    backend's Excel endpoint upserts by
+                          //    (employee, date) so re-uploading the same
+                          //    file is idempotent.
+                          const result = await attendanceApi.uploadBulk(parsed.rows);
+                          const errs = [...parsed.errors, ...result.errors];
+                          if (errs.length > 0 && result.saved === 0) {
+                            toast.error(`${errs.length} row(s) failed. First: ${errs[0]}`);
+                          } else if (errs.length > 0) {
+                            toast.warning(`Saved ${result.saved} · skipped ${errs.length}. First issue: ${errs[0]}`);
+                          } else {
+                            toast.success(`Saved ${result.saved} attendance row${result.saved === 1 ? '' : 's'}`);
+                          }
+                          setUploadDialogOpen(false);
+                          setSelectedFile(null);
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : 'Upload failed');
+                        } finally {
+                          setUploadProcessing(false);
+                        }
+                      }}
+                      disabled={!selectedFile || uploadProcessing}
+                      className="w-full"
+                    >
                       <Upload className="mr-2 h-4 w-4" />
-                      Upload & Process
+                      {uploadProcessing ? 'Processing…' : 'Upload & Process'}
                     </Button>
                   </div>
                 </DialogContent>
@@ -788,39 +1396,6 @@ export function Attendance() {
               </Card>
             ))}
           </div>
-
-          {/* Alerts */}
-          {(summary.noCheckin > 0 || summary.noCheckout > 0 || summary.absent > 0) && (
-            <div className="flex flex-wrap gap-3">
-              {summary.noCheckin > 0 && (
-                <div
-                  className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-lg cursor-pointer hover:bg-orange-100 transition-colors"
-                  onClick={() => setActiveFilter('no_checkin')}
-                >
-                  <AlertTriangle className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm text-orange-800 font-medium">{summary.noCheckin} employee(s) have not checked in</span>
-                </div>
-              )}
-              {summary.noCheckout > 0 && (
-                <div
-                  className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg cursor-pointer hover:bg-purple-100 transition-colors"
-                  onClick={() => setActiveFilter('no_checkout')}
-                >
-                  <AlertCircle className="h-4 w-4 text-purple-600" />
-                  <span className="text-sm text-purple-800 font-medium">{summary.noCheckout} employee(s) missing check-out</span>
-                </div>
-              )}
-              {summary.absent > 0 && (
-                <div
-                  className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
-                  onClick={() => setActiveFilter('absent')}
-                >
-                  <XCircle className="h-4 w-4 text-red-600" />
-                  <span className="text-sm text-red-800 font-medium">{summary.absent} employee(s) absent today</span>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Date picker + department filter + filter tabs */}
           <Card>
@@ -877,7 +1452,7 @@ export function Attendance() {
                     <Input
                       value={dailySearch}
                       onChange={(e) => setDailySearch(e.target.value)}
-                      placeholder="Search name, ID, department…"
+                      placeholder="Search name, Khmer name, ID, phone, department, device…"
                       className="h-8 pl-8 pr-8 text-sm"
                     />
                     {dailySearch && (
@@ -898,36 +1473,78 @@ export function Attendance() {
                 </Button>
               </div>
 
-              {/* Filter tabs */}
-              <div className="flex flex-wrap gap-1 mt-3">
-                {filterTabs.map(tab => (
+              {/* Filter tabs + Hours filter + view-mode toggle */}
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <div className="flex flex-wrap gap-1 flex-1">
+                  {filterTabs.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveFilter(tab.key)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
+                        activeFilter === tab.key
+                          ? 'bg-gray-900 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                      <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
+                        activeFilter === tab.key ? 'bg-white/20' : 'bg-gray-200'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {/* Hours fulfilment filter — independent of the chips
+                    above. Slices to rows that did vs. didn't reach 8h
+                    of scanned work, leaving everything else untouched. */}
+                <Select value={hoursFilter} onValueChange={v => setHoursFilter(v as typeof hoursFilter)}>
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue placeholder="Hours" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Hours: all</SelectItem>
+                    <SelectItem value="fulfilled">Fulfilled (≥ 8h)</SelectItem>
+                    <SelectItem value="short">Short (&lt; 8h)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {/* Roster ↔ Scan History toggle. Roster aggregates one
+                    row per (employee, date) with the four punches.
+                    Scan History flattens those punches into a per-event
+                    log so admins can see exactly who tapped which
+                    device when, sorted newest-first. */}
+                <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
                   <button
-                    key={tab.key}
-                    onClick={() => setActiveFilter(tab.key)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                      activeFilter === tab.key
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    type="button"
+                    onClick={() => setDailyViewMode('roster')}
+                    className={`px-3 py-1.5 text-xs rounded ${
+                      dailyViewMode === 'roster' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    {tab.icon}
-                    {tab.label}
-                    <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
-                      activeFilter === tab.key ? 'bg-white/20' : 'bg-gray-200'
-                    }`}>
-                      {tab.count}
-                    </span>
+                    Roster
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setDailyViewMode('history')}
+                    className={`px-3 py-1.5 text-xs rounded ${
+                      dailyViewMode === 'history' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Scan History
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
+              {dailyViewMode === 'roster' ? (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Dept</TableHead>
+                    <TableHead>Day</TableHead>
                     {dateFrom !== dateTo && <TableHead>Date</TableHead>}
                     <TableHead className="text-center">
                       <div className="text-xs">Morning</div>
@@ -955,7 +1572,7 @@ export function Attendance() {
                 <TableBody>
                   {dailyPagination.paginatedItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={(isAdmin ? 11 : 10) + (dateFrom !== dateTo ? 1 : 0)} className="text-center py-12 text-gray-400">
+                      <TableCell colSpan={(isAdmin ? 12 : 11) + (dateFrom !== dateTo ? 1 : 0)} className="text-center py-12 text-gray-400">
                         No records found for the selected filters
                       </TableCell>
                     </TableRow>
@@ -974,12 +1591,71 @@ export function Attendance() {
                           </span>
                         );
                       };
+                      const kind = dayKindOf(record.date);
+                      const isFreeStyle = kind === 'weekend' || kind === 'holiday';
+                      // On free-style days, late is meaningless — any scan is
+                      // present. Hardens against legacy rows where the backend
+                      // sync stamped 'late' before the V23/V24 free-style
+                      // rules landed.
+                      const displayStatus = isFreeStyle && record.status === 'late'
+                        ? 'present'
+                        : record.status;
+                      // OT auto-fill rules:
+                      //   • Stored otHours wins when present.
+                      //   • Free-style days (weekend / holiday) — every
+                      //     worked hour is OT-eligible.
+                      //   • Weekdays — anything past 8h counts; we only
+                      //     surface OT once the row crosses 8.5h, then
+                      //     show (workHours - 8) so 8.5h reads as +0.5h,
+                      //     9h as +1h, etc.
+                      const otDisplay = (() => {
+                        if (record.otHours && Number(record.otHours) > 0) return Number(record.otHours);
+                        const wh = Number(record.workHours);
+                        if (!Number.isFinite(wh) || wh <= 0) return null;
+                        if (isFreeStyle) return wh;
+                        if (wh >= 8.5) return Math.round((wh - 8) * 100) / 100;
+                        return null;
+                      })();
+                      // Workday hours coloring — green when fulfilled
+                      // (≥ 8h), orange otherwise. Mirrors the new
+                      // "Hours filter" chip the admin can use to slice
+                      // the daily list by fulfillment.
+                      const wh = Number(record.workHours);
+                      const fulfilled = Number.isFinite(wh) && wh >= 8;
+                      const hoursClass = !record.workHours
+                        ? 'text-gray-400'
+                        : fulfilled
+                          ? 'text-green-600 font-medium'
+                          : 'text-orange-600 font-medium';
+                      // Has an OT request already been filed for this
+                      // (employee, date)? Backend stores employeeId as the
+                      // UUID; emp.apiId carries the same. If found, dim
+                      // the badge so it's clear no further action is
+                      // needed. Coloured (blue) badges flag potential OT
+                      // that hasn't been claimed yet.
+                      const otApiId = (emp as any)?.apiId ?? record.employeeId;
+                      const otRequested = otApiId
+                        && otRequestKeys.has(`${record.date}|${otApiId}`);
                       return (
                         <TableRow key={record.id} className="hover:bg-gray-50">
                           <TableCell>
                             <EmployeeCell employee={emp} subtitle={emp?.id} />
                           </TableCell>
                           <TableCell className="text-sm">{deptName(emp?.department)}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                kind === 'holiday'
+                                  ? 'bg-red-50 text-red-700 border-red-200 text-xs font-normal'
+                                  : kind === 'weekend'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200 text-xs font-normal'
+                                    : 'bg-gray-50 text-gray-600 text-xs font-normal'
+                              }
+                            >
+                              {kind === 'holiday' ? 'Holiday Day' : kind === 'weekend' ? 'Weekend' : 'Work Day'}
+                            </Badge>
+                          </TableCell>
                           {dateFrom !== dateTo && (
                             <TableCell className="text-sm whitespace-nowrap">
                               {format(parseISO(record.date), 'MMM dd')}
@@ -990,22 +1666,74 @@ export function Attendance() {
                           <TableCell className="text-center">{timeCell(record.noonIn, 'in')}</TableCell>
                           <TableCell className="text-center">{timeCell(record.noonOut, 'out')}</TableCell>
                           <TableCell className="text-center">
-                            {record.otHours ? (
-                              <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">
-                                +{record.otHours}h
+                            {otDisplay !== null ? (
+                              <Badge
+                                className={
+                                  otRequested
+                                    ? 'bg-gray-100 text-gray-500 border-0 text-xs'
+                                    : 'bg-blue-100 text-blue-700 border-0 text-xs'
+                                }
+                                title={otRequested ? 'OT request already filed' : 'Potential OT — not yet claimed'}
+                              >
+                                +{otDisplay}h
                               </Badge>
                             ) : <span className="text-gray-300">-</span>}
                           </TableCell>
-                          <TableCell className="text-center text-sm">{record.workHours ? `${record.workHours}h` : '-'}</TableCell>
-                          <TableCell>{getStatusBadge(record.status)}</TableCell>
+                          <TableCell className={`text-center text-sm ${hoursClass}`}>
+                            {record.workHours ? `${record.workHours}h` : '-'}
+                          </TableCell>
+                          <TableCell>{getStatusBadge(displayStatus)}</TableCell>
                           <TableCell>
-                            <p className="text-xs text-gray-500 max-w-[150px] truncate">{record.notes || '-'}</p>
+                            {(() => {
+                              // Notes set by the fingerprint sync follow the
+                              // shape "fingerprint" or "fingerprint:<DeviceName>"
+                              // (e.g. "fingerprint:We-Cafe"). Render the device
+                              // name so admins can trace which terminal
+                              // captured the latest punch of the day.
+                              const note = record.notes ?? '';
+                              const isFp = note === 'fingerprint' || note.startsWith('fingerprint:');
+                              if (!isFp) {
+                                return <p className="text-xs text-gray-500 max-w-[150px] truncate">{note || '-'}</p>;
+                              }
+                              const deviceLabel = note.startsWith('fingerprint:') ? note.slice('fingerprint:'.length) : '';
+                              return (
+                                <p
+                                  className="text-xs text-gray-500 max-w-[200px] truncate"
+                                  title={deviceLabel ? `Captured by ${deviceLabel}` : 'Captured by fingerprint sync'}
+                                >
+                                  fingerprint
+                                  {deviceLabel && (
+                                    <>
+                                      {' · '}
+                                      <span className="text-gray-700">{deviceLabel}</span>
+                                    </>
+                                  )}
+                                </p>
+                              );
+                            })()}
                           </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEdit(record)}>
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  title="Edit punches"
+                                  onClick={() => handleEdit(record)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700"
+                                  title="Mark Exception (working outside, don't count)"
+                                  onClick={() => requestMarkException(record)}
+                                >
+                                  <UserMinus className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -1014,13 +1742,97 @@ export function Attendance() {
                   )}
                 </TableBody>
               </Table>
+              ) : (
+                /* Scan History — flat per-tap event log. Each row is a
+                   single fingerprint scan attached to the (employee, date)
+                   it landed on. Newest events first; useful for forensics
+                   ("who tapped which device when") and for verifying the
+                   sync caught a punch the roster column would mask if a
+                   later scan overwrote it. */
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Employee</TableHead>
+                      <TableHead>Dept</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Day</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Scan</TableHead>
+                      <TableHead>Device</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scanPagination.paginatedItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-12 text-gray-400">
+                          No scans found for the selected filters
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      scanPagination.paginatedItems.map(ev => {
+                        const emp = employees.find(
+                          e => e.id === ev.employeeId || (e as any).apiId === ev.employeeId,
+                        );
+                        const kind = dayKindOf(ev.date);
+                        return (
+                          <TableRow key={ev.key} className="hover:bg-gray-50">
+                            <TableCell>
+                              <EmployeeCell employee={emp} subtitle={emp?.id} />
+                            </TableCell>
+                            <TableCell className="text-sm">{deptName(emp?.department)}</TableCell>
+                            <TableCell className="text-sm whitespace-nowrap">
+                              {format(parseISO(ev.date), 'MMM dd, yyyy')}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  kind === 'holiday'
+                                    ? 'bg-red-50 text-red-700 border-red-200 text-xs font-normal'
+                                    : kind === 'weekend'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200 text-xs font-normal'
+                                      : 'bg-gray-50 text-gray-600 text-xs font-normal'
+                                }
+                              >
+                                {kind === 'holiday' ? 'Holiday' : kind === 'weekend' ? 'Weekend' : 'Workday'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{ev.time}</TableCell>
+                            <TableCell>
+                              <span className="flex items-center gap-1.5 text-sm">
+                                {ev.direction === 'in'
+                                  ? <LogIn className="h-3.5 w-3.5 text-green-500" />
+                                  : <LogOut className="h-3.5 w-3.5 text-blue-500" />}
+                                {ev.kind}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {ev.device ? (
+                                <span
+                                  className="flex items-center gap-1 text-xs text-gray-700"
+                                  title="Captured by fingerprint sync"
+                                >
+                                  <Fingerprint className="h-3 w-3 text-gray-400" />
+                                  {ev.device}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              )}
               <Pagination
-                currentPage={dailyPagination.currentPage}
-                totalPages={dailyPagination.totalPages}
-                onPageChange={dailyPagination.goToPage}
-                startIndex={dailyPagination.startIndex}
-                endIndex={dailyPagination.endIndex}
-                totalItems={dailyPagination.totalItems}
+                currentPage={dailyViewMode === 'roster' ? dailyPagination.currentPage : scanPagination.currentPage}
+                totalPages={dailyViewMode === 'roster' ? dailyPagination.totalPages : scanPagination.totalPages}
+                onPageChange={dailyViewMode === 'roster' ? dailyPagination.goToPage : scanPagination.goToPage}
+                startIndex={dailyViewMode === 'roster' ? dailyPagination.startIndex : scanPagination.startIndex}
+                endIndex={dailyViewMode === 'roster' ? dailyPagination.endIndex : scanPagination.endIndex}
+                totalItems={dailyViewMode === 'roster' ? dailyPagination.totalItems : scanPagination.totalItems}
               />
               </div>
             </CardContent>
@@ -1073,7 +1885,7 @@ export function Attendance() {
                     <Input
                       value={monthlySearch}
                       onChange={(e) => setMonthlySearch(e.target.value)}
-                      placeholder="Search name, ID, department…"
+                      placeholder="Search name, Khmer name, ID, phone, department, device…"
                       className="h-8 pl-8 pr-8 text-sm"
                     />
                     {monthlySearch && (
@@ -1109,12 +1921,16 @@ export function Attendance() {
               </CardHeader>
               <CardContent>
                 {(() => {
-                  const kw = monthlySearch.trim().toLowerCase();
+                  const tokens = monthlySearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
                   const filteredRows = monthlyData.filter(d => {
                     if (departmentFilter !== 'all' && deptName(d.employee.department) !== departmentFilter) return false;
-                    if (kw) {
-                      const hay = `${d.employee.name} ${d.employee.id} ${deptName(d.employee.department)}`.toLowerCase();
-                      if (!hay.includes(kw)) return false;
+                    if (tokens.length > 0) {
+                      const e = d.employee;
+                      const hay = [
+                        e.name, e.khmerName, e.id, (e as any).empNo,
+                        e.contactNumber, deptName(e.department),
+                      ].filter(Boolean).join(' ').toLowerCase();
+                      if (!tokens.every(tok => hay.includes(tok))) return false;
                     }
                     if (monthlyStatusFilter === 'late' && d.lateCount === 0) return false;
                     if (monthlyStatusFilter === 'absent' && d.absentCount === 0) return false;
@@ -1317,7 +2133,7 @@ export function Attendance() {
                     <span className="text-sm text-gray-500">Total Employees</span>
                     <span className="font-medium">
                       {employees
-                        .filter(e => e.status === 'active' && (isTenantWide || matchesScope(e.id, scopeMode)))
+                        .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
                         .length}
                     </span>
                   </div>
@@ -1409,7 +2225,11 @@ export function Attendance() {
           <DialogHeader>
             <DialogTitle>Edit Attendance</DialogTitle>
             <DialogDescription>
-              {editRecord && `Update attendance for ${employees.find(e => e.id === editRecord.employeeId)?.name} on ${editRecord.date}`}
+              {editRecord && `Update attendance for ${
+                employees.find(
+                  e => e.id === editRecord.employeeId || (e as any).apiId === editRecord.employeeId,
+                )?.name ?? 'employee'
+              } on ${editRecord.date}`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1441,7 +2261,20 @@ export function Attendance() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm">Status</Label>
-              <Select value={editStatus} onValueChange={v => setEditStatus(v as AttendanceStatus)}>
+              <Select
+                value={editStatus}
+                onValueChange={v => {
+                  setEditStatus(v as AttendanceStatus);
+                  // Re-suggest the leave sub-type from the current punches
+                  // every time the admin flips status to "leave". The pick
+                  // remains editable below.
+                  if (v === 'leave') {
+                    setEditLeaveType(
+                      suggestLeaveType(editMorningIn, editMorningOut, editNoonIn, editNoonOut),
+                    );
+                  }
+                }}
+              >
                 <SelectTrigger className="h-8">
                   <SelectValue />
                 </SelectTrigger>
@@ -1452,6 +2285,83 @@ export function Attendance() {
                 </SelectContent>
               </Select>
             </div>
+            {editStatus === 'leave' && (
+              <div className="space-y-2">
+                <Label className="text-sm">Leave Type</Label>
+                <Select
+                  value={editLeaveType}
+                  onValueChange={v => setEditLeaveType(v as 'full' | 'half_morning' | 'half_noon')}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full</SelectItem>
+                    <SelectItem value="half_morning">Half Morning</SelectItem>
+                    <SelectItem value="half_noon">Half Noon</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Suggested from the punch pattern — change if the day was a different half.
+                </p>
+              </div>
+            )}
+
+            {/* Optional "Apply OT" branch. Visible whenever there's an
+                edited record — admin can opt in even if no auto-suggest
+                came through. When an OT request was already filed for
+                this (employee, date), the section explains that and the
+                checkbox is disabled to avoid duplicates. */}
+            {editRecord && editStatus !== 'leave' && (
+              <div className="rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editApplyOt}
+                    onChange={e => setEditApplyOt(e.target.checked)}
+                    disabled={editOtAlreadyFiled}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      Apply OT for this employee
+                      <span className="text-xs text-gray-500 font-normal ml-1">(optional)</span>
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {editOtAlreadyFiled
+                        ? 'An OT request already exists for this date — no further action needed.'
+                        : 'Files an OT request on the employee\'s behalf. Goes through the normal Approve / Reject flow.'}
+                    </p>
+                  </div>
+                </label>
+                {editApplyOt && !editOtAlreadyFiled && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">OT Hours</Label>
+                      <Input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        value={editOtHours}
+                        onChange={e => setEditOtHours(e.target.value)}
+                        placeholder="e.g., 3"
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Reason</Label>
+                      <Input
+                        value={editOtReason}
+                        onChange={e => setEditOtReason(e.target.value)}
+                        placeholder="e.g., Holiday work — order pack"
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label className="text-sm">Remark</Label>
               <Input
@@ -1465,8 +2375,16 @@ export function Attendance() {
               <p className="text-xs text-amber-800">Changes will be logged in the audit trail with your user ID and timestamp.</p>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSaveEdit}>Save Changes</Button>
+              <Button
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+                disabled={editSaving}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={editSaving}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1480,6 +2398,107 @@ export function Attendance() {
         employees={employees.map(e => ({ id: e.id, name: e.name, joinDate: e.joinDate, status: e.status }))}
         onChanged={() => setAlVersion(v => v + 1)}
       />
+
+      {/* Mark-as-Exception confirm — replaces the native browser confirm()
+          so the prompt looks like every other destructive action in the app. */}
+      <AlertDialog
+        open={!!markExceptionTarget}
+        onOpenChange={(open) => { if (!open && !markExceptionBusy) setMarkExceptionTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Mark {markExceptionTarget?.name} as Exception?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They'll no longer be counted in attendance, late checks, or
+              compliance reports until you flip them back via{' '}
+              <span className="font-medium">Employees → Employment → "Count in Attendance"</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={markExceptionBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={(e) => { e.preventDefault(); void confirmMarkException(); }}
+              disabled={markExceptionBusy}
+            >
+              {markExceptionBusy ? 'Updating…' : 'Mark Exception'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/**
+ * Read-only pill showing the latest Node-worker → backend fingerprint sync.
+ * Replaces the old "Import Fingerprint" admin dialog: the worker now polls
+ * the device every 60 s and pushes results, so the UI just observes status
+ * instead of triggering an import.
+ *
+ *   ●  Connected   · synced 30s ago        (lastSyncAt < 3 min)
+ *   ●  Stale       · last sync 12 min ago  (3 min ≤ lastSyncAt < 30 min)
+ *   ●  Offline     · last sync 2h ago      (lastSyncAt ≥ 30 min)
+ *   ◌  Awaiting sync                       (no push since backend started)
+ */
+function FingerprintSyncPill({ status }: { status: attendanceApi.FingerprintSyncStatus | null }) {
+  const lastSyncAt = status?.lastSyncAt ? new Date(status.lastSyncAt) : null;
+  const ageMs = lastSyncAt ? Date.now() - lastSyncAt.getTime() : null;
+  // Connected when the backend received a push within the last 3 minutes —
+  // the worker pushes every 60 s by default, so 3 min covers a missed beat.
+  const tone: 'live' | 'stale' | 'offline' | 'idle' =
+    ageMs == null ? 'idle'
+    : ageMs < 3 * 60_000 ? 'live'
+    : ageMs < 30 * 60_000 ? 'stale'
+    : 'offline';
+
+  const label =
+    tone === 'live'    ? 'Connected'
+    : tone === 'stale' ? 'Stale'
+    : tone === 'offline' ? 'Offline'
+    : 'Awaiting sync';
+
+  const dotColor =
+    tone === 'live' ? 'bg-green-500'
+    : tone === 'stale' ? 'bg-amber-500'
+    : tone === 'offline' ? 'bg-red-500'
+    : 'bg-gray-300';
+
+  const wrapColor =
+    tone === 'live' ? 'border-green-200 bg-green-50 text-green-800'
+    : tone === 'stale' ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : tone === 'offline' ? 'border-red-200 bg-red-50 text-red-800'
+    : 'border-gray-200 bg-gray-50 text-gray-600';
+
+  const ageLabel = (() => {
+    if (ageMs == null) return null;
+    const sec = Math.floor(ageMs / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    return `${hr}h ago`;
+  })();
+
+  const tooltipParts: string[] = [];
+  if (lastSyncAt) tooltipParts.push(`Last push: ${format(lastSyncAt, 'MMM d, HH:mm:ss')}`);
+  if (status) {
+    tooltipParts.push(`Records received: ${status.received}`);
+    tooltipParts.push(`Inserted: ${status.inserted} · Updated: ${status.updated} · Unchanged: ${status.unchanged}`);
+    if (status.unmatchedUsers > 0) tooltipParts.push(`Unmatched users: ${status.unmatchedUsers}`);
+  }
+
+  return (
+    <div
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${wrapColor}`}
+      title={tooltipParts.join('\n') || 'No sync data yet'}
+    >
+      <Fingerprint className="h-3.5 w-3.5" />
+      <span className={`h-2 w-2 rounded-full ${dotColor} ${tone === 'live' ? 'animate-pulse' : ''}`} />
+      <span className="font-medium">{label}</span>
+      {ageLabel && <span className="text-current/70">· {ageLabel}</span>}
     </div>
   );
 }

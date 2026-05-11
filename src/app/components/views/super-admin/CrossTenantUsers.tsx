@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -11,22 +11,87 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound } from 'lucide-react';
+import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { mockCompanies, mockPlatformUsers, PlatformUser } from '../../../data/platformData';
+import { mockCompanies, mockPlatformUsers } from '../../../data/platformData';
+import { USE_MOCKS } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 
 export function CrossTenantUsers() {
-  const [users, setUsers] = useState<PlatformUser[]>(mockPlatformUsers);
+  const [users, setUsers] = useState<platformApi.PlatformUser[]>([]);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
+  // Real tenant list for the Company filter dropdown — mock seed IDs
+  // (T001, T002…) aren't valid UUIDs and crashed the backend with a
+  // MethodArgumentTypeMismatchException when sent as `tenantId=T001`.
+  // In live mode we fetch the real tenants and use their UUID `id`.
+  const [tenantOptions, setTenantOptions] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [roleTab, setRoleTab] = useState<'all' | 'admin' | 'manager' | 'employee'>('all');
-  const [resetTarget, setResetTarget] = useState<PlatformUser | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<PlatformUser | null>(null);
+  const [resetTarget, setResetTarget] = useState<platformApi.PlatformUser | null>(null);
+  const [suspendTarget, setSuspendTarget] = useState<platformApi.PlatformUser | null>(null);
+  // Merge dialog state — surfaces every user sharing the same email and lets
+  // the admin pick one to keep; the others get hard-deleted.
+  const [mergeEmail, setMergeEmail] = useState<string | null>(null);
+  const [keepUserId, setKeepUserId] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
 
-  const companyById = useMemo(() => new Map(mockCompanies.map(c => [c.id, c])), []);
+  // Derive a display name from email local-part since the API doesn't return one.
+  const displayName = (u: platformApi.PlatformUser) => u.email.split('@')[0];
+
+  const loadUsers = async () => {
+    if (USE_MOCKS) {
+      // Mock-mode shape differs (companyId/name); cast for backward compat in dev.
+      setUsers(mockPlatformUsers as unknown as platformApi.PlatformUser[]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await platformApi.users.list({
+        tenantId: companyFilter !== 'all' ? companyFilter : undefined,
+        q: search.trim() || undefined,
+        role: roleTab !== 'all' ? roleTab : undefined,
+      });
+      setUsers(data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reload on mount + whenever filters change. Server applies q/role/tenantId.
+  useEffect(() => {
+    void loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyFilter, roleTab, search]);
+
+  // Populate the Company filter dropdown from the real tenants endpoint
+  // (live mode) or the mock seed (mock mode). Loaded once on mount.
+  useEffect(() => {
+    if (USE_MOCKS) {
+      setTenantOptions(mockCompanies.map(c => ({ id: c.id, name: c.name, slug: c.slug })));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await platformApi.tenants.list();
+        if (cancelled) return;
+        setTenantOptions(list.map(t => ({
+          id: t.id,
+          name: t.name?.trim() || t.slug || '—',
+          slug: t.slug ?? '',
+        })));
+      } catch {
+        // Silent fall-through — dropdown shows just "All companies".
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const counts = useMemo(() => ({
     all:      users.length,
@@ -36,22 +101,22 @@ export function CrossTenantUsers() {
   }), [users]);
 
   const filtered = useMemo(() => {
+    // Server-side filtering; keep client filter as a no-op safety net.
     const q = search.trim().toLowerCase();
     return users.filter(u => {
       if (roleTab !== 'all' && u.role !== roleTab) return false;
-      if (companyFilter !== 'all' && u.companyId !== companyFilter) return false;
+      if (companyFilter !== 'all' && u.tenantId !== companyFilter) return false;
       if (q) {
-        const company = companyById.get(u.companyId);
-        const hay = `${u.name} ${u.email} ${company?.name ?? ''}`.toLowerCase();
+        const hay = `${displayName(u)} ${u.email} ${u.tenantSlug ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [users, search, companyFilter, roleTab, companyById]);
+  }, [users, search, companyFilter, roleTab]);
 
   const pager = usePagination(filtered, 10);
 
-  const roleBadge = (role: PlatformUser['role']) => {
+  const roleBadge = (role: platformApi.PlatformUser['role']) => {
     const map: Record<string, string> = {
       admin:    'bg-red-100 text-red-800',
       manager:  'bg-blue-100 text-blue-800',
@@ -66,21 +131,112 @@ export function CrossTenantUsers() {
     );
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!resetTarget) return;
-    toast.success(`Password reset email sent to ${resetTarget.email}`);
+    const target = resetTarget;
     setResetTarget(null);
+    if (USE_MOCKS) {
+      toast.success(`Password reset email sent to ${target.email}`);
+      return;
+    }
+    try {
+      const { temporaryPassword } = await platformApi.users.resetPassword(target.id);
+      // Cleartext password returned ONCE — show prominently with long duration.
+      toast.success(`Temporary password for ${target.email}: ${temporaryPassword}`, {
+        description: 'Copy this now — it will not be shown again.',
+        duration: 60000,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reset password');
+    }
   };
 
-  const handleToggleActive = () => {
+  // Group users by lowercase email so we can detect duplicates.
+  const duplicatesByEmail = useMemo(() => {
+    const m = new Map<string, platformApi.PlatformUser[]>();
+    for (const u of users) {
+      const key = u.email.toLowerCase();
+      const arr = m.get(key) ?? [];
+      arr.push(u);
+      m.set(key, arr);
+    }
+    // Drop singletons — only emails with 2+ rows are "duplicates".
+    return new Map(Array.from(m.entries()).filter(([, v]) => v.length > 1));
+  }, [users]);
+
+  const mergeCandidates = useMemo<platformApi.PlatformUser[]>(() => {
+    if (!mergeEmail) return [];
+    return duplicatesByEmail.get(mergeEmail.toLowerCase()) ?? [];
+  }, [mergeEmail, duplicatesByEmail]);
+
+  const openMerge = (email: string) => {
+    const group = duplicatesByEmail.get(email.toLowerCase()) ?? [];
+    if (group.length < 2) return;
+    setMergeEmail(email);
+    // Default "keep" pick: prefer an active user, then the most-recently
+    // logged-in. Falls back to the first row when nothing else fits.
+    const active = group.filter(u => u.isActive);
+    const ranked = (active.length ? active : group).slice().sort((a, b) => {
+      if (a.lastLogin && b.lastLogin) return b.lastLogin.localeCompare(a.lastLogin);
+      if (a.lastLogin) return -1;
+      if (b.lastLogin) return 1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+    setKeepUserId(ranked[0]?.id ?? null);
+  };
+
+  const closeMerge = () => {
+    setMergeEmail(null);
+    setKeepUserId(null);
+  };
+
+  const handleMerge = async () => {
+    if (!keepUserId || mergeCandidates.length < 2) return;
+    const losers = mergeCandidates.filter(u => u.id !== keepUserId);
+    setMerging(true);
+    try {
+      // Delete the losers in parallel. Backend rejects with 409 when a
+      // user has linked records — we surface that per-row so the admin
+      // knows which row blocked the merge and can suspend instead.
+      const results = await Promise.allSettled(losers.map(u => platformApi.users.remove(u.id)));
+      const failed = results
+        .map((r, i) => ({ r, u: losers[i] }))
+        .filter(x => x.r.status === 'rejected');
+      const ok = results.length - failed.length;
+      if (failed.length === 0) {
+        toast.success(`Merged ${results.length + 1} → 1. Removed ${ok} duplicate${ok === 1 ? '' : 's'}.`);
+      } else {
+        const msg = failed
+          .map(f => `${f.u.tenantName?.trim() || f.u.tenantSlug || '—'}: ${(f.r as PromiseRejectedResult).reason?.message ?? 'failed'}`)
+          .join(' · ');
+        toast.error(`Removed ${ok} of ${losers.length}. Some failed — ${msg}`, { duration: 12000 });
+      }
+      closeMerge();
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Merge failed');
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const handleToggleActive = async () => {
     if (!suspendTarget) return;
-    setUsers(prev => prev.map(u => u.id === suspendTarget.id ? { ...u, isActive: !u.isActive } : u));
-    toast.success(
-      suspendTarget.isActive
-        ? `Suspended ${suspendTarget.email}`
-        : `Reactivated ${suspendTarget.email}`,
-    );
+    const target = suspendTarget;
     setSuspendTarget(null);
+    if (USE_MOCKS) {
+      setUsers(prev => prev.map(u => u.id === target.id ? { ...u, isActive: !u.isActive } : u));
+      toast.success(target.isActive ? `Suspended ${target.email}` : `Reactivated ${target.email}`);
+      return;
+    }
+    try {
+      if (target.isActive) await platformApi.users.suspend(target.id);
+      else                 await platformApi.users.reactivate(target.id);
+      toast.success(target.isActive ? `Suspended ${target.email}` : `Reactivated ${target.email}`);
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update user');
+    }
   };
 
   return (
@@ -136,7 +292,7 @@ export function CrossTenantUsers() {
               className="h-9 px-3 border rounded-md text-sm min-w-[200px]"
             >
               <option value="all">All companies</option>
-              {mockCompanies.map(c => (
+              {tenantOptions.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -159,19 +315,40 @@ export function CrossTenantUsers() {
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No users match these filters.
+                    {loading ? 'Loading…' : 'No users match these filters.'}
                   </TableCell>
                 </TableRow>
               )}
               {pager.paginatedItems.map(u => {
-                const company = companyById.get(u.companyId);
+                // Cross-tenant duplicate emails are valid (the same person can
+                // be admin in multiple tenants). Surface a short id hint so two
+                // rows with admin@example.com are visually distinguishable.
+                const sameEmailCount = filtered.filter(o => o.email.toLowerCase() === u.email.toLowerCase()).length;
+                const idHint = u.id.slice(0, 8);
                 return (
                   <TableRow key={u.id}>
                     <TableCell>
-                      <p className="font-medium text-sm">{u.name}</p>
-                      <p className="text-xs text-gray-400">{u.email}</p>
+                      <p className="font-medium text-sm">{displayName(u)}</p>
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                        <span>{u.email}</span>
+                        {sameEmailCount > 1 && (
+                          <span
+                            className="font-mono text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded"
+                            title={`User ID: ${u.id}`}
+                          >
+                            #{idHint}
+                          </span>
+                        )}
+                      </p>
                     </TableCell>
-                    <TableCell className="text-sm">{company?.name ?? '—'}</TableCell>
+                    <TableCell className="text-sm">
+                      <span
+                        className="font-medium"
+                        title={u.tenantSlug ?? undefined}
+                      >
+                        {u.tenantName?.trim() || u.tenantSlug || '—'}
+                      </span>
+                    </TableCell>
                     <TableCell>{roleBadge(u.role)}</TableCell>
                     <TableCell>
                       {u.isActive
@@ -186,6 +363,17 @@ export function CrossTenantUsers() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {sameEmailCount > 1 && (
+                          <Button
+                            variant="ghost" size="sm"
+                            className="h-7 text-xs text-blue-700 hover:bg-blue-50"
+                            onClick={() => openMerge(u.email)}
+                            title={`${sameEmailCount} users share this email — merge`}
+                          >
+                            <GitMerge className="h-3.5 w-3.5 mr-1" />
+                            Merge
+                          </Button>
+                        )}
                         <Button
                           variant="ghost" size="sm" className="h-7 text-xs"
                           onClick={() => setResetTarget(u)}
@@ -255,6 +443,95 @@ export function CrossTenantUsers() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleToggleActive}>
               {suspendTarget?.isActive ? 'Suspend' : 'Reactivate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Merge duplicate users — pick one to keep, others get deleted. */}
+      <AlertDialog open={!!mergeEmail} onOpenChange={(o) => !o && closeMerge()}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-blue-600" />
+              Merge {mergeCandidates.length} users sharing {mergeEmail}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Pick the canonical record to keep. The other {mergeCandidates.length - 1}{' '}
+              {mergeCandidates.length - 1 === 1 ? 'row will be permanently deleted' : 'rows will be permanently deleted'}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2 my-2">
+            {mergeCandidates.map(u => {
+              const selected = u.id === keepUserId;
+              return (
+                <label
+                  key={u.id}
+                  className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer transition ${
+                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="merge-keep"
+                    className="mt-1"
+                    checked={selected}
+                    onChange={() => setKeepUserId(u.id)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="font-medium text-sm"
+                        title={u.tenantSlug ?? undefined}
+                      >
+                        {u.tenantName?.trim() || u.tenantSlug || '—'}
+                      </span>
+                      {roleBadge(u.role)}
+                      {u.isActive
+                        ? <Badge className="bg-green-100 text-green-800">Active</Badge>
+                        : <Badge className="bg-gray-100 text-gray-700">Suspended</Badge>}
+                      <span
+                        className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
+                        title={`User ID: ${u.id}`}
+                      >
+                        #{u.id.slice(0, 8)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-3">
+                      <span>Created {format(new Date(u.createdAt), 'MMM dd, yyyy')}</span>
+                      <span>
+                        Last login {u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, HH:mm') : 'never'}
+                      </span>
+                    </div>
+                  </div>
+                  {selected && (
+                    <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                      Keep
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              The deletion is permanent. If a row has linked records (audit / approvals / payroll history),
+              the delete will fail with a 409 and you'll be told which row blocked the merge — suspend that
+              one instead.
+            </span>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={merging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMerge}
+              disabled={merging || !keepUserId || mergeCandidates.length < 2}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {merging ? 'Merging…' : `Keep 1, delete ${mergeCandidates.length - 1}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

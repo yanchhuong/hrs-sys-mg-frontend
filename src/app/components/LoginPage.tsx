@@ -6,9 +6,14 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { UserRole } from '../types/hrms';
-import { Building2, Shield, Users, User, Loader2 } from 'lucide-react';
+import { Building2, Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react';
 
-export function LoginPage() {
+interface LoginPageProps {
+  /** Optional — when provided, renders a "Back to home" link above the card. */
+  onBack?: () => void;
+}
+
+export function LoginPage({ onBack }: LoginPageProps = {}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -39,7 +44,18 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md">
+      <div className="w-full max-w-md">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to home
+          </button>
+        )}
+      <Card className="w-full">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
             <div className="p-3 bg-blue-600 rounded-full">
@@ -143,6 +159,7 @@ export function LoginPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

@@ -28,19 +28,20 @@ import { mockAttendanceRules } from '../../data/settingsData';
 import { Badge } from '../ui/badge';
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
-  CheckCircle, AlertTriangle, Cloud, CloudOff, Link2, Link2Off,
+  CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
   RefreshCw, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   loadCloudConfig, saveCloudConfig, clearCloudConfig, deriveStatus,
-  testCloudConnection, runSyncNow, CloudConfig, ConnectionStatus, TestResult,
+  testCloudConnection, runSyncNow, sendHeartbeat, pushTable,
+  CloudConfig, ConnectionStatus, TestResult, HeartbeatResponse,
 } from '../../utils/cloudSync';
 import { useI18n } from '../../i18n/I18nContext';
 import { DevicesCard } from '../common/DevicesCard';
 import * as settingsApi from '../../api/settings';
-import { USE_MOCKS } from '../../api/client';
+import { USE_MOCKS, API_BASE, apiJson } from '../../api/client';
 
 export function Settings() {
   const { t } = useI18n();
@@ -505,6 +506,9 @@ function CloudConnectionCard() {
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [lastTest, setLastTest] = useState<TestResult | null>(null);
+  // Result of the most recent heartbeat — drives the "100% in sync"
+  // badge under the Cloud Connection card after Connect succeeds.
+  const [lastHeartbeat, setLastHeartbeat] = useState<HeartbeatResponse | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
@@ -524,10 +528,30 @@ function CloudConnectionCard() {
     setTesting(false);
     setLastTest(res);
     if (res.ok) {
+      // A successful reachability check clears any stale error state — the
+      // Error badge sticks around between Sync Now attempts otherwise, and
+      // confuses admins who fixed the underlying issue (e.g. rotated key).
+      const next = saveCloudConfig({
+        ...cfg,
+        lastSyncStatus: 'ok',
+        lastSyncError: undefined,
+      });
+      setCfg(next);
       toast.success(`Reachable — ${res.mode ?? 'unknown'} mode, ${res.latencyMs}ms`);
     } else {
       toast.error(`Test failed: ${res.error}`);
     }
+  };
+
+  /** Manual dismiss for the Error badge — clears just the status flag and
+   *  the saved error message; does NOT touch credentials or connectedAt. */
+  const handleDismissError = () => {
+    const next = saveCloudConfig({
+      ...cfg,
+      lastSyncStatus: cfg.connectedAt ? 'ok' : undefined,
+      lastSyncError: undefined,
+    });
+    setCfg(next);
   };
 
   const handleConnect = async () => {
@@ -543,14 +567,38 @@ function CloudConnectionCard() {
       toast.error(`Cannot connect: ${res.error}`);
       return;
     }
+    // Reachability passed — immediately send a heartbeat so the cloud
+    // records a sync_state row and the local UI shows drift status.
+    let hb: HeartbeatResponse | null = null;
+    try {
+      const counts = await fetch(`${API_BASE}/api/v1/sync/local-counts`, {
+        headers: localStorage.getItem('hrms:apiToken')
+          ? { Authorization: `Bearer ${localStorage.getItem('hrms:apiToken')}` }
+          : undefined,
+      }).then(r => r.ok ? r.json() : ({} as Record<string, number>));
+      hb = await sendHeartbeat(cfg.serverUrl, cfg.apiKey, { tables: counts });
+      setLastHeartbeat(hb);
+    } catch (e) {
+      // Heartbeat failure is non-fatal for the connect handshake — the
+      // user is still authenticated. Show a toast so they know drift
+      // tracking didn't fire and can retry.
+      toast.warning(`Connected, but heartbeat failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    }
     const next = saveCloudConfig({
       ...cfg,
       connectedAt: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString(),
       lastSyncStatus: 'ok',
       lastSyncError: undefined,
     });
     setCfg(next);
-    toast.success('Connected to cloud');
+    if (hb && hb.inSync) {
+      toast.success(`Connected · 100% in sync (${hb.tables.length} tables)`);
+    } else if (hb) {
+      toast.success(`Connected · drift detected: ${hb.totalDrift} rows differ across ${hb.tables.length} tables`);
+    } else {
+      toast.success('Connected to cloud');
+    }
   };
 
   const handleDisconnect = () => {
@@ -568,12 +616,92 @@ function CloudConnectionCard() {
   };
 
   const handleSyncNow = async () => {
+    if (!cfg.serverUrl || !cfg.apiKey) {
+      toast.error('Connect first');
+      return;
+    }
     setSyncing(true);
-    const res = await runSyncNow();
-    setSyncing(false);
-    setCfg(loadCloudConfig());
-    if (res.ok) toast.success(`Sync OK — ${res.latencyMs}ms`);
-    else toast.error(`Sync failed: ${res.error}`);
+    // Push order matters because of FK chains:
+    //   departments → positions → employees
+    // The cloud's upsert keeps the local UUIDs so FK references survive
+    // across the wire. Audit FKs (created_by_id / updated_by_id) get
+    // nullified server-side because user IDs differ between the two DBs.
+    const PUSH_ORDER = ['departments', 'positions', 'employees'] as const;
+    const totals: Record<string, { upserted: number; skipped: number }> = {};
+    const auth = localStorage.getItem('hrms:apiToken');
+    try {
+      // 1) Schema/static tables — pushTable handles departments/positions/
+      //    employees via the legacy /local/sync/push endpoint. These don't
+      //    flow through the outbox because they aren't @EntityListeners-
+      //    instrumented (employees IS, but pushing here is idempotent).
+      for (const table of PUSH_ORDER) {
+        const rows = await fetch(`${API_BASE}/api/v1/sync/export/${table}`, {
+          headers: auth ? { Authorization: `Bearer ${auth}` } : undefined,
+        }).then(r => r.ok ? r.json() : []);
+        const result = await pushTable(cfg.serverUrl, cfg.apiKey, table, rows);
+        totals[table] = { upserted: result.upserted, skipped: result.skipped };
+      }
+      // 2) Outbox-managed entities — attendance, payroll_items, leave,
+      //    OT, salary increases, salary deductions all live in the
+      //    sync_outbox queue. Trigger a flush so the cloud's row counts
+      //    update before we re-fire the heartbeat. Without this, the
+      //    drift panel shows the same number on every Sync Now click.
+      let outboxDrained = 0;
+      try {
+        const r = await apiJson<{ drained: number }>(
+          '/api/v1/local/sync-admin/flush-now',
+          { method: 'POST' },
+        );
+        outboxDrained = r.drained ?? 0;
+      } catch {
+        // Outbox flush is best-effort here; if it fails the heartbeat
+        // below will still surface drift accurately.
+      }
+      // 3) Refresh heartbeat so the in-sync status updates immediately.
+      //    Now that both legacy push AND outbox have ack'd, the cloud's
+      //    counts reflect the current sync state — drift recalculates
+      //    against fresh values, not the stale snapshot from page load.
+      try {
+        const counts = await fetch(`${API_BASE}/api/v1/sync/local-counts`, {
+          headers: auth ? { Authorization: `Bearer ${auth}` } : undefined,
+        }).then(r => r.ok ? r.json() : ({} as Record<string, number>));
+        const hb = await sendHeartbeat(cfg.serverUrl, cfg.apiKey, { tables: counts });
+        setLastHeartbeat(hb);
+      } catch { /* heartbeat is informational; push already succeeded */ }
+      const summary = PUSH_ORDER.map(t =>
+        `${t}: ${totals[t]?.upserted ?? 0}${totals[t]?.skipped ? ` (${totals[t].skipped} skipped)` : ''}`
+      ).join(' · ');
+      const next = saveCloudConfig({
+        ...cfg,
+        lastSyncAt: new Date().toISOString(),
+        lastSyncStatus: 'ok',
+        lastSyncError: undefined,
+      });
+      setCfg(next);
+      toast.success(
+        `Pushed → ${summary}${outboxDrained ? ` · outbox: ${outboxDrained}` : ''}`,
+        { duration: 8000 },
+      );
+    } catch (err) {
+      let msg = err instanceof Error ? err.message : 'unknown';
+      // Common case: push 403 because the saved key was revoked / never
+      // existed on this cloud. Surface a fix-it hint instead of just
+      // "HTTP 403" so the admin knows where to regenerate.
+      if (msg.includes('HTTP 403') || msg.includes('HTTP 401')) {
+        msg += ' — API key not recognized. Generate a new install key in '
+          + 'Super Admin → Connect & Sync, or use the tenant master key.';
+      }
+      const next = saveCloudConfig({
+        ...cfg,
+        lastSyncAt: new Date().toISOString(),
+        lastSyncStatus: 'error',
+        lastSyncError: msg,
+      });
+      setCfg(next);
+      toast.error(`Sync failed: ${msg}`, { duration: 12000 });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   return (
@@ -589,8 +717,39 @@ function CloudConnectionCard() {
               Pair this local install with the online HRMS. Data syncs via the tenant API key.
             </CardDescription>
           </div>
-          <StatusBadge status={status} />
+          <div className="flex items-start gap-2">
+            <StatusBadge status={status} />
+            {status === 'error' && (
+              <button
+                type="button"
+                onClick={handleDismissError}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+                title="Clear the saved error state without disconnecting"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
         </div>
+        {/* Inline error detail — shows under the header so the admin can
+            see WHY status is 'error' without checking the toast history.
+            Cleared by handleDismissError, Test Connection success,
+            Connect, or Sync Now success. */}
+        {status === 'error' && cfg.lastSyncError && (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">Last sync failed</p>
+                <p className="text-xs mt-0.5 break-all">{cfg.lastSyncError}</p>
+                <p className="text-xs mt-1 text-red-800">
+                  Run <strong>Test Connection</strong> to retry, or <strong>Sync Now</strong> to
+                  push again. Both clear this on success.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-5">
@@ -678,6 +837,59 @@ function CloudConnectionCard() {
             />
           </div>
         </div>
+
+        {/* Heartbeat / drift summary — shown after a successful Connect.
+            "100% in sync" when cloud and local row counts match for every
+            allowlisted table; otherwise lists per-table deltas. */}
+        {lastHeartbeat && (
+          <div
+            className={`p-3 rounded-md border ${
+              lastHeartbeat.inSync
+                ? 'bg-green-50 border-green-200 text-green-900'
+                : 'bg-amber-50 border-amber-200 text-amber-900'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              {lastHeartbeat.inSync ? (
+                <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">
+                  {lastHeartbeat.inSync
+                    ? `100% in sync — ${lastHeartbeat.tables.length} tables match`
+                    : `Drift detected — ${lastHeartbeat.totalDrift} rows differ across ${lastHeartbeat.tables.length} tables`}
+                </p>
+                <p className="text-xs mt-0.5">
+                  Heartbeat at {new Date(lastHeartbeat.heartbeatAt).toLocaleTimeString()}
+                </p>
+                <table className="mt-2 text-xs w-full max-w-md">
+                  <thead className="text-gray-500">
+                    <tr>
+                      <th className="text-left">Table</th>
+                      <th className="text-right">Local</th>
+                      <th className="text-right">Cloud</th>
+                      <th className="text-right">Drift</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lastHeartbeat.tables.map(t => (
+                      <tr key={t.table} className="border-t border-current/10">
+                        <td className="py-0.5">{t.table}</td>
+                        <td className="text-right">{t.localCount}</td>
+                        <td className="text-right">{t.cloudCount}</td>
+                        <td className={`text-right font-mono ${t.drift !== 0 ? 'text-amber-700' : ''}`}>
+                          {t.drift > 0 ? `+${t.drift}` : t.drift}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Live test result */}
         {lastTest && (
@@ -786,7 +998,155 @@ function CloudConnectionCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sync outbox status — surfaces the backend's view of pending /
+          sent rows + manual triggers for "Sync now" (drain outbox) and
+          "Pull from cloud" (one-shot backfill). The on-prem flusher
+          already runs every 60s; this is the escape hatch / debug
+          surface for admins. After a successful action we re-send the
+          heartbeat so the Drift panel above recalculates against the
+          cloud's new row counts instead of staying stale. */}
+      <SyncOutboxStatusPanel
+        onSyncSuccess={async () => {
+          if (!cfg.serverUrl || !cfg.apiKey) return;
+          try {
+            const auth = localStorage.getItem('hrms:apiToken');
+            const counts = await fetch(`${API_BASE}/api/v1/sync/local-counts`, {
+              headers: auth ? { Authorization: `Bearer ${auth}` } : undefined,
+            }).then(r => r.ok ? r.json() : ({} as Record<string, number>));
+            const hb = await sendHeartbeat(cfg.serverUrl, cfg.apiKey, { tables: counts });
+            setLastHeartbeat(hb);
+          } catch { /* drift refresh is informational; sync already succeeded */ }
+        }}
+      />
     </Card>
+  );
+}
+
+/**
+ * Small panel rendered at the bottom of the CloudConnectionCard. Polls
+ * the backend's /local/sync-admin/status every 5 seconds and offers
+ * "Sync now" + "Pull from cloud" buttons. Distinct from the front-end's
+ * own cloudSync.ts state — that holds the user's saved config; this
+ * shows the actual outbox/flusher state from the server.
+ */
+function SyncOutboxStatusPanel({ onSyncSuccess }: { onSyncSuccess?: () => void | Promise<void> } = {}) {
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    cloudUrl: string;
+    apiKeyLastFour: string;
+    outboxPending: number;
+    outboxSent: number;
+    outboxTotal: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [flushing, setFlushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const r = await apiJson<typeof status>('/api/v1/local/sync-admin/status', {});
+      setStatus(r);
+    } catch { /* leave previous state */ }
+  };
+
+  useEffect(() => {
+    void refresh();
+    const t = setInterval(refresh, 5_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const onFlush = async () => {
+    setFlushing(true);
+    try {
+      const r = await apiJson<{ drained: number }>('/api/v1/local/sync-admin/flush-now', { method: 'POST' });
+      toast.success(`Flushed ${r.drained} change(s)`);
+      await refresh();
+      // Re-fire heartbeat so the Drift panel above recalculates against
+      // the cloud's now-updated row counts instead of showing the stale
+      // pre-sync snapshot the user landed on.
+      if (onSyncSuccess) await onSyncSuccess();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Flush failed');
+    } finally {
+      setFlushing(false);
+    }
+  };
+
+  const onPull = async () => {
+    setPulling(true);
+    try {
+      const r = await apiJson<{ applied: number; skipped: number; perEntity: Record<string, number> }>(
+        '/api/v1/local/sync-admin/pull-from-cloud',
+        { method: 'POST' },
+      );
+      const summary = Object.entries(r.perEntity)
+        .filter(([, c]) => c > 0)
+        .map(([k, c]) => `${k}: ${c}`)
+        .join(' · ');
+      toast.success(`Pulled ${r.applied} change(s)${summary ? ` — ${summary}` : ''}`);
+      await refresh();
+      if (onSyncSuccess) await onSyncSuccess();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Pull failed');
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  if (!status) return null;
+  return (
+    <div className="px-6 pb-6 -mt-2">
+      <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="text-sm">
+            <p className="font-medium text-gray-800">Sync outbox</p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              {status.configured
+                ? <>Cloud: <span className="font-mono">{status.cloudUrl}</span> · key ****{status.apiKeyLastFour}</>
+                : <span className="text-amber-700">Not configured — set CLOUD_SYNC_URL + CLOUD_SYNC_API_KEY env vars and restart the backend.</span>}
+            </p>
+            <p className="text-xs mt-1">
+              <span className="text-gray-500">Pending:</span>{' '}
+              <span className={`font-semibold ${status.outboxPending > 0 ? 'text-amber-700' : 'text-green-700'}`}>
+                {status.outboxPending.toLocaleString()}
+              </span>
+              <span className="text-gray-400 mx-1.5">·</span>
+              <span className="text-gray-500">Sent:</span>{' '}
+              <span className="font-semibold text-gray-700">{status.outboxSent.toLocaleString()}</span>
+              <span className="text-gray-400 mx-1.5">·</span>
+              <span className="text-gray-500">Total:</span>{' '}
+              <span className="font-semibold text-gray-700">{status.outboxTotal.toLocaleString()}</span>
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onFlush}
+              disabled={flushing || !status.configured}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${flushing ? 'animate-spin' : ''}`} />
+              {flushing ? 'Flushing…' : 'Sync now'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onPull}
+              disabled={pulling || !status.configured}
+              title="Pull every whitelisted entity from the cloud and apply locally (one-shot backfill)"
+            >
+              <CloudDownload className={`h-3.5 w-3.5 mr-1.5 ${pulling ? 'animate-pulse' : ''}`} />
+              {pulling ? 'Pulling…' : 'Pull from cloud'}
+            </Button>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-2">
+          On-prem writes are pushed to the cloud automatically every 60 seconds.
+          Use "Sync now" to flush immediately, or "Pull from cloud" to re-sync down (rare — useful after restoring a fresh on-prem DB).
+        </p>
+      </div>
+    </div>
   );
 }
 

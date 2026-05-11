@@ -55,6 +55,10 @@ export interface Company {
   status: CompanyStatus;
   userCount: number;
   employeeCount: number;
+  /** Live row count from the cloud's attendance table. */
+  attendanceCount?: number;
+  /** Live row count from the cloud's payroll_items table. */
+  payrollItemCount?: number;
   storageMb: number;
   monthlyCostUsd: number;
   createdAt: string;
@@ -137,6 +141,12 @@ export interface Backup {
   checksumSha256?: string;
   triggeredBy: string;
   error?: string;
+  /** 0-100 while the worker is running; absent before/after. */
+  progressPercent?: number;
+  /** Human label of the current phase ("dumping payroll_items (8/12)"). */
+  phase?: string;
+  /** ISO timestamp of projected completion. UI shows "X min remaining". */
+  estimatedCompletionAt?: string;
 }
 
 export interface BackupSchedule {

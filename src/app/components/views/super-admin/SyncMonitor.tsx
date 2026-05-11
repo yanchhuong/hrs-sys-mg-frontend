@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -13,29 +13,76 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import {
-  Link2, Copy, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Clock, Plus, Eye, EyeOff,
+  Link2, Copy, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Clock, Plus, Shield,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import {
-  mockLocalInstalls, mockCompanies, LocalInstall, SyncHealth,
-} from '../../../data/platformData';
+import { mockLocalInstalls, mockCompanies, SyncHealth } from '../../../data/platformData';
+import { USE_MOCKS } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
 
-function randomKey(): string {
+// Live LocalInstall lacks the cleartext apiKey and uses tenantId in place of
+// companyId; mocks use the legacy shape. We coerce mocks into the live shape
+// once at load time so the rest of the component reads a single type.
+function mockToLive(): platformApi.LocalInstall[] {
+  return mockLocalInstalls.map(m => ({
+    id: m.id,
+    tenantId: m.companyId,
+    siteName: m.siteName,
+    apiKeyLastFour: m.apiKeyLastFour,
+    agentVersion: m.agentVersion,
+    createdAt: m.createdAt,
+    lastSyncAt: m.lastSyncAt ?? null,
+    lastSyncStatus: m.lastSyncStatus ?? 'never',
+    lastSyncError: m.lastSyncError ?? null,
+    syncHealth: m.syncHealth,
+    revokedAt: null,
+    allowedIps: null,
+    lastIpAddress: null,
+  }));
+}
+
+function mockTenants(): platformApi.PlatformTenant[] {
+  return mockCompanies.map(c => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    planTier: c.planTier,
+    status: c.status,
+    contactEmail: c.contactEmail,
+    contactPhone: c.contactPhone ?? '',
+    country: c.country,
+    notes: c.notes ?? '',
+    suspendedAt: null,
+    cancelledAt: null,
+    createdAt: c.createdAt,
+    updatedAt: c.lastActiveAt,
+  }));
+}
+
+function randomMockKey(): string {
   const bytes = new Uint8Array(32);
-  (typeof crypto !== 'undefined' ? crypto : ({ getRandomValues: (a: Uint8Array) => { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); return a; } } as Crypto)).getRandomValues(bytes);
+  (typeof crypto !== 'undefined'
+    ? crypto
+    : ({ getRandomValues: (a: Uint8Array) => { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); return a; } } as Crypto)
+  ).getRandomValues(bytes);
   return 'pk_' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function SyncMonitor() {
-  const [installs, setInstalls] = useState<LocalInstall[]>(mockLocalInstalls);
-  const [revealedKey, setRevealedKey] = useState<{ install: LocalInstall; key: string } | null>(null);
-  const [rotateTarget, setRotateTarget] = useState<LocalInstall | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<LocalInstall | null>(null);
+  const [installs, setInstalls] = useState<platformApi.LocalInstall[]>([]);
+  const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [revealedKey, setRevealedKey] = useState<{ install: platformApi.LocalInstall; key: string } | null>(null);
+  const [rotateTarget, setRotateTarget] = useState<platformApi.LocalInstall | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<platformApi.LocalInstall | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newInstall, setNewInstall] = useState({ companyId: '', siteName: '' });
+  const [newInstall, setNewInstall] = useState({ tenantId: '', siteName: '', allowedIps: '' });
+  const [ipsTarget, setIpsTarget] = useState<platformApi.LocalInstall | null>(null);
+  const [ipsDraft, setIpsDraft] = useState('');
+  const [ipsSaving, setIpsSaving] = useState(false);
 
-  const companyById = useMemo(() => new Map(mockCompanies.map(c => [c.id, c])), []);
+  const tenantById = useMemo(() => new Map(tenants.map(t => [t.id, t])), [tenants]);
 
   const summary = useMemo(() => ({
     total:    installs.length,
@@ -45,54 +92,161 @@ export function SyncMonitor() {
     never:    installs.filter(i => i.syncHealth === 'never').length,
   }), [installs]);
 
-  const handleCopyKey = (install: LocalInstall) => {
-    navigator.clipboard.writeText(install.apiKey).catch(() => {});
-    setRevealedKey({ install, key: install.apiKey });
-    toast.success('API key copied to clipboard');
-  };
-
-  const handleRotate = () => {
-    if (!rotateTarget) return;
-    const fresh = randomKey();
-    setInstalls(prev => prev.map(i =>
-      i.id === rotateTarget.id
-        ? { ...i, apiKey: fresh, apiKeyLastFour: fresh.slice(-4), lastSyncAt: undefined, syncHealth: 'never', lastSyncStatus: undefined, lastSyncError: undefined }
-        : i
-    ));
-    toast.success(`Rotated API key for ${rotateTarget.siteName}. Deliver the new key to the site.`);
-    setRevealedKey({ install: { ...rotateTarget, apiKey: fresh }, key: fresh });
-    setRotateTarget(null);
-  };
-
-  const handleRevoke = () => {
-    if (!revokeTarget) return;
-    setInstalls(prev => prev.filter(i => i.id !== revokeTarget.id));
-    toast.success(`Revoked ${revokeTarget.siteName}`);
-    setRevokeTarget(null);
-  };
-
-  const handleCreate = () => {
-    if (!newInstall.companyId || !newInstall.siteName.trim()) {
-      toast.error('Pick a company and give the site a name');
+  const loadData = async () => {
+    if (USE_MOCKS) {
+      // Mock fallback — coerce legacy arrays into live shape for type parity.
+      setInstalls(mockToLive());
+      setTenants(mockTenants());
       return;
     }
-    const fresh = randomKey();
-    const now = new Date().toISOString();
-    const record: LocalInstall = {
-      id: `L${String(installs.length + 100).padStart(3, '0')}`,
-      companyId: newInstall.companyId,
-      siteName: newInstall.siteName.trim(),
-      apiKey: fresh,
-      apiKeyLastFour: fresh.slice(-4),
-      createdAt: now,
-      syncHealth: 'never',
-      agentVersion: '1.4.2',
-    };
-    setInstalls(prev => [...prev, record]);
-    setRevealedKey({ install: record, key: fresh });
-    setNewInstall({ companyId: '', siteName: '' });
-    setCreateDialogOpen(false);
-    toast.success(`Issued key for ${record.siteName}`);
+    setLoading(true);
+    try {
+      const [i, t] = await Promise.all([
+        platformApi.installs.list(),
+        platformApi.tenants.list(),
+      ]);
+      setInstalls(i);
+      setTenants(t);
+    } catch {
+      // Leave whatever was last loaded; toasts at the call site explain failure.
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The cleartext API key is only available at issuance (create/rotate). After
+  // that the row only carries the last-four. Surfacing the inline copy button
+  // tells the admin to rotate if they need a key they can deliver.
+  const handleCopyKey = (install: platformApi.LocalInstall) => {
+    toast.info(`Key for ${install.siteName} ends in ${install.apiKeyLastFour}. Rotate to issue a new copyable key.`);
+  };
+
+  const handleRotate = async () => {
+    if (!rotateTarget) return;
+    if (USE_MOCKS) {
+      const fresh = randomMockKey();
+      setInstalls(prev => prev.map(i =>
+        i.id === rotateTarget.id
+          ? {
+              ...i,
+              apiKeyLastFour: fresh.slice(-4),
+              lastSyncAt: null,
+              syncHealth: 'never',
+              lastSyncStatus: 'never',
+              lastSyncError: null,
+            }
+          : i
+      ));
+      setRevealedKey({ install: { ...rotateTarget, apiKeyLastFour: fresh.slice(-4) }, key: fresh });
+      toast.success(`Rotated API key for ${rotateTarget.siteName}. The previous key is now invalid.`);
+      setRotateTarget(null);
+      return;
+    }
+    try {
+      const { install, apiKey, warning } = await platformApi.installs.rotateKey(rotateTarget.id);
+      setInstalls(prev => prev.map(i => (i.id === install.id ? install : i)));
+      setRevealedKey({ install, key: apiKey });
+      toast.success(warning || `Rotated API key for ${install.siteName}. The previous key is now invalid.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to rotate key');
+    } finally {
+      setRotateTarget(null);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!revokeTarget) return;
+    if (USE_MOCKS) {
+      setInstalls(prev => prev.filter(i => i.id !== revokeTarget.id));
+      toast.success(`Revoked ${revokeTarget.siteName}`);
+      setRevokeTarget(null);
+      return;
+    }
+    try {
+      await platformApi.installs.revoke(revokeTarget.id);
+      toast.success(`Revoked ${revokeTarget.siteName}`);
+      setRevokeTarget(null);
+      await loadData();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to revoke');
+      setRevokeTarget(null);
+    }
+  };
+
+  const handleSaveIps = async () => {
+    if (!ipsTarget) return;
+    const trimmed = ipsDraft.trim();
+    if (USE_MOCKS) {
+      setInstalls(prev => prev.map(i =>
+        i.id === ipsTarget.id ? { ...i, allowedIps: trimmed === '' ? null : trimmed } : i
+      ));
+      toast.success(trimmed === '' ? 'Cleared IP allowlist' : `Updated allowlist for ${ipsTarget.siteName}`);
+      setIpsTarget(null);
+      return;
+    }
+    setIpsSaving(true);
+    try {
+      const updated = await platformApi.installs.update(ipsTarget.id, { allowedIps: trimmed });
+      setInstalls(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+      toast.success(trimmed === '' ? 'Cleared IP allowlist' : `Updated allowlist for ${updated.siteName}`);
+      setIpsTarget(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save allowlist');
+    } finally {
+      setIpsSaving(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newInstall.tenantId || !newInstall.siteName.trim()) {
+      toast.error('Pick a tenant and give the site a name');
+      return;
+    }
+    const allowed = newInstall.allowedIps.trim();
+    if (USE_MOCKS) {
+      const fresh = randomMockKey();
+      const now = new Date().toISOString();
+      const record: platformApi.LocalInstall = {
+        id: `L${String(installs.length + 100).padStart(3, '0')}`,
+        tenantId: newInstall.tenantId,
+        siteName: newInstall.siteName.trim(),
+        apiKeyLastFour: fresh.slice(-4),
+        createdAt: now,
+        syncHealth: 'never',
+        lastSyncStatus: 'never',
+        lastSyncAt: null,
+        lastSyncError: null,
+        agentVersion: '1.4.2',
+        revokedAt: null,
+        allowedIps: allowed === '' ? null : allowed,
+        lastIpAddress: null,
+      };
+      setInstalls(prev => [...prev, record]);
+      setRevealedKey({ install: record, key: fresh });
+      setNewInstall({ tenantId: '', siteName: '', allowedIps: '' });
+      setCreateDialogOpen(false);
+      toast.success(`Issued key for ${record.siteName}`);
+      return;
+    }
+    try {
+      const { install, apiKey, warning } = await platformApi.installs.create({
+        tenantId: newInstall.tenantId,
+        siteName: newInstall.siteName.trim(),
+        allowedIps: allowed,
+      });
+      setInstalls(prev => [...prev, install]);
+      setRevealedKey({ install, key: apiKey });
+      setNewInstall({ tenantId: '', siteName: '', allowedIps: '' });
+      setCreateDialogOpen(false);
+      toast.success(warning || `Issued key for ${install.siteName}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to issue key');
+    }
   };
 
   return (
@@ -112,7 +266,7 @@ export function SyncMonitor() {
               <CardTitle>Local Installations</CardTitle>
               <CardDescription>Each row is a site paired to a tenant via an API key.</CardDescription>
             </div>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button onClick={() => setCreateDialogOpen(true)} disabled={loading}>
               <Plus className="h-4 w-4 mr-2" />
               Issue New Key
             </Button>
@@ -125,6 +279,7 @@ export function SyncMonitor() {
                 <TableHead>Site</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>API Key</TableHead>
+                <TableHead>Allowed IPs</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Last Sync</TableHead>
                 <TableHead>Health</TableHead>
@@ -134,26 +289,35 @@ export function SyncMonitor() {
             <TableBody>
               {installs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No local installations issued yet.
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
+                    {loading ? 'Loading…' : 'No local installations issued yet.'}
                   </TableCell>
                 </TableRow>
               )}
               {installs.map(inst => {
-                const company = companyById.get(inst.companyId);
+                const tenant = tenantById.get(inst.tenantId);
                 return (
                   <TableRow key={inst.id}>
                     <TableCell>
                       <p className="font-medium text-sm">{inst.siteName}</p>
-                      <p className="text-xs text-gray-400">{inst.ipAddress ?? '—'}</p>
+                      <p className="text-xs font-mono text-gray-500" title="Last source IP that authenticated with this key">
+                        {inst.lastIpAddress ?? <span className="text-gray-300">—</span>}
+                      </p>
                     </TableCell>
-                    <TableCell className="text-sm">{company?.name ?? '—'}</TableCell>
+                    <TableCell className="text-sm">{tenant?.name ?? '—'}</TableCell>
                     <TableCell>
                       <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                         pk_•••••••• {inst.apiKeyLastFour}
                       </code>
                     </TableCell>
-                    <TableCell className="text-sm text-gray-600">v{inst.agentVersion}</TableCell>
+                    <TableCell className="text-xs">
+                      {inst.allowedIps && inst.allowedIps.trim()
+                        ? <span className="font-mono text-gray-700" title={inst.allowedIps}>
+                            {truncateIps(inst.allowedIps)}
+                          </span>
+                        : <span className="text-gray-400">Any IP</span>}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">v{inst.agentVersion ?? '—'}</TableCell>
                     <TableCell className="text-sm">
                       {inst.lastSyncAt ? (
                         <>
@@ -166,7 +330,7 @@ export function SyncMonitor() {
                         <span className="text-gray-400">Never</span>
                       )}
                     </TableCell>
-                    <TableCell><HealthBadge health={inst.syncHealth} /></TableCell>
+                    <TableCell><HealthBadge health={inst.syncHealth as SyncHealth} /></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -175,6 +339,13 @@ export function SyncMonitor() {
                           title="Reveal & copy key"
                         >
                           <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-700 hover:bg-blue-50"
+                          onClick={() => { setIpsDraft(inst.allowedIps ?? ''); setIpsTarget(inst); }}
+                          title="Edit allowed IPs"
+                        >
+                          <Shield className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-700 hover:bg-amber-50"
@@ -213,13 +384,13 @@ export function SyncMonitor() {
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Company</label>
               <select
-                value={newInstall.companyId}
-                onChange={(e) => setNewInstall({ ...newInstall, companyId: e.target.value })}
+                value={newInstall.tenantId}
+                onChange={(e) => setNewInstall({ ...newInstall, tenantId: e.target.value })}
                 className="w-full h-9 px-3 border rounded-md text-sm"
               >
                 <option value="">Select a tenant…</option>
-                {mockCompanies.filter(c => c.status !== 'cancelled').map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {tenants.filter(t => t.status !== 'cancelled').map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             </div>
@@ -233,9 +404,25 @@ export function SyncMonitor() {
                 className="w-full h-9 px-3 border rounded-md text-sm"
               />
             </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5 text-blue-700" />
+                Allowed IPs <span className="text-xs text-gray-400 font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={newInstall.allowedIps}
+                onChange={(e) => setNewInstall({ ...newInstall, allowedIps: e.target.value })}
+                placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
+                rows={2}
+                className="w-full px-3 py-2 border rounded-md text-sm font-mono"
+              />
+              <p className="text-xs text-gray-500">
+                Comma-separated source IPs / CIDR ranges. Leave empty to allow any IP. Localhost is always permitted.
+              </p>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setCreateDialogOpen(false); setNewInstall({ tenantId: '', siteName: '', allowedIps: '' }); }}>Cancel</Button>
             <Button onClick={handleCreate}>Generate key</Button>
           </DialogFooter>
         </DialogContent>
@@ -256,7 +443,7 @@ export function SyncMonitor() {
             </div>
             <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
-              <p>This key grants full write access to {companyById.get(revealedKey?.install.companyId ?? '')?.name ?? 'the tenant'}'s data. Rotate immediately if it leaks.</p>
+              <p>This key grants full write access to {tenantById.get(revealedKey?.install.tenantId ?? '')?.name ?? 'the tenant'}'s data. Rotate immediately if it leaks.</p>
             </div>
           </div>
           <DialogFooter>
@@ -268,6 +455,38 @@ export function SyncMonitor() {
               Copy
             </Button>
             <Button onClick={() => setRevealedKey(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit IP allowlist */}
+      <Dialog open={!!ipsTarget} onOpenChange={(o) => { if (!o) setIpsTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Allowed IPs for {ipsTarget?.siteName}</DialogTitle>
+            <DialogDescription>
+              Comma-separated allowlist of source IPs / CIDR ranges. Leave empty to allow any IP. Examples: <code>203.0.113.12</code>, <code>203.0.113.0/24</code>.
+              <br />
+              <span className="text-xs text-gray-500">Localhost is always permitted so admins can't lock themselves out of local testing.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <textarea
+              value={ipsDraft}
+              onChange={(e) => setIpsDraft(e.target.value)}
+              placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
+              rows={3}
+              className="w-full px-3 py-2 border rounded-md text-sm font-mono"
+            />
+            {!ipsDraft.trim() && (
+              <p className="text-xs text-amber-700">No restriction — the API key will be accepted from any IP.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIpsTarget(null)} disabled={ipsSaving}>Cancel</Button>
+            <Button onClick={handleSaveIps} disabled={ipsSaving}>
+              {ipsSaving ? 'Saving…' : 'Save'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -314,8 +533,18 @@ const HEALTH_MAP: Record<SyncHealth, { label: string; cls: string; Icon: typeof 
   never:    { label: 'Never',    cls: 'bg-blue-100 text-blue-800',   Icon: Clock },
 };
 
+/** Show first IP/CIDR + a "+N" suffix when the allowlist is long, so the
+ *  table cell stays compact. The full value is exposed via `title=` on hover. */
+function truncateIps(s: string): string {
+  const parts = s.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return s;
+  const first = parts[0];
+  return parts.length > 1 ? `${first} +${parts.length - 1}` : first;
+}
+
 function HealthBadge({ health }: { health: SyncHealth }) {
-  const { label, cls, Icon } = HEALTH_MAP[health];
+  const entry = HEALTH_MAP[health] ?? HEALTH_MAP.never;
+  const { label, cls, Icon } = entry;
   return (
     <Badge className={`${cls} gap-1`}>
       <Icon className="h-3 w-3" />

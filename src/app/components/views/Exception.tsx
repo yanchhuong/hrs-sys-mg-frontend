@@ -26,19 +26,23 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { AuditCell } from '../common/AuditCell';
 import { mockExceptions } from '../../data/timeworkData';
 import { useI18n } from '../../i18n/I18nContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { AlertCircle, Check, X, Plus, Search } from 'lucide-react';
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import {
+  format, isWithinInterval, parseISO, eachDayOfInterval,
+} from 'date-fns';
 import { toast } from 'sonner';
 import { AttendanceException, Employee } from '../../types/hrms';
 import * as leaveApi from '../../api/leave';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 
 // Adapts a backend Employee to the front-end Employee shape used by this
 // view. Mirrors the pattern from Attendance.tsx / Employees.tsx — the
@@ -72,11 +76,19 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
 // Narrows a free-form backend leave `type` string to the front-end union used
 // by getTypeLabel. Unknown values fall through to `manual_correction` so the
 // row still renders cleanly.
+// Leave types (replaces the old exception-flavoured taxonomy):
+//   full          — full-day leave
+//   half_morning  — half day, morning off (works in the afternoon)
+//   half_noon     — half day, afternoon off (works in the morning)
+// Anything else from the backend is normalised to "full" so legacy rows
+// still display sensibly.
 function narrowExceptionType(t: string): AttendanceException['type'] {
   const allowed: AttendanceException['type'][] = [
+    'full', 'half_morning', 'half_noon',
+    // Kept for backward compatibility with rows created before the rename.
     'missed_punch', 'late_arrival', 'early_leave', 'manual_correction',
-  ];
-  return (allowed as string[]).includes(t) ? (t as AttendanceException['type']) : 'manual_correction';
+  ] as unknown as AttendanceException['type'][];
+  return (allowed as string[]).includes(t) ? (t as AttendanceException['type']) : ('full' as AttendanceException['type']);
 }
 
 // Adapts a backend LeaveRequest to the front-end AttendanceException shape
@@ -111,12 +123,9 @@ export function Exception() {
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   // departmentId → name lookup. Adapter stores the raw UUID on
-  // `employee.department`; resolve to the readable name everywhere we render.
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (idOrName: string | undefined): string => {
-    if (!idOrName || idOrName === '-') return '';
-    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
-  };
+  // `employee.department`; resolve to the readable name everywhere we
+  // render. Stale UUIDs (dept deleted) collapse to '' rather than leak.
+  const deptName = makeDeptName(deptList, '');
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -128,10 +137,21 @@ export function Exception() {
   // New-exception dialog state (employee only)
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newDate, setNewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newType, setNewType] = useState<'missed_punch' | 'late_arrival' | 'early_leave' | 'manual_correction'>('missed_punch');
+  const [newType, setNewType] = useState<'full' | 'half_morning' | 'half_noon' | 'custom'>('full');
+  // Multi-day "custom" range. Expanded into N per-day LeaveRequest rows on
+  // submit so existing reports / monthly summaries / attendance sync stay
+  // unchanged (they all assume one row per (employee, date)).
+  const [newStartDate, setNewStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [newStartHalf, setNewStartHalf] = useState<'morning' | 'noon'>('morning');
+  const [newEndDate, setNewEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [newEndHalf, setNewEndHalf] = useState<'morning' | 'noon'>('noon');
   const [newReason, setNewReason] = useState('');
   const [newCorrectedIn, setNewCorrectedIn] = useState('');
   const [newCorrectedOut, setNewCorrectedOut] = useState('');
+
+  // View-leave dialog. Set on row "View" click; resolved into a detail view
+  // below the main table.
+  const [viewTarget, setViewTarget] = useState<AttendanceException | null>(null);
 
   const {
     role,
@@ -173,7 +193,7 @@ export function Exception() {
       return;
     }
     try {
-      const res = await employeesApi.list({ size: 200 });
+      const res = await employeesApi.list({ size: 500 });
       setEmployees(res.content.map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
@@ -237,10 +257,68 @@ export function Exception() {
     }
   };
 
+  /**
+   * Expand a Custom (multi-day) leave selection into one entry per
+   * calendar day. The current schema stores one LeaveRequest per
+   * (employee, date), so a "Mon morning → Wed noon" submission becomes
+   * three rows: Mon full, Tue full, Wed full. A noon-start chops the
+   * first day to half_noon (afternoon only); a morning-end chops the
+   * last day to half_morning (morning only).
+   *
+   * Returns {@code totalDays} alongside the per-day list so the form
+   * can render the live "Total: X days" hint without recomputing.
+   */
+  const expandCustomLeave = (
+    startDate: string,
+    startHalf: 'morning' | 'noon',
+    endDate: string,
+    endHalf: 'morning' | 'noon',
+  ): { items: { date: string; type: 'full' | 'half_morning' | 'half_noon' }[]; totalDays: number } => {
+    if (!startDate || !endDate) return { items: [], totalDays: 0 };
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return { items: [], totalDays: 0 };
+    }
+    const days = eachDayOfInterval({ start, end });
+    const items = days.map((d, i) => {
+      const iso = format(d, 'yyyy-MM-dd');
+      // Single-day range: the two halves collapse into one row.
+      if (days.length === 1) {
+        if (startHalf === 'morning' && endHalf === 'noon') return { date: iso, type: 'full' as const };
+        if (startHalf === 'morning' && endHalf === 'morning') return { date: iso, type: 'half_morning' as const };
+        if (startHalf === 'noon' && endHalf === 'noon')       return { date: iso, type: 'half_noon' as const };
+        // noon → morning same day = 0 days; caller blocks via totalDays.
+        return { date: iso, type: 'full' as const };
+      }
+      if (i === 0) {
+        return { date: iso, type: (startHalf === 'noon' ? 'half_noon' : 'full') as 'full' | 'half_noon' };
+      }
+      if (i === days.length - 1) {
+        return { date: iso, type: (endHalf === 'morning' ? 'half_morning' : 'full') as 'full' | 'half_morning' };
+      }
+      return { date: iso, type: 'full' as const };
+    });
+    const totalDays = items.reduce((acc, it) => acc + (it.type === 'full' ? 1 : 0.5), 0);
+    return { items, totalDays };
+  };
+
+  const customExpansion = (
+    newType === 'custom'
+      ? expandCustomLeave(newStartDate, newStartHalf, newEndDate, newEndHalf)
+      : { items: [], totalDays: 0 }
+  );
+
   const handleSubmitNew = async () => {
     if (!newReason.trim()) {
       toast.error('Please provide a reason');
       return;
+    }
+    if (newType === 'custom') {
+      if (customExpansion.totalDays <= 0) {
+        toast.error('End date must be on or after start date, and the range must cover at least half a day');
+        return;
+      }
     }
     if (USE_MOCKS) {
       toast.success('Exception submitted for approval');
@@ -250,6 +328,38 @@ export function Exception() {
       setNewCorrectedOut('');
       return;
     }
+
+    if (newType === 'custom') {
+      // Submit one LeaveRequest per day, sequentially. If any one fails
+      // we stop and surface which day failed — partial state is fine
+      // because each row is independent and the user can re-submit the
+      // remaining days from the leave list.
+      let submitted = 0;
+      try {
+        for (const it of customExpansion.items) {
+          await leaveApi.create({
+            date: it.date,
+            days: it.type === 'full' ? 1 : 0.5,
+            halfDay: it.type !== 'full',
+            type: it.type,
+            reason: newReason,
+          });
+          submitted++;
+        }
+        toast.success(`Submitted ${customExpansion.totalDays} day${customExpansion.totalDays === 1 ? '' : 's'} of leave (${customExpansion.items.length} entries)`);
+        setDialogOpen(false);
+        setNewReason('');
+        await loadLeaves();
+      } catch (err) {
+        const remaining = customExpansion.items.length - submitted;
+        toast.error(
+          `${err instanceof Error ? err.message : 'Failed to submit leave'} — ${submitted} of ${customExpansion.items.length} day(s) saved, ${remaining} pending. Re-submit the missing days from the leave list.`,
+        );
+        await loadLeaves();
+      }
+      return;
+    }
+
     try {
       await leaveApi.create({
         date: newDate,
@@ -273,10 +383,15 @@ export function Exception() {
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
-      missed_punch: 'Missed Punch',
-      late_arrival: 'Late Arrival',
-      early_leave: 'Early Leave',
-      manual_correction: 'Manual Correction',
+      full:         'Full',
+      half_morning: 'Half Morning',
+      half_noon:    'Half Noon',
+      // Legacy mappings — show the row sensibly even if it's still using
+      // the older exception-style enum value.
+      missed_punch: 'Full',
+      late_arrival: 'Half Morning',
+      early_leave: 'Half Noon',
+      manual_correction: 'Full',
     };
     return labels[type] || type;
   };
@@ -295,7 +410,7 @@ export function Exception() {
   // Scope: admin sees everything; manager/employee see self + direct reports,
   // optionally narrowed to `mine` or `team` via the ScopePicker.
   if (!isTenantWide) {
-    filteredExceptions = filteredExceptions.filter(e => matchesScope(e.employeeId, scopeMode));
+    filteredExceptions = filteredExceptions.filter(e => matchesScope(e.employeeId, scopeMode, employees));
   }
 
   // Apply date filter
@@ -377,16 +492,6 @@ export function Exception() {
                 </DialogHeader>
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="exc-date">Date</Label>
-                    <Input
-                      id="exc-date"
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      max={format(new Date(), 'yyyy-MM-dd')}
-                    />
-                  </div>
-                  <div className="space-y-2">
                     <Label htmlFor="exc-type">Type</Label>
                     <select
                       id="exc-type"
@@ -394,13 +499,86 @@ export function Exception() {
                       onChange={(e) => setNewType(e.target.value as typeof newType)}
                       className="w-full px-3 py-2 border rounded-md text-sm h-9"
                     >
-                      <option value="missed_punch">Missed Punch</option>
-                      <option value="late_arrival">Late Arrival</option>
-                      <option value="early_leave">Early Leave</option>
-                      <option value="manual_correction">Manual Correction</option>
+                      <option value="full">Full</option>
+                      <option value="half_morning">Half Morning</option>
+                      <option value="half_noon">Half Noon</option>
+                      <option value="custom">Custom (multi-day)</option>
                     </select>
                   </div>
-                  {(newType === 'missed_punch' || newType === 'manual_correction') && (
+                  {newType !== 'custom' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="exc-date">Date</Label>
+                      <Input
+                        id="exc-date"
+                        type="date"
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        max={format(new Date(), 'yyyy-MM-dd')}
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="exc-start-date">Start Date</Label>
+                          <Input
+                            id="exc-start-date"
+                            type="date"
+                            value={newStartDate}
+                            onChange={(e) => setNewStartDate(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="exc-start-half">Start From</Label>
+                          <select
+                            id="exc-start-half"
+                            value={newStartHalf}
+                            onChange={(e) => setNewStartHalf(e.target.value as 'morning' | 'noon')}
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            <option value="morning">Morning</option>
+                            <option value="noon">Noon</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="exc-end-date">End Date</Label>
+                          <Input
+                            id="exc-end-date"
+                            type="date"
+                            value={newEndDate}
+                            onChange={(e) => setNewEndDate(e.target.value)}
+                            min={newStartDate}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="exc-end-half">End At</Label>
+                          <select
+                            id="exc-end-half"
+                            value={newEndHalf}
+                            onChange={(e) => setNewEndHalf(e.target.value as 'morning' | 'noon')}
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            <option value="morning">Morning</option>
+                            <option value="noon">Noon</option>
+                          </select>
+                        </div>
+                      </div>
+                      {customExpansion.totalDays > 0 ? (
+                        <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                          Total: <span className="font-semibold">{customExpansion.totalDays} day{customExpansion.totalDays === 1 ? '' : 's'}</span>
+                          {' · '}
+                          {customExpansion.items.length} entr{customExpansion.items.length === 1 ? 'y' : 'ies'} will be created
+                        </div>
+                      ) : (newStartDate && newEndDate) && (
+                        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                          End date must be on or after start date, and the range must cover at least half a day.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(newType === 'half_morning' || newType === 'half_noon') && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="exc-in">Corrected Check-in</Label>
@@ -532,15 +710,18 @@ export function Exception() {
                 <TableHead>Date</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Reason</TableHead>
+                <TableHead>Remark</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Modifier</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {exceptionsPagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={10} className="text-center text-sm text-gray-400 py-10">
                     No leaves in this status.
                   </TableCell>
                 </TableRow>
@@ -555,7 +736,7 @@ export function Exception() {
                     )
                   : null;
                 const isPending = exception.status === 'pending';
-                const canActOnThis = isPending && canApproveLeaveOf(exception.employeeId);
+                const canActOnThis = isPending && canApproveLeaveOf(exception.employeeId, employees);
                 return (
                   <TableRow key={exception.id} className={isPending ? 'bg-yellow-50/50' : ''}>
                     <TableCell>
@@ -578,7 +759,12 @@ export function Exception() {
                     <TableCell>
                       <Badge variant="outline">{getTypeLabel(exception.type)}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate" title={exception.reason}>{exception.reason}</TableCell>
+                    <TableCell className="max-w-xs truncate" title={exception.reason}>
+                      {exception.reason || <span className="text-gray-300">—</span>}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-xs text-gray-500" title={exception.notes || ''}>
+                      {exception.notes || <span className="text-gray-300">—</span>}
+                    </TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(exception.status)}>
                         {exception.status}
@@ -586,6 +772,18 @@ export function Exception() {
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
                       {format(new Date(exception.submittedAt), 'MMM dd, HH:mm')}
+                    </TableCell>
+                    <TableCell>
+                      <AuditCell
+                        name={(exception as any).createdByName}
+                        at={(exception as any).submittedAt}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <AuditCell
+                        name={(exception as any).updatedByName}
+                        at={(exception as any).updatedAt}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       {canActOnThis ? (
@@ -619,7 +817,12 @@ export function Exception() {
                           {isManager ? 'Not your team' : 'Awaiting leader'}
                         </Badge>
                       ) : (
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setViewTarget(exception)}
+                        >
                           View
                         </Button>
                       )}
@@ -639,6 +842,87 @@ export function Exception() {
           />
         </CardContent>
       </Card>
+
+      {/* View leave detail */}
+      <Dialog open={!!viewTarget} onOpenChange={(open) => !open && setViewTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Leave Detail</DialogTitle>
+            <DialogDescription>
+              Read-only view. Approve / Reject is only available while pending.
+            </DialogDescription>
+          </DialogHeader>
+          {viewTarget && (() => {
+            const employee = employees.find(
+              (e) => e.id === viewTarget.employeeId || (e as any).apiId === viewTarget.employeeId,
+            );
+            const approver = viewTarget.approvedBy
+              ? employees.find(
+                  (e) => e.id === viewTarget.approvedBy || (e as any).apiId === viewTarget.approvedBy,
+                )
+              : null;
+            const safeFmt = (s: string | undefined, pat: string) => {
+              if (!s) return '—';
+              const d = new Date(s);
+              return Number.isNaN(d.getTime()) ? '—' : format(d, pat);
+            };
+            return (
+              <div className="space-y-3 text-sm">
+                <div className="p-3 rounded-md border">
+                  <EmployeeCell employee={employee} subtitle={employee?.id} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Date</p>
+                    <p className="font-medium">{safeFmt(viewTarget.date, 'MMM dd, yyyy')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Type</p>
+                    <p><Badge variant="outline">{getTypeLabel(viewTarget.type)}</Badge></p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Status</p>
+                    <p><Badge className={getStatusBadge(viewTarget.status)}>{viewTarget.status}</Badge></p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Submitted</p>
+                    <p className="font-medium">{safeFmt(viewTarget.submittedAt, 'MMM dd, HH:mm')}</p>
+                  </div>
+                </div>
+                {viewTarget.correctedCheckIn || viewTarget.correctedCheckOut ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500">Corrected Check-in</p>
+                      <p className="font-medium">{viewTarget.correctedCheckIn || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Corrected Check-out</p>
+                      <p className="font-medium">{viewTarget.correctedCheckOut || '—'}</p>
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  <p className="text-xs text-gray-500">Reason</p>
+                  <p className="whitespace-pre-wrap">{viewTarget.reason || <span className="text-gray-300">—</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Remark</p>
+                  <p className="whitespace-pre-wrap">{viewTarget.notes || <span className="text-gray-300">—</span>}</p>
+                </div>
+                {approver && (
+                  <div>
+                    <p className="text-xs text-gray-500">Approved By</p>
+                    <p className="font-medium">{approver.name}</p>
+                    {viewTarget.approvedAt && (
+                      <p className="text-xs text-gray-500">{safeFmt(viewTarget.approvedAt, 'MMM dd, yyyy HH:mm')}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

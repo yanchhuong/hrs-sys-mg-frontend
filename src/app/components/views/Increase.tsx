@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { AuditCell } from '../common/AuditCell';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
@@ -26,12 +27,15 @@ import {
 } from '../ui/dialog';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { SearchablePicker } from '../common/SearchablePicker';
 import { mockIncreases } from '../../data/timeworkData';
+import { useAuth } from '../../context/AuthContext';
 import { mockEmployees } from '../../data/mockData';
 import { SalaryIncrease } from '../../types/timework';
 import { Employee } from '../../types/hrms';
 import * as increasesApi from '../../api/increases';
 import * as employeesApi from '../../api/employees';
+import * as categoriesApi from '../../api/payrollCategories';
 import { USE_MOCKS } from '../../api/client';
 import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -80,6 +84,8 @@ function adaptApiIncrease(r: increasesApi.SalaryIncrease): SalaryIncrease {
     amount: r.amount,
     isPercentage: r.isPercentage ?? false,
     effectiveDate: r.effectiveDate,
+    recurrence: r.recurrence ?? 'once',
+    effectiveUntil: r.effectiveUntil ?? undefined,
     reason: r.reason ?? '',
     approvedBy: r.approvedBy ?? '',
     approvedAt: r.createdAt ?? '',
@@ -99,6 +105,14 @@ const CATEGORY_COLORS = [
 
 export function Increase() {
   const { t } = useI18n();
+  // Permission gates per the matrix in Settings → User Management → Permissions.
+  // A role with V-only on 'increase' will hide the Add button and per-row
+  // Edit / Delete actions; the page still renders the read-only table.
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  const canAdd = canCreate('increase');
+  const canEdit = canUpdate('increase');
+  const canRemove = canDelete('increase');
+  void canEdit; void canRemove; // future per-row mutations gate here
   const [increases, setIncreases] = useState<SalaryIncrease[]>(USE_MOCKS ? mockIncreases : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
@@ -115,6 +129,11 @@ export function Increase() {
   const [newAmount, setNewAmount] = useState<string>('');
   const [newIsPercentage, setNewIsPercentage] = useState<boolean>(false);
   const [newEffectiveDate, setNewEffectiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  // Recurrence: 'once' = single payroll cycle (default; permanent base
+  // salary bump for type=basic). 'monthly' = repeats every cycle through
+  // newEffectiveUntil (blank = open-ended).
+  const [newRecurrence, setNewRecurrence] = useState<'once' | 'monthly'>('once');
+  const [newEffectiveUntil, setNewEffectiveUntil] = useState<string>('');
   const [newReason, setNewReason] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
 
@@ -165,6 +184,8 @@ export function Increase() {
     setNewAmount('');
     setNewIsPercentage(false);
     setNewEffectiveDate(format(new Date(), 'yyyy-MM-dd'));
+    setNewRecurrence('once');
+    setNewEffectiveUntil('');
     setNewReason('');
   };
 
@@ -199,6 +220,8 @@ export function Increase() {
         amount: amt,
         isPercentage: newIsPercentage,
         effectiveDate: newEffectiveDate,
+        recurrence: newRecurrence,
+        effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : undefined,
         reason: newReason.trim(),
         approvedBy: 'system',
         approvedAt: new Date().toISOString(),
@@ -208,6 +231,12 @@ export function Increase() {
       toast.success('Salary increase added successfully');
       resetForm();
       setDialogOpen(false);
+      return;
+    }
+
+    // Validation: monthly with an end date must end on/after start.
+    if (newRecurrence === 'monthly' && newEffectiveUntil && newEffectiveUntil < newEffectiveDate) {
+      toast.error('Effective Until must be on or after Effective Date');
       return;
     }
 
@@ -221,6 +250,9 @@ export function Increase() {
         amount: amt,
         isPercentage: newIsPercentage,
         effectiveDate: newEffectiveDate,
+        recurrence: newRecurrence,
+        // Only meaningful for monthly; once-rows ignore it server-side.
+        effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : null,
         reason: newReason.trim(),
       });
       toast.success('Salary increase added successfully');
@@ -263,10 +295,34 @@ export function Increase() {
     [categories],
   );
 
+  // Live mode: pull the tenant's actual payroll categories from the
+  // backend so the Type dropdown reflects what HR configured under
+  // Settings → Payroll Categories. Falling back to localStorage (mock
+  // seed) leaves the dropdown empty for tenants that never visited that
+  // settings page. Mock mode continues to use the localStorage seed.
   useEffect(() => {
-    const refresh = () => setCategories(loadPayrollCategories());
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
+    if (USE_MOCKS) {
+      const refresh = () => setCategories(loadPayrollCategories());
+      window.addEventListener('focus', refresh);
+      return () => window.removeEventListener('focus', refresh);
+    }
+    let cancelled = false;
+    const reload = async () => {
+      try {
+        const rows = await categoriesApi.list();
+        if (!cancelled) setCategories(rows as unknown as PayrollCategory[]);
+      } catch {
+        // Fall through silently — the dropdown just shows whatever is
+        // already in state. The toast on the page handles user-visible
+        // load errors elsewhere.
+      }
+    };
+    void reload();
+    window.addEventListener('focus', reload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', reload);
+    };
   }, []);
 
   const categoryLabelMap = useMemo(() => {
@@ -301,7 +357,7 @@ export function Increase() {
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -316,24 +372,26 @@ export function Increase() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Employee</Label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md"
+                {/* Searchable picker — same UX as Manager/Lead and the
+                    Member picker. Supports name / empNo / position search. */}
+                <SearchablePicker
+                  options={employees
+                    .filter(e => e.status === 'active')
+                    .map(emp => {
+                      const val = (emp as { apiId?: string }).apiId ?? emp.id;
+                      return {
+                        value: val,
+                        label: emp.name,
+                        secondary: `${emp.id} · ${emp.position ?? ''}`,
+                        searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+                      };
+                    })}
                   value={newEmployeeId}
-                  onChange={(e) => setNewEmployeeId(e.target.value)}
-                >
-                  <option value="">Select employee…</option>
-                  {employees.map((emp) => {
-                    // In live mode the backend keys salary-increases by employee
-                    // UUID; in mock mode there's only the human empNo. Send
-                    // whichever is available so both modes work.
-                    const val = (emp as { apiId?: string }).apiId ?? emp.id;
-                    return (
-                      <option key={val} value={val}>
-                        {emp.name} ({emp.id})
-                      </option>
-                    );
-                  })}
-                </select>
+                  onChange={setNewEmployeeId}
+                  placeholder="Select employee…"
+                  searchPlaceholder="Search by name, ID, or position…"
+                  allowClear={false}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Type</Label>
@@ -380,6 +438,61 @@ export function Increase() {
                   onChange={(e) => setNewEffectiveDate(e.target.value)}
                 />
               </div>
+              {/* Recurrence — drives whether the row affects only one
+                  payroll cycle (default; how Basic permanently bumps the
+                  base salary) or repeats each month through Effective
+                  Until. The payroll template generator includes recurring
+                  rows automatically for every month inside the window. */}
+              <div className="space-y-2">
+                <Label>Recurrence</Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewRecurrence('once')}
+                    className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                      newRecurrence === 'once'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    One-time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRecurrence('monthly')}
+                    className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                      newRecurrence === 'monthly'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Repeat Monthly
+                  </button>
+                </div>
+                {newRecurrence === 'once' && (newType === 'basic' || newType === 'salary' || newType === 'base') && (
+                  <p className="text-xs text-blue-700">
+                    Basic / salary increases permanently bump the employee's base salary. Apply once.
+                  </p>
+                )}
+                {newRecurrence === 'monthly' && (newType === 'basic' || newType === 'salary' || newType === 'base') && (
+                  <p className="text-xs text-amber-700">
+                    Note: Monthly recurrence on a base-salary type adds the amount each cycle but does not stack into base salary.
+                  </p>
+                )}
+              </div>
+              {newRecurrence === 'monthly' && (
+                <div className="space-y-2">
+                  <Label>
+                    Effective Until <span className="text-xs text-gray-500 font-normal">(blank = open-ended)</span>
+                  </Label>
+                  <Input
+                    type="date"
+                    value={newEffectiveUntil}
+                    min={newEffectiveDate || undefined}
+                    onChange={(e) => setNewEffectiveUntil(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>
                   Reason <span className="text-red-500">*</span>
@@ -396,7 +509,7 @@ export function Increase() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
         </div>
       </div>
 
@@ -437,6 +550,8 @@ export function Increase() {
                 <TableHead>Effective Date</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Approved By</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Modifier</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -464,6 +579,18 @@ export function Increase() {
                     <TableCell>{format(new Date(increase.effectiveDate), 'MMM dd, yyyy')}</TableCell>
                     <TableCell className="max-w-xs truncate">{increase.reason}</TableCell>
                     <TableCell>{approver?.name}</TableCell>
+                    <TableCell>
+                      <AuditCell
+                        name={(increase as any).createdByName}
+                        at={(increase as any).createdAt}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <AuditCell
+                        name={(increase as any).updatedByName}
+                        at={(increase as any).updatedAt}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => setDetailsTarget(increase)}>
                         <Eye className="mr-1.5 h-3.5 w-3.5" />

@@ -3,7 +3,7 @@ import { Employee } from '../../types/hrms';
 
 interface EmployeeCellProps {
   employee: Pick<Employee, 'id' | 'name' | 'department' | 'profileImage'> | undefined | null;
-  /** optional subtitle override; defaults to employee.department */
+  /** optional subtitle override; defaults to employee.id (empNo / 4-digit code) */
   subtitle?: string | null;
   size?: 'sm' | 'md';
   /** when true, hide subtitle line entirely */
@@ -12,15 +12,20 @@ interface EmployeeCellProps {
 
 /**
  * Compact "face" cell used inside tables: square-with-radius avatar plus
- * name and optional subtitle (default: department). Falls back to a blank
- * placeholder when employee is missing.
+ * name and optional subtitle.
+ *
+ * Default subtitle is {@code employee.id} (the human-readable empNo, e.g.
+ * "1003"). Earlier versions defaulted to {@code employee.department}, but
+ * in live mode that field carries the department UUID — which leaked into
+ * Increase / Deduction / Contracts / Overtime tables as raw 36-char UUIDs.
+ * Falls back to a blank placeholder when employee is missing.
  */
 export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly }: EmployeeCellProps) {
   if (!employee) {
     return <span className="text-gray-400 text-sm">—</span>;
   }
   const dim = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10';
-  const sub = subtitle === undefined ? employee.department : subtitle;
+  const sub = subtitle === undefined ? employee.id : subtitle;
   return (
     <div className="flex items-center gap-2.5">
       <Avatar className={`${dim} rounded-md border border-gray-200 shrink-0`}>

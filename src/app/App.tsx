@@ -1,32 +1,54 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { I18nProvider } from './i18n/I18nContext';
+import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
-import { Dashboard } from './components/views/Dashboard';
-import { Employees } from './components/views/Employees';
-import { Attendance } from './components/views/Attendance';
-import { Overtime } from './components/views/Overtime';
-import { Payroll } from './components/views/Payroll';
-import { Contracts } from './components/views/Contracts';
-import { UserManagement } from './components/views/UserManagement';
-import { Settings } from './components/views/Settings';
-import { Exception } from './components/views/Exception';
-import { Deduction } from './components/views/Deduction';
-import { Increase } from './components/views/Increase';
-import { AttendanceSettings } from './components/views/AttendanceSettings';
-import { EmployeeSettings } from './components/views/EmployeeSettings';
-import { PayrollCategorySettings } from './components/views/PayrollCategorySettings';
-import { Reports } from './components/views/Reports';
 import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
 import { Toaster } from './components/ui/sonner';
+import { Card, CardContent } from './components/ui/card';
+import { ShieldOff } from 'lucide-react';
+import { NAV_BY_ID } from './config/nav';
+
+function NotAuthorizedView() {
+  return (
+    <Card className="max-w-md mx-auto mt-12">
+      <CardContent className="py-12 flex flex-col items-center text-center gap-3">
+        <ShieldOff className="h-10 w-10 text-gray-400" />
+        <p className="font-medium">Access denied</p>
+        <p className="text-sm text-gray-500">
+          Your role does not grant access to this module. Pick another menu item, or
+          ask an administrator to update the Permissions matrix.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 function AppContent() {
-  const { currentUser } = useAuth();
+  const { currentUser, canView, loading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
+  // Unauthenticated UX: marketing landing first, login surfaces when the
+  // user clicks Sign In / Get Started. Reset to landing on every logout so
+  // the next visitor doesn't drop straight into the login form.
+  const [showLogin, setShowLogin] = useState(false);
+
+  // Reset the view whenever the logged-in user changes (logout → login as a
+  // different role). Without this, currentView is sticky and a freshly-
+  // logged-in approver may briefly land on the previous admin's last page.
+  useEffect(() => {
+    setCurrentView('dashboard');
+    if (currentUser) setShowLogin(false);
+  }, [currentUser?.id]);
+
+  // Don't flash protected UI before we know whether the cached token is still
+  // valid — AuthProvider calls /auth/me on boot to verify.
+  if (loading) return null;
 
   if (!currentUser) {
-    return <LoginPage />;
+    return showLogin
+      ? <LoginPage onBack={() => setShowLogin(false)} />
+      : <LandingPage onSignInClick={() => setShowLogin(true)} />;
   }
 
   // Super Admin operates the platform, not tenant data — give them a separate shell.
@@ -34,46 +56,19 @@ function AppContent() {
     return <SuperAdminApp />;
   }
 
-  const renderView = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'employees':
-        return <Employees />;
-      case 'attendance':
-        return <Attendance />;
-      case 'exception':
-        return <Exception />;
-      case 'overtime':
-        return <Overtime />;
-      case 'deduction':
-        return <Deduction />;
-      case 'increase':
-        return <Increase />;
-      case 'payroll':
-        return <Payroll />;
-      case 'reports':
-        return <Reports />;
-      case 'contracts':
-        return <Contracts />;
-      case 'user-management':
-        return <UserManagement />;
-      case 'settings':
-        return <Settings />;
-      case 'attendance-settings':
-        return <AttendanceSettings />;
-      case 'employee-settings':
-        return <EmployeeSettings />;
-      case 'payroll-categories':
-        return <PayrollCategorySettings />;
-      default:
-        return <Dashboard />;
-    }
-  };
+  // The view registry in `config/nav.ts` is the single source of truth: it
+  // binds id → permission module → component, and is also what the Layout
+  // sidebar is built from. Anything outside the registry, OR anything whose
+  // module isn't permitted for the current role, falls through to the
+  // friendly "Not Authorized" card instead of attempting an API call that
+  // would 403.
+  const entry = NAV_BY_ID[currentView];
+  const allowed = entry ? canView(entry.module) : false;
+  const ViewComponent = allowed ? entry!.component : NotAuthorizedView;
 
   return (
     <Layout currentView={currentView} onViewChange={setCurrentView}>
-      {renderView()}
+      <ViewComponent />
     </Layout>
   );
 }

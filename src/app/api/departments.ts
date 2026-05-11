@@ -8,6 +8,8 @@ export interface Department {
   managerId?: string | null;
   /** Backend UUID of the parent department/group. null = top-level. */
   parentId?: string | null;
+  /** "department" | "group" | "team" — defaults to "department" on legacy rows. */
+  type?: 'department' | 'group' | 'team' | string | null;
   createdAt?: string;
 }
 
@@ -18,6 +20,8 @@ export interface CreateDepartmentRequest {
   managerId?: string | null;
   /** Pass another department's UUID to nest, or null for top-level. */
   parentId?: string | null;
+  /** Optional — defaults to "department" server-side when omitted. */
+  type?: 'department' | 'group' | 'team';
 }
 
 export async function list(): Promise<Department[]> {

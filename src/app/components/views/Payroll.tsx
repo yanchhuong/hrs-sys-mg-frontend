@@ -8,7 +8,13 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as categoriesApi from '../../api/payrollCategories';
 import * as usersApi from '../../api/users';
+import * as overtimeApi from '../../api/overtime';
+import * as deductionsApi from '../../api/deductions';
+import * as settingsApi from '../../api/settings';
+import * as increasesApi from '../../api/increases';
+import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 import type { Employee, PayrollItem } from '../../types/hrms';
 import type { PayrollBatch, PayrollCategory } from '../../types/settings';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -39,7 +45,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark } from 'lucide-react';
+import { AuditCell } from '../common/AuditCell';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
 import {
@@ -50,7 +57,11 @@ import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
-import { exportPayrollToExcel } from '../../utils/excelExport';
+import { exportPayrollToExcel, PAYROLL_TEMPLATES, PayrollTemplate } from '../../utils/excelExport';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +92,9 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
+    // Was dropped — the Excel template Allowances column reads this and
+    // would silently render 0 for every row when the adapter omitted it.
+    allowance: e.allowance ?? 0,
   };
 }
 
@@ -104,13 +118,17 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
     deductions: b.totalDeductions,
     remarks: b.remarks,
     uploadedBy: b.uploadedById,
+    uploadedByName: b.uploadedByName ?? undefined,
     uploadedAt: b.uploadedAt,
     status: b.status,
     approvedBy: b.approvedById ?? undefined,
+    approvedByName: b.approvedByName ?? undefined,
     approvedAt: b.approvedAt ?? undefined,
     completedBy: b.completedById ?? undefined,
+    completedByName: b.completedByName ?? undefined,
     completedAt: b.completedAt ?? undefined,
     rejectedBy: b.rejectedById ?? undefined,
+    rejectedByName: b.rejectedByName ?? undefined,
     rejectedAt: b.rejectedAt ?? undefined,
     rejectionReason: b.rejectionReason ?? undefined,
     approverIds: b.approverIds ?? [],
@@ -119,7 +137,7 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
 
 export function Payroll() {
   const { t } = useI18n();
-  const { currentUser, currentEmployee } = useAuth();
+  const { currentUser, currentEmployee, canUpdate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -131,6 +149,16 @@ export function Payroll() {
   // admin (other than uploader) may approve.
   const [batchApproverIds, setBatchApproverIds] = useState<string[]>([]);
   const APPROVER_LIMIT = 3;
+  // Per-batch "include this column" toggles. Codes present in this set are
+  // EXCLUDED from the template download AND the parsed data — when the user
+  // unchecks a column we hide it from the spreadsheet they download AND
+  // force the value to 0 if it sneaks back in via a paste from another
+  // file. Empty by default = every enabled category is included.
+  const [excludedCodes, setExcludedCodes] = useState<Set<string>>(new Set());
+  // Tax-on-Salary brackets + FX rate, used to pre-fill the Tax column on
+  // the downloaded template. Loaded once on mount; in mock mode we ship a
+  // hard-coded mirror of the NBC defaults so the math still demos.
+  const [taxSettings, setTaxSettings] = useState<settingsApi.PayrollTaxSettings | null>(null);
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
@@ -152,12 +180,9 @@ export function Payroll() {
   const [adminUsers, setAdminUsers] = useState<usersApi.User[]>([]);
   // departmentId → name lookup. Adapter stores the raw UUID on
   // `employee.department`; resolve to the readable name everywhere we
-  // render to avoid leaking foreign keys into the UI.
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (idOrName: string | undefined): string => {
-    if (!idOrName || idOrName === '-') return '';
-    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
-  };
+  // render to avoid leaking foreign keys into the UI. Stale UUIDs (dept
+  // deleted) collapse to '' rather than show through.
+  const deptName = makeDeptName(deptList, '');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [batchStatusTab, setBatchStatusTab] = useState<'all' | PayrollBatchStatus>('all');
@@ -173,6 +198,16 @@ export function Payroll() {
   // marked Yes, so admins can't accidentally double-send. State is
   // frontend-only for now (resets on page reload); backend persistence is
   // a follow-up (a `payroll_dispatches` log table).
+  // Self-payslip records loaded from the backend in live mode for
+  // employee/manager roles (mockPayroll has empNo-style ids that never
+  // match the live UUID). Empty array = "no records" — same as before.
+  const [myPayrollItems, setMyPayrollItems] = useState<payrollApi.PayrollItem[]>([]);
+  // Admin-scope payroll items for live mode. Loaded across the last 12
+  // months by the effect below. Without this, the admin's table + Excel
+  // export both fall back to `mockPayroll`, which is seeded with empNos
+  // (EMP001..EMP043) that don't exist in the real tenant — so every row
+  // except the seeded admin shows "-" for name / dept / position.
+  const [adminPayrollItems, setAdminPayrollItems] = useState<payrollApi.PayrollItem[]>([]);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [sentMail, setSentMail] = useState<Set<string>>(new Set());
   const [sentSms, setSentSms] = useState<Set<string>>(new Set());
@@ -186,8 +221,17 @@ export function Payroll() {
     }
   }, [selectedBatch]);
 
-  const isEmployee = currentUser?.role === 'employee';
-  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const role = currentUser?.role;
+  const isEmployee = role === 'employee';
+  // "Self-payslip view" — both Employee and built-in Manager see only their
+  // own payroll records. Manager keeps team scope on Attendance/OT/Leave
+  // elsewhere; Payroll is treated as sensitive comp data.
+  const isSelfPayslipView = role === 'employee' || role === 'manager';
+  // Admin + custom roles see the batch-management surface. The previous
+  // {@code isAdminOrManager} included Manager — now Manager is demoted to
+  // self-only since their team-payroll wasn't authorised by the matrix.
+  const isAdminOrManager =
+    role === 'admin' || (!!role && role !== 'manager' && role !== 'employee');
 
   // Dynamic payroll categories — backed by /payroll-categories in live mode
   // and the localStorage helper in mock mode. The Excel template + upload
@@ -267,12 +311,69 @@ export function Payroll() {
   const loadAdminUsers = async () => {
     if (USE_MOCKS) return;
     try {
-      // Backend filters by exact role string; admins are the only role with
-      // payroll read+write today, so the picker is exactly that list.
-      const res = await usersApi.list({ role: 'admin', size: 100 });
-      setAdminUsers(res.data.filter(u => u.isActive));
+      // Approver candidates = built-in Admin + every Custom Role whose
+      // permission grid grants Payroll access. Built-in Manager and
+      // Employee never qualify (the V4 seed denies them payroll
+      // create/update). Filtered down to active users so suspended
+      // accounts can't be picked.
+      const usersRes = await usersApi.list({ size: 200 });
+      const activeUsers = usersRes.data.filter(u => u.isActive);
+
+      const eligibleRoleKeys = new Set<string>(['admin']);
+      try {
+        const roles = await rolesApi.list();
+        const customKeys = roles.filter(r => !r.isBuiltin).map(r => r.key);
+        const grids = await Promise.all(
+          customKeys.map(async key => ({
+            key,
+            grid: await rolesApi.getPermissions(key).catch(() => []),
+          })),
+        );
+        for (const { key, grid } of grids) {
+          if (grid.some(p => p.module === 'payroll' && p.granted)) {
+            eligibleRoleKeys.add(key);
+          }
+        }
+      } catch {
+        // Roles endpoint failed — fall back to admin-only candidates so
+        // the picker still works (matches the previous behaviour).
+      }
+
+      setAdminUsers(activeUsers.filter(u => eligibleRoleKeys.has(u.role)));
     } catch { /* picker just shows an empty state if this fails */ }
   };
+
+  // Tax brackets + FX rate. Loaded separately from the main settings burst
+  // so the page still renders if Settings → Tax Brackets has never been
+  // opened (the GET self-heals with NBC defaults on first read).
+  useEffect(() => {
+    if (USE_MOCKS) {
+      // Mock mode mirror of the NBC defaults so the template's tax column
+      // still pre-fills when running off the seed data.
+      setTaxSettings({
+        khrPerUsd: 4100,
+        brackets: [
+          { fromAmount: 0,        toAmount: 1500000,  ratePercent: 0,  excessAmount: 0,       sortOrder: 1 },
+          { fromAmount: 1500001,  toAmount: 2000000,  ratePercent: 5,  excessAmount: 75000,   sortOrder: 2 },
+          { fromAmount: 2000001,  toAmount: 8500000,  ratePercent: 10, excessAmount: 175000,  sortOrder: 3 },
+          { fromAmount: 8500001,  toAmount: 12500000, ratePercent: 15, excessAmount: 600000,  sortOrder: 4 },
+          { fromAmount: 12500001, toAmount: null,     ratePercent: 20, excessAmount: 1225000, sortOrder: 5 },
+        ],
+      });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await settingsApi.getPayrollTaxSettings();
+        if (!cancelled) setTaxSettings(s);
+      } catch {
+        // Fail silent — Tax column just falls back to 0 if the endpoint
+        // is unreachable. The admin can still adjust by hand in Excel.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +385,78 @@ export function Payroll() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Self-payslip loader. For Employee / Manager roles in live mode, fetch
+  // the user's own payroll items across the last 12 months and store them
+  // for the My Payroll Records card. Re-runs when the role / employee
+  // identity changes (e.g. login). Mock mode falls through and the
+  // existing `mockPayroll` filter handles it.
+  useEffect(() => {
+    if (USE_MOCKS || !isSelfPayslipView || !currentUser?.employeeId) {
+      setMyPayrollItems([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Last 12 months of YYYY-MM strings (newest first).
+      const months: string[] = [];
+      const cursor = new Date();
+      for (let i = 0; i < 12; i++) {
+        const y = cursor.getFullYear();
+        const m = String(cursor.getMonth() + 1).padStart(2, '0');
+        months.push(`${y}-${m}`);
+        cursor.setMonth(cursor.getMonth() - 1);
+      }
+      try {
+        const results = await Promise.all(
+          months.map(month =>
+            payrollApi.listItemsByMonth(month, currentUser.employeeId).catch(() => [])),
+        );
+        if (cancelled) return;
+        const flat = results.flat();
+        // Filter again client-side as a safety net — backend already
+        // narrowed by employeeId, but keeps us defensive against an
+        // endpoint quirk that returns the whole batch.
+        setMyPayrollItems(flat.filter(it => it.employeeId === currentUser.employeeId));
+      } catch {
+        if (!cancelled) setMyPayrollItems([]);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSelfPayslipView, currentUser?.employeeId]);
+
+  // Admin tenant-wide loader. Mirrors the self-view loader above but
+  // omits the employeeId filter so we get every employee's items for the
+  // last 12 months. Re-runs only on role change — month / year filters
+  // are applied client-side downstream (`payrollRecords` filter block).
+  useEffect(() => {
+    if (USE_MOCKS || isSelfPayslipView) {
+      setAdminPayrollItems([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const months: string[] = [];
+      const cursor = new Date();
+      for (let i = 0; i < 12; i++) {
+        const y = cursor.getFullYear();
+        const m = String(cursor.getMonth() + 1).padStart(2, '0');
+        months.push(`${y}-${m}`);
+        cursor.setMonth(cursor.getMonth() - 1);
+      }
+      try {
+        const results = await Promise.all(
+          months.map(month => payrollApi.listItemsByMonth(month).catch(() => [])),
+        );
+        if (cancelled) return;
+        setAdminPayrollItems(results.flat());
+      } catch {
+        if (!cancelled) setAdminPayrollItems([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isSelfPayslipView]);
 
   // When the admin opens a batch's detail page we need its actual items —
   // mockPayroll won't match the live employees so the table shows "—" in
@@ -320,6 +493,12 @@ export function Payroll() {
           deductionsExtras: (it as any).deductionsBreakdown as Record<string, number> | undefined,
           payrollAccount: (it as any).payrollAccount,
         } as unknown as PayrollItem)));
+        // Hydrate the per-channel "sent" sets from the persisted timestamps
+        // so a page reload doesn't reset every Yes back to No. Empty when
+        // the column is null (= not yet sent on that channel).
+        setSentMail(new Set(items.filter(it => it.mailSentAt).map(it => it.id)));
+        setSentSms(new Set(items.filter(it => it.smsSentAt).map(it => it.id)));
+        setSentBank(new Set(items.filter(it => it.bankSentAt).map(it => it.id)));
       } catch (err) {
         if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load batch items');
       } finally {
@@ -365,7 +544,11 @@ export function Payroll() {
           // helper, which can be shorter/stale than the backend list and
           // leads to "Total earnings mismatch" because the last few columns
           // get ignored when summing components.
-          categories: payrollCategories,
+          // Filter out codes the admin unchecked for this batch — those
+          // columns are not part of the WABOOKS layout we just generated,
+          // so any value the user pasted into them is intentionally ignored
+          // (treated as 0).
+          categories: payrollCategories.filter(c => !excludedCodes.has(c.code)),
         });
         setPreviewData(parsed);
 
@@ -477,6 +660,7 @@ export function Payroll() {
       setPeriodEnd('');
       setPreviewData(null);
       setPreviewDialogOpen(false);
+      setExcludedCodes(new Set());
     }
   };
 
@@ -487,9 +671,60 @@ export function Payroll() {
   // employee role will see an empty list when running against the real API.
   // TODO: wire per-employee items in a follow-up using `getBatchItems(batchId)`
   // (requires letting the user pick a batch, or aggregating across all batches).
-  let payrollRecords = isEmployee
-    ? mockPayroll.filter(pay => pay.employeeId === currentUser?.employeeId)
-    : mockPayroll;
+  // Payroll scope rules (also see {@link isSelfPayslipView}):
+  //   • Employee  → own payslips only.
+  //   • Manager   → own payslips only (members' compensation is sensitive
+  //                 and isn't surfaced even though manager sees member
+  //                 attendance / OT / leave elsewhere).
+  //   • Admin + custom roles → full tenant view.
+  // In live mode the self view is sourced from {@link myPayrollItems}
+  // (loaded by the backend per-month effect above) and adapted to the
+  // mock {@code PayrollItem} shape the table renderer expects. Mock mode
+  // continues to filter the seed array by empNo.
+  // Adapter: backend PayrollItem → local PayrollItem-ish row used by the
+  // table, payslip dialog, and Excel export. Same shape used for self view
+  // and admin tenant-wide view — the only difference is whether the item
+  // list was prefiltered by employeeId server-side.
+  const adaptBackendItem = (it: payrollApi.PayrollItem): typeof mockPayroll[number] => ({
+    id: it.id,
+    employeeId: it.employeeId,
+    month: it.month,
+    baseSalary: it.baseSalary,
+    positionAllowance: 0,
+    evaluationAllowance: 0,
+    otHours: it.otHours ?? 0,
+    otPay: it.otPay ?? 0,
+    firstSalaryDeduction: 0,
+    nssfPension: 0,
+    taxOnSalary: 0,
+    otherDeductions: 0,
+    deductions: it.deductions,
+    totalPay: it.netSalary,
+    totalEarnings: it.totalEarnings,
+    payrollAccount: it.payrollAccount ?? '-',
+    currency: it.currency ?? 'USD',
+    generatedAt: it.generatedAt ?? `${it.month}-01T00:00:00`,
+    approvedBy: '',
+    // Forward the per-category breakdown so the Payslip dialog renders the
+    // same line items the Admin sees. The dialog's PayslipBody reads
+    // `extras` / `deductionsExtras`; the FE PayrollItem stores the same
+    // shape under `earnings` / `deductionsBreakdown` — copy under both
+    // keys so either reader resolves.
+    earnings: it.earnings,
+    deductionsBreakdown: it.deductionsBreakdown,
+    extras: it.earnings,
+    deductionsExtras: it.deductionsBreakdown,
+    // Backend already resolves the employee name server-side; preserve it
+    // so the export / table can fall back to it when the local Employee
+    // lookup misses (e.g. terminated employees not in the active list).
+    employeeName: it.employeeName,
+  } as unknown as typeof mockPayroll[number]);
+
+  let payrollRecords: typeof mockPayroll = isSelfPayslipView
+    ? (USE_MOCKS
+        ? mockPayroll.filter(pay => pay.employeeId === currentUser?.employeeId)
+        : myPayrollItems.map(adaptBackendItem))
+    : (USE_MOCKS ? mockPayroll : adminPayrollItems.map(adaptBackendItem));
 
   // Apply year and month filters
   payrollRecords = payrollRecords.filter(pay => {
@@ -519,17 +754,21 @@ export function Payroll() {
   // ---------------------------------------------------------------------------
   // Batch workflow (Pending → Approved → Done, with Rejection)
   // ---------------------------------------------------------------------------
-  const canApprove = currentUser?.role === 'admin';
+  // Approve/Reject is driven by the Permission Matrix, not a hardcoded
+  // role check. Matches the backend's @perm.allow('payroll','update') —
+  // any role with payroll:update granted (admin or a custom role with
+  // the toggle on) can act, provided the per-batch rules below pass.
+  const canApprove = canUpdate('payroll');
   const myUserEmpId = currentUser?.employeeId ?? '';
   const myUserId = currentUser?.id ?? '';
 
   /**
    * Approve / Reject visibility rules:
    *   - Status must be pending.
-   *   - Caller must have role-level approve permission (admin).
+   *   - Caller must have payroll:update granted in the Permission Matrix.
    *   - Segregation of duties: caller is not the uploader.
    *   - If the uploader nominated specific approvers, caller must be in
-   *     that list. Empty list = open to any other admin.
+   *     that list. Empty list = open to any user with payroll:update.
    * The backend enforces the same checks; this just hides buttons that
    * would only error out.
    */
@@ -640,16 +879,248 @@ export function Payroll() {
     }
   };
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     // Use the upload dialog MM/YYYY values, fall back to current month/year.
     const month = periodStart ? String(periodStart).padStart(2, '0') : format(new Date(), 'MM');
     const year = periodEnd || format(new Date(), 'yyyy');
     const monthYear = `${month}-${year}`;
+    const periodFromIso = `${year}-${month}-01`;
+    const periodEndDay = new Date(Number(year), Number(month), 0).getDate(); // last day of month
+    const periodToIso = `${year}-${month}-${String(periodEndDay).padStart(2, '0')}`;
+
+    // Only active employees in the template — terminated / inactive rows
+    // would just clutter the upload sheet with zero-amount lines.
+    const activeEmployees = employees.filter(e => e.status === 'active');
+
+    // Resolve the canonical earnings codes (basic / allowances / ot) from
+    // the live category list. Match by code first, fall back to label
+    // (case-insensitive) so admins who renamed the labels still get values
+    // routed correctly.
+    const earningCode = (predicates: ((c: typeof payrollCategories[number]) => boolean)[]) =>
+      payrollCategories.find(c =>
+        c.kind === 'earning' && c.enabled && predicates.some(p => p(c)),
+      )?.code ?? null;
+
+    const basicCode = earningCode([
+      c => c.code.toLowerCase() === 'basic',
+      c => c.label.toLowerCase().includes('basic'),
+    ]);
+    const allowanceCode = earningCode([
+      c => c.code.toLowerCase() === 'allowances',
+      c => c.code.toLowerCase() === 'allowance',
+      c => c.label.toLowerCase().startsWith('allowance'),
+    ]);
+    const otCode = earningCode([
+      c => c.code.toLowerCase() === 'ot',
+      c => c.label.toLowerCase().startsWith('ot'),
+      c => c.label.toLowerCase().includes('overtime'),
+    ]);
+
+    // Tax-on-Salary code on the deduction side. Used to pre-fill the Tax
+    // column from the configured Cambodia TOS brackets so HR doesn't have
+    // to paste tax values into 100 rows by hand.
+    const taxCode = payrollCategories.find(c =>
+      c.kind === 'deduction'
+      && c.enabled
+      && (c.code.toLowerCase() === 'tax' || c.label.toLowerCase().startsWith('tax'))
+    )?.code ?? null;
+
+    /**
+     * Apply the configured progressive brackets to a USD gross amount and
+     * return the tax in USD (rounded to 2 decimals). Returns 0 when tax
+     * settings haven't loaded, the FX rate is unset, or no bracket
+     * matches. Dependents reduce the taxable base by KHR 150,000 each
+     * (Cambodia TOS rule). Caller is responsible for resolving dependent
+     * count from {@link Employee.maritalStatus} / {@link Employee.numberOfChildren}.
+     */
+    const computeTosUsd = (grossUsd: number, dependents: number): number => {
+      if (!taxSettings || !(taxSettings.khrPerUsd > 0)) return 0;
+      if (!taxSettings.brackets || taxSettings.brackets.length === 0) return 0;
+      const grossKhr = grossUsd * taxSettings.khrPerUsd;
+      const taxableKhr = Math.max(0, grossKhr - dependents * 150000);
+      const sorted = [...taxSettings.brackets].sort((a, b) => Number(a.fromAmount) - Number(b.fromAmount));
+      const bracket = sorted.find(b => {
+        const from = Number(b.fromAmount);
+        const to = b.toAmount == null ? null : Number(b.toAmount);
+        return taxableKhr >= from && (to == null || taxableKhr <= to);
+      });
+      if (!bracket) return 0;
+      const taxKhr = Math.max(
+        0,
+        (taxableKhr * Number(bracket.ratePercent) / 100) - Number(bracket.excessAmount),
+      );
+      return Math.round((taxKhr / Number(taxSettings.khrPerUsd)) * 100) / 100;
+    };
+
+    /** Spouse counts when married; children are claimed verbatim. */
+    const dependentsFor = (e: Employee): number => {
+      if (e.maritalStatus !== 'married') return 0;
+      return (e.numberOfChildren ?? 0) + 1;
+    };
+
+    // OT pay = (baseSalary / 160) * hours * multiplier. 160 = 20 working
+    // days × 8 hours. Multiplier mirrors the rate badge in the Overtime
+    // page: weekday 1.5×, weekend 2×, holiday 3×.
+    const otPayFor = (baseSalary: number, hours: number, isWeekend: boolean, isHoliday: boolean) => {
+      if (!baseSalary || !hours) return 0;
+      const multiplier = isHoliday ? 3 : isWeekend ? 2 : 1.5;
+      return (baseSalary / 160) * hours * multiplier;
+    };
+
+    // Pull approved OT + active deductions + increases overlapping the
+    // period. All three are paged endpoints; cap at 1000 rows which is
+    // comfortably more than any single tenant produces in a month.
+    let otRows: overtimeApi.OtRequest[] = [];
+    let deductionRows: deductionsApi.SalaryDeduction[] = [];
+    let increaseRows: increasesApi.SalaryIncrease[] = [];
+    if (!USE_MOCKS) {
+      try {
+        const [otRes, dedRes, incRes] = await Promise.all([
+          overtimeApi.list({
+            status: 'approved',
+            from: periodFromIso,
+            to: periodToIso,
+            size: 1000,
+          }),
+          deductionsApi.list({
+            status: 'active',
+            from: periodFromIso,
+            to: periodToIso,
+            size: 1000,
+          }),
+          // Increase rows are filtered server-side by effectiveDate falling
+          // inside [from, to] — i.e. only events that hit this month count.
+          // Past increases that already raised baseSalary aren't summed
+          // again here; they're already baked into the employee record.
+          increasesApi.list({
+            from: periodFromIso,
+            to: periodToIso,
+            size: 1000,
+          }),
+        ]);
+        otRows = otRes.data;
+        deductionRows = dedRes.data;
+        increaseRows = incRes.data;
+      } catch (err) {
+        // Non-fatal — the template still downloads, just without the
+        // computed OT / deduction / increase columns.
+        console.warn('Could not preload OT / deductions / increases for template', err);
+      }
+    }
+
+    // Build per-employee OT pay totals. Match against either id form
+    // because the OT row's employeeId is a backend UUID while the FE
+    // Employee uses empNo as id and apiId for the UUID.
+    const otTotalByApiId = new Map<string, number>();
+    for (const r of otRows) {
+      otTotalByApiId.set(
+        r.employeeId,
+        (otTotalByApiId.get(r.employeeId) ?? 0) + Number(r.hours || 0) * 0, // placeholder; replaced below
+      );
+    }
+    // Re-walk now that we know the full set of approved rows so each row
+    // can find its employee's baseSalary for the multiplier formula.
+    otTotalByApiId.clear();
+    for (const r of otRows) {
+      const emp = activeEmployees.find(
+        e => (e as { apiId?: string }).apiId === r.employeeId || e.id === r.employeeId,
+      );
+      if (!emp) continue;
+      const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
+      const pay = otPayFor(emp.baseSalary || 0, Number(r.hours || 0), r.isWeekend, r.isHoliday);
+      otTotalByApiId.set(apiId, (otTotalByApiId.get(apiId) ?? 0) + pay);
+    }
+
+    // Build deduction sums keyed by (employee apiId → category code → amount).
+    // The deduction.type field is free text; we lowercase-match it against
+    // the category code so a row of type 'advance' lands under the
+    // 'advance' deduction column even if the admin wrote 'Advance'.
+    const deductionsByApiId = new Map<string, Record<string, number>>();
+    for (const d of deductionRows) {
+      const emp = activeEmployees.find(
+        e => (e as { apiId?: string }).apiId === d.employeeId || e.id === d.employeeId,
+      );
+      if (!emp) continue;
+      const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
+      const code = (d.type ?? '').toLowerCase().trim();
+      if (!code) continue;
+      const bucket = deductionsByApiId.get(apiId) ?? {};
+      bucket[code] = (bucket[code] ?? 0) + Number(d.amount || 0);
+      deductionsByApiId.set(apiId, bucket);
+    }
+
+    // Same shape as deductionsByApiId but for the earning side. Drives
+    // every earning column other than the three reserved ones (basic,
+    // allowances, ot — those have dedicated sources). A salary increase
+    // of type='position' for $50 lands under the 'Position' earning
+    // column for that employee.
+    const reservedEarningCodes = new Set(
+      [basicCode, allowanceCode, otCode].filter((c): c is string => !!c),
+    );
+    const increasesByApiId = new Map<string, Record<string, number>>();
+    for (const inc of increaseRows) {
+      const emp = activeEmployees.find(
+        e => (e as { apiId?: string }).apiId === inc.employeeId || e.id === inc.employeeId,
+      );
+      if (!emp) continue;
+      const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
+      const code = (inc.type ?? '').toLowerCase().trim();
+      if (!code) continue;
+      // Skip rows that target the reserved built-in earnings — those are
+      // owned by the employee record / OT module and shouldn't be
+      // double-counted from an increase row.
+      if (reservedEarningCodes.has(code)) continue;
+      const bucket = increasesByApiId.get(apiId) ?? {};
+      bucket[code] = (bucket[code] ?? 0) + Number(inc.amount || 0);
+      increasesByApiId.set(apiId, bucket);
+    }
+
+    // Compose the override maps keyed by Employee.id (the empNo) since
+    // that's what the template util uses to render rows. Layered fill:
+    //   1. start with Increase amounts (Position, Bonus, Meal, …)
+    //   2. then write the three reserved earnings on top — guarantees
+    //      basic / allowances / ot always come from the canonical
+    //      sources even if a stray Increase row had one of those types.
+    const earningsByEmployee: Record<string, Record<string, number>> = {};
+    const deductionsByEmployee: Record<string, Record<string, number>> = {};
+    for (const emp of activeEmployees) {
+      const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
+      const earnRow: Record<string, number> = { ...(increasesByApiId.get(apiId) ?? {}) };
+      if (basicCode)     earnRow[basicCode]     = emp.baseSalary || 0;
+      if (allowanceCode) earnRow[allowanceCode] = (emp as { allowance?: number }).allowance || 0;
+      if (otCode)        earnRow[otCode]        = Math.round((otTotalByApiId.get(apiId) ?? 0) * 100) / 100;
+      earningsByEmployee[emp.id] = earnRow;
+
+      // Start the deduction bucket from any pre-existing manual rows the
+      // admin captured under Settings → Deductions, then layer the
+      // computed Tax-on-Salary on top. We only set tax when the row
+      // doesn't already have a non-zero value, so manual overrides win.
+      const dedBucket: Record<string, number> = { ...(deductionsByApiId.get(apiId) ?? {}) };
+      if (taxCode && !(dedBucket[taxCode] > 0)) {
+        const grossUsd = Object.values(earnRow).reduce(
+          (s, n) => s + (Number.isFinite(Number(n)) ? Number(n) : 0),
+          0,
+        );
+        dedBucket[taxCode] = computeTosUsd(grossUsd, dependentsFor(emp));
+      }
+      deductionsByEmployee[emp.id] = dedBucket;
+    }
 
     // Pass the live category roster so the Excel columns match what the
-    // admin actually configured under Settings → Payroll Categories.
-    downloadPayrollTemplate(employees, monthYear, { categories: payrollCategories });
-    toast.success('Payroll template downloaded successfully');
+    // admin actually configured under Settings → Payroll Categories. Drop
+    // any codes the admin unchecked on this batch's "Include columns"
+    // panel so the spreadsheet stays tight.
+    downloadPayrollTemplate(activeEmployees, monthYear, {
+      categories: payrollCategories.filter(c => !excludedCodes.has(c.code)),
+      earningsByEmployee,
+      deductionsByEmployee,
+    });
+    toast.success(
+      `Payroll template downloaded — ${activeEmployees.length} active employees`
+        + (otRows.length ? `, ${otRows.length} OT entries` : '')
+        + (increaseRows.length ? `, ${increaseRows.length} increase entries` : '')
+        + (deductionRows.length ? `, ${deductionRows.length} deduction entries` : ''),
+    );
   };
 
   const calculateOTRate = (baseSalary: number) => {
@@ -979,27 +1450,118 @@ export function Payroll() {
                     );
                   })()}
 
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <p className="text-sm font-medium text-blue-900 mb-2">
-                      WABOOKS Payroll Format (Two-Row Stacked):
-                    </p>
-                    <ul className="text-sm text-blue-800 space-y-1">
-                      <li>• Row 1: Earnings ({earningCategories.map(c => c.label).join(', ') || '—'})</li>
-                      <li>• Row 2: Deductions ({deductionCategories.map(c => c.label).join(', ') || '—'})</li>
-                      <li>• Each employee takes 2 rows</li>
-                      <li>• Columns A, B, C merged across both rows</li>
-                    </ul>
-                    <div className="mt-3">
-                      <Button
-                        variant="outline"
-                        onClick={handleDownloadTemplate}
-                        className="w-full"
-                        type="button"
-                      >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download Excel Template
-                      </Button>
+                  {/* Template format + per-batch column toggles. The two
+                      checkbox panels stand in for the old "Row 1 / Row 2"
+                      bullets — same information, no duplication. Toggling
+                      a column hides it from the downloaded template and
+                      forces parsed values to 0 if it sneaks back in. */}
+                  <div className="bg-blue-50 p-4 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-blue-900">
+                        Format (Two-Row Stacked)
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        Each employee = 2 rows · Columns A/B/C merged
+                      </p>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Row 1 — Earnings */}
+                      <div className="rounded-md border border-blue-200 bg-white p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">Row 1</span>
+                            <span className="text-sm font-semibold text-gray-800">Earnings</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-[11px] text-blue-700 hover:underline"
+                            onClick={() => setExcludedCodes(prev => {
+                              const next = new Set(prev);
+                              const allIncluded = earningCategories.every(c => !next.has(c.code));
+                              if (allIncluded) earningCategories.forEach(c => next.add(c.code));
+                              else earningCategories.forEach(c => next.delete(c.code));
+                              return next;
+                            })}
+                          >
+                            {earningCategories.every(c => !excludedCodes.has(c.code)) ? 'Clear all' : 'Select all'}
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                          {earningCategories.map(c => {
+                            const included = !excludedCodes.has(c.code);
+                            return (
+                              <label key={c.code} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <Checkbox
+                                  checked={included}
+                                  onCheckedChange={(v) => {
+                                    setExcludedCodes(prev => {
+                                      const next = new Set(prev);
+                                      if (v) next.delete(c.code); else next.add(c.code);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <span className={included ? '' : 'line-through text-gray-400'}>{c.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Row 2 — Deductions */}
+                      <div className="rounded-md border border-blue-200 bg-white p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">Row 2</span>
+                            <span className="text-sm font-semibold text-gray-800">Deductions</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-[11px] text-blue-700 hover:underline"
+                            onClick={() => setExcludedCodes(prev => {
+                              const next = new Set(prev);
+                              const allIncluded = deductionCategories.every(c => !next.has(c.code));
+                              if (allIncluded) deductionCategories.forEach(c => next.add(c.code));
+                              else deductionCategories.forEach(c => next.delete(c.code));
+                              return next;
+                            })}
+                          >
+                            {deductionCategories.every(c => !excludedCodes.has(c.code)) ? 'Clear all' : 'Select all'}
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                          {deductionCategories.map(c => {
+                            const included = !excludedCodes.has(c.code);
+                            return (
+                              <label key={c.code} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                <Checkbox
+                                  checked={included}
+                                  onCheckedChange={(v) => {
+                                    setExcludedCodes(prev => {
+                                      const next = new Set(prev);
+                                      if (v) next.delete(c.code); else next.add(c.code);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <span className={included ? '' : 'line-through text-gray-400'}>{c.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadTemplate}
+                      className="w-full"
+                      type="button"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Excel Template
+                    </Button>
                   </div>
                 </div>
 
@@ -1145,24 +1707,66 @@ export function Payroll() {
               </DialogContent>
             </Dialog>
 
-            <Button
-              variant="outline"
-              onClick={() => {
-                const periodLabel =
-                  selectedYear !== 'all' && selectedMonth !== 'all' ? `${selectedYear}-${selectedMonth}` :
-                  selectedYear !== 'all' ? selectedYear :
-                  'All';
-                exportPayrollToExcel({
-                  payrollItems: payrollRecords,
-                  employees: employees,
-                  period: periodLabel,
-                });
-                toast.success(`Exported ${payrollRecords.length} payroll records`);
-              }}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export Excel
-            </Button>
+            {/* Template-aware export. Each bank publishes its own bulk-payment
+                Excel format, so let the user pick before generating. The
+                Standard report is the legacy multi-sheet HR file; bank
+                templates (ABA, ACLEDA, Wing) produce a single beneficiary
+                list ready to upload to the bank portal. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Excel
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Choose export template</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {PAYROLL_TEMPLATES.map((tpl, i) => (
+                  <div key={tpl.id}>
+                    {i === 1 && <DropdownMenuSeparator />}
+                    {i === 2 && (
+                      <DropdownMenuLabel className="text-xs text-gray-400 font-normal pt-2">
+                        Bank portals (draft)
+                      </DropdownMenuLabel>
+                    )}
+                    <DropdownMenuItem
+                      className="flex flex-col items-start gap-0.5 py-2"
+                      onClick={() => {
+                        const periodLabel =
+                          selectedYear !== 'all' && selectedMonth !== 'all' ? `${selectedYear}-${selectedMonth}` :
+                          selectedYear !== 'all' ? selectedYear :
+                          'All';
+                        exportPayrollToExcel({
+                          payrollItems: payrollRecords,
+                          employees,
+                          period: periodLabel,
+                          template: tpl.id as PayrollTemplate,
+                          deptName,
+                        });
+                        if (tpl.draft) {
+                          toast.warning(
+                            `${tpl.label} (draft) — exported ${payrollRecords.length} records. Verify columns before uploading to the portal.`,
+                          );
+                        } else {
+                          toast.success(`Exported ${payrollRecords.length} records (${tpl.label})`);
+                        }
+                      }}
+                    >
+                      <span className="text-sm font-medium flex items-center gap-1.5">
+                        {tpl.label}
+                        {tpl.draft && (
+                          <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                            draft
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs text-gray-500">{tpl.description}</span>
+                    </DropdownMenuItem>
+                  </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={handleGeneratePayroll}>
               <FileText className="mr-2 h-4 w-4" />
               Generate Payroll
@@ -1228,7 +1832,7 @@ export function Payroll() {
         );
       })()}
 
-      {isEmployee && currentEmployee && (
+      {isSelfPayslipView && currentEmployee && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1335,6 +1939,8 @@ export function Payroll() {
                   <TableHead className="text-right">Employees</TableHead>
                   <TableHead className="text-right">Net Salary</TableHead>
                   <TableHead>Audit</TableHead>
+                  <TableHead>Author</TableHead>
+                  <TableHead>Modifier</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1347,12 +1953,23 @@ export function Payroll() {
                   </TableRow>
                 )}
                 {visibleBatches.map((batch) => {
-                  const matchEmp = (uid: string | undefined) =>
-                    uid ? employees.find(e => e.id === uid || (e as Employee).apiId === uid) : undefined;
-                  const uploader = matchEmp(batch.uploadedBy);
-                  const approver = matchEmp(batch.approvedBy);
-                  const completer = matchEmp(batch.completedBy);
-                  const rejecter = matchEmp(batch.rejectedBy);
+                  // Display names come from the backend now (user→employee
+                  // resolved on the DTO). The legacy local lookup against
+                  // `employees` failed for non-admin actors because
+                  // batch.uploadedBy / approvedBy is a USER UUID, not an
+                  // employee id — `employees.find()` couldn't match it.
+                  const uploaderName = batch.uploadedByName
+                    ?? employees.find(e => e.id === batch.uploadedBy || (e as Employee).apiId === batch.uploadedBy)?.name
+                    ?? '—';
+                  const approverName = batch.approvedByName
+                    ?? (batch.approvedBy ? employees.find(e => e.id === batch.approvedBy || (e as Employee).apiId === batch.approvedBy)?.name : undefined)
+                    ?? null;
+                  const completerName = batch.completedByName
+                    ?? (batch.completedBy ? employees.find(e => e.id === batch.completedBy || (e as Employee).apiId === batch.completedBy)?.name : undefined)
+                    ?? null;
+                  const rejecterName = batch.rejectedByName
+                    ?? (batch.rejectedBy ? employees.find(e => e.id === batch.rejectedBy || (e as Employee).apiId === batch.rejectedBy)?.name : undefined)
+                    ?? null;
                   const rowTone =
                     batch.status === 'pending'  ? 'bg-yellow-50/40' :
                     batch.status === 'rejected' ? 'bg-red-50/40'    : '';
@@ -1377,16 +1994,28 @@ export function Payroll() {
                         ${batch.netSalary.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-[11px] text-gray-600 leading-snug">
-                        <p>📥 {uploader?.name ?? '—'} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
-                        {approver && batch.approvedAt && (
-                          <p>✅ {approver.name} · {format(new Date(batch.approvedAt), 'MMM dd HH:mm')}</p>
+                        <p>📥 {uploaderName} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
+                        {approverName && batch.approvedAt && (
+                          <p>✅ {approverName} · {format(new Date(batch.approvedAt), 'MMM dd HH:mm')}</p>
                         )}
-                        {completer && batch.completedAt && (
-                          <p>💰 {completer.name} · {format(new Date(batch.completedAt), 'MMM dd HH:mm')}</p>
+                        {completerName && batch.completedAt && (
+                          <p>💰 {completerName} · {format(new Date(batch.completedAt), 'MMM dd HH:mm')}</p>
                         )}
-                        {rejecter && batch.rejectedAt && (
-                          <p className="text-red-700">❌ {rejecter.name} · {format(new Date(batch.rejectedAt), 'MMM dd HH:mm')}</p>
+                        {rejecterName && batch.rejectedAt && (
+                          <p className="text-red-700">❌ {rejecterName} · {format(new Date(batch.rejectedAt), 'MMM dd HH:mm')}</p>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <AuditCell
+                          name={(batch as any).createdByName ?? uploaderName}
+                          at={(batch as any).createdAt ?? batch.uploadedAt}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <AuditCell
+                          name={(batch as any).updatedByName}
+                          at={(batch as any).updatedAt}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1 flex-wrap">
@@ -1449,7 +2078,7 @@ export function Payroll() {
         );
       })()}
 
-      {isEmployee && !selectedBatch && (
+      {isSelfPayslipView && !selectedBatch && (
         <Card>
           <CardHeader>
             <CardTitle>My Payroll Records</CardTitle>
@@ -1603,7 +2232,7 @@ export function Payroll() {
               const sentByChannel = { mail: sentMail, sms: sentSms, bank: sentBank } as const;
               const setSentByChannel = { mail: setSentMail, sms: setSentSms, bank: setSentBank } as const;
 
-              const dispatch = (channel: 'mail' | 'sms' | 'bank') => {
+              const dispatch = async (channel: 'mail' | 'sms' | 'bank') => {
                 if (selectedRowIds.size === 0) {
                   toast.warning('Tick at least one row first.');
                   return;
@@ -1618,26 +2247,59 @@ export function Payroll() {
                   toast.warning(`All ${selectedRowIds.size} selected row${selectedRowIds.size === 1 ? ' is' : 's are'} already sent by ${labels[channel]}.`);
                   return;
                 }
-                // Mark as Yes locally — backend wiring (POST
-                // .../dispatch?channel=…) is a follow-up.
-                setSentByChannel[channel](prev => {
-                  const next = new Set(prev);
-                  targets.forEach(id => next.add(id));
-                  return next;
-                });
-                const note = alreadySent > 0
-                  ? ` — ${alreadySent} already sent earlier and skipped.`
-                  : '';
-                toast.success(
-                  `Queued ${targets.length} payslip${targets.length === 1 ? '' : 's'} for ${labels[channel]}${note}`,
-                  { duration: 6000 },
-                );
+
+                // Mock mode keeps the legacy in-memory behavior — no
+                // backend to call against. Live mode persists to the
+                // database via POST /payroll/batches/{id}/dispatch so a
+                // page reload still shows the green ticks.
+                if (USE_MOCKS || !selectedBatch) {
+                  setSentByChannel[channel](prev => {
+                    const next = new Set(prev);
+                    targets.forEach(id => next.add(id));
+                    return next;
+                  });
+                  const note = alreadySent > 0
+                    ? ` — ${alreadySent} already sent earlier and skipped.`
+                    : '';
+                  toast.success(
+                    `Queued ${targets.length} payslip${targets.length === 1 ? '' : 's'} for ${labels[channel]}${note}`,
+                    { duration: 6000 },
+                  );
+                  return;
+                }
+
+                try {
+                  const res = await payrollApi.dispatchBatchItems(selectedBatch.id, channel, targets);
+                  // Reflect the server-confirmed dispatched ids in local
+                  // state. We mirror only `targets` here — the server
+                  // re-applies its own idempotency check, but we already
+                  // filtered out already-sent rows above, so targets and
+                  // res.dispatched should match in normal flows.
+                  setSentByChannel[channel](prev => {
+                    const next = new Set(prev);
+                    targets.forEach(id => next.add(id));
+                    return next;
+                  });
+                  const note = alreadySent > 0
+                    ? ` — ${alreadySent} already sent earlier and skipped.`
+                    : '';
+                  toast.success(
+                    `Queued ${res.dispatched} payslip${res.dispatched === 1 ? '' : 's'} for ${labels[channel]}${note}`,
+                    { duration: 6000 },
+                  );
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : `Failed to dispatch ${labels[channel]}`);
+                }
               };
 
+              // Visual cue for the per-channel sent state. Filled green
+              // tick = already dispatched (and locked out of subsequent
+              // bulk sends by the dispatch filter at L2238). Hollow gray
+              // circle = not sent yet.
               const yesNo = (yes: boolean) =>
                 yes
-                  ? <Badge className="bg-green-100 text-green-800 border-0">Yes</Badge>
-                  : <Badge variant="outline" className="text-gray-500">No</Badge>;
+                  ? <CheckCircle className="h-5 w-5 text-green-600 inline" aria-label="Sent" />
+                  : <Circle className="h-5 w-5 text-gray-300 inline" aria-label="Not sent" />;
 
               return (
                 <>
@@ -2086,7 +2748,7 @@ function ApproverPicker({
   if (candidates.length === 0) {
     return (
       <p className="text-xs text-gray-400 italic px-3 py-2 border rounded-md">
-        No other active admins available.
+        No other active users with Payroll access available.
       </p>
     );
   }

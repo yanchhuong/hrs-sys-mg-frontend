@@ -38,16 +38,93 @@ const fmt = (d: Date) => {
 // ---------------------------------------------------------------------------
 // Payroll export
 // ---------------------------------------------------------------------------
+/**
+ * Template registry for payroll exports.
+ *
+ * - `standard`  — full multi-sheet HR report (Summary + Detail + Pivot).
+ *                 Use for internal record-keeping.
+ * - `simple`    — one sheet, plain-English columns, matching the
+ *                 "Simple Payroll System" template style. Good for sharing
+ *                 with managers who just want a single readable table.
+ * - `aba`       — ABA Bank bulk-payment template. One sheet, beneficiary
+ *                 account / name / amount / currency / reference.
+ * - `acleda`    — ACLEDA Bank bulk-payroll template (same shape as ABA
+ *                 with bank-specific header wording).
+ * - `wing`      — Wing bulk-disbursement template, keyed by Wing ID /
+ *                 phone instead of bank account.
+ *
+ * Bank templates are best-effort approximations of common Cambodian bulk
+ * payment formats — adjust column headers if your bank-supplied template
+ * names them differently.
+ */
+export type PayrollTemplate = 'standard' | 'simple' | 'aba' | 'acleda' | 'wing';
+
+export interface PayrollTemplateInfo {
+  id: PayrollTemplate;
+  label: string;
+  description: string;
+  /** True when the layout hasn't been verified against the bank's real
+   *  upload template yet — UI shows a (draft) tag to discourage portal
+   *  uploads until headers are confirmed with a real sample file. */
+  draft?: boolean;
+}
+
+export const PAYROLL_TEMPLATES: PayrollTemplateInfo[] = [
+  { id: 'standard', label: 'Standard Report', description: 'Full multi-sheet HR report (Summary + Detail + Pivot)' },
+  { id: 'simple',   label: 'Simple Summary',  description: 'One sheet, plain-English columns — easy to share' },
+  { id: 'aba',      label: 'ABA Bank',        description: 'Bulk-payroll template for ABA Bank' },
+  { id: 'acleda',   label: 'ACLEDA Bank',     description: 'Draft layout — confirm headers with a real ACLEDA template before uploading', draft: true },
+  { id: 'wing',     label: 'Wing',            description: 'Draft layout — confirm headers with a real Wing template before uploading',   draft: true },
+];
+
 export interface PayrollExportOptions {
   payrollItems: PayrollItem[];
   employees: Employee[];
   period?: string; // e.g. "April 2026" or "2026-04"
   fileName?: string;
+  /** Defaults to 'standard' to preserve legacy callers. */
+  template?: PayrollTemplate;
+  /** Resolver that turns the raw `Employee.department` value (which is a
+   *  departmentId UUID in live mode) into a human-readable department name.
+   *  Caller passes the same helper used to render the on-screen tables.
+   *  Falls back to the raw value when omitted. */
+  deptName?: (raw: string | undefined) => string;
 }
 
-export function exportPayrollToExcel({ payrollItems, employees, period, fileName }: PayrollExportOptions) {
+export function exportPayrollToExcel({ payrollItems, employees, period, fileName, template = 'standard', deptName }: PayrollExportOptions) {
+  // Live mode keys PayrollItem.employeeId by the backend UUID, while the
+  // human-readable empNo lives on Employee.id and the UUID on Employee.apiId.
+  // Index by both so every row resolves regardless of which side it came from.
+  const empById = new Map<string, Employee>();
+  for (const e of employees) {
+    if (e.id) empById.set(e.id, e);
+    if (e.apiId) empById.set(e.apiId, e);
+  }
+  // Default resolver: if `dept` looks like a UUID, hide it ("-") so we never
+  // leak FK UUIDs into a user-facing export. Otherwise pass through. Caller-
+  // provided resolver always wins.
+  const resolveDept = deptName ?? ((raw?: string) => {
+    if (!raw) return '-';
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) ? '-' : raw;
+  });
+  const ctx = { payrollItems, empById, period, fileName, deptName: resolveDept };
+  if (template === 'simple')  return exportSimpleSummary(ctx);
+  if (template === 'aba')     return exportAbaTemplate(ctx);
+  if (template === 'acleda')  return exportBankTemplate({ ...ctx, bank: 'acleda' });
+  if (template === 'wing')    return exportWingTemplate({ ...ctx, employees });
+  return exportStandardReport(ctx);
+}
+
+type TemplateCtx = {
+  payrollItems: PayrollItem[];
+  empById: Map<string, Employee>;
+  period?: string;
+  fileName?: string;
+  deptName: (raw: string | undefined) => string;
+};
+
+function exportStandardReport({ payrollItems, empById, period, fileName, deptName }: TemplateCtx) {
   const wb = XLSX.utils.book_new();
-  const empById = new Map(employees.map(e => [e.id, e]));
 
   // Sheet 1: Summary
   const totalNet = payrollItems.reduce((s, p) => s + p.totalPay, 0);
@@ -74,7 +151,7 @@ export function exportPayrollToExcel({ payrollItems, employees, period, fileName
   const deptTotals = new Map<string, { emp: Set<string>; earn: number; ded: number; net: number }>();
   payrollItems.forEach(p => {
     const emp = empById.get(p.employeeId);
-    const dept = emp?.department || 'Unknown';
+    const dept = deptName(emp?.department) || 'Unknown';
     const entry = deptTotals.get(dept) || { emp: new Set(), earn: 0, ded: 0, net: 0 };
     entry.emp.add(p.employeeId);
     entry.earn += p.totalEarnings;
@@ -102,9 +179,12 @@ export function exportPayrollToExcel({ payrollItems, employees, period, fileName
     const emp = empById.get(p.employeeId);
     detailRows.push([
       p.month,
-      p.employeeId,
-      emp?.name || '-',
-      emp?.department || '-',
+      // Always emit the human-readable empNo (Employee.id), never the
+      // backend UUID — UUIDs in user-facing files are confusing and the
+      // codebase has a hard rule against leaking them.
+      emp?.id || p.employeeId,
+      emp?.name || p.employeeName || '-',
+      deptName(emp?.department),
       emp?.position || '-',
       p.baseSalary,
       p.positionAllowance || 0,
@@ -141,10 +221,11 @@ export function exportPayrollToExcel({ payrollItems, employees, period, fileName
   ];
   Array.from(pivotMap.entries()).forEach(([empId, v]) => {
     const emp = empById.get(empId);
+    const sample = payrollItems.find(p => p.employeeId === empId);
     pivotRows.push([
-      empId,
-      emp?.name || '-',
-      emp?.department || '-',
+      emp?.id || empId,
+      emp?.name || sample?.employeeName || '-',
+      deptName(emp?.department),
       v.months.size,
       v.earn.toFixed(2),
       v.ded.toFixed(2),
@@ -156,6 +237,177 @@ export function exportPayrollToExcel({ payrollItems, employees, period, fileName
 
   const name = fileName || `Payroll-Report-${period || fmt(new Date())}.xlsx`;
   XLSX.writeFile(wb, name);
+}
+
+// ---------------------------------------------------------------------------
+// Simple Summary template — single sheet, plain English columns. Mirrors the
+// "Simple Payroll System" layout that's common in shared spreadsheets so a
+// non-HR reader can scan a payroll run without learning our internal jargon.
+// Ends with a Total row.
+// ---------------------------------------------------------------------------
+/** Builds the data + total rows for the ABA-style simple-payroll layout.
+ *  Shared by Simple Summary (no banner) and ABA Bank (with banner). */
+function buildSimplePayrollRows(payrollItems: PayrollItem[], empById: Map<string, Employee>): {
+  header: string[];
+  data: any[][];
+  total: any[];
+} {
+  const header = [
+    'Name', 'PAY', 'TOTAL HOURS WORKED', 'OVERTIME',
+    'TOTAL OVERTIME HOURS', 'GROSS PAY', 'INCOME TAX(15%)',
+    'OTHER DEDUCTIBLES', 'NET PAY',
+  ];
+  const data: any[][] = [];
+  let tBase = 0, tHrs = 0, tOtPay = 0, tOtHrs = 0, tGross = 0, tTax = 0, tOther = 0, tNet = 0;
+  payrollItems.forEach(p => {
+    const emp = empById.get(p.employeeId);
+    // "Total Hours Worked" isn't tracked on PayrollItem itself; derive it
+    // from a flat 8h × working-days assumption since that's what the bank
+    // template asks for at month granularity. Falls back to 0 if the
+    // month can't be parsed.
+    const hoursWorked = estimateMonthHours(p.month);
+    const tax = p.taxOnSalary || 0;
+    const other = (p.firstSalaryDeduction || 0) + (p.nssfPension || 0) + (p.otherDeductions || 0);
+    data.push([
+      emp?.name || p.employeeName || '-',
+      p.baseSalary,
+      hoursWorked,
+      p.otPay || 0,
+      p.otHours || 0,
+      p.totalEarnings,
+      tax,
+      other,
+      p.totalPay,
+    ]);
+    tBase += p.baseSalary; tHrs += hoursWorked; tOtPay += p.otPay || 0; tOtHrs += p.otHours || 0;
+    tGross += p.totalEarnings; tTax += tax; tOther += other; tNet += p.totalPay;
+  });
+  return {
+    header,
+    data,
+    total: ['TOTAL', tBase, tHrs, tOtPay, tOtHrs, tGross, tTax, tOther, tNet],
+  };
+}
+
+function exportSimpleSummary({ payrollItems, empById, period, fileName }: TemplateCtx) {
+  const wb = XLSX.utils.book_new();
+  const { header, data, total } = buildSimplePayrollRows(payrollItems, empById);
+  const rows: any[][] = [
+    [`Payroll Summary — ${period || 'All'}`],
+    [],
+    header,
+    ...data,
+    total,
+  ];
+  appendSheet(wb, 'Payroll Summary', rows);
+  XLSX.writeFile(wb, fileName || `Payroll-Simple-${period || fmt(new Date())}.xlsx`);
+}
+
+/**
+ * ABA Bank bulk-payroll template. Layout matches the actual ABA-issued
+ * Excel template:
+ *   Row 1 — "SIMPLE PAYROLL SYSTEM IN EXCEL" banner merged across A:I
+ *   Row 2 — column headers (Name, PAY, TOTAL HOURS WORKED, ...)
+ *   Row 3..n — one row per employee
+ *   Row n+1 — TOTAL row
+ * Sheet name and file name use ABA branding so the bank's import parser
+ * picks up the file by convention.
+ */
+function exportAbaTemplate({ payrollItems, empById, period, fileName }: TemplateCtx) {
+  const wb = XLSX.utils.book_new();
+  const { header, data, total } = buildSimplePayrollRows(payrollItems, empById);
+  const rows: any[][] = [
+    ['SIMPLE PAYROLL SYSTEM IN EXCEL'],
+    header,
+    ...data,
+    total,
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = autoSizeColumns(rows);
+  // Merge the banner cell across all 9 data columns (A1:I1) so it renders
+  // as a single title row matching the ABA-supplied template.
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } }];
+  XLSX.utils.book_append_sheet(wb, ws, 'ABA Payroll');
+  XLSX.writeFile(wb, fileName || `ABA-Payroll-${period || fmt(new Date())}.xlsx`);
+}
+
+/** Rough month-hours estimate (working days × 8h) so the Simple Summary
+ *  has a sensible "Total Hours Worked" column even though we don't store
+ *  that on PayrollItem directly. Returns 0 when month can't be parsed. */
+function estimateMonthHours(month?: string): number {
+  if (!month) return 0;
+  const m = /^(\d{4})-(\d{2})/.exec(month);
+  if (!m) return 0;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const last = new Date(y, mo + 1, 0).getDate();
+  let workdays = 0;
+  for (let d = 1; d <= last; d++) {
+    const wd = new Date(y, mo, d).getDay();
+    if (wd !== 0 && wd !== 6) workdays++;
+  }
+  return workdays * 8;
+}
+
+// ---------------------------------------------------------------------------
+// Bank beneficiary-list templates. ACLEDA accepts a flat beneficiary list
+// (account / name / amount / currency / reference). ABA uses a different
+// payroll-summary layout — see exportAbaTemplate above.
+// Header wording differs slightly per bank's published template; if your
+// bank's actual template uses different headers, edit the per-bank config
+// below — the row-builder is the same.
+// ---------------------------------------------------------------------------
+type Bank = 'acleda';
+const BANK_CONFIG: Record<Bank, { sheetName: string; filePrefix: string; headers: string[] }> = {
+  acleda: {
+    sheetName: 'ACLEDA Payroll',
+    filePrefix: 'ACLEDA-Payroll',
+    headers: ['No.', 'Beneficiary Account', 'Beneficiary Name', 'Amount', 'Currency', 'Reference'],
+  },
+};
+
+function exportBankTemplate({ payrollItems, empById, period, fileName, bank }: TemplateCtx & { bank: Bank }) {
+  const cfg = BANK_CONFIG[bank];
+  const wb = XLSX.utils.book_new();
+  const rows: any[][] = [cfg.headers];
+  payrollItems.forEach((p, i) => {
+    const emp = empById.get(p.employeeId);
+    rows.push([
+      i + 1,
+      p.payrollAccount || '',
+      emp?.name || p.employeeName || '-',
+      Number(p.totalPay.toFixed(2)),
+      p.currency || 'USD',
+      `Salary ${period || ''}`.trim(),
+    ]);
+  });
+  appendSheet(wb, cfg.sheetName, rows);
+  XLSX.writeFile(wb, fileName || `${cfg.filePrefix}-${period || fmt(new Date())}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
+// Wing bulk-disbursement template — keyed by Wing ID / phone instead of a
+// bank account number. Falls back to the employee's contact number when no
+// dedicated Wing ID is stored.
+// ---------------------------------------------------------------------------
+function exportWingTemplate({ payrollItems, empById, period, fileName }: TemplateCtx & { employees?: Employee[] }) {
+  const wb = XLSX.utils.book_new();
+  const rows: any[][] = [
+    ['No.', 'Wing ID / Phone', 'Receiver Name', 'Amount', 'Currency', 'Remark'],
+  ];
+  payrollItems.forEach((p, i) => {
+    const emp = empById.get(p.employeeId);
+    rows.push([
+      i + 1,
+      p.payrollAccount || emp?.contactNumber || '',
+      emp?.name || p.employeeName || '-',
+      Number(p.totalPay.toFixed(2)),
+      p.currency || 'USD',
+      `Salary ${period || ''}`.trim(),
+    ]);
+  });
+  appendSheet(wb, 'Wing Bulk Disbursement', rows);
+  XLSX.writeFile(wb, fileName || `Wing-Payroll-${period || fmt(new Date())}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------

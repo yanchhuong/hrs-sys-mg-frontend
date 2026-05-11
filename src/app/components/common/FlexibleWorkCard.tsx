@@ -33,6 +33,7 @@ import {
   deleteFlexibleSchedule,
 } from '../../utils/flexibleSchedule';
 import { ScanRule, ScanMode } from '../../utils/scanRule';
+import { makeDeptName } from '../../utils/deptName';
 import * as flexApi from '../../api/flexibleSchedules';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
@@ -132,11 +133,8 @@ export function FlexibleWorkCard({ scanRule }: Props) {
 
   // Resolve departmentId → name. The adapter stores the UUID on
   // `employee.department`; we never want to leak that into the UI.
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (idOrName: string | undefined): string => {
-    if (!idOrName || idOrName === '-') return '';
-    return deptNameById.get(idOrName) ?? (USE_MOCKS ? idOrName : '');
-  };
+  // Stale UUIDs (dept deleted) collapse to '' rather than show through.
+  const deptName = makeDeptName(deptList, '');
 
   const refresh = async () => {
     if (USE_MOCKS) {

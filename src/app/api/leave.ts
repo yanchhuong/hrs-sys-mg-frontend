@@ -18,6 +18,12 @@ export interface LeaveRequest {
   approvedBy?: string | null;
   approvedAt?: string | null;
   submittedAt: string;
+  /** Author + modifier audit. Display names resolved server-side. */
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CreateLeaveRequest {

@@ -6,6 +6,7 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -51,7 +52,7 @@ import {
 } from '../ui/command';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, ChevronsUpDown, Check,
+  Save, AlertTriangle, ChevronsUpDown, Check, Info,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { format } from 'date-fns';
@@ -91,10 +92,18 @@ const MODULES: ModuleDef[] = [
   { key: 'increase', label: 'Increase', description: 'Salary increases and bonuses' },
   { key: 'payroll', label: 'Payroll', description: 'Payroll batches and payslips' },
   { key: 'reports', label: 'Reports', description: 'Attendance & payroll reporting' },
-  { key: 'contracts', label: 'Contracts', description: 'Employment contracts' },
   { key: 'settings', label: 'Settings', description: 'System and policy settings' },
   { key: 'user-management', label: 'User Management', description: 'Users, roles, permissions' },
 ];
+
+/**
+ * Backend modules the matrix doesn't surface but {@code @perm.allow} still
+ * checks at the API level (Contracts is the canonical example — it was
+ * removed from the visible matrix to keep the grid compact, but the
+ * Contracts endpoints still gate on it). Custom roles created from the
+ * Admin base seed full grants on these so they don't silently 403.
+ */
+const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts'] as const;
 
 // Default permissions mirror the role-gating currently enforced in the views.
 const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action): boolean => {
@@ -110,7 +119,6 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
   // employee
   if (ADMIN_FULL.includes(moduleKey)) return false;
   if (moduleKey === 'reports') return false;
-  if (moduleKey === 'contracts') return action === 'view';
   if (moduleKey === 'employees') return action === 'view';
   if (APPROVAL_MODULES.includes(moduleKey)) return action === 'view' || action === 'create';
   return action === 'view';
@@ -220,11 +228,7 @@ export function UserManagement() {
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
 
-  const deptNameById = new Map<string, string>(deptList.map(d => [d.id, d.name]));
-  const deptName = (id?: string): string => {
-    if (!id) return '';
-    return deptNameById.get(id) ?? (USE_MOCKS ? id : '');
-  };
+  const deptName = makeDeptName(deptList, '');
 
   const loadUsers = async () => {
     if (USE_MOCKS) {
@@ -353,7 +357,10 @@ export function UserManagement() {
   const [customRoleDialogOpen, setCustomRoleDialogOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
-  const [newRoleBase, setNewRoleBase] = useState<'employee' | 'manager' | 'blank'>('employee');
+  // Custom roles always start from Admin (full access). The admin then
+  // refines the grid in the Permissions tab — that's the workflow per the
+  // matrix screenshot, so the dialog no longer asks for a starting point.
+  const [newRoleBase] = useState<'employee' | 'manager' | 'admin' | 'blank'>('admin');
   const [newRoleError, setNewRoleError] = useState<string | null>(null);
 
   const [deleteRoleTarget, setDeleteRoleTarget] = useState<RoleDef | null>(null);
@@ -604,7 +611,6 @@ export function UserManagement() {
   const openCustomRoleDialog = () => {
     setNewRoleName('');
     setNewRoleDescription('');
-    setNewRoleBase('employee');
     setNewRoleError(null);
     setCustomRoleDialogOpen(true);
   };
@@ -624,8 +630,14 @@ export function UserManagement() {
     const key = slugifyRoleKey(trimmedName, existingKeys);
     const palette = CUSTOM_PALETTE[customRoles.length % CUSTOM_PALETTE.length];
     const description = newRoleDescription.trim() || 'Custom role';
+    // Backend supports baseRole=employee|manager. For "admin" (full perms)
+    // and "blank" we send undefined and seed perms ourselves below.
     const baseRole: 'employee' | 'manager' | undefined =
-      newRoleBase === 'blank' ? undefined : newRoleBase;
+      newRoleBase === 'employee' || newRoleBase === 'manager' ? newRoleBase : undefined;
+    const fullAccess: Record<Action, boolean> =
+      { view: true, create: true, update: true, delete: true };
+    const noAccess: Record<Action, boolean> =
+      { view: false, create: false, update: false, delete: false };
 
     if (USE_MOCKS) {
       const def: RoleDef = {
@@ -638,9 +650,9 @@ export function UserManagement() {
         const next = { ...prev };
         for (const mod of MODULES) {
           const seed: Record<Action, boolean> =
-            newRoleBase === 'blank'
-              ? { view: false, create: false, update: false, delete: false }
-              : { ...(prev[mod.key]?.[newRoleBase] ?? { view: false, create: false, update: false, delete: false }) };
+            newRoleBase === 'admin'  ? { ...fullAccess }
+            : newRoleBase === 'blank' ? { ...noAccess }
+            : { ...(prev[mod.key]?.[newRoleBase] ?? noAccess) };
           next[mod.key] = { ...(prev[mod.key] ?? {}), [key]: seed };
         }
         return next;
@@ -652,9 +664,38 @@ export function UserManagement() {
       return;
     }
 
-    // Live mode — backend persists role + seeds permissions from baseRole.
+    // Live mode — backend persists role + seeds permissions from baseRole
+    // when it's employee/manager. For "admin" we create with no base, then
+    // PUT the full V/C/U/D=true grid for every module.
     try {
       await rolesApi.create({ key, name: trimmedName, description, baseRole });
+      if (newRoleBase === 'admin') {
+        const fullGrid: rolesApi.RolePermission[] = [];
+        // Visible modules from the matrix.
+        for (const mod of MODULES) {
+          for (const action of ACTIONS) {
+            fullGrid.push({
+              module: mod.key as rolesApi.PermissionModule,
+              action: action as rolesApi.PermissionAction,
+              granted: true,
+            });
+          }
+        }
+        // Backend gates on a few modules that aren't shown in the matrix
+        // (e.g. contracts). Without these the role would silently 403 on
+        // endpoints like /api/v1/contracts even though the user picked
+        // "Admin base — full access". Seed them granted by default.
+        for (const modKey of HIDDEN_MODULES_FOR_ADMIN_SEED) {
+          for (const action of ACTIONS) {
+            fullGrid.push({
+              module: modKey as rolesApi.PermissionModule,
+              action: action as rolesApi.PermissionAction,
+              granted: true,
+            });
+          }
+        }
+        await rolesApi.replacePermissions(key, fullGrid);
+      }
       await loadRolesAndPermissions();
       setCustomRoleDialogOpen(false);
       toast.success(`Custom role "${trimmedName}" created`);
@@ -824,23 +865,67 @@ export function UserManagement() {
                             employees={employees}
                             deptName={deptName}
                             value={formData.employeeId}
-                            onChange={v => setFormData({ ...formData, employeeId: v })}
+                            onChange={v => {
+                              // Selecting an employee auto-fills the dept and
+                              // (when blank) the email — same data already lives
+                              // on the Employee row, so the admin doesn't have
+                              // to retype it. Email is only filled when blank
+                              // so a manually-typed login isn't overwritten.
+                              const picked = employees.find(
+                                e => e.id === v || (e as Employee).apiId === v,
+                              );
+                              setFormData(prev => ({
+                                ...prev,
+                                employeeId: v,
+                                departmentId: picked?.department && picked.department !== '-'
+                                  ? picked.department
+                                  : prev.departmentId,
+                                email: prev.email || picked?.email || '',
+                              }));
+                            }}
                           />
+                          {formData.employeeId && (() => {
+                            const picked = employees.find(
+                              e => e.id === formData.employeeId || (e as Employee).apiId === formData.employeeId,
+                            );
+                            if (!picked) return null;
+                            return (
+                              <p className="text-xs text-gray-500">
+                                {picked.position}
+                                {picked.department && picked.department !== '-' && ` · ${deptName(picked.department)}`}
+                                {picked.contactNumber && ` · ${picked.contactNumber}`}
+                              </p>
+                            );
+                          })()}
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="departmentId">Department</Label>
+                          <Label htmlFor="departmentId">Department / Group / Team</Label>
                           <select
                             id="departmentId"
                             value={formData.departmentId}
                             onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md"
+                            className="w-full pl-3 pr-8 py-2 border rounded-md truncate bg-white"
                           >
-                            <option value="">Select Department</option>
-                            {deptList.map((dept) => (
-                              <option key={dept.id} value={dept.id}>
-                                {dept.name}
-                              </option>
-                            ))}
+                            <option value="">Select…</option>
+                            {/* Group by type so admins see Departments, Groups,
+                                and Teams in tidy stacks. The optgroup label
+                                disambiguates rows that share a name across
+                                types (e.g. a "Local Outsourcing" Team vs Dept). */}
+                            {(['department', 'group', 'team'] as const).map(t => {
+                              const bucket = deptList
+                                .filter(d => ((d as { type?: string }).type ?? 'department') === t)
+                                .sort((a, b) => a.name.localeCompare(b.name));
+                              if (bucket.length === 0) return null;
+                              const label = t === 'department' ? 'Departments'
+                                : t === 'group' ? 'Groups' : 'Teams';
+                              return (
+                                <optgroup key={t} label={label}>
+                                  {bucket.map(dept => (
+                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                  ))}
+                                </optgroup>
+                              );
+                            })}
                           </select>
                         </div>
                       </div>
@@ -1067,7 +1152,9 @@ export function UserManagement() {
                 <div>
                   <CardTitle>Permission Matrix</CardTitle>
                   <CardDescription>
-                    Configure what each role can do per module. V = View, C = Create, U = Update, D = Delete.
+                    Configure what each role can do per module.
+                    Actions: V = View, C = Create, U = Update, D = Delete.
+                    Scope: O = Owner (own records), M = Member (direct reports), A = All (tenant-wide).
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
@@ -1103,6 +1190,10 @@ export function UserManagement() {
                             {ACTIONS.map(a => (
                               <span key={a} className="w-6 text-center">{ACTION_SHORT[a]}</span>
                             ))}
+                            {/* Visibility scope columns — Owner / Member / All. */}
+                            <span className="w-6 text-center border-l pl-2 ml-1" title="Scope: Owner — sees own records only">O</span>
+                            <span className="w-6 text-center" title="Scope: Member — sees direct reports' records">M</span>
+                            <span className="w-6 text-center" title="Scope: All — full tenant view">A</span>
                           </div>
                         </TableHead>
                       ))}
@@ -1120,6 +1211,22 @@ export function UserManagement() {
                         {roles.filter(r => r.key !== 'admin').map(role => {
                           const roleState = permissions[mod.key]?.[role.key];
                           const allOn = ACTIONS.every(a => roleState?.[a]);
+                          const hasAnyAccess = ACTIONS.some(a => roleState?.[a]);
+                          // Visibility scope per role (read-only indicators):
+                          //   Manager  → Owner + Member
+                          //   Employee → Owner only
+                          //   Custom   → All
+                          // The actual scoping is enforced by useTeamScope /
+                          // isTenantWide; these checkboxes are informational
+                          // until per-module scope override is wired. Hidden
+                          // entirely when the role has no access to the
+                          // module — scope is meaningless without access.
+                          const isCustom = !role.builtIn;
+                          const scope = {
+                            owner:  isCustom ? false : true,
+                            member: isCustom ? false : role.key === 'manager',
+                            all:    isCustom,
+                          };
                           return (
                             <TableCell key={role.key} className="border-l">
                               <div className="flex items-center justify-center gap-4">
@@ -1132,6 +1239,30 @@ export function UserManagement() {
                                     />
                                   </div>
                                 ))}
+                                {/* Scope checkboxes — only rendered when the
+                                    role actually has some access to this
+                                    module. Layout reserves the same width
+                                    when hidden so the column stays aligned. */}
+                                {hasAnyAccess ? (
+                                  <>
+                                    <div className="w-6 flex justify-center border-l pl-2 ml-1" title={`${role.name}: Owner scope — sees own records`}>
+                                      <Checkbox checked={scope.owner} disabled />
+                                    </div>
+                                    <div className="w-6 flex justify-center" title={`${role.name}: Member scope — sees direct reports' records`}>
+                                      <Checkbox checked={scope.member} disabled />
+                                    </div>
+                                    <div className="w-6 flex justify-center" title={`${role.name}: All scope — full tenant view`}>
+                                      <Checkbox checked={scope.all} disabled />
+                                    </div>
+                                  </>
+                                ) : (
+                                  // Empty placeholders preserve column width.
+                                  <>
+                                    <div className="w-6 border-l ml-1" />
+                                    <div className="w-6" />
+                                    <div className="w-6" />
+                                  </>
+                                )}
                               </div>
                               <div className="flex justify-center mt-2">
                                 <button
@@ -1194,29 +1325,13 @@ export function UserManagement() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Start from</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {([
-                  { key: 'employee', label: 'Employee', hint: 'Copy Employee perms' },
-                  { key: 'manager', label: 'Manager', hint: 'Copy Manager perms' },
-                  { key: 'blank', label: 'Blank', hint: 'Nothing allowed yet' },
-                ] as const).map(opt => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setNewRoleBase(opt.key)}
-                    className={`p-2.5 border rounded-md text-left transition-colors ${
-                      newRoleBase === opt.key
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{opt.label}</p>
-                    <p className="text-[10px] text-gray-500">{opt.hint}</p>
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 border border-blue-200">
+              <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800">
+                The role starts with <span className="font-medium">full access</span>.
+                Switch to the <span className="font-medium">Permissions</span> tab
+                after creating to revoke specific menus or actions.
+              </p>
             </div>
 
             {newRoleError && (

@@ -1,0 +1,12 @@
+node_modules
+dist
+.vite
+build
+coverage
+.git
+.gitignore
+*.log
+.env
+.env.local
+Dockerfile
+.dockerignore

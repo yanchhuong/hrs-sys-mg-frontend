@@ -31,7 +31,7 @@ export const dict: Dict = {
   'role.employee':            { en: 'Employee',             km: 'បុគ្គលិក',           zh: '员工' },
 
   // --- Tenant sidebar ------------------------------------------------------
-  'nav.home':                 { en: 'Home',                 km: 'ទំព័រដើម',           zh: '首页' },
+  'nav.home':                 { en: 'Dashboard',            km: 'ផ្ទាំងបញ្ជា',          zh: '仪表板' },
   'nav.employee':             { en: 'Employee',             km: 'បុគ្គលិក',           zh: '员工' },
   'nav.attendance':           { en: 'Attendance',           km: 'វត្តមាន',           zh: '考勤' },
   'nav.exception':            { en: 'All Leave',            km: 'ច្បាប់ឈប់សម្រាកទាំងអស់', zh: '全部请假' },
@@ -42,6 +42,7 @@ export const dict: Dict = {
   'nav.payroll_mgmt':         { en: 'Payroll Management',   km: 'គ្រប់គ្រងប្រាក់ខែ',   zh: '薪资管理' },
   'nav.time_tracking':        { en: 'Time Tracking',        km: 'តាមដានពេលវេលា',   zh: '考勤管理' },
   'nav.reports':              { en: 'Reports',              km: 'របាយការណ៍',        zh: '报表' },
+  'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },
   'nav.setting.general':      { en: 'General Settings',     km: 'ការកំណត់ទូទៅ',      zh: '常规设置' },
   'nav.setting.attendance':   { en: 'Attendance Settings',  km: 'ការកំណត់វត្តមាន',   zh: '考勤设置' },
@@ -55,6 +56,8 @@ export const dict: Dict = {
   'page.employeeSettings.description':     { en: 'Manage positions, departments and groups used across HR records.', km: 'គ្រប់គ្រងតួនាទី នាយកដ្ឋាន និងក្រុមដែលប្រើក្នុងកំណត់ត្រាបុគ្គលិក។', zh: '管理在人事记录中使用的职位、部门和小组。' },
   'page.employeeSettings.tab.positions':   { en: 'Positions',            km: 'តួនាទី',                    zh: '职位' },
   'page.employeeSettings.tab.departments': { en: 'Departments / Groups', km: 'នាយកដ្ឋាន / ក្រុម',         zh: '部门 / 小组' },
+  'page.employeeSettings.tab.salaryRules': { en: 'Salary Rules',         km: 'ច្បាប់ប្រាក់ខែ',              zh: '薪酬规则' },
+  'page.employeeSettings.tab.deviceUsers': { en: 'Device Users',         km: 'អ្នកប្រើឧបករណ៍',             zh: '设备用户' },
 
   // --- Payroll Categories settings page ----------------------------------
   'payrollCat.title':         { en: 'Payroll Categories',                                 km: 'ប្រភេទប្រាក់ខែ',                       zh: '薪资类别' },
@@ -137,7 +140,7 @@ export const dict: Dict = {
   'status.locked':            { en: 'Locked',               km: 'បានចាក់សោ',       zh: '已锁定' },
 
   // --- Page titles + descriptions (tenant) ---------------------------------
-  'page.dashboard.title':        { en: 'Home Dashboard',              km: 'ផ្ទាំងបញ្ជាដើម',           zh: '主页仪表板' },
+  'page.dashboard.title':        { en: 'Dashboard',                   km: 'ផ្ទាំងបញ្ជា',              zh: '仪表板' },
   'page.dashboard.welcome':      { en: 'Welcome back',                km: 'សូមស្វាគមន៍ត្រឡប់មកវិញ', zh: '欢迎回来' },
   'page.employees.title':        { en: 'Employee Management',         km: 'ការគ្រប់គ្រងបុគ្គលិក',    zh: '员工管理' },
   'page.employees.description':  { en: 'Manage all employee records', km: 'គ្រប់គ្រងកំណត់ត្រាបុគ្គលិកទាំងអស់', zh: '管理所有员工记录' },

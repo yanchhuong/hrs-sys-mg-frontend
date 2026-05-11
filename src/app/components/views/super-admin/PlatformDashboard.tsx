@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import {
@@ -12,34 +12,124 @@ import { format } from 'date-fns';
 import {
   mockCompanies, mockLocalInstalls, mockPlatformUsers, mockAuditTrail,
   PLAN_LIMITS, computeUsage, PlanTier,
+  Company, LocalInstall as LegacyLocalInstall,
 } from '../../../data/platformData';
+import * as platformApi from '../../../api/platform';
+import { USE_MOCKS } from '../../../api/client';
+
+// Adapter: map a live PlatformTenant to the legacy Company shape so the JSX
+// and computeUsage helper keep working without churn. Numeric fields not on
+// the live shape default to 0; lastActiveAt falls back to createdAt.
+function toLegacyCompany(t: platformApi.PlatformTenant): Company {
+  const anyT = t as unknown as Partial<Company>;
+  return {
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    contactEmail: t.contactEmail,
+    contactPhone: t.contactPhone,
+    country: t.country,
+    planTier: t.planTier as PlanTier,
+    status: t.status as Company['status'],
+    userCount: anyT.userCount ?? 0,
+    employeeCount: anyT.employeeCount ?? 0,
+    storageMb: anyT.storageMb ?? 0,
+    monthlyCostUsd: anyT.monthlyCostUsd ?? 0,
+    createdAt: t.createdAt,
+    lastActiveAt: anyT.lastActiveAt ?? t.createdAt,
+    notes: t.notes,
+  };
+}
+
+// Adapter: live LocalInstall has tenantId; legacy expects companyId. We only
+// need the fields computeUsage and the sync-health stats touch.
+function toLegacyInstall(i: platformApi.LocalInstall): LegacyLocalInstall {
+  return {
+    id: i.id,
+    companyId: i.tenantId,
+    siteName: i.siteName,
+    apiKey: '',
+    apiKeyLastFour: i.apiKeyLastFour,
+    createdAt: i.createdAt,
+    lastSyncAt: i.lastSyncAt ?? undefined,
+    lastSyncStatus: (i.lastSyncStatus === 'ok' || i.lastSyncStatus === 'error')
+      ? i.lastSyncStatus
+      : undefined,
+    lastSyncError: i.lastSyncError ?? undefined,
+    syncHealth: i.syncHealth as LegacyLocalInstall['syncHealth'],
+    agentVersion: i.agentVersion ?? '',
+  };
+}
 
 export function PlatformDashboard() {
+  const [companies, setCompanies] = useState<platformApi.PlatformTenant[]>(
+    USE_MOCKS ? (mockCompanies as unknown as platformApi.PlatformTenant[]) : [],
+  );
+  const [installs, setInstalls] = useState<platformApi.LocalInstall[]>(
+    USE_MOCKS ? (mockLocalInstalls as unknown as platformApi.LocalInstall[]) : [],
+  );
+  const [usersList, setUsersList] = useState<platformApi.PlatformUser[]>(
+    USE_MOCKS ? (mockPlatformUsers as unknown as platformApi.PlatformUser[]) : [],
+  );
+  const [auditEvents, setAuditEvents] = useState<platformApi.PlatformAuditEntry[]>(
+    USE_MOCKS ? (mockAuditTrail as unknown as platformApi.PlatformAuditEntry[]) : [],
+  );
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (USE_MOCKS) {
+      // Mock fallback — initial state already seeded from the platformData
+      // arrays cast to the API shape. Behaviour matches the pre-rewire view.
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [t, i, u, a] = await Promise.all([
+          platformApi.tenants.list(),
+          platformApi.installs.list(),
+          platformApi.users.list(),
+          platformApi.activity.list({ unacked: true }),
+        ]);
+        if (cancelled) return;
+        setCompanies(t);
+        setInstalls(i);
+        setUsersList(u);
+        setAuditEvents(a);
+      } catch { /* leave empty arrays */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const stats = useMemo(() => {
-    const active = mockCompanies.filter(c => c.status === 'active').length;
-    const trial = mockCompanies.filter(c => c.status === 'trial').length;
-    const suspended = mockCompanies.filter(c => c.status === 'suspended').length;
-    const totalEmployees = mockCompanies.reduce((s, c) => s + c.employeeCount, 0);
-    const mrr = mockCompanies.filter(c => c.status === 'active').reduce((s, c) => s + c.monthlyCostUsd, 0);
-    const totalStorage = mockCompanies.reduce((s, c) => s + c.storageMb, 0);
-    const syncIssues = mockLocalInstalls.filter(l => l.syncHealth === 'degraded' || l.syncHealth === 'down').length;
-    const never = mockLocalInstalls.filter(l => l.syncHealth === 'never').length;
+    const legacyCompanies = companies.map(toLegacyCompany);
+    const legacyInstalls = installs.map(toLegacyInstall);
+    const active = legacyCompanies.filter(c => c.status === 'active').length;
+    const trial = legacyCompanies.filter(c => c.status === 'trial').length;
+    const suspended = legacyCompanies.filter(c => c.status === 'suspended').length;
+    const totalEmployees = legacyCompanies.reduce((s, c) => s + c.employeeCount, 0);
+    const mrr = legacyCompanies.filter(c => c.status === 'active').reduce((s, c) => s + c.monthlyCostUsd, 0);
+    const totalStorage = legacyCompanies.reduce((s, c) => s + c.storageMb, 0);
+    const syncIssues = legacyInstalls.filter(l => l.syncHealth === 'degraded' || l.syncHealth === 'down').length;
+    const never = legacyInstalls.filter(l => l.syncHealth === 'never').length;
     // Quota utilization
-    const usageRows = mockCompanies
+    const usageRows = legacyCompanies
       .filter(c => c.status !== 'cancelled')
-      .map(c => ({ company: c, usage: computeUsage(c, mockLocalInstalls) }));
+      .map(c => ({ company: c, usage: computeUsage(c, legacyInstalls) }));
     const overQuotaCount = usageRows.filter(r => r.usage.storage.over || r.usage.employees.over || r.usage.installs.over).length;
     const totalStorageCap = usageRows.reduce((s, r) => s + r.usage.storage.cap, 0);
     const storagePct = totalStorageCap > 0 ? Math.round((totalStorage / totalStorageCap) * 100) : 0;
-    return { active, trial, suspended, totalEmployees, mrr, totalStorage, syncIssues, never, overQuotaCount, totalStorageCap, storagePct, usageRows };
-  }, []);
+    return { active, trial, suspended, totalEmployees, mrr, totalStorage, syncIssues, never, overQuotaCount, totalStorageCap, storagePct, usageRows, legacyCompanies, legacyInstalls };
+  }, [companies, installs]);
 
   // Plan tier breakdown
   const byPlan = useMemo(() => {
     const map: Record<string, number> = {};
-    mockCompanies.forEach(c => { if (c.status !== 'cancelled') map[c.planTier] = (map[c.planTier] ?? 0) + 1; });
+    stats.legacyCompanies.forEach(c => { if (c.status !== 'cancelled') map[c.planTier] = (map[c.planTier] ?? 0) + 1; });
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-  }, []);
+  }, [stats.legacyCompanies]);
 
   return (
     <div className="space-y-6">
@@ -55,7 +145,7 @@ export function PlatformDashboard() {
         <StatCard
           label="Total Employees"
           value={stats.totalEmployees.toLocaleString()}
-          hint={`${mockPlatformUsers.length} user accounts`}
+          hint={`${usersList.length} user accounts`}
           icon={UsersRound}
           tone="purple"
         />
@@ -69,7 +159,7 @@ export function PlatformDashboard() {
         <StatCard
           label="Sync Issues"
           value={stats.syncIssues}
-          hint={`${mockLocalInstalls.length - stats.never} installs online`}
+          hint={`${installs.length - stats.never} installs online`}
           icon={stats.syncIssues > 0 ? AlertTriangle : CheckCircle}
           tone={stats.syncIssues > 0 ? 'red' : 'green'}
         />
@@ -157,14 +247,23 @@ export function PlatformDashboard() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-3">
-              {mockAuditTrail.slice(0, 5).map(a => (
-                <li key={a.id} className="text-xs">
-                  <p className="font-medium">{a.action}</p>
-                  <p className="text-gray-500 truncate">
-                    {a.target} · {format(new Date(a.at), 'MMM dd, HH:mm')}
-                  </p>
-                </li>
-              ))}
+              {auditEvents.slice(0, 5).map(a => {
+                // Live entries expose targetType/targetId + createdAt; the
+                // legacy mock shape uses target + at — accept either.
+                const legacy = a as unknown as { target?: string; at?: string };
+                const targetLabel = legacy.target
+                  ?? [a.targetType, a.targetId].filter(Boolean).join(' ')
+                  ?? '';
+                const ts = legacy.at ?? a.createdAt;
+                return (
+                  <li key={a.id} className="text-xs">
+                    <p className="font-medium">{a.action}</p>
+                    <p className="text-gray-500 truncate">
+                      {targetLabel} · {ts ? format(new Date(ts), 'MMM dd, HH:mm') : '—'}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
@@ -189,7 +288,7 @@ export function PlatformDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockCompanies.map(c => (
+              {stats.legacyCompanies.map(c => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell className="text-sm">{c.country}</TableCell>
@@ -200,7 +299,7 @@ export function PlatformDashboard() {
                     {c.monthlyCostUsd > 0 ? `$${c.monthlyCostUsd.toLocaleString()}` : '—'}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
-                    {format(new Date(c.lastActiveAt), 'MMM dd, HH:mm')}
+                    {c.lastActiveAt ? format(new Date(c.lastActiveAt), 'MMM dd, HH:mm') : '—'}
                   </TableCell>
                 </TableRow>
               ))}
