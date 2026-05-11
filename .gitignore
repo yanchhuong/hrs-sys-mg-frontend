@@ -22,9 +22,10 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-# Production build config (VITE_API_BASE for the hosted API) — public,
-# baked into the bundle anyway, so it's safe to commit.
-!.env.production
+# Cloud-mode build config (VITE_API_BASE pointing at the docker-hosted
+# API). Loaded by `vite build --mode cloud`, ignored by `vite` dev.
+# The value is public — Vite bakes it into the JS bundle anyway.
+!.env.cloud
 
 # Editor
 .idea/
