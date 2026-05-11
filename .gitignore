@@ -22,6 +22,9 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+# Production build config (VITE_API_BASE for the hosted API) — public,
+# baked into the bundle anyway, so it's safe to commit.
+!.env.production
 
 # Editor
 .idea/
