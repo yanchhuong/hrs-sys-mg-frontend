@@ -254,6 +254,42 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     }
     return map;
   }, [employees]);
+
+  /**
+   * Rolled-up member count per node: own employees + every descendant's
+   * own employees, walked recursively through the parentId tree.
+   * Lets the Members column on a Department show "direct leaders + all
+   * sub-team/group totals" so the org chart actually adds up to the
+   * headline number.
+   */
+  const memberCountIncludingDescendantsById = useMemo(() => {
+    const childrenOf = new Map<string, string[]>();
+    for (const i of items) {
+      if (!i.parentId) continue;
+      const bucket = childrenOf.get(i.parentId) ?? [];
+      bucket.push(i.id);
+      childrenOf.set(i.parentId, bucket);
+    }
+    // Memoised DFS — handles deep trees in O(N) and tolerates accidental
+    // cycles in user data by short-circuiting on revisit.
+    const totals = new Map<string, number>();
+    const visiting = new Set<string>();
+    const walk = (id: string): number => {
+      if (totals.has(id)) return totals.get(id)!;
+      if (visiting.has(id)) return memberCountById.get(id) ?? 0;
+      visiting.add(id);
+      let sum = memberCountById.get(id) ?? 0;
+      for (const child of childrenOf.get(id) ?? []) sum += walk(child);
+      visiting.delete(id);
+      totals.set(id, sum);
+      return sum;
+    };
+    for (const i of items) walk(i.id);
+    return totals;
+  }, [items, memberCountById]);
+
+  // Total members across the org = sum of direct counts (NOT the rolled-up
+  // map, which would double-count anyone whose dept is itself a child).
   const totalMembers = items.reduce(
     (sum, i) => sum + (memberCountById.get(i.id) ?? 0), 0,
   );
@@ -683,14 +719,26 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                     <TableCell className="text-center">
                       {/* Clickable count opens the same Manage Members dialog
                           so admins can adjust membership without going
-                          through the kebab menu. */}
-                      <button
-                        onClick={() => { setAddMemberFor(item); setAddMemberSearch(''); }}
-                        className="inline-flex items-center justify-center min-w-[28px] h-7 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 hover:ring-2 hover:ring-blue-200 text-sm font-medium transition-all"
-                        title="Click to manage members"
-                      >
-                        {memberCountById.get(item.id) ?? 0}
-                      </button>
+                          through the kebab menu.
+                          Shows the rolled-up total (own + descendants) so a
+                          Department's number reflects its sub-teams; tooltip
+                          breaks down the math when they differ. */}
+                      {(() => {
+                        const direct = memberCountById.get(item.id) ?? 0;
+                        const rolled = memberCountIncludingDescendantsById.get(item.id) ?? direct;
+                        const hasChildren = rolled !== direct;
+                        return (
+                          <button
+                            onClick={() => { setAddMemberFor(item); setAddMemberSearch(''); }}
+                            className="inline-flex items-center justify-center min-w-[28px] h-7 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 hover:ring-2 hover:ring-blue-200 text-sm font-medium transition-all"
+                            title={hasChildren
+                              ? `${direct} direct + ${rolled - direct} in sub-units = ${rolled} total. Click to manage direct members.`
+                              : 'Click to manage members'}
+                          >
+                            {rolled}
+                          </button>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <Switch
