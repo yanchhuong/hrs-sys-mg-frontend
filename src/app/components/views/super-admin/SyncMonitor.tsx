@@ -469,23 +469,30 @@ export function SyncMonitor() {
             const tenant = tenantById.get(revealedKey.install.tenantId);
             const ping  = publicEndpoint('/api/v1/integration/attendance/ping');
             const scans = publicEndpoint('/api/v1/integration/attendance/scans');
-            // `_notes` is an underscore-prefixed key carrying free-form
-            // documentation inside the JSON itself. Strict JSON forbids
-            // comments, so we can't use `//` — but a regular string field
-            // survives `JSON.parse`, and worker code that reads `baseUrl`,
-            // `apiKey`, `endpoints` etc. simply ignores it. Lets the
-            // integrator open the file weeks later and remember how the
-            // pieces fit without consulting the docs.
+            // Field names match the Device Integration Service worker's
+            // config schema so the integrator can drop this JSON straight
+            // into config.json with no renames:
+            //   apiBase  — backend URL (worker also accepts `baseUrl` as an alias)
+            //   apiKey   — X-API-Key value (sk_… install key)
+            //   pollMs   — poll cadence
+            //   endpoints — paths the integrator hits, no leading /api so
+            //               the same paths work for cloud (via nginx proxy)
+            //               and on-prem (direct).
+            //   _notes   — strict JSON has no comments; this string field
+            //              carries instructions inside the file itself so
+            //              future readers don't need our docs to swap
+            //              targets.
             const jsonConfig = JSON.stringify({
-              _notes: 'Flip baseUrl between cloud (current value) and an on-prem URL like http://localhost:4000 to switch targets. The path shape is the same on both — the backend serves /v1/... and /api/v1/... in parallel. Keys are per-deploy: this sk_ key only authorises the cloud; mint a separate one on-prem if you target that backend.',
-              baseUrl:  ping.base,
-              baseUrlLocal: 'http://localhost:4000',
-              apiKey:   key,
-              tenant:   { slug: tenant?.slug ?? null, name: tenant?.name ?? null },
+              _notes: 'Flip apiBase between cloud (current value) and apiBaseLocal to switch targets. The backend serves /v1/... and /api/v1/... in parallel so endpoint paths stay the same. Keys are per-deploy: this sk_ key only authorises the cloud; mint a separate one on-prem if you target that backend.',
+              apiBase:      ping.base,
+              apiBaseLocal: 'http://localhost:4000',
+              apiKey:       key,
+              tenant:       { slug: tenant?.slug ?? null, name: tenant?.name ?? null },
               endpoints: {
                 ping:  ping.url.slice(ping.base.length),
                 scans: scans.url.slice(scans.base.length),
               },
+              pollMs: 60000,
               scanPayloadExample: [
                 { empNo: 'EMP001', scanAt: new Date().toISOString(), deviceCode: 'gate-1' },
               ],
@@ -529,7 +536,7 @@ export function SyncMonitor() {
                     integrator never needs to know internal UUIDs.
                   </p>
                   <p className="text-[11px] text-gray-500 leading-relaxed">
-                    <strong>Cloud vs local:</strong> change only <code className="px-1 py-0.5 bg-gray-100 rounded">baseUrl</code> to flip targets — the
+                    <strong>Cloud vs local:</strong> change only <code className="px-1 py-0.5 bg-gray-100 rounded">apiBase</code> to flip targets — the
                     controller serves both <code className="px-1 py-0.5 bg-gray-100 rounded">/v1/...</code> and <code className="px-1 py-0.5 bg-gray-100 rounded">/api/v1/...</code> so the path
                     shape is identical. Note: keys are per-deploy — a key minted here
                     only authorises this cloud; for an on-prem target, mint a key
