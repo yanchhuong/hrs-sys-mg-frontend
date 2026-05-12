@@ -189,8 +189,17 @@ export async function testCloudConnection(
   //      and admins were getting "Cloud is reachable" with a key the
   //      cloud silently rejected. The heartbeat probe with an empty
   //      tables map is a no-op write that auths via X-API-Key.
-  const healthTarget = `${cleanUrl}/api/v1/health`;
-  const probeTarget  = `${cleanUrl}/api/v1/local/sync/heartbeat`;
+  //
+  // Path stitching: when the server URL ends with /api or /api-XX (e.g.
+  // a reverse-proxy prefix like /api-02), the deployment expects paths
+  // already rooted under that segment. So the call-site `/api/v1/...`
+  // is stripped of its leading `/api` to avoid duplicating it (mirrors
+  // the smart-join in src/app/api/client.ts).
+  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(cleanUrl);
+  const join = (callPath: string) =>
+    `${cleanUrl}${baseEndsInApi && callPath.startsWith('/api/') ? callPath.slice('/api'.length) : callPath}`;
+  const healthTarget = join('/api/v1/health');
+  const probeTarget  = join('/api/v1/local/sync/heartbeat');
   const started = performance.now();
 
   const controller = new AbortController();
