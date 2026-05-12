@@ -66,9 +66,35 @@ export function buildQuery(query?: FetchOptions['query']): string {
   return s ? `?${s}` : '';
 }
 
+/**
+ * Build the full URL for a call-site path.
+ *
+ * Every call site in this app sends paths that start with `/api/v1/...`
+ * (e.g. `/api/v1/auth/login`). In some deployments the reverse proxy in
+ * front of Spring Boot exposes the backend under a different prefix —
+ * e.g. nginx routes `/api-02/v1/...` to the upstream's `/api/v1/...`.
+ * When that's the case the operator sets:
+ *   VITE_API_BASE=http://host:port/api-02
+ * To avoid every URL turning into `…/api-02/api/v1/…` (which the nginx
+ * location wouldn't match), strip the leading `/api` from the call-site
+ * path whenever the base already ends with an `/api` / `/api-XX` segment.
+ *
+ * Local dev (VITE_API_BASE unset → falls through to `http://localhost:4000`)
+ * doesn't match the regex, so paths stay `/api/v1/...` and hit Spring
+ * Boot directly without a proxy.
+ */
+function buildUrl(path: string, query: FetchOptions['query']): string {
+  const base = API_BASE.replace(/\/$/, '');
+  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(base);
+  const trimmedPath = baseEndsInApi && path.startsWith('/api/')
+    ? path.slice('/api'.length)
+    : path;
+  return `${base}${trimmedPath}${buildQuery(query)}`;
+}
+
 export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<Response> {
   const { json, query, auth = true, headers, ...rest } = opts;
-  const url = `${API_BASE}${path}${buildQuery(query)}`;
+  const url = buildUrl(path, query);
   const merged: Record<string, string> = { ...(headers as Record<string, string> ?? {}) };
   if (json !== undefined) merged['Content-Type'] = 'application/json';
   if (auth) {
