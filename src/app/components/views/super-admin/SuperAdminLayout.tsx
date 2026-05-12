@@ -9,13 +9,13 @@ import {
 } from '../../ui/dropdown-menu';
 import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
-  ScrollText, Database, LogOut, Menu, X, UserCog,
+  ScrollText, Database, LogOut, Menu, X, UserCog, Layers,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
 import { LanguageSwitcher } from '../../common/LanguageSwitcher';
 import { useI18n } from '../../../i18n/I18nContext';
 
-export type SuperAdminView = 'dashboard' | 'companies' | 'users' | 'sync' | 'activity' | 'backups' | 'policy';
+export type SuperAdminView = 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'activity' | 'backups' | 'policy';
 
 interface Props {
   children: ReactNode;
@@ -26,6 +26,7 @@ interface Props {
 const MENU_ITEMS: { id: SuperAdminView; icon: typeof LayoutDashboard; tKey: string; tDesc: string }[] = [
   { id: 'dashboard', icon: LayoutDashboard,   tKey: 'nav.platform.dashboard', tDesc: 'nav.platform.dashboard.desc' },
   { id: 'companies', icon: Building2,         tKey: 'nav.platform.companies', tDesc: 'nav.platform.companies.desc' },
+  { id: 'plans',     icon: Layers,            tKey: 'nav.platform.plans',     tDesc: 'nav.platform.plans.desc' },
   { id: 'users',     icon: UsersRound,        tKey: 'nav.platform.users',     tDesc: 'nav.platform.users.desc' },
   { id: 'sync',      icon: Link2,             tKey: 'nav.platform.sync',      tDesc: 'nav.platform.sync.desc' },
   { id: 'activity',  icon: ScrollText,        tKey: 'nav.platform.activity',  tDesc: 'nav.platform.activity.desc' },

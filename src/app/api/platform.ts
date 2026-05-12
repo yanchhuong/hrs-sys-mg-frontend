@@ -88,11 +88,34 @@ export interface PlanLimits {
   maxStorageMb: number;
   maxLocalInstalls: number;
   monthlyPriceCents: number;
+  /** Returned by the list endpoint — count of tenants currently on this
+   *  plan. Drives the Adoption column and gates the delete button. */
+  tenantsOnPlan?: number;
+}
+
+export interface PlanRequest {
+  /** Required on create, ignored on update (plan_tier is the PK and
+   *  carried in the URL on PUT, so the body field is silently dropped). */
+  planTier: string;
+  maxEmployees: number;
+  maxStorageMb: number;
+  maxLocalInstalls: number;
+  monthlyPriceCents: number;
 }
 
 export const plans = {
   list: (): Promise<PlanLimits[]> =>
     apiJson<Paged<PlanLimits>>('/api/v1/platform/plans').then(unwrap),
+  create: (req: PlanRequest): Promise<PlanLimits> =>
+    apiJson('/api/v1/platform/plans', { method: 'POST', json: req }),
+  update: (planTier: string, req: PlanRequest): Promise<PlanLimits> =>
+    apiJson(`/api/v1/platform/plans/${encodeURIComponent(planTier)}`, {
+      method: 'PUT', json: req,
+    }),
+  /** Backend returns 409 with a "N tenants are on this plan…" message
+   *  when the plan is still in use; surface that to the admin. */
+  remove: (planTier: string): Promise<void> =>
+    apiVoid(`/api/v1/platform/plans/${encodeURIComponent(planTier)}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------

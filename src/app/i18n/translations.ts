@@ -92,6 +92,7 @@ export const dict: Dict = {
   'nav.platform.sync':        { en: 'Connect & Sync',       km: 'ភ្ជាប់ និងធ្វើសមកាល', zh: '连接与同步' },
   'nav.platform.activity':    { en: 'Activity Log',         km: 'កំណត់ហេតុសកម្មភាព',  zh: '活动日志' },
   'nav.platform.backups':     { en: 'Backups',              km: 'ការបម្រុងទុក',      zh: '备份' },
+  'nav.platform.plans':       { en: 'Plans',                km: 'គម្រោងតម្លៃ',         zh: '套餐' },
   'nav.platform.policy':      { en: 'Policy',               km: 'គោលការណ៍',         zh: '策略' },
   'nav.platform.dashboard.desc': { en: 'Platform overview',          km: 'ទិដ្ឋភាពទូទៅ',           zh: '平台概览' },
   'nav.platform.companies.desc': { en: 'Tenants and plans',          km: 'អតិថិជន និងគម្រោង',      zh: '租户和套餐' },
@@ -99,6 +100,7 @@ export const dict: Dict = {
   'nav.platform.sync.desc':      { en: 'API keys and local installs',km: 'សោ API និងការដំឡើងមូលដ្ឋាន', zh: 'API 密钥与本地安装' },
   'nav.platform.activity.desc':  { en: 'Audit trail & sync errors',  km: 'ការសវនកម្ម និងកំហុសសមកាល', zh: '审计与同步错误' },
   'nav.platform.backups.desc':   { en: 'Per-tenant snapshots & restore', km: 'រូបថត និងស្ដារតាមអតិថិជន', zh: '按租户的快照与恢复' },
+  'nav.platform.plans.desc':     { en: 'Pricing tiers and limits',   km: 'កម្រិតតម្លៃ និងដែនកំណត់', zh: '定价层级与限额' },
   'nav.platform.policy.desc':    { en: 'Global security + features', km: 'សុវត្ថិភាព និងមុខងារសាកល', zh: '全局安全与功能' },
 
   // --- Common actions ------------------------------------------------------

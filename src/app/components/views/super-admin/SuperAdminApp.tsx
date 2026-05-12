@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SuperAdminLayout, SuperAdminView } from './SuperAdminLayout';
 import { PlatformDashboard } from './PlatformDashboard';
 import { Companies } from './Companies';
+import { Plans } from './Plans';
 import { CrossTenantUsers } from './CrossTenantUsers';
 import { SyncMonitor } from './SyncMonitor';
 import { ActivityLog } from './ActivityLog';
@@ -15,6 +16,7 @@ export function SuperAdminApp() {
     switch (view) {
       case 'dashboard': return <PlatformDashboard />;
       case 'companies': return <Companies />;
+      case 'plans':     return <Plans />;
       case 'users':     return <CrossTenantUsers />;
       case 'sync':      return <SyncMonitor />;
       case 'activity':  return <ActivityLog />;
