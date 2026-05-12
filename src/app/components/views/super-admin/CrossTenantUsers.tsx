@@ -11,7 +11,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle } from 'lucide-react';
+import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '../../ui/dialog';
+import { Label } from '../../ui/label';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { mockCompanies, mockPlatformUsers } from '../../../data/platformData';
@@ -38,6 +42,92 @@ export function CrossTenantUsers() {
   const [mergeEmail, setMergeEmail] = useState<string | null>(null);
   const [keepUserId, setKeepUserId] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+
+  // Add-user dialog state. When role === 'admin' the form switches to
+  // creating a brand-new company (tenant) with this user as initialAdmin —
+  // POST /platform/tenants. For manager/employee it adds a user under an
+  // existing tenant via POST /platform/users.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addRole, setAddRole] = useState<'admin' | 'manager' | 'employee'>('admin');
+  const [addEmail, setAddEmail] = useState('');
+  const [addPassword, setAddPassword] = useState('');
+  const [addShowPwd, setAddShowPwd] = useState(false);
+  const [addCompanyName, setAddCompanyName] = useState('');
+  const [addCompanySlug, setAddCompanySlug] = useState('');
+  const [addTenantId, setAddTenantId] = useState<string>('');
+  const [addSubmitting, setAddSubmitting] = useState(false);
+
+  const resetAddForm = () => {
+    setAddRole('admin');
+    setAddEmail('');
+    setAddPassword('');
+    setAddShowPwd(false);
+    setAddCompanyName('');
+    setAddCompanySlug('');
+    setAddTenantId('');
+  };
+
+  // Auto-derive slug from name as the admin types (lowercase + dash-safe).
+  const slugify = (s: string) =>
+    s.toLowerCase().trim()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64);
+
+  const handleAddSubmit = async () => {
+    if (!addEmail.trim() || !addPassword.trim()) {
+      toast.error('Email and password are required');
+      return;
+    }
+    if (addPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    setAddSubmitting(true);
+    try {
+      if (addRole === 'admin') {
+        if (!addCompanyName.trim()) {
+          toast.error('Company name is required for an admin');
+          return;
+        }
+        const slug = addCompanySlug.trim() || slugify(addCompanyName);
+        if (!/^[a-z][a-z0-9-]{2,63}$/.test(slug)) {
+          toast.error('Slug must start with a lowercase letter and be 3–64 chars (a–z, 0–9, -)');
+          return;
+        }
+        await platformApi.tenants.create({
+          name: addCompanyName.trim(),
+          slug,
+          planTier: 'starter',
+          initialAdmin: {
+            email: addEmail.trim(),
+            password: addPassword,
+            name: addEmail.split('@')[0],
+          },
+        });
+        toast.success(`Created ${addCompanyName.trim()} and admin ${addEmail.trim()}`);
+      } else {
+        if (!addTenantId) {
+          toast.error('Pick a company');
+          return;
+        }
+        await platformApi.users.create({
+          email: addEmail.trim(),
+          password: addPassword,
+          role: addRole,
+          tenantId: addTenantId,
+        });
+        toast.success(`Created ${addRole} ${addEmail.trim()}`);
+      }
+      setAddOpen(false);
+      resetAddForm();
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create user');
+    } finally {
+      setAddSubmitting(false);
+    }
+  };
 
   // Derive a display name from email local-part since the API doesn't return one.
   const displayName = (u: platformApi.PlatformUser) => u.email.split('@')[0];
@@ -296,6 +386,10 @@ export function CrossTenantUsers() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            <Button size="sm" className="ml-auto" onClick={() => { resetAddForm(); setAddOpen(true); }}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add User
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -536,6 +630,142 @@ export function CrossTenantUsers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add User dialog — admin role spawns a new company (tenant + first
+          admin); manager/employee gets attached to an existing tenant. */}
+      <Dialog open={addOpen} onOpenChange={(o) => { if (!o) { setAddOpen(false); resetAddForm(); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add User
+            </DialogTitle>
+            <DialogDescription>
+              Choosing <strong>Admin</strong> as the role creates a new company alongside the user.
+              Other roles attach the user to an existing company.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-gray-500">Role</Label>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {(['admin', 'manager', 'employee'] as const).map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setAddRole(r)}
+                    className={`h-9 rounded-md border text-sm capitalize transition ${
+                      addRole === r
+                        ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {addRole === 'admin' ? (
+              <>
+                <div>
+                  <Label htmlFor="add-company-name" className="text-xs uppercase tracking-wide text-gray-500">
+                    New Company Name
+                  </Label>
+                  <Input
+                    id="add-company-name"
+                    value={addCompanyName}
+                    onChange={e => {
+                      setAddCompanyName(e.target.value);
+                      // Auto-fill slug if the admin hasn't manually edited it.
+                      if (!addCompanySlug || addCompanySlug === slugify(addCompanyName)) {
+                        setAddCompanySlug(slugify(e.target.value));
+                      }
+                    }}
+                    placeholder="ACME Corporation"
+                    className="mt-1 h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="add-company-slug" className="text-xs uppercase tracking-wide text-gray-500">
+                    Slug
+                  </Label>
+                  <Input
+                    id="add-company-slug"
+                    value={addCompanySlug}
+                    onChange={e => setAddCompanySlug(slugify(e.target.value))}
+                    placeholder="acme"
+                    className="mt-1 h-9 font-mono text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    URL-safe identifier. Lowercase a–z, 0–9, and dashes. Auto-filled from the name.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-gray-500">Company</Label>
+                <select
+                  value={addTenantId}
+                  onChange={e => setAddTenantId(e.target.value)}
+                  className="mt-1 h-9 px-3 border rounded-md text-sm w-full"
+                >
+                  <option value="">Pick a company…</option>
+                  {tenantOptions.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="add-email" className="text-xs uppercase tracking-wide text-gray-500">Email</Label>
+              <Input
+                id="add-email"
+                type="email"
+                value={addEmail}
+                onChange={e => setAddEmail(e.target.value)}
+                placeholder="user@example.com"
+                className="mt-1 h-9"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="add-password" className="text-xs uppercase tracking-wide text-gray-500">Password</Label>
+              <div className="relative mt-1">
+                <Input
+                  id="add-password"
+                  type={addShowPwd ? 'text' : 'password'}
+                  value={addPassword}
+                  onChange={e => setAddPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="h-9 pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setAddShowPwd(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={addShowPwd ? 'Hide password' : 'Show password'}
+                >
+                  {addShowPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddOpen(false); resetAddForm(); }} disabled={addSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddSubmit} disabled={addSubmitting}>
+              {addSubmitting
+                ? 'Creating…'
+                : addRole === 'admin' ? 'Create Company + Admin' : `Create ${addRole}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

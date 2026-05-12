@@ -119,9 +119,21 @@ export interface ListUsersParams {
   role?: string;
 }
 
+export interface CreateUserRequest {
+  email: string;
+  password: string;
+  role: string;
+  tenantId: string;
+}
+
 export const users = {
   list: (params: ListUsersParams = {}): Promise<PlatformUser[]> =>
     apiJson<Paged<PlatformUser>>('/api/v1/platform/users', { query: { ...params } }).then(unwrap),
+  /** Add a user under an existing tenant. For role=admin under a *new*
+   *  tenant, use {@link tenants.create} with `initialAdmin` populated —
+   *  that creates the tenant and the first admin atomically. */
+  create: (req: CreateUserRequest): Promise<PlatformUser> =>
+    apiJson('/api/v1/platform/users', { method: 'POST', json: req }),
   /** Returns the cleartext temporary password — shown to admin once. */
   resetPassword: (id: string): Promise<{ temporaryPassword: string }> =>
     apiJson(`/api/v1/platform/users/${id}/reset-password`, { method: 'POST' }),
