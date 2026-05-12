@@ -29,7 +29,7 @@ import { Badge } from '../ui/badge';
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
-  RefreshCw, Eye, EyeOff,
+  RefreshCw, Eye, EyeOff, Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -615,6 +615,47 @@ function CloudConnectionCard() {
     toast.success('Cloud settings saved');
   };
 
+  /**
+   * Populate the sync_outbox with one row per existing entity (departments,
+   * positions, employees, users, contracts, attendance, payroll items,
+   * leave/OT requests, salary increases/deductions) and immediately flush.
+   *
+   * Used after a fresh cloud setup to backfill historical data that
+   * pre-dates the SyncOutboxRecorder listener. Idempotent on the cloud
+   * (upsert by primary key) so re-running just re-pushes the same rows.
+   */
+  const handlePushAllExisting = async () => {
+    if (!cfg.serverUrl || !cfg.apiKey) {
+      toast.error('Connect first');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const queue = await apiJson<{ queued: Record<string, number>; total: number }>(
+        '/api/v1/local/sync-admin/rehydrate-outbox',
+        { method: 'POST' },
+      );
+      toast.success(`Queued ${queue.total} rows — draining…`);
+      // Now flush in a loop until the outbox is empty (or stuck). Each
+      // /flush-now drains up to one batch (200 by default), so big
+      // backlogs need several loops. Cap iterations to prevent runaway.
+      let totalDrained = 0;
+      for (let i = 0; i < 200; i++) {
+        const r = await apiJson<{ drained: number; pendingAfter: number }>(
+          '/api/v1/local/sync-admin/flush-now',
+          { method: 'POST' },
+        );
+        totalDrained += r.drained ?? 0;
+        if ((r.drained ?? 0) === 0 || (r.pendingAfter ?? 0) === 0) break;
+      }
+      toast.success(`Pushed ${totalDrained} rows to cloud`);
+    } catch (err) {
+      toast.error(`Push All failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSyncNow = async () => {
     if (!cfg.serverUrl || !cfg.apiKey) {
       toast.error('Connect first');
@@ -940,6 +981,10 @@ function CloudConnectionCard() {
         <div className="flex items-center justify-end gap-2 flex-wrap pt-2 border-t">
           {status === 'connected' && (
             <>
+              <Button variant="outline" onClick={handlePushAllExisting} disabled={syncing}>
+                <Upload className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                Push All Existing
+              </Button>
               <Button variant="outline" onClick={handleSyncNow} disabled={syncing}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Syncing…' : 'Sync Now'}

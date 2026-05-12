@@ -119,7 +119,12 @@ export async function pushTable(
   timeoutMs = 60000,
 ): Promise<PushTableResult> {
   const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
-  const target = `${cleanUrl}/api/v1/local/sync/push`;
+  // Same smart-join as testCloudConnection / client.ts: if the cloud URL
+  // already ends with /api or /api-XX, drop the leading /api from the
+  // call-site path so the full URL doesn't double up.
+  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(cleanUrl);
+  const callPath = '/api/v1/local/sync/push';
+  const target = `${cleanUrl}${baseEndsInApi ? callPath.slice('/api'.length) : callPath}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -149,7 +154,9 @@ export async function sendHeartbeat(
   timeoutMs = 10000,
 ): Promise<HeartbeatResponse> {
   const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
-  const target = `${cleanUrl}/api/v1/local/sync/heartbeat`;
+  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(cleanUrl);
+  const callPath = '/api/v1/local/sync/heartbeat';
+  const target = `${cleanUrl}${baseEndsInApi ? callPath.slice('/api'.length) : callPath}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
