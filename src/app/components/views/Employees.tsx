@@ -41,7 +41,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2, Fingerprint } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -1246,7 +1246,27 @@ export function Employees() {
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
                   <TableCell className="font-medium">{employee.id}</TableCell>
-                  <TableCell>
+                  {/* Profile + Name is a duplicate trigger for the details
+                      sheet: clicking the avatar or the name opens the same
+                      Sheet as the View Details button. cursor-pointer +
+                      hover:bg cues that the cell is clickable;
+                      role/tabIndex/onKeyDown keep it keyboard-reachable. */}
+                  <TableCell
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer hover:bg-blue-50/60 transition-colors"
+                    onClick={() => {
+                      setSelectedEmployee(employee);
+                      setSheetOpen(true);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedEmployee(employee);
+                        setSheetOpen(true);
+                      }
+                    }}
+                  >
                     <EmployeeCell employee={employee} nameOnly />
                   </TableCell>
                   <TableCell className="text-sm">{employee.khmerName || '-'}</TableCell>
@@ -1351,36 +1371,16 @@ export function Employees() {
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      {/* Fingerprint shortcut — duplicate trigger for the
-                          details sheet so admins can open it with one
-                          click on the biometric glyph (matches the
-                          fingerprint identity displayed elsewhere in
-                          the app). */}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        title="View Details"
-                        aria-label={`View details for ${employee.name}`}
-                        onClick={() => {
-                          setSelectedEmployee(employee);
-                          setSheetOpen(true);
-                        }}
-                      >
-                        <Fingerprint className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                        onClick={() => {
-                          setSelectedEmployee(employee);
-                          setSheetOpen(true);
-                        }}
-                      >
-                        View Details
-                      </Button>
-                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => {
+                        setSelectedEmployee(employee);
+                        setSheetOpen(true);
+                      }}
+                    >
+                      View Details
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
