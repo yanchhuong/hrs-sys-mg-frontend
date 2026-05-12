@@ -16,7 +16,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { Fingerprint, Plus, Pencil, Trash2, Wifi, WifiOff, HelpCircle, Zap, Download, Eye, EyeOff, Copy, RefreshCw } from 'lucide-react';
+import {
+  Fingerprint, Plus, Pencil, Trash2, Wifi, WifiOff, HelpCircle, Zap, Download,
+  Eye, EyeOff, Copy, RefreshCw,
+  ScanFace, CreditCard, Layers,
+} from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import * as devicesApi from '../../api/attendanceDevices';
@@ -26,6 +30,23 @@ const COMM_TYPES = ['Ethernet', 'RS-232', 'RS-485', 'USB'] as const;
 type CommType = (typeof COMM_TYPES)[number];
 type DeviceStatus = 'connected' | 'disconnected' | 'unknown';
 
+/**
+ * Capture modality registered on each terminal. Drives the row icon
+ * and the device-type chip — sync protocol on the wire is the same
+ * for all of them (ZK push SDK).
+ */
+const DEVICE_TYPES = [
+  { value: 'fingerprint', label: 'Fingerprint', Icon: Fingerprint, tone: 'text-blue-600',    bg: 'bg-blue-50' },
+  { value: 'face',        label: 'Face / Camera', Icon: ScanFace,    tone: 'text-violet-600',  bg: 'bg-violet-50' },
+  { value: 'card',        label: 'Card / RFID',  Icon: CreditCard, tone: 'text-amber-600',   bg: 'bg-amber-50' },
+  { value: 'hybrid',      label: 'Hybrid',       Icon: Layers,     tone: 'text-emerald-600', bg: 'bg-emerald-50' },
+] as const;
+type DeviceType = (typeof DEVICE_TYPES)[number]['value'];
+
+function deviceTypeMeta(t: string | undefined | null) {
+  return DEVICE_TYPES.find(d => d.value === t) ?? DEVICE_TYPES[0];
+}
+
 type FormState = {
   id?: string;
   name: string;
@@ -34,13 +55,15 @@ type FormState = {
   commKey: string;
   location: string;
   commType: CommType;
+  deviceType: DeviceType;
   machineNo: string;
   baudRate: string;
 };
 
 const EMPTY: FormState = {
   name: '', ip: '', port: '4370', commKey: '', location: '',
-  commType: 'Ethernet', machineNo: '1', baudRate: '115200',
+  commType: 'Ethernet', deviceType: 'fingerprint',
+  machineNo: '1', baudRate: '115200',
 };
 
 function statusBadge(status: string) {
@@ -167,6 +190,7 @@ export function DevicesCard() {
       commKey: d.commKey != null ? String(d.commKey) : '',
       location: d.location ?? '',
       commType: (COMM_TYPES.includes(d.commType as CommType) ? d.commType : 'Ethernet') as CommType,
+      deviceType: ((DEVICE_TYPES.find(t => t.value === d.deviceType)?.value) ?? 'fingerprint') as DeviceType,
       machineNo: String(d.machineNo),
       baudRate: d.baudRate != null ? String(d.baudRate) : '115200',
     });
@@ -196,6 +220,7 @@ export function DevicesCard() {
       commKey: form.commKey.trim() ? Number(form.commKey) : null,
       location: form.location.trim() || null,
       commType: form.commType,
+      deviceType: form.deviceType,
       machineNo,
       baudRate: isSerial && form.baudRate.trim() ? Number(form.baudRate) : null,
     };
@@ -309,8 +334,8 @@ export function DevicesCard() {
             Attendance Devices
           </CardTitle>
           <CardDescription>
-            Fingerprint / face terminals registered to this tenant. Connection is checked over TCP;
-            ZKTeco SDK port is normally <code>4370</code>.
+            Fingerprint, face/camera, RFID, and hybrid terminals registered to this tenant.
+            Connection is checked over TCP; ZKTeco SDK port is normally <code>4370</code>.
           </CardDescription>
         </div>
         <div className="flex gap-2">
@@ -336,6 +361,7 @@ export function DevicesCard() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead className="text-center">Machine #</TableHead>
                 <TableHead>Comm Type</TableHead>
@@ -355,7 +381,28 @@ export function DevicesCard() {
                 const testing = testingIds.has(d.id);
                 return (
                   <TableRow key={d.id}>
-                    <TableCell className="font-medium">{d.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        {(() => {
+                          const m = deviceTypeMeta(d.deviceType);
+                          const I = m.Icon;
+                          return <I className={`h-4 w-4 ${m.tone}`} />;
+                        })()}
+                        {d.name}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const m = deviceTypeMeta(d.deviceType);
+                        const I = m.Icon;
+                        return (
+                          <Badge variant="outline" className={`gap-1 font-normal ${m.bg}`}>
+                            <I className={`h-3 w-3 ${m.tone}`} />
+                            <span className="text-xs">{m.label}</span>
+                          </Badge>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-sm text-gray-600">{d.location ?? '—'}</TableCell>
                     <TableCell className="text-center font-mono text-xs">{d.machineNo}</TableCell>
                     <TableCell className="text-xs">
@@ -515,6 +562,35 @@ export function DevicesCard() {
                 onChange={e => setForm({ ...form, location: e.target.value })}
                 placeholder="e.g. Ground floor, 4th Office"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Device Type</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {DEVICE_TYPES.map(t => {
+                  const I = t.Icon;
+                  const active = form.deviceType === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setForm({ ...form, deviceType: t.value })}
+                      className={`h-16 rounded-md border flex flex-col items-center justify-center gap-1 text-xs transition ${
+                        active
+                          ? `border-blue-600 ${t.bg} ${t.tone} font-medium ring-1 ring-blue-200`
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <I className={`h-5 w-5 ${active ? t.tone : 'text-gray-400'}`} />
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Capture modality — fingerprint sensor, face/camera, RFID card,
+                or a hybrid terminal. Drives the icon on the device list;
+                doesn't change the sync protocol.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

@@ -15,6 +15,8 @@ export interface AttendanceDevice {
   location?: string | null;
   machineNo: number;
   commType: 'Ethernet' | 'RS-232' | 'RS-485' | 'USB' | string;
+  /** Capture modality. Drives the row icon in DevicesCard. */
+  deviceType?: 'fingerprint' | 'face' | 'card' | 'hybrid' | string;
   ip: string;
   port: number;
   commKey?: number | null;
@@ -37,6 +39,7 @@ export interface DeviceRequest {
   location?: string | null;
   machineNo?: number;
   commType?: string;
+  deviceType?: 'fingerprint' | 'face' | 'card' | 'hybrid' | string;
   ip?: string;
   port?: number;
   commKey?: number | null;
