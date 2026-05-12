@@ -4,11 +4,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    {
-      "//": "Proxy API calls through Vercel so the browser keeps seeing same-origin HTTPS requests. The backend on 165.232.164.4 is plain HTTP, which a HTTPS page is not allowed to call directly (mixed-content block). Vercel forwards server-to-server, returns the response over HTTPS.",
-      "source": "/api-02/:path*",
-      "destination": "http://165.232.164.4:8081/api-02/:path*"
-    },
+    { "source": "/api-02/:path*", "destination": "http://165.232.164.4:8081/api-02/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
