@@ -469,10 +469,15 @@ export function SyncMonitor() {
             const tenant = tenantById.get(revealedKey.install.tenantId);
             const ping  = publicEndpoint('/api/v1/integration/attendance/ping');
             const scans = publicEndpoint('/api/v1/integration/attendance/scans');
+            // `_notes` is an underscore-prefixed key carrying free-form
+            // documentation inside the JSON itself. Strict JSON forbids
+            // comments, so we can't use `//` — but a regular string field
+            // survives `JSON.parse`, and worker code that reads `baseUrl`,
+            // `apiKey`, `endpoints` etc. simply ignores it. Lets the
+            // integrator open the file weeks later and remember how the
+            // pieces fit without consulting the docs.
             const jsonConfig = JSON.stringify({
-              // Flip baseUrl between these to switch targets — the path
-              // shape is the same in both, the controller serves both
-              // /api/v1/... and /v1/... so no other field changes.
+              _notes: 'Flip baseUrl between cloud (current value) and an on-prem URL like http://localhost:4000 to switch targets. The path shape is the same on both — the backend serves /v1/... and /api/v1/... in parallel. Keys are per-deploy: this sk_ key only authorises the cloud; mint a separate one on-prem if you target that backend.',
               baseUrl:  ping.base,
               baseUrlLocal: 'http://localhost:4000',
               apiKey:   key,
