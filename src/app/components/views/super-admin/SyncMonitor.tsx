@@ -18,8 +18,28 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { mockLocalInstalls, mockCompanies, SyncHealth } from '../../../data/platformData';
-import { USE_MOCKS } from '../../../api/client';
+import { API_BASE, USE_MOCKS } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
+
+/**
+ * Public URL an external Device Integration System would target. Mirrors the
+ * `buildUrl` logic in `api/client.ts`: when the API base ends in `/api` or
+ * `/api-XX`, the call-site `/api/v1/...` path gets its leading `/api`
+ * stripped (the nginx proxy already maps `/api-02/v1/...` → upstream
+ * `/api/v1/...`). For local dev (`http://localhost:4000`), the path stays
+ * intact. Relative bases (e.g. `/api-02` on Vercel) get the current origin
+ * prefixed so the URL is copy-paste-ready for an integrator on a different
+ * host.
+ */
+function publicEndpoint(path: string): { base: string; url: string } {
+  const raw = API_BASE.replace(/\/$/, '');
+  const abs = /^https?:\/\//i.test(raw)
+    ? raw
+    : (typeof window !== 'undefined' ? window.location.origin + raw : raw);
+  const endsInApi = /\/api(-[\w-]+)?$/.test(abs);
+  const tail = endsInApi && path.startsWith('/api/') ? path.slice('/api'.length) : path;
+  return { base: abs, url: `${abs}${tail}` };
+}
 
 // Live LocalInstall lacks the cleartext apiKey and uses tenantId in place of
 // companyId; mocks use the legacy shape. We coerce mocks into the live shape
@@ -430,30 +450,110 @@ export function SyncMonitor() {
 
       {/* Reveal key */}
       <Dialog open={!!revealedKey} onOpenChange={(o) => !o && setRevealedKey(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>API key for {revealedKey?.install.siteName}</DialogTitle>
             <DialogDescription>
-              Send this to the site admin securely. It will not be shown in full again.
+              Send this to the site admin or Device Integration vendor securely.
+              The full key is never shown again — rotate to issue a new one.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="font-mono text-xs bg-gray-900 text-gray-100 px-3 py-3 rounded-md break-all select-all">
-              {revealedKey?.key}
-            </div>
-            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
-              <p>This key grants full write access to {tenantById.get(revealedKey?.install.tenantId ?? '')?.name ?? 'the tenant'}'s data. Rotate immediately if it leaks.</p>
-            </div>
-          </div>
+          {revealedKey && (() => {
+            const key = revealedKey.key;
+            const tenant = tenantById.get(revealedKey.install.tenantId);
+            const ping  = publicEndpoint('/api/v1/integration/attendance/ping');
+            const scans = publicEndpoint('/api/v1/integration/attendance/scans');
+            const jsonConfig = JSON.stringify({
+              baseUrl:  ping.base,
+              apiKey:   key,
+              tenant:   { slug: tenant?.slug ?? null, name: tenant?.name ?? null },
+              endpoints: {
+                ping:  ping.url.slice(ping.base.length),
+                scans: scans.url.slice(scans.base.length),
+              },
+              scanPayloadExample: [
+                { empNo: 'EMP001', scanAt: new Date().toISOString(), deviceCode: 'gate-1' },
+              ],
+            }, null, 2);
+            const curlPing = `curl -H "X-API-Key: ${key}" \\\n  ${ping.url}`;
+            const curlScans = `curl -X POST ${scans.url} \\\n  -H "X-API-Key: ${key}" \\\n  -H "Content-Type: application/json" \\\n  -d '[{"empNo":"EMP001","scanAt":"${new Date().toISOString()}","deviceCode":"gate-1"}]'`;
+            const copy = (text: string, label: string) => {
+              navigator.clipboard.writeText(text).catch(() => {});
+              toast.success(`${label} copied`);
+            };
+            return (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs font-medium text-gray-700">API key</p>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copy(key, 'Key')}>
+                      <Copy className="h-3 w-3 mr-1" /> Copy
+                    </Button>
+                  </div>
+                  <div className="font-mono text-xs bg-gray-900 text-gray-100 px-3 py-2.5 rounded-md break-all select-all">
+                    {key}
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+                  <p>
+                    Full write access to <strong>{tenant?.name ?? 'the tenant'}</strong>'s data.
+                    Authorises both cloud sync and the Device Integration endpoints.
+                    Rotate immediately if it leaks.
+                  </p>
+                </div>
+
+                <div className="border-t pt-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                    Device Integration config
+                  </p>
+                  <p className="text-xs text-gray-500 -mt-1">
+                    Paste this into the integrator's config or use the curl snippets to wire up
+                    a third-party scanner. Endpoints accept attendance scans by empNo so the
+                    integrator never needs to know internal UUIDs.
+                  </p>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs font-medium text-gray-700">Integration config (JSON)</p>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copy(jsonConfig, 'JSON config')}>
+                        <Copy className="h-3 w-3 mr-1" /> Copy
+                      </Button>
+                    </div>
+                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+{jsonConfig}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs font-medium text-gray-700">Verify the key (ping)</p>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copy(curlPing, 'Ping curl')}>
+                        <Copy className="h-3 w-3 mr-1" /> Copy
+                      </Button>
+                    </div>
+                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+{curlPing}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs font-medium text-gray-700">Push a scan</p>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copy(curlScans, 'Push curl')}>
+                        <Copy className="h-3 w-3 mr-1" /> Copy
+                      </Button>
+                    </div>
+                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+{curlScans}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => { navigator.clipboard.writeText(revealedKey?.key ?? '').catch(() => {}); toast.success('Copied'); }}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Copy
-            </Button>
             <Button onClick={() => setRevealedKey(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
