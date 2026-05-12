@@ -22,13 +22,20 @@ import { API_BASE, USE_MOCKS } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
 
 /**
- * Public URL an external Device Integration System would target. Mirrors the
- * `buildUrl` logic in `api/client.ts`: when the API base ends in `/api` or
- * `/api-XX`, the call-site `/api/v1/...` path gets its leading `/api`
- * stripped (the nginx proxy already maps `/api-02/v1/...` → upstream
- * `/api/v1/...`). For local dev (`http://localhost:4000`), the path stays
- * intact. Relative bases (e.g. `/api-02` on Vercel) get the current origin
- * prefixed so the URL is copy-paste-ready for an integrator on a different
+ * Public URL an external Device Integration System would target. We always
+ * emit the `/v1/...` shape (no leading `/api`) so a single JSON config works
+ * for both targets without the integrator doing path math:
+ *
+ *   • Cloud target: `https://…/api-02/v1/integration/attendance/scans`
+ *       — nginx strips `/api-02` and prepends `/api`, so the request arrives
+ *         at Spring as `/api/v1/...` (the canonical route).
+ *   • Local target: `http://localhost:4000/v1/integration/attendance/scans`
+ *       — Spring serves the same controller at `/v1/...` directly via the
+ *         dual @RequestMapping on IntegrationAttendanceController, so no
+ *         proxy is needed.
+ *
+ * Relative bases (e.g. `/api-02` on Vercel) get the current origin prefixed
+ * so the URL is copy-paste-ready for an integrator running on a different
  * host.
  */
 function publicEndpoint(path: string): { base: string; url: string } {
@@ -36,8 +43,7 @@ function publicEndpoint(path: string): { base: string; url: string } {
   const abs = /^https?:\/\//i.test(raw)
     ? raw
     : (typeof window !== 'undefined' ? window.location.origin + raw : raw);
-  const endsInApi = /\/api(-[\w-]+)?$/.test(abs);
-  const tail = endsInApi && path.startsWith('/api/') ? path.slice('/api'.length) : path;
+  const tail = path.startsWith('/api/') ? path.slice('/api'.length) : path;
   return { base: abs, url: `${abs}${tail}` };
 }
 
@@ -464,7 +470,11 @@ export function SyncMonitor() {
             const ping  = publicEndpoint('/api/v1/integration/attendance/ping');
             const scans = publicEndpoint('/api/v1/integration/attendance/scans');
             const jsonConfig = JSON.stringify({
+              // Flip baseUrl between these to switch targets — the path
+              // shape is the same in both, the controller serves both
+              // /api/v1/... and /v1/... so no other field changes.
               baseUrl:  ping.base,
+              baseUrlLocal: 'http://localhost:4000',
               apiKey:   key,
               tenant:   { slug: tenant?.slug ?? null, name: tenant?.name ?? null },
               endpoints: {
@@ -512,6 +522,13 @@ export function SyncMonitor() {
                     Paste this into the integrator's config or use the curl snippets to wire up
                     a third-party scanner. Endpoints accept attendance scans by empNo so the
                     integrator never needs to know internal UUIDs.
+                  </p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    <strong>Cloud vs local:</strong> change only <code className="px-1 py-0.5 bg-gray-100 rounded">baseUrl</code> to flip targets — the
+                    controller serves both <code className="px-1 py-0.5 bg-gray-100 rounded">/v1/...</code> and <code className="px-1 py-0.5 bg-gray-100 rounded">/api/v1/...</code> so the path
+                    shape is identical. Note: keys are per-deploy — a key minted here
+                    only authorises this cloud; for an on-prem target, mint a key
+                    on that backend's Super Admin.
                   </p>
 
                   <div>
