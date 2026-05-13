@@ -662,9 +662,19 @@ export function Employees() {
   const handleSaveEmployee = async () => {
     if (!editedEmployee) return;
 
-    // Validation
-    if (!editedEmployee.name || !editedEmployee.email || !editedEmployee.contactNumber) {
-      notify.validate('Please fill in all required fields');
+    // Hard-required fields (name + email) match the backend's
+    // @NotBlank columns. contactNumber stays optional because the
+    // bootstrap admin (EMP001) seeds without one, and gating Save on
+    // it makes the existing row un-editable until HR fills in a phone
+    // that's been blank for the row's whole lifetime. Naming the
+    // missing field explicitly tells the user where to look (the
+    // Profile tab) — the previous toast just said "fill in required
+    // fields" without saying which.
+    const missing: string[] = [];
+    if (!editedEmployee.name?.trim())  missing.push('Name');
+    if (!editedEmployee.email?.trim()) missing.push('Email');
+    if (missing.length > 0) {
+      notify.validate(`Missing on Profile tab: ${missing.join(', ')}`);
       return;
     }
 
