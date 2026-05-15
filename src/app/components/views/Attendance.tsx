@@ -48,6 +48,7 @@ import {
 import { makeDeptName } from '../../utils/deptName';
 import { downloadAttendanceTemplate } from '../../utils/attendanceTemplate';
 import { parseAttendanceExcel } from '../../utils/attendanceParser';
+import { loadScanRule } from '../../utils/scanRule';
 
 type ViewMode = 'daily' | 'monthly';
 type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'absent' | 'present' | 'leave';
@@ -65,7 +66,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
 // Adapts a backend AttendanceEntry to the front-end Attendance shape used
 // throughout the UI. The fingerprint sync writes morning/noon punches; carry
 // them through so the daily grid shows real check-in / check-out times.
-function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
+function adaptApiAttendance(
+  a: attendanceApi.AttendanceEntry,
+  checkOutCutoffMinutes: number,
+): AttendanceType {
   const status = ([
     'present', 'late', 'early_leave', 'absent',
     'no_checkin', 'no_checkout', 'leave',
@@ -73,16 +77,14 @@ function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
     ? (a.status as AttendanceStatus)
     : 'present';
 
-  // Single-scan reclassification.
+  // Single-scan reclassification, driven by the tenant's check-out rule.
   //
-  // The fingerprint sync sometimes lands a lone punch in the wrong bucket
-  // (e.g. an employee who only scanned once at 14:16 ends up under
-  // "Noon Out" because the device assigned the latest read of the day to
-  // the closing slot). A single scan should always be treated as a
-  // check-IN, not a check-out. Pick the slot by the wall-clock time:
-  //   • before 11:00       → Morning In  (start of day)
-  //   • 11:00 – 13:59      → Noon In     (return from lunch / late start)
-  //   • 14:00 onwards      → Noon In     (came back, missing morning)
+  // A lone punch is ambiguous — was the employee checking IN late, or
+  // checking OUT without ever checking in? We resolve it by comparing the
+  // scan's wall-clock time against the rule's check-out target:
+  //   • scan ≥ check-out rule → Noon Out  (no check-in — they only closed out)
+  //   • scan <  11:00         → Morning In (start of day, missing check-out)
+  //   • scan 11:00 – check-out → Noon In   (late check-in, missing check-out)
   // This is purely a UI re-shuffle; the original raw scan is unchanged on
   // the server, so admins editing the row see and edit the same value.
   let morningIn  = a.morningIn  ?? undefined;
@@ -97,8 +99,10 @@ function adaptApiAttendance(a: attendanceApi.AttendanceEntry): AttendanceType {
       return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
     })();
     morningIn = morningOut = noonIn = noonOut = undefined;
-    if (Number.isFinite(minutes) && minutes < 11 * 60) morningIn = only;
-    else                                                noonIn    = only;
+    if (!Number.isFinite(minutes))                       noonIn  = only;
+    else if (minutes >= checkOutCutoffMinutes)           noonOut = only;
+    else if (minutes < 11 * 60)                          morningIn = only;
+    else                                                 noonIn    = only;
   }
 
   return {
@@ -324,7 +328,10 @@ export function Attendance() {
       const rows = dateFrom && dateTo
         ? await attendanceApi.listRange({ from: dateFrom, to: dateTo, size: 500 })
         : (await attendanceApi.list({ date: dateFrom || format(new Date(), 'yyyy-MM-dd'), size: 500 })).data;
-      setAttendance(rows.map(adaptApiAttendance));
+      const rule = loadScanRule();
+      const m = /^(\d{1,2}):(\d{2})/.exec(rule.eveningOut);
+      const cutoff = m ? Number(m[1]) * 60 + Number(m[2]) : 17 * 60;
+      setAttendance(rows.map(r => adaptApiAttendance(r, cutoff)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
     }
