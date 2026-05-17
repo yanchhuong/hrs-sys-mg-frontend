@@ -103,7 +103,7 @@ export interface OTSettings {
 // Payroll Categories (customizable earnings / deductions)
 // ---------------------------------------------------------------------------
 export type PayrollCategoryKind = 'earning' | 'deduction';
-export type PayrollCategoryValueType = 'flat' | 'percentage';
+export type PayrollCategoryValueType = 'flat' | 'percentage' | 'day';
 
 export interface PayrollCategory {
   id: string;

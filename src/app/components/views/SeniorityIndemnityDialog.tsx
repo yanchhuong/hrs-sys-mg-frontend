@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Calculator, Info, Scale, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 import * as seniorityApi from '../../api/seniorityIndemnity';
+import * as categoriesApi from '../../api/payrollCategories';
 import {
   Dialog,
   DialogContent,
@@ -74,16 +75,30 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
   const [included, setIncluded] = useState<Set<string>>(new Set());
 
   // Reset state every time the dialog opens — stops a stale preview from a
-  // previous session bleeding into the next one.
+  // previous session bleeding into the next one. Also re-reads the
+  // `seniority_indemnity` payroll category so the Days input mirrors the
+  // value HR set in Settings → Payroll Categories (7.5 ships as the seed).
   useEffect(() => {
-    if (open) {
-      const d = defaultPeriod();
-      setStartDate(d.startDate);
-      setEndDate(d.endDate);
-      setDays('7.5');
-      setPreview(null);
-      setIncluded(new Set());
-    }
+    if (!open) return;
+    const d = defaultPeriod();
+    setStartDate(d.startDate);
+    setEndDate(d.endDate);
+    setDays('7.5');
+    setPreview(null);
+    setIncluded(new Set());
+    let cancelled = false;
+    (async () => {
+      try {
+        const cats = await categoriesApi.list();
+        const seniority = cats.find(c => c.code === 'seniority_indemnity');
+        if (!cancelled && seniority && seniority.valueType === 'day' && seniority.defaultAmount > 0) {
+          setDays(String(seniority.defaultAmount));
+        }
+      } catch {
+        // Non-fatal — fall back to the literal 7.5 default set above.
+      }
+    })();
+    return () => { cancelled = true; };
   }, [open]);
 
   const applyPreset = (kind: 'H1' | 'H2') => {
@@ -260,7 +275,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
                   <p className="font-medium text-gray-900">Formula</p>
                   <code className="block bg-gray-100 rounded px-3 py-2 text-xs font-mono whitespace-pre">
 {`avg_monthly = sum(net_salary across selected months) ÷ months_found
-daily_wage  = avg_monthly ÷ 26
+daily_wage  = avg_monthly ÷ working_days
 indemnity   = daily_wage × days_to_pay`}
                   </code>
                   <p className="text-xs text-gray-500">
@@ -275,8 +290,9 @@ indemnity   = daily_wage × days_to_pay`}
                     window, we fall back to <code>base + allowance</code> and label the
                     row so HR can audit it. Standard payment is <strong>7.5 days each
                     June and December</strong>; override the Days field for back-pay
-                    catch-ups or partial-period payments. 26 = Cambodian standard
-                    working-days-per-month (6-day week).
+                    catch-ups or partial-period payments. <strong>working_days</strong>{' '}
+                    comes from your General Attendance Settings &gt; Weekend Days
+                    (Mon–Sat → 26, Mon–Fri → 22, Mon–Thu → 17).
                   </p>
                 </div>
                 <div>

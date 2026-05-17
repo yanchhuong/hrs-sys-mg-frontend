@@ -127,7 +127,9 @@ export function Increase() {
   const [newEmployeeId, setNewEmployeeId] = useState<string>('');
   const [newType, setNewType] = useState<string>('');
   const [newAmount, setNewAmount] = useState<string>('');
-  const [newIsPercentage, setNewIsPercentage] = useState<boolean>(false);
+  /** "amount" (dollars), "percentage" (% of base), or "day" (day count).
+   *  Drives the unit dropdown and the Amount/Days label flip. */
+  const [newUnit, setNewUnit] = useState<'amount' | 'percentage' | 'day'>('amount');
   const [newEffectiveDate, setNewEffectiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   // Recurrence: 'once' = single payroll cycle (default; permanent base
   // salary bump for type=basic). 'monthly' = repeats every cycle through
@@ -182,11 +184,28 @@ export function Increase() {
     setNewEmployeeId('');
     setNewType('');
     setNewAmount('');
-    setNewIsPercentage(false);
+    setNewUnit('amount');
     setNewEffectiveDate(format(new Date(), 'yyyy-MM-dd'));
     setNewRecurrence('once');
     setNewEffectiveUntil('');
     setNewReason('');
+  };
+
+  /** When the user picks a Type, auto-default the unit + amount from the
+   *  category's value_type so day-flavoured categories (seniority_indemnity)
+   *  arrive pre-filled with their day count. The user can still override. */
+  const handleTypeChange = (code: string) => {
+    setNewType(code);
+    const cat = earningCategories.find((c) => c.code === code);
+    if (!cat) return;
+    if (cat.valueType === 'day') {
+      setNewUnit('day');
+      if (cat.defaultAmount > 0) setNewAmount(String(cat.defaultAmount));
+    } else if (cat.valueType === 'percentage') {
+      setNewUnit('percentage');
+    } else {
+      setNewUnit('amount');
+    }
   };
 
   const handleAddIncrease = async () => {
@@ -218,7 +237,8 @@ export function Increase() {
         employeeId: newEmployeeId,
         type: newType,
         amount: amt,
-        isPercentage: newIsPercentage,
+        isPercentage: newUnit === 'percentage',
+        unit: newUnit,
         effectiveDate: newEffectiveDate,
         recurrence: newRecurrence,
         effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : undefined,
@@ -248,7 +268,8 @@ export function Increase() {
         employeeId: newEmployeeId,
         type: newType,
         amount: amt,
-        isPercentage: newIsPercentage,
+        isPercentage: newUnit === 'percentage',
+        unit: newUnit,
         effectiveDate: newEffectiveDate,
         recurrence: newRecurrence,
         // Only meaningful for monthly; once-rows ignore it server-side.
@@ -398,7 +419,7 @@ export function Increase() {
                 <select
                   className="w-full px-3 py-2 border rounded-md"
                   value={newType}
-                  onChange={(e) => setNewType(e.target.value)}
+                  onChange={(e) => handleTypeChange(e.target.value)}
                 >
                   <option value="">Select type…</option>
                   {earningCategories.map((c) => (
@@ -410,10 +431,11 @@ export function Increase() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Amount</Label>
+                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'}</Label>
                   <Input
                     type="number"
-                    placeholder="500"
+                    step={newUnit === 'day' ? '0.5' : '0.01'}
+                    placeholder={newUnit === 'day' ? '7.5' : '500'}
                     value={newAmount}
                     onChange={(e) => setNewAmount(e.target.value)}
                   />
@@ -422,11 +444,12 @@ export function Increase() {
                   <Label>Unit</Label>
                   <select
                     className="w-full px-3 py-2 border rounded-md"
-                    value={newIsPercentage ? 'percentage' : 'fixed'}
-                    onChange={(e) => setNewIsPercentage(e.target.value === 'percentage')}
+                    value={newUnit}
+                    onChange={(e) => setNewUnit(e.target.value as 'amount' | 'percentage' | 'day')}
                   >
-                    <option value="fixed">Fixed Amount ($)</option>
+                    <option value="amount">Fixed Amount ($)</option>
                     <option value="percentage">Percentage (%)</option>
+                    <option value="day">Day(s)</option>
                   </select>
                 </div>
               </div>

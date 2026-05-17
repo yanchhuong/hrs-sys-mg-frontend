@@ -1075,6 +1075,11 @@ export function Payroll() {
       // owned by the employee record / OT module and shouldn't be
       // double-counted from an increase row.
       if (reservedEarningCodes.has(code)) continue;
+      // Day-unit rows store a day count, not dollars — summing them as
+      // money would silently corrupt the column (a 7.5-day seniority entry
+      // would land as $7.50 in the template). The Compute Seniority
+      // Indemnity dialog owns the dollar math for those.
+      if (inc.unit === 'day') continue;
       const bucket = increasesByApiId.get(apiId) ?? {};
       bucket[code] = (bucket[code] ?? 0) + Number(inc.amount || 0);
       increasesByApiId.set(apiId, bucket);
