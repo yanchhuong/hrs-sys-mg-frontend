@@ -46,7 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Scale } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
 import {
@@ -63,6 +63,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
+import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
 
 // ---------------------------------------------------------------------------
 // API → UI adapters
@@ -140,6 +141,10 @@ export function Payroll() {
   const { currentUser, currentEmployee, canUpdate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  // Cambodian Seniority Indemnity dialog — June/December payment calculator.
+  // Generates a payroll batch carrying a single 'seniority_indemnity' line
+  // per eligible UDC employee. See SeniorityIndemnityDialog for the rules.
+  const [seniorityDialogOpen, setSeniorityDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchType, setBatchType] = useState<'Salary' | 'Salary & Bonus' | '1st Salary' | '2nd Salary'>('Salary');
@@ -1070,6 +1075,11 @@ export function Payroll() {
       // owned by the employee record / OT module and shouldn't be
       // double-counted from an increase row.
       if (reservedEarningCodes.has(code)) continue;
+      // Day-unit rows store a day count, not dollars — summing them as
+      // money would silently corrupt the column (a 7.5-day seniority entry
+      // would land as $7.50 in the template). The Compute Seniority
+      // Indemnity dialog owns the dollar math for those.
+      if (inc.unit === 'day') continue;
       const bucket = increasesByApiId.get(apiId) ?? {};
       bucket[code] = (bucket[code] ?? 0) + Number(inc.amount || 0);
       increasesByApiId.set(apiId, bucket);
@@ -1160,6 +1170,15 @@ export function Payroll() {
           </div>
           {isAdminOrManager && (
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setSeniorityDialogOpen(true)}>
+              <Scale className="mr-2 h-4 w-4" />
+              Compute Seniority Indemnity
+            </Button>
+            <SeniorityIndemnityDialog
+              open={seniorityDialogOpen}
+              onOpenChange={setSeniorityDialogOpen}
+              onCreated={() => { void loadBatches(); }}
+            />
             <Dialog open={uploadDialogOpen} onOpenChange={handleDialogOpenChange}>
               <DialogTrigger asChild>
                 <Button variant="outline">

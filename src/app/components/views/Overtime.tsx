@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { mockOTRequests, mockEmployees } from '../../data/mockData';
 import { OTRequest } from '../../types/hrms';
 import { Employee } from '../../types/hrms';
@@ -125,6 +125,7 @@ export function Overtime() {
   });
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'by-request' | 'by-employee'>('by-request');
 
   // Live data — falls back to the mock arrays when VITE_USE_MOCKS is on.
   const [allOtRequests, setAllOtRequests] = useState<OTRequest[]>(USE_MOCKS ? mockOTRequests : []);
@@ -377,6 +378,33 @@ export function Overtime() {
     overtimePagination.resetPage();
   }, [dateFilter, statusFilter, scopeMode, search]);
 
+  // Group-by-employee aggregation. Only approved requests count toward pay —
+  // pending/rejected amounts would mislead admins reconciling payroll.
+  const byEmployeeRows = useMemo(() => {
+    const approved = otRequests.filter(r => r.status === 'approved');
+    const map = new Map<string, { workday: number; weekend: number; holiday: number }>();
+    approved.forEach(req => {
+      const entry = map.get(req.employeeId) ?? { workday: 0, weekend: 0, holiday: 0 };
+      if (req.isHoliday) entry.holiday += req.hours;
+      else if (req.isWeekend) entry.weekend += req.hours;
+      else entry.workday += req.hours;
+      map.set(req.employeeId, entry);
+    });
+    return Array.from(map.entries()).map(([employeeId, hours]) => {
+      const employee = mockEmployees.find(e => e.id === employeeId);
+      const hourlyRate = (employee?.baseSalary ?? 0) / 160; // 160 hrs/month baseline
+      const totalAmount =
+        hourlyRate * (hours.workday * 1 + hours.weekend * 1.5 + hours.holiday * 2);
+      return { employeeId, employee, ...hours, hourlyRate, totalAmount };
+    }).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [otRequests]);
+
+  const byEmployeePagination = usePagination(byEmployeeRows, 10);
+
+  useEffect(() => {
+    byEmployeePagination.resetPage();
+  }, [dateFilter]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -479,49 +507,44 @@ export function Overtime() {
       <Card>
         <CardHeader className="pb-3 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>OT Request History</CardTitle>
-            <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+            <CardTitle>{viewMode === 'by-request' ? 'OT Request History' : 'OT Totals by Employee'}</CardTitle>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
               <TabsList>
-                <TabsTrigger value="all">
-                  All
-                  <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{statusCounts.all}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="pending">
-                  Pending
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="approved">
-                  Approved
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">{statusCounts.approved}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="rejected">
-                  Rejected
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">{statusCounts.rejected}</Badge>
-                </TabsTrigger>
+                <TabsTrigger value="by-request">By Request</TabsTrigger>
+                <TabsTrigger value="by-employee">By Employee</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, ID, department or reason…"
-              className="h-8 pl-8 pr-8 text-sm"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                title="Clear search"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          {viewMode === 'by-request' && (
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, ID, department or reason…"
+                className="h-8 pl-8 pr-8 text-sm"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+          {viewMode === 'by-employee' && (
+            <p className="text-xs text-gray-500 mt-2">
+              Totals from approved OT only. Rates: workday ×1, weekend ×1.5, holiday ×2. Hourly rate = base salary ÷ 160.
+            </p>
+          )}
         </CardHeader>
         <CardContent>
+          {viewMode === 'by-request' ? (
+          <>
           <Table>
             <TableHeader>
               <TableRow>
@@ -673,6 +696,76 @@ export function Overtime() {
             endIndex={overtimePagination.endIndex}
             totalItems={overtimePagination.totalItems}
           />
+          </>
+          ) : (
+          <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee</TableHead>
+                <TableHead className="text-right">Workday OT (×1)</TableHead>
+                <TableHead className="text-right">Weekend OT (×1.5)</TableHead>
+                <TableHead className="text-right">Holiday OT (×2)</TableHead>
+                <TableHead className="text-right">Total Hours</TableHead>
+                <TableHead className="text-right">Total Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {byEmployeePagination.paginatedItems.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">
+                    No approved OT to aggregate.
+                  </TableCell>
+                </TableRow>
+              )}
+              {byEmployeePagination.paginatedItems.map((row) => {
+                const totalHours = row.workday + row.weekend + row.holiday;
+                return (
+                  <TableRow key={row.employeeId}>
+                    <TableCell>
+                      <EmployeeCell employee={row.employee} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{row.workday.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.weekend.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.holiday.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">{totalHours.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold text-green-700">
+                      ${row.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {byEmployeePagination.paginatedItems.length > 0 && (() => {
+                const all = byEmployeeRows;
+                const sumWork = all.reduce((s, r) => s + r.workday, 0);
+                const sumWkd  = all.reduce((s, r) => s + r.weekend, 0);
+                const sumHol  = all.reduce((s, r) => s + r.holiday, 0);
+                const sumAmt  = all.reduce((s, r) => s + r.totalAmount, 0);
+                return (
+                  <TableRow className="bg-gray-50 font-semibold">
+                    <TableCell>Total ({all.length} employee{all.length !== 1 ? 's' : ''})</TableCell>
+                    <TableCell className="text-right tabular-nums">{sumWork.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums">{sumWkd.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums">{sumHol.toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums">{(sumWork + sumWkd + sumHol).toFixed(1)}h</TableCell>
+                    <TableCell className="text-right tabular-nums text-green-700">
+                      ${sumAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                  </TableRow>
+                );
+              })()}
+            </TableBody>
+          </Table>
+          <Pagination
+            currentPage={byEmployeePagination.currentPage}
+            totalPages={byEmployeePagination.totalPages}
+            onPageChange={byEmployeePagination.goToPage}
+            startIndex={byEmployeePagination.startIndex}
+            endIndex={byEmployeePagination.endIndex}
+            totalItems={byEmployeePagination.totalItems}
+          />
+          </>
+          )}
         </CardContent>
       </Card>
 

@@ -1,5 +1,7 @@
 import { apiJson, apiVoid } from './client';
 
+export type SalaryIncreaseUnit = 'amount' | 'percentage' | 'day';
+
 export interface SalaryIncrease {
   id: string;
   employeeId: string;
@@ -7,6 +9,8 @@ export interface SalaryIncrease {
   type: string;
   amount: number;
   isPercentage?: boolean;
+  /** Explicit unit of {@link amount}. Falls back to `isPercentage` for legacy rows. */
+  unit?: SalaryIncreaseUnit;
   effectiveDate: string;
   /** "once" = single payroll cycle, "monthly" = recurring through effectiveUntil. */
   recurrence?: 'once' | 'monthly';
@@ -28,6 +32,7 @@ export interface CreateIncreaseRequest {
   type: string;
   amount: number;
   isPercentage?: boolean;
+  unit?: SalaryIncreaseUnit;
   effectiveDate: string;
   /** Defaults to 'once' on the server when omitted. */
   recurrence?: 'once' | 'monthly';

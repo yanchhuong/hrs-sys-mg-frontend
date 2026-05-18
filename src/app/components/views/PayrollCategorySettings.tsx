@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import * as categoriesApi from '../../api/payrollCategories';
 import { USE_MOCKS } from '../../api/client';
@@ -7,6 +7,7 @@ import {
   ArrowUp,
   Check,
   DollarSign,
+  Info,
   Minus,
   Pencil,
   Plus,
@@ -20,6 +21,8 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Badge } from '../ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -67,6 +70,48 @@ import {
   savePayrollCategories,
   validateCategory,
 } from '../../utils/payrollCategories';
+
+/**
+ * Per-category hover-hint, keyed by `code`. Only categories with non-obvious
+ * mechanics need an entry — Basic / OT / Tax / NSSF are self-evident.
+ * Adding a new key here is the entire extension point; the table cell
+ * surfaces an ℹ button next to the label whenever a code matches.
+ *
+ * Each entry is rendered inside a <Tooltip>, so plain text + brief JSX
+ * (lists, code spans) are fine — keep it short, deep details belong in
+ * the dedicated feature dialog (e.g. SeniorityIndemnityDialog).
+ */
+const CATEGORY_HELP: Record<string, React.ReactNode> = {
+  seniority_indemnity: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">Seniority Indemnity — Cambodian Labour Law (2018 Prakas)</p>
+      <p>
+        Paid <strong>twice a year</strong> to UDC (Permanent) employees:
+        <br />• <strong>7.5 days in June</strong> (covers Jan–Jun)
+        <br />• <strong>7.5 days in December</strong> (covers Jul–Dec)
+      </p>
+      <p>
+        Wage base = <strong>average net salary</strong> across the
+        6 months of payroll (skipping <em>1st Salary</em> advances).
+      </p>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+        amount = (avg_net ÷ working_days) × days
+      </p>
+      <p>
+        <strong>working_days</strong> is derived from your tenant's General Attendance
+        Settings &gt; Weekend Days: Mon–Sat → 26, Mon–Fri → 22, Mon–Thu → 17.
+      </p>
+      <p>
+        FDC employees aren't eligible — they receive a separate <strong>5% severance</strong>
+        at contract end. Payments ≤ 4,000,000 KHR are tax-exempt (Circular 002).
+      </p>
+      <p className="text-[11px] opacity-80">
+        Use the <strong>Compute Seniority Indemnity</strong> button on the Payroll page
+        to generate the batch.
+      </p>
+    </div>
+  ),
+};
 
 function adaptApi(c: categoriesApi.PayrollCategory): PayrollCategory {
   return {
@@ -430,13 +475,14 @@ export function PayrollCategorySettings() {
                             <SelectContent>
                               <SelectItem value="flat">{t('payrollCat.type.flat')}</SelectItem>
                               <SelectItem value="percentage">{t('payrollCat.type.percentage')}</SelectItem>
+                              <SelectItem value="day">Day</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
                         <TableCell>
                           <Input
                             type="number"
-                            step="0.01"
+                            step="0.5"
                             value={draft.defaultAmount}
                             onChange={(e) =>
                               setDraft({ ...draft, defaultAmount: parseFloat(e.target.value) || 0 })
@@ -467,17 +513,39 @@ export function PayrollCategorySettings() {
                               {t('payrollCat.builtin')}
                             </Badge>
                           )}
+                          {CATEGORY_HELP[c.code] && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-blue-600 hover:bg-blue-50 align-middle"
+                                  aria-label={`How ${c.label} works`}
+                                >
+                                  <Info className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-sm text-left text-xs leading-relaxed">
+                                {CATEGORY_HELP[c.code]}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                         </TableCell>
                         <TableCell>
                           <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{c.code}</code>
                         </TableCell>
                         <TableCell>
-                          {c.valueType === 'flat' ? t('payrollCat.type.flat') : t('payrollCat.type.percentage')}
+                          {c.valueType === 'flat'
+                            ? t('payrollCat.type.flat')
+                            : c.valueType === 'percentage'
+                              ? t('payrollCat.type.percentage')
+                              : 'Day'}
                         </TableCell>
                         <TableCell>
                           {c.valueType === 'percentage'
                             ? `${c.defaultAmount}%`
-                            : c.defaultAmount.toLocaleString()}
+                            : c.valueType === 'day'
+                              ? `${c.defaultAmount} days`
+                              : c.defaultAmount.toLocaleString()}
                         </TableCell>
                         <TableCell>
                           <Switch
@@ -534,12 +602,28 @@ export function PayrollCategorySettings() {
         )}
       </div>
 
-      {/* Side-by-side on wide screens (≥xl), stacked on narrower viewports
-          so the table columns don't get cramped past the responsive break. */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {renderSection('earning', earnings)}
-        {renderSection('deduction', deductions)}
-      </div>
+      {/* Full-width tabs — Earnings and Deductions get the whole row each.
+          Counts on the trigger labels so the user sees scale before clicking. */}
+      <Tabs defaultValue="earning">
+        <TabsList>
+          <TabsTrigger value="earning" className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+            {t('payrollCat.earnings')}
+            <Badge variant="secondary" className="ml-1">{earnings.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="deduction" className="flex items-center gap-2">
+            <Minus className="h-4 w-4 text-rose-600" />
+            {t('payrollCat.deductions')}
+            <Badge variant="secondary" className="ml-1">{deductions.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="earning" className="mt-4">
+          {renderSection('earning', earnings)}
+        </TabsContent>
+        <TabsContent value="deduction" className="mt-4">
+          {renderSection('deduction', deductions)}
+        </TabsContent>
+      </Tabs>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
@@ -648,16 +732,17 @@ export function PayrollCategorySettings() {
                     <SelectContent>
                       <SelectItem value="flat">{t('payrollCat.type.flat')}</SelectItem>
                       <SelectItem value="percentage">{t('payrollCat.type.percentage')}</SelectItem>
+                      <SelectItem value="day">Day</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>
-                    Default {addDraft.valueType === 'percentage' ? '(%)' : '(amount)'}
+                    Default {addDraft.valueType === 'percentage' ? '(%)' : addDraft.valueType === 'day' ? '(days)' : '(amount)'}
                   </Label>
                   <Input
                     type="number"
-                    step="0.01"
+                    step={addDraft.valueType === 'day' ? '0.5' : '0.01'}
                     value={addDraft.defaultAmount}
                     onChange={(e) =>
                       setAddDraft({ ...addDraft, defaultAmount: parseFloat(e.target.value) || 0 })
