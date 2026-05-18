@@ -61,8 +61,12 @@ export interface Employee {
    * (field engineers, remote staff). Defaults to true.
    */
   attendanceYn?: boolean;
-  /** Monthly allowance — separate from baseSalary. Defaults to 0. */
-  allowance?: number;
+  /** Fixed Position Allowance — standing earning shown on every payslip.
+   *  NOT NULL on the server (V43); defaults to 0 when HR didn't set it. */
+  positionAllowance?: number;
+  /** Fixed Evaluation Allowance — standing earning shown on every payslip.
+   *  Same NOT NULL DEFAULT 0 semantics as {@link positionAllowance}. */
+  evaluationAllowance?: number;
   // Banking
   bankName?: string;
   bankAccount?: string;

@@ -118,6 +118,10 @@ export function AddEmployeeDialog({
         joinDate: form.joinDate!,
         contactNumber: form.contactNumber?.trim() || undefined,
         baseSalary: form.baseSalary as number,
+        // Standing allowances — always send a number; server column is
+        // NOT NULL DEFAULT 0.
+        positionAllowance: form.positionAllowance ?? 0,
+        evaluationAllowance: form.evaluationAllowance ?? 0,
         managerId: form.managerId || null,
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
@@ -318,7 +322,7 @@ export function AddEmployeeDialog({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Base Salary ($)" required>
+              <Field label="Basic Salary ($)" required>
                 <Input
                   type="number"
                   min={0}
@@ -340,6 +344,30 @@ export function AddEmployeeDialog({
                   placeholder="Select manager…"
                   emptyLabel="No manager"
                   searchPlaceholder="Search by name, ID, position…"
+                />
+              </Field>
+            </div>
+            {/* Standing earnings on the Employee record. NOT NULL DEFAULT 0
+                on the server (V43): we always send a number, never blank. */}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Position Allowance ($)">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={form.positionAllowance ?? 0}
+                  onChange={(e) => patch({ positionAllowance: parseFloat(e.target.value) || 0 })}
+                />
+              </Field>
+              <Field label="Evaluation Allowance ($)">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={form.evaluationAllowance ?? 0}
+                  onChange={(e) => patch({ evaluationAllowance: parseFloat(e.target.value) || 0 })}
                 />
               </Field>
             </div>

@@ -86,6 +86,11 @@ export interface SalaryIncrease {
   type: string;
   amount: number;
   isPercentage: boolean;
+  /** Explicit unit for {@link amount}. Day-flavoured categories (e.g.
+   *  seniority indemnity) carry 'day' so the Amount column reads
+   *  "7.5 days" instead of "$7.5". Falls back to isPercentage for
+   *  legacy rows. */
+  unit?: 'amount' | 'percentage' | 'day';
   effectiveDate: string;
   /** "once" = single payroll cycle (default), "monthly" = recurring. */
   recurrence?: 'once' | 'monthly';

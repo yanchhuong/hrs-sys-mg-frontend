@@ -195,7 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           contractExpireDate: me.contractExpireDate ?? undefined,
           resignDate: me.resignDate ?? undefined,
           attendanceYn: me.attendanceYn ?? true,
-          allowance: me.allowance ?? 0,
+          positionAllowance: me.positionAllowance ?? 0,
+          evaluationAllowance: me.evaluationAllowance ?? 0,
         });
       } catch (err) {
         // Non-fatal — the dialog still renders with blank fields, same as

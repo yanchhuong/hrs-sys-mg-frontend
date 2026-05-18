@@ -28,6 +28,7 @@ import {
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { Checkbox } from '../ui/checkbox';
 import { mockIncreases } from '../../data/timeworkData';
 import { useAuth } from '../../context/AuthContext';
 import { mockEmployees } from '../../data/mockData';
@@ -37,7 +38,7 @@ import * as increasesApi from '../../api/increases';
 import * as employeesApi from '../../api/employees';
 import * as categoriesApi from '../../api/payrollCategories';
 import { USE_MOCKS } from '../../api/client';
-import { TrendingUp, Plus, Eye, User as UserIcon } from 'lucide-react';
+import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -77,12 +78,16 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
 // match on either `.id` (empNo) or `.apiId` (UUID), so we don't depend on the
 // employees list having loaded before increases.
 function adaptApiIncrease(r: increasesApi.SalaryIncrease): SalaryIncrease {
+  // Legacy rows pre-V41 only carry isPercentage; derive unit from it so
+  // the Amount/Unit columns render consistently across old + new rows.
+  const unit = r.unit ?? (r.isPercentage ? 'percentage' : 'amount');
   return {
     id: r.id,
     employeeId: r.employeeId,
     type: r.type,
     amount: r.amount,
     isPercentage: r.isPercentage ?? false,
+    unit,
     effectiveDate: r.effectiveDate,
     recurrence: r.recurrence ?? 'once',
     effectiveUntil: r.effectiveUntil ?? undefined,
@@ -90,6 +95,20 @@ function adaptApiIncrease(r: increasesApi.SalaryIncrease): SalaryIncrease {
     approvedBy: r.approvedBy ?? '',
     approvedAt: r.createdAt ?? '',
   };
+}
+
+const UNIT_LABEL: Record<'amount' | 'percentage' | 'day', string> = {
+  amount:     'Fixed Amount',
+  percentage: 'Percentage',
+  day:        'Day(s)',
+};
+
+function formatIncreaseAmount(inc: SalaryIncrease, locale = false): string {
+  const unit = inc.unit ?? (inc.isPercentage ? 'percentage' : 'amount');
+  const n = locale ? inc.amount.toLocaleString() : String(inc.amount);
+  if (unit === 'day')        return `${n} days`;
+  if (unit === 'percentage') return `${n}%`;
+  return `$${n}`;
 }
 
 const CATEGORY_COLORS = [
@@ -122,9 +141,22 @@ export function Increase() {
     start: null,
     end: null,
   });
+  // Header filters — Type picker + free-text search, mirrors the
+  // Salary Deduction page so HR uses the same shape on both screens.
+  // Search matches against the employee's name / empNo / position and
+  // the increase reason; case-insensitive.
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Create-dialog form state
   const [newEmployeeId, setNewEmployeeId] = useState<string>('');
+  // When unit is 'percentage' or 'day' the increase is a formula, not a
+  // flat dollar amount — so the same rule (e.g. 7.5 days seniority) applies
+  // to multiple employees but resolves to a different cash value per person.
+  // The dialog flips the Employee input from a single-picker to a checkbox
+  // list and creates one salary_increase row per selected id on submit.
+  const [multiEmployeeIds, setMultiEmployeeIds] = useState<string[]>([]);
+  const [employeePickerSearch, setEmployeePickerSearch] = useState<string>('');
   const [newType, setNewType] = useState<string>('');
   const [newAmount, setNewAmount] = useState<string>('');
   /** "amount" (dollars), "percentage" (% of base), or "day" (day count).
@@ -182,6 +214,8 @@ export function Increase() {
 
   const resetForm = () => {
     setNewEmployeeId('');
+    setMultiEmployeeIds([]);
+    setEmployeePickerSearch('');
     setNewType('');
     setNewAmount('');
     setNewUnit('amount');
@@ -190,6 +224,10 @@ export function Increase() {
     setNewEffectiveUntil('');
     setNewReason('');
   };
+
+  // Multi-target mode: percentage / day-unit increases are formulas, so we
+  // let the user fan the rule out across many employees in one submit.
+  const isMultiTargetMode = newUnit === 'percentage' || newUnit === 'day';
 
   /** When the user picks a Type, auto-default the unit + amount from the
    *  category's value_type so day-flavoured categories (seniority_indemnity)
@@ -209,8 +247,16 @@ export function Increase() {
   };
 
   const handleAddIncrease = async () => {
-    if (!newEmployeeId) {
-      toast.error('Please select an employee');
+    // In multi-target mode (% / day) we ignore the single-picker value and
+    // require at least one checked employee; otherwise fall back to the
+    // single-picker as before.
+    const targetIds = isMultiTargetMode
+      ? multiEmployeeIds
+      : (newEmployeeId ? [newEmployeeId] : []);
+    if (targetIds.length === 0) {
+      toast.error(isMultiTargetMode
+        ? 'Please select at least one employee'
+        : 'Please select an employee');
       return;
     }
     if (!newType) {
@@ -232,23 +278,27 @@ export function Increase() {
     }
 
     if (USE_MOCKS) {
-      const newRec: SalaryIncrease = {
-        id: `inc_${Date.now()}`,
-        employeeId: newEmployeeId,
-        type: newType,
-        amount: amt,
-        isPercentage: newUnit === 'percentage',
-        unit: newUnit,
-        effectiveDate: newEffectiveDate,
-        recurrence: newRecurrence,
-        effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : undefined,
-        reason: newReason.trim(),
-        approvedBy: 'system',
-        approvedAt: new Date().toISOString(),
-      };
-      mockIncreases.push(newRec);
+      for (const eid of targetIds) {
+        const newRec: SalaryIncrease = {
+          id: `inc_${Date.now()}_${eid}`,
+          employeeId: eid,
+          type: newType,
+          amount: amt,
+          isPercentage: newUnit === 'percentage',
+          unit: newUnit,
+          effectiveDate: newEffectiveDate,
+          recurrence: newRecurrence,
+          effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : undefined,
+          reason: newReason.trim(),
+          approvedBy: 'system',
+          approvedAt: new Date().toISOString(),
+        };
+        mockIncreases.push(newRec);
+      }
       setIncreases([...mockIncreases]);
-      toast.success('Salary increase added successfully');
+      toast.success(targetIds.length === 1
+        ? 'Salary increase added successfully'
+        : `${targetIds.length} salary increases added`);
       resetForm();
       setDialogOpen(false);
       return;
@@ -262,21 +312,31 @@ export function Increase() {
 
     setSubmitting(true);
     try {
-      // The chosen value is the employee's apiId (UUID) when available,
-      // falling back to id (empNo) for safety.
-      await increasesApi.create({
-        employeeId: newEmployeeId,
-        type: newType,
-        amount: amt,
-        isPercentage: newUnit === 'percentage',
-        unit: newUnit,
-        effectiveDate: newEffectiveDate,
-        recurrence: newRecurrence,
-        // Only meaningful for monthly; once-rows ignore it server-side.
-        effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : null,
-        reason: newReason.trim(),
-      });
-      toast.success('Salary increase added successfully');
+      // Sequential POSTs — keeps backend write order deterministic and
+      // surfaces a per-row failure (e.g. one employee fails a server-side
+      // rule) without aborting the whole batch.
+      const results = await Promise.allSettled(
+        targetIds.map(eid => increasesApi.create({
+          employeeId: eid,
+          type: newType,
+          amount: amt,
+          isPercentage: newUnit === 'percentage',
+          unit: newUnit,
+          effectiveDate: newEffectiveDate,
+          recurrence: newRecurrence,
+          effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : null,
+          reason: newReason.trim(),
+        })),
+      );
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
+      if (failed === 0) {
+        toast.success(ok === 1
+          ? 'Salary increase added successfully'
+          : `${ok} salary increases added`);
+      } else {
+        toast.error(`${failed} of ${results.length} failed — ${ok} added`);
+      }
       resetForm();
       setDialogOpen(false);
       await loadIncreases();
@@ -306,12 +366,38 @@ export function Increase() {
       return true;
     });
   }
+  if (typeFilter !== 'all') {
+    filteredIncreases = filteredIncreases.filter(inc => inc.type === typeFilter);
+  }
+  // Free-text search matches against the employee (name / empNo /
+  // position) and the increase reason. Looked up via the employees
+  // list so a stale `inc.employeeId` doesn't drop the row.
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    filteredIncreases = filteredIncreases.filter(inc => {
+      const emp = employees.find(
+        e => e.id === inc.employeeId || (e as { apiId?: string }).apiId === inc.employeeId,
+      );
+      const hay = [
+        emp?.name, emp?.id, emp?.position, (emp as { khmerName?: string } | undefined)?.khmerName,
+        inc.reason,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
 
   const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
+  // Codes hidden from the Salary Increase Type dropdown. Position and
+  // Evaluation are now standing fields on the Employee record (V42), not
+  // raises — putting them here would double-count on the payslip. Basic
+  // is excluded the same way: it represents the employee's base salary,
+  // not an increase line.
+  const HIDDEN_INCREASE_CODES = new Set(['position', 'evaluation']);
   const earningCategories = useMemo(
     () =>
       categories
-        .filter((c) => c.kind === 'earning' && c.enabled)
+        .filter((c) => c.kind === 'earning' && c.enabled
+          && !HIDDEN_INCREASE_CODES.has(c.code.toLowerCase()))
         .sort((a, b) => a.order - b.order),
     [categories],
   );
@@ -367,7 +453,7 @@ export function Increase() {
 
   useEffect(() => {
     increasePagination.resetPage();
-  }, [dateFilter]);
+  }, [dateFilter, typeFilter, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -376,7 +462,53 @@ export function Increase() {
           <h1 className="text-3xl font-bold">{t('page.increase.title')}</h1>
           <p className="text-gray-500">{t('page.increase.description')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search employee or reason…"
+              className="h-9 pl-8 pr-7 border rounded-md text-sm bg-white w-56"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Filter className="h-4 w-4 text-gray-500" />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-9 px-2 border rounded-md text-sm bg-white"
+            >
+              <option value="all">All Types</option>
+              {earningCategories.map((c) => (
+                <option key={c.id} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            {(typeFilter !== 'all' || searchQuery) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setTypeFilter('all'); setSearchQuery(''); }}
+                className="h-9 px-2"
+              >
+                <X className="h-3.5 w-3.5 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -391,29 +523,107 @@ export function Increase() {
               <DialogDescription>Record a raise, bonus, or promotion</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Employee</Label>
-                {/* Searchable picker — same UX as Manager/Lead and the
-                    Member picker. Supports name / empNo / position search. */}
-                <SearchablePicker
-                  options={employees
-                    .filter(e => e.status === 'active')
-                    .map(emp => {
-                      const val = (emp as { apiId?: string }).apiId ?? emp.id;
-                      return {
-                        value: val,
-                        label: emp.name,
-                        secondary: `${emp.id} · ${emp.position ?? ''}`,
-                        searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
-                      };
-                    })}
-                  value={newEmployeeId}
-                  onChange={setNewEmployeeId}
-                  placeholder="Select employee…"
-                  searchPlaceholder="Search by name, ID, or position…"
-                  allowClear={false}
-                />
-              </div>
+              {isMultiTargetMode ? (
+                <div className="space-y-2">
+                  <Label>
+                    Apply to employees
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      ({multiEmployeeIds.length} selected)
+                    </span>
+                  </Label>
+                  <Input
+                    placeholder="Search by name, ID, or position…"
+                    value={employeePickerSearch}
+                    onChange={(e) => setEmployeePickerSearch(e.target.value)}
+                    className="h-8"
+                  />
+                  {(() => {
+                    const active = employees.filter(e => e.status === 'active');
+                    const q = employeePickerSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? active.filter(e => `${e.name} ${e.id} ${e.position ?? ''} ${e.khmerName ?? ''}`.toLowerCase().includes(q))
+                      : active;
+                    const allVisibleIds = filtered.map(e => (e as { apiId?: string }).apiId ?? e.id);
+                    const allChecked = filtered.length > 0
+                      && allVisibleIds.every(id => multiEmployeeIds.includes(id));
+                    return (
+                      <div className="border rounded-md max-h-56 overflow-y-auto">
+                        <label className="flex items-center gap-2 px-3 py-2 border-b bg-gray-50 cursor-pointer sticky top-0">
+                          <Checkbox
+                            checked={allChecked}
+                            onCheckedChange={(c) => {
+                              if (c) {
+                                // Union of currently selected + all visible matches.
+                                const next = new Set(multiEmployeeIds);
+                                allVisibleIds.forEach(id => next.add(id));
+                                setMultiEmployeeIds(Array.from(next));
+                              } else {
+                                // Remove only the currently visible ids — a search
+                                // term shouldn't wipe out non-matching selections.
+                                setMultiEmployeeIds(multiEmployeeIds.filter(id => !allVisibleIds.includes(id)));
+                              }
+                            }}
+                          />
+                          <span className="text-sm font-medium">Select all ({filtered.length})</span>
+                        </label>
+                        {filtered.length === 0 && (
+                          <div className="px-3 py-4 text-sm text-gray-500 text-center">No matches</div>
+                        )}
+                        {filtered.map(emp => {
+                          const val = (emp as { apiId?: string }).apiId ?? emp.id;
+                          const checked = multiEmployeeIds.includes(val);
+                          return (
+                            <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(c) => {
+                                  if (c) setMultiEmployeeIds([...multiEmployeeIds, val]);
+                                  else   setMultiEmployeeIds(multiEmployeeIds.filter(id => id !== val));
+                                }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm truncate">{emp.name}</div>
+                                <div className="text-xs text-gray-500 truncate">
+                                  {emp.id}{emp.position ? ` · ${emp.position}` : ''}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  <p className="text-xs text-gray-500">
+                    {newUnit === 'percentage'
+                      ? 'A percentage rule applies to each employee\'s own base salary — the dollar value differs per person.'
+                      : 'A day-based rule (e.g. seniority indemnity) is computed from each employee\'s daily wage on payroll.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Employee</Label>
+                  {/* Searchable picker — same UX as Manager/Lead and the
+                      Member picker. Supports name / empNo / position search. */}
+                  <SearchablePicker
+                    options={employees
+                      .filter(e => e.status === 'active')
+                      .map(emp => {
+                        const val = (emp as { apiId?: string }).apiId ?? emp.id;
+                        return {
+                          value: val,
+                          label: emp.name,
+                          secondary: `${emp.id} · ${emp.position ?? ''}`,
+                          searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+                        };
+                      })}
+                    value={newEmployeeId}
+                    onChange={setNewEmployeeId}
+                    placeholder="Select employee…"
+                    searchPlaceholder="Search by name, ID, or position…"
+                    allowClear={false}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Type</Label>
                 <select
@@ -569,6 +779,7 @@ export function Increase() {
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Unit</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Effective Date</TableHead>
                 <TableHead>Reason</TableHead>
@@ -596,8 +807,11 @@ export function Increase() {
                         {getTypeLabel(increase.type)}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-gray-700">
+                      {UNIT_LABEL[increase.unit ?? (increase.isPercentage ? 'percentage' : 'amount')]}
+                    </TableCell>
                     <TableCell className="font-semibold text-green-600">
-                      +{increase.isPercentage ? `${increase.amount}%` : `$${increase.amount}`}
+                      +{formatIncreaseAmount(increase)}
                     </TableCell>
                     <TableCell>{format(new Date(increase.effectiveDate), 'MMM dd, yyyy')}</TableCell>
                     <TableCell className="max-w-xs truncate">{increase.reason}</TableCell>
@@ -670,9 +884,12 @@ export function Increase() {
                   <DetailRow label="Type">
                     <Badge className={getTypeColor(detailsTarget.type)}>{getTypeLabel(detailsTarget.type)}</Badge>
                   </DetailRow>
+                  <DetailRow label="Unit">
+                    {UNIT_LABEL[detailsTarget.unit ?? (detailsTarget.isPercentage ? 'percentage' : 'amount')]}
+                  </DetailRow>
                   <DetailRow label="Amount">
                     <span className="font-semibold text-green-700">
-                      +{detailsTarget.isPercentage ? `${detailsTarget.amount}%` : `$${detailsTarget.amount.toLocaleString()}`}
+                      +{formatIncreaseAmount(detailsTarget, true)}
                     </span>
                   </DetailRow>
                   <DetailRow label="Effective Date">

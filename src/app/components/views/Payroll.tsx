@@ -46,7 +46,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Scale } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Scale, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
 import {
@@ -64,6 +65,7 @@ import {
 } from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
 import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
+import { TaxCalculatorDialog } from './TaxCalculatorDialog';
 
 // ---------------------------------------------------------------------------
 // API → UI adapters
@@ -93,9 +95,11 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
-    // Was dropped — the Excel template Allowances column reads this and
-    // would silently render 0 for every row when the adapter omitted it.
-    allowance: e.allowance ?? 0,
+    // Standing earnings (V43): both NOT NULL DEFAULT 0 on the server,
+    // coerced to 0 here so the "1st Salary" formula and the payslip line
+    // items always have a number to work with.
+    positionAllowance: e.positionAllowance ?? 0,
+    evaluationAllowance: e.evaluationAllowance ?? 0,
   };
 }
 
@@ -136,20 +140,64 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
   };
 }
 
+// Codes whose dollar value comes from a formula, not from a fixed
+// number HR enters. We mark them with an info icon next to the label
+// so admins don't accidentally type an override into the spreadsheet.
+const FORMULA_DEDUCTION_HINTS: Record<string, string> = {
+  first_salary: 'Formula: (Basic Salary + Position Allowance + Evaluation Allowance) ÷ 2. The amount is computed per employee and auto-filled on the 2nd Salary payslip — not a fixed number.',
+  nssf:         'Formula: contributoryKhr = min(gross × khrPerUsd, 1,200,000) ; nssfUsd = (contributoryKhr × 2%) ÷ khrPerUsd. Capped at 1.2M KHR contributory wage; manual non-zero override on a salary_deductions row wins.',
+  tax:          'Cambodia TOS — progressive brackets (0% / 5% / 10% / 15% / 20%) applied to gross × khrPerUsd minus 150,000 KHR per dependent. Formula: taxKhr = taxable × ratePercent − excessAmount; auto-filled by the payroll generator, manual override on a salary_deductions row wins.',
+};
+const FORMULA_EARNING_HINTS: Record<string, string> = {
+  first_salary: 'Formula: (Basic Salary + Position Allowance + Evaluation Allowance) ÷ 2. The amount is computed per employee — not a fixed number you enter on the spreadsheet.',
+};
+
+function FormulaHint({ text }: { text: string }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-amber-600 cursor-help"
+            aria-label="Formula-driven"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs leading-snug">
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export function Payroll() {
   const { t } = useI18n();
   const { currentUser, currentEmployee, canUpdate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  /** Which flow opened the dialog. 'upload' = old Excel roundtrip;
+   *  'generate' = direct POST via handleGeneratePayroll. Drives the
+   *  dialog title and hides the Excel picker + parse preview when we're
+   *  generating directly so HR isn't distracted by upload-only widgets. */
+  const [uploadDialogMode, setUploadDialogMode] = useState<'upload' | 'generate'>('upload');
   // Cambodian Seniority Indemnity dialog — June/December payment calculator.
   // Generates a payroll batch carrying a single 'seniority_indemnity' line
   // per eligible UDC employee. See SeniorityIndemnityDialog for the rules.
   const [seniorityDialogOpen, setSeniorityDialogOpen] = useState(false);
+  const [taxDialogOpen, setTaxDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
-  const [batchType, setBatchType] = useState<'Salary' | 'Salary & Bonus' | '1st Salary' | '2nd Salary'>('Salary');
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
+  const [batchType, setBatchType] = useState<'One Time Salary' | '1st Salary' | '2nd Salary'>('One Time Salary');
+  // Period defaults to the current month / year so HR doesn't have to
+  // type the same MM / YYYY into every batch they create. The dialog
+  // re-applies these defaults on open (see handleDialogOpenChange) so
+  // a batch generated next month picks up the new month automatically.
+  const currentMm   = format(new Date(), 'MM');
+  const currentYyyy = format(new Date(), 'yyyy');
+  const [periodStart, setPeriodStart] = useState(currentMm);
+  const [periodEnd, setPeriodEnd] = useState(currentYyyy);
   // Designated approvers (UUIDs in live mode). Optional, max 3. Empty = any
   // admin (other than uploader) may approve.
   const [batchApproverIds, setBatchApproverIds] = useState<string[]>([]);
@@ -277,6 +325,131 @@ export function Payroll() {
     () => payrollCategories.filter((c) => c.kind === 'deduction' && c.enabled).sort((a, b) => a.order - b.order),
     [payrollCategories],
   );
+  // Earning categories shown in the Upload Payroll Batch dialog. For a
+  // "1st Salary" mid-month batch only the two valid earnings appear —
+  // 1st Salary itself and an optional Bonus. The other codes (OT, Meal,
+  // Petrol, Seniority Indemnity, …) belong to the end-of-month batch
+  // and stay hidden so the spreadsheet template generator can't be
+  // tricked into including them.
+  const FIRST_SALARY_ALLOWED = new Set(['first_salary', 'bonus']);
+  // Synthetic "Employee field" earnings — Basic / Position / Evaluation
+  // live on the Employee record (NOT NULL DEFAULT 0 since V43) and have
+  // no row in payroll_categories. They still need to appear on the
+  // Upload-dialog Earnings checkbox list so HR can include/exclude their
+  // columns from the Excel template just like the real categories.
+  // Built once, prepended to the visible list below.
+  const EMPLOYEE_FIELD_EARNINGS: PayrollCategory[] = useMemo(() => ([
+    { id: '__basic__',      code: 'basic',      label: 'Basic Salary',         kind: 'earning', valueType: 'flat', defaultAmount: 0, order: -3, enabled: true, system: true },
+    { id: '__position__',   code: 'position',   label: 'Position Allowance',   kind: 'earning', valueType: 'flat', defaultAmount: 0, order: -2, enabled: true, system: true },
+    { id: '__evaluation__', code: 'evaluation', label: 'Evaluation Allowance', kind: 'earning', valueType: 'flat', defaultAmount: 0, order: -1, enabled: true, system: true },
+  ]), []);
+  // Seniority Indemnity is paid twice a year per Cambodian Labour Law:
+  // the June and December cycles only. Restrict the Earnings column to
+  // those months on a Salary / 2nd Salary batch — every other (batch
+  // type, month) combination hides it. Mid-month (1st Salary) batches
+  // never carry seniority.
+  const isSeniorityMonth = periodStart === '6' || periodStart === '06'
+                        || periodStart === '12';
+  const isSeniorityAllowedBatchType = batchType === '2nd Salary' || batchType === 'One Time Salary';
+  const isSeniorityAllowed = isSeniorityAllowedBatchType && isSeniorityMonth;
+
+  const uploadEarningCategories = useMemo(() => {
+    // On a "1st Salary" mid-month batch only first_salary + bonus apply —
+    // Basic / Position / Evaluation are part of the 2nd-half (full)
+    // payslip and are intentionally hidden here.
+    if (batchType === '1st Salary') {
+      return earningCategories.filter(c => FIRST_SALARY_ALLOWED.has(c.code.toLowerCase()));
+    }
+    const withSeniorityFilter = earningCategories.filter(c =>
+      c.code.toLowerCase() !== 'seniority_indemnity' || isSeniorityAllowed,
+    );
+    return [...EMPLOYEE_FIELD_EARNINGS, ...withSeniorityFilter];
+  }, [earningCategories, batchType, EMPLOYEE_FIELD_EARNINGS, isSeniorityAllowed]);
+
+  // Full category list (earnings + deductions) that downloadPayrollTemplate
+  // and the upload parser both consume. Filtering is done by (kind, code)
+  // here — NOT by `excludedCodes` alone — because the same `code`
+  // ('first_salary') exists on both the earning and deduction sides, so
+  // a code-only Set can't distinguish them. The rules:
+  //   • 1st Salary batch  — earnings: first_salary + bonus only;
+  //                         no deductions render on a mid-month payslip.
+  //   • 2nd Salary batch  — drop the first_salary EARNING; keep the
+  //                         first_salary DEDUCTION (clawback).
+  //   • Salary / Salary & Bonus — drop first_salary on BOTH sides.
+  // Per-batch `excludedCodes` filters this further at the call site.
+  const templateCategories = useMemo(() => {
+    const filtered = payrollCategories.filter(c => {
+      if (c.kind === 'earning') {
+        if (batchType === '1st Salary') {
+          return FIRST_SALARY_ALLOWED.has(c.code.toLowerCase());
+        }
+        // first_salary EARNING only belongs on a mid-month batch.
+        if (c.code.toLowerCase() === 'first_salary') return false;
+        // Seniority Indemnity only on Salary / 2nd Salary of Jun or Dec.
+        if (c.code.toLowerCase() === 'seniority_indemnity' && !isSeniorityAllowed) return false;
+        return true;
+      }
+      if (c.kind === 'deduction') {
+        if (batchType === '1st Salary') return false;
+        if (c.code.toLowerCase() === 'first_salary') {
+          return batchType === '2nd Salary';
+        }
+        return true;
+      }
+      return true;
+    });
+    return batchType === '1st Salary'
+      ? filtered
+      : [...EMPLOYEE_FIELD_EARNINGS, ...filtered];
+  }, [payrollCategories, batchType, EMPLOYEE_FIELD_EARNINGS, isSeniorityAllowed]);
+
+  // Keep excludedCodes in sync with the per-batch-type rules:
+  //   • "1st Salary"  — only first_salary + bonus earnings; all
+  //                     deductions auto-excluded (mid-month payslip
+  //                     carries no tax / NSSF / 1st Salary clawback).
+  //   • "2nd Salary"  — every earning enabled; deductions enabled and
+  //                     the first_salary clawback row force-included
+  //                     so HR can't accidentally uncheck it.
+  //   • other types   — first_salary deduction force-excluded (no
+  //                     prior 1st-half batch to claw back).
+  useEffect(() => {
+    setExcludedCodes(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      if (batchType === '1st Salary') {
+        for (const c of earningCategories) {
+          if (FIRST_SALARY_ALLOWED.has(c.code.toLowerCase())) continue;
+          if (!next.has(c.code)) { next.add(c.code); changed = true; }
+        }
+        for (const c of deductionCategories) {
+          if (!next.has(c.code)) { next.add(c.code); changed = true; }
+        }
+      } else if (batchType === '2nd Salary') {
+        // Make sure the clawback DEDUCTION row is INCLUDED (not
+        // excluded) — drop it from excludedCodes if a previous
+        // batch-type selection happened to push it in.
+        const fsDed = deductionCategories.find(c => c.code.toLowerCase() === 'first_salary')?.code;
+        if (fsDed && next.has(fsDed)) { next.delete(fsDed); changed = true; }
+        // Force-exclude the 1st Salary EARNING — it only belongs on a
+        // mid-month batch and would double-count if HR somehow checked
+        // it here. The checkbox is also disabled in the UI below.
+        const fsEarn = earningCategories.find(c => c.code.toLowerCase() === 'first_salary')?.code;
+        if (fsEarn && !next.has(fsEarn)) { next.add(fsEarn); changed = true; }
+      } else {
+        // "Salary" / "Salary & Bonus" — single-payment monthly. There
+        // is no 1st-half batch to deduct, so force-exclude both the
+        // 1st Salary earning AND the clawback deduction.
+        const fsDed = deductionCategories.find(c => c.code.toLowerCase() === 'first_salary')?.code;
+        if (fsDed && !next.has(fsDed)) { next.add(fsDed); changed = true; }
+        const fsEarn = earningCategories.find(c => c.code.toLowerCase() === 'first_salary')?.code;
+        if (fsEarn && !next.has(fsEarn)) { next.add(fsEarn); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [batchType, earningCategories, deductionCategories]);
+  // True when deductions should be visible-but-uncheckable on the
+  // Upload Payroll Batch dialog (mid-month '1st Salary' batch only).
+  const deductionsLocked = batchType === '1st Salary';
 
   // ---------------------------------------------------------------------------
   // Live data loaders
@@ -553,7 +726,7 @@ export function Payroll() {
           // columns are not part of the WABOOKS layout we just generated,
           // so any value the user pasted into them is intentionally ignored
           // (treated as 0).
-          categories: payrollCategories.filter(c => !excludedCodes.has(c.code)),
+          categories: templateCategories.filter(c => !excludedCodes.has(c.code)),
         });
         setPreviewData(parsed);
 
@@ -577,8 +750,11 @@ export function Payroll() {
     setUploadDialogOpen(false);
     setSelectedFile(null);
     setBatchName('');
-    setPeriodStart('');
-    setPeriodEnd('');
+    // Reset Period to the CURRENT month / year (not blank) so the
+    // next open of the dialog presents sensible defaults instead of
+    // forcing HR to re-type the date for every batch.
+    setPeriodStart(format(new Date(), 'MM'));
+    setPeriodEnd(format(new Date(), 'yyyy'));
     setBatchApproverIds([]);
     setPreviewData(null);
   };
@@ -658,14 +834,18 @@ export function Payroll() {
       setCategoriesVersion((v) => v + 1);
     }
     if (!open) {
-      // Reset all states when dialog closes
+      // Reset all states when dialog closes. Period falls back to the
+      // current month / year — see resetUploadDialog for the rationale.
       setSelectedFile(null);
       setBatchName('');
-      setPeriodStart('');
-      setPeriodEnd('');
+      setPeriodStart(format(new Date(), 'MM'));
+      setPeriodEnd(format(new Date(), 'yyyy'));
       setPreviewData(null);
       setPreviewDialogOpen(false);
       setExcludedCodes(new Set());
+      // Default back to upload mode so the next click on the
+      // DialogTrigger (Upload Bulk Payroll button) reopens cleanly.
+      setUploadDialogMode('upload');
     }
   };
 
@@ -752,8 +932,16 @@ export function Payroll() {
     toast.success('Payslip downloaded successfully');
   };
 
+  /**
+   * Opens the existing Bulk Payroll dialog in generate mode — same
+   * Subject / Period / Type / Approvers / Earning + Deduction toggles
+   * HR uses for an Excel upload, but the Generate button at the bottom
+   * POSTs the batch directly instead of going through the spreadsheet
+   * roundtrip. The actual composition runs in handleComposeBatch('generate').
+   */
   const handleGeneratePayroll = () => {
-    toast.success('Payroll generated for current month');
+    setUploadDialogMode('generate');
+    setUploadDialogOpen(true);
   };
 
   // ---------------------------------------------------------------------------
@@ -884,7 +1072,19 @@ export function Payroll() {
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  /**
+   * Shared composer behind both "Download Excel Template" and the new
+   * "Generate Payroll" flow. Builds the same earnings / deductions
+   * maps the upload dialog would produce, then either:
+   *   - mode='download' → writes the .xlsx the existing Bulk Upload
+   *     consumes (HR fills + uploads),
+   *   - mode='generate' → POSTs the batch directly to
+   *     payrollApi.createBatch so HR can skip the Excel roundtrip.
+   * Keeping one composer guarantees the downloaded template and the
+   * directly-generated batch always carry identical numbers — Tax /
+   * NSSF / 1st-Salary clawback / 2nd-Salary clawback etc.
+   */
+  const handleComposeBatch = async (mode: 'download' | 'generate') => {
     // Use the upload dialog MM/YYYY values, fall back to current month/year.
     const month = periodStart ? String(periodStart).padStart(2, '0') : format(new Date(), 'MM');
     const year = periodEnd || format(new Date(), 'yyyy');
@@ -906,20 +1106,33 @@ export function Payroll() {
         c.kind === 'earning' && c.enabled && predicates.some(p => p(c)),
       )?.code ?? null;
 
-    const basicCode = earningCode([
-      c => c.code.toLowerCase() === 'basic',
-      c => c.label.toLowerCase().includes('basic'),
-    ]);
-    const allowanceCode = earningCode([
-      c => c.code.toLowerCase() === 'allowances',
-      c => c.code.toLowerCase() === 'allowance',
-      c => c.label.toLowerCase().startsWith('allowance'),
+    // Basic / Position / Evaluation no longer have payroll-category rows
+    // (V43); the values come straight off the Employee record. We still
+    // place them under stable internal keys in the earnings map so the
+    // backend's totalEarnings sum stays correct.
+    const BASIC_KEY      = 'basic';
+    const POSITION_KEY   = 'position';
+    const EVALUATION_KEY = 'evaluation';
+    // '1st Salary' is the new earning category seeded in V43. On a "1st
+    // Salary" batch it's the only line we emit; on any other batch it
+    // stays absent.
+    const firstSalaryCode = earningCode([
+      c => c.code.toLowerCase() === 'first_salary',
+      c => c.label.toLowerCase().startsWith('1st'),
     ]);
     const otCode = earningCode([
       c => c.code.toLowerCase() === 'ot',
       c => c.label.toLowerCase().startsWith('ot'),
       c => c.label.toLowerCase().includes('overtime'),
     ]);
+    // True when the admin selected the mid-month "1st Salary" batch type.
+    // Drives the split-pay payslip layout: a single 1st-Salary line in
+    // place of Basic + Position + Evaluation.
+    const isFirstSalaryBatch = batchType === '1st Salary';
+    // True when this is the end-of-month "2nd Salary" batch — the
+    // payslip then carries full earnings AND deducts back the half
+    // that was paid in the prior 1st Salary batch.
+    const isSecondSalaryBatch = batchType === '2nd Salary';
 
     // Tax-on-Salary code on the deduction side. Used to pre-fill the Tax
     // column from the configured Cambodia TOS brackets so HR doesn't have
@@ -928,6 +1141,19 @@ export function Payroll() {
       c.kind === 'deduction'
       && c.enabled
       && (c.code.toLowerCase() === 'tax' || c.label.toLowerCase().startsWith('tax'))
+    )?.code ?? null;
+    // '1st Salary' on the DEDUCTION side (V44 seed). Same code as the
+    // earning, different `kind` row. Used to clawback the mid-month
+    // advance on the 2nd Salary payslip.
+    const firstSalaryDeductionCode = payrollCategories.find(c =>
+      c.kind === 'deduction' && c.enabled && c.code.toLowerCase() === 'first_salary'
+    )?.code ?? null;
+    // NSSF Pension — employee portion (2% during the first 5 years per
+    // Cambodian NSSF). Computed deterministically below so HR doesn't
+    // have to enter dollar values by hand and so manual mistakes can't
+    // drift from the legal schedule.
+    const nssfDeductionCode = payrollCategories.find(c =>
+      c.kind === 'deduction' && c.enabled && c.code.toLowerCase() === 'nssf'
     )?.code ?? null;
 
     /**
@@ -955,6 +1181,30 @@ export function Payroll() {
         (taxableKhr * Number(bracket.ratePercent) / 100) - Number(bracket.excessAmount),
       );
       return Math.round((taxKhr / Number(taxSettings.khrPerUsd)) * 100) / 100;
+    };
+
+    /**
+     * Employee NSSF pension contribution in USD.
+     *
+     * Per Cambodian NSSF: 2% of the **contributory wage**, where the
+     * contributory wage is capped at **1,200,000 KHR/month**. Apply the
+     * cap in KHR, take the 2%, then convert back to USD at the tenant's
+     * configured FX rate. Returns 0 if the FX rate isn't set yet —
+     * matches the existing TOS behaviour and avoids silently writing
+     * implausible numbers on a fresh tenant.
+     *
+     * The 5-year pension escalation (rate climbs to 8% total after
+     * year 5 and beyond) is NOT modelled — revisit per the project
+     * memory on Cambodia NSSF when the escalation date is configurable.
+     */
+    const NSSF_CONTRIBUTORY_CAP_KHR = 1_200_000;
+    const NSSF_EMPLOYEE_RATE = 0.02; // 2% — employee pension portion, first 5 years
+    const computeNssfUsd = (grossUsd: number): number => {
+      if (!taxSettings || !(taxSettings.khrPerUsd > 0)) return 0;
+      const grossKhr = grossUsd * taxSettings.khrPerUsd;
+      const contributoryKhr = Math.min(grossKhr, NSSF_CONTRIBUTORY_CAP_KHR);
+      const nssfKhr = contributoryKhr * NSSF_EMPLOYEE_RATE;
+      return Math.round((nssfKhr / Number(taxSettings.khrPerUsd)) * 100) / 100;
     };
 
     /** Spouse counts when married; children are claimed verbatim. */
@@ -1055,12 +1305,13 @@ export function Payroll() {
     }
 
     // Same shape as deductionsByApiId but for the earning side. Drives
-    // every earning column other than the three reserved ones (basic,
-    // allowances, ot — those have dedicated sources). A salary increase
-    // of type='position' for $50 lands under the 'Position' earning
-    // column for that employee.
+    // every earning column other than the reserved ones (basic /
+    // position / evaluation / ot / first_salary). A salary increase of
+    // type='bonus' for $50 lands under the 'Bonus' earning column for
+    // that employee.
     const reservedEarningCodes = new Set(
-      [basicCode, allowanceCode, otCode].filter((c): c is string => !!c),
+      [BASIC_KEY, POSITION_KEY, EVALUATION_KEY, otCode, firstSalaryCode]
+        .filter((c): c is string => !!c),
     );
     const increasesByApiId = new Map<string, Record<string, number>>();
     for (const inc of increaseRows) {
@@ -1087,51 +1338,134 @@ export function Payroll() {
 
     // Compose the override maps keyed by Employee.id (the empNo) since
     // that's what the template util uses to render rows. Layered fill:
-    //   1. start with Increase amounts (Position, Bonus, Meal, …)
-    //   2. then write the three reserved earnings on top — guarantees
-    //      basic / allowances / ot always come from the canonical
-    //      sources even if a stray Increase row had one of those types.
+    //   1. start with Increase amounts (Bonus, Meal, Petrol, …)
+    //   2. then write the standing earnings (Basic / Position / Evaluation
+    //      / OT) on top so a stray Increase row with one of those codes
+    //      can't override the canonical Employee value.
+    //   3. for the mid-month "1st Salary" batch, replace the three
+    //      standing earnings with a single first_salary line equal to
+    //      (basic + position + evaluation) / 2.
     const earningsByEmployee: Record<string, Record<string, number>> = {};
     const deductionsByEmployee: Record<string, Record<string, number>> = {};
     for (const emp of activeEmployees) {
       const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
       const earnRow: Record<string, number> = { ...(increasesByApiId.get(apiId) ?? {}) };
-      if (basicCode)     earnRow[basicCode]     = emp.baseSalary || 0;
-      if (allowanceCode) earnRow[allowanceCode] = (emp as { allowance?: number }).allowance || 0;
+      const base = emp.baseSalary || 0;
+      const pa   = (emp as { positionAllowance?: number }).positionAllowance ?? 0;
+      const ea   = (emp as { evaluationAllowance?: number }).evaluationAllowance ?? 0;
+
+      if (isFirstSalaryBatch) {
+        // Split-pay mid-month payslip: single "1st Salary" line at 50%
+        // of the standing earnings. Other increases (bonus / meal / …)
+        // typically don't apply mid-month; they remain in earnRow if
+        // they were attached on a 1st-half date, but the three standing
+        // earnings are intentionally absent.
+        const firstSalary = Math.round(((base + pa + ea) / 2) * 100) / 100;
+        if (firstSalaryCode) earnRow[firstSalaryCode] = firstSalary;
+      } else {
+        earnRow[BASIC_KEY]      = base;
+        earnRow[POSITION_KEY]   = pa;
+        earnRow[EVALUATION_KEY] = ea;
+      }
       if (otCode)        earnRow[otCode]        = Math.round((otTotalByApiId.get(apiId) ?? 0) * 100) / 100;
+      // Seniority Indemnity is computed by the dedicated "Compute
+      // Seniority Indemnity" dialog (June + December). The category
+      // default is a day count (7.5), which the template util would
+      // otherwise print verbatim into the dollar column. Force it to
+      // 0 here so the cell stays blank until HR populates it via the
+      // dedicated flow — even when the column is visible.
+      earnRow['seniority_indemnity'] = 0;
       earningsByEmployee[emp.id] = earnRow;
 
       // Start the deduction bucket from any pre-existing manual rows the
       // admin captured under Settings → Deductions, then layer the
-      // computed Tax-on-Salary on top. We only set tax when the row
-      // doesn't already have a non-zero value, so manual overrides win.
+      // computed Tax-on-Salary and NSSF on top. We only set the
+      // formula-driven rows when the bucket doesn't already have a
+      // non-zero value, so manual overrides win.
       const dedBucket: Record<string, number> = { ...(deductionsByApiId.get(apiId) ?? {}) };
+      const grossUsd = Object.values(earnRow).reduce(
+        (s, n) => s + (Number.isFinite(Number(n)) ? Number(n) : 0),
+        0,
+      );
       if (taxCode && !(dedBucket[taxCode] > 0)) {
-        const grossUsd = Object.values(earnRow).reduce(
-          (s, n) => s + (Number.isFinite(Number(n)) ? Number(n) : 0),
-          0,
-        );
         dedBucket[taxCode] = computeTosUsd(grossUsd, dependentsFor(emp));
+      }
+      // NSSF — 2% of min(gross_khr, 1,200,000 KHR cap), converted back
+      // to USD. Same "don't stomp manual" guard as Tax so an HR-entered
+      // override (e.g. catch-up for a missed month) survives the
+      // automatic fill.
+      if (nssfDeductionCode && !(dedBucket[nssfDeductionCode] > 0)) {
+        dedBucket[nssfDeductionCode] = computeNssfUsd(grossUsd);
+      }
+      // 2nd Salary clawback: deduct the half already paid mid-month so
+      // the take-home only reflects the remaining half. Recomputed from
+      // the formula rather than read from the prior batch, per the
+      // user's "recompute" decision — keeps the flow deterministic even
+      // if no 1st-half batch exists.
+      if (isSecondSalaryBatch && firstSalaryDeductionCode) {
+        dedBucket[firstSalaryDeductionCode] = Math.round(((base + pa + ea) / 2) * 100) / 100;
       }
       deductionsByEmployee[emp.id] = dedBucket;
     }
 
-    // Pass the live category roster so the Excel columns match what the
-    // admin actually configured under Settings → Payroll Categories. Drop
-    // any codes the admin unchecked on this batch's "Include columns"
-    // panel so the spreadsheet stays tight.
-    downloadPayrollTemplate(activeEmployees, monthYear, {
-      categories: payrollCategories.filter(c => !excludedCodes.has(c.code)),
-      earningsByEmployee,
-      deductionsByEmployee,
-    });
-    toast.success(
-      `Payroll template downloaded — ${activeEmployees.length} active employees`
-        + (otRows.length ? `, ${otRows.length} OT entries` : '')
-        + (increaseRows.length ? `, ${increaseRows.length} increase entries` : '')
-        + (deductionRows.length ? `, ${deductionRows.length} deduction entries` : ''),
-    );
+    if (mode === 'download') {
+      // Pass the live category roster so the Excel columns match what the
+      // admin actually configured under Settings → Payroll Categories. Drop
+      // any codes the admin unchecked on this batch's "Include columns"
+      // panel so the spreadsheet stays tight.
+      downloadPayrollTemplate(activeEmployees, monthYear, {
+        categories: templateCategories.filter(c => !excludedCodes.has(c.code)),
+        earningsByEmployee,
+        deductionsByEmployee,
+      });
+      toast.success(
+        `Payroll template downloaded — ${activeEmployees.length} active employees`
+          + (otRows.length ? `, ${otRows.length} OT entries` : '')
+          + (increaseRows.length ? `, ${increaseRows.length} increase entries` : '')
+          + (deductionRows.length ? `, ${deductionRows.length} deduction entries` : ''),
+      );
+      return;
+    }
+    // 'generate' mode — short-circuit the Excel roundtrip and POST the
+    // batch directly with the same auto-computed amounts. Validation
+    // mirrors the upload-confirm path (Subject + Period required) so a
+    // sloppy click doesn't generate "Untitled" batches.
+    if (!batchName.trim()) {
+      toast.error('Subject is required');
+      return;
+    }
+    if (!periodStart || !periodEnd) {
+      toast.error('Period (Month + Year) is required');
+      return;
+    }
+    const items: payrollApi.CreateBatchItem[] = activeEmployees.map(emp => ({
+      employeeId: (emp as { apiId?: string }).apiId ?? emp.id,
+      baseSalary: emp.baseSalary,
+      earnings: earningsByEmployee[emp.id] ?? {},
+      deductionsBreakdown: deductionsByEmployee[emp.id] ?? {},
+    }));
+    try {
+      await payrollApi.createBatch({
+        batchDate: `${year}-${month}-01`,
+        monthYear,
+        type: batchType,
+        subject: batchName.trim(),
+        currency: 'USD',
+        approverIds: batchApproverIds.length > 0 ? batchApproverIds : undefined,
+        items,
+      });
+      toast.success(`Payroll batch "${batchName}" generated for ${activeEmployees.length} employees`);
+      resetUploadDialog();
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate payroll batch');
+    }
   };
+
+  // Thin wrapper so existing call sites keep their name. The actual
+  // Generate-Payroll button (page header) opens the dialog; the dialog's
+  // bottom Generate button then runs handleComposeBatch('generate').
+  const handleDownloadTemplate = () => handleComposeBatch('download');
 
   const calculateOTRate = (baseSalary: number) => {
     const hourlyRate = baseSalary / 160;
@@ -1172,25 +1506,39 @@ export function Payroll() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setSeniorityDialogOpen(true)}>
               <Scale className="mr-2 h-4 w-4" />
-              Compute Seniority Indemnity
+              Calculate Seniority
             </Button>
             <SeniorityIndemnityDialog
               open={seniorityDialogOpen}
               onOpenChange={setSeniorityDialogOpen}
               onCreated={() => { void loadBatches(); }}
             />
+            <Button variant="outline" onClick={() => setTaxDialogOpen(true)}>
+              <Scale className="mr-2 h-4 w-4" />
+              Calculate Tax
+            </Button>
+            <TaxCalculatorDialog
+              open={taxDialogOpen}
+              onOpenChange={setTaxDialogOpen}
+              employees={employees}
+              taxSettings={taxSettings}
+            />
             <Dialog open={uploadDialogOpen} onOpenChange={handleDialogOpenChange}>
               <DialogTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => setUploadDialogMode('upload')}>
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Bulk Payroll
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-                  <DialogTitle>Upload Payroll Batch</DialogTitle>
+                  <DialogTitle>
+                    {uploadDialogMode === 'generate' ? 'Generate Payroll Batch' : 'Upload Payroll Batch'}
+                  </DialogTitle>
                   <DialogDescription>
-                    Upload Excel file with payroll data for multiple employees
+                    {uploadDialogMode === 'generate'
+                      ? 'Auto-fill from Employee record + OT + Increases — no Excel roundtrip.'
+                      : 'Upload Excel file with payroll data for multiple employees'}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">
@@ -1216,8 +1564,7 @@ export function Payroll() {
                         onChange={(e) => setBatchType(e.target.value as typeof batchType)}
                         className="w-full px-3 py-2 border rounded-md h-9"
                       >
-                        <option value="Salary">Salary</option>
-                        <option value="Salary & Bonus">Salary &amp; Bonus</option>
+                        <option value="One Time Salary">One Time Salary</option>
                         <option value="1st Salary">1st Salary</option>
                         <option value="2nd Salary">2nd Salary</option>
                       </select>
@@ -1276,28 +1623,30 @@ export function Payroll() {
                       max={APPROVER_LIMIT}
                     />
                     <p className="text-xs text-gray-500">
-                      Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch. Leave empty to let any admin (other than yourself) handle it.
+                      Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch. <strong>Leave empty to auto-approve on upload</strong> (useful when no second admin is available).
                     </p>
                   </div>
 
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                    <FileSpreadsheet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      id="payroll-upload"
-                    />
-                    <label htmlFor="payroll-upload" className="cursor-pointer">
-                      <Button variant="outline" asChild disabled={isParsingFile}>
-                        <span>{isParsingFile ? 'Parsing...' : 'Select Excel File'}</span>
-                      </Button>
-                    </label>
-                    {selectedFile && (
-                      <p className="mt-2 text-sm text-gray-600">{selectedFile.name}</p>
-                    )}
-                  </div>
+                  {uploadDialogMode === 'upload' && (
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                      <FileSpreadsheet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        id="payroll-upload"
+                      />
+                      <label htmlFor="payroll-upload" className="cursor-pointer">
+                        <Button variant="outline" asChild disabled={isParsingFile}>
+                          <span>{isParsingFile ? 'Parsing...' : 'Select Excel File'}</span>
+                        </Button>
+                      </label>
+                      {selectedFile && (
+                        <p className="mt-2 text-sm text-gray-600">{selectedFile.name}</p>
+                      )}
+                    </div>
+                  )}
 
                   {previewData && (() => {
                     const totalEarnings = previewData.employees.reduce((sum, emp) => sum + emp.totalEarnings, 0);
@@ -1497,22 +1846,39 @@ export function Payroll() {
                             className="text-[11px] text-blue-700 hover:underline"
                             onClick={() => setExcludedCodes(prev => {
                               const next = new Set(prev);
-                              const allIncluded = earningCategories.every(c => !next.has(c.code));
-                              if (allIncluded) earningCategories.forEach(c => next.add(c.code));
-                              else earningCategories.forEach(c => next.delete(c.code));
+                              const allIncluded = uploadEarningCategories.every(c => !next.has(c.code));
+                              if (allIncluded) uploadEarningCategories.forEach(c => next.add(c.code));
+                              else uploadEarningCategories.forEach(c => next.delete(c.code));
                               return next;
                             })}
                           >
-                            {earningCategories.every(c => !excludedCodes.has(c.code)) ? 'Clear all' : 'Select all'}
+                            {uploadEarningCategories.every(c => !excludedCodes.has(c.code)) ? 'Clear all' : 'Select all'}
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                          {earningCategories.map(c => {
-                            const included = !excludedCodes.has(c.code);
+                          {uploadEarningCategories.map(c => {
+                            // The 1st Salary earning is only valid on a
+                            // mid-month "1st Salary" batch. On every other
+                            // type (Salary / 2nd Salary / Salary & Bonus)
+                            // it stays force-excluded AND uncheckable, so
+                            // HR can't accidentally double-count it.
+                            const isFsEarning = c.code.toLowerCase() === 'first_salary';
+                            const locked = isFsEarning && batchType !== '1st Salary';
+                            // When locked we always render as unchecked,
+                            // regardless of what's in excludedCodes — the
+                            // sync useEffect can lag if categories
+                            // haven't loaded yet (e.g. cloud backend that
+                            // doesn't have V43), so the visual must not
+                            // depend on it alone.
+                            const included = !locked && !excludedCodes.has(c.code);
                             return (
-                              <label key={c.code} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <label
+                                key={c.code}
+                                className={`flex items-center gap-2 text-sm text-gray-700 ${locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                              >
                                 <Checkbox
                                   checked={included}
+                                  disabled={locked}
                                   onCheckedChange={(v) => {
                                     setExcludedCodes(prev => {
                                       const next = new Set(prev);
@@ -1522,6 +1888,9 @@ export function Payroll() {
                                   }}
                                 />
                                 <span className={included ? '' : 'line-through text-gray-400'}>{c.label}</span>
+                                {FORMULA_EARNING_HINTS[c.code.toLowerCase()] && (
+                                  <FormulaHint text={FORMULA_EARNING_HINTS[c.code.toLowerCase()]} />
+                                )}
                               </label>
                             );
                           })}
@@ -1537,7 +1906,8 @@ export function Payroll() {
                           </div>
                           <button
                             type="button"
-                            className="text-[11px] text-blue-700 hover:underline"
+                            disabled={deductionsLocked}
+                            className="text-[11px] text-blue-700 hover:underline disabled:no-underline disabled:text-gray-400 disabled:cursor-not-allowed"
                             onClick={() => setExcludedCodes(prev => {
                               const next = new Set(prev);
                               const allIncluded = deductionCategories.every(c => !next.has(c.code));
@@ -1551,11 +1921,29 @@ export function Payroll() {
                         </div>
                         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                           {deductionCategories.map(c => {
-                            const included = !excludedCodes.has(c.code);
+                            // The 1st Salary clawback only belongs on a
+                            // 2nd Salary batch. On every other type
+                            // (1st Salary, Salary, Salary & Bonus) the
+                            // checkbox is greyed out + force-excluded
+                            // so HR can't accidentally deduct the
+                            // half-paid advance from a batch that
+                            // didn't have one.
+                            const isFsDed = c.code.toLowerCase() === 'first_salary';
+                            const fsDedLocked = isFsDed && batchType !== '2nd Salary';
+                            const locked = deductionsLocked || fsDedLocked;
+                            // Same defensive computation as the earnings
+                            // panel: when locked we always render as
+                            // unchecked so a stale excludedCodes set
+                            // can't leak a phantom check mark through.
+                            const included = !locked && !excludedCodes.has(c.code);
                             return (
-                              <label key={c.code} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                              <label
+                                key={c.code}
+                                className={`flex items-center gap-2 text-sm text-gray-700 ${locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                              >
                                 <Checkbox
                                   checked={included}
+                                  disabled={locked}
                                   onCheckedChange={(v) => {
                                     setExcludedCodes(prev => {
                                       const next = new Set(prev);
@@ -1565,6 +1953,9 @@ export function Payroll() {
                                   }}
                                 />
                                 <span className={included ? '' : 'line-through text-gray-400'}>{c.label}</span>
+                                {FORMULA_DEDUCTION_HINTS[c.code.toLowerCase()] && (
+                                  <FormulaHint text={FORMULA_DEDUCTION_HINTS[c.code.toLowerCase()]} />
+                                )}
                               </label>
                             );
                           })}
@@ -1612,7 +2003,11 @@ export function Payroll() {
                         </span>
                       )
                     ) : (
-                      <span className="text-xs text-gray-400">Select a file to preview</span>
+                      <span className="text-xs text-gray-400">
+                        {uploadDialogMode === 'generate'
+                          ? 'Auto-fills from Employee record + OT + Increases on Generate'
+                          : 'Select a file to preview'}
+                      </span>
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
@@ -1622,16 +2017,29 @@ export function Payroll() {
                     >
                       Cancel
                     </Button>
-                    <Button
-                      onClick={handleUploadPayroll}
-                      disabled={!previewData || previewData.errors.length > 0 || isParsingFile}
-                      title={previewData && previewData.errors.length > 0 ? `Fix ${previewData.errors.length} error(s) before uploading` : undefined}
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      {previewData && previewData.errors.length > 0
-                        ? `Fix ${previewData.errors.length} Error${previewData.errors.length !== 1 ? 's' : ''} to Upload`
-                        : 'Confirm Upload'}
-                    </Button>
+                    {uploadDialogMode === 'generate' ? (
+                      <Button
+                        onClick={() => handleComposeBatch('generate')}
+                        disabled={!batchName.trim() || !periodStart || !periodEnd}
+                        title={!batchName.trim() || !periodStart || !periodEnd
+                          ? 'Subject + Period are required'
+                          : undefined}
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Generate Payroll
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleUploadPayroll}
+                        disabled={!previewData || previewData.errors.length > 0 || isParsingFile}
+                        title={previewData && previewData.errors.length > 0 ? `Fix ${previewData.errors.length} error(s) before uploading` : undefined}
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        {previewData && previewData.errors.length > 0
+                          ? `Fix ${previewData.errors.length} Error${previewData.errors.length !== 1 ? 's' : ''} to Upload`
+                          : 'Confirm Upload'}
+                      </Button>
+                    )}
                   </div>
                 </DialogFooter>
               </DialogContent>
@@ -1786,10 +2194,31 @@ export function Payroll() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button onClick={handleGeneratePayroll}>
-              <FileText className="mr-2 h-4 w-4" />
-              Generate Payroll
-            </Button>
+            {/* Generate Payroll is a 3-way dropdown — picking an option
+                sets the batch type and opens the upload dialog in
+                generate mode so HR jumps straight to a pre-typed batch
+                without flipping the Type select inside the dialog. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Generate Payroll
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {(['1st Salary', '2nd Salary', 'One Time Salary'] as const).map(opt => (
+                  <DropdownMenuItem
+                    key={opt}
+                    onClick={() => {
+                      setBatchType(opt);
+                      handleGeneratePayroll();
+                    }}
+                  >
+                    {opt}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           )}
         </div>
@@ -2611,9 +3040,30 @@ function derivePayslipLines(
   const deductions: { label: string; amount: number }[] = [];
 
   if (payslip.extras) {
-    // Live mode: walk the configured categories in display order; only show
-    // rows that are non-zero. Codes the admin removed/disabled don't appear.
+    // V43: the canonical earning fields (Basic / Position / Evaluation)
+    // no longer have payroll_categories rows — they're standing Employee
+    // columns. The generator still writes them under fixed keys in the
+    // extras map. We surface those first with hardcoded labels, then
+    // walk the remaining configured categories (Bonus, OT, Meal, …).
+    //
+    // For a "1st Salary" batch the generator emits ONLY a first_salary
+    // line at 50% of (basic + position + evaluation); we detect that
+    // shape and render just that one item instead of the three.
+    const fsVal = Number(payslip.extras['first_salary'] ?? 0);
+    const isFirstSalary = fsVal !== 0;
+    if (isFirstSalary) {
+      earnings.push({ label: '1st Salary', amount: fsVal });
+    } else {
+      const basicVal = Number(payslip.extras['basic'] ?? payslip.baseSalary ?? 0);
+      if (basicVal !== 0) earnings.push({ label: 'Basic Salary',         amount: basicVal });
+      const posVal   = Number(payslip.extras['position'] ?? 0);
+      if (posVal   !== 0) earnings.push({ label: 'Position Allowance',   amount: posVal });
+      const evalVal  = Number(payslip.extras['evaluation'] ?? 0);
+      if (evalVal  !== 0) earnings.push({ label: 'Evaluation Allowance', amount: evalVal });
+    }
+    const seen = new Set(['basic', 'position', 'evaluation', 'first_salary']);
     earningCategories.forEach(c => {
+      if (seen.has(c.code.toLowerCase())) return;
       const v = Number(payslip.extras![c.code] ?? 0);
       if (v !== 0) earnings.push({ label: c.label, amount: v });
     });

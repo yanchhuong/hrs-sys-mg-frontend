@@ -41,6 +41,23 @@ interface MenuNode {
   children?: MenuNode[];          // absent = leaf; present = group
 }
 
+/**
+ * Sidebar entries whose values feed the auto-payroll generator (Tax /
+ * NSSF / 1st Salary / seniority math run from these inputs without HR
+ * needing to fill them on a spreadsheet). We render a small gold
+ * "(Auto)" tag next to the label so HR knows entering data here flows
+ * straight into Generate Payroll.
+ */
+const AUTO_NAV_IDS = new Set(['increase', 'deduction', 'overtime']);
+
+function AutoTag() {
+  return (
+    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-500 font-semibold">
+      (Auto)
+    </span>
+  );
+}
+
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { currentUser, currentEmployee, canView, logout } = useAuth();
   const { t } = useI18n();
@@ -173,6 +190,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                 >
                   <Icon className="mr-2 h-4 w-4" />
                   {item.label}
+                  {AUTO_NAV_IDS.has(item.id) && <AutoTag />}
                 </Button>
               );
             }
@@ -207,6 +225,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                         >
                           <SubIcon className="mr-2 h-3 w-3" />
                           {sub.label}
+                          {AUTO_NAV_IDS.has(sub.id) && <AutoTag />}
                         </Button>
                       );
                     })}

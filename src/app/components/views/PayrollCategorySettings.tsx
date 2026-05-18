@@ -111,6 +111,93 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
       </p>
     </div>
   ),
+  first_salary: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">1st Salary — mid-month advance (split-pay)</p>
+      <p>
+        Used by tenants that pay twice a month. The amount is a
+        <strong> formula</strong>, not a fixed number HR enters:
+      </p>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+        first_salary = (Basic Salary + Position Allowance + Evaluation Allowance) ÷ 2
+      </p>
+      <p>
+        On a <strong>1st Salary</strong> payroll batch it appears as the
+        only earning line. On the matching <strong>2nd Salary</strong>
+        batch the same amount is added as a <em>deduction</em> so the
+        employee only takes home the remaining half.
+      </p>
+      <p className="text-[11px] opacity-80">
+        Default Amount is ignored — leave it at 0; the payroll generator
+        fills the value per employee from the formula.
+      </p>
+    </div>
+  ),
+  tax: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">Tax on Salary (TOS) — Cambodia</p>
+      <p>
+        Progressive monthly tax published by NBC, applied to the
+        employee's gross in KHR after dependent deductions
+        (<strong>150,000 KHR per dependent</strong>; spouse + children
+        when <em>marital_status = married</em>).
+      </p>
+      <p className="text-[11px]">Monthly brackets (KHR):</p>
+      <table className="text-[11px] w-full border-separate border-spacing-y-0.5">
+        <tbody>
+          <tr><td className="opacity-80">0 – 1,500,000</td><td className="text-right">0%</td></tr>
+          <tr><td className="opacity-80">1,500,001 – 2,000,000</td><td className="text-right">5%</td></tr>
+          <tr><td className="opacity-80">2,000,001 – 8,500,000</td><td className="text-right">10%</td></tr>
+          <tr><td className="opacity-80">8,500,001 – 12,500,000</td><td className="text-right">15%</td></tr>
+          <tr><td className="opacity-80">Over 12,500,000</td><td className="text-right">20%</td></tr>
+        </tbody>
+      </table>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+{`taxableKhr = (gross × khrPerUsd) − dependents × 150,000
+taxKhr     = (taxableKhr × ratePercent ÷ 100) − excessAmount
+taxUsd     = taxKhr ÷ khrPerUsd`}
+      </p>
+      <p className="text-[11px]">
+        The <strong>excess</strong> column on the Tax Brackets table
+        encodes lower-bracket subtotals so a single multiplication on
+        the gross gives the correct progressive amount.
+      </p>
+      <p className="text-[11px] opacity-80">
+        Brackets + FX rate are editable under Settings →
+        <strong> Tax Brackets</strong>. Auto-filled by the payroll
+        generator; a manual non-zero value on a salary_deductions row
+        wins over the formula.
+      </p>
+    </div>
+  ),
+  nssf: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">NSSF Pension — employee 2% contribution (Cambodia)</p>
+      <p>
+        Cambodian NSSF taxes the <strong>contributory wage</strong>,
+        which is the employee's monthly gross capped at
+        <strong> 1,200,000 KHR</strong> (≈ $300 USD). The employee pays
+        <strong> 2%</strong> of that during the first 5 years of the
+        pension scheme.
+      </p>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+{`contributoryKhr = min(gross × khrPerUsd, 1,200,000)
+nssfKhr         = contributoryKhr × 0.02
+nssfUsd         = nssfKhr ÷ khrPerUsd`}
+      </p>
+      <p className="text-[11px]">
+        <strong>Worked example</strong> — khrPerUsd = 4,000, gross ≥ $300:
+        <br />min($1,950 × 4,000, 1,200,000) = 1,200,000
+        <br />× 2% = 24,000 KHR ÷ 4,000 = <strong>$6.00</strong>
+      </p>
+      <p className="text-[11px] opacity-80">
+        Auto-filled by the payroll generator; the row's Default Amount
+        is ignored. A manual non-zero value on a salary_deductions row
+        for the employee wins over the formula. The 5-year pension
+        escalation (2% → 8%) is <em>not yet modelled</em>.
+      </p>
+    </div>
+  ),
 };
 
 function adaptApi(c: categoriesApi.PayrollCategory): PayrollCategory {

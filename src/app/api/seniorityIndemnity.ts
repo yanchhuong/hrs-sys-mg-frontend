@@ -23,6 +23,12 @@ export interface SeniorityIndemnityPreviewItem {
    *  6 months of payroll history" or "Base salary + allowance (no payroll
    *  history in semester)". */
   basis: string;
+  /** Per-month gross earnings used to derive `monthlyWage`. Keys are
+   *  YYYY-MM in the order the backend iterated the period (Jan→Jun for
+   *  H1, Jul→Dec for H2). Each value is the gross used for that month —
+   *  actual when a monthly_gross_earnings row existed, projected
+   *  otherwise (base + position + evaluation + approved OT + bonus). */
+  monthlyGross: Record<string, number>;
 }
 
 export interface SeniorityIndemnityPreview {

@@ -404,7 +404,10 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // Default true when the backend hasn't sent the field (older rows
     // before V15) so existing employees stay counted in attendance.
     attendanceYn: e.attendanceYn ?? true,
-    allowance: e.allowance ?? 0,
+    // NOT NULL DEFAULT 0 columns since V43 — coerce missing server data
+    // to 0 so the input + payslip line read a number, not blank.
+    positionAllowance: e.positionAllowance ?? 0,
+    evaluationAllowance: e.evaluationAllowance ?? 0,
     // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
     // the Author/Modifier columns can read them. Cast to a dynamic
     // shape since the FE Employee type doesn't declare them yet.
@@ -793,7 +796,8 @@ export function Employees() {
         contractExpireDate: raw.contractExpireDate ?? null,
         resignDate: raw.resignDate ?? null,
         attendanceYn: raw.attendanceYn,
-        allowance: raw.allowance,
+        positionAllowance: raw.positionAllowance ?? 0,
+        evaluationAllowance: raw.evaluationAllowance ?? 0,
       };
       const updated = await employeesApi.update(raw.id, body);
       // Refresh the raw cache so subsequent edits see the new value.
@@ -1814,7 +1818,7 @@ export function Employees() {
                       <FieldRow label="Experience" isEditing={false}>
                         <p>{calculateExperience(selectedEmployee.joinDate)}</p>
                       </FieldRow>
-                      <FieldRow label="Base Salary ($)" required={isEditing} isEditing={isEditing}>
+                      <FieldRow label="Basic Salary ($)" required={isEditing} isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <Input
                             type="number"
@@ -1826,19 +1830,34 @@ export function Employees() {
                           <p>${selectedEmployee.baseSalary.toLocaleString()}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="Allowance ($)" isEditing={isEditing}>
+                      <FieldRow label="Position Allowance ($)" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <Input
                             type="number"
                             min={0}
                             step="0.01"
-                            value={editedEmployee.allowance ?? 0}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, allowance: parseFloat(e.target.value) || 0 })}
+                            value={editedEmployee.positionAllowance ?? 0}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, positionAllowance: parseFloat(e.target.value) || 0 })}
                             className="h-9"
                             placeholder="0.00"
                           />
                         ) : (
-                          <p>${(selectedEmployee.allowance ?? 0).toLocaleString()}</p>
+                          <p>${(selectedEmployee.positionAllowance ?? 0).toLocaleString()}</p>
+                        )}
+                      </FieldRow>
+                      <FieldRow label="Evaluation Allowance ($)" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={editedEmployee.evaluationAllowance ?? 0}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, evaluationAllowance: parseFloat(e.target.value) || 0 })}
+                            className="h-9"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <p>${(selectedEmployee.evaluationAllowance ?? 0).toLocaleString()}</p>
                         )}
                       </FieldRow>
                       <FieldRow label="Status" isEditing={isEditing}>

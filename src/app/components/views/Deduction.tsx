@@ -36,7 +36,7 @@ import { Employee } from '../../types/hrms';
 import * as deductionsApi from '../../api/deductions';
 import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
-import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare } from 'lucide-react';
+import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -130,6 +130,10 @@ export function Deduction() {
   });
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | SalaryDeduction['status']>('all');
+  // Free-text search — matches the employee (name / empNo / position) and
+  // the deduction's own name (e.g. "Health insurance"). Mirrors the
+  // search box on the Salary Increase page.
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<SalaryDeduction['status']>('active');
 
@@ -139,10 +143,27 @@ export function Deduction() {
   const [newType, setNewType] = useState<string>('');
   const [newName, setNewName] = useState<string>('');
   const [newAmount, setNewAmount] = useState<string>('');
-  const [newIsPercentage, setNewIsPercentage] = useState<boolean>(false);
+  /** "amount" (dollars), "percentage" (% of base), or "day" (day count).
+   *  Mirrors the unit picker on Add Salary Increase. Backend persists
+   *  the flat boolean via isPercentage; 'day' is currently UI-only
+   *  metadata (saved as isPercentage=false on the wire). */
+  const [newUnit, setNewUnit] = useState<'amount' | 'percentage' | 'day'>('amount');
   const [newStartDate, setNewStartDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [newEndDate, setNewEndDate] = useState<string>('');
-  const [newIsRecurring, setNewIsRecurring] = useState<boolean>(false);
+  /** Two-state picker on the dialog: 'once' (default — no end date) /
+   *  'monthly' (repeats until newEndDate). Maps to isRecurring boolean
+   *  on the wire so the backend contract stays unchanged. */
+  const [newRecurrence, setNewRecurrence] = useState<'once' | 'monthly'>('once');
+  /** When the selected Type is formula-driven (Tax / NSSF / 1st Salary),
+   *  HR must opt in via this checkbox before they can enter an Amount.
+   *  Unchecked = no manual row is created; the auto-formula stays in
+   *  charge. Checked = the entered Amount overrides the formula for the
+   *  selected employee while the row is active. */
+  const [overrideFormula, setOverrideFormula] = useState<boolean>(false);
+  // Multi-target mode: percentage / day-unit deductions are formulas, so
+  // we let the user fan the rule out across many employees in one submit.
+  const [multiEmployeeIds, setMultiEmployeeIds] = useState<string[]>([]);
+  const [employeePickerSearch, setEmployeePickerSearch] = useState<string>('');
 
   const [categories, setCategories] = useState<PayrollCategory[]>(() => loadPayrollCategories());
   const deductionCategories = useMemo(
@@ -228,60 +249,128 @@ export function Deduction() {
 
   const resetAddForm = () => {
     setNewEmployeeId(employees[0]?.apiId ?? employees[0]?.id ?? '');
+    setMultiEmployeeIds([]);
+    setEmployeePickerSearch('');
     setNewType(deductionCategories[0]?.code ?? '');
     setNewName('');
     setNewAmount('');
-    setNewIsPercentage(false);
+    setNewUnit('amount');
     setNewStartDate(format(new Date(), 'yyyy-MM-dd'));
     setNewEndDate('');
-    setNewIsRecurring(false);
+    setNewRecurrence('once');
+    setOverrideFormula(false);
   };
 
+  // Deduction codes whose value is owned by the payroll generator's
+  // formula, not a number HR types. Selecting one of these types in the
+  // dialog locks the Amount/Unit fields by default; HR must explicitly
+  // tick "Override formula" to enter a manual number (used for one-off
+  // corrections / retroactive adjustments).
+  const FORMULA_DRIVEN_TYPES = new Set(['tax', 'nssf', 'first_salary']);
+  const isFormulaDrivenType = FORMULA_DRIVEN_TYPES.has(newType.toLowerCase());
+  // Clear the override flag whenever HR switches to a different Type,
+  // so a previous override doesn't silently survive a Type change.
+  useEffect(() => {
+    setOverrideFormula(false);
+  }, [newType]);
+
+  // Multi-target mode: percentage / day-unit deductions are formulas, so
+  // we let the user fan the rule out across many employees in one submit.
+  // Formula-driven Types (Tax / NSSF / 1st Salary) always edit a fixed
+  // dollar override per employee, so we suppress the multi-employee
+  // checkbox-list UI for those — overrides for many employees with one
+  // number rarely make sense (each person's tax differs).
+  const isMultiTargetMode = !isFormulaDrivenType
+    && (newUnit === 'percentage' || newUnit === 'day');
+
   const handleAddDeduction = async () => {
-    if (!newEmployeeId) { toast.error('Please pick an employee'); return; }
+    // In multi-target mode (% / day) we ignore the single-picker value
+    // and require at least one checked employee; otherwise fall back to
+    // the single-picker as before.
+    const targetIds = isMultiTargetMode
+      ? multiEmployeeIds
+      : (newEmployeeId ? [newEmployeeId] : []);
+    if (targetIds.length === 0) {
+      toast.error(isMultiTargetMode ? 'Please select at least one employee' : 'Please pick an employee');
+      return;
+    }
     if (!newType) { toast.error('Please pick a deduction type'); return; }
+    // Tax / NSSF / 1st Salary: the payroll generator owns the value.
+    // Block the submit unless HR explicitly checked "Override formula"
+    // so a routine click on a formula-driven Type can't silently create
+    // a stale manual row that overrides the auto-computation forever.
+    if (isFormulaDrivenType && !overrideFormula) {
+      toast.error('This type is computed automatically. Tick "Override formula" to enter a manual amount.');
+      return;
+    }
     if (!newName.trim()) { toast.error('Name is required'); return; }
     const amt = parseFloat(newAmount);
     if (!Number.isFinite(amt) || amt < 0) { toast.error('Amount must be ≥ 0'); return; }
     if (!newStartDate) { toast.error('Start date is required'); return; }
+    if (newRecurrence === 'monthly' && newEndDate && newEndDate < newStartDate) {
+      toast.error('End Date must be on or after Start Date');
+      return;
+    }
+
+    const isPercentage = newUnit === 'percentage';
+    const isRecurring  = newRecurrence === 'monthly';
+    // Resolve every target to its backend UUID (apiId) once. The dropdown
+    // stores apiId in live mode, but fall back to empNo for safety.
+    const resolveBackendId = (idFromForm: string) => {
+      const emp = employees.find(e => (e.apiId ?? e.id) === idFromForm || e.id === idFromForm);
+      return emp?.apiId ?? emp?.id ?? idFromForm;
+    };
 
     if (USE_MOCKS) {
-      const emp = employees.find(e => e.id === newEmployeeId || e.apiId === newEmployeeId);
-      const newRow: SalaryDeduction = {
-        id: `ded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        employeeId: emp?.id ?? newEmployeeId,
-        name: newName.trim(),
-        type: newType,
-        amount: amt,
-        isPercentage: newIsPercentage,
-        isRecurring: newIsRecurring,
-        startDate: newStartDate,
-        endDate: newEndDate || undefined,
-        status: 'active',
-      };
-      setDeductions(prev => [newRow, ...prev]);
-      toast.success('Deduction added successfully');
+      for (const tid of targetIds) {
+        const emp = employees.find(e => e.id === tid || e.apiId === tid);
+        const newRow: SalaryDeduction = {
+          id: `ded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          employeeId: emp?.id ?? tid,
+          name: newName.trim(),
+          type: newType,
+          amount: amt,
+          isPercentage,
+          isRecurring,
+          startDate: newStartDate,
+          endDate: newEndDate || undefined,
+          status: 'active',
+        };
+        setDeductions(prev => [newRow, ...prev]);
+      }
+      toast.success(targetIds.length === 1
+        ? 'Deduction added successfully'
+        : `${targetIds.length} deductions added`);
       setDialogOpen(false);
       resetAddForm();
       return;
     }
 
     try {
-      // Resolve to the backend UUID — the dropdown stores apiId for live mode,
-      // but in case the row only has empNo, fall back to that lookup.
-      const emp = employees.find(e => (e.apiId ?? e.id) === newEmployeeId);
-      const employeeIdForApi = emp?.apiId ?? emp?.id ?? newEmployeeId;
-      await deductionsApi.create({
-        employeeId: employeeIdForApi,
-        name: newName.trim(),
-        type: newType,
-        amount: amt,
-        isPercentage: newIsPercentage,
-        isRecurring: newIsRecurring,
-        startDate: newStartDate,
-        endDate: newEndDate || null,
-      });
-      toast.success('Deduction added successfully');
+      // Sequential per-row dispatch via Promise.allSettled so one failure
+      // doesn't drop the rest — same pattern as the Increase form's
+      // fan-out submit.
+      const results = await Promise.allSettled(
+        targetIds.map(tid => deductionsApi.create({
+          employeeId: resolveBackendId(tid),
+          name: newName.trim(),
+          type: newType,
+          amount: amt,
+          isPercentage,
+          isRecurring,
+          startDate: newStartDate,
+          endDate: isRecurring && newEndDate ? newEndDate : null,
+        })),
+      );
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
+      if (failed === 0) {
+        toast.success(ok === 1
+          ? 'Deduction added successfully'
+          : `${ok} deductions added`);
+      } else {
+        toast.error(`${failed} of ${results.length} failed — ${ok} added`);
+      }
       setDialogOpen(false);
       resetAddForm();
       await loadDeductions();
@@ -317,6 +406,17 @@ export function Deduction() {
   if (statusFilter !== 'all') {
     filteredDeductions = filteredDeductions.filter(d => d.status === statusFilter);
   }
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    filteredDeductions = filteredDeductions.filter(d => {
+      const emp = employees.find(e => e.id === d.employeeId || e.apiId === d.employeeId);
+      const hay = [
+        emp?.name, emp?.id, emp?.position, (emp as { khmerName?: string } | undefined)?.khmerName,
+        d.name,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
 
   const getTypeColor = (type: string) =>
     categoryColorMap.get(type) ?? 'bg-gray-100 text-gray-800 hover:bg-gray-100';
@@ -328,7 +428,7 @@ export function Deduction() {
   useEffect(() => {
     deductionsPagination.resetPage();
     setSelectedIds(new Set());
-  }, [dateFilter, typeFilter, statusFilter]);
+  }, [dateFilter, typeFilter, statusFilter, searchQuery]);
 
   const visibleIds = deductionsPagination.paginatedItems.map(d => d.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
@@ -377,9 +477,10 @@ export function Deduction() {
   const clearFilters = () => {
     setTypeFilter('all');
     setStatusFilter('all');
+    setSearchQuery('');
   };
 
-  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all';
+  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all' || !!searchQuery;
 
   return (
     <div className="space-y-6">
@@ -389,6 +490,26 @@ export function Deduction() {
           <p className="text-gray-500">{t('page.deduction.description')}</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search employee or name…"
+              className="h-9 pl-8 pr-7 border rounded-md text-sm bg-white w-56"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-1.5">
             <Filter className="h-4 w-4 text-gray-500" />
             <select
@@ -434,29 +555,104 @@ export function Deduction() {
               <DialogDescription>Configure a new salary deduction for an employee</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Employee</Label>
-                {/* Same searchable picker as Salary Increase / Manager-Lead.
-                    Inactive employees are filtered out of the list. */}
-                <SearchablePicker
-                  options={employees
-                    .filter(e => e.status === 'active')
-                    .map(emp => {
-                      const val = emp.apiId ?? emp.id;
-                      return {
-                        value: val,
-                        label: emp.name,
-                        secondary: `${emp.id} · ${emp.position ?? ''}`,
-                        searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
-                      };
-                    })}
-                  value={newEmployeeId}
-                  onChange={setNewEmployeeId}
-                  placeholder="Select employee…"
-                  searchPlaceholder="Search by name, ID, or position…"
-                  allowClear={false}
-                />
-              </div>
+              {isMultiTargetMode ? (
+                <div className="space-y-2">
+                  <Label>
+                    Apply to employees
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      ({multiEmployeeIds.length} selected)
+                    </span>
+                  </Label>
+                  <Input
+                    placeholder="Search by name, ID, or position…"
+                    value={employeePickerSearch}
+                    onChange={(e) => setEmployeePickerSearch(e.target.value)}
+                    className="h-8"
+                  />
+                  {(() => {
+                    const active = employees.filter(e => e.status === 'active');
+                    const q = employeePickerSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? active.filter(e => `${e.name} ${e.id} ${e.position ?? ''} ${e.khmerName ?? ''}`.toLowerCase().includes(q))
+                      : active;
+                    const allVisibleIds = filtered.map(e => e.apiId ?? e.id);
+                    const allChecked = filtered.length > 0
+                      && allVisibleIds.every(id => multiEmployeeIds.includes(id));
+                    return (
+                      <div className="border rounded-md max-h-56 overflow-y-auto">
+                        <label className="flex items-center gap-2 px-3 py-2 border-b bg-gray-50 cursor-pointer sticky top-0">
+                          <Checkbox
+                            checked={allChecked}
+                            onCheckedChange={(c) => {
+                              if (c) {
+                                const next = new Set(multiEmployeeIds);
+                                allVisibleIds.forEach(id => next.add(id));
+                                setMultiEmployeeIds(Array.from(next));
+                              } else {
+                                setMultiEmployeeIds(multiEmployeeIds.filter(id => !allVisibleIds.includes(id)));
+                              }
+                            }}
+                          />
+                          <span className="text-sm font-medium">Select all ({filtered.length})</span>
+                        </label>
+                        {filtered.length === 0 && (
+                          <div className="px-3 py-4 text-sm text-gray-500 text-center">No matches</div>
+                        )}
+                        {filtered.map(emp => {
+                          const val = emp.apiId ?? emp.id;
+                          const checked = multiEmployeeIds.includes(val);
+                          return (
+                            <label key={val} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(c) => {
+                                  if (c) setMultiEmployeeIds([...multiEmployeeIds, val]);
+                                  else   setMultiEmployeeIds(multiEmployeeIds.filter(id => id !== val));
+                                }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm truncate">{emp.name}</div>
+                                <div className="text-xs text-gray-500 truncate">
+                                  {emp.id}{emp.position ? ` · ${emp.position}` : ''}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  <p className="text-xs text-gray-500">
+                    {newUnit === 'percentage'
+                      ? 'A percentage rule applies to each employee\'s own base salary — the dollar value differs per person.'
+                      : 'A day-based rule is computed from each employee\'s daily wage on payroll.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Employee</Label>
+                  {/* Same searchable picker as Salary Increase / Manager-Lead.
+                      Inactive employees are filtered out of the list. */}
+                  <SearchablePicker
+                    options={employees
+                      .filter(e => e.status === 'active')
+                      .map(emp => {
+                        const val = emp.apiId ?? emp.id;
+                        return {
+                          value: val,
+                          label: emp.name,
+                          secondary: `${emp.id} · ${emp.position ?? ''}`,
+                          searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+                        };
+                      })}
+                    value={newEmployeeId}
+                    onChange={setNewEmployeeId}
+                    placeholder="Select employee…"
+                    searchPlaceholder="Search by name, ID, or position…"
+                    allowClear={false}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Deduction Type</Label>
                 <select
@@ -479,55 +675,104 @@ export function Deduction() {
                   onChange={(e) => setNewName(e.target.value)}
                 />
               </div>
+              {/* Formula-driven types (Tax / NSSF / 1st Salary) are owned
+                  by the payroll generator. Surface an info notice +
+                  "Override formula" opt-in instead of the free Amount/Unit
+                  pair so HR can't quietly enter "100%" on a Type=Tax row. */}
+              {isFormulaDrivenType && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <p className="text-xs text-amber-900">
+                    <strong>{deductionCategories.find(c => c.code === newType)?.label}</strong> is
+                    computed automatically by the payroll generator from
+                    the configured rules. You don't normally need to add
+                    a manual row for routine payroll.
+                  </p>
+                  <label className="flex items-center gap-2 text-xs text-amber-900 cursor-pointer">
+                    <Checkbox
+                      checked={overrideFormula}
+                      onCheckedChange={(c) => setOverrideFormula(!!c)}
+                    />
+                    <span>Override formula for this employee (one-off correction)</span>
+                  </label>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Amount</Label>
+                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'}</Label>
                   <Input
                     type="number"
-                    placeholder="100"
+                    step={newUnit === 'day' ? '0.5' : '0.01'}
+                    placeholder={newUnit === 'day' ? '7.5' : '100'}
                     value={newAmount}
                     onChange={(e) => setNewAmount(e.target.value)}
+                    disabled={isFormulaDrivenType && !overrideFormula}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Type</Label>
+                  <Label>Unit</Label>
                   <select
-                    className="w-full px-3 py-2 border rounded-md"
-                    value={newIsPercentage ? 'percentage' : 'fixed'}
-                    onChange={(e) => setNewIsPercentage(e.target.value === 'percentage')}
+                    className="w-full px-3 py-2 border rounded-md disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    value={isFormulaDrivenType ? 'amount' : newUnit}
+                    onChange={(e) => setNewUnit(e.target.value as 'amount' | 'percentage' | 'day')}
+                    disabled={isFormulaDrivenType}
                   >
-                    <option value="fixed">Fixed Amount ($)</option>
+                    <option value="amount">Fixed Amount ($)</option>
                     <option value="percentage">Percentage (%)</option>
+                    <option value="day">Day(s)</option>
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Start Date</Label>
-                  <Input
-                    type="date"
-                    value={newStartDate}
-                    onChange={(e) => setNewStartDate(e.target.value)}
-                  />
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={newStartDate}
+                  onChange={(e) => setNewStartDate(e.target.value)}
+                />
+              </div>
+              {/* Recurrence picker — same two-button UX as Add Salary
+                  Increase. 'monthly' enables the End Date below; 'once'
+                  hides it and persists as a single-cycle row. */}
+              <div className="space-y-2">
+                <Label>Recurrence</Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewRecurrence('once')}
+                    className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                      newRecurrence === 'once'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    One-time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewRecurrence('monthly')}
+                    className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                      newRecurrence === 'monthly'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Repeat Monthly
+                  </button>
                 </div>
+              </div>
+              {newRecurrence === 'monthly' && (
                 <div className="space-y-2">
-                  <Label>End Date (Optional)</Label>
+                  <Label>
+                    End Date <span className="text-xs text-gray-500 font-normal">(blank = open-ended)</span>
+                  </Label>
                   <Input
                     type="date"
                     value={newEndDate}
+                    min={newStartDate || undefined}
                     onChange={(e) => setNewEndDate(e.target.value)}
                   />
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="recurring"
-                  checked={newIsRecurring}
-                  onChange={(e) => setNewIsRecurring(e.target.checked)}
-                />
-                <Label htmlFor="recurring">Recurring deduction</Label>
-              </div>
+              )}
               <Button onClick={handleAddDeduction} className="w-full">
                 Add Deduction
               </Button>

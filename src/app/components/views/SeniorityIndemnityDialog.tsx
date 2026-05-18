@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Calculator, Info, Scale, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Calculator, Download, Info, Scale, Loader2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 import * as seniorityApi from '../../api/seniorityIndemnity';
 import * as categoriesApi from '../../api/payrollCategories';
@@ -12,12 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../ui/accordion';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
@@ -126,7 +121,10 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     try {
       const res = await seniorityApi.preview(startDate, endDate, daysNum);
       setPreview(res);
-      setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
+      // Default to "every row included" — HR can uncheck rows that
+      // shouldn't get the payment. Eligibility is no longer enforced
+      // here; the backend honours whatever the user selects.
+      setIncluded(new Set(res.items.map(i => i.employeeId)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to compute seniority indemnity');
     } finally {
@@ -134,22 +132,106 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     }
   };
 
+  // Selected total is computed from dailyWage × daysPaid for every
+  // checked row regardless of eligibility — the backend used to force
+  // amount=0 for ineligible rows, but the dialog now treats eligibility
+  // as advisory + lets HR choose. The same formula drives the per-row
+  // "Seniority" cell so the footer total always matches the sum of
+  // what's visible above.
   const selectedTotal = useMemo(() => {
     if (!preview) return 0;
     return preview.items
-      .filter(i => i.eligible && included.has(i.employeeId))
-      .reduce((sum, i) => sum + i.amount, 0);
+      .filter(i => included.has(i.employeeId))
+      .reduce((sum, i) => sum + i.dailyWage * preview.daysPaid, 0);
   }, [preview, included]);
 
   const selectedCount = useMemo(() => {
     if (!preview) return 0;
-    return preview.items.filter(i => i.eligible && included.has(i.employeeId)).length;
+    return preview.items.filter(i => included.has(i.employeeId)).length;
   }, [preview, included]);
+
+  /**
+   * Export the current preview to an .xlsx file so HR can archive / share
+   * the calc. Mirrors the on-screen table columns plus an "Included"
+   * marker so a reader can see which rows would have been pushed into the
+   * Create Payroll Batch flow. Totals row sums the Seniority column.
+   */
+  const handleDownloadExcel = () => {
+    if (!preview) return;
+    // Pull month keys from the response so the spreadsheet header
+    // matches what's on screen (Jan→Jun or Jul→Dec).
+    const sample = preview.items.find(r => r.monthlyGross && Object.keys(r.monthlyGross).length > 0);
+    const monthKeys = sample ? Object.keys(sample.monthlyGross) : [];
+
+    // Short month labels (Jan, Feb, …) to match the on-screen headers.
+    const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const xlsxShortLabel = (ym: string) => {
+      const m = parseInt(ym.slice(5, 7), 10);
+      return m >= 1 && m <= 12 ? MONTH_LABELS[m - 1] : ym;
+    };
+    const headers = [
+      'Employee No', 'Employee Name',
+      ...monthKeys.map(xlsxShortLabel),
+      'Months found',
+      'Daily wage (USD)', `Seniority (${preview.daysPaid} days)`,
+      'Included',
+    ];
+    const sheetRows: (string | number)[][] = [];
+    sheetRows.push([`Seniority Indemnity — ${preview.startDate} → ${preview.endDate} · ${preview.daysPaid} days × daily wage`]);
+    sheetRows.push(headers);
+    let totalSeniority = 0;
+    // Per-month totals across the selected rows so the auditor can
+    // verify the average without re-summing each column by hand.
+    const monthTotals: Record<string, number> = {};
+    for (const r of preview.items) {
+      const seniorityUsd = r.dailyWage * preview.daysPaid;
+      const isIncluded = included.has(r.employeeId);
+      if (isIncluded) totalSeniority += seniorityUsd;
+      const monthCells = monthKeys.map(k => {
+        const v = r.monthlyGross?.[k] ?? 0;
+        if (isIncluded) monthTotals[k] = (monthTotals[k] ?? 0) + v;
+        return Number(v.toFixed(2));
+      });
+      sheetRows.push([
+        r.empNo ?? '',
+        r.name ?? '',
+        ...monthCells,
+        r.monthsFound,
+        Number(r.dailyWage.toFixed(2)),
+        Number(seniorityUsd.toFixed(2)),
+        isIncluded ? 'Yes' : 'No',
+      ]);
+    }
+    sheetRows.push([
+      'TOTAL (selected)', '',
+      ...monthKeys.map(k => Number((monthTotals[k] ?? 0).toFixed(2))),
+      '',
+      '',
+      Number(totalSeniority.toFixed(2)),
+      '',
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+    ws['!cols'] = [
+      { wch: 12 }, // Emp No
+      { wch: 26 }, // Name
+      ...monthKeys.map(() => ({ wch: 14 })),
+      { wch: 12 }, // Months
+      { wch: 14 }, // Daily wage
+      { wch: 18 }, // Seniority
+      { wch: 10 }, // Included
+    ];
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Seniority Indemnity');
+    XLSX.writeFile(wb, `Seniority-Indemnity-${preview.startDate}-to-${preview.endDate}.xlsx`);
+  };
 
   const toggleAll = (allOn: boolean) => {
     if (!preview) return;
     setIncluded(allOn
-      ? new Set(preview.items.filter(i => i.eligible).map(i => i.employeeId))
+      ? new Set(preview.items.map(i => i.employeeId))
       : new Set());
   };
 
@@ -182,11 +264,14 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0 gap-0">
+      {/* Width + height mirror the Tax Calculator dialog so the two
+          read as siblings. 95vw with a 1400px cap fits the 11-column
+          preview table without horizontal scroll on standard monitors. */}
+      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-blue-600" />
-            Compute Seniority Indemnity
+            Calculate Seniority
           </DialogTitle>
           <DialogDescription>
             Cambodian Labour Law (2018 Prakas) — 7.5 days of wages paid each June and December
@@ -195,134 +280,115 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
         </DialogHeader>
 
         <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
-          {/* Period controls + Run button */}
+          {/* Period + days picker — same compact two-column shape as the
+              Tax Calculator's Month/Year row. */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="seniority-start">Start date</Label>
+              <Input
+                id="seniority-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="seniority-end">End date</Label>
+              <Input
+                id="seniority-end"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="seniority-days">Days to pay</Label>
+              <Input
+                id="seniority-days"
+                type="number"
+                step="0.5"
+                min="0"
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                placeholder="7.5"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-gray-500">Quick fill:</span>
+            <Button type="button" variant="outline" size="sm" className="h-7 px-2"
+                    onClick={() => applyPreset('H1')}>
+              H1 — Jan→Jun
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-7 px-2"
+                    onClick={() => applyPreset('H2')}>
+              H2 — Jul→Dec
+            </Button>
+            <Button onClick={loadPreview} disabled={loading} className="ml-auto" size="sm">
+              {loading
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Computing…</>
+                : <><Calculator className="mr-2 h-4 w-4" /> Compute Preview</>}
+            </Button>
+          </div>
+
+          {/* Rules reference — mirrors the Tax Calculator's "Brackets in
+              use" card. Formula first (so HR sees the math), then the
+              key eligibility / tax / FDC rules in tight bullets. */}
           <Card>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="seniority-start">Start date</Label>
-                  <Input
-                    id="seniority-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-44"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="seniority-end">End date</Label>
-                  <Input
-                    id="seniority-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-44"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="seniority-days">Days to pay</Label>
-                  <Input
-                    id="seniority-days"
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={days}
-                    onChange={(e) => setDays(e.target.value)}
-                    className="w-28"
-                    placeholder="7.5"
-                  />
-                </div>
-                <Button onClick={loadPreview} disabled={loading} className="ml-auto">
-                  {loading
-                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Computing…</>
-                    : <><Calculator className="mr-2 h-4 w-4" /> Compute Preview</>}
-                </Button>
+            <CardContent className="p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-blue-600" />
+                <p className="font-semibold text-sm">Formula in use (Cambodian Labour Law 2018 Prakas)</p>
+                {preview && (
+                  <span className="text-xs text-gray-500">
+                    working_days: {preview.daysDivisor} · days_to_pay: {preview.daysPaid}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500">Quick fill:</span>
-                <Button type="button" variant="outline" size="sm" className="h-7 px-2"
-                        onClick={() => applyPreset('H1')}>
-                  H1 — Jan→Jun
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="h-7 px-2"
-                        onClick={() => applyPreset('H2')}>
-                  H2 — Jul→Dec
-                </Button>
-                <span className="text-gray-400">· The two legally-mandated payment windows under the 2018 Prakas. Override the dates or days field to compute back-pay or partial-period payments.</span>
+              <p className="font-mono text-[11px] bg-gray-100 rounded px-2 py-1 whitespace-pre-wrap">
+{`avg_monthly = sum(total_earnings) ÷ count_of_non_zero_months
+daily_wage  = avg_monthly ÷ working_days
+indemnity   = daily_wage × days_to_pay
+
+Jan-May (H1) / Jul-Nov (H2): read from payslip; $0 if no batch yet
+Closing month (Jun or Dec):  projected from base + position +
+                             evaluation + approved OT + bonus
+Zero months drop out of the divisor — Apr $500 + May $500 averages
+to $500/mo, not $167.`}
+              </p>
+              <div className="grid md:grid-cols-2 gap-x-6 gap-y-1 text-[11px] text-gray-600 pt-1">
+                <div>
+                  <p className="font-semibold text-gray-800">Wage base</p>
+                  Average <strong>gross earnings</strong> across the 6-month
+                  window. Earlier months (Jan–May or Jul–Nov) read from
+                  <code>monthly_gross_earnings</code> — <strong>$0 when no payslip
+                  exists yet</strong>. The closing month (Jun or Dec) is
+                  always <strong>projected</strong> from Basic + Position +
+                  Evaluation + approved OT + active flat-dollar earnings.
+                  Zero months are excluded from the divisor.
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800">working_days</p>
+                  From General Attendance Settings &gt; Weekend Days —
+                  Mon–Sat → <strong>26</strong>, Mon–Fri → <strong>22</strong>,
+                  Mon–Thu → <strong>17</strong>.
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800">Eligibility</p>
+                  Contract = <strong>UDC / Permanent</strong>, still employed
+                  on the last day of the semester, at least 1 month of
+                  service in the window. FDC / Probation are excluded.
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800">Tax (Circular 002, 2020)</p>
+                  Payments <strong>≤ 4,000,000 KHR (~USD 1,000)</strong> are
+                  exempt; above the threshold the usual TOS brackets apply.
+                  Always deductible as a business expense.
+                </div>
               </div>
             </CardContent>
           </Card>
-
-          {/* Explanation — collapsible so the table stays the focus once HR knows the rules */}
-          <Accordion type="single" collapsible defaultValue={preview ? undefined : 'rules'}>
-            <AccordionItem value="rules" className="border rounded-md">
-              <AccordionTrigger className="px-4 hover:no-underline">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <Info className="h-4 w-4 text-blue-600" />
-                  How is this calculated? — Cambodian Labour Law &amp; Circular 002
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="px-4 pb-4 text-sm text-gray-700 space-y-3">
-                <div>
-                  <p className="font-medium text-gray-900">Entitlement</p>
-                  <p>
-                    UDC (Undetermined Duration / Permanent) employees earn <strong>15 days of wages
-                    per year of service</strong>, paid in two equal installments — <strong>7.5
-                    days in June</strong> (H1) and <strong>7.5 days in December</strong> (H2).
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Formula</p>
-                  <code className="block bg-gray-100 rounded px-3 py-2 text-xs font-mono whitespace-pre">
-{`avg_monthly = sum(net_salary across selected months) ÷ months_found
-daily_wage  = avg_monthly ÷ working_days
-indemnity   = daily_wage × days_to_pay`}
-                  </code>
-                  <p className="text-xs text-gray-500">
-                    Wage base is the <strong>average net salary</strong> across the
-                    period's payroll batches — the 2018 Prakas calls for "average wage
-                    and benefits", not the static base. <strong>1st&nbsp;Salary</strong>{' '}
-                    batches are excluded from the average because they only carry a
-                    mid-month half-net advance (no tax applied); the matching
-                    <strong>&nbsp;2nd&nbsp;Salary</strong> settles the month. Single
-                    <code> Salary</code> / <code>Salary &amp; Bonus</code> batches are
-                    included as-is. If no qualifying payroll history covers the
-                    window, we fall back to <code>base + allowance</code> and label the
-                    row so HR can audit it. Standard payment is <strong>7.5 days each
-                    June and December</strong>; override the Days field for back-pay
-                    catch-ups or partial-period payments. <strong>working_days</strong>{' '}
-                    comes from your General Attendance Settings &gt; Weekend Days
-                    (Mon–Sat → 26, Mon–Fri → 22, Mon–Thu → 17).
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Eligibility</p>
-                  <ul className="list-disc list-inside text-sm space-y-0.5">
-                    <li>Contract type must be <strong>UDC / Permanent</strong> (FDC and Probation are excluded).</li>
-                    <li>Still employed on the last day of the semester (Jun 30 or Dec 31).</li>
-                    <li>At least <strong>1 month</strong> of service within the semester.</li>
-                    <li>Serious-misconduct termination forfeits the entitlement (handled manually for now).</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Tax (Circular 002, from 2020)</p>
-                  <ul className="list-disc list-inside text-sm space-y-0.5">
-                    <li>Payments <strong>≤ 4,000,000 KHR (~USD 1,000)</strong> are exempt from salary tax.</li>
-                    <li>Payments above the threshold are subject to the usual TOS brackets.</li>
-                    <li>Always deductible as a business expense for income tax.</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">FDC contracts</p>
-                  <p>
-                    Fixed-Duration employees are not eligible for seniority indemnity. They earn
-                    a separate severance of <strong>5% of total wages</strong> at contract
-                    expiry — handled outside this calculator.
-                  </p>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
 
           {/* Empty state */}
           {!preview && !loading && (
@@ -334,34 +400,16 @@ indemnity   = daily_wage × days_to_pay`}
             </Card>
           )}
 
-          {/* Results */}
           {preview && (
             <>
-              {/* Summary tiles */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <SummaryTile label="Period"
-                             value={`${preview.startDate} → ${preview.endDate}`}
-                             sub="Selected date range" />
-                <SummaryTile label="Eligible / Roster"
-                             value={`${preview.eligibleCount} / ${preview.rosterCount}`}
-                             sub="UDC employees still on the books" />
-                <SummaryTile label="Days × divisor"
-                             value={`${preview.daysPaid} / ${preview.daysDivisor}`}
-                             sub={`${preview.daysPaid} days ÷ 26-day month`} />
-                <SummaryTile label="Selected total"
-                             value={money(selectedTotal)}
-                             sub={`${selectedCount} included of ${preview.eligibleCount} eligible`}
-                             highlight />
-              </div>
-
-              {/* Bulk toggle */}
+              {/* Bulk toggle row */}
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
+                <p className="text-xs text-gray-500">
                   Uncheck a row to exclude that employee from the generated payroll batch.
                 </p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => toggleAll(true)}>
-                    Select all eligible
+                    Select all
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => toggleAll(false)}>
                     Clear
@@ -369,99 +417,125 @@ indemnity   = daily_wage × days_to_pay`}
                 </div>
               </div>
 
-              {/* Preview table */}
-              <div className="border rounded-md overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10"></TableHead>
-                      <TableHead>Emp No</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Contract</TableHead>
-                      <TableHead>Join date</TableHead>
-                      <TableHead className="text-right">Avg monthly</TableHead>
-                      <TableHead>Basis</TableHead>
-                      <TableHead className="text-right">Daily wage</TableHead>
-                      <TableHead className="text-right">Indemnity ({preview.daysPaid}d)</TableHead>
-                      <TableHead>Tax</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {preview.items.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-6">
-                          No employees on the roster for the selected semester.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {preview.items.map(row => {
-                      const checked = included.has(row.employeeId);
-                      return (
-                        <TableRow key={row.employeeId} className={!row.eligible ? 'bg-gray-50/60' : ''}>
-                          <TableCell>
-                            <Checkbox
-                              checked={checked}
-                              disabled={!row.eligible}
-                              onCheckedChange={(v) => {
-                                setIncluded(prev => {
-                                  const next = new Set(prev);
-                                  if (v) next.add(row.employeeId);
-                                  else next.delete(row.employeeId);
-                                  return next;
-                                });
-                              }}
-                              aria-label={row.eligible ? `Include ${row.name}` : `${row.name} not eligible`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{row.empNo}</TableCell>
-                          <TableCell className="font-medium">{row.name}</TableCell>
-                          <TableCell className="text-sm text-gray-700">
-                            {row.contractType ?? <span className="italic text-gray-400">—</span>}
-                          </TableCell>
-                          <TableCell className="text-sm">{row.joinDate}</TableCell>
-                          <TableCell className="text-right">{money(row.monthlyWage)}</TableCell>
-                          <TableCell>
-                            {row.monthsFound > 0
-                              ? <Badge variant="outline" className="text-blue-700 border-blue-200 bg-blue-50 font-normal">
-                                  Avg of {row.monthsFound} mo
-                                </Badge>
-                              : <Badge variant="outline" className="text-gray-600 border-gray-200 bg-gray-50 font-normal" title={row.basis}>
-                                  Base + allowance
-                                </Badge>}
-                          </TableCell>
-                          <TableCell className="text-right">{money(row.dailyWage)}</TableCell>
-                          <TableCell className={`text-right font-semibold ${row.eligible ? 'text-green-700' : 'text-gray-400'}`}>
-                            {money(row.amount)}
-                          </TableCell>
-                          <TableCell>
-                            {row.eligible && (
-                              row.taxExempt
-                                ? <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50">Exempt</Badge>
-                                : <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">Taxable</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {row.eligible
-                              ? <span className="inline-flex items-center gap-1 text-green-700 text-sm">
-                                  <CheckCircle2 className="h-4 w-4" /> Eligible
-                                </span>
-                              : <span className="inline-flex items-center gap-1 text-gray-500 text-xs">
-                                  <XCircle className="h-4 w-4" />
-                                  {row.reason}
-                                </span>}
-                          </TableCell>
+              {/* Per-employee preview. Sticky header keeps column names
+                  visible while HR scrolls a long roster. */}
+              {(() => {
+                // Pull the month keys (YYYY-MM) from the first row that
+                // has them — every row in a response shares the same
+                // window so this is stable. Short labels (Jan, Feb…) are
+                // derived from the month part so the header stays narrow.
+                const sample = preview.items.find(r => r.monthlyGross && Object.keys(r.monthlyGross).length > 0);
+                const monthKeys = sample ? Object.keys(sample.monthlyGross) : [];
+                const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const shortLabel = (ym: string) => {
+                  const m = parseInt(ym.slice(5, 7), 10);
+                  return m >= 1 && m <= 12 ? MONTH_LABELS[m - 1] : ym;
+                };
+                const totalCols = 5 + monthKeys.length; // checkbox + Employee + monthly columns + Basis + Daily + Seniority
+                return (
+                  <div className="border rounded-md overflow-x-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-gray-50">
+                        <TableRow>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead>Employee</TableHead>
+                          {monthKeys.map(ym => (
+                            <TableHead key={ym} className="text-right whitespace-nowrap" title={ym}>
+                              {shortLabel(ym)}
+                            </TableHead>
+                          ))}
+                          <TableHead>Basis</TableHead>
+                          <TableHead className="text-right">Daily wage</TableHead>
+                          <TableHead className="text-right">Seniority ({preview.daysPaid} days)</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {preview.items.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={totalCols} className="text-center text-sm text-gray-500 py-6">
+                              No employees on the roster for the selected semester.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {preview.items.map(row => {
+                          const checked = included.has(row.employeeId);
+                          return (
+                            <TableRow key={row.employeeId}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(v) => {
+                                    setIncluded(prev => {
+                                      const next = new Set(prev);
+                                      if (v) next.add(row.employeeId);
+                                      else next.delete(row.employeeId);
+                                      return next;
+                                    });
+                                  }}
+                                  aria-label={`Include ${row.name}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{row.name}</div>
+                                <div className="font-mono text-xs text-gray-500">{row.empNo}</div>
+                              </TableCell>
+                              {monthKeys.map(ym => (
+                                <TableCell key={ym} className="text-right tabular-nums text-sm">
+                                  {money(row.monthlyGross?.[ym] ?? 0)}
+                                </TableCell>
+                              ))}
+                              <TableCell>
+                                {row.monthsFound > 0
+                                  ? <Badge variant="outline" className="text-blue-700 border-blue-200 bg-blue-50 font-normal"
+                                           title={row.basis}>
+                                      Avg of {row.monthsFound} mo
+                                    </Badge>
+                                  : <Badge variant="outline" className="text-gray-600 border-gray-200 bg-gray-50 font-normal" title={row.basis}>
+                                      Base + allowance
+                                    </Badge>}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">{money(row.dailyWage)}</TableCell>
+                              <TableCell className="text-right font-semibold tabular-nums text-green-700">
+                                {money(row.dailyWage * preview.daysPaid)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+
+              {/* Summary footer — mirrors the Tax Calculator's bottom bar. */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-4 py-3 text-sm">
+                <div>
+                  <span className="text-gray-500">Period:</span>{' '}
+                  <strong>{preview.startDate} → {preview.endDate}</strong>
+                  {' · '}
+                  <span className="text-gray-500">Roster:</span>{' '}
+                  <strong>{preview.rosterCount}</strong>
+                </div>
+                <div>
+                  <span className="text-gray-500">Selected:</span>{' '}
+                  <strong>{selectedCount}</strong> ·{' '}
+                  <span className="text-gray-500">Total:</span>{' '}
+                  <strong className="text-green-700">{money(selectedTotal)}</strong>
+                </div>
               </div>
             </>
           )}
         </div>
 
         <DialogFooter className="px-6 py-4 border-t shrink-0">
+          <Button
+            variant="outline"
+            onClick={handleDownloadExcel}
+            disabled={!preview || preview.items.length === 0}
+            title={!preview ? 'Compute Preview first to enable export' : undefined}
+          >
+            <Download className="mr-2 h-4 w-4" /> Download Excel
+          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             Cancel
           </Button>
@@ -473,17 +547,5 @@ indemnity   = daily_wage × days_to_pay`}
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function SummaryTile({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
-  return (
-    <Card className={highlight ? 'border-blue-300 bg-blue-50/40' : ''}>
-      <CardContent className="p-3">
-        <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-        <p className={`text-lg font-semibold ${highlight ? 'text-blue-700' : 'text-gray-900'}`}>{value}</p>
-        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
   );
 }

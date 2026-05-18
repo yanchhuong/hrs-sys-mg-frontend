@@ -34,8 +34,10 @@ export interface Employee {
    * daily roster's absent count.
    */
   attendanceYn?: boolean;
-  /** Monthly allowance bucket — added to by Increase rows of type 'allowance'. */
-  allowance?: number;
+  /** Fixed Position Allowance — NOT NULL DEFAULT 0 since V43. */
+  positionAllowance?: number;
+  /** Fixed Evaluation Allowance — NOT NULL DEFAULT 0 since V43. */
+  evaluationAllowance?: number;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;
