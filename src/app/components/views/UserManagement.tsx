@@ -62,19 +62,32 @@ import { useI18n } from '../../i18n/I18nContext';
 // ---------------------------------------------------------------------------
 // Role + permission model
 // ---------------------------------------------------------------------------
-type Action = 'view' | 'create' | 'update' | 'delete';
-const ACTIONS: Action[] = ['view', 'create', 'update', 'delete'];
+// Two axes share the role_permissions table:
+//   Menu Access — V/C/U/D, what the role can DO on a module.
+//   Data Access — O/M/A,   what RECORDS the role can see.
+type MenuAction  = 'view' | 'create' | 'update' | 'delete';
+type ScopeAction = 'scope_owner' | 'scope_member' | 'scope_all';
+type Action      = MenuAction | ScopeAction;
+const MENU_ACTIONS:  MenuAction[]  = ['view', 'create', 'update', 'delete'];
+const SCOPE_ACTIONS: ScopeAction[] = ['scope_owner', 'scope_member', 'scope_all'];
+const ACTIONS: Action[] = [...MENU_ACTIONS, ...SCOPE_ACTIONS];
 const ACTION_LABELS: Record<Action, string> = {
   view: 'View',
   create: 'Create',
   update: 'Update',
   delete: 'Delete',
+  scope_owner:  'Data — Owner (own records)',
+  scope_member: 'Data — Member (direct reports)',
+  scope_all:    'Data — All (tenant-wide)',
 };
 const ACTION_SHORT: Record<Action, string> = {
   view: 'V',
   create: 'C',
   update: 'U',
   delete: 'D',
+  scope_owner:  'O',
+  scope_member: 'M',
+  scope_all:    'A',
 };
 
 interface ModuleDef {
@@ -86,11 +99,12 @@ const MODULES: ModuleDef[] = [
   { key: 'dashboard', label: 'Dashboard', description: 'Home overview and widgets' },
   { key: 'employees', label: 'Employees', description: 'Employee master data' },
   { key: 'attendance', label: 'Attendance', description: 'Daily and monthly attendance' },
-  { key: 'exception', label: 'Exception', description: 'Attendance exceptions and approvals' },
+  { key: 'all-leave', label: 'All Leave', description: 'Leave requests (Annual / Sick / Special / Maternity)' },
+  { key: 'exception', label: 'Exception', description: 'Long-term opt-outs and day exceptions' },
   { key: 'overtime', label: 'Overtime', description: 'OT requests and approvals' },
   { key: 'deduction', label: 'Deduction', description: 'Salary deductions' },
   { key: 'increase', label: 'Increase', description: 'Salary increases and bonuses' },
-  { key: 'payroll', label: 'Payroll', description: 'Payroll batches and payslips' },
+  { key: 'payroll', label: 'Payroll', description: 'Admin: all batches & payslips. Manager / Employee: own payslip only.' },
   { key: 'reports', label: 'Reports', description: 'Attendance & payroll reporting' },
   { key: 'settings', label: 'Settings', description: 'System and policy settings' },
   { key: 'user-management', label: 'User Management', description: 'Users, roles, permissions' },
@@ -105,23 +119,49 @@ const MODULES: ModuleDef[] = [
  */
 const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts'] as const;
 
-// Default permissions mirror the role-gating currently enforced in the views.
+// Default permissions per role. The Permission Matrix UI calls this for
+// every (module, role, action) combo so "Reset to Defaults" produces a
+// stable baseline. Admin always returns true — they're the company
+// owner and not configurable here.
+//
+// Data Access (O/M/A) is its own axis:
+//   admin   → All
+//   manager → Owner + Member (own + direct reports)
+//   employee → Owner only
 const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action): boolean => {
-  const ADMIN_FULL = ['deduction', 'increase', 'settings', 'user-management'];
-  const APPROVAL_MODULES = ['exception', 'overtime'];
+  // Data Access defaults first — they're orthogonal to the per-module
+  // Menu Access table below.
+  if (action === 'scope_owner' || action === 'scope_member' || action === 'scope_all') {
+    if (role === 'admin')   return action === 'scope_all';
+    if (role === 'manager') return action === 'scope_owner' || action === 'scope_member';
+    return action === 'scope_owner';
+  }
 
   if (role === 'admin') return true;
+
+  // Per-module Menu Access defaults. Anything not listed → no grant
+  // (Dashboard, Employees, Deduction, Increase, Reports, Contracts,
+  // Settings, User Management — admin-only by default).
   if (role === 'manager') {
-    if (ADMIN_FULL.includes(moduleKey) && action !== 'view') return false;
-    if (moduleKey === 'payroll' && action === 'delete') return false;
-    return true;
+    switch (moduleKey) {
+      case 'attendance': return action === 'view';
+      case 'all-leave':  return action === 'view' || action === 'create' || action === 'update';
+      case 'exception':  return true;                     // V / C / U / D
+      case 'overtime':   return true;                     // V / C / U / D
+      case 'payroll':    return action === 'view';        // own payslip only
+      default:           return false;
+    }
   }
-  // employee
-  if (ADMIN_FULL.includes(moduleKey)) return false;
-  if (moduleKey === 'reports') return false;
-  if (moduleKey === 'employees') return action === 'view';
-  if (APPROVAL_MODULES.includes(moduleKey)) return action === 'view' || action === 'create';
-  return action === 'view';
+
+  // Employee — file own leave / OT, view own payslip + attendance.
+  switch (moduleKey) {
+    case 'attendance': return action === 'view';
+    case 'all-leave':  return action === 'view' || action === 'create';
+    case 'exception':  return action === 'view' || action === 'create';
+    case 'overtime':   return action === 'view' || action === 'create';
+    case 'payroll':    return action === 'view';
+    default:           return false;
+  }
 };
 
 type PermissionMatrix = Record<string, Record<string, Record<Action, boolean>>>;
@@ -556,11 +596,17 @@ export function UserManagement() {
   };
 
   const toggleAllForRoleModule = (moduleKey: string, role: UserRole, value: boolean) => {
+    // "Grant all" / "Clear" only flips the Menu Access axis. Data Access
+    // (O/M/A) is independent and stays as the admin set it so a quick
+    // Clear doesn't wipe out a deliberate scope configuration.
     setPermissions(prev => ({
       ...prev,
       [moduleKey]: {
         ...prev[moduleKey],
-        [role]: ACTIONS.reduce((acc, a) => ({ ...acc, [a]: value }), {} as Record<Action, boolean>),
+        [role]: {
+          ...prev[moduleKey][role],
+          ...MENU_ACTIONS.reduce((acc, a) => ({ ...acc, [a]: value }), {} as Record<MenuAction, boolean>),
+        },
       },
     }));
   };
@@ -749,48 +795,48 @@ export function UserManagement() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Users</CardTitle>
-            <Users className="h-4 w-4 text-gray-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.length}</div>
-            <p className="text-xs text-gray-500">System accounts</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-gray-600" />
+              <span className="text-2xl font-bold text-gray-700">{users.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total Users</p>
+            <p className="text-[11px] text-gray-500 truncate">System accounts</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Active Users</CardTitle>
-            <UserCheck className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.filter(u => u.isActive).length}</div>
-            <p className="text-xs text-gray-500">Currently active</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <UserCheck className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">{users.filter(u => u.isActive).length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Active Users</p>
+            <p className="text-[11px] text-gray-500 truncate">Currently active</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Administrators</CardTitle>
-            <Shield className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.filter(u => u.role === 'admin').length}</div>
-            <p className="text-xs text-gray-500">Admin accounts</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Shield className="h-5 w-5 text-red-600" />
+              <span className="text-2xl font-bold text-red-600">{users.filter(u => u.role === 'admin').length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Administrators</p>
+            <p className="text-[11px] text-gray-500 truncate">Admin accounts</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Inactive Users</CardTitle>
-            <UserX className="h-4 w-4 text-gray-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.filter(u => !u.isActive).length}</div>
-            <p className="text-xs text-gray-500">Deactivated</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <UserX className="h-5 w-5 text-gray-600" />
+              <span className="text-2xl font-bold text-gray-500">{users.filter(u => !u.isActive).length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Inactive Users</p>
+            <p className="text-[11px] text-gray-500 truncate">Deactivated</p>
           </CardContent>
         </Card>
       </div>
@@ -1153,8 +1199,9 @@ export function UserManagement() {
                   <CardTitle>Permission Matrix</CardTitle>
                   <CardDescription>
                     Configure what each role can do per module.
-                    Actions: V = View, C = Create, U = Update, D = Delete.
-                    Scope: O = Owner (own records), M = Member (direct reports), A = All (tenant-wide).
+                    <br />
+                    <span className="font-medium text-gray-700">Menu Access</span> — V=View, C=Create, U=Update, D=Delete.
+                    {' '}<span className="font-medium text-gray-700">Data Access</span> — O=Owner (own records), M=Member (direct reports), A=All (tenant-wide).
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
@@ -1186,14 +1233,23 @@ export function UserManagement() {
                             <role.icon className={`h-3.5 w-3.5 ${role.iconColor}`} />
                             {role.name}
                           </div>
-                          <div className="flex justify-center gap-4 mt-1.5 text-[10px] font-normal text-gray-400 uppercase tracking-wide">
-                            {ACTIONS.map(a => (
-                              <span key={a} className="w-6 text-center">{ACTION_SHORT[a]}</span>
+                          {/* Two grouped header rows. The 4 menu cells +
+                              3 gaps below total 9rem; the 3 data cells +
+                              2 gaps total 6.5rem. Fixed widths on the
+                              labels (matching those numbers) keep the
+                              divider stroke vertically aligned with the
+                              border between D and O in the row below. */}
+                          <div className="mt-1.5 flex justify-center gap-4 text-[9px] font-medium text-gray-500 uppercase tracking-wide">
+                            <div className="text-center" style={{ width: '9rem' }}>Menu Access</div>
+                            <div className="text-center pl-2 ml-1 border-l border-gray-300" style={{ width: '6.5rem' }}>Data Access</div>
+                          </div>
+                          <div className="flex justify-center gap-4 mt-1 text-[10px] font-normal text-gray-400 uppercase tracking-wide">
+                            {MENU_ACTIONS.map(a => (
+                              <span key={a} className="w-6 text-center" title={ACTION_LABELS[a]}>{ACTION_SHORT[a]}</span>
                             ))}
-                            {/* Visibility scope columns — Owner / Member / All. */}
-                            <span className="w-6 text-center border-l pl-2 ml-1" title="Scope: Owner — sees own records only">O</span>
-                            <span className="w-6 text-center" title="Scope: Member — sees direct reports' records">M</span>
-                            <span className="w-6 text-center" title="Scope: All — full tenant view">A</span>
+                            <span className="w-6 text-center border-l pl-2 ml-1" title={ACTION_LABELS.scope_owner}>O</span>
+                            <span className="w-6 text-center" title={ACTION_LABELS.scope_member}>M</span>
+                            <span className="w-6 text-center" title={ACTION_LABELS.scope_all}>A</span>
                           </div>
                         </TableHead>
                       ))}
@@ -1210,27 +1266,15 @@ export function UserManagement() {
                         </TableCell>
                         {roles.filter(r => r.key !== 'admin').map(role => {
                           const roleState = permissions[mod.key]?.[role.key];
-                          const allOn = ACTIONS.every(a => roleState?.[a]);
-                          const hasAnyAccess = ACTIONS.some(a => roleState?.[a]);
-                          // Visibility scope per role (read-only indicators):
-                          //   Manager  → Owner + Member
-                          //   Employee → Owner only
-                          //   Custom   → All
-                          // The actual scoping is enforced by useTeamScope /
-                          // isTenantWide; these checkboxes are informational
-                          // until per-module scope override is wired. Hidden
-                          // entirely when the role has no access to the
-                          // module — scope is meaningless without access.
-                          const isCustom = !role.builtIn;
-                          const scope = {
-                            owner:  isCustom ? false : true,
-                            member: isCustom ? false : role.key === 'manager',
-                            all:    isCustom,
-                          };
+                          // "All" for the Grant all / Clear toggle is now only
+                          // about Menu Access — Data Access has its own axis
+                          // that the admin configures per module / role.
+                          const allMenuOn = MENU_ACTIONS.every(a => roleState?.[a]);
+                          const hasAnyMenuAccess = MENU_ACTIONS.some(a => roleState?.[a]);
                           return (
                             <TableCell key={role.key} className="border-l">
                               <div className="flex items-center justify-center gap-4">
-                                {ACTIONS.map(action => (
+                                {MENU_ACTIONS.map(action => (
                                   <div key={action} className="w-6 flex justify-center" title={`${role.name}: ${ACTION_LABELS[action]}`}>
                                     <Checkbox
                                       checked={!!roleState?.[action]}
@@ -1239,24 +1283,26 @@ export function UserManagement() {
                                     />
                                   </div>
                                 ))}
-                                {/* Scope checkboxes — only rendered when the
-                                    role actually has some access to this
-                                    module. Layout reserves the same width
+                                {/* Data Access checkboxes — editable. Visible
+                                    only when the role has at least one menu
+                                    grant on this module (scope without
+                                    access is meaningless). Width is reserved
                                     when hidden so the column stays aligned. */}
-                                {hasAnyAccess ? (
-                                  <>
-                                    <div className="w-6 flex justify-center border-l pl-2 ml-1" title={`${role.name}: Owner scope — sees own records`}>
-                                      <Checkbox checked={scope.owner} disabled />
+                                {hasAnyMenuAccess ? (
+                                  SCOPE_ACTIONS.map((action, idx) => (
+                                    <div
+                                      key={action}
+                                      className={`w-6 flex justify-center ${idx === 0 ? 'border-l pl-2 ml-1' : ''}`}
+                                      title={`${role.name}: ${ACTION_LABELS[action]}`}
+                                    >
+                                      <Checkbox
+                                        checked={!!roleState?.[action]}
+                                        onCheckedChange={() => togglePermission(mod.key, role.key, action)}
+                                        aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]}`}
+                                      />
                                     </div>
-                                    <div className="w-6 flex justify-center" title={`${role.name}: Member scope — sees direct reports' records`}>
-                                      <Checkbox checked={scope.member} disabled />
-                                    </div>
-                                    <div className="w-6 flex justify-center" title={`${role.name}: All scope — full tenant view`}>
-                                      <Checkbox checked={scope.all} disabled />
-                                    </div>
-                                  </>
+                                  ))
                                 ) : (
-                                  // Empty placeholders preserve column width.
                                   <>
                                     <div className="w-6 border-l ml-1" />
                                     <div className="w-6" />
@@ -1267,10 +1313,10 @@ export function UserManagement() {
                               <div className="flex justify-center mt-2">
                                 <button
                                   type="button"
-                                  onClick={() => toggleAllForRoleModule(mod.key, role.key, !allOn)}
+                                  onClick={() => toggleAllForRoleModule(mod.key, role.key, !allMenuOn)}
                                   className="text-[10px] text-blue-600 hover:underline"
                                 >
-                                  {allOn ? 'Clear' : 'Grant all'}
+                                  {allMenuOn ? 'Clear' : 'Grant all'}
                                 </button>
                               </div>
                             </TableCell>

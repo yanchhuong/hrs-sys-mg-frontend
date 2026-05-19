@@ -218,17 +218,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [grants]);
 
   /**
-   * Dashboard is the universal landing page — every authenticated user is
-   * routed to it on login and the Dashboard component handles its own
-   * per-role rendering (admin / manager / employee / custom role). Some
-   * older custom roles were created without a `dashboard:view` row in
-   * their grid, which made App.tsx render the "Access denied" card the
-   * moment they logged in. Treat dashboard:view as implicitly granted to
-   * any authenticated user so the sidebar shows it and the routing layer
-   * lets it through. Other modules still gate normally.
+   * Dashboard used to be implicitly granted to every authenticated user
+   * because legacy custom roles didn't have the row in their grid. The
+   * Permission Matrix now exposes Dashboard as a regular column, so an
+   * admin who unchecks it expects the menu to hide. Honour the grants
+   * here — Layout's redirect-to-first-allowed-view effect handles the
+   * "you have nowhere to land" edge case cleanly.
    */
   const canView   = useCallback(
-    (m: string) => m === 'dashboard' || canDo(m, 'view'),
+    (m: string) => canDo(m, 'view'),
     [canDo],
   );
   const canCreate = useCallback((m: string) => canDo(m, 'create'), [canDo]);

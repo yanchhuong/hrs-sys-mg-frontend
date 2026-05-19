@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
+import { formatMoney, formatNumber } from '../../utils/format';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
@@ -381,24 +381,6 @@ function AttendanceReport({
     });
   }, [records, startDate, endDate, empIds]);
 
-  const stats = useMemo(() => {
-    const byStatus: Record<string, number> = {};
-    let totalOT = 0;
-    let totalWorkHours = 0;
-    filtered.forEach(a => {
-      byStatus[a.status] = (byStatus[a.status] || 0) + 1;
-      totalOT += a.otHours || 0;
-      totalWorkHours += a.workHours || 0;
-    });
-    return {
-      total: filtered.length,
-      byStatus,
-      totalOT,
-      totalWorkHours,
-      uniqueEmployees: new Set(filtered.map(a => a.employeeId)).size,
-    };
-  }, [filtered]);
-
   // ---- Per-employee aggregation (shared by KPI cards + Detailed table) ----
   // Active-only scoreboard. The Detailed Records table renders this
   // verbatim; the KPI cards above derive counts from it. Keeping a single
@@ -451,7 +433,10 @@ function AttendanceReport({
     return m;
   }, [yearForAL, alRule, activeEmployees]);
 
-  // Per-employee year-to-date leave-day count. Half-days count as 0.5;
+  // Per-employee year-to-date leave-day count for ANNUAL-LEAVE-DEDUCTING
+  // categories only (annual / sick / special). Maternity and Exception
+  // are non-deductible — they're paid time but don't reduce the AL
+  // balance — so they're filtered out here. Half-days count as 0.5;
   // multi-day requests use the backend's `days` value verbatim. Window
   // is the full calendar year of the selected end date, not the narrow
   // date filter — so Remaining = Annual Leave − Leave Used is consistent
@@ -460,10 +445,16 @@ function AttendanceReport({
   const leaveDaysByEmp = useMemo(() => {
     const yearStart = `${yearForAL}-01-01`;
     const yearEnd   = `${yearForAL}-12-31`;
+    const DEDUCTS_FROM_AL = new Set(['annual', 'sick', 'special']);
     const m = new Map<string, { count: number; dates: Set<string> }>();
     for (const lv of leaves) {
       if (lv.status !== 'approved') continue;
       if (lv.date < yearStart || lv.date > yearEnd) continue;
+      // Skip non-deductible categories. Pre-V47 rows with no category
+      // still flow through as 'annual' (legacy default), so existing
+      // tenant data keeps deducting as before.
+      const category = lv.category ?? 'annual';
+      if (!DEDUCTS_FROM_AL.has(category)) continue;
       const cur = m.get(lv.employeeId) ?? { count: 0, dates: new Set() };
       const days = Number(lv.days) || (lv.halfDay ? 0.5 : 1);
       cur.count += days;
@@ -579,17 +570,6 @@ function AttendanceReport({
 
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>('all');
 
-  const topAbsent = useMemo(() => {
-    const counts = new Map<string, number>();
-    filtered.filter(a => a.status === 'absent').forEach(a => {
-      counts.set(a.employeeId, (counts.get(a.employeeId) || 0) + 1);
-    });
-    return Array.from(counts.entries())
-      .map(([id, c]) => ({ employee: allEmployees.find(e => e.id === id), count: c }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [filtered]);
-
   const handleExport = () => {
     if (filtered.length === 0) {
       toast.error('No records to export');
@@ -628,67 +608,12 @@ function AttendanceReport({
 
   return (
     <>
-      {/* Filters */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPreset('thisMonth')}>This Month</Button>
-            <Button variant="outline" size="sm" onClick={() => setPreset('lastMonth')}>Last Month</Button>
-            <Button variant="outline" size="sm" onClick={() => setPreset('last7')}>Last 7 Days</Button>
-            <Button variant="outline" size="sm" onClick={() => setPreset('last30')}>Last 30 Days</Button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-1.5">
-              <Label>Start Date</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>End Date</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => (
-                    // value matches Employee.department (id in live, name in mock)
-                    <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="present">Present</SelectItem>
-                  <SelectItem value="late">Late</SelectItem>
-                  <SelectItem value="early_leave">Early Leave</SelectItem>
-                  <SelectItem value="leave">On Leave</SelectItem>
-                  <SelectItem value="absent">Absent</SelectItem>
-                  <SelectItem value="no_checkin">No Check-in</SelectItem>
-                  <SelectItem value="no_checkout">No Check-out</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* KPI cards — clickable filters that slice the Detailed Records
           table below. Click an active card again to clear back to "All".
           Counts are computed off the same per-employee aggregation the
-          table renders, so the numbers stay in lockstep. */}
+          table renders, so the numbers stay in lockstep. Surfaced
+          directly under the page title so HR sees the headline numbers
+          before drilling in with filters. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           label="Perfect Attendance"
@@ -732,73 +657,66 @@ function AttendanceReport({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Status Breakdown */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Status Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {Object.keys(stats.byStatus).length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No records in the selected range</p>
-            ) : (
-              <div className="space-y-3">
-                {Object.entries(stats.byStatus).map(([status, count]) => {
-                  const pct = stats.total > 0 ? (count / stats.total) * 100 : 0;
-                  const color = STATUS_COLORS[status] || 'bg-gray-400';
-                  return (
-                    <div key={status}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="capitalize">{status.replace(/_/g, ' ')}</span>
-                        <span className="text-gray-500">{count} ({pct.toFixed(1)}%)</span>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Top Absent — clickable rows open the per-employee detail dialog */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Top Absent Employees</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {topAbsent.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No absences in the selected range</p>
-            ) : (
-              <div className="space-y-2">
-                {topAbsent.map(({ employee, count }, i) => (
-                  <button
-                    key={employee?.id || i}
-                    type="button"
-                    onClick={() => employee && setDetailEmployee(employee)}
-                    className="w-full flex items-center justify-between py-2 border-b last:border-b-0 hover:bg-gray-50 -mx-2 px-2 rounded transition-colors text-left"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{employee?.name}</p>
-                      <p className="text-xs text-gray-400">{employee ? deptName(employee.department) : ''}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-red-50 text-red-700 border-0">{count} days</Badge>
-                      <Eye className="h-3.5 w-3.5 text-gray-400" />
-                    </div>
-                  </button>
+      {/* Filter bar — single-row compact layout. Date inputs first, then
+          Dept + Status selects, presets pushed to the right as quick
+          buttons. No CardHeader / "Filters" title — the KPI cards above
+          and the page H1 already frame the section. */}
+      <Card>
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 text-gray-400" />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="h-8 w-36 text-sm"
+              title="Start date"
+            />
+            <span className="text-gray-400 text-xs">→</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="h-8 w-36 text-sm"
+              title="End date"
+            />
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => (
+                  // value matches Employee.department (id in live, name in mock)
+                  <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-8 w-36 text-sm" title="Status"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="present">Present</SelectItem>
+                <SelectItem value="late">Late</SelectItem>
+                <SelectItem value="early_leave">Early Leave</SelectItem>
+                <SelectItem value="leave">On Leave</SelectItem>
+                <SelectItem value="absent">Absent</SelectItem>
+                <SelectItem value="no_checkin">No Check-in</SelectItem>
+                <SelectItem value="no_checkout">No Check-out</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('thisMonth')}>This Month</Button>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('lastMonth')}>Last Month</Button>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('last7')}>7d</Button>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('last30')}>30d</Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Detailed records — per-employee yearly attendance summary.
           Receives the precomputed summaryRows from the parent so the
-          numbers in this table match the KPI cards exactly. */}
+          numbers in this table match the KPI cards exactly. Export
+          Excel is rendered in the table's header. */}
       <AttendanceDetailTable
         rows={summaryRows}
         kpiFilter={kpiFilter}
@@ -807,6 +725,8 @@ function AttendanceReport({
         onPickEmployee={setDetailEmployee}
         loading={loading || sharedLoading}
         deptName={deptName}
+        onExport={handleExport}
+        exportCount={filtered.length}
       />
 
       <AttendanceEmployeeDialog
@@ -817,22 +737,6 @@ function AttendanceReport({
         onClose={() => setDetailEmployee(null)}
         deptName={deptName}
       />
-
-      {/* Export */}
-      <Card>
-        <CardContent className="py-5 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="font-medium">Export Attendance Report</p>
-            <p className="text-sm text-gray-500">
-              Excel file with summary, per-employee breakdown, and daily log.
-            </p>
-          </div>
-          <Button onClick={handleExport} disabled={filtered.length === 0}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Excel ({filtered.length})
-          </Button>
-        </CardContent>
-      </Card>
     </>
   );
 }
@@ -973,51 +877,42 @@ function PayrollReport({
 
   return (
     <>
-      {/* Filters */}
+      {/* Summary Stats — surfaced before the filter bar so the headline
+          numbers land first, matching the Attendance and Compliance tabs. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Records" value={stats.count} icon={FileText} tone="blue" />
+        <StatCard label="Total Earnings" value={`$${formatMoney(stats.earn)}`} icon={TrendingUp} tone="green" />
+        <StatCard label="Total Deductions" value={`$${formatMoney(stats.ded)}`} icon={DollarSign} tone="red" />
+        <StatCard label="Net Salary" value={`$${formatMoney(stats.net)}`} icon={DollarSign} tone="purple" />
+      </div>
+
+      {/* Filter bar — same compact single-row treatment as the
+          Attendance tab. Only two selects here (Month + Department). */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label>Month</Label>
-              <Select value={monthFilter} onValueChange={setMonthFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  {availableMonths.map(m => (
-                    <SelectItem key={m} value={m}>{format(parseISO(m + '-01'), 'MMMM yyyy')}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => (
-                    <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 text-gray-400" />
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="h-8 w-44 text-sm" title="Month"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {availableMonths.map(m => (
+                  <SelectItem key={m} value={m}>{format(parseISO(m + '-01'), 'MMMM yyyy')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => (
+                  <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Records" value={stats.count} icon={FileText} tone="blue" />
-        <StatCard label="Total Earnings" value={`$${stats.earn.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={TrendingUp} tone="green" />
-        <StatCard label="Total Deductions" value={`$${stats.ded.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={DollarSign} tone="red" />
-        <StatCard label="Net Salary" value={`$${stats.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={DollarSign} tone="purple" />
-      </div>
 
       {/* By Department */}
       <Card>
@@ -1054,15 +949,15 @@ function PayrollReport({
                         <Eye className="h-3.5 w-3.5 text-gray-400" />
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">{v.count}</TableCell>
+                    <TableCell className="text-right">{formatNumber(v.count)}</TableCell>
                     <TableCell className="text-right text-green-700">
-                      ${v.earn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      ${formatMoney(v.earn)}
                     </TableCell>
                     <TableCell className="text-right text-red-700">
-                      ${v.ded.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      ${formatMoney(v.ded)}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
-                      ${v.net.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      ${formatMoney(v.net)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1072,7 +967,8 @@ function PayrollReport({
         </CardContent>
       </Card>
 
-      {/* Detailed records — full per-employee payroll breakdown */}
+      {/* Detailed records — full per-employee payroll breakdown.
+          Export Excel lives in the table's own header now. */}
       <PayrollDetailTable
         records={filtered}
         employees={allEmployees}
@@ -1080,6 +976,8 @@ function PayrollReport({
         period={monthFilter === 'all' ? 'All Months' : format(parseISO(monthFilter + '-01'), 'MMMM yyyy')}
         loading={loading || sharedLoading}
         categories={categories}
+        onExport={handleExport}
+        exportCount={filtered.length}
       />
 
       <PayrollDeptDialog
@@ -1090,22 +988,6 @@ function PayrollReport({
         period={monthFilter === 'all' ? 'All Months' : format(parseISO(monthFilter + '-01'), 'MMMM yyyy')}
         onClose={() => setDetailDept(null)}
       />
-
-      {/* Export */}
-      <Card>
-        <CardContent className="py-5 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="font-medium">Export Payroll Report</p>
-            <p className="text-sm text-gray-500">
-              Excel file with summary, detailed rows, and per-employee totals.
-            </p>
-          </div>
-          <Button onClick={handleExport} disabled={filtered.length === 0}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Excel ({filtered.length})
-          </Button>
-        </CardContent>
-      </Card>
     </>
   );
 }
@@ -1131,6 +1013,7 @@ type AttendanceSummaryRow = {
 
 function AttendanceDetailTable({
   rows, kpiFilter, onClearFilter, statusFilter, onPickEmployee, loading, deptName,
+  onExport, exportCount,
 }: {
   rows: AttendanceSummaryRow[];
   kpiFilter: 'all' | 'perfect' | 'late' | 'metHours' | 'absent';
@@ -1142,6 +1025,13 @@ function AttendanceDetailTable({
   onPickEmployee: (e: Employee) => void;
   loading?: boolean;
   deptName?: (id: string) => string;
+  /** Top-right Export Excel button — supplied by the parent so the
+   *  table doesn't need to know about the raw daily records used in
+   *  the workbook. */
+  onExport?: () => void;
+  /** Number of underlying daily records the export will include —
+   *  shown in the button label so HR knows the scope at a glance. */
+  exportCount?: number;
 }) {
   const resolveDept = deptName ?? ((s: string) => s);
 
@@ -1259,24 +1149,37 @@ function AttendanceDetailTable({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-          <FileText className="h-4 w-4" />
-          Detailed Records
-          <Badge variant="secondary" className="ml-1 font-normal">{rows.length} employees</Badge>
-          {kpiFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={onClearFilter}
-              className="text-xs font-normal text-blue-700 bg-blue-50 px-2 py-0.5 rounded hover:bg-blue-100"
-              title="Clear filter"
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+            <FileText className="h-4 w-4" />
+            Detailed Records
+            <Badge variant="secondary" className="ml-1 font-normal">{rows.length} employees</Badge>
+            {kpiFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={onClearFilter}
+                className="text-xs font-normal text-blue-700 bg-blue-50 px-2 py-0.5 rounded hover:bg-blue-100"
+                title="Clear filter"
+              >
+                Filter: {filterLabel[kpiFilter]} ({sorted.length}) ✕
+              </button>
+            )}
+            <span className="text-xs font-normal text-gray-500">
+              Sorted by attendance — best first
+            </span>
+          </CardTitle>
+          {onExport && (
+            <Button
+              size="sm"
+              onClick={onExport}
+              disabled={!exportCount}
+              title="Excel file with summary, per-employee breakdown, and daily log"
             >
-              Filter: {filterLabel[kpiFilter]} ({sorted.length}) ✕
-            </button>
+              <Download className="h-4 w-4 mr-1.5" />
+              Export Excel{exportCount != null ? ` (${exportCount})` : ''}
+            </Button>
           )}
-          <span className="text-xs font-normal text-gray-500 ml-auto">
-            Sorted by attendance — best first
-          </span>
-        </CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -1305,7 +1208,7 @@ function AttendanceDetailTable({
                   <TableHead className="text-right" title="Times late · total hours late (vs standard check-in)">
                     <SortableHead label="Late (× / hrs)" sortKeyValue="late" align="right" />
                   </TableHead>
-                  <TableHead className="text-right" title="Year-to-date approved leave days">
+                  <TableHead className="text-right" title="Year-to-date approved leave days (Annual / Sick / Special only — Maternity & Exception don't deduct from AL)">
                     <SortableHead label="Leave Used (YTD)" sortKeyValue="leave" align="right" />
                   </TableHead>
                   <TableHead className="text-right"><SortableHead label="Annual Leave" sortKeyValue="totalAL" align="right" /></TableHead>
@@ -1522,6 +1425,7 @@ function AttendanceEmployeeDialog({
 // ---------------------------------------------------------------------------
 function PayrollDetailTable({
   records, employees, period, deptName, loading, categories,
+  onExport, exportCount,
 }: {
   records: PayrollItem[];
   employees: Employee[];
@@ -1529,6 +1433,9 @@ function PayrollDetailTable({
   deptName?: (id: string) => string;
   loading?: boolean;
   categories?: payrollCategoriesApi.PayrollCategory[];
+  /** Top-right Export Excel button — handled by the parent. */
+  onExport?: () => void;
+  exportCount?: number;
 }) {
   const empById = useMemo(
     () => new Map(employees.map(e => [e.id, e])),
@@ -1576,17 +1483,30 @@ function PayrollDetailTable({
   };
   const dedAmount = (p: PayrollItem, code: string): number => p.deductionsBreakdown?.[code] ?? 0;
 
-  const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) => formatMoney(n);
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <FileText className="h-4 w-4" />
-          Detailed Records
-          <Badge variant="secondary" className="ml-1 font-normal">{records.length}</Badge>
-          <span className="ml-auto text-xs font-normal text-gray-400">{period}</span>
-        </CardTitle>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Detailed Records
+            <Badge variant="secondary" className="ml-1 font-normal">{records.length}</Badge>
+            <span className="text-xs font-normal text-gray-400 ml-1">{period}</span>
+          </CardTitle>
+          {onExport && (
+            <Button
+              size="sm"
+              onClick={onExport}
+              disabled={!exportCount}
+              title="Excel file with summary, detailed rows, and per-employee totals"
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Export Excel{exportCount != null ? ` (${exportCount})` : ''}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
@@ -1732,19 +1652,19 @@ function PayrollDeptDialog({
             <div className="p-3 bg-gray-50 rounded-md">
               <p className="text-xs text-gray-500">Total Earnings</p>
               <p className="text-lg font-semibold text-green-700">
-                ${totals.earn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                ${formatMoney(totals.earn)}
               </p>
             </div>
             <div className="p-3 bg-gray-50 rounded-md">
               <p className="text-xs text-gray-500">Total Deductions</p>
               <p className="text-lg font-semibold text-red-700">
-                ${totals.ded.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                ${formatMoney(totals.ded)}
               </p>
             </div>
             <div className="p-3 bg-gray-50 rounded-md">
               <p className="text-xs text-gray-500">Net Salary</p>
               <p className="text-lg font-semibold">
-                ${totals.net.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                ${formatMoney(totals.net)}
               </p>
             </div>
           </div>
@@ -1777,13 +1697,13 @@ function PayrollDeptDialog({
                       </TableCell>
                       <TableCell className="text-xs">{p.month}</TableCell>
                       <TableCell className="text-right text-xs text-green-700">
-                        ${p.totalEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${formatMoney(p.totalEarnings)}
                       </TableCell>
                       <TableCell className="text-right text-xs text-red-700">
-                        ${p.deductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${formatMoney(p.deductions)}
                       </TableCell>
                       <TableCell className="text-right text-sm font-semibold">
-                        ${p.totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${formatMoney(p.totalPay)}
                       </TableCell>
                     </TableRow>
                   );
@@ -1800,16 +1720,6 @@ function PayrollDeptDialog({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const STATUS_COLORS: Record<string, string> = {
-  present: 'bg-green-500',
-  late: 'bg-yellow-500',
-  early_leave: 'bg-orange-500',
-  leave: 'bg-blue-500',
-  absent: 'bg-red-500',
-  no_checkin: 'bg-purple-500',
-  no_checkout: 'bg-indigo-500',
-};
-
 // ---------------------------------------------------------------------------
 // Compliance Report — surfaces users with the most missed punches per the
 // observation pattern (e.g. user 6151: 98/102 single-scan days).
@@ -1876,55 +1786,53 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
 
   return (
     <>
-      {/* Filters */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-1.5">
-              <Label>Start Date</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>End Date</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Search</Label>
-              <Input
-                placeholder="Name, ID, or department"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Aggregate stats */}
+      {/* Aggregate stats — surfaced before the filter bar so the
+          headline numbers land first, matching the other report tabs. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Overall Compliance" value={`${totals.overallPct}%`} icon={TrendingUp} tone={totals.overallPct >= 90 ? 'green' : totals.overallPct >= 60 ? 'orange' : 'red'} />
         <StatCard label="Complete Days" value={totals.complete} icon={FileText} tone="green" />
         <StatCard label="Single-Scan Days" value={totals.single} icon={AlertCircle} tone="orange" />
         <StatCard label="Absent Days" value={totals.absent} icon={Users} tone="red" />
       </div>
+
+      {/* Filter bar — single-row compact layout. */}
+      <Card>
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 text-gray-400" />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="h-8 w-36 text-sm"
+              title="Start date"
+            />
+            <span className="text-gray-400 text-xs">→</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="h-8 w-36 text-sm"
+              title="End date"
+            />
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Name, ID, or department"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-8 w-56 text-sm ml-auto"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Per-employee breakdown — sorted least compliant first by the API. */}
       <Card>
@@ -2020,7 +1928,7 @@ function StatCard({
           <div className={`p-2 rounded-lg ${t.bg}`}>
             <Icon className={`h-4 w-4 ${t.text}`} />
           </div>
-          <span className={`text-xl font-bold ${t.text}`}>{value}</span>
+          <span className={`text-2xl font-bold ${t.text}`}>{value}</span>
         </div>
         <p className="text-xs text-gray-500">{label}</p>
       </CardContent>

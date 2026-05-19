@@ -34,6 +34,22 @@ export interface Employee {
    * daily roster's absent count.
    */
   attendanceYn?: boolean;
+  /** V53 — opt-in for claiming family dependents in the TOS calculation.
+   *  When false, the employee's payslip subtracts no dependent allowance
+   *  even if married / has children. Lets dual-earner couples designate
+   *  which spouse is the claimant. */
+  decouple?: boolean;
+  /** V55 — explicit spouse-claim toggle. Spouse dependent counts only
+   *  when both decouple and claimSpouse are true. Lets widowed /
+   *  divorced single parents claim children without a spouse line. */
+  claimSpouse?: boolean;
+  /** V51 — date the Long-term Exception began. Surfaced as the "Start Date"
+   *  column on the Exception → Long-term view. */
+  attendanceExceptionStartDate?: string | null;
+  /** V51 — optional planned restore date for the Exception. */
+  attendanceExceptionEndDate?: string | null;
+  /** V51 — free-form note explaining why the employee is on Exception. */
+  attendanceExceptionRemark?: string | null;
   /** Fixed Position Allowance — NOT NULL DEFAULT 0 since V43. */
   positionAllowance?: number;
   /** Fixed Evaluation Allowance — NOT NULL DEFAULT 0 since V43. */

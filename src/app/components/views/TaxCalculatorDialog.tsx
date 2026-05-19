@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calculator, Download, Info } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { formatMoney, formatNumber } from '../../utils/format';
 
 import {
   Dialog,
@@ -14,6 +15,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent } from '../ui/card';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   Table,
   TableBody,
@@ -57,18 +59,27 @@ interface Props {
 }
 
 function money(n: number, locale: 'usd' | 'khr' = 'usd'): string {
-  const opts = locale === 'khr'
-    ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
-    : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-  const formatted = n.toLocaleString(undefined, opts);
-  return locale === 'khr' ? `${formatted} KHR` : `$${formatted}`;
+  // KHR uses no-decimal thousands grouping (#,###); USD uses #,###.00.
+  // Both go through the shared utility so the app-wide formatting
+  // convention is honoured.
+  if (locale === 'khr') return `${formatNumber(n)} KHR`;
+  return `$${formatMoney(n)}`;
 }
 
 /** Dependents = spouse (if married) + claimed children. Matches the
- *  payroll generator's dependentsFor() helper in Payroll.tsx. */
+ *  payroll generator's dependentsFor() helper in Payroll.tsx.
+ *
+ *  V53 (`decouple`)    gates the whole claim — when false, no
+ *                       dependents are subtracted on this payslip.
+ *  V55 (`claimSpouse`) is the explicit spouse line. Independent of
+ *                       maritalStatus so a widowed / divorced single
+ *                       parent with custody keeps their children
+ *                       deduction without a phantom spouse line. */
 function dependentsFor(e: Employee): number {
-  if (e.maritalStatus !== 'married') return 0;
-  return (e.numberOfChildren ?? 0) + 1;
+  if (!e.decouple) return 0;
+  const spouse = e.claimSpouse ? 1 : 0;
+  const children = e.numberOfChildren ?? 0;
+  return spouse + children;
 }
 
 interface BracketHit {
@@ -412,7 +423,7 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
                 <Info className="h-4 w-4 text-blue-600" />
                 <p className="font-semibold text-sm">Brackets in use (per month, KHR)</p>
                 <span className="text-xs text-gray-500">
-                  FX rate: {fx > 0 ? `${fx.toLocaleString()} KHR / USD` : 'not configured'}
+                  FX rate: {fx > 0 ? `${formatNumber(fx)} KHR / USD` : 'not configured'}
                 </span>
               </div>
               {ready ? (
@@ -428,10 +439,10 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
                   <tbody>
                     {brackets.map((b, i) => (
                       <tr key={i} className="border-t">
-                        <td className="py-1">{b.fromAmount.toLocaleString()}</td>
-                        <td className="py-1">{b.toAmount == null ? 'and above' : b.toAmount.toLocaleString()}</td>
+                        <td className="py-1">{formatNumber(b.fromAmount)}</td>
+                        <td className="py-1">{b.toAmount == null ? 'and above' : formatNumber(b.toAmount)}</td>
                         <td className="py-1 text-right">{b.ratePercent}%</td>
-                        <td className="py-1 text-right">{b.excessAmount.toLocaleString()}</td>
+                        <td className="py-1 text-right">{formatNumber(b.excessAmount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -452,6 +463,11 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
                 OT / bonus / other variable earnings differ by month and aren't in this preview;
                 the payroll batch auto-fill uses the full earnings map.
               </p>
+              <p className="text-[11px] text-gray-500">
+                <strong>dependents</strong> = (1 if married + N children) when the employee's{' '}
+                <em>Claim Dependents (TOS)</em> flag is <strong>Yes</strong>, else <strong>0</strong>.
+                See the <Info className="h-3 w-3 inline -mt-0.5 text-blue-500" /> beside the Decouple column for the full rule.
+              </p>
             </CardContent>
           </Card>
 
@@ -469,6 +485,36 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
                   <TableHead className="text-right">OT</TableHead>
                   <TableHead className="text-right">Bonus</TableHead>
                   <TableHead className="text-right">Gross (USD)</TableHead>
+                  <TableHead className="text-center">
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex items-center gap-1 cursor-help">
+                            Decouple
+                            <Info className="h-3.5 w-3.5 text-blue-500" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" align="center" className="max-w-sm text-left">
+                          <p className="text-xs font-semibold mb-1">Claim Dependents (TOS) — per employee</p>
+                          <p className="text-[11px] leading-relaxed">
+                            Cambodian TOS lets one parent subtract 150,000 KHR per dependent
+                            (housewife spouse + each child) from the monthly taxable base.
+                            When both spouses work, only one should claim — this flag
+                            designates that claimant.
+                          </p>
+                          <ul className="text-[11px] mt-1.5 list-disc pl-4 space-y-0.5">
+                            <li><strong>Decouple = Yes</strong>: this row is the claimant. Dependents = <code>spouse + children</code>.</li>
+                            <li><strong>Spouse = Yes</strong> adds 1 (the housewife allowance). Set <strong>No</strong> for widowed / divorced single parents, or dual-earner couples where no housewife exists.</li>
+                            <li><strong>Children</strong> comes from <em>Number of Children</em> on the employee profile, regardless of marital status.</li>
+                            <li><strong>Decouple = No</strong> (default): no dependents claimed here — the other spouse claims at their workplace, or there are none.</li>
+                          </ul>
+                          <p className="text-[11px] mt-1.5 text-gray-500">
+                            Edit on <strong>Employees → Profile → Claim Dependents (TOS) / Claim Spouse</strong>.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableHead>
                   <TableHead className="text-right">Taxable (KHR)</TableHead>
                   <TableHead className="text-right">Bracket</TableHead>
                   <TableHead className="text-right">Tax (KHR)</TableHead>
@@ -478,7 +524,7 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
               <TableBody>
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-6">
+                    <TableCell colSpan={12} className="text-center text-sm text-gray-500 py-6">
                       {ready
                         ? 'No active employees to display.'
                         : 'Configure Tax Brackets + KHR/USD rate to see the preview.'}
@@ -497,13 +543,40 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
                     <TableCell className="text-right tabular-nums text-gray-600">{money(r.otUsd)}</TableCell>
                     <TableCell className="text-right tabular-nums text-gray-600">{money(r.bonusUsd)}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">{money(r.grossUsd)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.taxableKhr.toLocaleString()}</TableCell>
+                    <TableCell className="text-center text-xs">
+                      {r.employee.decouple ? (() => {
+                        const spouse   = r.employee.claimSpouse ? 1 : 0;
+                        const children = r.employee.numberOfChildren ?? 0;
+                        // Compact breakdown — "Yes (3 = 1s+2c)" reads quickly
+                        // once HR knows the legend, and the tooltip spells
+                        // out the math in plain English.
+                        return (
+                          <span
+                            className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-0.5"
+                            title={r.dependents > 0
+                              ? `${r.dependents} dependent${r.dependents === 1 ? '' : 's'} = ${spouse} spouse + ${children} ${children === 1 ? 'child' : 'children'} (saves ${formatNumber(r.dependents * 150_000)} KHR from taxable base)`
+                              : 'Decoupled but Spouse=No and 0 children, so no deduction applies'}
+                          >
+                            Yes ({r.dependents}
+                            {(spouse > 0 || children > 0) && (
+                              <span className="opacity-70 ml-0.5">
+                                {' '}= {spouse}s+{children}c
+                              </span>
+                            )}
+                            )
+                          </span>
+                        );
+                      })() : (
+                        <span className="text-gray-400" title="Not claiming family dependents on this payslip">No</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumber(r.taxableKhr)}</TableCell>
                     <TableCell className="text-right text-xs">
                       {r.bracket
-                        ? `${r.bracket.ratePercent}% (−${r.bracket.excessAmount.toLocaleString()})`
+                        ? `${r.bracket.ratePercent}% (−${formatNumber(r.bracket.excessAmount)})`
                         : '—'}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{r.taxKhr.toLocaleString()}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumber(r.taxKhr)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums text-red-700">
                       {money(r.taxUsd)}
                     </TableCell>

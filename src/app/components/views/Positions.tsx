@@ -292,39 +292,39 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
           duplicate "Total Positions" cards visible when both layers
           rendered. The standalone Positions page keeps them. */}
       {!embedded && (
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Positions</CardTitle>
-            <Briefcase className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{positions.length}</div>
-            <p className="text-xs text-gray-500">Across {departments.length} departments</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Briefcase className="h-5 w-5 text-blue-600" />
+              <span className="text-2xl font-bold text-blue-600">{positions.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total Positions</p>
+            <p className="text-[11px] text-gray-500 truncate">Across {departments.length} departments</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Assigned</CardTitle>
-            <Users className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {positions.filter(p => countFor(p) > 0).length}
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">
+                {positions.filter(p => countFor(p) > 0).length}
+              </span>
             </div>
-            <p className="text-xs text-gray-500">Positions with employees</p>
+            <p className="text-xs font-medium text-gray-700 truncate">Assigned</p>
+            <p className="text-[11px] text-gray-500 truncate">Positions with employees</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Vacant</CardTitle>
-            <Briefcase className="h-4 w-4 text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {positions.filter(p => countFor(p) === 0).length}
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Briefcase className="h-5 w-5 text-gray-400" />
+              <span className="text-2xl font-bold text-gray-500">
+                {positions.filter(p => countFor(p) === 0).length}
+              </span>
             </div>
-            <p className="text-xs text-gray-500">No employees assigned</p>
+            <p className="text-xs font-medium text-gray-700 truncate">Vacant</p>
+            <p className="text-[11px] text-gray-500 truncate">No employees assigned</p>
           </CardContent>
         </Card>
       </div>

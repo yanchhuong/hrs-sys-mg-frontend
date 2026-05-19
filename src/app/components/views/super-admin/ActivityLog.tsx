@@ -519,13 +519,13 @@ function StatCard({ label, value, icon: Icon, tone }: {
   label: string; value: number; icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TONE;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4 flex items-center justify-between">
-        <div>
-          <p className={`text-2xl font-bold ${TONE[tone]}`}>{value}</p>
-          <p className="text-xs text-gray-500">{label}</p>
+    <Card className="border-gray-200">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <Icon className={`h-5 w-5 ${TONE[tone]}`} />
+          <span className={`text-2xl font-bold ${TONE[tone]}`}>{value}</span>
         </div>
-        <Icon className={`h-5 w-5 ${TONE[tone]}`} />
+        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
       </CardContent>
     </Card>
   );

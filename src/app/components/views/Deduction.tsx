@@ -41,6 +41,7 @@ import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { formatMoney } from '../../utils/format';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
 
@@ -782,22 +783,37 @@ export function Deduction() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {deductionCategories.slice(0, 4).map((cat) => {
-          const count = filteredDeductions.filter((d) => d.type === cat.code && d.status === 'active').length;
-          const total = filteredDeductions
-            .filter((d) => d.type === cat.code && d.status === 'active')
-            .reduce((sum, d) => sum + (d.isPercentage ? 0 : d.amount), 0);
+      {/* One summary card per enabled Deduction category from Payroll
+          Categories settings. Counts only currently-active rows.
+          Layout matches the Attendance summary strip. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {deductionCategories.length === 0 && (
+          <Card className="col-span-full">
+            <CardContent className="py-6 text-center text-sm text-gray-500">
+              No deduction categories configured. Add one under{' '}
+              <strong>Settings → Payroll Categories</strong> to start
+              tracking deductions here.
+            </CardContent>
+          </Card>
+        )}
+        {deductionCategories.map((cat) => {
+          const rows  = filteredDeductions.filter((d) => d.type === cat.code && d.status === 'active');
+          const count = rows.length;
+          // Only flat-amount rows can be summed in dollars. Percentage
+          // rows are deferred to payroll-run-time (per-employee base).
+          const total = rows
+            .filter((d) => !d.isPercentage)
+            .reduce((sum, d) => sum + d.amount, 0);
           return (
-            <Card key={cat.id}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm">{cat.label}</CardTitle>
-                <Minus className="h-4 w-4 text-red-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{count}</div>
-                <p className="text-xs text-gray-500">
-                  {total > 0 ? `$${total.toLocaleString()}/mo` : 'Active deductions'}
+            <Card key={cat.id} className="border-gray-200">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Minus className="h-5 w-5 text-red-600" />
+                  <span className="text-2xl font-bold text-red-600">{count}</span>
+                </div>
+                <p className="text-xs font-medium text-gray-700 truncate" title={cat.label}>{cat.label}</p>
+                <p className="text-[11px] text-gray-500 truncate">
+                  {total > 0 ? `$${formatMoney(total)}/mo` : 'No active rows'}
                 </p>
               </CardContent>
             </Card>
@@ -884,7 +900,7 @@ export function Deduction() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-semibold text-red-600">
-                      {deduction.isPercentage ? `${deduction.amount}%` : `$${deduction.amount}`}
+                      {deduction.isPercentage ? `${deduction.amount}%` : `$${formatMoney(deduction.amount)}`}
                     </TableCell>
                     <TableCell>{format(new Date(deduction.startDate), 'MMM dd, yyyy')}</TableCell>
                     <TableCell>
@@ -1043,7 +1059,7 @@ export function Deduction() {
                     <p className="text-[11px] text-gray-500">
                       {editForm.isPercentage
                         ? `${editForm.amount}% of base salary per cycle`
-                        : `$${editForm.amount} flat per cycle`}
+                        : `$${formatMoney(editForm.amount)} flat per cycle`}
                     </p>
                   </div>
                 </div>

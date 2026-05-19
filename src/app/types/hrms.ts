@@ -44,8 +44,11 @@ export interface Employee {
   managerId?: string;
   profileImage?: string;
   gender?: 'male' | 'female';
-  /** Drives the dependents count for Cambodia TOS (KHR 150,000 each). */
-  maritalStatus?: 'single' | 'married';
+  /** Drives the dependents count for Cambodia TOS (KHR 150,000 each).
+   *  Only 'married' adds a spouse dependent (housewife rule); children
+   *  count regardless of marital status, so 'divorced' and 'widowed'
+   *  single parents still claim their kids. */
+  maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
   /** Children claimed as dependents. Only meaningful when married. */
   numberOfChildren?: number;
   dateOfBirth?: string;
@@ -61,6 +64,28 @@ export interface Employee {
    * (field engineers, remote staff). Defaults to true.
    */
   attendanceYn?: boolean;
+  /** V53 — opt-in for claiming family dependents in the TOS calculation.
+   *  When false (default), the payslip subtracts no dependent allowance
+   *  even if maritalStatus = 'married' or numberOfChildren > 0. Used to
+   *  designate the single claimant in dual-earner couples. */
+  decouple?: boolean;
+  /** V55 — explicit spouse-claim toggle. The spouse dependent is only
+   *  added when both `decouple` and `claimSpouse` are true. Independent
+   *  of maritalStatus so a widowed / divorced single parent can claim
+   *  children only. */
+  claimSpouse?: boolean;
+  /** V51 — explicit Long-term Exception start date. The Exception →
+   *  Long-term view's "Start Date" column reads this; falls back to
+   *  {@link updatedAt} for pre-V51 rows. */
+  attendanceExceptionStartDate?: string;
+  /** V51 — optional planned restore date. Empty = open-ended. */
+  attendanceExceptionEndDate?: string;
+  /** V51 — free-form note explaining the Exception. */
+  attendanceExceptionRemark?: string;
+  /** Server-side last-updated timestamp. Used on the Exception →
+   *  Long-term sub-view as a fallback for the Start Date column when
+   *  pre-V51 rows don't have an explicit start date. Not auditable. */
+  updatedAt?: string;
   /** Fixed Position Allowance — standing earning shown on every payslip.
    *  NOT NULL on the server (V43); defaults to 0 when HR didn't set it. */
   positionAllowance?: number;

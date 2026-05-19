@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 
 import * as seniorityApi from '../../api/seniorityIndemnity';
 import * as categoriesApi from '../../api/payrollCategories';
+import { formatMoney } from '../../utils/format';
 import {
   Dialog,
   DialogContent,
@@ -50,8 +51,11 @@ function defaultPeriod(): { startDate: string; endDate: string } {
     : { startDate: `${y}-07-01`, endDate: `${y}-12-31` };
 }
 
+// Local convenience that mirrors the app-wide formatUSD utility — kept
+// for backwards compatibility with the existing call sites in this
+// dialog. New code should prefer importing formatUSD directly.
 function money(n: number): string {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${formatMoney(n)}`;
 }
 
 export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Props) {

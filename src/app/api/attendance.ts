@@ -114,8 +114,13 @@ export async function uploadBulk(rows: AttendanceUploadRow[]): Promise<Attendanc
 export async function update(
   id: string,
   req: Partial<AttendanceEntry> & {
-    /** Only honoured when status='leave'. Drives the auto-created LeaveRequest's type. */
+    /** Only honoured when status='leave'. Drives the auto-created LeaveRequest's duration. */
     leaveType?: 'full' | 'half_morning' | 'half_noon';
+    /** V47 — leave category for the auto-created LeaveRequest. Only honoured when status='leave'. */
+    leaveCategory?: 'annual' | 'sick' | 'special' | 'maternity' | 'exception';
+    /** V49 — inclusive end date for the auto-created LeaveRequest. Only honoured when status='leave'.
+     *  Omit to mark a single-day leave (server defaults to the attendance row's date). */
+    leaveEndDate?: string;
   },
 ): Promise<AttendanceEntry> {
   return apiJson(`/api/v1/attendance/${id}`, { method: 'PATCH', json: req });
@@ -136,8 +141,12 @@ export async function upsert(req: {
   noonOut?: string | null;
   status?: string;
   notes?: string | null;
-  /** Only honoured when status='leave'. Drives the auto-created LeaveRequest's type. */
+  /** Only honoured when status='leave'. Drives the auto-created LeaveRequest's duration. */
   leaveType?: 'full' | 'half_morning' | 'half_noon';
+  /** V47 — leave category for the auto-created LeaveRequest. Only honoured when status='leave'. */
+  leaveCategory?: 'annual' | 'sick' | 'special' | 'maternity' | 'exception';
+  /** V49 — inclusive end date for the auto-created LeaveRequest. Only honoured when status='leave'. */
+  leaveEndDate?: string;
 }): Promise<AttendanceEntry> {
   return apiJson('/api/v1/attendance', { method: 'POST', json: req });
 }

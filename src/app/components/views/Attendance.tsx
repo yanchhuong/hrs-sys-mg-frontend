@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../../context/AuthContext';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
@@ -210,6 +211,15 @@ export function Attendance() {
   // from the punch pattern (single-scan-morning ⇒ half_noon, etc.) but
   // lets the admin override before saving.
   const [editLeaveType, setEditLeaveType] = useState<'full' | 'half_morning' | 'half_noon'>('full');
+  // V47 leave category — Annual / Sick / Special / Maternity / Exception.
+  // Defaults to 'annual' since that's what the column defaults to server-side.
+  const [editLeaveCategory, setEditLeaveCategory] = useState<
+    'annual' | 'sick' | 'special' | 'maternity' | 'exception'
+  >('annual');
+  // V49 — end date for the auto-created LeaveRequest. Defaults to the
+  // editing row's date (single-day) and auto-jumps to start+89 when the
+  // admin picks Maternity. Empty string means "same as start date".
+  const [editLeaveEndDate, setEditLeaveEndDate] = useState<string>('');
   // Optional "Apply OT for this employee on this date" branch in the
   // Edit Attendance dialog. Pre-filled from the day's punches: free-style
   // days suggest the full work hours; weekday rows skip the section.
@@ -747,6 +757,135 @@ export function Attendance() {
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
 
+  /**
+   * Build + download an Excel workbook of the currently-filtered daily
+   * attendance rows. Two sheets:
+   *   Summary — header context (range, dept, search, hours filter, status
+   *             tab, counts per status).
+   *   Records — one row per (employee, date) with punches, OT, hours,
+   *             status, remark, and department.
+   * Honours every active filter from the page, so what HR sees on the
+   * table is exactly what lands in the file (no surprise "1,200 rows
+   * exported when I was looking at 12"). */
+  const handleDailyExport = () => {
+    if (filteredRecords.length === 0) {
+      toast.error('No attendance rows to export under the current filters');
+      return;
+    }
+    const findEmp = (employeeId: string) =>
+      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+
+    // Per-status counts for the summary sheet — mirrors the filter chips.
+    const statusCounts: Record<string, number> = {};
+    for (const r of filteredRecords) {
+      const k = r.status || 'unknown';
+      statusCounts[k] = (statusCounts[k] || 0) + 1;
+    }
+
+    const summary: Array<[string, string | number]> = [
+      ['Attendance Export',                  ''],
+      ['Generated',                          format(new Date(), 'yyyy-MM-dd HH:mm')],
+      ['From',                               dateFrom || '(all)'],
+      ['To',                                 dateTo   || '(all)'],
+      ['Department',                         departmentFilter === 'all' ? 'All Departments' : departmentFilter],
+      ['Search',                             dailySearch || '—'],
+      ['Hours filter',                       hoursFilter === 'all' ? 'All' : hoursFilter === 'fulfilled' ? '≥ 8h' : '< 8h'],
+      ['Status tab',                         activeFilter === 'all' ? 'All' : activeFilter],
+      ['',                                   ''],
+      ['Total rows',                         filteredRecords.length],
+    ];
+    for (const [status, count] of Object.entries(statusCounts).sort()) {
+      summary.push([`  ${status}`, count]);
+    }
+
+    const detailHeader = [
+      'Date',
+      'Day',
+      'Emp No',
+      'Name',
+      'Khmer Name',
+      'Department',
+      'Position',
+      'Morning In',
+      'Morning Out',
+      'Noon In',
+      'Noon Out',
+      'OT (h)',
+      'Work Hours',
+      'Status',
+      'Remark',
+    ];
+    // Sort rows for export: status priority (rows with real punches
+    // first), then date desc, then by empNo. Without this, alphabetical
+    // employee order surfaces the unrecorded / absent rows at the top
+    // and the actual data feels missing on first scroll.
+    const STATUS_RANK: Record<string, number> = {
+      present: 0, late: 0, early_leave: 0, no_checkout: 1,
+      no_checkin: 2, leave: 3, absent: 4,
+    };
+    const sortedRecords = [...filteredRecords].sort((a, b) => {
+      const ra = STATUS_RANK[a.status] ?? 5;
+      const rb = STATUS_RANK[b.status] ?? 5;
+      if (ra !== rb) return ra - rb;
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      const ae = findEmp(a.employeeId)?.id ?? a.employeeId;
+      const be = findEmp(b.employeeId)?.id ?? b.employeeId;
+      return ae.localeCompare(be);
+    });
+    const detailRows = sortedRecords.map(r => {
+      const emp = findEmp(r.employeeId);
+      const note = r.notes ?? '';
+      // Legacy single check-in/check-out fields survive on older rows
+      // where the morning/noon split is null. Fall back to them so the
+      // Excel never shows blanks when the underlying record really had
+      // a scan recorded.
+      const mIn  = r.morningIn  ?? r.checkIn  ?? '';
+      const mOut = r.morningOut ?? '';
+      const nIn  = r.noonIn     ?? '';
+      const nOut = r.noonOut    ?? r.checkOut ?? '';
+      return [
+        r.date,
+        r.date ? format(parseISO(r.date), 'EEE') : '',
+        emp?.id ?? r.employeeId,
+        emp?.name ?? '',
+        emp?.khmerName ?? '',
+        deptName(emp?.department) || '',
+        emp?.position ?? '',
+        mIn,
+        mOut,
+        nIn,
+        nOut,
+        Number(r.otHours ?? 0),
+        Number(r.workHours ?? 0),
+        r.status ?? '',
+        note,
+      ];
+    });
+
+    const wb = XLSX.utils.book_new();
+    const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+    // 28-char first column gets the long labels; second column is the value.
+    wsSummary['!cols'] = [{ wch: 28 }, { wch: 32 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+    const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailRows]);
+    // Reasonable column widths for the columns that benefit; rest auto.
+    wsDetail['!cols'] = [
+      { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 22 }, { wch: 18 },
+      { wch: 22 }, { wch: 22 }, { wch: 11 }, { wch: 11 }, { wch: 11 },
+      { wch: 11 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 36 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsDetail, 'Records');
+
+    const periodSlug = dateFrom && dateTo && dateFrom === dateTo
+      ? dateFrom
+      : dateFrom && dateTo
+        ? `${dateFrom}_to_${dateTo}`
+        : format(new Date(), 'yyyy-MM-dd');
+    XLSX.writeFile(wb, `attendance_${periodSlug}.xlsx`);
+    toast.success(`Exported ${filteredRecords.length} row${filteredRecords.length === 1 ? '' : 's'}`);
+  };
+
   // Scan History — flattens each row's four punches (morningIn / morningOut /
   // noonIn / noonOut) into individual scan events. Reuses the dept + search
   // filters from the roster pipeline (skipping status / hours filters since
@@ -857,11 +996,17 @@ export function Attendance() {
     // daily filter was already on a different day.
     const monthStartStr = format(monthStart, 'yyyy-MM-dd');
     const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
-    type LeaveAgg = { days: number; rows: { date: string; reason: string }[] };
+    type LeaveRow = { date: string; reason: string; category: string; deducts: boolean };
+    type LeaveAgg = { days: number; rows: LeaveRow[] };
+    // Only annual / sick / special deduct from the AL balance. Maternity
+    // and Exception are paid time but don't reduce AL — they're still
+    // listed in the Leave Records popup so HR can see them, just with
+    // a "no AL deduction" marker.
+    const DEDUCTS_FROM_AL = new Set(['annual', 'sick', 'special']);
     const leavesByEmp = new Map<string, LeaveAgg>();
-    const addLeave = (key: string, days: number, row: { date: string; reason: string }) => {
+    const addLeave = (key: string, days: number, row: LeaveRow) => {
       const cur = leavesByEmp.get(key) ?? { days: 0, rows: [] };
-      cur.days += days;
+      if (row.deducts) cur.days += days;
       cur.rows.push(row);
       leavesByEmp.set(key, cur);
     };
@@ -877,10 +1022,12 @@ export function Attendance() {
         typeof lv.days === 'number' && lv.days > 0
           ? lv.days
           : isHalf ? 0.5 : 1;
+      const category = lv.category ?? 'annual';
+      const deducts = DEDUCTS_FROM_AL.has(category);
       const reason = `${lv.type ?? 'leave'}${lv.reason ? ` — ${lv.reason}` : ''}`
         + (lv.status === 'pending' ? ' (pending)' : '');
       // Index by both forms; the lookup tries each in order below.
-      addLeave(lv.employeeId, days, { date: lv.date, reason });
+      addLeave(lv.employeeId, days, { date: lv.date, reason, category, deducts });
     }
 
     return employees
@@ -979,6 +1126,10 @@ export function Attendance() {
       record.morningIn || '', record.morningOut || '',
       record.noonIn || '',    record.noonOut || '',
     ));
+    // Default category + end date for the auto-created LeaveRequest
+    // when status='leave'. Admin can override before saving.
+    setEditLeaveCategory('annual');
+    setEditLeaveEndDate(record.date);
     // Pre-fill the optional "Apply OT" branch from the row.
     //   • Free-style days (weekend / holiday) → suggest the full
     //     work-hours value.
@@ -1058,8 +1209,22 @@ export function Attendance() {
    * They stay opted out until an admin flips them back via Employees →
    * Employment → "Count in Attendance".
    */
-  const [markExceptionTarget, setMarkExceptionTarget] = useState<Employee | null>(null);
+  // Mark Exception now creates a DAY EXCEPTION leave row for the
+  // specific (employee, date) — a one-day "mission / on-site / special"
+  // entry. Long-term opt-outs (employee never counted until HR flips
+  // back) live on the Employee page's "Count in Attendance" toggle
+  // (attendanceYn). The split keeps the Attendance page's single-day
+  // context honest: marking from here is always day-scoped.
+  const [markExceptionTarget, setMarkExceptionTarget] = useState<{ employee: Employee; date: string } | null>(null);
   const [markExceptionBusy, setMarkExceptionBusy] = useState(false);
+  // Two-axis Mark Exception form state. Category covers the non-deductible
+  // leave kinds (Maternity / Exception); duration is independent. Default
+  // to 'exception' + 'full' since that matches the previous behaviour.
+  const [markCategory, setMarkCategory] = useState<'maternity' | 'exception'>('exception');
+  const [markDuration, setMarkDuration] = useState<'full' | 'half_morning' | 'half_noon'>('full');
+  // V49 — end date for the auto-created LeaveRequest. Empty string =
+  // single-day (use the target row's date).
+  const [markEndDate, setMarkEndDate] = useState<string>('');
 
   const requestMarkException = (record: AttendanceType) => {
     const emp = employees.find(
@@ -1069,54 +1234,59 @@ export function Attendance() {
       toast.error('Could not resolve employee for this row');
       return;
     }
-    setMarkExceptionTarget(emp);
+    if (!record.date) {
+      toast.error('Attendance row has no date — cannot mark a Day Exception');
+      return;
+    }
+    setMarkExceptionTarget({ employee: emp, date: record.date });
+    // Default end to the row's date — single-day. Maternity below will
+    // bump it to start + 89 when the admin picks that category.
+    setMarkEndDate(record.date);
   };
 
   const confirmMarkException = async () => {
-    const emp = markExceptionTarget;
-    if (!emp) return;
+    const target = markExceptionTarget;
+    if (!target) return;
+    const { employee: emp, date } = target;
     setMarkExceptionBusy(true);
     try {
       if (USE_MOCKS) {
-        setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: false } : e));
-        toast.success(`${emp.name} marked as Exception`);
+        toast.success(`Day Exception recorded for ${emp.name} on ${date}`);
         setMarkExceptionTarget(null);
         return;
       }
-      // Backend's PUT overwrites every field, so we have to round-trip the
-      // current employee instead of just sending {attendanceYn: false}.
-      const targetId = (emp as any).apiId ?? emp.id;
-      const body: employeesApi.CreateEmployeeRequest = {
-        empNo: emp.id,
-        name: emp.name,
-        khmerName: emp.khmerName,
-        email: emp.email,
-        position: emp.position,
-        departmentId: emp.department && emp.department !== '-' ? emp.department : null,
-        joinDate: emp.joinDate,
-        baseSalary: emp.baseSalary,
-        managerId: emp.managerId ?? null,
-        gender: emp.gender,
-        dateOfBirth: emp.dateOfBirth,
-        placeOfBirth: emp.placeOfBirth,
-        contactNumber: emp.contactNumber,
-        currentAddress: emp.currentAddress,
-        nffNo: emp.nffNo,
-        tid: emp.tid,
-        contractExpireDate: emp.contractExpireDate,
-        resignDate: emp.resignDate,
-        status: emp.status,
-        attendanceYn: false,
-      };
-      await employeesApi.update(targetId, body);
-      // Optimistically update local state so the row vanishes immediately —
-      // dailyRows already filters on attendanceYn, so the row disappears
-      // and chip counts refresh on the next render.
-      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: false } : e));
-      toast.success(`${emp.name} marked as Exception`);
+      // Resolve the backend UUID — the picker / row stores apiId, but
+      // fall back to empNo for safety on legacy rows.
+      const employeeId = (emp as Employee & { apiId?: string }).apiId ?? emp.id;
+      await leaveApi.create({
+        // Backend's LeaveRequestService maps the caller to their own
+        // employee when employeeId is omitted. Admins marking on
+        // behalf of someone else send it explicitly here.
+        employeeId,
+        date,
+        endDate: markEndDate || date,
+        days: markDuration === 'full' ? 1 : 0.5,
+        halfDay: markDuration !== 'full',
+        type: markDuration,
+        category: markCategory,
+        reason: markCategory === 'maternity'
+          ? 'Maternity leave (marked from Attendance)'
+          : 'Marked exception from Attendance',
+      });
+      toast.success(
+        markCategory === 'maternity'
+          ? `Maternity leave recorded for ${emp.name} on ${date}`
+          : `Day Exception recorded for ${emp.name} on ${date}`,
+      );
       setMarkExceptionTarget(null);
+      // Reset back to defaults so the next click on a fresh row
+      // doesn't inherit the previous choice.
+      setMarkCategory('exception');
+      setMarkDuration('full');
+      setMarkEndDate('');
+      await loadLeaves();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to mark as Exception');
+      toast.error(err instanceof Error ? err.message : 'Failed to record Day Exception');
     } finally {
       setMarkExceptionBusy(false);
     }
@@ -1138,7 +1308,14 @@ export function Attendance() {
     const isSynthetic = editRecord.id.startsWith('synthetic:');
     // Only forward the leave sub-type when the admin actually picked
     // "leave" — for any other status the backend ignores it anyway.
-    const leaveTypePatch = editStatus === 'leave' ? { leaveType: editLeaveType } : {};
+    const leaveTypePatch = editStatus === 'leave'
+      ? {
+          leaveType: editLeaveType,
+          leaveCategory: editLeaveCategory,
+          // Blank → server defaults to leave's start date (single-day row).
+          leaveEndDate: editLeaveEndDate || undefined,
+        }
+      : {};
     setEditSaving(true);
     try {
       if (isSynthetic) {
@@ -1474,9 +1651,15 @@ export function Attendance() {
                     )}
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => toast.success('Exported attendance data')}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDailyExport}
+                  disabled={filteredRecords.length === 0}
+                  title="Excel workbook with a Summary sheet (range, filters, counts) + a Records sheet (one row per employee per day)"
+                >
                   <Download className="mr-1.5 h-4 w-4" />
-                  Export
+                  Export ({filteredRecords.length})
                 </Button>
               </div>
 
@@ -1735,7 +1918,7 @@ export function Attendance() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700"
-                                  title="Mark Exception (working outside, don't count)"
+                                  title="Add Day Exception (mission / on-site / special work for this day)"
                                   onClick={() => requestMarkException(record)}
                                 >
                                   <UserMinus className="h-3.5 w-3.5" />
@@ -2200,7 +2383,9 @@ export function Attendance() {
                     <p className="text-xs text-green-600">Remaining</p>
                   </div>
                 </div>
-                {/* Leave records list */}
+                {/* Leave records list — non-deductible categories
+                    (Maternity / Exception) are listed but flagged as
+                    not counting toward AL Used, so HR has full context. */}
                 {data.leaveRecords.length > 0 ? (
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Leave Records</p>
@@ -2212,8 +2397,19 @@ export function Attendance() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium">{format(parseISO(lr.date), 'EEE, MMM d, yyyy')}</p>
                           <p className="text-xs text-gray-500 mt-0.5">{lr.reason}</p>
+                          {!lr.deducts && (
+                            <p className="text-[11px] text-amber-700 mt-0.5">Does not deduct from AL</p>
+                          )}
                         </div>
-                        <Badge className="bg-indigo-50 text-indigo-700 border-0 text-xs shrink-0">Leave</Badge>
+                        {lr.deducts ? (
+                          <Badge className="bg-indigo-50 text-indigo-700 border-0 text-xs shrink-0 capitalize">
+                            {lr.category}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-50 text-amber-700 border-0 text-xs shrink-0 capitalize">
+                            {lr.category}
+                          </Badge>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2293,24 +2489,90 @@ export function Attendance() {
               </Select>
             </div>
             {editStatus === 'leave' && (
-              <div className="space-y-2">
-                <Label className="text-sm">Leave Type</Label>
-                <Select
-                  value={editLeaveType}
-                  onValueChange={v => setEditLeaveType(v as 'full' | 'half_morning' | 'half_noon')}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="full">Full</SelectItem>
-                    <SelectItem value="half_morning">Half Morning</SelectItem>
-                    <SelectItem value="half_noon">Half Noon</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500">
-                  Suggested from the punch pattern — change if the day was a different half.
-                </p>
+              <div className="space-y-3">
+                {/* V47 two-axis model: category (what kind) + duration
+                    (full / half). Maternity & Exception don't deduct
+                    from the annual leave balance. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-sm">Leave Type</Label>
+                    <Select
+                      value={editLeaveCategory}
+                      onValueChange={v => {
+                        const next = v as typeof editLeaveCategory;
+                        setEditLeaveCategory(next);
+                        // Maternity = 90 days inclusive → auto-fill end date.
+                        // For half-day durations end stays at the row date.
+                        if (next === 'maternity' && editRecord?.date && editLeaveType === 'full') {
+                          const s = new Date(editRecord.date + 'T00:00:00');
+                          s.setDate(s.getDate() + 89);
+                          const yyyy = s.getFullYear();
+                          const mm = String(s.getMonth() + 1).padStart(2, '0');
+                          const dd = String(s.getDate()).padStart(2, '0');
+                          setEditLeaveEndDate(`${yyyy}-${mm}-${dd}`);
+                        } else if (next !== 'maternity' && editRecord?.date) {
+                          // Reset to single-day when stepping away from Maternity.
+                          setEditLeaveEndDate(editRecord.date);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="annual">Annual</SelectItem>
+                        <SelectItem value="sick">Sick</SelectItem>
+                        <SelectItem value="special">Special</SelectItem>
+                        <SelectItem value="maternity">Maternity (90 days)</SelectItem>
+                        <SelectItem value="exception">Exception</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">Duration</Label>
+                    <Select
+                      value={editLeaveType}
+                      onValueChange={v => {
+                        const next = v as 'full' | 'half_morning' | 'half_noon';
+                        setEditLeaveType(next);
+                        // Half-day implies single-day — clamp end to start.
+                        if (next !== 'full' && editRecord?.date) {
+                          setEditLeaveEndDate(editRecord.date);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full Day</SelectItem>
+                        <SelectItem value="half_morning">Half — Morning</SelectItem>
+                        <SelectItem value="half_noon">Half — Afternoon</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {/* End Date — only meaningful when Duration = Full Day.
+                    For half-day rows we lock it to the attendance row's
+                    date (single-day leave). */}
+                <div className="space-y-1">
+                  <Label className="text-sm" htmlFor="edit-leave-end">End Date</Label>
+                  <Input
+                    id="edit-leave-end"
+                    type="date"
+                    value={editLeaveEndDate}
+                    min={editRecord?.date}
+                    disabled={editLeaveType !== 'full'}
+                    onChange={e => setEditLeaveEndDate(e.target.value)}
+                  />
+                  <p className="text-[11px] text-gray-500">
+                    {editLeaveType !== 'full'
+                      ? 'Half-day leave is always single-day.'
+                      : editLeaveCategory === 'maternity'
+                        ? '90 days from start date — adjust if the leave spans a different range.'
+                        : 'Same as start date for single-day leaves; pick a later date for a range.'}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -2415,14 +2677,100 @@ export function Attendance() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Mark {markExceptionTarget?.name} as Exception?
+              {markCategory === 'maternity' ? 'Add Maternity Leave' : 'Add Day Exception'}
+              {' for '}{markExceptionTarget?.employee.name}?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              They'll no longer be counted in attendance, late checks, or
-              compliance reports until you flip them back via{' '}
-              <span className="font-medium">Employees → Employment → "Count in Attendance"</span>.
+            <AlertDialogDescription asChild>
+              <div>
+                Recording a non-deductible leave for{' '}
+                <span className="font-medium">{markExceptionTarget?.date}</span>.
+                It will appear under{' '}
+                <span className="font-medium">Exception → Day</span> and will NOT
+                deduct from the employee's annual leave balance.
+                <div className="mt-1 text-xs text-gray-500">
+                  Need a permanent opt-out instead? Use{' '}
+                  <span className="font-medium">Employees → Employment → "Count in Attendance"</span>{' '}
+                  for a long-term Exception.
+                </div>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* Category + Duration form. Maternity is the 90-day flavour;
+              Exception covers mission / on-site / special work. Both are
+              non-deductible — that's what makes them live on this page. */}
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="me-cat" className="text-xs">Leave Type</Label>
+                <select
+                  id="me-cat"
+                  value={markCategory}
+                  onChange={(e) => {
+                    const next = e.target.value as typeof markCategory;
+                    setMarkCategory(next);
+                    // Maternity = 90 days inclusive from the row date.
+                    const rowDate = markExceptionTarget?.date;
+                    if (next === 'maternity' && rowDate && markDuration === 'full') {
+                      const s = new Date(rowDate + 'T00:00:00');
+                      s.setDate(s.getDate() + 89);
+                      const yyyy = s.getFullYear();
+                      const mm = String(s.getMonth() + 1).padStart(2, '0');
+                      const dd = String(s.getDate()).padStart(2, '0');
+                      setMarkEndDate(`${yyyy}-${mm}-${dd}`);
+                    } else if (next !== 'maternity' && rowDate) {
+                      setMarkEndDate(rowDate);
+                    }
+                  }}
+                  disabled={markExceptionBusy}
+                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                >
+                  <option value="exception">Exception (mission / on-site)</option>
+                  <option value="maternity">Maternity (90 days)</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="me-dur" className="text-xs">Duration</Label>
+                <select
+                  id="me-dur"
+                  value={markDuration}
+                  onChange={(e) => {
+                    const next = e.target.value as typeof markDuration;
+                    setMarkDuration(next);
+                    if (next !== 'full' && markExceptionTarget?.date) {
+                      setMarkEndDate(markExceptionTarget.date);
+                    }
+                  }}
+                  disabled={markExceptionBusy}
+                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                >
+                  <option value="full">Full Day</option>
+                  <option value="half_morning">Half Day — Morning</option>
+                  <option value="half_noon">Half Day — Afternoon</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="me-end" className="text-xs">
+                End Date <span className="text-gray-400 font-normal">(optional)</span>
+              </Label>
+              <input
+                id="me-end"
+                type="date"
+                value={markEndDate}
+                min={markExceptionTarget?.date}
+                disabled={markExceptionBusy || markDuration !== 'full'}
+                onChange={e => setMarkEndDate(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-sm h-9 disabled:bg-gray-100"
+              />
+              <p className="text-[11px] text-gray-500">
+                {markDuration !== 'full'
+                  ? 'Half-day leave is always single-day.'
+                  : markCategory === 'maternity'
+                    ? '90 days from start — adjust if the leave spans a different range.'
+                    : 'Leave blank or match the start date for a single-day Exception.'}
+              </p>
+            </div>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={markExceptionBusy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -2430,7 +2778,9 @@ export function Attendance() {
               onClick={(e) => { e.preventDefault(); void confirmMarkException(); }}
               disabled={markExceptionBusy}
             >
-              {markExceptionBusy ? 'Updating…' : 'Mark Exception'}
+              {markExceptionBusy
+                ? 'Recording…'
+                : markCategory === 'maternity' ? 'Add Maternity Leave' : 'Add Day Exception'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

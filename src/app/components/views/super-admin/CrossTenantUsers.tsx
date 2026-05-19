@@ -340,13 +340,13 @@ export function CrossTenantUsers() {
         ] as const).map(s => {
           const Icon = s.Icon;
           return (
-            <Card key={s.key}>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className={`text-2xl font-bold ${s.cls}`}>{s.value}</p>
-                  <p className="text-xs text-gray-500">{s.label}</p>
+            <Card key={s.key} className="border-gray-200">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Icon className={`h-5 w-5 ${s.cls}`} />
+                  <span className={`text-2xl font-bold ${s.cls}`}>{s.value}</span>
                 </div>
-                <Icon className={`h-5 w-5 ${s.cls}`} />
+                <p className="text-xs font-medium text-gray-700 truncate">{s.label}</p>
               </CardContent>
             </Card>
           );

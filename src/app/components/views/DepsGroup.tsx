@@ -557,55 +557,55 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
           renders its own KPI strip above the tabs. Standalone page keeps
           the detailed Departments / Groups / Teams / Active breakdown. */}
       {!embedded && (
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total</CardTitle>
-            <FolderTree className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{items.length}</div>
-            <p className="text-xs text-gray-500">Departments & groups</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <FolderTree className="h-5 w-5 text-gray-500" />
+              <span className="text-2xl font-bold text-gray-700">{items.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total</p>
+            <p className="text-[11px] text-gray-500 truncate">Departments & groups</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Departments</CardTitle>
-            <Building2 className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{departments.length}</div>
-            <p className="text-xs text-gray-500">Organizational units</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Building2 className="h-5 w-5 text-blue-600" />
+              <span className="text-2xl font-bold text-blue-600">{departments.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Departments</p>
+            <p className="text-[11px] text-gray-500 truncate">Organizational units</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Groups</CardTitle>
-            <Users className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{groups.length}</div>
-            <p className="text-xs text-gray-500">Custom groups</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-purple-600" />
+              <span className="text-2xl font-bold text-purple-600">{groups.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Groups</p>
+            <p className="text-[11px] text-gray-500 truncate">Custom groups</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Teams</CardTitle>
-            <UserCheck className="h-4 w-4 text-teal-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{teams.length}</div>
-            <p className="text-xs text-gray-500">Project / squad teams</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <UserCheck className="h-5 w-5 text-teal-600" />
+              <span className="text-2xl font-bold text-teal-600">{teams.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Teams</p>
+            <p className="text-[11px] text-gray-500 truncate">Project / squad teams</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Active</CardTitle>
-            <UserCheck className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeCount}</div>
-            <p className="text-xs text-gray-500">{totalMembers} total members</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <UserCheck className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">{activeCount}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Active</p>
+            <p className="text-[11px] text-gray-500 truncate">{totalMembers} total members</p>
           </CardContent>
         </Card>
       </div>

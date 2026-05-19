@@ -5,6 +5,7 @@ import { Employee } from '../../types/hrms';
 import * as overtimeApi from '../../api/overtime';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
+import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
@@ -38,7 +39,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon } from 'lucide-react';
+import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -132,6 +134,13 @@ export function Overtime() {
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const deptName = makeDeptName(deptList, '-');
+  // OT multipliers come from Attendance Settings → OT Rules. We load the
+  // settings once on mount and read the rates from them. Pre-load with
+  // the legal-default 1.5 / 2 / 3 so the first render doesn't show 0× while
+  // the network call is in flight.
+  const [otRates, setOtRates] = useState<{ weekday: number; weekend: number; holiday: number }>(
+    { weekday: 1.5, weekend: 2, holiday: 3 },
+  );
 
   const loadOtRequests = async () => {
     if (USE_MOCKS) {
@@ -173,11 +182,39 @@ export function Overtime() {
     }
   };
 
+  /** Pull the tenant's OT rules so the rate / amount columns reflect
+   *  whatever Attendance Settings → OT Rules has saved (e.g. 3× for
+   *  Holiday). Non-fatal — falls back to the legal-default 1.5/2/3 if
+   *  the request fails or the row is missing on a fresh tenant. */
+  const loadOtSettings = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const s = await settingsApi.getOtSettings();
+      // Prefer the nested workdayRule.rate / etc. (what the OT Rules
+      // editor binds to) but fall back to the top-level weekdayRate /
+      // weekendRate / holidayRate so older rows still work.
+      const nested = (k: keyof settingsApi.OtSettings): number | undefined => {
+        const v = (s[k] as Record<string, unknown> | undefined)?.rate;
+        return typeof v === 'number' && v > 0 ? v : undefined;
+      };
+      setOtRates({
+        // Parens required: ES2020 forbids mixing `??` with `||` without
+        // explicit grouping (Babel raises a parse error).
+        weekday: nested('workdayRule') ?? (Number(s.weekdayRate) || 1.5),
+        weekend: nested('weekendRule') ?? (Number(s.weekendRate) || 2),
+        holiday: nested('holidayRule') ?? (Number(s.holidayRate) || 3),
+      });
+    } catch (err) {
+      console.warn('Could not load OT settings — using default 1.5 / 2 / 3 rates', err);
+    }
+  };
+
   // Initial load on mount.
   useEffect(() => {
     void loadEmployees();
     void loadDepartments();
     void loadOtRequests();
+    void loadOtSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -341,16 +378,22 @@ export function Overtime() {
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
 
-  const calculateOTRate = (isWeekend: boolean, isHoliday: boolean) => {
-    if (isHoliday) return '3x';
-    if (isWeekend) return '2x';
-    return '1.5x';
+  /** Resolve the multiplier for a row from the loaded OT rules. The
+   *  rules are tenant-configurable in Attendance Settings → OT Rules;
+   *  Cambodian Labour Law defaults are 1.5× workday / 2× weekend / 3×
+   *  holiday and that's what we seed before the request returns. */
+  const rateMultiplier = (isWeekend: boolean, isHoliday: boolean): number =>
+    isHoliday ? otRates.holiday : isWeekend ? otRates.weekend : otRates.weekday;
+
+  const calculateOTRate = (isWeekend: boolean, isHoliday: boolean): string => {
+    const m = rateMultiplier(isWeekend, isHoliday);
+    return `${m}x`;
   };
 
   /**
    * OT pay amount for a single request. Mirrors the formula used in
    * Payroll: hourly = base / 160 (20 working days × 8 hours), then
-   * scaled by the rate multiplier (weekday 1.5×, weekend 2×, holiday 3×).
+   * scaled by the rate multiplier from {@link rateMultiplier}.
    * Returns 0 when the employee can't be matched (e.g. roster still
    * loading) so the cell stays usable.
    */
@@ -361,8 +404,7 @@ export function Overtime() {
     isHoliday: boolean,
   ): number => {
     if (!baseSalary || !hours) return 0;
-    const multiplier = isHoliday ? 3 : isWeekend ? 2 : 1.5;
-    return (baseSalary / 160) * hours * multiplier;
+    return (baseSalary / 160) * hours * rateMultiplier(isWeekend, isHoliday);
   };
 
   // Pending first, then newest by requested date
@@ -504,6 +546,50 @@ export function Overtime() {
         </div>
       </div>
 
+      {/* OT summary cards — surfaced above the listing for quick context.
+          Employee-only since admins / managers see the same numbers via
+          the by-employee view + Reports. */}
+      {isEmployee && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <TimerIcon className="h-5 w-5 text-gray-600" />
+                <span className="text-2xl font-bold text-gray-700">
+                  {otRequests
+                    .filter(req => req.status === 'approved')
+                    .reduce((sum, req) => sum + req.hours, 0)}h
+                </span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Total OT Hours</p>
+              <p className="text-[11px] text-gray-500 truncate">Approved this period</p>
+            </CardContent>
+          </Card>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <TimerIcon className="h-5 w-5 text-yellow-600" />
+                <span className="text-2xl font-bold text-yellow-600">{pendingRequests.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Pending</p>
+              <p className="text-[11px] text-gray-500 truncate">Awaiting approval</p>
+            </CardContent>
+          </Card>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <TimerIcon className="h-5 w-5 text-green-600" />
+                <span className="text-2xl font-bold text-green-600">
+                  {otRequests.filter(req => req.status === 'approved').length}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Approved</p>
+              <p className="text-[11px] text-gray-500 truncate">Requests approved</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="pb-3 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -630,7 +716,7 @@ export function Overtime() {
                           request.isHoliday,
                         );
                         return amount > 0
-                          ? `$${amount.toFixed(2)}`
+                          ? `$${formatMoney(amount)}`
                           : <span className="text-gray-300">—</span>;
                       })()}
                     </TableCell>
@@ -730,7 +816,7 @@ export function Overtime() {
                     <TableCell className="text-right tabular-nums">{row.holiday.toFixed(1)}h</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{totalHours.toFixed(1)}h</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-green-700">
-                      ${row.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${formatMoney(row.totalAmount)}
                     </TableCell>
                   </TableRow>
                 );
@@ -749,7 +835,7 @@ export function Overtime() {
                     <TableCell className="text-right tabular-nums">{sumHol.toFixed(1)}h</TableCell>
                     <TableCell className="text-right tabular-nums">{(sumWork + sumWkd + sumHol).toFixed(1)}h</TableCell>
                     <TableCell className="text-right tabular-nums text-green-700">
-                      ${sumAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${formatMoney(sumAmt)}
                     </TableCell>
                   </TableRow>
                 );
@@ -769,36 +855,6 @@ export function Overtime() {
         </CardContent>
       </Card>
 
-      {isEmployee && (
-        <Card>
-          <CardHeader>
-            <CardTitle>OT Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">Total OT Hours</p>
-                <p className="text-2xl font-bold">
-                  {otRequests
-                    .filter(req => req.status === 'approved')
-                    .reduce((sum, req) => sum + req.hours, 0)}
-                  h
-                </p>
-              </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                <p className="text-sm text-gray-600">Pending</p>
-                <p className="text-2xl font-bold">{pendingRequests.length}</p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-gray-600">Approved</p>
-                <p className="text-2xl font-bold">
-                  {otRequests.filter(req => req.status === 'approved').length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

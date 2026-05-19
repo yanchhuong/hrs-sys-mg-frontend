@@ -281,39 +281,39 @@ export function SalaryRules({ embedded = false }: Props = {}) {
       {/* Summary cards — hidden when embedded in Employee Settings, which
           renders its own KPI strip above the tabs. */}
       {!embedded && (
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Tiers</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{rules.length}</div>
-            <p className="text-xs text-gray-500">Defined experience brackets</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <TrendingUp className="h-5 w-5 text-blue-600" />
+              <span className="text-2xl font-bold text-blue-600">{rules.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total Tiers</p>
+            <p className="text-[11px] text-gray-500 truncate">Defined experience brackets</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Lowest Base</CardTitle>
-            <DollarSign className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {rules.length === 0 ? '—' : `$${Math.min(...rules.map(r => r.baseSalary)).toLocaleString()}`}
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">
+                {rules.length === 0 ? '—' : `$${Math.min(...rules.map(r => r.baseSalary)).toLocaleString()}`}
+              </span>
             </div>
-            <p className="text-xs text-gray-500">Minimum tier salary</p>
+            <p className="text-xs font-medium text-gray-700 truncate">Lowest Base</p>
+            <p className="text-[11px] text-gray-500 truncate">Minimum tier salary</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Highest Base</CardTitle>
-            <DollarSign className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {rules.length === 0 ? '—' : `$${Math.max(...rules.map(r => r.baseSalary)).toLocaleString()}`}
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign className="h-5 w-5 text-purple-600" />
+              <span className="text-2xl font-bold text-purple-600">
+                {rules.length === 0 ? '—' : `$${Math.max(...rules.map(r => r.baseSalary)).toLocaleString()}`}
+              </span>
             </div>
-            <p className="text-xs text-gray-500">Maximum tier salary</p>
+            <p className="text-xs font-medium text-gray-700 truncate">Highest Base</p>
+            <p className="text-[11px] text-gray-500 truncate">Maximum tier salary</p>
           </CardContent>
         </Card>
       </div>

@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
+import { formatMoney } from '../../utils/format';
 import { useAuth } from '../../context/AuthContext';
 import { mockPayroll, mockEmployees } from '../../data/mockData';
 import { mockPayrollBatches } from '../../data/settingsData';
@@ -95,6 +96,13 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
+    // TOS dependents inputs — without these the TaxCalculator dialog
+    // and the payroll auto-fill always see 0 dependents regardless of
+    // what HR set on the Employee profile.
+    maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married' || e.maritalStatus === 'divorced' || e.maritalStatus === 'widowed') ? e.maritalStatus : undefined,
+    numberOfChildren: e.numberOfChildren ?? 0,
+    decouple: e.decouple ?? false,
+    claimSpouse: e.claimSpouse ?? false,
     // Standing earnings (V43): both NOT NULL DEFAULT 0 on the server,
     // coerced to 0 here so the "1st Salary" formula and the payslip line
     // items always have a number to work with.
@@ -903,6 +911,9 @@ export function Payroll() {
     // so the export / table can fall back to it when the local Employee
     // lookup misses (e.g. terminated employees not in the active list).
     employeeName: it.employeeName,
+    // Owning batch subject (e.g. "1st Salary of May") — surfaced in
+    // the Subject column and the Payslip Details header.
+    batchSubject: it.batchSubject,
   } as unknown as typeof mockPayroll[number]);
 
   let payrollRecords: typeof mockPayroll = isSelfPayslipView
@@ -1207,10 +1218,20 @@ export function Payroll() {
       return Math.round((nssfKhr / Number(taxSettings.khrPerUsd)) * 100) / 100;
     };
 
-    /** Spouse counts when married; children are claimed verbatim. */
+    /** Dependents = (claimSpouse ? 1 : 0) + numberOfChildren — both
+     *  gated by the top-level `decouple` flag.
+     *
+     *  V53 (`decouple`)    gates the whole claim — when false, no
+     *                       dependents are subtracted on this payslip.
+     *  V55 (`claimSpouse`) is the explicit spouse line. Independent of
+     *                       maritalStatus so a widowed / divorced single
+     *                       parent with custody can keep their children
+     *                       deduction without a phantom spouse line. */
     const dependentsFor = (e: Employee): number => {
-      if (e.maritalStatus !== 'married') return 0;
-      return (e.numberOfChildren ?? 0) + 1;
+      if (!e.decouple) return 0;
+      const spouse = e.claimSpouse ? 1 : 0;
+      const children = e.numberOfChildren ?? 0;
+      return spouse + children;
     };
 
     // OT pay = (baseSalary / 160) * hours * multiplier. 160 = 20 working
@@ -1519,7 +1540,14 @@ export function Payroll() {
             </Button>
             <TaxCalculatorDialog
               open={taxDialogOpen}
-              onOpenChange={setTaxDialogOpen}
+              onOpenChange={(open) => {
+                setTaxDialogOpen(open);
+                // Refresh employees whenever the dialog opens so changes
+                // saved on the Employees page (decouple / maritalStatus /
+                // numberOfChildren) flow into the TOS preview without a
+                // manual page refresh.
+                if (open) void loadEmployees();
+              }}
               employees={employees}
               taxSettings={taxSettings}
             />
@@ -1751,19 +1779,19 @@ export function Payroll() {
                             <div>
                               <p className="text-xs text-gray-600">Total Net Salary</p>
                               <p className={`text-lg font-bold ${totalNet === 0 ? 'text-gray-400' : ''}`}>
-                                ${totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${formatMoney(totalNet)}
                               </p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-600">Total Earnings</p>
                               <p className={`text-lg font-bold ${totalEarnings === 0 ? 'text-gray-400' : 'text-green-600'}`}>
-                                ${totalEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${formatMoney(totalEarnings)}
                               </p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-600">Total Deductions</p>
                               <p className={`text-lg font-bold ${totalDeductions === 0 ? 'text-gray-400' : 'text-red-600'}`}>
-                                ${totalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${formatMoney(totalDeductions)}
                               </p>
                             </div>
                           </div>
@@ -1804,9 +1832,9 @@ export function Payroll() {
                                       <td className={`sticky left-[130px] px-3 py-2 whitespace-nowrap z-10 ${rowBg}`}>
                                         {emp.employeeName}
                                       </td>
-                                      <td className="text-right px-3 py-2 whitespace-nowrap text-green-700">${emp.totalEarnings.toFixed(2)}</td>
-                                      <td className="text-right px-3 py-2 whitespace-nowrap text-red-700">${emp.totalDeductions.toFixed(2)}</td>
-                                      <td className={`text-right px-3 py-2 whitespace-nowrap font-semibold ${emp.netSalary < 0 ? 'text-red-700' : ''}`}>${emp.netSalary.toFixed(2)}</td>
+                                      <td className="text-right px-3 py-2 whitespace-nowrap text-green-700">${formatMoney(emp.totalEarnings)}</td>
+                                      <td className="text-right px-3 py-2 whitespace-nowrap text-red-700">${formatMoney(emp.totalDeductions)}</td>
+                                      <td className={`text-right px-3 py-2 whitespace-nowrap font-semibold ${emp.netSalary < 0 ? 'text-red-700' : ''}`}>${formatMoney(emp.netSalary)}</td>
                                     </tr>
                                   );
                                 })}
@@ -2063,13 +2091,13 @@ export function Payroll() {
                       <div className="bg-green-50 p-6 rounded-lg">
                         <p className="text-sm text-gray-600 mb-2">Total Earnings</p>
                         <p className="text-3xl font-bold text-green-600">
-                          ${previewData.employees.reduce((sum, emp) => sum + emp.totalEarnings, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${formatMoney(previewData.employees.reduce((sum, emp) => sum + emp.totalEarnings, 0))}
                         </p>
                       </div>
                       <div className="bg-blue-50 p-6 rounded-lg">
                         <p className="text-sm text-gray-600 mb-2">Total Net Salary</p>
                         <p className="text-3xl font-bold text-blue-600">
-                          ${previewData.employees.reduce((sum, emp) => sum + emp.netSalary, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${formatMoney(previewData.employees.reduce((sum, emp) => sum + emp.netSalary, 0))}
                         </p>
                       </div>
                     </div>
@@ -2114,14 +2142,14 @@ export function Payroll() {
                                 <td className={`px-4 py-3 font-semibold text-sm border-r sticky left-[48px] ${rowBg}`}>{emp.employeeNo}</td>
                                 <td className={`px-4 py-3 text-sm border-r sticky left-[148px] ${rowBg}`}>{emp.employeeName}</td>
                                 {earningCategories.map((c) => (
-                                  <td key={`e-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${(emp.earnings?.[c.code] ?? 0).toFixed(2)}</td>
+                                  <td key={`e-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${formatMoney(emp.earnings?.[c.code] ?? 0)}</td>
                                 ))}
-                                <td className="px-4 py-3 text-sm font-bold text-green-700 whitespace-nowrap bg-green-50 border-l-2 border-green-300">${emp.totalEarnings.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-sm font-bold text-green-700 whitespace-nowrap bg-green-50 border-l-2 border-green-300">${formatMoney(emp.totalEarnings)}</td>
                                 {deductionCategories.map((c) => (
-                                  <td key={`d-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${(emp.deductions?.[c.code] ?? 0).toFixed(2)}</td>
+                                  <td key={`d-${idx}-${c.id}`} className="px-4 py-3 text-sm whitespace-nowrap">${formatMoney(emp.deductions?.[c.code] ?? 0)}</td>
                                 ))}
-                                <td className="px-4 py-3 text-sm font-bold text-red-700 whitespace-nowrap bg-red-50 border-l-2 border-red-300">${emp.totalDeductions.toFixed(2)}</td>
-                                <td className={`px-4 py-3 text-sm font-bold whitespace-nowrap bg-blue-50 border-l-2 border-blue-300 ${emp.netSalary < 0 ? 'text-red-700' : 'text-blue-700'}`}>${emp.netSalary.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-sm font-bold text-red-700 whitespace-nowrap bg-red-50 border-l-2 border-red-300">${formatMoney(emp.totalDeductions)}</td>
+                                <td className={`px-4 py-3 text-sm font-bold whitespace-nowrap bg-blue-50 border-l-2 border-blue-300 ${emp.netSalary < 0 ? 'text-red-700' : 'text-blue-700'}`}>${formatMoney(emp.netSalary)}</td>
                               </tr>
                             );
                             })}
@@ -2250,29 +2278,21 @@ export function Payroll() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">Total Payroll</p>
-                <p className="text-xl font-bold">
-                  ${totalPayroll.toLocaleString()}
-                </p>
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <p className="text-2xl font-bold">${formatMoney(totalPayroll)}</p>
+                <p className="text-xs text-gray-500 mt-1">Total Payroll</p>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-gray-600">Base Salaries</p>
-                <p className="text-xl font-bold">
-                  ${totalBase.toLocaleString()}
-                </p>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <p className="text-2xl font-bold text-green-700">${formatMoney(totalBase)}</p>
+                <p className="text-xs text-gray-500 mt-1">Base Salaries</p>
               </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-gray-600">OT Payments</p>
-                <p className="text-xl font-bold">
-                  ${totalOt.toLocaleString()}
-                </p>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-2xl font-bold text-blue-700">${formatMoney(totalOt)}</p>
+                <p className="text-xs text-gray-500 mt-1">OT Payments</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-sm text-gray-600">Total Deductions</p>
-                <p className="text-xl font-bold">
-                  ${totalDeductions.toLocaleString()}
-                </p>
+              <div className="p-4 bg-red-50 rounded-lg">
+                <p className="text-2xl font-bold text-red-700">${formatMoney(totalDeductions)}</p>
+                <p className="text-xs text-gray-500 mt-1">Total Deductions</p>
               </div>
             </div>
           </CardContent>
@@ -2281,41 +2301,41 @@ export function Payroll() {
       })()}
 
       {isSelfPayslipView && currentEmployee && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Base Salary</CardTitle>
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">${currentEmployee.baseSalary.toLocaleString()}</div>
-              <p className="text-xs text-gray-500">Per month</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <DollarSign className="h-5 w-5 text-green-600" />
+                <span className="text-2xl font-bold text-green-600">${formatMoney(currentEmployee.baseSalary)}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Base Salary</p>
+              <p className="text-[11px] text-gray-500 truncate">Per month</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">OT Rate (1.5x)</CardTitle>
-              <DollarSign className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ${calculateOTRate(currentEmployee.baseSalary).toFixed(2)}
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <DollarSign className="h-5 w-5 text-blue-600" />
+                <span className="text-2xl font-bold text-blue-600">
+                  ${formatMoney(calculateOTRate(currentEmployee.baseSalary))}
+                </span>
               </div>
-              <p className="text-xs text-gray-500">Per hour</p>
+              <p className="text-xs font-medium text-gray-700 truncate">OT Rate (1.5x)</p>
+              <p className="text-[11px] text-gray-500 truncate">Per hour</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Last Payment</CardTitle>
-              <DollarSign className="h-4 w-4 text-purple-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ${payrollRecords[0]?.totalPay.toLocaleString() || '0'}
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <DollarSign className="h-5 w-5 text-purple-600" />
+                <span className="text-2xl font-bold text-purple-600">
+                  ${formatMoney(payrollRecords[0]?.totalPay ?? 0)}
+                </span>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs font-medium text-gray-700 truncate">Last Payment</p>
+              <p className="text-[11px] text-gray-500 truncate">
                 {payrollRecords[0] ? format(new Date(payrollRecords[0].month + '-01'), 'MM/yyyy') : '-'}
               </p>
             </CardContent>
@@ -2439,7 +2459,7 @@ export function Payroll() {
                       </TableCell>
                       <TableCell className="text-right text-sm">{batch.totalEmployees}</TableCell>
                       <TableCell className="text-right font-semibold text-sm">
-                        ${batch.netSalary.toLocaleString()}
+                        ${formatMoney(batch.netSalary)}
                       </TableCell>
                       <TableCell className="text-[11px] text-gray-600 leading-snug">
                         <p>📥 {uploaderName} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
@@ -2536,6 +2556,7 @@ export function Payroll() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Month/Year</TableHead>
+                  <TableHead>Subject</TableHead>
                   <TableHead>Payroll Account</TableHead>
                   <TableHead>Currency</TableHead>
                   <TableHead>Net Salary</TableHead>
@@ -2548,11 +2569,14 @@ export function Payroll() {
                 {payrollRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>{format(new Date(record.month + '-01'), 'MM/yyyy')}</TableCell>
+                    <TableCell className="text-sm">
+                      {(record as { batchSubject?: string }).batchSubject ?? <span className="text-gray-400">—</span>}
+                    </TableCell>
                     <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
                     <TableCell>{record.currency}</TableCell>
-                    <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
-                    <TableCell className="text-green-600">${record.totalEarnings.toLocaleString()}</TableCell>
-                    <TableCell className="text-red-600">${record.deductions.toLocaleString()}</TableCell>
+                    <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
+                    <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
+                    <TableCell className="text-red-600">${formatMoney(record.deductions)}</TableCell>
                     <TableCell>
                       <Dialog>
                         <DialogTrigger asChild>
@@ -2634,15 +2658,15 @@ export function Payroll() {
               </div>
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600">Net Salary</p>
-                <p className="text-2xl font-bold">${selectedBatch.netSalary.toLocaleString()}</p>
+                <p className="text-2xl font-bold">${formatMoney(selectedBatch.netSalary)}</p>
               </div>
               <div className="bg-green-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600">Total Earnings</p>
-                <p className="text-2xl font-bold">${selectedBatch.totalEarnings.toLocaleString()}</p>
+                <p className="text-2xl font-bold">${formatMoney(selectedBatch.totalEarnings)}</p>
               </div>
               <div className="bg-red-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600">Deductions</p>
-                <p className="text-2xl font-bold">${selectedBatch.deductions.toLocaleString()}</p>
+                <p className="text-2xl font-bold">${formatMoney(selectedBatch.deductions)}</p>
               </div>
             </div>
 
@@ -2865,9 +2889,9 @@ export function Payroll() {
                       </TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
                       <TableCell>{record.currency}</TableCell>
-                      <TableCell className="font-semibold">${record.totalPay.toLocaleString()}</TableCell>
-                      <TableCell className="text-green-600">${record.totalEarnings.toLocaleString()}</TableCell>
-                      <TableCell className="text-red-600">${record.deductions.toLocaleString()}</TableCell>
+                      <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
+                      <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
+                      <TableCell className="text-red-600">${formatMoney(record.deductions)}</TableCell>
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentMail.has(record.id))}</TableCell>}
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>}
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>}
@@ -2928,7 +2952,7 @@ export function Payroll() {
                     <p><span className="text-gray-500">Batch:</span> <strong>{approveTarget.subject}</strong></p>
                     <p><span className="text-gray-500">Period:</span> {approveTarget.monthYear} · {approveTarget.type}</p>
                     <p><span className="text-gray-500">Employees:</span> {approveTarget.totalEmployees}</p>
-                    <p><span className="text-gray-500">Net Salary:</span> <strong>${approveTarget.netSalary.toLocaleString()}</strong></p>
+                    <p><span className="text-gray-500">Net Salary:</span> <strong>${formatMoney(approveTarget.netSalary)}</strong></p>
                     <p><span className="text-gray-500">Uploaded by:</span> {employees.find(e => e.id === approveTarget.uploadedBy || (e as Employee).apiId === approveTarget.uploadedBy)?.name ?? '—'}</p>
                   </div>
                 )}
@@ -3014,6 +3038,10 @@ type AnyPayslip = {
   id: string;
   employeeId: string;
   month: string;
+  /** Owning batch's subject — set in adaptBackendItem; absent on legacy
+   *  mock rows. The PayslipBody header prefers this over the synthesised
+   *  "Year YYYY Month MM Salary" fallback. */
+  batchSubject?: string;
   baseSalary: number;
   otPay: number;
   totalEarnings: number;
@@ -3109,7 +3137,12 @@ function PayslipBody({
     <div className="space-y-6">
       <div className="text-center border-b pb-4">
         <h3 className="font-semibold text-lg mb-4">
-          Year {format(new Date(payslip.month + '-01'), 'yyyy')} Month {format(new Date(payslip.month + '-01'), 'MM')} Salary
+          {/* Prefer the batch subject (e.g. "1st Salary of May") so the
+              dialog header matches the listing. Fall back to the
+              synthesised year/month label for legacy rows that pre-date
+              the batchSubject field. */}
+          {payslip.batchSubject
+            ?? `Year ${format(new Date(payslip.month + '-01'), 'yyyy')} Month ${format(new Date(payslip.month + '-01'), 'MM')} Salary`}
         </h3>
         <div className="text-left space-y-1">
           <p className="text-sm">
@@ -3132,12 +3165,12 @@ function PayslipBody({
           {earnings.map((line, i) => (
             <div key={`e-${i}-${line.label}`} className="flex justify-between text-sm">
               <span className="text-gray-700">{line.label}</span>
-              <span className="font-medium">${line.amount.toFixed(2)}</span>
+              <span className="font-medium">${formatMoney(line.amount)}</span>
             </div>
           ))}
           <div className="border-t pt-2 flex justify-between font-semibold">
             <span>Total Earnings</span>
-            <span>${payslip.totalEarnings.toFixed(2)}</span>
+            <span>${formatMoney(payslip.totalEarnings)}</span>
           </div>
         </div>
       </div>
@@ -3151,12 +3184,12 @@ function PayslipBody({
           {deductions.map((line, i) => (
             <div key={`d-${i}-${line.label}`} className="flex justify-between text-sm">
               <span className="text-gray-700">{line.label}</span>
-              <span className="font-medium">${line.amount.toFixed(2)}</span>
+              <span className="font-medium">${formatMoney(line.amount)}</span>
             </div>
           ))}
           <div className="border-t pt-2 flex justify-between font-semibold">
             <span>Total Deductions</span>
-            <span>${payslip.deductions.toFixed(2)}</span>
+            <span>${formatMoney(payslip.deductions)}</span>
           </div>
         </div>
       </div>
@@ -3164,7 +3197,7 @@ function PayslipBody({
       <div className="border-t pt-4">
         <div className="flex justify-between items-center">
           <span className="text-lg font-semibold">Net Salary</span>
-          <span className="text-2xl font-bold text-blue-600">${payslip.totalPay.toFixed(2)}</span>
+          <span className="text-2xl font-bold text-blue-600">${formatMoney(payslip.totalPay)}</span>
         </div>
       </div>
 

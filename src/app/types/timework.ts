@@ -44,13 +44,23 @@ export interface Holiday {
  * exception kind ("missed_punch" etc.); the leave UI now uses the
  * coarser leave-shaped enum (full / half_morning / half_noon). Older
  * values are still accepted on the wire — display code maps them.
+ *
+ * V47 added a second axis ({@link #category}) so a row carries both
+ * "duration" (type) and "what kind of leave" (category).
  */
+export type LeaveCategory = 'annual' | 'sick' | 'special' | 'maternity' | 'exception';
+
 export interface AttendanceException {
   id: string;
   employeeId: string;
   date: string;
+  /** Inclusive end date. Defaults to {@link #date} for single-day leaves. V49. */
+  endDate?: string;
   type: 'full' | 'half_morning' | 'half_noon'
       | 'missed_punch' | 'late_arrival' | 'early_leave' | 'manual_correction';
+  /** V47. annual/sick/special deduct from leave balances; maternity and
+   *  exception are paid time that doesn't deduct from annual leave. */
+  category?: LeaveCategory;
   originalCheckIn?: string;
   originalCheckOut?: string;
   correctedCheckIn?: string;
@@ -63,6 +73,9 @@ export interface AttendanceException {
   approvedBy?: string;
   submittedAt: string;
   approvedAt?: string;
+  /** Legacy flag — pre-V47 rows used this boolean alone. Now equivalent
+   *  to category in ('maternity', 'exception'). */
+  isException?: boolean;
 }
 
 export interface SalaryDeduction {

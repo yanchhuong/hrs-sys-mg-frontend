@@ -18,11 +18,23 @@ export interface Role {
 }
 
 export type PermissionModule =
-  | 'dashboard' | 'employees' | 'attendance' | 'exception' | 'overtime'
+  | 'dashboard' | 'employees' | 'attendance' | 'all-leave' | 'exception' | 'overtime'
   | 'deduction' | 'increase' | 'payroll' | 'reports' | 'contracts'
   | 'settings' | 'user-management';
 
-export type PermissionAction = 'view' | 'create' | 'update' | 'delete';
+/**
+ * Permission actions split into two axes:
+ *   Menu Access — what the role can do on a module (view, create, update, delete)
+ *   Data Access — what records the role can see (owner / member / all)
+ *
+ * They share the role_permissions table by storing the data-access axis
+ * as additional "scope_*" action rows. Runtime enforcement of the scope
+ * grants is still role-based (useTeamScope); the grants are persisted
+ * so future per-role overrides can be wired without another migration.
+ */
+export type PermissionAction =
+  | 'view' | 'create' | 'update' | 'delete'
+  | 'scope_owner' | 'scope_member' | 'scope_all';
 
 export interface RolePermission {
   module: PermissionModule;

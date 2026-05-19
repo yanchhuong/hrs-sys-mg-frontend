@@ -419,35 +419,35 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Holidays</CardTitle>
-            <CalendarDays className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filtered.length}</div>
-            <p className="text-xs text-gray-500">Match current filters</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <CalendarDays className="h-5 w-5 text-blue-600" />
+              <span className="text-2xl font-bold text-blue-600">{filtered.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total Holidays</p>
+            <p className="text-[11px] text-gray-500 truncate">Match current filters</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Public</CardTitle>
-            <CalendarDays className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filtered.filter(h => h.type === 'public').length}</div>
-            <p className="text-xs text-gray-500">National observances</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <CalendarDays className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">{filtered.filter(h => h.type === 'public').length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Public</p>
+            <p className="text-[11px] text-gray-500 truncate">National observances</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Company</CardTitle>
-            <CalendarDays className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filtered.filter(h => h.type === 'company').length}</div>
-            <p className="text-xs text-gray-500">Internal off-days</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <CalendarDays className="h-5 w-5 text-purple-600" />
+              <span className="text-2xl font-bold text-purple-600">{filtered.filter(h => h.type === 'company').length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Company</p>
+            <p className="text-[11px] text-gray-500 truncate">Internal off-days</p>
           </CardContent>
         </Card>
       </div>

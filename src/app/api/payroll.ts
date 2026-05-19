@@ -43,6 +43,10 @@ export interface PayrollBatch {
 export interface PayrollItem {
   id: string;
   batchId: string;
+  /** Owning batch's subject — server-side copy so the payslip dialog
+   *  and the "My Payroll Records" table can render it without a
+   *  separate batch lookup. */
+  batchSubject?: string;
   employeeId: string;
   employeeName?: string;
   month: string;

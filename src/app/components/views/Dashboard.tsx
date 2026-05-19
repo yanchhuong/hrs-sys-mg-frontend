@@ -11,6 +11,7 @@ import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
 import * as leaveApi from '../../api/leave';
 import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 import { Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle, RefreshCw, CalendarDays } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
@@ -155,61 +156,61 @@ export function Dashboard() {
           <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Total Employees</CardTitle>
-              <Users className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{employees.length}</div>
-              <p className="text-xs text-gray-500">{activeEmployeeCount} active</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                <span className="text-2xl font-bold text-blue-600">{employees.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Total Employees</p>
+              <p className="text-[11px] text-gray-500 truncate">{activeEmployeeCount} active</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Today&apos;s Attendance</CardTitle>
-              <Clock className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{todayAttendance.length}</div>
-              <p className="text-xs text-gray-500">
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Clock className="h-5 w-5 text-green-600" />
+                <span className="text-2xl font-bold text-green-600">{todayAttendance.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Today&apos;s Attendance</p>
+              <p className="text-[11px] text-gray-500 truncate">
                 {todayAttendance.filter((a: any) => a.status === 'late').length} late arrivals
               </p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Pending OT Requests</CardTitle>
-              <TimerIcon className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pendingOT.length}</div>
-              <p className="text-xs text-gray-500">Require approval</p>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <TimerIcon className="h-5 w-5 text-orange-600" />
+                <span className="text-2xl font-bold text-orange-600">{pendingOT.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Pending OT</p>
+              <p className="text-[11px] text-gray-500 truncate">Require approval</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Pending Leave Requests</CardTitle>
-              <CalendarDays className="h-4 w-4 text-purple-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pendingLeaves.length}</div>
-              <p className="text-xs text-gray-500">Awaiting approval</p>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <CalendarDays className="h-5 w-5 text-purple-600" />
+                <span className="text-2xl font-bold text-purple-600">{pendingLeaves.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Pending Leave</p>
+              <p className="text-[11px] text-gray-500 truncate">Awaiting approval</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Expiring Contracts</CardTitle>
-              <FileText className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{expiringContracts.length}</div>
-              <p className="text-xs text-gray-500">Within 30 days</p>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <FileText className="h-5 w-5 text-red-600" />
+                <span className="text-2xl font-bold text-red-600">{expiringContracts.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Expiring Contracts</p>
+              <p className="text-[11px] text-gray-500 truncate">Within 30 days</p>
             </CardContent>
           </Card>
         </div>
@@ -310,37 +311,37 @@ export function Dashboard() {
           <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Team Members</CardTitle>
-              <Users className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{teamMembers.length}</div>
-              <p className="text-xs text-gray-500">Under your management</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                <span className="text-2xl font-bold text-blue-600">{teamMembers.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Team Members</p>
+              <p className="text-[11px] text-gray-500 truncate">Under your management</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Pending Approvals</CardTitle>
-              <TimerIcon className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pendingOT.length}</div>
-              <p className="text-xs text-gray-500">OT requests</p>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <TimerIcon className="h-5 w-5 text-orange-600" />
+                <span className="text-2xl font-bold text-orange-600">{pendingOT.length}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Pending Approvals</p>
+              <p className="text-[11px] text-gray-500 truncate">OT requests</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">Team Attendance</CardTitle>
-              <Clock className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{teamPresentToday}</div>
-              <p className="text-xs text-gray-500">Present today</p>
+          <Card className="border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Clock className="h-5 w-5 text-green-600" />
+                <span className="text-2xl font-bold text-green-600">{teamPresentToday}</span>
+              </div>
+              <p className="text-xs font-medium text-gray-700 truncate">Team Attendance</p>
+              <p className="text-[11px] text-gray-500 truncate">Present today</p>
             </CardContent>
           </Card>
         </div>
@@ -459,7 +460,18 @@ export function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Department</p>
-              <p className="font-medium">{currentEmployee?.department ?? '—'}</p>
+              <p className="font-medium">
+                {/* employee.department carries the department UUID in
+                    live mode; resolve to its human-readable name from
+                    the departments list. Mock mode already stores the
+                    name, so makeDeptName falls through cleanly. */}
+                {(() => {
+                  const id = currentEmployee?.department;
+                  if (!id || id === '-') return '—';
+                  const name = makeDeptName(deptList, '')(id);
+                  return name || id;
+                })()}
+              </p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Join Date</p>

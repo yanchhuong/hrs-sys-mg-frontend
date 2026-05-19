@@ -827,19 +827,19 @@ export function AttendanceSettings() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /><p className="font-medium text-sm text-blue-800">Workday</p></div>
-                  <div className="text-3xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>
+                  <div className="text-2xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>
                   <div className="text-xs text-blue-600 space-y-1"><p>After {otSettings.workdayRule.otStartAfter}</p><p>Min {otSettings.workdayRule.minimumOTMinutes}min / Max {otSettings.workdayRule.maxOTHours}h</p></div>
                   <div className="font-mono text-xs text-blue-900 bg-white rounded p-2">18:30 out → 1.5h × {otSettings.workdayRule.rate} = {(1.5 * otSettings.workdayRule.rate).toFixed(2)}h</div>
                 </div>
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-orange-600" /><p className="font-medium text-sm text-orange-800">Weekend</p></div>
-                  <div className="text-3xl font-bold text-orange-700">{otSettings.weekendRule.rate}x</div>
+                  <div className="text-2xl font-bold text-orange-700">{otSettings.weekendRule.rate}x</div>
                   <div className="text-xs text-orange-600 space-y-1"><p>{otSettings.weekendRule.countAllHoursAsOT ? 'All hours = OT' : 'After standard hours'}</p><p>Min {otSettings.weekendRule.minimumWorkMinutes}min required</p></div>
                   <div className="font-mono text-xs text-orange-900 bg-white rounded p-2">6h work → 6h × {otSettings.weekendRule.rate} = {(6 * otSettings.weekendRule.rate).toFixed(1)}h</div>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><PartyPopper className="h-4 w-4 text-red-600" /><p className="font-medium text-sm text-red-800">Holiday</p></div>
-                  <div className="text-3xl font-bold text-red-700">{otSettings.holidayRule.rate}x</div>
+                  <div className="text-2xl font-bold text-red-700">{otSettings.holidayRule.rate}x</div>
                   <div className="text-xs text-red-600 space-y-1"><p>Highest priority rule</p><p>{otSettings.holidayRule.specialBonusEnabled ? `+ $${otSettings.holidayRule.specialBonusAmount} bonus` : 'No special bonus'}</p></div>
                   <div className="font-mono text-xs text-red-900 bg-white rounded p-2">5h work → 5h × {otSettings.holidayRule.rate} = {(5 * otSettings.holidayRule.rate).toFixed(1)}h</div>
                 </div>

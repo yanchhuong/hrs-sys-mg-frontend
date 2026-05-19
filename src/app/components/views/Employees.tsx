@@ -392,8 +392,10 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     managerId: e.managerId ?? undefined,
     profileImage: e.profileImage ?? undefined,
     gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
-    maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married') ? e.maritalStatus : undefined,
+    maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married' || e.maritalStatus === 'divorced' || e.maritalStatus === 'widowed') ? e.maritalStatus : undefined,
     numberOfChildren: e.numberOfChildren ?? 0,
+    decouple: e.decouple ?? false,
+    claimSpouse: e.claimSpouse ?? false,
     dateOfBirth: e.dateOfBirth ?? undefined,
     placeOfBirth: e.placeOfBirth ?? undefined,
     currentAddress: e.currentAddress ?? undefined,
@@ -796,6 +798,8 @@ export function Employees() {
         contractExpireDate: raw.contractExpireDate ?? null,
         resignDate: raw.resignDate ?? null,
         attendanceYn: raw.attendanceYn,
+        decouple: raw.decouple ?? false,
+        claimSpouse: raw.claimSpouse ?? false,
         positionAllowance: raw.positionAllowance ?? 0,
         evaluationAllowance: raw.evaluationAllowance ?? 0,
       };
@@ -1576,11 +1580,15 @@ export function Employees() {
                           <select
                             value={editedEmployee.maritalStatus || ''}
                             onChange={(e) => {
-                              const v = e.target.value as '' | 'single' | 'married';
+                              const v = e.target.value as '' | 'single' | 'married' | 'divorced' | 'widowed';
+                              // Only 'single' wipes the children count —
+                              // divorced / widowed single parents commonly
+                              // retain custody and still claim them in TOS,
+                              // so we keep the count when flipping to those.
                               setEditedEmployee({
                                 ...editedEmployee,
                                 maritalStatus: v === '' ? undefined : v,
-                                numberOfChildren: v === 'married' ? (editedEmployee.numberOfChildren ?? 0) : 0,
+                                numberOfChildren: v === 'single' ? 0 : (editedEmployee.numberOfChildren ?? 0),
                               });
                             }}
                             className="w-full px-3 py-2 border rounded-md text-sm h-9"
@@ -1588,14 +1596,24 @@ export function Employees() {
                             <option value="">Select</option>
                             <option value="single">Single</option>
                             <option value="married">Married</option>
+                            <option value="divorced">Divorced</option>
+                            <option value="widowed">Widowed</option>
                           </select>
                         ) : (
                           <p className="capitalize">{selectedEmployee.maritalStatus || '—'}</p>
                         )}
                       </FieldRow>
-                      {(isEditing
-                        ? editedEmployee?.maritalStatus === 'married'
-                        : selectedEmployee.maritalStatus === 'married') && (
+                      {/* Number of Children is visible for any non-Single
+                          (or unset) status. Single = no kids deduction
+                          path; the other three (married / divorced /
+                          widowed) can all have children claimed under
+                          Cambodian TOS. */}
+                      {(() => {
+                        const ms = isEditing
+                          ? editedEmployee?.maritalStatus
+                          : selectedEmployee.maritalStatus;
+                        return ms && ms !== 'single';
+                      })() && (
                         <FieldRow label="Number of Children" isEditing={isEditing}>
                           {isEditing && editedEmployee ? (
                             <Input
@@ -1611,6 +1629,63 @@ export function Employees() {
                             />
                           ) : (
                             <p>{selectedEmployee.numberOfChildren ?? 0}</p>
+                          )}
+                        </FieldRow>
+                      )}
+                      {/* Decouple — V53. Flipped to Yes on the spouse who
+                          claims the family dependents (housewife spouse +
+                          children) on their own TOS. The other working
+                          spouse stays at No so the same dependents aren't
+                          double-counted across two payslips. */}
+                      <FieldRow label="Claim Dependents (TOS)" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.decouple ? 'yes' : 'no'}
+                            onChange={(e) => {
+                              const yes = e.target.value === 'yes';
+                              setEditedEmployee({
+                                ...editedEmployee,
+                                decouple: yes,
+                                // Flipping back to No clears the spouse
+                                // sub-flag so we don't keep stale state.
+                                claimSpouse: yes ? (editedEmployee.claimSpouse ?? false) : false,
+                              });
+                            }}
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                            title="Yes → this employee subtracts spouse + children allowances from their TOS base. No → no dependents are claimed on this payslip (the other spouse claims, or there are none)."
+                          >
+                            <option value="no">No</option>
+                            <option value="yes">Yes</option>
+                          </select>
+                        ) : (
+                          <p>{selectedEmployee.decouple ? 'Yes' : 'No'}</p>
+                        )}
+                      </FieldRow>
+                      {/* Claim Spouse — V55. Nested under "Claim Dependents",
+                          only visible when Decouple = Yes. Independent of
+                          marital status: a widowed / divorced parent with
+                          custody flips this to No and still claims their
+                          children. A married housewife scenario flips it
+                          to Yes. */}
+                      {(isEditing
+                        ? editedEmployee?.decouple
+                        : selectedEmployee.decouple) && (
+                        <FieldRow label="↳ Claim Spouse" isEditing={isEditing}>
+                          {isEditing && editedEmployee ? (
+                            <select
+                              value={editedEmployee.claimSpouse ? 'yes' : 'no'}
+                              onChange={(e) => setEditedEmployee({
+                                ...editedEmployee,
+                                claimSpouse: e.target.value === 'yes',
+                              })}
+                              className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                              title="Yes → adds 1 dependent (150,000 KHR) for the housewife spouse allowance. No → no spouse line (typical for widowed / divorced / single-parent rows, or dual-earner couples where neither claims a housewife spouse)."
+                            >
+                              <option value="no">No</option>
+                              <option value="yes">Yes</option>
+                            </select>
+                          ) : (
+                            <p>{selectedEmployee.claimSpouse ? 'Yes' : 'No'}</p>
                           )}
                         </FieldRow>
                       )}

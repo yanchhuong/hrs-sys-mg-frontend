@@ -5,6 +5,14 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
@@ -15,15 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '../ui/dialog';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
@@ -32,10 +31,8 @@ import { useI18n } from '../../i18n/I18nContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
-import { AlertCircle, Check, X, Plus, Search } from 'lucide-react';
-import {
-  format, isWithinInterval, parseISO, eachDayOfInterval,
-} from 'date-fns';
+import { X, Search, Pencil } from 'lucide-react';
+import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { AttendanceException, Employee } from '../../types/hrms';
 import * as leaveApi from '../../api/leave';
@@ -45,9 +42,7 @@ import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 
 // Adapts a backend Employee to the front-end Employee shape used by this
-// view. Mirrors the pattern from Attendance.tsx / Employees.tsx — the
-// user-facing `id` holds the human-readable empNo and the backend UUID is
-// kept on `apiId` for mutating calls.
+// view. Mirrors the pattern from AllLeave.tsx / Employees.tsx.
 function adaptApiEmployee(e: employeesApi.Employee): Employee {
   return {
     id: e.empNo,
@@ -70,41 +65,35 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
+    resignDate: e.resignDate ?? undefined,
+    attendanceYn: e.attendanceYn ?? true,
+    // V51 — Long-term Exception bookkeeping. Pre-V51 rows have null
+    // start date; the table falls back to {@link updatedAt} for those.
+    attendanceExceptionStartDate: e.attendanceExceptionStartDate ?? undefined,
+    attendanceExceptionEndDate: e.attendanceExceptionEndDate ?? undefined,
+    attendanceExceptionRemark: e.attendanceExceptionRemark ?? undefined,
+    updatedAt: e.updatedAt ?? undefined,
   };
 }
 
-// Narrows a free-form backend leave `type` string to the front-end union used
-// by getTypeLabel. Unknown values fall through to `manual_correction` so the
-// row still renders cleanly.
-// Leave types (replaces the old exception-flavoured taxonomy):
-//   full          — full-day leave
-//   half_morning  — half day, morning off (works in the afternoon)
-//   half_noon     — half day, afternoon off (works in the morning)
-// Anything else from the backend is normalised to "full" so legacy rows
-// still display sensibly.
 function narrowExceptionType(t: string): AttendanceException['type'] {
   const allowed: AttendanceException['type'][] = [
     'full', 'half_morning', 'half_noon',
-    // Kept for backward compatibility with rows created before the rename.
     'missed_punch', 'late_arrival', 'early_leave', 'manual_correction',
   ] as unknown as AttendanceException['type'][];
   return (allowed as string[]).includes(t) ? (t as AttendanceException['type']) : ('full' as AttendanceException['type']);
 }
 
-// Adapts a backend LeaveRequest to the front-end AttendanceException shape
-// rendered by this view. employeeName is derived from the loaded employees
-// list so the EmployeeCell can resolve department / manager / avatar.
 function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
-  // Keep the backend UUID on employeeId. Render-side lookups now match on
-  // either `.id` (empNo) or `.apiId` (UUID), so we don't depend on the
-  // employees list having loaded before leaves.
   const status: AttendanceException['status'] =
     r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending';
   return {
     id: r.id,
     employeeId: r.employeeId,
     date: r.date,
+    endDate: r.endDate ?? r.date,
     type: narrowExceptionType(r.type),
+    category: r.category ?? (r.isException ? 'exception' : 'annual'),
     reason: r.reason ?? '',
     status,
     submittedBy: r.employeeId,
@@ -113,8 +102,28 @@ function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
     approvedAt: r.approvedAt ?? undefined,
     correctedCheckIn: r.correctedCheckIn ?? undefined,
     correctedCheckOut: r.correctedCheckOut ?? undefined,
+    isException: r.isException ?? false,
   };
 }
+
+/** Categories that surface on the Day Exception sub-view — the
+ *  non-deductible flavours of leave. */
+const NON_DEDUCTIBLE_CATEGORIES = new Set(['maternity', 'exception']);
+
+const CATEGORY_BADGE: Record<string, string> = {
+  annual:    'bg-blue-100 text-blue-800 hover:bg-blue-100',
+  sick:      'bg-rose-100 text-rose-800 hover:bg-rose-100',
+  special:   'bg-violet-100 text-violet-800 hover:bg-violet-100',
+  maternity: 'bg-pink-100 text-pink-800 hover:bg-pink-100',
+  exception: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+};
+const CATEGORY_LABEL: Record<string, string> = {
+  annual:    'Annual',
+  sick:      'Sick',
+  special:   'Special',
+  maternity: 'Maternity',
+  exception: 'Exception',
+};
 
 export function Exception() {
   const { t } = useI18n();
@@ -122,45 +131,23 @@ export function Exception() {
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
-  // departmentId → name lookup. Adapter stores the raw UUID on
-  // `employee.department`; resolve to the readable name everywhere we
-  // render. Stale UUIDs (dept deleted) collapse to '' rather than leak.
   const deptName = makeDeptName(deptList, '');
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
   });
 
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  /** Top-level mode for this page: Long-term (employee-level attendanceYn=false)
+   *  vs Day (per-leave-row is_exception flag). No status tabs — Day Exception
+   *  rows are typically auto-approved or out-of-band, and the Long-term axis
+   *  has no status to filter on. */
+  const [mode, setMode] = useState<'employee' | 'day'>('employee');
   const [search, setSearch] = useState('');
 
-  // New-exception dialog state (employee only)
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [newDate, setNewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newType, setNewType] = useState<'full' | 'half_morning' | 'half_noon' | 'custom'>('full');
-  // Multi-day "custom" range. Expanded into N per-day LeaveRequest rows on
-  // submit so existing reports / monthly summaries / attendance sync stay
-  // unchanged (they all assume one row per (employee, date)).
-  const [newStartDate, setNewStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newStartHalf, setNewStartHalf] = useState<'morning' | 'noon'>('morning');
-  const [newEndDate, setNewEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [newEndHalf, setNewEndHalf] = useState<'morning' | 'noon'>('noon');
-  const [newReason, setNewReason] = useState('');
-  const [newCorrectedIn, setNewCorrectedIn] = useState('');
-  const [newCorrectedOut, setNewCorrectedOut] = useState('');
-
-  // View-leave dialog. Set on row "View" click; resolved into a detail view
-  // below the main table.
-  const [viewTarget, setViewTarget] = useState<AttendanceException | null>(null);
-
   const {
-    role,
-    isEmployee,
-    isManager,
     isTenantWide,
     showScopePicker,
     matchesScope,
-    canApproveFor: canApproveLeaveOf,
   } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
@@ -205,13 +192,10 @@ export function Exception() {
     try {
       setDeptList(await departmentsApi.list());
     } catch (err) {
-      // Non-fatal — currently unused in rendering but kept for parity with
-      // Attendance.tsx in case department cells are added later.
       console.warn('Could not load departments', err);
     }
   };
 
-  // Initial load on mount.
   useEffect(() => {
     void loadEmployees();
     void loadDepartments();
@@ -219,165 +203,132 @@ export function Exception() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refetch leaves when the date-range filter changes (live mode only —
-  // mock data is filtered client-side downstream).
   useEffect(() => {
     if (USE_MOCKS) return;
     void loadLeaves();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilter.start, dateFilter.end]);
 
-  const handleApprove = async (id: string) => {
-    if (USE_MOCKS) {
-      setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
-      toast.success('Leave approved');
+  // Edit-Exception dialog state. Lets HR set the Start / End / Remark
+  // on a Long-term Exception row without flipping the attendanceYn flag.
+  const [editEmp, setEditEmp] = useState<Employee | null>(null);
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [editRemark, setEditRemark] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
+  const openEditExceptionDialog = (emp: Employee) => {
+    setEditEmp(emp);
+    setEditStartDate(emp.attendanceExceptionStartDate
+      ?? (emp.updatedAt ? emp.updatedAt.slice(0, 10) : ''));
+    setEditEndDate(emp.attendanceExceptionEndDate ?? '');
+    setEditRemark(emp.attendanceExceptionRemark ?? '');
+  };
+
+  const handleSaveEditException = async () => {
+    if (!editEmp) return;
+    if (editEndDate && editStartDate && editEndDate < editStartDate) {
+      toast.error('End Date must be on or after Start Date');
       return;
     }
+    setEditSaving(true);
     try {
-      await leaveApi.approve(id);
-      toast.success('Leave approved');
-      await loadLeaves();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve leave');
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    if (USE_MOCKS) {
-      setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l));
-      toast.error('Leave rejected');
-      return;
-    }
-    try {
-      await leaveApi.reject(id);
-      toast.error('Leave rejected');
-      await loadLeaves();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reject leave');
-    }
-  };
-
-  /**
-   * Expand a Custom (multi-day) leave selection into one entry per
-   * calendar day. The current schema stores one LeaveRequest per
-   * (employee, date), so a "Mon morning → Wed noon" submission becomes
-   * three rows: Mon full, Tue full, Wed full. A noon-start chops the
-   * first day to half_noon (afternoon only); a morning-end chops the
-   * last day to half_morning (morning only).
-   *
-   * Returns {@code totalDays} alongside the per-day list so the form
-   * can render the live "Total: X days" hint without recomputing.
-   */
-  const expandCustomLeave = (
-    startDate: string,
-    startHalf: 'morning' | 'noon',
-    endDate: string,
-    endHalf: 'morning' | 'noon',
-  ): { items: { date: string; type: 'full' | 'half_morning' | 'half_noon' }[]; totalDays: number } => {
-    if (!startDate || !endDate) return { items: [], totalDays: 0 };
-    const start = parseISO(startDate);
-    const end = parseISO(endDate);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
-      return { items: [], totalDays: 0 };
-    }
-    const days = eachDayOfInterval({ start, end });
-    const items = days.map((d, i) => {
-      const iso = format(d, 'yyyy-MM-dd');
-      // Single-day range: the two halves collapse into one row.
-      if (days.length === 1) {
-        if (startHalf === 'morning' && endHalf === 'noon') return { date: iso, type: 'full' as const };
-        if (startHalf === 'morning' && endHalf === 'morning') return { date: iso, type: 'half_morning' as const };
-        if (startHalf === 'noon' && endHalf === 'noon')       return { date: iso, type: 'half_noon' as const };
-        // noon → morning same day = 0 days; caller blocks via totalDays.
-        return { date: iso, type: 'full' as const };
-      }
-      if (i === 0) {
-        return { date: iso, type: (startHalf === 'noon' ? 'half_noon' : 'full') as 'full' | 'half_noon' };
-      }
-      if (i === days.length - 1) {
-        return { date: iso, type: (endHalf === 'morning' ? 'half_morning' : 'full') as 'full' | 'half_morning' };
-      }
-      return { date: iso, type: 'full' as const };
-    });
-    const totalDays = items.reduce((acc, it) => acc + (it.type === 'full' ? 1 : 0.5), 0);
-    return { items, totalDays };
-  };
-
-  const customExpansion = (
-    newType === 'custom'
-      ? expandCustomLeave(newStartDate, newStartHalf, newEndDate, newEndHalf)
-      : { items: [], totalDays: 0 }
-  );
-
-  const handleSubmitNew = async () => {
-    if (!newReason.trim()) {
-      toast.error('Please provide a reason');
-      return;
-    }
-    if (newType === 'custom') {
-      if (customExpansion.totalDays <= 0) {
-        toast.error('End date must be on or after start date, and the range must cover at least half a day');
+      if (USE_MOCKS) {
+        setEmployees(prev => prev.map(e => e.id === editEmp.id ? {
+          ...e,
+          attendanceExceptionStartDate: editStartDate || undefined,
+          attendanceExceptionEndDate:   editEndDate   || undefined,
+          attendanceExceptionRemark:    editRemark    || undefined,
+        } : e));
+        toast.success('Exception details updated');
+        setEditEmp(null);
         return;
       }
-    }
-    if (USE_MOCKS) {
-      toast.success('Exception submitted for approval');
-      setDialogOpen(false);
-      setNewReason('');
-      setNewCorrectedIn('');
-      setNewCorrectedOut('');
-      return;
-    }
-
-    if (newType === 'custom') {
-      // Submit one LeaveRequest per day, sequentially. If any one fails
-      // we stop and surface which day failed — partial state is fine
-      // because each row is independent and the user can re-submit the
-      // remaining days from the leave list.
-      let submitted = 0;
-      try {
-        for (const it of customExpansion.items) {
-          await leaveApi.create({
-            date: it.date,
-            days: it.type === 'full' ? 1 : 0.5,
-            halfDay: it.type !== 'full',
-            type: it.type,
-            reason: newReason,
-          });
-          submitted++;
-        }
-        toast.success(`Submitted ${customExpansion.totalDays} day${customExpansion.totalDays === 1 ? '' : 's'} of leave (${customExpansion.items.length} entries)`);
-        setDialogOpen(false);
-        setNewReason('');
-        await loadLeaves();
-      } catch (err) {
-        const remaining = customExpansion.items.length - submitted;
-        toast.error(
-          `${err instanceof Error ? err.message : 'Failed to submit leave'} — ${submitted} of ${customExpansion.items.length} day(s) saved, ${remaining} pending. Re-submit the missing days from the leave list.`,
-        );
-        await loadLeaves();
-      }
-      return;
-    }
-
-    try {
-      await leaveApi.create({
-        date: newDate,
-        days: 1,
-        halfDay: false,
-        type: newType,
-        reason: newReason,
-        correctedCheckIn: newCorrectedIn || undefined,
-        correctedCheckOut: newCorrectedOut || undefined,
-      });
-      toast.success('Exception submitted for approval');
-      setDialogOpen(false);
-      setNewReason('');
-      setNewCorrectedIn('');
-      setNewCorrectedOut('');
-      await loadLeaves();
+      const targetId = (editEmp as Employee & { apiId?: string }).apiId ?? editEmp.id;
+      const body: employeesApi.CreateEmployeeRequest = {
+        empNo: editEmp.id,
+        name: editEmp.name,
+        khmerName: editEmp.khmerName,
+        email: editEmp.email,
+        position: editEmp.position,
+        departmentId: editEmp.department && editEmp.department !== '-' ? editEmp.department : null,
+        joinDate: editEmp.joinDate,
+        baseSalary: editEmp.baseSalary,
+        managerId: editEmp.managerId ?? null,
+        gender: editEmp.gender,
+        dateOfBirth: editEmp.dateOfBirth,
+        placeOfBirth: editEmp.placeOfBirth,
+        contactNumber: editEmp.contactNumber,
+        currentAddress: editEmp.currentAddress,
+        nffNo: editEmp.nffNo,
+        tid: editEmp.tid,
+        contractExpireDate: editEmp.contractExpireDate,
+        resignDate: editEmp.resignDate,
+        status: editEmp.status,
+        // Keep the row on Exception while editing — only the date / remark
+        // fields change. Use the Unmark Exception button to restore.
+        attendanceYn: false,
+        attendanceExceptionStartDate: editStartDate || null,
+        attendanceExceptionEndDate:   editEndDate   || null,
+        attendanceExceptionRemark:    editRemark    || null,
+      } as employeesApi.CreateEmployeeRequest;
+      await employeesApi.update(targetId, body);
+      setEmployees(prev => prev.map(e => e.id === editEmp.id ? {
+        ...e,
+        attendanceExceptionStartDate: editStartDate || undefined,
+        attendanceExceptionEndDate:   editEndDate   || undefined,
+        attendanceExceptionRemark:    editRemark    || undefined,
+      } : e));
+      toast.success('Exception details updated');
+      setEditEmp(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to submit leave request');
+      toast.error(err instanceof Error ? err.message : 'Failed to save Exception details');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Inverse of the Attendance "Mark Exception" action — flip attendanceYn
+  // back to true so the employee is counted in attendance again.
+  const [unmarkingId, setUnmarkingId] = useState<string | null>(null);
+  const handleUnmarkException = async (emp: Employee) => {
+    setUnmarkingId(emp.id);
+    try {
+      if (USE_MOCKS) {
+        setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: true } : e));
+        toast.success(`${emp.name} restored to attendance counting`);
+        return;
+      }
+      const targetId = (emp as Employee & { apiId?: string }).apiId ?? emp.id;
+      const body: employeesApi.CreateEmployeeRequest = {
+        empNo: emp.id,
+        name: emp.name,
+        khmerName: emp.khmerName,
+        email: emp.email,
+        position: emp.position,
+        departmentId: emp.department && emp.department !== '-' ? emp.department : null,
+        joinDate: emp.joinDate,
+        baseSalary: emp.baseSalary,
+        managerId: emp.managerId ?? null,
+        gender: emp.gender,
+        dateOfBirth: emp.dateOfBirth,
+        placeOfBirth: emp.placeOfBirth,
+        contactNumber: emp.contactNumber,
+        currentAddress: emp.currentAddress,
+        nffNo: emp.nffNo,
+        tid: emp.tid,
+        contractExpireDate: emp.contractExpireDate,
+        resignDate: emp.resignDate,
+        status: emp.status,
+        attendanceYn: true,
+      } as employeesApi.CreateEmployeeRequest;
+      await employeesApi.update(targetId, body);
+      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: true } : e));
+      toast.success(`${emp.name} restored to attendance counting`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to unmark Exception');
+    } finally {
+      setUnmarkingId(null);
     }
   };
 
@@ -386,8 +337,6 @@ export function Exception() {
       full:         'Full',
       half_morning: 'Half Morning',
       half_noon:    'Half Noon',
-      // Legacy mappings — show the row sensibly even if it's still using
-      // the older exception-style enum value.
       missed_punch: 'Full',
       late_arrival: 'Half Morning',
       early_leave: 'Half Noon',
@@ -405,17 +354,30 @@ export function Exception() {
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
 
-  let filteredExceptions = leaves;
+  const kw = search.trim().toLowerCase();
 
-  // Scope: admin sees everything; manager/employee see self + direct reports,
-  // optionally narrowed to `mine` or `team` via the ScopePicker.
-  if (!isTenantWide) {
-    filteredExceptions = filteredExceptions.filter(e => matchesScope(e.employeeId, scopeMode, employees));
+  // Long-term roster: employees with attendanceYn=false. Date filter is
+  // ignored here — attendanceYn is a continuous state, not a per-day event.
+  let exceptionEmployees = employees.filter(
+    e => e.attendanceYn === false && e.status === 'active',
+  );
+  if (kw) {
+    exceptionEmployees = exceptionEmployees.filter(emp => {
+      const hay = `${emp.name} ${emp.id} ${deptName(emp.department)} ${emp.position ?? ''}`.toLowerCase();
+      return hay.includes(kw);
+    });
   }
 
-  // Apply date filter
+  // Day Exception: leave-request rows whose category is non-deductible
+  // (maternity or exception). The legacy isException flag still flows
+  // through adaptApiLeave (mapped to 'exception') for pre-V47 rows, so
+  // this filter stays correct even on older data.
+  let dayExceptionRows = leaves.filter(r => r.category && NON_DEDUCTIBLE_CATEGORIES.has(r.category));
+  if (!isTenantWide) {
+    dayExceptionRows = dayExceptionRows.filter(e => matchesScope(e.employeeId, scopeMode, employees));
+  }
   if (dateFilter.start || dateFilter.end) {
-    filteredExceptions = filteredExceptions.filter(exc => {
+    dayExceptionRows = dayExceptionRows.filter(exc => {
       const excDate = parseISO(exc.date);
       if (dateFilter.start && dateFilter.end) {
         return isWithinInterval(excDate, {
@@ -430,40 +392,25 @@ export function Exception() {
       return true;
     });
   }
-
-  // Apply keyword search against employee name/ID/dept and the request reason.
-  const kw = search.trim().toLowerCase();
   if (kw) {
-    filteredExceptions = filteredExceptions.filter(exc => {
+    dayExceptionRows = dayExceptionRows.filter(exc => {
       const emp = employees.find(e => e.id === exc.employeeId || (e as any).apiId === exc.employeeId);
       const hay = `${emp?.name ?? ''} ${emp?.id ?? ''} ${deptName(emp?.department)} ${exc.reason ?? ''}`.toLowerCase();
       return hay.includes(kw);
     });
   }
 
-  const statusCounts = {
-    all: filteredExceptions.length,
-    pending: filteredExceptions.filter((e) => e.status === 'pending').length,
-    approved: filteredExceptions.filter((e) => e.status === 'approved').length,
-    rejected: filteredExceptions.filter((e) => e.status === 'rejected').length,
-  };
+  const sortedDayExceptions = [...dayExceptionRows].sort(
+    (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+  );
 
-  const statusFiltered = statusFilter === 'all'
-    ? filteredExceptions
-    : filteredExceptions.filter((e) => e.status === statusFilter);
-
-  // Sort pending first so approvers see them at the top
-  const sortedExceptions = [...statusFiltered].sort((a, b) => {
-    if (a.status === 'pending' && b.status !== 'pending') return -1;
-    if (a.status !== 'pending' && b.status === 'pending') return 1;
-    return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
-  });
-
-  const exceptionsPagination = usePagination(sortedExceptions, 10);
+  const exceptionEmpsPagination = usePagination(exceptionEmployees, 10);
+  const dayExceptionsPagination = usePagination(sortedDayExceptions, 10);
 
   useEffect(() => {
-    exceptionsPagination.resetPage();
-  }, [dateFilter, statusFilter, scopeMode, search]);
+    exceptionEmpsPagination.resetPage();
+    dayExceptionsPagination.resetPage();
+  }, [dateFilter, scopeMode, search, mode]);
 
   return (
     <div className="space-y-6">
@@ -473,454 +420,321 @@ export function Exception() {
           <p className="text-gray-500">{t('page.exception.description')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
-          <DateRangeFilter onFilterChange={handleDateFilterChange} />
-          {isEmployee && (
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Leave Request
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Submit Leave Request</DialogTitle>
-                  <DialogDescription>
-                    Your manager will review and approve this request
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="exc-type">Type</Label>
-                    <select
-                      id="exc-type"
-                      value={newType}
-                      onChange={(e) => setNewType(e.target.value as typeof newType)}
-                      className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                    >
-                      <option value="full">Full</option>
-                      <option value="half_morning">Half Morning</option>
-                      <option value="half_noon">Half Noon</option>
-                      <option value="custom">Custom (multi-day)</option>
-                    </select>
-                  </div>
-                  {newType !== 'custom' ? (
-                    <div className="space-y-2">
-                      <Label htmlFor="exc-date">Date</Label>
-                      <Input
-                        id="exc-date"
-                        type="date"
-                        value={newDate}
-                        onChange={(e) => setNewDate(e.target.value)}
-                        max={format(new Date(), 'yyyy-MM-dd')}
-                      />
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="exc-start-date">Start Date</Label>
-                          <Input
-                            id="exc-start-date"
-                            type="date"
-                            value={newStartDate}
-                            onChange={(e) => setNewStartDate(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="exc-start-half">Start From</Label>
-                          <select
-                            id="exc-start-half"
-                            value={newStartHalf}
-                            onChange={(e) => setNewStartHalf(e.target.value as 'morning' | 'noon')}
-                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                          >
-                            <option value="morning">Morning</option>
-                            <option value="noon">Noon</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="exc-end-date">End Date</Label>
-                          <Input
-                            id="exc-end-date"
-                            type="date"
-                            value={newEndDate}
-                            onChange={(e) => setNewEndDate(e.target.value)}
-                            min={newStartDate}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="exc-end-half">End At</Label>
-                          <select
-                            id="exc-end-half"
-                            value={newEndHalf}
-                            onChange={(e) => setNewEndHalf(e.target.value as 'morning' | 'noon')}
-                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                          >
-                            <option value="morning">Morning</option>
-                            <option value="noon">Noon</option>
-                          </select>
-                        </div>
-                      </div>
-                      {customExpansion.totalDays > 0 ? (
-                        <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-                          Total: <span className="font-semibold">{customExpansion.totalDays} day{customExpansion.totalDays === 1 ? '' : 's'}</span>
-                          {' · '}
-                          {customExpansion.items.length} entr{customExpansion.items.length === 1 ? 'y' : 'ies'} will be created
-                        </div>
-                      ) : (newStartDate && newEndDate) && (
-                        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                          End date must be on or after start date, and the range must cover at least half a day.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {(newType === 'half_morning' || newType === 'half_noon') && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="exc-in">Corrected Check-in</Label>
-                        <Input
-                          id="exc-in"
-                          type="time"
-                          value={newCorrectedIn}
-                          onChange={(e) => setNewCorrectedIn(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="exc-out">Corrected Check-out</Label>
-                        <Input
-                          id="exc-out"
-                          type="time"
-                          value={newCorrectedOut}
-                          onChange={(e) => setNewCorrectedOut(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <Label htmlFor="exc-reason">Reason</Label>
-                    <Textarea
-                      id="exc-reason"
-                      placeholder="Explain why this exception is needed..."
-                      value={newReason}
-                      onChange={(e) => setNewReason(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                  <Button onClick={handleSubmitNew} className="w-full">
-                    Submit Exception
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+          {showScopePicker && mode === 'day' && (
+            <ScopePicker value={scopeMode} onChange={setScopeMode} />
           )}
+          {mode === 'day' && <DateRangeFilter onFilterChange={handleDateFilterChange} />}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Pending</CardTitle>
-            <AlertCircle className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statusCounts.pending}</div>
-            <p className="text-xs text-gray-500">Require approval</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Approved</CardTitle>
-            <Check className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statusCounts.approved}</div>
-            <p className="text-xs text-gray-500">This month</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Rejected</CardTitle>
-            <X className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statusCounts.rejected}</div>
-            <p className="text-xs text-gray-500">This month</p>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
-        <CardHeader className="pb-3 space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>All Leave</CardTitle>
-            <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <TabsList>
-                <TabsTrigger value="all">
-                  All
-                  <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{statusCounts.all}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="pending">
-                  Pending
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="approved">
-                  Approved
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">{statusCounts.approved}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="rejected">
-                  Rejected
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">{statusCounts.rejected}</Badge>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, ID, department or reason…"
-              className="h-8 pl-8 pr-8 text-sm"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                title="Clear search"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+        <CardHeader className="pb-3">
+          {/* Single-row header: view-mode pills on the left, search on
+              the right. The hover-tooltip on each pill replaces the old
+              separate description line, and the section title is dropped
+              because the active pill already labels the table. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-gray-500 mr-1">
+              View:
+            </span>
+            {(['employee', 'day'] as const).map(m => {
+              const isActive = mode === m;
+              const count = m === 'employee' ? exceptionEmployees.length : dayExceptionRows.length;
+              const hint = m === 'employee'
+                ? 'Employees opted out of attendance until HR unmarks them (Attendance → Mark Exception).'
+                : 'Single-day exceptions (mission, on-site, special) flagged on the Submit Leave dialog.';
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  title={hint}
+                  onClick={() => setMode(m)}
+                  className={`h-8 px-3 rounded-full text-sm border transition ${
+                    isActive
+                      ? 'border-amber-300 bg-amber-50 text-amber-800 font-medium'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {m === 'employee' ? 'Long-term (Employee)' : 'Day Exception'}
+                  <Badge variant="outline" className="ml-1.5 h-5 px-1.5 text-[10px]">{count}</Badge>
+                </button>
+              );
+            })}
+            <div className="relative ml-auto w-full sm:w-72">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={mode === 'employee'
+                  ? 'Search name, ID, department or position…'
+                  : 'Search name, ID, department or reason…'}
+                className="h-8 pl-8 pr-8 text-sm"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Dept/Group</TableHead>
-                <TableHead>Leader</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Remark</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Modifier</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {exceptionsPagination.paginatedItems.length === 0 && (
+          {mode === 'employee' ? (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-sm text-gray-400 py-10">
-                    No leaves in this status.
-                  </TableCell>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Dept/Group</TableHead>
+                  <TableHead>Position</TableHead>
+                  <TableHead>Join date</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>End Date</TableHead>
+                  <TableHead>Remark</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-              {exceptionsPagination.paginatedItems.map((exception) => {
-                const employee = employees.find(
-                  (e) => e.id === exception.employeeId || (e as any).apiId === exception.employeeId,
-                );
-                const leader = employee?.managerId
-                  ? employees.find(
-                      (e) => e.id === employee.managerId || (e as any).apiId === employee.managerId,
-                    )
-                  : null;
-                const isPending = exception.status === 'pending';
-                const canActOnThis = isPending && canApproveLeaveOf(exception.employeeId, employees);
-                return (
-                  <TableRow key={exception.id} className={isPending ? 'bg-yellow-50/50' : ''}>
-                    <TableCell>
-                      {/* Subtitle = empNo (human-readable). Never the UUID. */}
-                      <EmployeeCell employee={employee} subtitle={employee?.id} />
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {deptName(employee?.department)
-                        ? <Badge variant="outline" className="font-normal">{deptName(employee?.department)}</Badge>
-                        : <span className="text-gray-400">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      {leader ? (
-                        <EmployeeCell employee={leader} subtitle={leader.position} />
-                      ) : (
-                        <span className="text-xs text-gray-400">No leader assigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{format(new Date(exception.date), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{getTypeLabel(exception.type)}</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate" title={exception.reason}>
-                      {exception.reason || <span className="text-gray-300">—</span>}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate text-xs text-gray-500" title={exception.notes || ''}>
-                      {exception.notes || <span className="text-gray-300">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusBadge(exception.status)}>
-                        {exception.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600">
-                      {format(new Date(exception.submittedAt), 'MMM dd, HH:mm')}
-                    </TableCell>
-                    <TableCell>
-                      <AuditCell
-                        name={(exception as any).createdByName}
-                        at={(exception as any).submittedAt}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <AuditCell
-                        name={(exception as any).updatedByName}
-                        at={(exception as any).updatedAt}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canActOnThis ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
-                            onClick={() => handleApprove(exception.id)}
-                          >
-                            <Check className="h-3.5 w-3.5 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
-                            onClick={() => handleReject(exception.id)}
-                          >
-                            <X className="h-3.5 w-3.5 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
-                      ) : isPending && role !== 'admin' ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] text-gray-500"
-                          title="Only this employee's direct leader can approve."
-                        >
-                          <X className="h-3 w-3 mr-1" />
-                          {isManager ? 'Not your team' : 'Awaiting leader'}
-                        </Badge>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => setViewTarget(exception)}
-                        >
-                          View
-                        </Button>
-                      )}
+              </TableHeader>
+              <TableBody>
+                {exceptionEmpsPagination.paginatedItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-10">
+                      {kw
+                        ? <>No Exception employees match <strong>"{search}"</strong>.</>
+                        : <>No employees are currently marked as Exception. Use{' '}
+                          <strong>Attendance → Mark Exception</strong> on a row
+                          to opt that employee out of attendance counting.</>
+                      }
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-          <Pagination
-            currentPage={exceptionsPagination.currentPage}
-            totalPages={exceptionsPagination.totalPages}
-            onPageChange={exceptionsPagination.goToPage}
-            startIndex={exceptionsPagination.startIndex}
-            endIndex={exceptionsPagination.endIndex}
-            totalItems={exceptionsPagination.totalItems}
-          />
+                )}
+                {exceptionEmpsPagination.paginatedItems.map(emp => {
+                  // Start Date prefers the V51 explicit field; pre-V51
+                  // rows still fall back to updated_at as an approximation.
+                  const startSource = emp.attendanceExceptionStartDate ?? emp.updatedAt;
+                  const startDate = startSource
+                    ? (() => {
+                        const d = new Date(startSource);
+                        return Number.isNaN(d.getTime()) ? '—' : format(d, 'MMM dd, yyyy');
+                      })()
+                    : '—';
+                  const endDate = emp.attendanceExceptionEndDate
+                    ? (() => {
+                        const d = new Date(emp.attendanceExceptionEndDate);
+                        return Number.isNaN(d.getTime()) ? '—' : format(d, 'MMM dd, yyyy');
+                      })()
+                    : <span className="text-gray-400 text-xs">Open-ended</span>;
+                  const remark = emp.attendanceExceptionRemark
+                    ? emp.attendanceExceptionRemark
+                    : <span className="text-gray-300">—</span>;
+                  return (
+                    <TableRow key={emp.id}>
+                      <TableCell>
+                        <EmployeeCell employee={emp} />
+                      </TableCell>
+                      <TableCell className="text-sm">{deptName(emp.department)}</TableCell>
+                      <TableCell className="text-sm">{emp.position ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{emp.joinDate}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{startDate}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{endDate}</TableCell>
+                      <TableCell className="text-sm text-gray-600 max-w-xs truncate" title={emp.attendanceExceptionRemark ?? ''}>{remark}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          Exception
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            title="Edit Exception details"
+                            onClick={() => openEditExceptionDialog(emp)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUnmarkException(emp)}
+                            disabled={unmarkingId === emp.id}
+                          >
+                            {unmarkingId === emp.id ? 'Restoring…' : 'Unmark Exception'}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Dept/Group</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>End Date</TableHead>
+                  <TableHead>Leave Type</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead>Author</TableHead>
+                  <TableHead>Modifier</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dayExceptionsPagination.paginatedItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-10">
+                      No Day Exceptions found for the current filters.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {dayExceptionsPagination.paginatedItems.map((exc) => {
+                  const employee = employees.find(
+                    (e) => e.id === exc.employeeId || (e as any).apiId === exc.employeeId,
+                  );
+                  return (
+                    <TableRow key={exc.id}>
+                      <TableCell>
+                        <EmployeeCell employee={employee} subtitle={employee?.id} />
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {deptName(employee?.department)
+                          ? <Badge variant="outline" className="font-normal">{deptName(employee?.department)}</Badge>
+                          : <span className="text-gray-400">—</span>}
+                      </TableCell>
+                      <TableCell>{format(new Date(exc.date), 'MMM dd, yyyy')}</TableCell>
+                      <TableCell>
+                        {format(new Date(exc.endDate ?? exc.date), 'MMM dd, yyyy')}
+                      </TableCell>
+                      <TableCell>
+                        {exc.category ? (
+                          <Badge className={CATEGORY_BADGE[exc.category]}>
+                            {CATEGORY_LABEL[exc.category]}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getTypeLabel(exc.type)}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate" title={exc.reason}>
+                        {exc.reason || <span className="text-gray-300">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusBadge(exc.status)}>
+                          {exc.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600">
+                        {format(new Date(exc.submittedAt), 'MMM dd, HH:mm')}
+                      </TableCell>
+                      <TableCell>
+                        <AuditCell
+                          name={(exc as any).createdByName}
+                          at={(exc as any).submittedAt}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <AuditCell
+                          name={(exc as any).updatedByName}
+                          at={(exc as any).updatedAt}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+          {mode === 'employee' ? (
+            <Pagination
+              currentPage={exceptionEmpsPagination.currentPage}
+              totalPages={exceptionEmpsPagination.totalPages}
+              onPageChange={exceptionEmpsPagination.goToPage}
+              startIndex={exceptionEmpsPagination.startIndex}
+              endIndex={exceptionEmpsPagination.endIndex}
+              totalItems={exceptionEmpsPagination.totalItems}
+            />
+          ) : (
+            <Pagination
+              currentPage={dayExceptionsPagination.currentPage}
+              totalPages={dayExceptionsPagination.totalPages}
+              onPageChange={dayExceptionsPagination.goToPage}
+              startIndex={dayExceptionsPagination.startIndex}
+              endIndex={dayExceptionsPagination.endIndex}
+              totalItems={dayExceptionsPagination.totalItems}
+            />
+          )}
         </CardContent>
       </Card>
 
-      {/* View leave detail */}
-      <Dialog open={!!viewTarget} onOpenChange={(open) => !open && setViewTarget(null)}>
+      {/* Edit-Exception dialog — Long-term roster's per-row Start Date /
+          End Date / Remark editor. Doesn't touch attendanceYn; use the
+          Unmark Exception button to restore the employee. */}
+      <Dialog open={!!editEmp} onOpenChange={(o) => { if (!o && !editSaving) setEditEmp(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Leave Detail</DialogTitle>
+            <DialogTitle>Edit Exception Details</DialogTitle>
             <DialogDescription>
-              Read-only view. Approve / Reject is only available while pending.
+              {editEmp ? `Update Start / End / Remark for ${editEmp.name}.` : ''}
             </DialogDescription>
           </DialogHeader>
-          {viewTarget && (() => {
-            const employee = employees.find(
-              (e) => e.id === viewTarget.employeeId || (e as any).apiId === viewTarget.employeeId,
-            );
-            const approver = viewTarget.approvedBy
-              ? employees.find(
-                  (e) => e.id === viewTarget.approvedBy || (e as any).apiId === viewTarget.approvedBy,
-                )
-              : null;
-            const safeFmt = (s: string | undefined, pat: string) => {
-              if (!s) return '—';
-              const d = new Date(s);
-              return Number.isNaN(d.getTime()) ? '—' : format(d, pat);
-            };
-            return (
-              <div className="space-y-3 text-sm">
-                <div className="p-3 rounded-md border">
-                  <EmployeeCell employee={employee} subtitle={employee?.id} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-gray-500">Date</p>
-                    <p className="font-medium">{safeFmt(viewTarget.date, 'MMM dd, yyyy')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Type</p>
-                    <p><Badge variant="outline">{getTypeLabel(viewTarget.type)}</Badge></p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Status</p>
-                    <p><Badge className={getStatusBadge(viewTarget.status)}>{viewTarget.status}</Badge></p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Submitted</p>
-                    <p className="font-medium">{safeFmt(viewTarget.submittedAt, 'MMM dd, HH:mm')}</p>
-                  </div>
-                </div>
-                {viewTarget.correctedCheckIn || viewTarget.correctedCheckOut ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs text-gray-500">Corrected Check-in</p>
-                      <p className="font-medium">{viewTarget.correctedCheckIn || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Corrected Check-out</p>
-                      <p className="font-medium">{viewTarget.correctedCheckOut || '—'}</p>
-                    </div>
-                  </div>
-                ) : null}
-                <div>
-                  <p className="text-xs text-gray-500">Reason</p>
-                  <p className="whitespace-pre-wrap">{viewTarget.reason || <span className="text-gray-300">—</span>}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Remark</p>
-                  <p className="whitespace-pre-wrap">{viewTarget.notes || <span className="text-gray-300">—</span>}</p>
-                </div>
-                {approver && (
-                  <div>
-                    <p className="text-xs text-gray-500">Approved By</p>
-                    <p className="font-medium">{approver.name}</p>
-                    {viewTarget.approvedAt && (
-                      <p className="text-xs text-gray-500">{safeFmt(viewTarget.approvedAt, 'MMM dd, yyyy HH:mm')}</p>
-                    )}
-                  </div>
-                )}
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="ee-start" className="text-xs">Start Date</Label>
+                <Input
+                  id="ee-start"
+                  type="date"
+                  value={editStartDate}
+                  onChange={(e) => setEditStartDate(e.target.value)}
+                />
               </div>
-            );
-          })()}
+              <div className="space-y-1.5">
+                <Label htmlFor="ee-end" className="text-xs">
+                  End Date <span className="text-gray-400 font-normal">(optional)</span>
+                </Label>
+                <Input
+                  id="ee-end"
+                  type="date"
+                  value={editEndDate}
+                  min={editStartDate || undefined}
+                  onChange={(e) => setEditEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ee-remark" className="text-xs">
+                Remark <span className="text-gray-400 font-normal">(optional)</span>
+              </Label>
+              <Textarea
+                id="ee-remark"
+                rows={3}
+                value={editRemark}
+                onChange={(e) => setEditRemark(e.target.value)}
+                placeholder="Reason for the Exception, e.g. field engineer based on customer site…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditEmp(null)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditException} disabled={editSaving}>
+              {editSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

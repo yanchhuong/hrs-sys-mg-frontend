@@ -96,48 +96,48 @@ export function EmployeeSettings() {
       {/* Global KPI cards — mirror the User Management page layout: cards
           first, tab filter below. Each card is a tenant-wide summary of
           the entity managed in the matching tab. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Positions</CardTitle>
-            <Briefcase className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpis.totalPositions}</div>
-            <p className="text-xs text-gray-500">{kpis.positionsAssigned} assigned</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Briefcase className="h-5 w-5 text-blue-600" />
+              <span className="text-2xl font-bold text-blue-600">{kpis.totalPositions}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Total Positions</p>
+            <p className="text-[11px] text-gray-500 truncate">{kpis.positionsAssigned} assigned</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Departments / Groups</CardTitle>
-            <FolderTree className="h-4 w-4 text-emerald-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpis.totalDepartments}</div>
-            <p className="text-xs text-gray-500">All units</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <FolderTree className="h-5 w-5 text-emerald-600" />
+              <span className="text-2xl font-bold text-emerald-600">{kpis.totalDepartments}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Departments / Groups</p>
+            <p className="text-[11px] text-gray-500 truncate">All units</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Salary Rules</CardTitle>
-            <DollarSign className="h-4 w-4 text-amber-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpis.totalSalaryRules}</div>
-            <p className="text-xs text-gray-500">Tenure brackets</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign className="h-5 w-5 text-amber-600" />
+              <span className="text-2xl font-bold text-amber-600">{kpis.totalSalaryRules}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Salary Rules</p>
+            <p className="text-[11px] text-gray-500 truncate">Tenure brackets</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Device Users</CardTitle>
-            <Users className="h-4 w-4 text-rose-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{kpis.unmatchedDeviceUsers}</div>
-            <p className="text-xs text-gray-500">Unmatched / pending</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="h-5 w-5 text-rose-600" />
+              <span className="text-2xl font-bold text-rose-600">{kpis.unmatchedDeviceUsers}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Device Users</p>
+            <p className="text-[11px] text-gray-500 truncate">Unmatched / pending</p>
           </CardContent>
         </Card>
       </div>

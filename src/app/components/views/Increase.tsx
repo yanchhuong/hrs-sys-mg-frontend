@@ -37,6 +37,7 @@ import { Employee } from '../../types/hrms';
 import * as increasesApi from '../../api/increases';
 import * as employeesApi from '../../api/employees';
 import * as categoriesApi from '../../api/payrollCategories';
+import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
 import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -105,10 +106,14 @@ const UNIT_LABEL: Record<'amount' | 'percentage' | 'day', string> = {
 
 function formatIncreaseAmount(inc: SalaryIncrease, locale = false): string {
   const unit = inc.unit ?? (inc.isPercentage ? 'percentage' : 'amount');
-  const n = locale ? inc.amount.toLocaleString() : String(inc.amount);
-  if (unit === 'day')        return `${n} days`;
-  if (unit === 'percentage') return `${n}%`;
-  return `$${n}`;
+  // Currency uses formatMoney (#,###.00); day / percentage keep a plain
+  // number since they're not amounts (e.g. "7.5 days", "10%"). The
+  // `locale` flag is retained for callers that still pass it but the
+  // formatting is now driven by the unit.
+  void locale;
+  if (unit === 'day')        return `${inc.amount} days`;
+  if (unit === 'percentage') return `${inc.amount}%`;
+  return `$${formatMoney(inc.amount)}`;
 }
 
 const CATEGORY_COLORS = [
@@ -746,22 +751,39 @@ export function Increase() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {earningCategories.slice(0, 3).map((cat) => {
-          const count = filteredIncreases.filter((i) => i.type === cat.code).length;
-          const total = filteredIncreases
-            .filter((i) => i.type === cat.code)
-            .reduce((sum, i) => sum + (i.isPercentage ? 0 : i.amount), 0);
+      {/* One summary card per enabled Earning category from Payroll
+          Categories settings. Layout mirrors the Attendance page's
+          summary strip — compact p-4 body, icon-left + big number right,
+          label below. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {earningCategories.length === 0 && (
+          <Card className="col-span-full">
+            <CardContent className="py-6 text-center text-sm text-gray-500">
+              No earning categories configured. Add one under{' '}
+              <strong>Settings → Payroll Categories</strong> to start
+              tracking increases here.
+            </CardContent>
+          </Card>
+        )}
+        {earningCategories.map((cat) => {
+          const rows  = filteredIncreases.filter((i) => i.type === cat.code);
+          const count = rows.length;
+          // Flat-amount rows contribute to the dollar total; percentage /
+          // day-formula rows can't be summed in one currency, so we show
+          // their count below the total instead.
+          const total = rows
+            .filter((i) => (i.unit ?? (i.isPercentage ? 'percentage' : 'amount')) === 'amount')
+            .reduce((sum, i) => sum + i.amount, 0);
           return (
-            <Card key={cat.id}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm">{cat.label}</CardTitle>
-                <TrendingUp className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{count}</div>
-                <p className="text-xs text-gray-500">
-                  {total > 0 ? `$${total.toLocaleString()} total` : 'This year'}
+            <Card key={cat.id} className="border-gray-200">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                  <span className="text-2xl font-bold text-green-600">{count}</span>
+                </div>
+                <p className="text-xs font-medium text-gray-700 truncate" title={cat.label}>{cat.label}</p>
+                <p className="text-[11px] text-gray-500 truncate">
+                  {total > 0 ? `$${formatMoney(total)} total` : 'No entries yet'}
                 </p>
               </CardContent>
             </Card>

@@ -30,6 +30,7 @@ import { Overtime } from '../components/views/Overtime';
 import { Payroll } from '../components/views/Payroll';
 import { UserManagement } from '../components/views/UserManagement';
 import { Settings as SettingsView } from '../components/views/Settings';
+import { AllLeave } from '../components/views/AllLeave';
 import { Exception } from '../components/views/Exception';
 import { Deduction } from '../components/views/Deduction';
 import { Increase } from '../components/views/Increase';
@@ -70,6 +71,7 @@ export const NAV_LEAVES: NavLeaf[] = [
 
   { id: 'attendance',         labelKey: 'nav.attendance',            icon: Clock,           module: 'attendance',      component: Attendance,    group: 'time-tracking' },
   { id: 'overtime',           labelKey: 'nav.overtime',              icon: TimerIcon,       module: 'overtime',        component: Overtime,      group: 'time-tracking' },
+  { id: 'all-leave',          labelKey: 'nav.allleave',              icon: AlertCircle,     module: 'all-leave',       component: AllLeave,      group: 'time-tracking' },
   { id: 'exception',          labelKey: 'nav.exception',             icon: AlertCircle,     module: 'exception',       component: Exception,     group: 'time-tracking' },
 
   { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',         component: Payroll,       group: 'payroll-mgmt' },

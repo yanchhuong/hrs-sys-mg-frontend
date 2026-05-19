@@ -92,37 +92,37 @@ export function Contracts() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Active Contracts</CardTitle>
-            <FileText className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeContracts.length}</div>
-            <p className="text-xs text-gray-500">Currently active</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <FileText className="h-5 w-5 text-green-600" />
+              <span className="text-2xl font-bold text-green-600">{activeContracts.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Active Contracts</p>
+            <p className="text-[11px] text-gray-500 truncate">Currently active</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Expiring Soon</CardTitle>
-            <AlertCircle className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{expiringContracts.length}</div>
-            <p className="text-xs text-gray-500">Within 30 days</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              <span className="text-2xl font-bold text-orange-600">{expiringContracts.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Expiring Soon</p>
+            <p className="text-[11px] text-gray-500 truncate">Within 30 days</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Expired</CardTitle>
-            <FileText className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{expiredContracts.length}</div>
-            <p className="text-xs text-gray-500">Need renewal</p>
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <FileText className="h-5 w-5 text-red-600" />
+              <span className="text-2xl font-bold text-red-600">{expiredContracts.length}</span>
+            </div>
+            <p className="text-xs font-medium text-gray-700 truncate">Expired</p>
+            <p className="text-[11px] text-gray-500 truncate">Need renewal</p>
           </CardContent>
         </Card>
       </div>
