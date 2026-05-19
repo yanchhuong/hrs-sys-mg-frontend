@@ -47,6 +47,7 @@ import {
 } from '../ui/dropdown-menu';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
+import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
@@ -1135,6 +1136,23 @@ export function Employees() {
                 <DropdownMenuItem onClick={() => setBulkDialogOpen(true)}>
                   <FileSpreadsheet className="mr-2 h-4 w-4" />
                   Upload Bulk (Excel)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={filteredEmployees.length === 0}
+                  onClick={() => {
+                    // Re-importable Excel: same column order as the Bulk
+                    // Upload template, so HR can round-trip edits through
+                    // Excel and re-upload without reshaping.
+                    if (filteredEmployees.length === 0) {
+                      toast.error('No employees match the current filters');
+                      return;
+                    }
+                    exportEmployeesToExcel(filteredEmployees, deptName);
+                    toast.success(`Exported ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'}`);
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Excel ({filteredEmployees.length})
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -252,22 +252,69 @@ export function parseEmployeesExcel(
   });
 }
 
+/** Canonical column order for the Bulk Upload template and the
+ *  "Export Excel" round-trip. Keep these in sync with COLUMN_MAP above
+ *  so the file the Export button produces is re-importable as-is. */
+const EXPORT_HEADERS = [
+  'Employee ID', 'Name', 'Khmer Name', 'Email', 'Position', 'Department',
+  'Join Date', 'Base Salary', 'Gender', 'Date of Birth', 'Contact Number',
+  'Place of Birth', 'Current Address', 'NFF No', 'TID', 'Contract Expire',
+  'Bank Name', 'Account Number',
+] as const;
+
 export function downloadEmployeeTemplate() {
   const wb = XLSX.utils.book_new();
-  const headers = [
-    'Employee ID', 'Name', 'Khmer Name', 'Email', 'Position', 'Department',
-    'Join Date', 'Base Salary', 'Gender', 'Date of Birth', 'Contact Number',
-    'Place of Birth', 'Current Address', 'NFF No', 'TID', 'Contract Expire',
-    'Bank Name', 'Account Number',
-  ];
   const example = [
     'EMP128', 'Dara Sok', 'តារា សុខ', 'dara@company.com', 'Junior Developer', 'Engineering',
     '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
     'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
     'ABA', '000-123-456',
   ];
-  const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-  ws['!cols'] = headers.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+  const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], example]);
+  ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
   XLSX.utils.book_append_sheet(wb, ws, 'Employees');
   XLSX.writeFile(wb, 'Employees-Template.xlsx');
+}
+
+/**
+ * Export the given employee list to an Excel workbook in the same
+ * column order Upload Bulk expects, so the file can round-trip back
+ * through the importer without any reshaping.
+ *
+ * Department names (not UUIDs) are written out — the importer looks up
+ * the matching dept by name. `deptNameById` resolves the live-mode
+ * `Employee.department` UUID to the human-readable name; pass an
+ * identity function for mock mode where `department` already is a name.
+ */
+export function exportEmployeesToExcel(
+  employees: Employee[],
+  deptNameById: (idOrName: string | undefined) => string,
+  filename = `Employees-${new Date().toISOString().slice(0, 10)}.xlsx`,
+): void {
+  const rows: (string | number)[][] = employees.map(e => [
+    e.id ?? '',
+    e.name ?? '',
+    e.khmerName ?? '',
+    e.email ?? '',
+    e.position ?? '',
+    deptNameById(e.department) || '',
+    e.joinDate ?? '',
+    e.baseSalary ?? 0,
+    e.gender ?? '',
+    e.dateOfBirth ?? '',
+    e.contactNumber ?? '',
+    e.placeOfBirth ?? '',
+    e.currentAddress ?? '',
+    e.nffNo ?? '',
+    e.tid ?? '',
+    e.contractExpireDate ?? '',
+    e.bankName ?? '',
+    e.bankAccount ?? '',
+  ]);
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], ...rows]);
+  ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+  XLSX.writeFile(wb, filename);
 }
