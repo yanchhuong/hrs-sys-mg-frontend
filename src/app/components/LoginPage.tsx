@@ -132,31 +132,35 @@ export function LoginPage({ onBack }: LoginPageProps = {}) {
             </>
           )}
 
-          <div className="text-xs text-gray-500 space-y-2">
-            <p className="text-center">
-              {USE_MOCKS ? 'Or auto-fill credentials:' : 'Seeded demo credentials:'}
-            </p>
-            <div className="space-y-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => autoFill('admin@example.com', 'admin123')}
-                className="w-full justify-start text-xs h-7 px-2"
-              >
-                Admin: admin@example.com / admin123
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => autoFill('jane@example.com', 'password123')}
-                className="w-full justify-start text-xs h-7 px-2"
-              >
-                Employee: jane@example.com / password123
-              </Button>
+          {/* Quick-fill credentials block — only shown in mock mode for
+              local dev convenience. Live builds never surface the seeded
+              demo accounts so production login pages can't be used to
+              casually click into someone else's tenant. */}
+          {USE_MOCKS && (
+            <div className="text-xs text-gray-500 space-y-2">
+              <p className="text-center">Or auto-fill credentials:</p>
+              <div className="space-y-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => autoFill('admin@example.com', 'admin123')}
+                  className="w-full justify-start text-xs h-7 px-2"
+                >
+                  Admin: admin@example.com / admin123
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => autoFill('jane@example.com', 'password123')}
+                  className="w-full justify-start text-xs h-7 px-2"
+                >
+                  Employee: jane@example.com / password123
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
       </div>
