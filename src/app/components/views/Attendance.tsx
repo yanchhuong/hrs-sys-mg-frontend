@@ -230,6 +230,15 @@ export function Attendance() {
   const [editOtHours, setEditOtHours] = useState('');
   const [editOtReason, setEditOtReason] = useState('');
   const [editOtAlreadyFiled, setEditOtAlreadyFiled] = useState(false);
+  /** OT Start Hour (HH:mm) — drives both the auto-computed hours and the
+   *  day-bucket rate calc on the OT page. Empty = admin will type. */
+  const [editOtStartHour, setEditOtStartHour] = useState('');
+  /** OT End Hour (HH:mm). When endHour <= startHour we treat the OT as
+   *  cross-midnight and auto-bump editOtEndDate to start+1. */
+  const [editOtEndHour, setEditOtEndHour] = useState('');
+  /** OT End Date (YYYY-MM-DD). Starts equal to the row's date; auto-bumps
+   *  to start+1 whenever the picked hour range wraps past midnight. */
+  const [editOtEndDate, setEditOtEndDate] = useState('');
   // Locks the Save button while a save is in flight — without it, a slow
   // round-trip plus an impatient double-click fires two PATCHes for the
   // same row.
@@ -1147,9 +1156,54 @@ export function Attendance() {
     setEditOtAlreadyFiled(alreadyFiled);
     setEditOtHours(suggestedOt > 0 ? String(suggestedOt) : '');
     setEditOtReason('');
+    // Seed Start / End Hour for free-style days from the first / last
+    // punch — saves HR a few clicks for the common "weekend OT = full
+    // shift" case. Weekday rows leave them blank for explicit entry.
+    if (isFreeStyle) {
+      const first = record.morningIn || record.noonIn || '';
+      const last  = record.noonOut || record.morningOut || '';
+      setEditOtStartHour(first);
+      setEditOtEndHour(last);
+    } else {
+      setEditOtStartHour('');
+      setEditOtEndHour('');
+    }
+    // End Date defaults to same day; the wrap-detector effect below will
+    // bump it to date+1 the moment the picked hours imply cross-midnight.
+    setEditOtEndDate(record.date);
     setEditApplyOt(false); // explicit opt-in even when hours suggest OT
     setEditDialogOpen(true);
   };
+
+  // Auto-compute OT Hours from Start / End Hour, and derive the End Date
+  // strictly from whether the hour range wraps past midnight. Mirrors
+  // the Overtime page's submit-dialog logic so the two entry points
+  // stay consistent. End Date is fully derived (no manual override
+  // here) — admins who need an OT spanning >24h should use the dedicated
+  // Overtime page instead.
+  useEffect(() => {
+    if (!editApplyOt || !editRecord) return;
+    if (!editOtStartHour || !editOtEndHour) return;
+    const [sh, sm] = editOtStartHour.split(':').map(n => Number(n) || 0);
+    const [eh, em] = editOtEndHour.split(':').map(n => Number(n) || 0);
+    if ([sh, sm, eh, em].some(n => Number.isNaN(n))) return;
+
+    // Add 24h when end falls on or before start so 22:00 → 05:00 reads
+    // as 7h instead of -17h.
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    const wraps = mins <= 0;
+    if (wraps) mins += 24 * 60;
+    setEditOtHours((mins / 60).toFixed(2).replace(/\.00$/, ''));
+
+    const rowDate = editRecord.date;
+    if (wraps) {
+      const next = new Date(rowDate + 'T00:00:00');
+      next.setDate(next.getDate() + 1);
+      setEditOtEndDate(format(next, 'yyyy-MM-dd'));
+    } else {
+      setEditOtEndDate(rowDate);
+    }
+  }, [editApplyOt, editRecord, editOtStartHour, editOtEndHour]);
 
   /**
    * Pick a default leave sub-type from the punch pattern. The admin can
@@ -1364,7 +1418,14 @@ export function Attendance() {
             await overtimeApi.create({
               employeeId: targetEmpId,
               date: editRecord.date,
+              // endDate either matches the row's date (same-day OT) or
+              // is auto-bumped to +1 by the effect above when the picked
+              // hour range wraps past midnight (night-shift OT). Fall back
+              // to row date if the field somehow ended up blank.
+              endDate: editOtEndDate || editRecord.date,
               hours: otHoursNum,
+              startHour: editOtStartHour || undefined,
+              endHour: editOtEndHour || undefined,
               reason: editOtReason.trim(),
             });
             toast.success(`OT request filed for ${emp?.name ?? 'employee'} (${otHoursNum}h)`);
@@ -2604,28 +2665,96 @@ export function Attendance() {
                   </div>
                 </label>
                 {editApplyOt && !editOtAlreadyFiled && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">OT Hours</Label>
-                      <Input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        value={editOtHours}
-                        onChange={e => setEditOtHours(e.target.value)}
-                        placeholder="e.g., 3"
-                        className="h-8"
-                      />
+                  <div className="space-y-2">
+                    {/* Date range — Start Date is the row's date and stays
+                        locked. End Date auto-bumps to start+1 when the
+                        hour range wraps past midnight (night shift). */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Start Date</Label>
+                        <Input
+                          type="date"
+                          value={editRecord?.date ?? ''}
+                          readOnly
+                          className="h-8 bg-gray-50"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1.5">
+                          End Date
+                          {editOtEndDate && editRecord && editOtEndDate !== editRecord.date && (
+                            <Badge variant="outline" className="px-1 py-0 text-[10px] border-indigo-300 text-indigo-700 bg-indigo-50">
+                              cross-date
+                            </Badge>
+                          )}
+                        </Label>
+                        <Input
+                          type="date"
+                          value={editOtEndDate}
+                          readOnly
+                          className="h-8 bg-gray-50"
+                        />
+                      </div>
                     </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Reason</Label>
-                      <Input
-                        value={editOtReason}
-                        onChange={e => setEditOtReason(e.target.value)}
-                        placeholder="e.g., Holiday work — order pack"
-                        className="h-8"
-                      />
+                    {/* Hour range — drives day-bucket rate calc on the OT
+                        page. Hours below is auto-computed from these. */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Check-In Hour</Label>
+                        <Input
+                          type="time"
+                          value={editOtStartHour}
+                          onChange={e => setEditOtStartHour(e.target.value)}
+                          className="h-8"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Check-Out Hour</Label>
+                        <Input
+                          type="time"
+                          value={editOtEndHour}
+                          onChange={e => setEditOtEndHour(e.target.value)}
+                          className="h-8"
+                        />
+                      </div>
                     </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">
+                          OT Hours <span className="text-gray-400">(auto)</span>
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          value={editOtHours}
+                          onChange={e => setEditOtHours(e.target.value)}
+                          placeholder="e.g., 3"
+                          className="h-8 bg-gray-50"
+                          readOnly={!!editOtStartHour && !!editOtEndHour}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">Reason</Label>
+                        <Input
+                          value={editOtReason}
+                          onChange={e => setEditOtReason(e.target.value)}
+                          placeholder="e.g., Holiday work — order pack"
+                          className="h-8"
+                        />
+                      </div>
+                    </div>
+                    {/* Helper line — shows what the OT page will treat the
+                        row as the moment it gets filed. */}
+                    {editOtStartHour && editOtEndHour && Number(editOtHours) > 0 && (
+                      <p className="text-[11px] text-gray-500">
+                        {editOtStartHour} – {editOtEndHour}
+                        {editOtEndDate && editRecord && editOtEndDate !== editRecord.date && (
+                          <span className="text-indigo-700"> (next day)</span>
+                        )}
+                        {' = '}{editOtHours}h
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
