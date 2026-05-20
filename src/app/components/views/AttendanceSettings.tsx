@@ -758,21 +758,39 @@ export function AttendanceSettings() {
                   <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                     <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
                     <div className="font-mono text-xs space-y-1.5 text-indigo-900">
-                      <p>if OT hour ∈ [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
+                      <p>if OT interval overlaps [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
                       <p className="pl-4">→ effective_rate = max(dayTypeRate, {otSettings.nightRule.rate})</p>
                       <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
+                    </div>
+                    <p className="mt-3 text-[11px] text-indigo-800/80">
+                      The window wraps past midnight when end ≤ start. Cross-date OT (e.g. check-in 22:00 yesterday → check-out 05:00 today) is handled by splitting the request interval at midnight before the overlap check — start date drives the day-type, night overlay tops it up.
+                    </p>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Night shift 22:00 → 05:00 (cross-date, 7h)</p>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-600">Check-in</span><span className="font-medium">22:00 yesterday</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Check-out</span><span className="font-medium">05:00 today</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Day type (start date)</span><Badge className="bg-blue-100 text-blue-700 border-0">Weekday · {otSettings.workdayRule.rate}x</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Fully in night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">max({otSettings.workdayRule.rate}, {otSettings.nightRule.rate}) = {Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)}x</span></div>
+                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
+                        <span className="font-medium text-indigo-800">OT pay</span>
+                        <span className="font-semibold text-indigo-800">7h × {Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)}x = {(7 * Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
+                      </div>
                     </div>
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00–01:00 (2h)</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00 → Sunday 01:00 (cross-date, 2h)</p>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">Day type</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {otSettings.weekendRule.rate}x</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Day type (Saturday start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {otSettings.weekendRule.rate}x</Badge></div>
                       <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
                       <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">max({otSettings.weekendRule.rate}, {otSettings.nightRule.rate}) = {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x</span></div>
-                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
-                        <span className="font-medium text-indigo-800">OT pay</span>
-                        <span className="font-semibold text-indigo-800">2h × {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x = {(2 * Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
+                      <div className="border-t pt-2 flex justify-between bg-orange-100 -mx-4 px-4 py-2 rounded">
+                        <span className="font-medium text-orange-800">Weekend wins</span>
+                        <span className="font-semibold text-orange-800">2h × {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x = {(2 * Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
                       </div>
                     </div>
                   </div>

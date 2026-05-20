@@ -40,7 +40,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -555,11 +556,25 @@ export function Overtime() {
                     readOnly
                     className="bg-gray-50"
                   />
-                  {startHour && endHour && Number(hours) > 0 && (
-                    <p className="text-[11px] text-gray-500">
-                      {startHour} – {endHour} = {hours}h
-                    </p>
-                  )}
+                  {startHour && endHour && Number(hours) > 0 && (() => {
+                    const crosses = endHour <= startHour;
+                    const isNight = otOverlapsNightWindow(startHour, endHour, otRates.nightStart, otRates.nightEnd);
+                    return (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-gray-500">
+                          {startHour} – {endHour}
+                          {crosses && <span className="text-indigo-700"> (next day)</span>}
+                          {' = '}{hours}h
+                        </p>
+                        {otRates.nightEnabled && isNight && (
+                          <p className="inline-flex items-center gap-1 text-[11px] text-indigo-700">
+                            <Moon className="h-3 w-3" />
+                            Overlaps {otRates.nightStart}–{otRates.nightEnd} → night rate applies (max with day-type, {otRates.nightRate}×).
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reason">Reason</Label>
@@ -734,13 +749,41 @@ export function Overtime() {
                       {request.startHour || <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-center text-sm">
-                      {request.endHour || <span className="text-gray-300">—</span>}
+                      {request.endHour
+                        ? (() => {
+                            // OT that crosses midnight: end-hour belongs to
+                            // the day AFTER the row's `date`. The "+1d" tag
+                            // surfaces it so HR doesn't read "22:00 → 05:00"
+                            // as a 17-hour negative span by mistake.
+                            const crosses = !!request.startHour && request.endHour <= request.startHour;
+                            return crosses ? (
+                              <span className="inline-flex items-center gap-1">
+                                {request.endHour}
+                                <Badge variant="outline" className="px-1 py-0 text-[10px] border-indigo-300 text-indigo-700 bg-indigo-50">+1d</Badge>
+                              </span>
+                            ) : request.endHour;
+                          })()
+                        : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-center">{request.hours}h</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
-                        {calculateOTRate(request.isWeekend, request.isHoliday, request.startHour, request.endHour)}
-                      </Badge>
+                      <div className="inline-flex items-center gap-1.5">
+                        <Badge variant="outline">
+                          {calculateOTRate(request.isWeekend, request.isHoliday, request.startHour, request.endHour)}
+                        </Badge>
+                        {otRates.nightEnabled && otOverlapsNightWindow(request.startHour, request.endHour, otRates.nightStart, otRates.nightEnd) && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                                <Moon className="h-3 w-3" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="text-xs max-w-xs">
+                              Night work — OT overlaps {otRates.nightStart}–{otRates.nightEnd}. Rate is max(dayType, {otRates.nightRate}×).
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-sm">
                       {(() => {
