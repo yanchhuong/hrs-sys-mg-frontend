@@ -36,6 +36,7 @@ import { SalaryIncrease } from '../../types/timework';
 import { Employee } from '../../types/hrms';
 import * as increasesApi from '../../api/increases';
 import * as employeesApi from '../../api/employees';
+import * as contractsApi from '../../api/contracts';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
@@ -141,6 +142,12 @@ export function Increase() {
   void canEdit; void canRemove; // future per-row mutations gate here
   const [increases, setIncreases] = useState<SalaryIncrease[]>(USE_MOCKS ? mockIncreases : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  /** Map of employee API id → active contract type (V64 vocabulary:
+   *  UDC | FDC | Probation | Internship). Drives the picker filter
+   *  when Type is seniority_indemnity (UDC only) or fdc_severance
+   *  (FDC only) — HR can't accidentally pick a Probation hire for a
+   *  UDC-only line item. Empty when no active contract on file. */
+  const [contractTypeByEmpId, setContractTypeByEmpId] = useState<Record<string, string>>({});
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
@@ -208,11 +215,30 @@ export function Increase() {
     }
   };
 
+  /** Pulls every active contract and keys their type by employee id.
+   *  Used to filter the Add-Increase picker so seniority / FDC severance
+   *  line items only target the right contract bucket. Single 1000-row
+   *  page is plenty — tenants with > 1000 active contracts can paginate
+   *  later. */
+  const loadActiveContracts = async () => {
+    if (USE_MOCKS) return;
+    try {
+      const res = await contractsApi.list({ status: 'active', size: 1000 });
+      const map: Record<string, string> = {};
+      for (const c of res.data) {
+        if (c.employeeId && c.contractType) map[c.employeeId] = c.contractType;
+      }
+      setContractTypeByEmpId(map);
+    } catch (err) {
+      console.warn('Increase: could not load active contracts for picker filter', err);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadIncreases(), loadEmployees()]);
+      await Promise.all([loadIncreases(), loadEmployees(), loadActiveContracts()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -545,7 +571,22 @@ export function Increase() {
                     className="h-8"
                   />
                   {(() => {
-                    const active = employees.filter(e => e.status === 'active');
+                    // Contract-type gate: seniority_indemnity is UDC-only
+                    // and fdc_severance is FDC-only (Cambodian Labour Law).
+                    // Other types accept any active employee.
+                    const requiredContractType = newType === 'seniority_indemnity'
+                      ? 'UDC'
+                      : newType === 'fdc_severance'
+                        ? 'FDC'
+                        : null;
+                    const matchesContract = (emp: Employee) => {
+                      if (!requiredContractType) return true;
+                      const empApiId = (emp as { apiId?: string }).apiId ?? emp.id;
+                      return contractTypeByEmpId[empApiId] === requiredContractType;
+                    };
+                    const active = employees
+                      .filter(e => e.status === 'active')
+                      .filter(matchesContract);
                     const q = employeePickerSearch.trim().toLowerCase();
                     const filtered = q
                       ? active.filter(e => `${e.name} ${e.id} ${e.position ?? ''} ${e.khmerName ?? ''}`.toLowerCase().includes(q))
@@ -600,6 +641,12 @@ export function Increase() {
                       </div>
                     );
                   })()}
+                  {(newType === 'seniority_indemnity' || newType === 'fdc_severance') && (
+                    <p className="text-xs text-amber-700">
+                      List shows only employees with an active{' '}
+                      <strong>{newType === 'seniority_indemnity' ? 'UDC' : 'FDC'}</strong> contract — Cambodian Labour Law restricts this line to that contract type.
+                    </p>
+                  )}
                   <p className="text-xs text-gray-500">
                     {newUnit === 'percentage'
                       ? 'A percentage rule applies to each employee\'s own base salary — the dollar value differs per person.'
@@ -612,17 +659,29 @@ export function Increase() {
                   {/* Searchable picker — same UX as Manager/Lead and the
                       Member picker. Supports name / empNo / position search. */}
                   <SearchablePicker
-                    options={employees
-                      .filter(e => e.status === 'active')
-                      .map(emp => {
-                        const val = (emp as { apiId?: string }).apiId ?? emp.id;
-                        return {
-                          value: val,
-                          label: emp.name,
-                          secondary: `${emp.id} · ${emp.position ?? ''}`,
-                          searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
-                        };
-                      })}
+                    options={(() => {
+                      const requiredContractType = newType === 'seniority_indemnity'
+                        ? 'UDC'
+                        : newType === 'fdc_severance'
+                          ? 'FDC'
+                          : null;
+                      return employees
+                        .filter(e => e.status === 'active')
+                        .filter(e => {
+                          if (!requiredContractType) return true;
+                          const empApiId = (e as { apiId?: string }).apiId ?? e.id;
+                          return contractTypeByEmpId[empApiId] === requiredContractType;
+                        })
+                        .map(emp => {
+                          const val = (emp as { apiId?: string }).apiId ?? emp.id;
+                          return {
+                            value: val,
+                            label: emp.name,
+                            secondary: `${emp.id} · ${emp.position ?? ''}`,
+                            searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+                          };
+                        });
+                    })()}
                     value={newEmployeeId}
                     onChange={setNewEmployeeId}
                     placeholder="Select employee…"
