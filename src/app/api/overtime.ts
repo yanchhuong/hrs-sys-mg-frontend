@@ -15,6 +15,10 @@ export interface OtRequest {
   startHour?: string;
   endHour?: string;
   hours: number;
+  /** Admin-only manual rate override (V62). When non-null the rate
+   *  calculator skips day-type + night composition and pays this
+   *  multiplier directly. Numeric on the wire; null = use auto rate. */
+  rateOverride?: number | null;
   reason?: string;
   status: OtStatus;
   /** Backend sends submitter / approver as UUIDs. */
@@ -58,6 +62,9 @@ export interface CreateOtRequest {
    *  specific rate against the auto-detection (e.g. HR marks a
    *  special-cause weekday as holiday-rated). */
   dayType?: 'workday' | 'weekend' | 'holiday';
+  /** Admin-only manual rate override (V62). When non-null bypasses the
+   *  day-type + night composition entirely — pay = hourly × hours × this. */
+  rateOverride?: number | null;
 }
 
 export interface ListParams {

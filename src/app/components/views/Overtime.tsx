@@ -127,6 +127,9 @@ export function Overtime() {
   /** Admin-only day-type override for the Request OT dialog. `null` =
    *  use the auto-detected rule (driven by date + holiday calendar). */
   const [reqOtDayTypeOverride, setReqOtDayTypeOverride] = useState<'workday' | 'weekend' | 'holiday' | null>(null);
+  /** Admin-only manual rate override (V62). String to allow partial
+   *  entry; empty = use auto-detected rate. */
+  const [reqOtRateOverride, setReqOtRateOverride] = useState<string>('');
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   /** Submit-dialog End Date. Auto-bumps to selectedDate+1 when the picked
@@ -365,6 +368,7 @@ export function Overtime() {
       setHours('');
       setReason('');
       setReqOtDayTypeOverride(null);
+      setReqOtRateOverride('');
       return;
     }
     // Hours is the canonical value the backend persists. Parse from the
@@ -384,6 +388,10 @@ export function Overtime() {
         startHour,
         endHour,
         dayType: reqOtDayTypeOverride ?? undefined,
+        rateOverride: (() => {
+          const n = Number(reqOtRateOverride);
+          return Number.isFinite(n) && n > 0 ? n : undefined;
+        })(),
         reason: reason.trim(),
       });
       toast.success('OT request submitted successfully');
@@ -393,6 +401,7 @@ export function Overtime() {
       setHours('');
       setReason('');
       setReqOtDayTypeOverride(null);
+      setReqOtRateOverride('');
       await loadOtRequests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit OT request');
@@ -479,6 +488,13 @@ export function Overtime() {
   }): string => {
     const segs = segmentsFor(req);
     const rateOf = dayTypeRateFor(req);
+    // Row-level rate override (V62) wins outright — no need to walk
+    // segments. Otherwise pick the highest segment rate as the badge
+    // headline so HR can see the top-billed bucket at a glance.
+    const rowOverride = (req as { rateOverride?: number | null }).rateOverride;
+    if (typeof rowOverride === 'number' && rowOverride > 0) {
+      return `${rowOverride}x`;
+    }
     let max = 0;
     for (const s of segs) {
       const isNight = otOverlapsNightWindow(s.startHour, s.endHour, otRates.nightStart, otRates.nightEnd);
@@ -520,6 +536,7 @@ export function Overtime() {
       nightStart: otRates.nightStart,
       nightEnd: otRates.nightEnd,
       nightCompose: otRates.nightCompose,
+      rateOverride: (req as { rateOverride?: number | null }).rateOverride ?? undefined,
     });
   };
 
@@ -703,6 +720,10 @@ export function Overtime() {
                     if filing OT for a known holiday. */}
                 {(() => {
                   const startStr = format(selectedDate, 'yyyy-MM-dd');
+                  const rateOverrideNum = (() => {
+                    const n = Number(reqOtRateOverride);
+                    return Number.isFinite(n) && n > 0 ? n : undefined;
+                  })();
                   const rule = detectOtRule({
                     date: startStr,
                     startHour,
@@ -716,6 +737,7 @@ export function Overtime() {
                     nightEnd: otRates.nightEnd,
                     nightCompose: otRates.nightCompose,
                     override: reqOtDayTypeOverride ?? undefined,
+                    rateOverride: rateOverrideNum,
                   });
                   const dayBadgeColor = rule.dayType === 'holiday'
                     ? 'bg-red-100 text-red-800 border-red-200'
@@ -735,31 +757,64 @@ export function Overtime() {
                         <span className="text-xs text-gray-600 font-medium">→ {rule.effectiveRate}×</span>
                         {reqOtDayTypeOverride && (
                           <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
-                            manual override
+                            day-type override
+                          </Badge>
+                        )}
+                        {rule.fromOverride && (
+                          <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
+                            custom rate
                           </Badge>
                         )}
                       </div>
                       {isAdmin ? (
-                        <div className="space-y-1">
-                          <Label className="text-[11px] text-gray-500">Override day-type (admin)</Label>
-                          <Select
-                            value={reqOtDayTypeOverride ?? 'auto'}
-                            onValueChange={(v) =>
-                              setReqOtDayTypeOverride(v === 'auto' ? null : (v as 'workday' | 'weekend' | 'holiday'))
-                            }
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="auto">Auto-detect</SelectItem>
-                              <SelectItem value="workday">Workday</SelectItem>
-                              <SelectItem value="weekend">Weekend</SelectItem>
-                              <SelectItem value="holiday">Holiday</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-[11px] text-gray-500">
-                            Night overlay is always auto-detected from the configured {otRates.nightStart}–{otRates.nightEnd} window.
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-gray-500">Override day-type</Label>
+                            <Select
+                              value={reqOtDayTypeOverride ?? 'auto'}
+                              onValueChange={(v) =>
+                                setReqOtDayTypeOverride(v === 'auto' ? null : (v as 'workday' | 'weekend' | 'holiday'))
+                              }
+                            >
+                              <SelectTrigger className="h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">Auto-detect</SelectItem>
+                                <SelectItem value="workday">Workday</SelectItem>
+                                <SelectItem value="weekend">Weekend</SelectItem>
+                                <SelectItem value="holiday">Holiday</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-gray-500">Custom rate</Label>
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                value={reqOtRateOverride}
+                                onChange={(e) => setReqOtRateOverride(e.target.value)}
+                                placeholder={String(rule.effectiveRate)}
+                                className="h-8"
+                              />
+                              <span className="text-sm font-medium text-indigo-600">×</span>
+                              {reqOtRateOverride && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px]"
+                                  onClick={() => setReqOtRateOverride('')}
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-gray-500 col-span-2">
+                            Leave Custom Rate blank to follow the OT settings. Any positive value skips the day-type + night composition for this row only. Night overlay is auto-detected from the configured {otRates.nightStart}–{otRates.nightEnd} window.
                           </p>
                         </div>
                       ) : (

@@ -1289,6 +1289,7 @@ export function Payroll() {
       endHour?: string,
       startDate?: string,
       endDate?: string,
+      rateOverride?: number | null,
     ) => {
       if (!baseSalary || !hours) return 0;
       const segments = splitOtRequestByDay({
@@ -1313,6 +1314,7 @@ export function Payroll() {
         nightStart: otCfg.nightStart,
         nightEnd: otCfg.nightEnd,
         nightCompose: otCfg.nightCompose,
+        rateOverride: rateOverride ?? undefined,
       });
     };
 
@@ -1385,6 +1387,7 @@ export function Payroll() {
         (r as { endHour?: string }).endHour,
         r.date,
         (r as { endDate?: string }).endDate,
+        (r as { rateOverride?: number | null }).rateOverride ?? undefined,
       );
       otTotalByApiId.set(apiId, (otTotalByApiId.get(apiId) ?? 0) + pay);
     }

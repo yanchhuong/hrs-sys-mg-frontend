@@ -294,6 +294,10 @@ export function Attendance() {
   /** Admin-only day-type override for the Apply OT branch. `null` = use
    *  the auto-detected value (driven by date + holidayDates). */
   const [editOtDayTypeOverride, setEditOtDayTypeOverride] = useState<'workday' | 'weekend' | 'holiday' | null>(null);
+  /** Admin-only manual rate override (V62). Stored as a string so the
+   *  Input can hold partial entry (e.g. "1." while typing). `''` = use
+   *  the auto-detected rate. */
+  const [editOtRateOverride, setEditOtRateOverride] = useState<string>('');
   /**
    * Set of (date|employeeApiId) keys for which a non-rejected OT
    * request already exists. Used to dim the OT badge in the daily
@@ -1222,6 +1226,7 @@ export function Attendance() {
     // Reset the rule-type override — every fresh dialog starts from
     // auto-detection so a previous admin pick doesn't leak across rows.
     setEditOtDayTypeOverride(null);
+    setEditOtRateOverride('');
     setEditApplyOt(false); // explicit opt-in even when hours suggest OT
     setEditDialogOpen(true);
   };
@@ -1481,6 +1486,13 @@ export function Attendance() {
               // picked one in the rule-type Select. Backend leaves it
               // null/auto otherwise.
               dayType: editOtDayTypeOverride ?? undefined,
+              // Rate override (V62) — only sent when the admin typed a
+              // positive value. Empty / 0 / NaN falls through to the
+              // auto-detected rate. Stored as number on the wire.
+              rateOverride: (() => {
+                const n = Number(editOtRateOverride);
+                return Number.isFinite(n) && n > 0 ? n : undefined;
+              })(),
               reason: editOtReason.trim(),
             });
             toast.success(`OT request filed for ${emp?.name ?? 'employee'} (${otHoursNum}h)`);
@@ -2816,6 +2828,10 @@ export function Attendance() {
                         date + the configured holiday calendar + the
                         picked start/end hours (for the night overlay). */}
                     {editRecord && (() => {
+                      const rateOverrideNum = (() => {
+                        const n = Number(editOtRateOverride);
+                        return Number.isFinite(n) && n > 0 ? n : undefined;
+                      })();
                       const rule = detectOtRule({
                         date: editRecord.date,
                         startHour: editOtStartHour,
@@ -2830,6 +2846,7 @@ export function Attendance() {
                         nightEnd: otRates.nightEnd,
                         nightCompose: otRates.nightCompose,
                         override: editOtDayTypeOverride ?? undefined,
+                        rateOverride: rateOverrideNum,
                       });
                       const dayBadgeColor = rule.dayType === 'holiday'
                         ? 'bg-red-100 text-red-800 border-red-200'
@@ -2849,7 +2866,12 @@ export function Attendance() {
                             <span className="text-xs text-gray-600 font-medium">→ {rule.effectiveRate}×</span>
                             {editOtDayTypeOverride && (
                               <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
-                                manual override
+                                day-type override
+                              </Badge>
+                            )}
+                            {rule.fromOverride && (
+                              <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
+                                custom rate
                               </Badge>
                             )}
                           </div>
@@ -2874,8 +2896,34 @@ export function Attendance() {
                                   </SelectContent>
                                 </Select>
                               </div>
-                              <p className="text-[11px] text-gray-500 pb-2">
-                                Night overlay is always auto-detected from the configured 22:00–05:00 window.
+                              <div className="space-y-1">
+                                <Label className="text-[11px] text-gray-500">Custom rate (admin)</Label>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    value={editOtRateOverride}
+                                    onChange={(e) => setEditOtRateOverride(e.target.value)}
+                                    placeholder={String(rule.effectiveRate)}
+                                    className="h-8"
+                                  />
+                                  <span className="text-sm font-medium text-indigo-600">×</span>
+                                  {editOtRateOverride && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-[11px]"
+                                      onClick={() => setEditOtRateOverride('')}
+                                    >
+                                      Clear
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-gray-500 col-span-2">
+                                Leave Custom Rate blank to follow the OT settings. Any positive value skips the day-type + night composition for this row only.
                               </p>
                             </div>
                           ) : (

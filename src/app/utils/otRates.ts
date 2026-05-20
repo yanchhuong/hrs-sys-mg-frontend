@@ -202,21 +202,34 @@ export function computeOtPay(args: {
   nightStart: string;
   nightEnd: string;
   nightCompose?: NightComposeMode;
+  /** Admin-only manual rate override (V62). When > 0, every bucket
+   *  pays this rate — day-type + night composition are skipped. */
+  rateOverride?: number | null;
 }): number {
-  const { hourlyWage, segments, dayTypeRateFor, nightEnabled, nightRate, nightStart, nightEnd, nightCompose } = args;
+  const {
+    hourlyWage, segments, dayTypeRateFor,
+    nightEnabled, nightRate, nightStart, nightEnd, nightCompose,
+    rateOverride,
+  } = args;
   if (!hourlyWage) return 0;
+  const hasOverride = typeof rateOverride === 'number' && rateOverride > 0;
   let total = 0;
   for (const seg of segments) {
     if (!seg.hours) continue;
-    const dayRate = dayTypeRateFor(seg);
-    const isNight = otOverlapsNightWindow(seg.startHour, seg.endHour, nightStart, nightEnd);
-    const rate = effectiveOtMultiplier({
-      dayTypeRate: dayRate,
-      nightEnabled,
-      nightRate,
-      isNight,
-      nightCompose,
-    });
+    let rate: number;
+    if (hasOverride) {
+      rate = rateOverride!;
+    } else {
+      const dayRate = dayTypeRateFor(seg);
+      const isNight = otOverlapsNightWindow(seg.startHour, seg.endHour, nightStart, nightEnd);
+      rate = effectiveOtMultiplier({
+        dayTypeRate: dayRate,
+        nightEnabled,
+        nightRate,
+        isNight,
+        nightCompose,
+      });
+    }
     total += hourlyWage * seg.hours * rate;
   }
   return total;
@@ -252,6 +265,9 @@ export interface DetectedOtRule {
   dayType: OtDayType;
   isNight: boolean;
   effectiveRate: number;
+  /** True when the effective rate came from an explicit admin override
+   *  rather than the day-type + night composition. */
+  fromOverride: boolean;
   /** Human-readable summary, e.g. "Weekend + Night → 2.0x". */
   label: string;
 }
@@ -282,11 +298,16 @@ export function detectOtRule(args: {
   nightCompose?: NightComposeMode;
   /** Admin override — when set, wins over auto-detection. */
   override?: OtDayType;
+  /** Admin-only manual rate override (V62). When a positive number is
+   *  supplied, bypasses day-type + night composition entirely and uses
+   *  this as the effective rate. */
+  rateOverride?: number | null;
 }): DetectedOtRule {
   const {
     date, startHour, endHour, isHoliday, holidayDates,
     weekdayRate, weekendRate, holidayRate,
     nightEnabled, nightRate, nightStart, nightEnd, nightCompose, override,
+    rateOverride,
   } = args;
 
   let dayType: OtDayType;
@@ -306,12 +327,16 @@ export function detectOtRule(args: {
     weekdayRate;
 
   const isNight = otOverlapsNightWindow(startHour, endHour, nightStart, nightEnd);
-  const effectiveRate = effectiveOtMultiplier({
+  const computedRate = effectiveOtMultiplier({
     dayTypeRate, nightEnabled, nightRate, isNight, nightCompose,
   });
+  const hasOverride = typeof rateOverride === 'number' && rateOverride > 0;
+  const effectiveRate = hasOverride ? rateOverride! : computedRate;
 
   const dayLabel = dayType === 'holiday' ? 'Holiday' : dayType === 'weekend' ? 'Weekend' : 'Workday';
-  const label = `${dayLabel}${nightEnabled && isNight ? ' + Night' : ''} → ${effectiveRate}x`;
+  const label = hasOverride
+    ? `Custom → ${effectiveRate}x`
+    : `${dayLabel}${nightEnabled && isNight ? ' + Night' : ''} → ${effectiveRate}x`;
 
-  return { dayType, isNight, effectiveRate, label };
+  return { dayType, isNight, effectiveRate, fromOverride: hasOverride, label };
 }
