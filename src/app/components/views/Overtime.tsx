@@ -36,6 +36,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -46,7 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -130,6 +131,14 @@ export function Overtime() {
   /** Admin-only manual rate override (V62). String to allow partial
    *  entry; empty = use auto-detected rate. */
   const [reqOtRateOverride, setReqOtRateOverride] = useState<string>('');
+
+  /** State for the admin "Edit OT row" dialog. `null` = closed. */
+  const [editingOt, setEditingOt] = useState<overtimeApi.OtRequest | null>(null);
+  const [editOtRowStartHour, setEditOtRowStartHour] = useState('');
+  const [editOtRowEndHour, setEditOtRowEndHour] = useState('');
+  const [editOtRowDayType, setEditOtRowDayType] = useState<'auto' | 'workday' | 'weekend' | 'holiday'>('auto');
+  const [editOtRowRateOverride, setEditOtRowRateOverride] = useState<string>('');
+  const [editOtRowSaving, setEditOtRowSaving] = useState(false);
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   /** Submit-dialog End Date. Auto-bumps to selectedDate+1 when the picked
@@ -433,6 +442,69 @@ export function Overtime() {
       await loadOtRequests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to reject OT request');
+    }
+  };
+
+  /**
+   * Open the admin "Edit OT row" dialog seeded from the picked row.
+   * Day-type starts at 'auto' (no override) — admin can pick a different
+   * bucket from the Select to force it. Custom rate seeds from the row's
+   * persisted rateOverride; empty = follow the rule engine.
+   */
+  const openEditOtRow = (req: overtimeApi.OtRequest) => {
+    setEditingOt(req);
+    setEditOtRowStartHour(req.startHour ?? '');
+    setEditOtRowEndHour(req.endHour ?? '');
+    setEditOtRowDayType('auto');
+    setEditOtRowRateOverride(
+      typeof req.rateOverride === 'number' && req.rateOverride > 0
+        ? String(req.rateOverride)
+        : '',
+    );
+  };
+
+  const handleSaveOtRowEdit = async () => {
+    if (!editingOt) return;
+    // Recompute hours from the picked start/end when both are filled.
+    // Falls back to the row's existing hours when the admin clears the
+    // hour inputs (edge case — rare but lets HR drop the labels without
+    // zeroing the pay).
+    let hoursNum: number | undefined;
+    if (editOtRowStartHour && editOtRowEndHour) {
+      const [sh, sm] = editOtRowStartHour.split(':').map(n => Number(n) || 0);
+      const [eh, em] = editOtRowEndHour.split(':').map(n => Number(n) || 0);
+      let mins = (eh * 60 + em) - (sh * 60 + sm);
+      if (mins <= 0) mins += 24 * 60;
+      hoursNum = Math.round((mins / 60) * 100) / 100;
+    }
+    // Send 0 to explicitly clear the override when the input is empty
+    // — backend interprets 0 as "drop the override". Positive value
+    // pins the rate; null leaves it untouched (we never send null).
+    const rateNum = editOtRowRateOverride.trim() === ''
+      ? 0
+      : Number(editOtRowRateOverride);
+    const body: overtimeApi.UpdateOtRequest = {
+      startHour: editOtRowStartHour || undefined,
+      endHour: editOtRowEndHour || undefined,
+      hours: hoursNum,
+      dayType: editOtRowDayType === 'auto' ? undefined : editOtRowDayType,
+      rateOverride: Number.isFinite(rateNum) ? rateNum : undefined,
+    };
+    if (USE_MOCKS) {
+      toast.success('OT row updated');
+      setEditingOt(null);
+      return;
+    }
+    setEditOtRowSaving(true);
+    try {
+      await overtimeApi.update(editingOt.id, body);
+      toast.success('OT row updated');
+      setEditingOt(null);
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update OT row');
+    } finally {
+      setEditOtRowSaving(false);
     }
   };
 
@@ -1067,39 +1139,52 @@ export function Overtime() {
                     <TableCell className="text-sm">{request.submittedByName || '-'}</TableCell>
                     <TableCell className="text-sm">{approverName || '-'}</TableCell>
                     <TableCell className="text-right">
-                      {canActOnThis ? (
-                        <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isAdmin && (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
-                            onClick={() => handleApprove(request.id)}
+                            className="h-7 text-xs"
+                            onClick={() => openEditOtRow(request)}
+                            title="Edit start/end hour and rate"
                           >
-                            <Check className="h-3.5 w-3.5 mr-1" />
-                            Approve
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            size="sm"
+                        )}
+                        {canActOnThis ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
+                              onClick={() => handleApprove(request.id)}
+                            >
+                              <Check className="h-3.5 w-3.5 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
+                              onClick={() => handleReject(request.id)}
+                            >
+                              <X className="h-3.5 w-3.5 mr-1" />
+                              Reject
+                            </Button>
+                          </>
+                        ) : isPending && role !== 'admin' ? (
+                          <Badge
                             variant="outline"
-                            className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
-                            onClick={() => handleReject(request.id)}
+                            className="text-[10px] text-gray-500"
+                            title="Only this employee's direct leader can approve."
                           >
-                            <X className="h-3.5 w-3.5 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
-                      ) : isPending && role !== 'admin' ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] text-gray-500"
-                          title="Only this employee's direct leader can approve."
-                        >
-                          <X className="h-3 w-3 mr-1" />
-                          {isManager ? 'Not your team' : 'Awaiting leader'}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
+                            <X className="h-3 w-3 mr-1" />
+                            {isManager ? 'Not your team' : 'Awaiting leader'}
+                          </Badge>
+                        ) : !isAdmin ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -1187,6 +1272,99 @@ export function Overtime() {
         </CardContent>
       </Card>
 
+      {/* Admin Edit OT row dialog. Lets HR re-adjust the start/end
+          hour, force a day-type bucket, or pin a custom rate after the
+          fact — useful when an approved row turns out to need a
+          different multiplier (special-bonus shift, negotiated rate).
+          Gated to admin via the trigger button + the backend
+          PATCH's @PreAuthorize('overtime','update'). */}
+      <Dialog open={!!editingOt} onOpenChange={(o) => { if (!o) setEditingOt(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit OT Row</DialogTitle>
+            <DialogDescription>
+              Adjust the start / end hour, force a day-type bucket, or pin a custom rate. Empty rate falls back to the OT settings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Check-In Hour</Label>
+                <Input
+                  type="time"
+                  value={editOtRowStartHour}
+                  onChange={(e) => setEditOtRowStartHour(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Check-Out Hour</Label>
+                <Input
+                  type="time"
+                  value={editOtRowEndHour}
+                  onChange={(e) => setEditOtRowEndHour(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Override day-type</Label>
+                <Select
+                  value={editOtRowDayType}
+                  onValueChange={(v) => setEditOtRowDayType(v as 'auto' | 'workday' | 'weekend' | 'holiday')}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Keep current</SelectItem>
+                    <SelectItem value="workday">Workday</SelectItem>
+                    <SelectItem value="weekend">Weekend</SelectItem>
+                    <SelectItem value="holiday">Holiday</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Custom Rate</Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={editOtRowRateOverride}
+                    onChange={(e) => setEditOtRowRateOverride(e.target.value)}
+                    placeholder="e.g. 2.5"
+                  />
+                  <span className="text-sm font-medium text-indigo-600">×</span>
+                </div>
+                <p className="text-[11px] text-gray-500">Empty to clear and follow OT settings.</p>
+              </div>
+            </div>
+            {editingOt && editOtRowStartHour && editOtRowEndHour && (() => {
+              const [sh, sm] = editOtRowStartHour.split(':').map(n => Number(n) || 0);
+              const [eh, em] = editOtRowEndHour.split(':').map(n => Number(n) || 0);
+              let mins = (eh * 60 + em) - (sh * 60 + sm);
+              const crosses = mins <= 0;
+              if (crosses) mins += 24 * 60;
+              return (
+                <p className="text-[11px] text-gray-500">
+                  {editOtRowStartHour} – {editOtRowEndHour}
+                  {crosses && <span className="text-indigo-700"> (next day)</span>}
+                  {' = '}{(mins / 60).toFixed(2).replace(/\.00$/, '')}h
+                </p>
+              );
+            })()}
+            <p className="text-[11px] text-gray-500">
+              Changes go through the audit trail; the row's approval status is unchanged.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingOt(null)} disabled={editOtRowSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveOtRowEdit} disabled={editOtRowSaving}>
+              {editOtRowSaving ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

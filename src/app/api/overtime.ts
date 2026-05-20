@@ -97,6 +97,27 @@ export async function create(req: CreateOtRequest): Promise<OtRequest> {
   return apiJson('/api/v1/ot-requests', { method: 'POST', json: req });
 }
 
+/**
+ * Admin-only partial update for an existing OT row. Every field is
+ * optional — null/undefined leaves the persisted value alone. Send
+ * rateOverride: 0 to explicitly clear the custom rate and fall back to
+ * the auto-detected one. UI gates this to admins.
+ */
+export interface UpdateOtRequest {
+  date?: string;
+  endDate?: string;
+  hours?: number;
+  startHour?: string;
+  endHour?: string;
+  reason?: string;
+  dayType?: 'workday' | 'weekend' | 'holiday';
+  rateOverride?: number | null;
+}
+
+export async function update(id: string, req: UpdateOtRequest): Promise<OtRequest> {
+  return apiJson(`/api/v1/ot-requests/${id}`, { method: 'PATCH', json: req });
+}
+
 export async function approve(id: string): Promise<OtRequest> {
   return apiJson(`/api/v1/ot-requests/${id}/approve`, { method: 'POST' });
 }

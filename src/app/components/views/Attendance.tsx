@@ -230,6 +230,11 @@ export function Attendance() {
   // attendance update via overtimeApi.create() with the target employee's
   // UUID.
   const [editApplyOt, setEditApplyOt] = useState(false);
+  /** Whether the Morning/Noon session inputs in Edit Attendance are
+   *  expanded. Auto-collapses when Apply OT is checked so the dialog
+   *  doesn't overflow; admin can re-expand with the "Edit punches"
+   *  button. Resets to expanded on every dialog open via handleEditRow. */
+  const [editSessionsExpanded, setEditSessionsExpanded] = useState(true);
   const [editOtHours, setEditOtHours] = useState('');
   const [editOtReason, setEditOtReason] = useState('');
   const [editOtAlreadyFiled, setEditOtAlreadyFiled] = useState(false);
@@ -1228,8 +1233,19 @@ export function Attendance() {
     setEditOtDayTypeOverride(null);
     setEditOtRateOverride('');
     setEditApplyOt(false); // explicit opt-in even when hours suggest OT
+    setEditSessionsExpanded(true); // sessions visible by default on open
     setEditDialogOpen(true);
   };
+
+  // Auto-collapse the Morning/Noon session inputs the moment Apply OT
+  // is checked — the OT block adds a lot of new fields and the dialog
+  // overflows on a 720p screen. Re-expanding stays a one-click action
+  // via the "Edit punches" button below. Unchecking Apply OT brings
+  // the sessions back automatically so HR doesn't get stuck with a
+  // collapsed view they didn't ask for.
+  useEffect(() => {
+    setEditSessionsExpanded(!editApplyOt);
+  }, [editApplyOt]);
 
   // Auto-compute OT Hours from Start / End Hour, and derive the End Date
   // strictly from whether the hour range wraps past midnight. Mirrors
@@ -2564,32 +2580,79 @@ export function Attendance() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Morning Session</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label className="text-sm text-green-700">Morning In</Label>
-                  <Input type="time" value={editMorningIn} onChange={e => setEditMorningIn(e.target.value)} className="h-8" />
+            {editSessionsExpanded ? (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Morning Session</p>
+                    {editApplyOt && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[11px] text-gray-500"
+                        onClick={() => setEditSessionsExpanded(false)}
+                      >
+                        Hide punches
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-green-700">Morning In</Label>
+                      <Input type="time" value={editMorningIn} onChange={e => setEditMorningIn(e.target.value)} className="h-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-orange-700">Morning Out</Label>
+                      <Input type="time" value={editMorningOut} onChange={e => setEditMorningOut(e.target.value)} className="h-8" />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm text-orange-700">Morning Out</Label>
-                  <Input type="time" value={editMorningOut} onChange={e => setEditMorningOut(e.target.value)} className="h-8" />
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Noon Session</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-green-700">Noon In</Label>
+                      <Input type="time" value={editNoonIn} onChange={e => setEditNoonIn(e.target.value)} className="h-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-orange-700">Noon Out</Label>
+                      <Input type="time" value={editNoonOut} onChange={e => setEditNoonOut(e.target.value)} className="h-8" />
+                    </div>
+                  </div>
                 </div>
+              </>
+            ) : (
+              // Collapsed summary — one-line preview of all four punches
+              // with an "Edit punches" button to re-expand. Keeps the
+              // dialog short when the admin is focused on the Apply OT
+              // section but doesn't hide the data.
+              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
+                  <span className="font-medium text-gray-500 uppercase tracking-wide">Punches</span>
+                  <span className="font-mono">
+                    <span className="text-green-700">{editMorningIn || '—:—'}</span>
+                    <span className="text-gray-400"> / </span>
+                    <span className="text-orange-700">{editMorningOut || '—:—'}</span>
+                  </span>
+                  <span className="text-gray-300">·</span>
+                  <span className="font-mono">
+                    <span className="text-green-700">{editNoonIn || '—:—'}</span>
+                    <span className="text-gray-400"> / </span>
+                    <span className="text-orange-700">{editNoonOut || '—:—'}</span>
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setEditSessionsExpanded(true)}
+                >
+                  Edit punches
+                </Button>
               </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Noon Session</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label className="text-sm text-green-700">Noon In</Label>
-                  <Input type="time" value={editNoonIn} onChange={e => setEditNoonIn(e.target.value)} className="h-8" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm text-orange-700">Noon Out</Label>
-                  <Input type="time" value={editNoonOut} onChange={e => setEditNoonOut(e.target.value)} className="h-8" />
-                </div>
-              </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label className="text-sm">Status</Label>
               <Select
