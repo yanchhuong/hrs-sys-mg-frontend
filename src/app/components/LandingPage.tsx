@@ -9,6 +9,7 @@ import {
   ArrowRight, Quote, Sparkles, Target, Globe, LineChart,
   Lock, FileSpreadsheet, ShieldCheck, Network, RefreshCw,
   HelpCircle, Mail, Phone, MapPin, Factory, Briefcase, Store,
+  CalendarDays, FileText, Baby,
 } from 'lucide-react';
 // Real product screenshot — uses only the demo-named Payroll Management view.
 // The other two screenshots in src/imports contain real employee names and
@@ -27,6 +28,7 @@ const T = {
     features:   { en: 'Features',     km: 'លក្ខណៈពិសេស',   zh: '功能' },
     modules:    { en: 'Modules',      km: 'មុខងារ',         zh: '模块' },
     howItWorks: { en: 'How it works', km: 'របៀបដំណើរការ',   zh: '使用流程' },
+    rules:      { en: 'Labour law',   km: 'ច្បាប់ការងារ',   zh: '劳动法' },
     faq:        { en: 'FAQ',          km: 'សំណួរញឹកញាប់',   zh: '常见问题' },
     signIn:     { en: 'Sign in',      km: 'ចូលប្រើប្រាស់',  zh: '登录' },
     getStarted: { en: 'Get started',  km: 'ចាប់ផ្តើម',      zh: '立即开始' },
@@ -195,6 +197,20 @@ const T = {
                km: 'ឧបករណ៍ធនធានមនុស្សភាគច្រើនព្យាយាមកែច្បាប់បរទេសឱ្យស្របនឹងកម្ពុជា។ យើងចាប់ផ្តើមដោយផ្អែកលើច្បាប់ប្រាក់ខែកម្ពុជា — ពន្ធលើប្រាក់ខែតាមថ្នាក់ ថ្នាក់ ប.ស.ស ការដកពន្ធបរទេស អត្ថប្រយោជន៍ 20% អ្នកនៅក្នុងបន្ទុក ស្ថានភាពអ្នករស់នៅ និងបង្កាន់ដៃប្រាក់ខែជាភាសាខ្មែរ — រួចសាងសង់មុខងារផ្សេងទៀតជុំវិញវា។',
                zh: '大多数 HR 工具都生搬硬套外国规则来适配柬埔寨。我们从柬埔寨薪资法出发 — 累进薪资税档次、ប.ស.ស 等级、外国税抵免、20% 法定附加福利、被扶养人、居民身份和柬文工资单 — 再以此构建其余功能。' },
   },
+  workingRule: {
+    eyebrow: { en: 'Cambodia labour-law cheatsheet',
+               km: 'សេចក្តីសង្ខេបច្បាប់ការងារកម្ពុជា',
+               zh: '柬埔寨劳动法速查表' },
+    title:   { en: 'The working rules every HR officer needs at hand',
+               km: 'ច្បាប់ការងារដែលមន្ត្រី HR ត្រូវការក្បែរដៃ',
+               zh: 'HR 必须随手掌握的工作规则' },
+    desc:    { en: 'A quick reference for the same statutes the system automates — hours, overtime, paid leave, social security, and Tax on Salary. Numbers below trace back to the Labour Law of Cambodia (1997, amended through the 2018 Prakas), the General Department of Taxation, and the National Social Security Fund.',
+               km: 'សេចក្តីយោងរហ័សសម្រាប់ច្បាប់ដែលប្រព័ន្ធគ្រប់គ្រងដោយស្វ័យប្រវត្តិ — ម៉ោងធ្វើការ ការងារបន្ថែម ការឈប់សម្រាក សន្តិសុខសង្គម និងពន្ធលើប្រាក់ខែ។ លេខខាងក្រោមផ្អែកលើច្បាប់ការងារនៃកម្ពុជា (១៩៩៧ កែប្រែតាមប្រកាស ២០១៨) អគ្គនាយកដ្ឋានពន្ធដារ និងបេឡាជាតិសន្តិសុខសង្គម។',
+               zh: '与系统自动化处理同源的法规速查 — 工作时间、加班、带薪假、社会保障与薪资税。下列数据均依据柬埔寨劳动法（1997 年，2018 年公告修订）、税务总局及国家社会保障基金（ប.ស.ស）。' },
+    source:  { en: 'Sources: Cambodian Labour Law · 2018 Prakas on Seniority Indemnity · General Department of Taxation · NSSF',
+               km: 'ប្រភព៖ ច្បាប់ការងារកម្ពុជា · ប្រកាសឆ្នាំ ២០១៨ ស្តីពីប្រាក់ចូលនិវត្តន៍ · អគ្គនាយកដ្ឋានពន្ធដារ · ប.ស.ស',
+               zh: '资料来源：柬埔寨劳动法 · 2018 年关于工龄抚恤金的公告 · 税务总局 · ប.ស.ស' },
+  },
   testimonials: {
     eyebrow: { en: 'What teams say', km: 'អ្វីដែលក្រុមការងារនិយាយ', zh: '客户怎么说' },
     title:   { en: 'HR teams trade spreadsheets for one source of truth',
@@ -263,6 +279,7 @@ function LandingNav({
         <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
           <a href="#modules"     className="hover:text-slate-900">{t(T.nav.modules, lang)}</a>
           <a href="#how"         className="hover:text-slate-900">{t(T.nav.howItWorks, lang)}</a>
+          <a href="#rules"       className="hover:text-slate-900">{t(T.nav.rules, lang)}</a>
           <a href="#faq"         className="hover:text-slate-900">{t(T.nav.faq, lang)}</a>
         </nav>
 
@@ -1197,6 +1214,144 @@ function CambodiaSection({ lang }: { lang: Lang }) {
   );
 }
 
+/**
+ * "Working Rule" — Cambodian labour-law cheatsheet. Eight cards covering
+ * the same statutes the payroll/leave/OT engines automate. Numbers come
+ * from the Labour Law of Cambodia (1997, amended through the 2018 Prakas
+ * on Seniority Indemnity), the General Department of Taxation, and the
+ * National Social Security Fund. Treat this as a reference card, not
+ * legal advice — HR should verify against the latest Prakas before
+ * acting on edge cases.
+ */
+function WorkingRule({ lang }: { lang: Lang }) {
+  type ML = { en: string; km: string; zh: string };
+  const rules: Array<{ icon: React.ElementType; tone: 'blue' | 'amber' | 'emerald' | 'rose'; title: ML; bullets: ML[] }> = [
+    {
+      icon: Clock, tone: 'blue',
+      title:  { en: 'Working Hours',                          km: 'ម៉ោងធ្វើការ',                    zh: '工作时间' },
+      bullets: [
+        { en: '8 hours/day, 48 hours/week maximum',           km: '៨ ម៉ោង/ថ្ងៃ ៤៨ ម៉ោង/សប្តាហ៍ អតិបរមា', zh: '每日 8 小时，每周最多 48 小时' },
+        { en: '1-hour unpaid lunch break',                    km: 'ពេលសម្រាក ១ ម៉ោងមិនបង់ប្រាក់',     zh: '1 小时无薪午休' },
+        { en: 'Overtime capped at 2 hours per day',           km: 'ការងារបន្ថែមកំណត់ ២ ម៉ោងក្នុងមួយថ្ងៃ', zh: '加班每日上限 2 小时' },
+      ],
+    },
+    {
+      icon: TimerIcon, tone: 'amber',
+      title:  { en: 'Overtime Rates',                         km: 'អត្រាការងារបន្ថែម',                zh: '加班费率' },
+      bullets: [
+        { en: 'Weekday OT: 150% of the hourly wage',          km: 'ការងារបន្ថែមថ្ងៃធ្វើការ: ១៥០% នៃប្រាក់ឈ្នួល/ម៉ោង', zh: '工作日加班：时薪 150%' },
+        { en: 'Night work (10pm–5am): 130%',                  km: 'ការងារយប់ (ម៉ោង ១០ យប់ – ៥ ព្រឹក): ១៣០%',          zh: '夜班 (晚 10 时至凌晨 5 时)：130%' },
+        { en: 'Weekend / public holiday: 200%',               km: 'ចុងសប្តាហ៍ / ថ្ងៃបុណ្យ: ២០០%',     zh: '周末 / 法定节假日：200%' },
+      ],
+    },
+    {
+      icon: CalendarDays, tone: 'emerald',
+      title:  { en: 'Annual Leave & Holidays',                km: 'ការឈប់សម្រាកប្រចាំឆ្នាំ និងថ្ងៃបុណ្យ', zh: '年假与节假日' },
+      bullets: [
+        { en: '1.5 days/month worked, up to 18 days/year',    km: '១.៥ ថ្ងៃ/ខែ កំណត់ ១៨ ថ្ងៃ/ឆ្នាំ',  zh: '每工作 1 月累计 1.5 天，每年最多 18 天' },
+        { en: 'Seniority bonus: +1 day every 3 years',        km: 'ប្រាក់រង្វាន់អតីតភាព: +១ ថ្ងៃរៀងរាល់ ៣ ឆ្នាំ', zh: '工龄奖励：每满 3 年增加 1 天' },
+        { en: '14 designated public holidays per year',       km: '១៤ ថ្ងៃបុណ្យសាធារណៈក្នុងមួយឆ្នាំ', zh: '每年 14 个法定节假日' },
+      ],
+    },
+    {
+      icon: Baby, tone: 'rose',
+      title:  { en: 'Maternity & Sick Leave',                 km: 'ការឈប់សម្រាកសម្រាល និងជំងឺ',       zh: '产假与病假' },
+      bullets: [
+        { en: 'Maternity: 90 days at 50% (≥ 1 year service)', km: 'ការសម្រាល: ៩០ ថ្ងៃ ៥០% (បំរើ ≥ ១ ឆ្នាំ)', zh: '产假：90 天，工资 50%（工龄需满 1 年）' },
+        { en: 'Two 30-min nursing breaks daily until age 1',  km: 'សម្រាកបំបៅ ៣០ នាទី ២ ដងក្នុងមួយថ្ងៃ រហូតដល់អាយុ ១', zh: '婴儿满 1 岁前每日 2 次 30 分钟哺乳假' },
+        { en: 'Sick leave: 100% month 1, 60% months 2–3',     km: 'ការឈប់សម្រាកជំងឺ: ១០០% ខែទី១ ៦០% ខែទី ២–៣', zh: '病假：第 1 月 100%，第 2–3 月 60%' },
+      ],
+    },
+    {
+      icon: FileText, tone: 'blue',
+      title:  { en: 'Probation & Notice',                     km: 'រយៈពេលសាកល្បង និងការប្រកាស',       zh: '试用期与离职通知' },
+      bullets: [
+        { en: 'Probation: 3 mo (regular) · 2 mo · 1 mo',      km: 'រយៈពេលសាកល្បង: ៣ខែ (ធម្មតា) · ២ខែ · ១ខែ', zh: '试用期：3 月（一般）· 2 月 · 1 月' },
+        { en: '≤ 6 mo tenure: 7 days notice',                 km: 'បំរើ ≤ ៦ខែ: ប្រកាស ៧ ថ្ងៃ',         zh: '工龄 ≤ 6 月：提前 7 天通知' },
+        { en: '6 mo – 2 yr: 15 days · 2–5 yr: 1 month',       km: '៦ខែ – ២ឆ្នាំ: ១៥ ថ្ងៃ · ២–៥ឆ្នាំ: ១ខែ', zh: '6 月–2 年：15 天 · 2–5 年：1 月' },
+        { en: '5–10 yr: 2 months · > 10 yr: 3 months',        km: '៥–១០ឆ្នាំ: ២ខែ · > ១០ឆ្នាំ: ៣ខែ',  zh: '5–10 年：2 月 · 10 年以上：3 月' },
+      ],
+    },
+    {
+      icon: DollarSign, tone: 'amber',
+      title:  { en: 'Severance & Seniority',                  km: 'ប្រាក់សំណង និងអតីតភាព',           zh: '解雇赔偿与工龄抚恤金' },
+      bullets: [
+        { en: 'UDC (indefinite): 15 days per year of service', km: 'UDC (មិនកំណត់): ១៥ ថ្ងៃក្នុងមួយឆ្នាំបំរើ', zh: 'UDC（无固定期）：每工龄年 15 天' },
+        { en: '2018 Prakas: 7.5 days twice yearly (Jun/Dec)',  km: 'ប្រកាស ២០១៨: ៧.៥ ថ្ងៃ ២ដងក្នុងមួយឆ្នាំ (មិថុនា/ធ្នូ)', zh: '2018 公告：每年 6 月/12 月各发 7.5 天' },
+        { en: 'FDC: 5% of total wages over contract life',     km: 'FDC: ៥% នៃប្រាក់ឈ្នួលសរុបពេញកិច្ចសន្យា', zh: '固定期合约：合约期内总工资的 5%' },
+      ],
+    },
+    {
+      icon: ShieldCheck, tone: 'emerald',
+      title:  { en: 'NSSF Contributions',                     km: 'ការបង់ ប.ស.ស',                     zh: 'ប.ស.ស 缴费' },
+      bullets: [
+        { en: 'Employer: 5.40% of contributory wage',         km: 'និយោជក: ៥.៤% នៃប្រាក់ឈ្នួលរួមចំណែក', zh: '雇主：缴费工资的 5.40%' },
+        { en: 'Employee: 2% (first 5 years of pension scheme)', km: 'និយោជិត: ២% (៥ ឆ្នាំដំបូងនៃគម្រោងសោធន)',           zh: '员工：2%（养老保险前 5 年）' },
+        { en: 'Wage cap: 1,200,000 KHR (~ $300 USD)',         km: 'ដែនកំណត់ប្រាក់ឈ្នួល: ១,២០០,០០០ រៀល', zh: '缴费工资上限：1,200,000 瑞尔' },
+      ],
+    },
+    {
+      icon: Receipt, tone: 'rose',
+      title:  { en: 'Tax on Salary (TOS)',                    km: 'ពន្ធលើប្រាក់បៀវត្ស',              zh: '薪资税' },
+      bullets: [
+        { en: '0% up to 1.5M KHR · 5% to 2M · 10% to 8.5M',   km: '០% ដល់ ១.៥លាន · ៥% ដល់ ២លាន · ១០% ដល់ ៨.៥លាន', zh: '0%（≤150 万）· 5%（≤200 万）· 10%（≤850 万）' },
+        { en: '15% up to 12.5M · 20% above',                  km: '១៥% ដល់ ១២.៥លាន · ២០% លើស',       zh: '15%（≤1250 万）· 20%（以上）' },
+        { en: '150,000 KHR deduction per dependent',          km: 'កាត់បន្ថយ ១៥០,០០០ រៀលក្នុងម្នាក់នៅក្នុងបន្ទុក', zh: '每位被扶养人扣减 150,000 瑞尔' },
+      ],
+    },
+  ];
+
+  const toneStyles: Record<'blue' | 'amber' | 'emerald' | 'rose', { iconBg: string; iconText: string; ring: string }> = {
+    blue:    { iconBg: 'bg-blue-50',    iconText: 'text-blue-600',    ring: 'ring-blue-100' },
+    amber:   { iconBg: 'bg-amber-50',   iconText: 'text-amber-600',   ring: 'ring-amber-100' },
+    emerald: { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', ring: 'ring-emerald-100' },
+    rose:    { iconBg: 'bg-rose-50',    iconText: 'text-rose-600',    ring: 'ring-rose-100' },
+  };
+
+  return (
+    <section id="rules" className="py-20 sm:py-24">
+      <Container>
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>{t(T.workingRule.eyebrow, lang)}</Eyebrow>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            {t(T.workingRule.title, lang)}
+          </h2>
+          <p className="mt-5 text-base leading-relaxed text-slate-600">
+            {t(T.workingRule.desc, lang)}
+          </p>
+        </div>
+        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {rules.map((r, i) => {
+            const Icon = r.icon;
+            const tn = toneStyles[r.tone];
+            return (
+              <Card key={i} className="border-slate-200/70 shadow-sm">
+                <CardContent className="p-6">
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${tn.iconBg} ${tn.iconText} ring-4 ${tn.ring}`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <h3 className="mt-4 text-base font-semibold text-slate-900">{t(r.title, lang)}</h3>
+                  <ul className="mt-3 space-y-2">
+                    {r.bullets.map((b, j) => (
+                      <li key={j} className="flex items-start gap-2 text-sm leading-snug text-slate-600">
+                        <Check className="mt-1 h-3.5 w-3.5 flex-none text-emerald-600" />
+                        <span>{t(b, lang)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+        <p className="mt-10 text-center text-xs text-slate-500">
+          {t(T.workingRule.source, lang)}
+        </p>
+      </Container>
+    </section>
+  );
+}
+
 /** Testimonials — three short quotes. Stock names; replace with real once available. */
 function Testimonials({ lang }: { lang: Lang }) {
   const items: Array<{
@@ -1381,6 +1536,7 @@ function LandingFooter({ lang }: { lang: Lang }) {
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
               <li><a href="#modules"  className="hover:text-slate-900">{t(T.nav.modules, lang)}</a></li>
               <li><a href="#how"      className="hover:text-slate-900">{t(T.nav.howItWorks, lang)}</a></li>
+              <li><a href="#rules"    className="hover:text-slate-900">{t(T.nav.rules, lang)}</a></li>
               <li><a href="#faq"      className="hover:text-slate-900">{t(T.nav.faq, lang)}</a></li>
             </ul>
           </div>
@@ -1442,6 +1598,7 @@ export function LandingPage({ onSignInClick }: LandingPageProps) {
       <HowItWorks lang={lang} />
       <Deployment lang={lang} />
       <CambodiaSection lang={lang} />
+      <WorkingRule lang={lang} />
       <Testimonials lang={lang} />
       <Faq lang={lang} />
       <CtaBanner lang={lang} onSignIn={onSignInClick} />
