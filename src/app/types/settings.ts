@@ -72,6 +72,21 @@ export interface HolidayOTRule {
   roundingMinutes: number;
 }
 
+/**
+ * Night-work rule (Cambodian Labour Law Art. 144 + 162). The window may
+ * wrap past midnight (default 22:00 → 05:00). When {@link enabled} is true
+ * and any portion of an OT request overlaps the window, the effective
+ * multiplier becomes max(dayTypeRate, rate) — higher of the two applies.
+ */
+export interface NightWorkOTRule {
+  enabled: boolean;
+  /** HH:mm 24-hour. */
+  startTime: string;
+  /** HH:mm 24-hour. */
+  endTime: string;
+  rate: number;
+}
+
 export interface DepartmentOTAssignment {
   id: string;
   department: string;
@@ -95,6 +110,7 @@ export interface OTSettings {
   workdayRule: WorkdayOTRule;
   weekendRule: WeekendOTRule;
   holidayRule: HolidayOTRule;
+  nightRule: NightWorkOTRule;
   departmentAssignments: DepartmentOTAssignment[];
   calculationMode: 'factory' | 'office';
 }

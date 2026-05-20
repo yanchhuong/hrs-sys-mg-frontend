@@ -29,6 +29,14 @@ export const defaultOTSettings: OTSettings = {
     specialBonusAmount: 0,
     roundingMinutes: 30,
   },
+  // Night work per Cambodian Labour Law Art. 144 + 162 — 22:00 → 05:00 at
+  // 130% of the hourly wage. Composes with day-type rate by max-of-two.
+  nightRule: {
+    enabled: true,
+    startTime: '22:00',
+    endTime: '05:00',
+    rate: 1.3,
+  },
   departmentAssignments: [
     { id: 'DA001', department: 'Production', ruleLabel: 'Factory OT', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 },
     { id: 'DA002', department: 'IT', ruleLabel: 'Custom OT', weekdayRate: 1.5, weekendRate: 2.5, holidayRate: 3.0 },

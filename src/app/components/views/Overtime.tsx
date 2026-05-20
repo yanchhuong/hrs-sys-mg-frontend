@@ -9,6 +9,7 @@ import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
+import { otOverlapsNightWindow, effectiveOtMultiplier } from '../../utils/otRates';
 import { ScopePicker } from '../common/ScopePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -138,8 +139,12 @@ export function Overtime() {
   // settings once on mount and read the rates from them. Pre-load with
   // the legal-default 1.5 / 2 / 3 so the first render doesn't show 0× while
   // the network call is in flight.
-  const [otRates, setOtRates] = useState<{ weekday: number; weekend: number; holiday: number }>(
-    { weekday: 1.5, weekend: 2, holiday: 3 },
+  const [otRates, setOtRates] = useState<{
+    weekday: number; weekend: number; holiday: number;
+    nightEnabled: boolean; nightRate: number; nightStart: string; nightEnd: string;
+  }>(
+    { weekday: 1.5, weekend: 2, holiday: 3,
+      nightEnabled: true, nightRate: 1.3, nightStart: '22:00', nightEnd: '05:00' },
   );
 
   const loadOtRequests = async () => {
@@ -203,6 +208,13 @@ export function Overtime() {
         weekday: nested('workdayRule') ?? (Number(s.weekdayRate) || 1.5),
         weekend: nested('weekendRule') ?? (Number(s.weekendRate) || 2),
         holiday: nested('holidayRule') ?? (Number(s.holidayRate) || 3),
+        // Night-work overlay (V58). Flat columns, not nested in a JSON
+        // blob — fall back to the Cambodian Labour Law defaults so a
+        // legacy ot_settings row still drives the rate sensibly.
+        nightEnabled: s.nightEnabled ?? true,
+        nightRate:    Number(s.nightRate)   || 1.3,
+        nightStart:   (s.nightStartTime ?? '22:00').slice(0, 5),
+        nightEnd:     (s.nightEndTime   ?? '05:00').slice(0, 5),
       });
     } catch (err) {
       console.warn('Could not load OT settings — using default 1.5 / 2 / 3 rates', err);
@@ -381,12 +393,33 @@ export function Overtime() {
   /** Resolve the multiplier for a row from the loaded OT rules. The
    *  rules are tenant-configurable in Attendance Settings → OT Rules;
    *  Cambodian Labour Law defaults are 1.5× workday / 2× weekend / 3×
-   *  holiday and that's what we seed before the request returns. */
-  const rateMultiplier = (isWeekend: boolean, isHoliday: boolean): number =>
-    isHoliday ? otRates.holiday : isWeekend ? otRates.weekend : otRates.weekday;
+   *  holiday and that's what we seed before the request returns. The
+   *  night-work overlay (V58) takes precedence when the row's startHour
+   *  / endHour overlap the configured night window, raising the rate
+   *  to max(dayTypeRate, nightRate). */
+  const rateMultiplier = (
+    isWeekend: boolean,
+    isHoliday: boolean,
+    startHour?: string,
+    endHour?: string,
+  ): number => {
+    const dayTypeRate = isHoliday ? otRates.holiday : isWeekend ? otRates.weekend : otRates.weekday;
+    const isNight = otOverlapsNightWindow(startHour, endHour, otRates.nightStart, otRates.nightEnd);
+    return effectiveOtMultiplier({
+      dayTypeRate,
+      nightEnabled: otRates.nightEnabled,
+      nightRate: otRates.nightRate,
+      isNight,
+    });
+  };
 
-  const calculateOTRate = (isWeekend: boolean, isHoliday: boolean): string => {
-    const m = rateMultiplier(isWeekend, isHoliday);
+  const calculateOTRate = (
+    isWeekend: boolean,
+    isHoliday: boolean,
+    startHour?: string,
+    endHour?: string,
+  ): string => {
+    const m = rateMultiplier(isWeekend, isHoliday, startHour, endHour);
     return `${m}x`;
   };
 
@@ -402,9 +435,11 @@ export function Overtime() {
     hours: number,
     isWeekend: boolean,
     isHoliday: boolean,
+    startHour?: string,
+    endHour?: string,
   ): number => {
     if (!baseSalary || !hours) return 0;
-    return (baseSalary / 160) * hours * rateMultiplier(isWeekend, isHoliday);
+    return (baseSalary / 160) * hours * rateMultiplier(isWeekend, isHoliday, startHour, endHour);
   };
 
   // Pending first, then newest by requested date
@@ -704,7 +739,7 @@ export function Overtime() {
                     <TableCell className="text-center">{request.hours}h</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {calculateOTRate(request.isWeekend, request.isHoliday)}
+                        {calculateOTRate(request.isWeekend, request.isHoliday, request.startHour, request.endHour)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-sm">
@@ -714,6 +749,8 @@ export function Overtime() {
                           Number(request.hours) || 0,
                           request.isWeekend,
                           request.isHoliday,
+                          request.startHour,
+                          request.endHour,
                         );
                         return amount > 0
                           ? `$${formatMoney(amount)}`

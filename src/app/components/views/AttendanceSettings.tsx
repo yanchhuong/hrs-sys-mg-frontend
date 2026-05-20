@@ -30,7 +30,7 @@ import { USE_MOCKS } from '../../api/client';
 import {
   Settings, Clock, Save, Coffee, ArrowRightLeft, AlertTriangle, Timer,
   Plus, Trash2, Pencil, CheckCircle2, XCircle, Info, Zap, Building2, CalendarDays,
-  Briefcase, Calendar, PartyPopper, Shield, Users,
+  Briefcase, Calendar, PartyPopper, Shield, Users, Moon,
 } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
@@ -115,6 +115,15 @@ export function AttendanceSettings() {
         workdayRule: { ...prev.workdayRule, ...((remote.workdayRule as Partial<OTSettings['workdayRule']>) ?? {}) },
         weekendRule: { ...prev.weekendRule, ...((remote.weekendRule as Partial<OTSettings['weekendRule']>) ?? {}) },
         holidayRule: { ...prev.holidayRule, ...((remote.holidayRule as Partial<OTSettings['holidayRule']>) ?? {}) },
+        // Night-work rule comes from flat columns on ot_settings (V58), not
+        // a JSON blob like the other three — coerce + fall back to the
+        // tenant default so an older row still renders the card sensibly.
+        nightRule: {
+          enabled:   remote.nightEnabled    ?? prev.nightRule.enabled,
+          startTime: (remote.nightStartTime ?? prev.nightRule.startTime).slice(0, 5),
+          endTime:   (remote.nightEndTime   ?? prev.nightRule.endTime).slice(0, 5),
+          rate:      Number(remote.nightRate ?? prev.nightRule.rate),
+        },
         // Department assignments persist as a JSON list on the backend.
         // Coerce to the typed array if present, otherwise keep the empty
         // default so the rendered table still iterates safely.
@@ -205,6 +214,14 @@ export function AttendanceSettings() {
           workdayRule: otSettings.workdayRule as unknown as Record<string, unknown>,
           weekendRule: otSettings.weekendRule as unknown as Record<string, unknown>,
           holidayRule: otSettings.holidayRule as unknown as Record<string, unknown>,
+          // Night-work fields are flat columns (V58), serialised here.
+          // LocalTime on the backend tolerates the bare HH:mm form Tomcat /
+          // Jackson parses, so the :00 suffix that we tack onto otStartAfter
+          // isn't needed here.
+          nightEnabled:   otSettings.nightRule.enabled,
+          nightRate:      otSettings.nightRule.rate,
+          nightStartTime: otSettings.nightRule.startTime,
+          nightEndTime:   otSettings.nightRule.endTime,
           // Persist the per-department/group/team OT rule list. Backend
           // stores it as a JSON column verbatim (Object → list of rows
           // with id/department/ruleLabel/weekdayRate/weekendRate/holidayRate).
@@ -353,6 +370,7 @@ export function AttendanceSettings() {
               { key: 'workday', label: 'Workday OT', icon: <Briefcase className="h-4 w-4" /> },
               { key: 'weekend', label: 'Weekend OT', icon: <Calendar className="h-4 w-4" /> },
               { key: 'holiday-ot', label: 'Holiday OT', icon: <PartyPopper className="h-4 w-4" /> },
+              { key: 'night', label: 'Night Work', icon: <Moon className="h-4 w-4" /> },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -656,6 +674,119 @@ export function AttendanceSettings() {
             </div>
           )}
 
+          {/* ── Night Work OT ── */}
+          {otSubTab === 'night' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Moon className="h-5 w-5 text-indigo-600" />
+                    Night Work Settings
+                  </CardTitle>
+                  <CardDescription>Premium multiplier for OT that falls in the night window (Art. 144 + 162)</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="flex items-start justify-between gap-4 rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
+                    <div>
+                      <p className="text-sm font-medium text-indigo-900">Enable Night-Work Multiplier</p>
+                      <p className="text-xs text-indigo-700/80">When off, OT during night hours uses only the day-type rate.</p>
+                    </div>
+                    <Switch
+                      checked={otSettings.nightRule.enabled}
+                      onCheckedChange={v => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, enabled: v } })}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Night Window</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Start (inclusive)</Label>
+                        <Input
+                          type="time"
+                          value={otSettings.nightRule.startTime}
+                          disabled={!otSettings.nightRule.enabled}
+                          onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, startTime: e.target.value } })}
+                          className="h-9"
+                        />
+                        <p className="text-xs text-gray-400">Hours at or after this count as night.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">End (exclusive)</Label>
+                        <Input
+                          type="time"
+                          value={otSettings.nightRule.endTime}
+                          disabled={!otSettings.nightRule.enabled}
+                          onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, endTime: e.target.value } })}
+                          className="h-9"
+                        />
+                        <p className="text-xs text-gray-400">May wrap past midnight (e.g. 22:00 → 05:00).</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Multiplier</p>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Night Multiplier</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          value={otSettings.nightRule.rate}
+                          disabled={!otSettings.nightRule.enabled}
+                          onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, rate: parseFloat(e.target.value) || 1 } })}
+                          className="h-9 w-24"
+                        />
+                        <span className="text-lg font-semibold text-indigo-600">x</span>
+                      </div>
+                      <p className="text-xs text-gray-400">Default 1.30× per Cambodian Labour Law Art. 162.</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Info className="h-5 w-5 text-indigo-600" />
+                    Logic Preview & Example
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
+                    <div className="font-mono text-xs space-y-1.5 text-indigo-900">
+                      <p>if OT hour ∈ [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
+                      <p className="pl-4">→ effective_rate = max(dayTypeRate, {otSettings.nightRule.rate})</p>
+                      <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00–01:00 (2h)</p>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-600">Day type</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {otSettings.weekendRule.rate}x</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">max({otSettings.weekendRule.rate}, {otSettings.nightRule.rate}) = {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x</span></div>
+                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
+                        <span className="font-medium text-indigo-800">OT pay</span>
+                        <span className="font-semibold text-indigo-800">2h × {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x = {(2 * Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border rounded-lg p-4 text-xs leading-relaxed text-gray-600">
+                    <p className="font-medium text-gray-700 mb-1.5">Cambodian Labour Law reference</p>
+                    <p><strong>Art. 144</strong> — Night work is performed between 22:00 and 05:00.</p>
+                    <p className="mt-1"><strong>Art. 162</strong> — Night work is paid at no less than 130% of the normal hourly wage. When the OT also falls on a weekend or holiday, this implementation picks the higher of the two multipliers (single rate, not multiplicative).</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {/* ── Rule Priority ── */}
           <Card>
             <CardHeader>
@@ -663,7 +794,7 @@ export function AttendanceSettings() {
                 <Shield className="h-5 w-5" />
                 Rule Priority Order
               </CardTitle>
-              <CardDescription>When a day matches multiple rules, the highest priority is applied</CardDescription>
+              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night-work overlays on top, capping the day-type rate at max(dayType, night).</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
@@ -684,6 +815,15 @@ export function AttendanceSettings() {
                   </div>
                 ))}
               </div>
+              {otSettings.nightRule.enabled && (
+                <div className="mt-4 flex items-center gap-3 rounded-lg border-2 border-indigo-300 bg-indigo-100 text-indigo-800 p-4">
+                  <Moon className="h-4 w-4" />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">Night-work overlay</p>
+                    <p className="text-xs opacity-75">OT in [{otSettings.nightRule.startTime} → {otSettings.nightRule.endTime}) uses max(dayType, {otSettings.nightRule.rate}x).</p>
+                  </div>
+                </div>
+              )}
               <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-xs text-amber-800"><strong>Example:</strong> If a day is BOTH Weekend + Holiday → <strong>Holiday rule ({otSettings.holidayRule.rate}x)</strong> is applied, not Weekend ({otSettings.weekendRule.rate}x).</p>
               </div>

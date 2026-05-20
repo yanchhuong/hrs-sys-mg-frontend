@@ -102,6 +102,14 @@ export interface OtSettings {
   weekdayRate: number;
   weekendRate: number;
   holidayRate: number;
+  /** Night-work (Art. 144 + 162). The window may wrap past midnight.
+   *  Compose with day-type rate as max(dayTypeRate, nightRate). */
+  nightEnabled?: boolean;
+  nightRate?: number;
+  /** HH:mm. */
+  nightStartTime?: string;
+  /** HH:mm. */
+  nightEndTime?: string;
   maxOTHoursPerDay: number;
   requireApproval: boolean;
   calculationMode: 'factory' | 'office' | string;

@@ -60,6 +60,7 @@ import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel, PAYROLL_TEMPLATES, PayrollTemplate } from '../../utils/excelExport';
+import { otOverlapsNightWindow, effectiveOtMultiplier } from '../../utils/otRates';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -1235,11 +1236,51 @@ export function Payroll() {
     };
 
     // OT pay = (baseSalary / 160) * hours * multiplier. 160 = 20 working
-    // days × 8 hours. Multiplier mirrors the rate badge in the Overtime
-    // page: weekday 1.5×, weekend 2×, holiday 3×.
-    const otPayFor = (baseSalary: number, hours: number, isWeekend: boolean, isHoliday: boolean) => {
+    // days × 8 hours. Multipliers come from the tenant's OT settings
+    // (Attendance → OT Rules) — workday / weekend / holiday + the V58
+    // night-work overlay. Defaults fall back to the Cambodian Labour Law
+    // baselines (1.5× / 2× / 3× and 1.3× night) if the call fails.
+    let otCfg = {
+      weekday: 1.5, weekend: 2, holiday: 3,
+      nightEnabled: true, nightRate: 1.3, nightStart: '22:00', nightEnd: '05:00',
+    };
+    if (!USE_MOCKS) {
+      try {
+        const s = await settingsApi.getOtSettings();
+        const nested = (k: keyof settingsApi.OtSettings): number | undefined => {
+          const v = (s[k] as Record<string, unknown> | undefined)?.rate;
+          return typeof v === 'number' && v > 0 ? v : undefined;
+        };
+        otCfg = {
+          weekday: nested('workdayRule') ?? (Number(s.weekdayRate) || 1.5),
+          weekend: nested('weekendRule') ?? (Number(s.weekendRate) || 2),
+          holiday: nested('holidayRule') ?? (Number(s.holidayRate) || 3),
+          nightEnabled: s.nightEnabled ?? true,
+          nightRate:    Number(s.nightRate)   || 1.3,
+          nightStart:   (s.nightStartTime ?? '22:00').slice(0, 5),
+          nightEnd:     (s.nightEndTime   ?? '05:00').slice(0, 5),
+        };
+      } catch (err) {
+        console.warn('Could not load OT settings — using Cambodian Labour Law defaults', err);
+      }
+    }
+    const otPayFor = (
+      baseSalary: number,
+      hours: number,
+      isWeekend: boolean,
+      isHoliday: boolean,
+      startHour?: string,
+      endHour?: string,
+    ) => {
       if (!baseSalary || !hours) return 0;
-      const multiplier = isHoliday ? 3 : isWeekend ? 2 : 1.5;
+      const dayTypeRate = isHoliday ? otCfg.holiday : isWeekend ? otCfg.weekend : otCfg.weekday;
+      const isNight = otOverlapsNightWindow(startHour, endHour, otCfg.nightStart, otCfg.nightEnd);
+      const multiplier = effectiveOtMultiplier({
+        dayTypeRate,
+        nightEnabled: otCfg.nightEnabled,
+        nightRate: otCfg.nightRate,
+        isNight,
+      });
       return (baseSalary / 160) * hours * multiplier;
     };
 
@@ -1303,7 +1344,14 @@ export function Payroll() {
       );
       if (!emp) continue;
       const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
-      const pay = otPayFor(emp.baseSalary || 0, Number(r.hours || 0), r.isWeekend, r.isHoliday);
+      const pay = otPayFor(
+        emp.baseSalary || 0,
+        Number(r.hours || 0),
+        r.isWeekend,
+        r.isHoliday,
+        (r as { startHour?: string }).startHour,
+        (r as { endHour?: string }).endHour,
+      );
       otTotalByApiId.set(apiId, (otTotalByApiId.get(apiId) ?? 0) + pay);
     }
 
