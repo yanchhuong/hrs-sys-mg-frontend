@@ -36,6 +36,10 @@ export const defaultOTSettings: OTSettings = {
     startTime: '22:00',
     endTime: '05:00',
     rate: 1.3,
+    // 'replace' — night rate wins outright when in window (Cambodian
+    // payroll's typical reading of Art. 162). HR can switch to 'max'
+    // or 'multiply' in Settings → OT Rules → Night Work.
+    compose: 'replace',
   },
   departmentAssignments: [
     { id: 'DA001', department: 'Production', ruleLabel: 'Factory OT', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 },

@@ -55,28 +55,41 @@ export function otOverlapsNightWindow(
   return reqIntervals.some(r => nightIntervals.some(n => intervalsOverlap(r, n)));
 }
 
+export type NightComposeMode = 'replace' | 'max' | 'multiply';
+
 /**
  * Resolves the effective hourly multiplier for an OT request. When the
  * picked hours overlap the night window AND the night-work toggle is
- * on, the night rate REPLACES the day-type rate — the configured
- * 1.30× (Art. 162) is the canonical night-work pay regardless of
- * whether the date is a weekday, weekend or holiday. Outside the night
- * window the day-type rate stands alone.
+ * on, the {@code nightCompose} mode (V61) decides how the two rates
+ * combine:
  *
- * (Earlier we used max(dayType, night), but tenants treat the night
- * row in Settings as "the rate for night hours" not "a floor on top
- * of day-type" — replacement matches HR's mental model and what the
- * Settings preview promises.)
+ *   - 'replace'  → night rate wins outright (default; matches HR's
+ *                   intuition that the Settings row IS the rate for
+ *                   night hours).
+ *   - 'max'      → max(dayTypeRate, nightRate). Night acts as a floor
+ *                   without ever lowering weekend / holiday pay.
+ *   - 'multiply' → dayTypeRate × nightRate. Compound model
+ *                   (Saturday 23:00 → 2 × 1.3 = 2.6×).
+ *
+ * Outside the night window — or when nightEnabled is false — the day-
+ * type rate stands alone.
  */
 export function effectiveOtMultiplier(args: {
   dayTypeRate: number;
   nightEnabled: boolean;
   nightRate: number;
   isNight: boolean;
+  /** Tenant-configurable composition mode. Defaults to 'replace'. */
+  nightCompose?: NightComposeMode;
 }): number {
-  const { dayTypeRate, nightEnabled, nightRate, isNight } = args;
+  const { dayTypeRate, nightEnabled, nightRate, isNight, nightCompose = 'replace' } = args;
   if (!nightEnabled || !isNight) return dayTypeRate;
-  return nightRate;
+  switch (nightCompose) {
+    case 'max':      return Math.max(dayTypeRate, nightRate);
+    case 'multiply': return dayTypeRate * nightRate;
+    case 'replace':
+    default:         return nightRate;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,8 +201,9 @@ export function computeOtPay(args: {
   nightRate: number;
   nightStart: string;
   nightEnd: string;
+  nightCompose?: NightComposeMode;
 }): number {
-  const { hourlyWage, segments, dayTypeRateFor, nightEnabled, nightRate, nightStart, nightEnd } = args;
+  const { hourlyWage, segments, dayTypeRateFor, nightEnabled, nightRate, nightStart, nightEnd, nightCompose } = args;
   if (!hourlyWage) return 0;
   let total = 0;
   for (const seg of segments) {
@@ -201,6 +215,7 @@ export function computeOtPay(args: {
       nightEnabled,
       nightRate,
       isNight,
+      nightCompose,
     });
     total += hourlyWage * seg.hours * rate;
   }
@@ -264,13 +279,14 @@ export function detectOtRule(args: {
   nightRate: number;
   nightStart: string;
   nightEnd: string;
+  nightCompose?: NightComposeMode;
   /** Admin override — when set, wins over auto-detection. */
   override?: OtDayType;
 }): DetectedOtRule {
   const {
     date, startHour, endHour, isHoliday, holidayDates,
     weekdayRate, weekendRate, holidayRate,
-    nightEnabled, nightRate, nightStart, nightEnd, override,
+    nightEnabled, nightRate, nightStart, nightEnd, nightCompose, override,
   } = args;
 
   let dayType: OtDayType;
@@ -291,7 +307,7 @@ export function detectOtRule(args: {
 
   const isNight = otOverlapsNightWindow(startHour, endHour, nightStart, nightEnd);
   const effectiveRate = effectiveOtMultiplier({
-    dayTypeRate, nightEnabled, nightRate, isNight,
+    dayTypeRate, nightEnabled, nightRate, isNight, nightCompose,
   });
 
   const dayLabel = dayType === 'holiday' ? 'Holiday' : dayType === 'weekend' ? 'Weekend' : 'Workday';

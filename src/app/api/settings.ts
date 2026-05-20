@@ -113,6 +113,8 @@ export interface OtSettings {
   nightStartTime?: string;
   /** HH:mm. */
   nightEndTime?: string;
+  /** replace | max | multiply (V61). */
+  nightCompose?: 'replace' | 'max' | 'multiply';
   maxOTHoursPerDay: number;
   requireApproval: boolean;
   calculationMode: 'factory' | 'office' | string;

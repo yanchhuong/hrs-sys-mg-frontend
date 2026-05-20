@@ -78,6 +78,8 @@ export interface HolidayOTRule {
  * and any portion of an OT request overlaps the window, the effective
  * multiplier becomes max(dayTypeRate, rate) — higher of the two applies.
  */
+export type NightCompose = 'replace' | 'max' | 'multiply';
+
 export interface NightWorkOTRule {
   enabled: boolean;
   /** HH:mm 24-hour. */
@@ -85,6 +87,13 @@ export interface NightWorkOTRule {
   /** HH:mm 24-hour. */
   endTime: string;
   rate: number;
+  /** How the night rate combines with the day-type rate when in window
+   *  (V61). 'replace' → night wins outright (default; matches HR's
+   *  intuition that the Settings row IS the rate for night hours).
+   *  'max' → effective = max(dayType, night), useful when night should
+   *  act as a floor without ever lowering weekend / holiday pay.
+   *  'multiply' → effective = dayType × night (compound model). */
+  compose: NightCompose;
 }
 
 export interface DepartmentOTAssignment {

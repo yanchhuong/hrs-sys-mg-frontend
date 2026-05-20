@@ -123,6 +123,12 @@ export function AttendanceSettings() {
           startTime: (remote.nightStartTime ?? prev.nightRule.startTime).slice(0, 5),
           endTime:   (remote.nightEndTime   ?? prev.nightRule.endTime).slice(0, 5),
           rate:      Number(remote.nightRate ?? prev.nightRule.rate),
+          // V61 — composition mode. Coerce unknown values back to the
+          // 'replace' default so a future enum addition can't crash the
+          // page on a tenant that's already saved the new value.
+          compose:   (remote.nightCompose === 'max' || remote.nightCompose === 'multiply' || remote.nightCompose === 'replace')
+            ? remote.nightCompose
+            : prev.nightRule.compose,
         },
         // Department assignments persist as a JSON list on the backend.
         // Coerce to the typed array if present, otherwise keep the empty
@@ -222,6 +228,7 @@ export function AttendanceSettings() {
           nightRate:      otSettings.nightRule.rate,
           nightStartTime: otSettings.nightRule.startTime,
           nightEndTime:   otSettings.nightRule.endTime,
+          nightCompose:   otSettings.nightRule.compose,
           // Persist the per-department/group/team OT rule list. Backend
           // stores it as a JSON column verbatim (Object → list of rows
           // with id/department/ruleLabel/weekdayRate/weekendRate/holidayRate).
@@ -727,21 +734,45 @@ export function AttendanceSettings() {
 
                   <div className="border-t pt-4">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Multiplier</p>
-                    <div className="space-y-2">
-                      <Label className="text-sm">Night Multiplier</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          step="0.1"
-                          min="1"
-                          value={otSettings.nightRule.rate}
-                          disabled={!otSettings.nightRule.enabled}
-                          onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, rate: parseFloat(e.target.value) || 1 } })}
-                          className="h-9 w-24"
-                        />
-                        <span className="text-lg font-semibold text-indigo-600">x</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Night Multiplier</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="1"
+                            value={otSettings.nightRule.rate}
+                            disabled={!otSettings.nightRule.enabled}
+                            onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, rate: parseFloat(e.target.value) || 1 } })}
+                            className="h-9 w-24"
+                          />
+                          <span className="text-lg font-semibold text-indigo-600">x</span>
+                        </div>
+                        <p className="text-xs text-gray-400">Default 1.30× per Cambodian Labour Law Art. 162.</p>
                       </div>
-                      <p className="text-xs text-gray-400">Default 1.30× per Cambodian Labour Law Art. 162.</p>
+                      <div className="space-y-2">
+                        <Label className="text-sm">When in night window</Label>
+                        <Select
+                          value={otSettings.nightRule.compose}
+                          disabled={!otSettings.nightRule.enabled}
+                          onValueChange={v => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, compose: v as 'replace' | 'max' | 'multiply' } })}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="replace">Replace day-type rate</SelectItem>
+                            <SelectItem value="max">Max of day-type and night</SelectItem>
+                            <SelectItem value="multiply">Multiply day-type × night</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-400">
+                          {otSettings.nightRule.compose === 'replace'
+                            ? 'Night rate wins outright when overlapping the window.'
+                            : otSettings.nightRule.compose === 'max'
+                              ? 'Effective = max(dayType, night) — never lowers weekend or holiday pay.'
+                              : 'Effective = dayType × night — compound model (Sat night = weekend × night).'}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -755,50 +786,81 @@ export function AttendanceSettings() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                    <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
-                    <div className="font-mono text-xs space-y-1.5 text-indigo-900">
-                      <p>if OT interval overlaps [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
-                      <p className="pl-4">→ effective_rate = {otSettings.nightRule.rate} <span className="text-indigo-600">(night replaces day-type)</span></p>
-                      <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
-                    </div>
-                    <p className="mt-3 text-[11px] text-indigo-800/80">
-                      The window wraps past midnight when end ≤ start. Cross-date OT (e.g. check-in 22:00 yesterday → check-out 05:00 today) is handled by splitting the request interval at midnight — each side picks its own day-type, and the night rate replaces whichever bucket overlaps the window.
-                    </p>
-                  </div>
+                  {/* Helpers — keep the worked examples in lockstep with
+                      the picked composition mode so HR sees their choice
+                      reflected live in the preview numbers. */}
+                  {(() => {
+                    const compose = otSettings.nightRule.compose;
+                    const night = otSettings.nightRule.rate;
+                    const composeOf = (dayRate: number) =>
+                      compose === 'max' ? Math.max(dayRate, night)
+                      : compose === 'multiply' ? dayRate * night
+                      : night;
+                    const composeFormula = (dayLabel: string, dayRate: number) =>
+                      compose === 'max' ? `max(${dayRate}, ${night}) = ${composeOf(dayRate)}`
+                      : compose === 'multiply' ? `${dayRate} × ${night} = ${composeOf(dayRate).toFixed(2)}`
+                      : `${night} (replaces ${dayRate}x ${dayLabel})`;
+                    const composeRuleLine =
+                      compose === 'max' ? `→ effective_rate = max(dayTypeRate, ${night})`
+                      : compose === 'multiply' ? `→ effective_rate = dayTypeRate × ${night}`
+                      : `→ effective_rate = ${night}`;
+                    const composeNarrative =
+                      compose === 'max' ? 'night rate acts as a floor on the day-type rate'
+                      : compose === 'multiply' ? 'night rate compounds with the day-type rate'
+                      : 'night rate replaces the day-type rate';
+                    const workday = otSettings.workdayRule.rate;
+                    const weekend = otSettings.weekendRule.rate;
+                    const work7  = (7 * composeOf(workday));
+                    const wknd2  = (2 * composeOf(weekend));
+                    return (
+                      <>
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                          <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
+                          <div className="font-mono text-xs space-y-1.5 text-indigo-900">
+                            <p>if OT interval overlaps [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
+                            <p className="pl-4">{composeRuleLine} <span className="text-indigo-600">({composeNarrative})</span></p>
+                            <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
+                          </div>
+                          <p className="mt-3 text-[11px] text-indigo-800/80">
+                            The window wraps past midnight when end ≤ start. Cross-date OT splits at midnight — each side picks its own day-type, and the composition rule above applies to whichever bucket overlaps the window.
+                          </p>
+                        </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Night shift 22:00 → 05:00 (cross-date, 7h)</p>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">Check-in</span><span className="font-medium">22:00 yesterday</span></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Check-out</span><span className="font-medium">05:00 today</span></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Day type (start date)</span><Badge className="bg-blue-100 text-blue-700 border-0">Weekday · {otSettings.workdayRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Fully in night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{otSettings.nightRule.rate}x <span className="text-gray-500">(night replaces {otSettings.workdayRule.rate}x weekday)</span></span></div>
-                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
-                        <span className="font-medium text-indigo-800">OT pay</span>
-                        <span className="font-semibold text-indigo-800">7h × {otSettings.nightRule.rate}x = {(7 * otSettings.nightRule.rate).toFixed(2)}h equivalent</span>
-                      </div>
-                    </div>
-                  </div>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Night shift 22:00 → 05:00 (cross-date, 7h)</p>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between"><span className="text-gray-600">Check-in</span><span className="font-medium">22:00 yesterday</span></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Check-out</span><span className="font-medium">05:00 today</span></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Day type (start date)</span><Badge className="bg-blue-100 text-blue-700 border-0">Weekday · {workday}x</Badge></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Fully in night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {night}x</Badge></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{composeOf(workday)}x <span className="text-gray-500">({composeFormula('weekday', workday)})</span></span></div>
+                            <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
+                              <span className="font-medium text-indigo-800">OT pay</span>
+                              <span className="font-semibold text-indigo-800">7h × {composeOf(workday)}x = {work7.toFixed(2)}h equivalent</span>
+                            </div>
+                          </div>
+                        </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00 → Sunday 01:00 (cross-date, 2h)</p>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">Day type (Saturday start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {otSettings.weekendRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{otSettings.nightRule.rate}x <span className="text-gray-500">(night replaces {otSettings.weekendRule.rate}x weekend)</span></span></div>
-                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
-                        <span className="font-medium text-indigo-800">OT pay</span>
-                        <span className="font-semibold text-indigo-800">2h × {otSettings.nightRule.rate}x = {(2 * otSettings.nightRule.rate).toFixed(2)}h equivalent</span>
-                      </div>
-                    </div>
-                  </div>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00 → Sunday 01:00 (cross-date, 2h)</p>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between"><span className="text-gray-600">Day type (Saturday start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {weekend}x</Badge></div>
+                            <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {night}x</Badge></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{composeOf(weekend)}x <span className="text-gray-500">({composeFormula('weekend', weekend)})</span></span></div>
+                            <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
+                              <span className="font-medium text-indigo-800">OT pay</span>
+                              <span className="font-semibold text-indigo-800">2h × {composeOf(weekend)}x = {wknd2.toFixed(2)}h equivalent</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   <div className="bg-white border rounded-lg p-4 text-xs leading-relaxed text-gray-600">
                     <p className="font-medium text-gray-700 mb-1.5">Cambodian Labour Law reference</p>
                     <p><strong>Art. 144</strong> — Night work is performed between 22:00 and 05:00.</p>
-                    <p className="mt-1"><strong>Art. 162</strong> — Night work is paid at no less than 130% of the normal hourly wage. This implementation treats the night rate as <em>the</em> rate for night hours — it replaces the day-type multiplier whenever the OT overlaps the configured night window (rather than layering on top via max).</p>
+                    <p className="mt-1"><strong>Art. 162</strong> — Night work is paid at no less than 130% of the normal hourly wage. The composition mode above decides how that rate combines with the day-type multiplier — see the worked examples for the picked mode's behaviour.</p>
                   </div>
                 </CardContent>
               </Card>
@@ -812,7 +874,7 @@ export function AttendanceSettings() {
                 <Shield className="h-5 w-5" />
                 Rule Priority Order
               </CardTitle>
-              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night work overrides the day-type rate whenever the OT falls inside the configured night window.</CardDescription>
+              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night work composes with the day-type rate via the mode picked in the Night Work tab.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
@@ -838,7 +900,13 @@ export function AttendanceSettings() {
                   <Moon className="h-4 w-4" />
                   <div className="flex-1">
                     <p className="font-medium text-sm">Night-work overlay</p>
-                    <p className="text-xs opacity-75">OT in [{otSettings.nightRule.startTime} → {otSettings.nightRule.endTime}) is paid at {otSettings.nightRule.rate}x — replaces the day-type rate.</p>
+                    <p className="text-xs opacity-75">
+                      OT in [{otSettings.nightRule.startTime} → {otSettings.nightRule.endTime}) — {otSettings.nightRule.compose === 'max'
+                        ? `max(dayType, ${otSettings.nightRule.rate}x)`
+                        : otSettings.nightRule.compose === 'multiply'
+                          ? `dayType × ${otSettings.nightRule.rate} (compound)`
+                          : `${otSettings.nightRule.rate}x replaces the day-type rate`}.
+                    </p>
                   </div>
                 </div>
               )}
@@ -1020,10 +1088,22 @@ export function AttendanceSettings() {
                   </div>
                   <div className={`text-xs space-y-1 ${otSettings.nightRule.enabled ? 'text-indigo-600' : 'text-gray-500'}`}>
                     <p>Window {otSettings.nightRule.startTime}–{otSettings.nightRule.endTime}</p>
-                    <p>Replaces day-type rate · cross-date OK</p>
+                    <p>
+                      {otSettings.nightRule.compose === 'max'
+                        ? 'max(dayType, night) · cross-date OK'
+                        : otSettings.nightRule.compose === 'multiply'
+                          ? 'dayType × night · cross-date OK'
+                          : 'Replaces day-type rate · cross-date OK'}
+                    </p>
                   </div>
                   <div className={`font-mono text-xs bg-white rounded p-2 ${otSettings.nightRule.enabled ? 'text-indigo-900' : 'text-gray-500'}`}>
-                    Fri 22:00 → Sat 05:00, 7h × {otSettings.nightRule.rate} = {(7 * otSettings.nightRule.rate).toFixed(1)}h
+                    {(() => {
+                      const w = otSettings.workdayRule.rate, n = otSettings.nightRule.rate;
+                      const eff = otSettings.nightRule.compose === 'max' ? Math.max(w, n)
+                        : otSettings.nightRule.compose === 'multiply' ? w * n
+                        : n;
+                      return `Fri 22:00 → Sat 05:00, 7h × ${eff} = ${(7 * eff).toFixed(1)}h`;
+                    })()}
                   </div>
                 </div>
               </div>

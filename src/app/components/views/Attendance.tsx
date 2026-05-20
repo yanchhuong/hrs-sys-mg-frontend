@@ -285,9 +285,11 @@ export function Attendance() {
   const [otRates, setOtRates] = useState<{
     weekday: number; weekend: number; holiday: number;
     nightEnabled: boolean; nightRate: number; nightStart: string; nightEnd: string;
+    nightCompose: 'replace' | 'max' | 'multiply';
   }>({
     weekday: 1.5, weekend: 2, holiday: 3,
     nightEnabled: true, nightRate: 1.3, nightStart: '22:00', nightEnd: '05:00',
+    nightCompose: 'replace',
   });
   /** Admin-only day-type override for the Apply OT branch. `null` = use
    *  the auto-detected value (driven by date + holidayDates). */
@@ -531,6 +533,9 @@ export function Attendance() {
             nightRate:    Number(s.nightRate)   || 1.3,
             nightStart:   (s.nightStartTime ?? '22:00').slice(0, 5),
             nightEnd:     (s.nightEndTime   ?? '05:00').slice(0, 5),
+            nightCompose: (s.nightCompose === 'max' || s.nightCompose === 'multiply' || s.nightCompose === 'replace')
+              ? s.nightCompose
+              : 'replace',
           });
         } catch (err) {
           console.warn('Could not load OT settings — Apply OT badge will use defaults', err);
@@ -2823,6 +2828,7 @@ export function Attendance() {
                         nightRate: otRates.nightRate,
                         nightStart: otRates.nightStart,
                         nightEnd: otRates.nightEnd,
+                        nightCompose: otRates.nightCompose,
                         override: editOtDayTypeOverride ?? undefined,
                       });
                       const dayBadgeColor = rule.dayType === 'holiday'

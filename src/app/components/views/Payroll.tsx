@@ -1244,9 +1244,14 @@ export function Payroll() {
     // (Attendance → OT Rules) — workday / weekend / holiday + the V58
     // night-work overlay. Defaults fall back to the Cambodian Labour Law
     // baselines (1.5× / 2× / 3× and 1.3× night) if the call fails.
-    let otCfg = {
+    let otCfg: {
+      weekday: number; weekend: number; holiday: number;
+      nightEnabled: boolean; nightRate: number; nightStart: string; nightEnd: string;
+      nightCompose: 'replace' | 'max' | 'multiply';
+    } = {
       weekday: 1.5, weekend: 2, holiday: 3,
       nightEnabled: true, nightRate: 1.3, nightStart: '22:00', nightEnd: '05:00',
+      nightCompose: 'replace',
     };
     if (!USE_MOCKS) {
       try {
@@ -1263,6 +1268,9 @@ export function Payroll() {
           nightRate:    Number(s.nightRate)   || 1.3,
           nightStart:   (s.nightStartTime ?? '22:00').slice(0, 5),
           nightEnd:     (s.nightEndTime   ?? '05:00').slice(0, 5),
+          nightCompose: (s.nightCompose === 'max' || s.nightCompose === 'multiply' || s.nightCompose === 'replace')
+            ? s.nightCompose
+            : 'replace',
         };
       } catch (err) {
         console.warn('Could not load OT settings — using Cambodian Labour Law defaults', err);
@@ -1304,6 +1312,7 @@ export function Payroll() {
         nightRate: otCfg.nightRate,
         nightStart: otCfg.nightStart,
         nightEnd: otCfg.nightEnd,
+        nightCompose: otCfg.nightCompose,
       });
     };
 
