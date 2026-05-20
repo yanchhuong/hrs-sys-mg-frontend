@@ -60,7 +60,9 @@ import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
 import { exportPayrollToExcel, PAYROLL_TEMPLATES, PayrollTemplate } from '../../utils/excelExport';
-import { otOverlapsNightWindow, effectiveOtMultiplier } from '../../utils/otRates';
+import {
+  splitOtRequestByDay, defaultDayTypeRateFor, computeOtPay,
+} from '../../utils/otRates';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -1264,6 +1266,10 @@ export function Payroll() {
         console.warn('Could not load OT settings — using Cambodian Labour Law defaults', err);
       }
     }
+    // Per-day bucketed pay (V59). A cross-midnight OT splits at 24:00
+    // and each bucket gets its own day-type + night overlay; same-day
+    // OT collapses to one bucket so this matches the legacy 1.5/2/3
+    // path on existing rows.
     const otPayFor = (
       baseSalary: number,
       hours: number,
@@ -1271,17 +1277,32 @@ export function Payroll() {
       isHoliday: boolean,
       startHour?: string,
       endHour?: string,
+      startDate?: string,
+      endDate?: string,
     ) => {
       if (!baseSalary || !hours) return 0;
-      const dayTypeRate = isHoliday ? otCfg.holiday : isWeekend ? otCfg.weekend : otCfg.weekday;
-      const isNight = otOverlapsNightWindow(startHour, endHour, otCfg.nightStart, otCfg.nightEnd);
-      const multiplier = effectiveOtMultiplier({
-        dayTypeRate,
+      const segments = splitOtRequestByDay({
+        startDate: startDate ?? '',
+        startHour: startHour ?? '',
+        endDate:   endDate   ?? startDate ?? '',
+        endHour:   endHour   ?? '',
+        totalHours: hours,
+      });
+      const rateOf = defaultDayTypeRateFor({
+        weekdayRate: otCfg.weekday,
+        weekendRate: otCfg.weekend,
+        holidayRate: otCfg.holiday,
+        holidayDates: isHoliday && startDate ? new Set([startDate]) : undefined,
+      });
+      return computeOtPay({
+        hourlyWage: baseSalary / 160,
+        segments,
+        dayTypeRateFor: rateOf,
         nightEnabled: otCfg.nightEnabled,
         nightRate: otCfg.nightRate,
-        isNight,
+        nightStart: otCfg.nightStart,
+        nightEnd: otCfg.nightEnd,
       });
-      return (baseSalary / 160) * hours * multiplier;
     };
 
     // Pull approved OT + active deductions + increases overlapping the
@@ -1351,6 +1372,8 @@ export function Payroll() {
         r.isHoliday,
         (r as { startHour?: string }).startHour,
         (r as { endHour?: string }).endHour,
+        r.date,
+        (r as { endDate?: string }).endDate,
       );
       otTotalByApiId.set(apiId, (otTotalByApiId.get(apiId) ?? 0) + pay);
     }

@@ -9,7 +9,10 @@ import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
-import { otOverlapsNightWindow, effectiveOtMultiplier } from '../../utils/otRates';
+import {
+  otOverlapsNightWindow, effectiveOtMultiplier,
+  splitOtRequestByDay, defaultDayTypeRateFor, computeOtPay, isDateWeekend,
+} from '../../utils/otRates';
 import { ScopePicker } from '../common/ScopePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -118,6 +121,10 @@ export function Overtime() {
   } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  /** Submit-dialog End Date. Auto-bumps to selectedDate+1 when the picked
+   *  endHour wraps past midnight (endHour <= startHour); HR can still
+   *  override it manually for unusual cases. */
+  const [selectedEndDate, setSelectedEndDate] = useState<Date>(new Date());
   const [startHour, setStartHour] = useState('');
   const [endHour, setEndHour] = useState('');
   const [hours, setHours] = useState('');
@@ -302,6 +309,26 @@ export function Overtime() {
     setHours((mins / 60).toFixed(2).replace(/\.00$/, ''));
   }, [startHour, endHour]);
 
+  // Cross-midnight detection — when endHour wraps to a non-positive
+  // delta, the end belongs to the next calendar day. We auto-bump
+  // selectedEndDate to selectedDate + 1 so HR doesn't have to remember.
+  // Keeping in sync with selectedDate too so swapping the start date
+  // drags the end date along.
+  useEffect(() => {
+    if (!startHour || !endHour) {
+      // Without hours yet, end date mirrors start date.
+      setSelectedEndDate(selectedDate);
+      return;
+    }
+    const [sh, sm] = startHour.split(':').map(Number);
+    const [eh, em] = endHour.split(':').map(Number);
+    if ([sh, sm, eh, em].some(n => Number.isNaN(n))) return;
+    const wraps = (eh * 60 + em) <= (sh * 60 + sm);
+    const next = new Date(selectedDate);
+    if (wraps) next.setDate(next.getDate() + 1);
+    setSelectedEndDate(next);
+  }, [startHour, endHour, selectedDate]);
+
   const handleSubmitRequest = async () => {
     if (!startHour || !endHour) {
       toast.error('Please provide start and end hours');
@@ -316,6 +343,7 @@ export function Overtime() {
       return;
     }
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    const endDateStr = format(selectedEndDate, 'yyyy-MM-dd');
     if (USE_MOCKS) {
       toast.success('OT request submitted successfully');
       setDialogOpen(false);
@@ -337,6 +365,7 @@ export function Overtime() {
     try {
       await overtimeApi.create({
         date: dateStr,
+        endDate: endDateStr,
         hours: hoursNum,
         startHour,
         endHour,
@@ -391,56 +420,89 @@ export function Overtime() {
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
 
-  /** Resolve the multiplier for a row from the loaded OT rules. The
-   *  rules are tenant-configurable in Attendance Settings → OT Rules;
-   *  Cambodian Labour Law defaults are 1.5× workday / 2× weekend / 3×
-   *  holiday and that's what we seed before the request returns. The
-   *  night-work overlay (V58) takes precedence when the row's startHour
-   *  / endHour overlap the configured night window, raising the rate
-   *  to max(dayTypeRate, nightRate). */
-  const rateMultiplier = (
-    isWeekend: boolean,
-    isHoliday: boolean,
-    startHour?: string,
-    endHour?: string,
-  ): number => {
-    const dayTypeRate = isHoliday ? otRates.holiday : isWeekend ? otRates.weekend : otRates.weekday;
-    const isNight = otOverlapsNightWindow(startHour, endHour, otRates.nightStart, otRates.nightEnd);
-    return effectiveOtMultiplier({
-      dayTypeRate,
-      nightEnabled: otRates.nightEnabled,
-      nightRate: otRates.nightRate,
-      isNight,
+  /**
+   * Bucket an OT request by calendar day so each day gets its own
+   * day-type + night overlay (V59). Same-day OT collapses to one bucket;
+   * a cross-midnight request splits at 24:00.
+   */
+  const segmentsFor = (req: { date?: string; endDate?: string | null; startHour?: string; endHour?: string; hours: number }) =>
+    splitOtRequestByDay({
+      startDate: req.date ?? '',
+      startHour: req.startHour ?? '',
+      endDate:   req.endDate ?? req.date ?? '',
+      endHour:   req.endHour ?? '',
+      totalHours: Number(req.hours) || 0,
     });
-  };
 
-  const calculateOTRate = (
-    isWeekend: boolean,
-    isHoliday: boolean,
-    startHour?: string,
-    endHour?: string,
-  ): string => {
-    const m = rateMultiplier(isWeekend, isHoliday, startHour, endHour);
-    return `${m}x`;
+  /** Day-type rate function for one request. Honours the row's
+   *  isHoliday flag on the START date; falls back to day-of-week
+   *  weekend detection on each segment so a Fri→Sat shift correctly
+   *  picks up the Saturday weekend rate for the second bucket. */
+  const dayTypeRateFor = (req: { date?: string; isWeekend?: boolean; isHoliday?: boolean }) =>
+    defaultDayTypeRateFor({
+      weekdayRate: otRates.weekday,
+      weekendRate: otRates.weekend,
+      holidayRate: otRates.holiday,
+      // Treat the row's isHoliday flag as evidence the START date is a
+      // holiday — apply that rate on its segment specifically.
+      holidayDates: req.isHoliday && req.date ? new Set([req.date]) : undefined,
+    });
+
+  /**
+   * Headline rate badge for the table. We show the highest effective
+   * rate across the request's day buckets so admins see at a glance
+   * "Saturday-night → 2.0×". The actual pay below uses the per-bucket
+   * sum, so the displayed badge can read lower than the pay implies on
+   * mixed-day OT — the (i) tooltip explains the breakdown.
+   */
+  const calculateOTRate = (req: {
+    date?: string; endDate?: string | null;
+    isWeekend?: boolean; isHoliday?: boolean;
+    startHour?: string; endHour?: string;
+    hours: number;
+  }): string => {
+    const segs = segmentsFor(req);
+    const rateOf = dayTypeRateFor(req);
+    let max = 0;
+    for (const s of segs) {
+      const isNight = otOverlapsNightWindow(s.startHour, s.endHour, otRates.nightStart, otRates.nightEnd);
+      const m = effectiveOtMultiplier({
+        dayTypeRate: rateOf(s),
+        nightEnabled: otRates.nightEnabled,
+        nightRate: otRates.nightRate,
+        isNight,
+      });
+      if (m > max) max = m;
+    }
+    return `${max || otRates.weekday}x`;
   };
 
   /**
-   * OT pay amount for a single request. Mirrors the formula used in
-   * Payroll: hourly = base / 160 (20 working days × 8 hours), then
-   * scaled by the rate multiplier from {@link rateMultiplier}.
-   * Returns 0 when the employee can't be matched (e.g. roster still
-   * loading) so the cell stays usable.
+   * OT pay amount for a single request — per-day bucketed so a
+   * Fri→Sat night shift bills the Friday segment at the weekday rate
+   * and the Saturday segment at the weekend rate, with the night
+   * overlay layered on each bucket independently. Hourly = base / 160
+   * (20 working days × 8 hours).
    */
   const calculateOTAmount = (
     baseSalary: number | undefined,
-    hours: number,
-    isWeekend: boolean,
-    isHoliday: boolean,
-    startHour?: string,
-    endHour?: string,
+    req: {
+      date?: string; endDate?: string | null;
+      isWeekend?: boolean; isHoliday?: boolean;
+      startHour?: string; endHour?: string;
+      hours: number;
+    },
   ): number => {
-    if (!baseSalary || !hours) return 0;
-    return (baseSalary / 160) * hours * rateMultiplier(isWeekend, isHoliday, startHour, endHour);
+    if (!baseSalary) return 0;
+    return computeOtPay({
+      hourlyWage: baseSalary / 160,
+      segments: segmentsFor(req),
+      dayTypeRateFor: dayTypeRateFor(req),
+      nightEnabled: otRates.nightEnabled,
+      nightRate: otRates.nightRate,
+      nightStart: otRates.nightStart,
+      nightEnd: otRates.nightEnd,
+    });
   };
 
   // Pending first, then newest by requested date
@@ -507,23 +569,51 @@ export function Overtime() {
                 <DialogDescription>Fill in the details for your overtime request</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {format(selectedDate, 'PPP')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => date && setSelectedDate(date)}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {format(selectedDate, 'PPP')}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={selectedDate}
+                          onSelect={(date) => date && setSelectedDate(date)}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1.5">
+                      End Date
+                      {selectedEndDate > selectedDate && (
+                        <Badge variant="outline" className="px-1 py-0 text-[10px] border-indigo-300 text-indigo-700 bg-indigo-50">
+                          cross-date
+                        </Badge>
+                      )}
+                    </Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {format(selectedEndDate, 'PPP')}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={selectedEndDate}
+                          onSelect={(date) => date && setSelectedEndDate(date)}
+                          disabled={(d) => d < selectedDate}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -751,11 +841,13 @@ export function Overtime() {
                     <TableCell className="text-center text-sm">
                       {request.endHour
                         ? (() => {
-                            // OT that crosses midnight: end-hour belongs to
-                            // the day AFTER the row's `date`. The "+1d" tag
-                            // surfaces it so HR doesn't read "22:00 → 05:00"
-                            // as a 17-hour negative span by mistake.
-                            const crosses = !!request.startHour && request.endHour <= request.startHour;
+                            // Cross-date OT: prefer the explicit endDate
+                            // (V59); fall back to "endHour <= startHour"
+                            // for legacy rows submitted before the column
+                            // existed.
+                            const crosses = request.endDate && request.date && request.endDate !== request.date
+                              ? true
+                              : (!!request.startHour && request.endHour <= request.startHour);
                             return crosses ? (
                               <span className="inline-flex items-center gap-1">
                                 {request.endHour}
@@ -769,32 +861,53 @@ export function Overtime() {
                     <TableCell>
                       <div className="inline-flex items-center gap-1.5">
                         <Badge variant="outline">
-                          {calculateOTRate(request.isWeekend, request.isHoliday, request.startHour, request.endHour)}
+                          {calculateOTRate(request)}
                         </Badge>
-                        {otRates.nightEnabled && otOverlapsNightWindow(request.startHour, request.endHour, otRates.nightStart, otRates.nightEnd) && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
-                                <Moon className="h-3 w-3" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="text-xs max-w-xs">
-                              Night work — OT overlaps {otRates.nightStart}–{otRates.nightEnd}. Rate is max(dayType, {otRates.nightRate}×).
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                        {(() => {
+                          const segs = segmentsFor(request);
+                          const isCrossDate = segs.length > 1;
+                          const hasNight = otRates.nightEnabled && segs.some(s =>
+                            otOverlapsNightWindow(s.startHour, s.endHour, otRates.nightStart, otRates.nightEnd));
+                          // Mixed Fri+Sat or weekday+holiday tooltip — show the
+                          // per-day buckets so HR can audit the blended pay.
+                          if (!isCrossDate && !hasNight) return null;
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                                  <Moon className="h-3 w-3" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-xs max-w-xs">
+                                <p className="font-medium mb-1">
+                                  {isCrossDate ? 'Cross-date OT' : 'Night work'}
+                                </p>
+                                <ul className="space-y-0.5">
+                                  {segs.map((s, i) => {
+                                    const dayKind = (request.isHoliday && s.date === request.date)
+                                      ? 'holiday'
+                                      : isDateWeekend(s.date) ? 'weekend' : 'weekday';
+                                    const isNight = otOverlapsNightWindow(s.startHour, s.endHour, otRates.nightStart, otRates.nightEnd);
+                                    return (
+                                      <li key={i}>
+                                        {s.date} {s.startHour}–{s.endHour}: {s.hours}h · {dayKind}
+                                        {isNight && otRates.nightEnabled ? ' + night' : ''}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                                <p className="mt-1.5 opacity-80">
+                                  Each bucket uses max(dayType, {otRates.nightRate}×) when night-window overlap is detected.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-sm">
                       {(() => {
-                        const amount = calculateOTAmount(
-                          employee?.baseSalary,
-                          Number(request.hours) || 0,
-                          request.isWeekend,
-                          request.isHoliday,
-                          request.startHour,
-                          request.endHour,
-                        );
+                        const amount = calculateOTAmount(employee?.baseSalary, request);
                         return amount > 0
                           ? `$${formatMoney(amount)}`
                           : <span className="text-gray-300">—</span>;

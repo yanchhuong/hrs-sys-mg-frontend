@@ -68,3 +68,149 @@ export function effectiveOtMultiplier(args: {
   if (!nightEnabled || !isNight) return dayTypeRate;
   return Math.max(dayTypeRate, nightRate);
 }
+
+// ---------------------------------------------------------------------------
+// Cross-date OT (V59) — split by day, apply per-day day-type
+// ---------------------------------------------------------------------------
+//
+// A night shift filed as `date=Fri 22:00 → endDate=Sat 05:00` should bill
+// the first 2 hours at the Friday weekday rate and the last 5 at the
+// Saturday weekend rate. The night overlay still layers on top of each
+// bucket independently — Saturday 00:00–05:00 stays in the night window,
+// so its effective rate is max(weekendRate, nightRate).
+//
+// `splitOtRequestByDay` does the bucketing; `computeOtPay` walks the
+// buckets and returns the total $ amount. Same-day OT collapses to a
+// single bucket so existing callers don't pay a complexity tax.
+
+/** One side of a (possibly) split OT request. End-of-day boundary uses the
+ *  literal string '24:00' so the night-overlap check still treats it as
+ *  the end of the calendar day. */
+export interface OtSegment {
+  /** YYYY-MM-DD. */
+  date: string;
+  /** HH:mm. */
+  startHour: string;
+  /** HH:mm or '24:00' for the end-of-day boundary on the first bucket. */
+  endHour: string;
+  /** Hours covered by this segment. */
+  hours: number;
+}
+
+function diffHours(startHHmm: string, endHHmm: string): number {
+  const [sh, sm] = startHHmm.split(':').map(n => Number(n) || 0);
+  const [eh, em] = endHHmm.split(':').map(n => Number(n) || 0);
+  return ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+}
+
+/**
+ * Split a (possibly cross-date) OT request at midnight so each bucket has
+ * its own calendar date for day-type detection. Two-day OT only — a span
+ * longer than ~24h is unusual in practice and gets collapsed to the
+ * start-day bucket (caller can flag the row for HR review separately).
+ */
+export function splitOtRequestByDay(args: {
+  startDate: string;
+  startHour: string;
+  endDate: string;
+  endHour: string;
+  /** Total hours, used as a fallback when start/end hours are missing
+   *  (legacy rows pre-V20 lack them) so the calculator still returns a
+   *  sensible non-zero number. */
+  totalHours: number;
+}): OtSegment[] {
+  const { startDate, startHour, endDate, endHour, totalHours } = args;
+
+  // Missing hour labels → one bucket on startDate carrying the row's
+  // total hours. Same answer as the legacy single-rate path.
+  if (!startHour || !endHour) {
+    return [{ date: startDate, startHour: '00:00', endHour: '24:00', hours: totalHours }];
+  }
+
+  // Same calendar day → one bucket. Trust the request's startHour/endHour
+  // when they straddle midnight (endHour <= startHour but endDate ==
+  // startDate is a data error we tolerate by falling back to totalHours).
+  if (!endDate || endDate === startDate) {
+    const h = diffHours(startHour, endHour);
+    return [{ date: startDate, startHour, endHour, hours: h > 0 ? h : totalHours }];
+  }
+
+  // Cross-date — split at midnight. The first bucket runs to the literal
+  // '24:00' so the night-overlap helper still hits its [22:00, 24:00)
+  // sub-interval; the second starts at '00:00'.
+  const hoursFirst  = diffHours(startHour, '24:00');
+  const hoursSecond = diffHours('00:00', endHour);
+  return [
+    { date: startDate, startHour, endHour: '24:00', hours: hoursFirst },
+    { date: endDate,   startHour: '00:00', endHour, hours: hoursSecond },
+  ];
+}
+
+/**
+ * Day-of-week weekend check — Saturday + Sunday by default. Accepts a
+ * YYYY-MM-DD string; returns false on parse failure so a malformed row
+ * doesn't accidentally double its pay.
+ */
+export function isDateWeekend(yyyymmdd: string): boolean {
+  const d = new Date(yyyymmdd + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return false;
+  const dow = d.getDay(); // 0 = Sun, 6 = Sat
+  return dow === 0 || dow === 6;
+}
+
+/**
+ * Total OT pay for a (possibly cross-date) request. Each daily bucket
+ * picks its own day-type rate, then the night overlay raises it to
+ * max(dayTypeRate, nightRate) when the bucket's hours overlap the
+ * configured window.
+ *
+ * `dayTypeRateFor` is supplied by the caller so the holiday-vs-weekday
+ * distinction can be driven by whatever source they trust (the OT row's
+ * isHoliday flag, a holiday-calendar lookup, etc.). For the common case
+ * pass `defaultDayTypeRateFor` below.
+ */
+export function computeOtPay(args: {
+  hourlyWage: number;
+  segments: OtSegment[];
+  dayTypeRateFor: (segment: OtSegment) => number;
+  nightEnabled: boolean;
+  nightRate: number;
+  nightStart: string;
+  nightEnd: string;
+}): number {
+  const { hourlyWage, segments, dayTypeRateFor, nightEnabled, nightRate, nightStart, nightEnd } = args;
+  if (!hourlyWage) return 0;
+  let total = 0;
+  for (const seg of segments) {
+    if (!seg.hours) continue;
+    const dayRate = dayTypeRateFor(seg);
+    const isNight = otOverlapsNightWindow(seg.startHour, seg.endHour, nightStart, nightEnd);
+    const rate = effectiveOtMultiplier({
+      dayTypeRate: dayRate,
+      nightEnabled,
+      nightRate,
+      isNight,
+    });
+    total += hourlyWage * seg.hours * rate;
+  }
+  return total;
+}
+
+/**
+ * The common dayTypeRateFor: weekday rate by default, weekend rate when
+ * the segment's date is Sat/Sun, holiday rate when the caller-supplied
+ * holiday-date set contains the segment's date.
+ */
+export function defaultDayTypeRateFor(args: {
+  weekdayRate: number;
+  weekendRate: number;
+  holidayRate: number;
+  holidayDates?: ReadonlySet<string>;
+}): (segment: OtSegment) => number {
+  const { weekdayRate, weekendRate, holidayRate, holidayDates } = args;
+  return (segment) => {
+    if (holidayDates?.has(segment.date)) return holidayRate;
+    if (isDateWeekend(segment.date)) return weekendRate;
+    return weekdayRate;
+  };
+}

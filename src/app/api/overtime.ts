@@ -6,7 +6,11 @@ export interface OtRequest {
   id: string;
   employeeId: string;
   employeeName?: string;
+  /** Calendar date the OT begins. */
   date: string;
+  /** Calendar date the OT ends. Equal to {@link date} for same-day OT;
+   *  one day later for cross-midnight night shifts (V59). */
+  endDate?: string;
   /** Optional HH:mm labels persisted alongside {@link hours} (since V20). */
   startHour?: string;
   endHour?: string;
@@ -34,7 +38,13 @@ export interface CreateOtRequest {
    *  authenticated caller (the original employee self-submit flow);
    *  set to file on behalf of someone else (admin / leader flow). */
   employeeId?: string;
+  /** Start date — calendar day the OT begins. */
   date: string;
+  /** End date — calendar day the OT ends. Optional; backend defaults to
+   *  {@link date} when omitted. Must be on or after {@link date}. Set to
+   *  date + 1 for a cross-midnight night shift so the rate calculator
+   *  can apply per-day day-types to each side of the split. */
+  endDate?: string;
   /** Total OT hours, e.g. 3 for 17:00 → 20:00. Backend persists this; the
       hour-range fields are FE-only labels and not part of the create body. */
   hours: number;
