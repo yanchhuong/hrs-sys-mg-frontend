@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDateFormat } from '../../../context/DateFormatContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -78,6 +79,7 @@ function toPageSchedule(s: platformApi.BackupSchedule): BackupSchedule {
 }
 
 export function Backups() {
+  const { formatDate } = useDateFormat();
   const [backups, setBackups] = useState<Backup[]>(USE_MOCKS ? mockBackups : []);
   const [schedules, setSchedules] = useState<BackupSchedule[]>(
     USE_MOCKS ? mockBackupSchedules : [],
@@ -542,7 +544,7 @@ export function Backups() {
                       {b.expiresAt ? (
                         <>
                           <p>{b.retentionDays}d</p>
-                          <p className="text-gray-400">exp {format(new Date(b.expiresAt), 'MMM dd, yyyy')}</p>
+                          <p className="text-gray-400">exp {formatDate(b.expiresAt)}</p>
                         </>
                       ) : (
                         <span className="text-gray-400">—</span>

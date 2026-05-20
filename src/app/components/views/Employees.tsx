@@ -50,6 +50,7 @@ import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
 import { useAuth } from '../../context/AuthContext';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
@@ -348,7 +349,7 @@ function EmployeeDocuments({
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{doc.name}</p>
                   <p className="text-xs text-gray-500">
-                    <span className="capitalize">{label}</span> · {formatBytes(doc.sizeBytes)} · {format(new Date(doc.uploadedAt), 'MMM dd, yyyy')}
+                    <span className="capitalize">{label}</span> · {formatBytes(doc.sizeBytes)} · {formatDate(doc.uploadedAt)}
                     {doc.uploadedBy && ` · ${doc.uploadedBy}`}
                   </p>
                 </div>
@@ -454,6 +455,7 @@ function adaptApiContract(c: contractsApi.Contract): Contract {
 
 export function Employees() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
   const { currentUser } = useAuth();
   void isAdmin; void isManager;
@@ -1308,7 +1310,7 @@ export function Employees() {
                   <TableCell className="text-sm">{employee.khmerName || '-'}</TableCell>
                   <TableCell className="capitalize">{employee.gender || '-'}</TableCell>
                   <TableCell>
-                    {employee.dateOfBirth ? format(new Date(employee.dateOfBirth), 'MMM dd, yyyy') : '-'}
+                    {employee.dateOfBirth ? formatDate(employee.dateOfBirth) : '-'}
                   </TableCell>
                   <TableCell className="min-w-[180px]">
                     {canUpdateEmp ? (
@@ -1380,7 +1382,7 @@ export function Employees() {
                         : new Date(expire) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
                         ? 'text-orange-600 font-medium'
                         : '';
-                      return <span className={cls}>{format(new Date(expire), 'MMM dd, yyyy')}</span>;
+                      return <span className={cls}>{formatDate(expire)}</span>;
                     })()}
                   </TableCell>
                   <TableCell>
@@ -1716,7 +1718,7 @@ export function Employees() {
                             className="h-9"
                           />
                         ) : (
-                          <p>{selectedEmployee.dateOfBirth ? format(new Date(selectedEmployee.dateOfBirth), 'MMM dd, yyyy') : '—'}</p>
+                          <p>{selectedEmployee.dateOfBirth ? formatDate(selectedEmployee.dateOfBirth) : '—'}</p>
                         )}
                       </FieldRow>
                       <FieldRow label="Place of Birth" isEditing={isEditing} full>
@@ -1905,7 +1907,7 @@ export function Employees() {
                             className="h-9"
                           />
                         ) : (
-                          <p>{format(new Date(selectedEmployee.joinDate), 'MMM dd, yyyy')}</p>
+                          <p>{formatDate(selectedEmployee.joinDate)}</p>
                         )}
                       </FieldRow>
                       <FieldRow label="Experience" isEditing={false}>
@@ -1985,7 +1987,7 @@ export function Employees() {
                           />
                         ) : (() => {
                           const expire = getLatestContractEnd(selectedEmployee);
-                          return <p>{expire ? format(new Date(expire), 'MMM dd, yyyy') : '—'}</p>;
+                          return <p>{expire ? formatDate(expire) : '—'}</p>;
                         })()}
                       </FieldRow>
                       <FieldRow label="Resign Date" isEditing={isEditing}>
@@ -1999,7 +2001,7 @@ export function Employees() {
                         ) : (
                           <p className={selectedEmployee.resignDate ? 'text-red-600 font-medium' : ''}>
                             {selectedEmployee.resignDate
-                              ? format(new Date(selectedEmployee.resignDate), 'MMM dd, yyyy')
+                              ? formatDate(selectedEmployee.resignDate)
                               : '—'}
                           </p>
                         )}
@@ -2092,7 +2094,7 @@ export function Employees() {
                             <div className="p-3 bg-gray-50 rounded-md">
                               <p className="text-xs text-gray-500">Next Expiry</p>
                               <p className="text-lg font-semibold">
-                                {nextExpiry ? format(new Date(nextExpiry.endDate), 'MMM dd, yyyy') : '—'}
+                                {nextExpiry ? formatDate(nextExpiry.endDate) : '—'}
                               </p>
                             </div>
                           </div>
@@ -2118,8 +2120,8 @@ export function Employees() {
                                 ) : contracts.map((contract) => (
                                   <TableRow key={contract.id} className={`text-xs ${contract.id === activeContract?.id ? 'bg-blue-50/50' : ''}`}>
                                     <TableCell className="py-2 font-medium">{contract.contractType}</TableCell>
-                                    <TableCell className="py-2">{format(new Date(contract.startDate), 'MMM dd, yyyy')}</TableCell>
-                                    <TableCell className="py-2">{format(new Date(contract.endDate), 'MMM dd, yyyy')}</TableCell>
+                                    <TableCell className="py-2">{formatDate(contract.startDate)}</TableCell>
+                                    <TableCell className="py-2">{formatDate(contract.endDate)}</TableCell>
                                     <TableCell className="py-2">${contract.salary?.toLocaleString() || '-'}</TableCell>
                                     <TableCell className="py-2">{getContractStatusBadge(contract.status)}</TableCell>
                                     <TableCell className="py-2 text-right">
@@ -2186,7 +2188,7 @@ export function Employees() {
                       Unsaved changes
                     </span>
                   ) : (
-                    <span className="truncate">Last updated {format(new Date(selectedEmployee.joinDate), 'MMM dd, yyyy')}</span>
+                    <span className="truncate">Last updated {formatDate(selectedEmployee.joinDate)}</span>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -2244,7 +2246,7 @@ export function Employees() {
                   </div>
                   <div>
                     <p className="text-gray-600">End Date</p>
-                    <p className="font-medium">{format(new Date(selectedContract.endDate), 'MMM dd, yyyy')}</p>
+                    <p className="font-medium">{formatDate(selectedContract.endDate)}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Current Salary</p>

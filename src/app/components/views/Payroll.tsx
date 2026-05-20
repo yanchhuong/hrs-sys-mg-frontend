@@ -68,6 +68,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
 import { TaxCalculatorDialog } from './TaxCalculatorDialog';
 
@@ -185,6 +186,7 @@ function FormulaHint({ text }: { text: string }) {
 
 export function Payroll() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee, canUpdate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -2517,7 +2519,7 @@ export function Payroll() {
                       <TableCell><StatusBadge status={batch.status} /></TableCell>
                       <TableCell>
                         <p className="font-medium text-sm">{batch.monthYear}</p>
-                        <p className="text-[11px] text-gray-500">{format(new Date(batch.date), 'MMM dd, yyyy')} · {batch.type}</p>
+                        <p className="text-[11px] text-gray-500">{formatDate(batch.date)} · {batch.type}</p>
                       </TableCell>
                       <TableCell className="max-w-xs">
                         <p className="text-sm truncate">{batch.subject}</p>

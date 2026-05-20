@@ -81,6 +81,9 @@ export interface CompanyInfo {
   website?: string | null;
   logoUrl?: string | null;
   currency?: string;
+  /** date-fns pattern used to render visible dates across the app (V60).
+   *  Null on the wire leaves the persisted value untouched on PUT. */
+  dateFormat?: string;
 }
 
 export async function getCompanyInfo(): Promise<CompanyInfo> {

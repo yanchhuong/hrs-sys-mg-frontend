@@ -58,6 +58,7 @@ import { Textarea } from '../ui/textarea';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 // ---------------------------------------------------------------------------
 // Role + permission model
@@ -263,6 +264,7 @@ function adaptApiUser(u: usersApi.User): User {
 // ---------------------------------------------------------------------------
 export function UserManagement() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
@@ -1062,7 +1064,7 @@ export function UserManagement() {
                             <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm">{format(new Date(user.createdAt), 'MMM dd, yyyy')}</TableCell>
+                        <TableCell className="text-sm">{formatDate(user.createdAt)}</TableCell>
                         <TableCell className="text-sm">
                           {user.lastLogin ? format(new Date(user.lastLogin), 'MMM dd, HH:mm') : '-'}
                         </TableCell>

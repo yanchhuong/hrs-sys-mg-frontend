@@ -43,6 +43,7 @@ import { Pagination } from '../common/Pagination';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AnnualLeaveSetup } from '../common/AnnualLeaveSetup';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import {
   loadRule, daysForTenure, tenureYears, loadValuesForYear,
 } from '../../utils/annualLeave';
@@ -161,6 +162,7 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
 
 export function Attendance() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   // Default filter to TODAY so the page lands on a date that has data right
@@ -2032,7 +2034,7 @@ export function Attendance() {
                             </TableCell>
                             <TableCell className="text-sm">{deptName(emp?.department)}</TableCell>
                             <TableCell className="text-sm whitespace-nowrap">
-                              {format(parseISO(ev.date), 'MMM dd, yyyy')}
+                              {formatDate(ev.date)}
                             </TableCell>
                             <TableCell>
                               <Badge

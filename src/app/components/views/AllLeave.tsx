@@ -29,6 +29,7 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
 import { mockExceptions } from '../../data/timeworkData';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
@@ -136,6 +137,7 @@ export const LEAVE_CATEGORY_LABELS: Record<string, string> = {
 
 export function AllLeave() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
@@ -709,9 +711,9 @@ export function AllLeave() {
                         <span className="text-xs text-gray-400">No leader assigned</span>
                       )}
                     </TableCell>
-                    <TableCell>{format(new Date(leave.date), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell>{formatDate(leave.date)}</TableCell>
                     <TableCell>
-                      {format(new Date(leave.endDate ?? leave.date), 'MMM dd, yyyy')}
+                      {formatDate(leave.endDate ?? leave.date)}
                     </TableCell>
                     <TableCell>
                       {leave.category ? (

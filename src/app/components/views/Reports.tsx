@@ -70,6 +70,7 @@ import {
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 const TODAY = new Date('2026-04-20');
 
@@ -153,6 +154,7 @@ function adaptApiPayroll(p: payrollApi.PayrollItem): PayrollItem {
 
 export function Reports() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const { currentUser } = useAuth();
 
   // Shared datasets pulled once at this level. Children re-use them so we
@@ -1358,7 +1360,7 @@ function AttendanceEmployeeDialog({
         <DialogHeader>
           <DialogTitle>Attendance Detail — {employee?.name}</DialogTitle>
           <DialogDescription>
-            {format(new Date(startDate), 'MMM dd, yyyy')} – {format(new Date(endDate), 'MMM dd, yyyy')} ·{' '}
+            {formatDate(startDate)} – {formatDate(endDate)} ·{' '}
             {employee ? resolveDept(employee.department) : ''} · {employee?.position}
           </DialogDescription>
         </DialogHeader>

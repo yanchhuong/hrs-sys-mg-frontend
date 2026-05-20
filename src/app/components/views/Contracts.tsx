@@ -18,8 +18,10 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { FileText, AlertCircle, Plus } from 'lucide-react';
 import { format, differenceInDays, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 export function Contracts() {
+  const { formatDate } = useDateFormat();
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -145,7 +147,7 @@ export function Contracts() {
                     <div className="flex-1">
                       <p className="font-medium">{employee?.name}</p>
                       <p className="text-sm text-gray-600">
-                        Expires on {format(new Date(contract.endDate), 'MMM dd, yyyy')} ({daysLeft} days left)
+                        Expires on {formatDate(contract.endDate)} ({daysLeft} days left)
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         {employee?.position} • {employee?.department}
@@ -197,8 +199,8 @@ export function Contracts() {
                       <EmployeeCell employee={employee} />
                     </TableCell>
                     <TableCell>{employee?.position}</TableCell>
-                    <TableCell>{format(new Date(contract.startDate), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell>{format(new Date(contract.endDate), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell>{formatDate(contract.startDate)}</TableCell>
+                    <TableCell>{formatDate(contract.endDate)}</TableCell>
                     <TableCell>{Math.floor(duration / 365)} years</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(contract.status)}>
@@ -254,7 +256,7 @@ export function Contracts() {
                 return (
                   <div key={contract.id} className="flex items-center gap-4">
                     <div className="w-32 text-sm text-gray-600">
-                      {format(new Date(contract.endDate), 'MMM dd, yyyy')}
+                      {formatDate(contract.endDate)}
                     </div>
                     <div className="flex-1 bg-gray-100 rounded-lg p-3">
                       <div className="flex items-center justify-between">

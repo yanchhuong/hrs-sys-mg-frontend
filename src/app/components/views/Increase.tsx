@@ -43,6 +43,7 @@ import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X } from 'luci
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
 
@@ -129,6 +130,7 @@ const CATEGORY_COLORS = [
 
 export function Increase() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   // Permission gates per the matrix in Settings → User Management → Permissions.
   // A role with V-only on 'increase' will hide the Add button and per-row
   // Edit / Delete actions; the page still renders the read-only table.
@@ -835,7 +837,7 @@ export function Increase() {
                     <TableCell className="font-semibold text-green-600">
                       +{formatIncreaseAmount(increase)}
                     </TableCell>
-                    <TableCell>{format(new Date(increase.effectiveDate), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell>{formatDate(increase.effectiveDate)}</TableCell>
                     <TableCell className="max-w-xs truncate">{increase.reason}</TableCell>
                     <TableCell>{approver?.name}</TableCell>
                     <TableCell>
@@ -915,7 +917,7 @@ export function Increase() {
                     </span>
                   </DetailRow>
                   <DetailRow label="Effective Date">
-                    {format(new Date(detailsTarget.effectiveDate), 'MMM dd, yyyy')}
+                    {formatDate(detailsTarget.effectiveDate)}
                   </DetailRow>
                   <DetailRow label="Approved At">
                     {detailsTarget.approvedAt

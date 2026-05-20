@@ -26,6 +26,7 @@ import {
 } from '../ui/alert-dialog';
 import { mockAttendanceRules } from '../../data/settingsData';
 import { Badge } from '../ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
@@ -41,6 +42,7 @@ import {
 import { useI18n } from '../../i18n/I18nContext';
 import { DevicesCard } from '../common/DevicesCard';
 import * as settingsApi from '../../api/settings';
+import { DATE_FORMAT_PRESETS, useDateFormat } from '../../context/DateFormatContext';
 import { USE_MOCKS, API_BASE, apiJson } from '../../api/client';
 
 export function Settings() {
@@ -258,6 +260,9 @@ interface CompanyInfo {
   website?: string;
   logoUrl?: string;
   currency?: string;
+  /** date-fns pattern that drives every visible date across the app
+   *  (V60). Picked from the preset dropdown below. */
+  dateFormat?: string;
 }
 
 const COMPANY_INFO_KEY = 'hrms:companyInfo';
@@ -271,6 +276,7 @@ const defaultCompanyInfo: CompanyInfo = {
   website: '',
   logoUrl: '',
   currency: 'USD',
+  dateFormat: 'MMM dd, yyyy',
 };
 
 function loadCompanyInfo(): CompanyInfo {
@@ -284,8 +290,9 @@ function loadCompanyInfo(): CompanyInfo {
 
 function CompanyInformationCard() {
   const [info, setInfo] = useState<CompanyInfo>(
-    USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD' },
+    USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD', dateFormat: 'MMM dd, yyyy' },
   );
+  const { refresh: refreshDateFormat } = useDateFormat();
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -305,6 +312,7 @@ function CompanyInformationCard() {
           website: remote.website ?? '',
           logoUrl: remote.logoUrl ?? '',
           currency: remote.currency ?? 'USD',
+          dateFormat: remote.dateFormat ?? 'MMM dd, yyyy',
         });
         setDirty(false);
       } catch (err) {
@@ -330,6 +338,10 @@ function CompanyInformationCard() {
       await settingsApi.updateCompanyInfo(info);
       setDirty(false);
       toast.success('Company information saved');
+      // Push the new pattern into the app-wide DateFormat provider so
+      // every other open view re-renders with the picked format without
+      // a hard refresh.
+      void refreshDateFormat();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save company info');
     }
@@ -354,6 +366,7 @@ function CompanyInformationCard() {
         website: remote.website ?? '',
         logoUrl: remote.logoUrl ?? '',
         currency: remote.currency ?? 'USD',
+        dateFormat: remote.dateFormat ?? 'MMM dd, yyyy',
       });
       setDirty(false);
     } catch (err) {
@@ -457,6 +470,30 @@ function CompanyInformationCard() {
               placeholder="USD"
               disabled={loading}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ci-date-format">Date Format</Label>
+            <Select
+              value={info.dateFormat ?? 'MMM dd, yyyy'}
+              onValueChange={(v) => patch({ dateFormat: v })}
+              disabled={loading}
+            >
+              <SelectTrigger id="ci-date-format">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_FORMAT_PRESETS.map(p => (
+                  <SelectItem key={p.pattern} value={p.pattern}>
+                    <span className="font-medium">{p.label}</span>
+                    <span className="ml-2 text-xs text-gray-500 font-mono">{p.pattern}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">
+              Applies to every visible date across Attendance, Overtime, Leave, Payroll, Reports, etc. Date inputs and exports keep ISO (yyyy-MM-dd).
+            </p>
           </div>
 
           <div className="space-y-2 md:col-span-2">

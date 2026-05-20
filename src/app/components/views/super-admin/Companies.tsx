@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDateFormat } from '../../../context/DateFormatContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -81,6 +82,7 @@ function toTenant(c: Company): platformApi.PlatformTenant {
 }
 
 export function Companies() {
+  const { formatDate } = useDateFormat();
   const [companies, setCompanies] = useState<platformApi.PlatformTenant[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -539,7 +541,7 @@ export function Companies() {
                     {c.monthlyCostUsd > 0 ? `$${c.monthlyCostUsd.toLocaleString()}` : '—'}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
-                    {format(new Date(c.createdAt), 'MMM dd, yyyy')}
+                    {formatDate(c.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">

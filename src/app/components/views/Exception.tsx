@@ -33,6 +33,7 @@ import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
 import { X, Search, Pencil } from 'lucide-react';
 import { format, isWithinInterval, parseISO } from 'date-fns';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
 import { AttendanceException, Employee } from '../../types/hrms';
 import * as leaveApi from '../../api/leave';
@@ -127,6 +128,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 export function Exception() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
@@ -517,16 +519,10 @@ export function Exception() {
                   // rows still fall back to updated_at as an approximation.
                   const startSource = emp.attendanceExceptionStartDate ?? emp.updatedAt;
                   const startDate = startSource
-                    ? (() => {
-                        const d = new Date(startSource);
-                        return Number.isNaN(d.getTime()) ? '—' : format(d, 'MMM dd, yyyy');
-                      })()
+                    ? formatDate(startSource)
                     : '—';
                   const endDate = emp.attendanceExceptionEndDate
-                    ? (() => {
-                        const d = new Date(emp.attendanceExceptionEndDate);
-                        return Number.isNaN(d.getTime()) ? '—' : format(d, 'MMM dd, yyyy');
-                      })()
+                    ? formatDate(emp.attendanceExceptionEndDate)
                     : <span className="text-gray-400 text-xs">Open-ended</span>;
                   const remark = emp.attendanceExceptionRemark
                     ? emp.attendanceExceptionRemark
@@ -612,9 +608,9 @@ export function Exception() {
                           ? <Badge variant="outline" className="font-normal">{deptName(employee?.department)}</Badge>
                           : <span className="text-gray-400">—</span>}
                       </TableCell>
-                      <TableCell>{format(new Date(exc.date), 'MMM dd, yyyy')}</TableCell>
+                      <TableCell>{formatDate(exc.date)}</TableCell>
                       <TableCell>
-                        {format(new Date(exc.endDate ?? exc.date), 'MMM dd, yyyy')}
+                        {formatDate(exc.endDate ?? exc.date)}
                       </TableCell>
                       <TableCell>
                         {exc.category ? (

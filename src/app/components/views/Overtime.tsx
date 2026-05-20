@@ -13,6 +13,7 @@ import {
   otOverlapsNightWindow, effectiveOtMultiplier,
   splitOtRequestByDay, defaultDayTypeRateFor, computeOtPay, isDateWeekend,
 } from '../../utils/otRates';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { ScopePicker } from '../common/ScopePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -110,6 +111,7 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
 
 export function Overtime() {
   const { t } = useI18n();
+  const { formatDate, formatDateTime } = useDateFormat();
   const {
     role,
     isEmployee,
@@ -576,7 +578,7 @@ export function Overtime() {
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start">
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(selectedDate, 'PPP')}
+                          {formatDate(selectedDate)}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
@@ -601,7 +603,7 @@ export function Overtime() {
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start">
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(selectedEndDate, 'PPP')}
+                          {formatDate(selectedEndDate)}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
@@ -828,13 +830,7 @@ export function Overtime() {
                         <span className="text-xs text-gray-400">No leader assigned</span>
                       )}
                     </TableCell>
-                    <TableCell>{(() => {
-                      // Guard against invalid date strings — date-fns
-                      // `format()` throws RangeError on Invalid Date which
-                      // would unmount the whole page.
-                      const d = request.date ? new Date(request.date) : null;
-                      return d && !Number.isNaN(d.getTime()) ? format(d, 'MMM dd, yyyy') : '—';
-                    })()}</TableCell>
+                    <TableCell>{formatDate(request.date)}</TableCell>
                     <TableCell className="text-center text-sm">
                       {request.startHour || <span className="text-gray-300">—</span>}
                     </TableCell>
@@ -919,12 +915,7 @@ export function Overtime() {
                         {request.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {(() => {
-                        const d = request.requestedAt ? new Date(request.requestedAt) : null;
-                        return d && !Number.isNaN(d.getTime()) ? format(d, 'MMM dd, HH:mm') : '—';
-                      })()}
-                    </TableCell>
+                    <TableCell className="text-sm">{formatDateTime(request.requestedAt)}</TableCell>
                     <TableCell className="text-sm">{request.submittedByName || '-'}</TableCell>
                     <TableCell className="text-sm">{approverName || '-'}</TableCell>
                     <TableCell className="text-right">

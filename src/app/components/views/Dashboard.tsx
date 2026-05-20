@@ -15,6 +15,7 @@ import { makeDeptName } from '../../utils/deptName';
 import { Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle, RefreshCw, CalendarDays } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
 
 /** ISO YYYY-MM-DD for today, used for "today's attendance" lookups. */
@@ -28,6 +29,7 @@ function isExpiringSoon(endDate?: string | null, today = new Date()): boolean {
 }
 
 export function Dashboard() {
+  const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee } = useAuth();
 
   // ---------- State (mock-seeded in mock mode, refetched from API otherwise)
@@ -230,7 +232,7 @@ export function Dashboard() {
                       <div className="flex-1">
                         <p className="text-sm font-medium">Contract Expiring Soon</p>
                         <p className="text-sm text-gray-600">
-                          {employee?.name ?? '—'}&apos;s contract expires on {format(parseISO(contract.endDate), 'MMM dd, yyyy')}
+                          {employee?.name ?? '—'}&apos;s contract expires on {formatDate(contract.endDate)}
                         </p>
                       </div>
                     </div>
@@ -244,7 +246,7 @@ export function Dashboard() {
                       <div className="flex-1">
                         <p className="text-sm font-medium">Pending OT Approval</p>
                         <p className="text-sm text-gray-600">
-                          {employee?.name ?? '—'} – {ot.hours} hours on {format(parseISO(ot.date), 'MMM dd, yyyy')}
+                          {employee?.name ?? '—'} – {ot.hours} hours on {formatDate(ot.date)}
                         </p>
                       </div>
                     </div>
@@ -258,7 +260,7 @@ export function Dashboard() {
                       <div className="flex-1">
                         <p className="text-sm font-medium">Pending Leave Approval</p>
                         <p className="text-sm text-gray-600">
-                          {(employee?.name ?? lr.employeeName) ?? '—'} – {lr.type.replace('_', ' ')} on {format(parseISO(lr.date), 'MMM dd, yyyy')}
+                          {(employee?.name ?? lr.employeeName) ?? '—'} – {lr.type.replace('_', ' ')} on {formatDate(lr.date)}
                         </p>
                       </div>
                     </div>
@@ -359,7 +361,7 @@ export function Dashboard() {
                     <div className="flex-1">
                       <p className="font-medium">{employee?.name ?? '—'}</p>
                       <p className="text-sm text-gray-600">
-                        {ot.hours} hours on {format(parseISO(ot.date), 'MMM dd, yyyy')} – {ot.reason ?? 'no reason provided'}
+                        {ot.hours} hours on {formatDate(ot.date)} – {ot.reason ?? 'no reason provided'}
                       </p>
                     </div>
                     <Badge variant="secondary">Pending</Badge>
@@ -431,7 +433,7 @@ export function Dashboard() {
               {myPendingOT.map((ot: any) => (
                 <div key={ot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="text-sm font-medium">{format(parseISO(ot.date), 'MMM dd, yyyy')}</p>
+                    <p className="text-sm font-medium">{formatDate(ot.date)}</p>
                     <p className="text-sm text-gray-600">{ot.hours} hours – {ot.reason ?? '—'}</p>
                   </div>
                   <Badge variant="secondary">{ot.status}</Badge>
@@ -476,7 +478,7 @@ export function Dashboard() {
             <div>
               <p className="text-sm text-gray-600">Join Date</p>
               <p className="font-medium">
-                {currentEmployee && format(parseISO(currentEmployee.joinDate), 'MMM dd, yyyy')}
+                {currentEmployee && formatDate(currentEmployee.joinDate)}
               </p>
             </div>
             <div>

@@ -14,6 +14,7 @@ import {
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
 import { mockEmployees } from '../../data/mockData';
 import { Employee } from '../../types/hrms';
@@ -30,6 +31,7 @@ const BLANK_EMPLOYEE: Partial<Employee> = {
 };
 
 export function UserProfileDialog({ open, onOpenChange }: Props) {
+  const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee } = useAuth();
   const employeeRef = currentEmployee ?? BLANK_EMPLOYEE;
 
@@ -252,7 +254,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <FieldBox label="Member Since">
                 <div className="h-9 flex items-center px-3 border rounded-md bg-gray-50 text-sm text-gray-700">
-                  {currentUser?.createdAt ? format(new Date(currentUser.createdAt), 'MMM dd, yyyy') : '—'}
+                  {currentUser?.createdAt ? formatDate(currentUser.createdAt) : '—'}
                 </div>
               </FieldBox>
               <FieldBox label="Last Sign-in">

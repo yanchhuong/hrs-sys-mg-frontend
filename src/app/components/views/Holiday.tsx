@@ -36,6 +36,7 @@ import {
   eachDayOfInterval, getDay, isSameMonth, addMonths, subMonths,
 } from 'date-fns';
 import { toast } from 'sonner';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /** Live shape — mirrors api/settings.Holiday but adds a non-null id for table keys. */
 interface Holiday {
@@ -60,6 +61,7 @@ interface HolidayProps {
 }
 
 export function Holiday({ embedded = false }: HolidayProps = {}) {
+  const { formatDate } = useDateFormat();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(!USE_MOCKS);
   const [busy, setBusy] = useState(false);
@@ -570,7 +572,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                         className="text-blue-700 hover:underline"
                         title="Show this date on the calendar"
                       >
-                        {format(d, 'MMM dd, yyyy')}
+                        {formatDate(d)}
                       </button>
                       <p className="text-[11px] text-gray-500 font-normal">{format(d, 'EEEE')}</p>
                     </TableCell>
@@ -784,7 +786,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{h.name}</p>
                           <p className="text-[11px] text-gray-500">
-                            from {format(parseISO(h.date), 'MMM dd, yyyy')} ({format(parseISO(h.date), 'EEE')})
+                            from {formatDate(h.date)} ({format(parseISO(h.date), 'EEE')})
                           </p>
                         </div>
                         <span className="text-gray-300 text-sm">→</span>

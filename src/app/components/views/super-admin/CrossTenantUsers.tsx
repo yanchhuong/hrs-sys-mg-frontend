@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDateFormat } from '../../../context/DateFormatContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -25,6 +26,7 @@ import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 
 export function CrossTenantUsers() {
+  const { formatDate } = useDateFormat();
   const [users, setUsers] = useState<platformApi.PlatformUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -453,7 +455,7 @@ export function CrossTenantUsers() {
                       {u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, HH:mm') : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
-                      {format(new Date(u.createdAt), 'MMM dd, yyyy')}
+                      {formatDate(u.createdAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -593,7 +595,7 @@ export function CrossTenantUsers() {
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-3">
-                      <span>Created {format(new Date(u.createdAt), 'MMM dd, yyyy')}</span>
+                      <span>Created {formatDate(u.createdAt)}</span>
                       <span>
                         Last login {u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, HH:mm') : 'never'}
                       </span>

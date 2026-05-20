@@ -41,6 +41,7 @@ import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { formatMoney } from '../../utils/format';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
@@ -113,6 +114,7 @@ const CATEGORY_COLORS = [
 
 export function Deduction() {
   const { t } = useI18n();
+  const { formatDate } = useDateFormat();
   // Permission gates per the matrix in Settings → User Management → Permissions.
   // A role with V-only on 'deduction' will hide every mutating control here.
   const { canCreate, canUpdate, canDelete } = useAuth();
@@ -902,9 +904,9 @@ export function Deduction() {
                     <TableCell className="font-semibold text-red-600">
                       {deduction.isPercentage ? `${deduction.amount}%` : `$${formatMoney(deduction.amount)}`}
                     </TableCell>
-                    <TableCell>{format(new Date(deduction.startDate), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell>{formatDate(deduction.startDate)}</TableCell>
                     <TableCell>
-                      {deduction.endDate ? format(new Date(deduction.endDate), 'MMM dd, yyyy') : 'Ongoing'}
+                      {deduction.endDate ? formatDate(deduction.endDate) : 'Ongoing'}
                     </TableCell>
                     <TableCell>
                       <Badge variant={deduction.status === 'active' ? 'default' : 'secondary'}>

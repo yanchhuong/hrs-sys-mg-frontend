@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { DateFormatProvider } from './context/DateFormatContext';
 import { I18nProvider } from './i18n/I18nContext';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
@@ -77,8 +78,10 @@ export default function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <AppContent />
-        <Toaster />
+        <DateFormatProvider>
+          <AppContent />
+          <Toaster />
+        </DateFormatProvider>
       </AuthProvider>
     </I18nProvider>
   );
