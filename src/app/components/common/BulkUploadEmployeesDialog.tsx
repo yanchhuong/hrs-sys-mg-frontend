@@ -45,7 +45,7 @@ interface RowProgress {
 function buildCreateRequest(
   row: ParsedEmployeeRow,
   deptByLowerName: Map<string, string>,
-): employeesApi.CreateEmployeeRequest & { empNo: string } {
+): employeesApi.CreateEmployeeRequest & { empNo: string; departmentName?: string | null } {
   const d = row.data;
   const deptName = d.department?.trim();
   const departmentId = deptName ? deptByLowerName.get(deptName.toLowerCase()) ?? null : null;
@@ -57,6 +57,10 @@ function buildCreateRequest(
     email: d.email as string,
     position: d.position as string,
     departmentId,
+    // Pass the raw spreadsheet value through so the backend can find-or-create
+    // a Department row when the name didn't match anything in our roster.
+    // Server keeps using departmentId when set, so this is purely a fallback.
+    departmentName: deptName || null,
     joinDate: d.joinDate as string,
     baseSalary: d.baseSalary as number,
     managerId: undefined,
