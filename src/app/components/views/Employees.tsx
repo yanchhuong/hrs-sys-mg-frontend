@@ -130,6 +130,7 @@ function EmployeeDocuments({
   /** Mock-mode hook so the parent can persist into mockEmployees. Ignored in live mode. */
   onChange?: (docs: import('../../types/hrms').EmployeeDocument[]) => void;
 }) {
+  const { formatDate } = useDateFormat();
   const [uploadType, setUploadType] = useState<documentsApi.EmployeeDocumentType>('contract');
   const [filter, setFilter] = useState<string>('all');
   // Live-mode state. In USE_MOCKS we read straight from `employee.documents`

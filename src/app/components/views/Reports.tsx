@@ -1335,6 +1335,7 @@ function AttendanceEmployeeDialog({
   onClose: () => void;
   deptName?: (id: string) => string;
 }) {
+  const { formatDate } = useDateFormat();
   const resolveDept = deptName ?? ((s: string) => s);
   const myRecords = useMemo(() => {
     if (!employee) return [];
