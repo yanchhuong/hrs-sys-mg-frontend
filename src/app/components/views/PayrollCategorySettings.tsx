@@ -73,9 +73,9 @@ import {
 
 /**
  * Per-category hover-hint, keyed by `code`. Only categories with non-obvious
- * mechanics need an entry — Basic / OT / Tax / NSSF are self-evident.
- * Adding a new key here is the entire extension point; the table cell
- * surfaces an ℹ button next to the label whenever a code matches.
+ * mechanics need an entry. Adding a new key here is the entire extension
+ * point; the table cell surfaces an ℹ button next to the label whenever
+ * a code matches.
  *
  * Each entry is rendered inside a <Tooltip>, so plain text + brief JSX
  * (lists, code spans) are fine — keep it short, deep details belong in
@@ -167,6 +167,38 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
         <strong> Tax Brackets</strong>. Auto-filled by the payroll
         generator; a manual non-zero value on a salary_deductions row
         wins over the formula.
+      </p>
+    </div>
+  ),
+  ot: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">OT — Cambodia Labour Law overtime</p>
+      <p>
+        Hourly wage is derived from the employee's Basic + Position +
+        Evaluation Allowance and the configured working days:
+      </p>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+{`hourly_wage = (basic + position + evaluation) ÷ (working_days × 8)
+ot_pay      = hourly_wage × hours × rate_multiplier`}
+      </p>
+      <p className="text-[11px]">Default multipliers (editable per tenant):</p>
+      <table className="text-[11px] w-full border-separate border-spacing-y-0.5">
+        <tbody>
+          <tr><td className="opacity-80">Weekday (after work hours)</td><td className="text-right">1.50×</td></tr>
+          <tr><td className="opacity-80">Weekend (Sat / Sun off)</td><td className="text-right">2.00×</td></tr>
+          <tr><td className="opacity-80">Public Holiday</td><td className="text-right">2.50×</td></tr>
+        </tbody>
+      </table>
+      <p className="text-[11px]">
+        Hours flow in from <strong>approved OT requests</strong> grouped
+        by day-type for the month — pending / rejected rows are ignored.
+        A custom Department / Group rate in Settings → OT overrides the
+        tenant defaults for matched employees.
+      </p>
+      <p className="text-[11px] opacity-80">
+        Default Amount on this row is ignored — leave it at 0. The
+        payroll generator fills the per-employee value from the formula
+        above; a manual non-zero on the payslip line wins over it.
       </p>
     </div>
   ),
