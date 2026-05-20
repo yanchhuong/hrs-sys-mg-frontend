@@ -982,7 +982,7 @@ export function AttendanceSettings() {
               <CardDescription>Side-by-side comparison of all OT types</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /><p className="font-medium text-sm text-blue-800">Workday</p></div>
                   <div className="text-2xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>
@@ -1000,6 +1000,30 @@ export function AttendanceSettings() {
                   <div className="text-2xl font-bold text-red-700">{otSettings.holidayRule.rate}x</div>
                   <div className="text-xs text-red-600 space-y-1"><p>Highest priority rule</p><p>{otSettings.holidayRule.specialBonusEnabled ? `+ $${otSettings.holidayRule.specialBonusAmount} bonus` : 'No special bonus'}</p></div>
                   <div className="font-mono text-xs text-red-900 bg-white rounded p-2">5h work → 5h × {otSettings.holidayRule.rate} = {(5 * otSettings.holidayRule.rate).toFixed(1)}h</div>
+                </div>
+                {/* Night Work — overlays on top of the day-type rate via
+                    max(dayType, night). Greys out when the toggle is off
+                    so HR can see it's configured but inactive. */}
+                <div className={`rounded-lg p-4 space-y-3 border ${otSettings.nightRule.enabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex items-center gap-2">
+                    <Moon className={`h-4 w-4 ${otSettings.nightRule.enabled ? 'text-indigo-600' : 'text-gray-400'}`} />
+                    <p className={`font-medium text-sm ${otSettings.nightRule.enabled ? 'text-indigo-800' : 'text-gray-500'}`}>
+                      Night Work
+                    </p>
+                    {!otSettings.nightRule.enabled && (
+                      <Badge variant="outline" className="px-1 py-0 text-[10px] ml-auto">off</Badge>
+                    )}
+                  </div>
+                  <div className={`text-2xl font-bold ${otSettings.nightRule.enabled ? 'text-indigo-700' : 'text-gray-500'}`}>
+                    {otSettings.nightRule.rate}x
+                  </div>
+                  <div className={`text-xs space-y-1 ${otSettings.nightRule.enabled ? 'text-indigo-600' : 'text-gray-500'}`}>
+                    <p>Window {otSettings.nightRule.startTime}–{otSettings.nightRule.endTime}</p>
+                    <p>max(dayType, night) — cross-date OK</p>
+                  </div>
+                  <div className={`font-mono text-xs bg-white rounded p-2 ${otSettings.nightRule.enabled ? 'text-indigo-900' : 'text-gray-500'}`}>
+                    Fri 22:00 → Sat 05:00, 7h × max({otSettings.workdayRule.rate}, {otSettings.nightRule.rate}) = {(7 * Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)).toFixed(1)}h
+                  </div>
                 </div>
               </div>
             </CardContent>
