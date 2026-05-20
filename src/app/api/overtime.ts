@@ -1,6 +1,6 @@
 import { apiJson, apiVoid } from './client';
 
-export type OtStatus = 'pending' | 'approved' | 'rejected';
+export type OtStatus = 'pending' | 'approved' | 'rejected' | 'done';
 
 export interface OtRequest {
   id: string;
@@ -19,6 +19,11 @@ export interface OtRequest {
    *  calculator skips day-type + night composition and pays this
    *  multiplier directly. Numeric on the wire; null = use auto rate. */
   rateOverride?: number | null;
+  /** When set, this OT row has been folded into a payroll batch and
+   *  is locked from further edits (V63). status === 'done' carries
+   *  the same signal; the id is exposed so the UI can deep-link to
+   *  the batch in future. */
+  payrollBatchId?: string | null;
   reason?: string;
   status: OtStatus;
   /** Backend sends submitter / approver as UUIDs. */

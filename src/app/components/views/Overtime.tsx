@@ -47,7 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -154,7 +154,7 @@ export function Overtime() {
     start: null,
     end: null,
   });
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'done'>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'by-request' | 'by-employee'>('by-request');
 
@@ -513,6 +513,7 @@ export function Overtime() {
       pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
       approved: 'bg-green-100 text-green-800 hover:bg-green-100',
       rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
+      done: 'bg-slate-200 text-slate-700 hover:bg-slate-200',
     };
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
@@ -1139,52 +1140,72 @@ export function Overtime() {
                     <TableCell className="text-sm">{request.submittedByName || '-'}</TableCell>
                     <TableCell className="text-sm">{approverName || '-'}</TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {isAdmin && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => openEditOtRow(request)}
-                            title="Edit start/end hour and rate"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canActOnThis ? (
-                          <>
-                            <Button
-                              size="sm"
+                      {(() => {
+                        // Done = locked: row has been paid via a payroll
+                        // batch (V63). All admin/leader actions hide
+                        // until the batch is rejected.
+                        const isDone = request.status === 'done';
+                        if (isDone) {
+                          return (
+                            <Badge
                               variant="outline"
-                              className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
-                              onClick={() => handleApprove(request.id)}
+                              className="text-[10px] text-slate-600 bg-slate-50 border-slate-200"
+                              title="OT row is locked — folded into a payroll batch. Reject the batch to edit."
                             >
-                              <Check className="h-3.5 w-3.5 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
-                              onClick={() => handleReject(request.id)}
-                            >
-                              <X className="h-3.5 w-3.5 mr-1" />
-                              Reject
-                            </Button>
-                          </>
-                        ) : isPending && role !== 'admin' ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] text-gray-500"
-                            title="Only this employee's direct leader can approve."
-                          >
-                            <X className="h-3 w-3 mr-1" />
-                            {isManager ? 'Not your team' : 'Awaiting leader'}
-                          </Badge>
-                        ) : !isAdmin ? (
-                          <span className="text-xs text-gray-400">—</span>
-                        ) : null}
-                      </div>
+                              <Lock className="h-3 w-3 mr-1" />
+                              Locked
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => openEditOtRow(request)}
+                                title="Edit start/end hour and rate"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canActOnThis ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
+                                  onClick={() => handleApprove(request.id)}
+                                >
+                                  <Check className="h-3.5 w-3.5 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
+                                  onClick={() => handleReject(request.id)}
+                                >
+                                  <X className="h-3.5 w-3.5 mr-1" />
+                                  Reject
+                                </Button>
+                              </>
+                            ) : isPending && role !== 'admin' ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] text-gray-500"
+                                title="Only this employee's direct leader can approve."
+                              >
+                                <X className="h-3 w-3 mr-1" />
+                                {isManager ? 'Not your team' : 'Awaiting leader'}
+                              </Badge>
+                            ) : !isAdmin ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                   </TableRow>
                 );
