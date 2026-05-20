@@ -1285,7 +1285,7 @@ function WorkingRule({ lang }: { lang: Lang }) {
       icon: ShieldCheck, tone: 'emerald',
       title:  { en: 'NSSF Contributions',                     km: 'ការបង់ ប.ស.ស',                     zh: 'ប.ស.ស 缴费' },
       bullets: [
-        { en: 'Employer: 5.40% of contributory wage',         km: 'និយោជក: ៥.៤% នៃប្រាក់ឈ្នួលរួមចំណែក', zh: '雇主：缴费工资的 5.40%' },
+        { en: 'Employer: 2% of contributory wage',            km: 'និយោជក: ២% នៃប្រាក់ឈ្នួលរួមចំណែក', zh: '雇主：缴费工资的 2%' },
         { en: 'Employee: 2% (first 5 years of pension scheme)', km: 'និយោជិត: ២% (៥ ឆ្នាំដំបូងនៃគម្រោងសោធន)',           zh: '员工：2%（养老保险前 5 年）' },
         { en: 'Wage cap: 1,200,000 KHR (~ $300 USD)',         km: 'ដែនកំណត់ប្រាក់ឈ្នួល: ១,២០០,០០០ រៀល', zh: '缴费工资上限：1,200,000 瑞尔' },
       ],
