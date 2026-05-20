@@ -148,6 +148,10 @@ export function Increase() {
    *  (FDC only) — HR can't accidentally pick a Probation hire for a
    *  UDC-only line item. Empty when no active contract on file. */
   const [contractTypeByEmpId, setContractTypeByEmpId] = useState<Record<string, string>>({});
+  /** Companion lookup: employee API id → active contract end date (ISO).
+   *  Used by the fdc_severance flow to auto-fill the Effective Date with
+   *  the contract's natural expiry — HR can still override. */
+  const [contractEndByEmpId, setContractEndByEmpId] = useState<Record<string, string>>({});
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
@@ -225,10 +229,13 @@ export function Increase() {
     try {
       const res = await contractsApi.list({ status: 'active', size: 1000 });
       const map: Record<string, string> = {};
+      const endMap: Record<string, string> = {};
       for (const c of res.data) {
         if (c.employeeId && c.contractType) map[c.employeeId] = c.contractType;
+        if (c.employeeId && c.endDate) endMap[c.employeeId] = c.endDate;
       }
       setContractTypeByEmpId(map);
+      setContractEndByEmpId(endMap);
     } catch (err) {
       console.warn('Increase: could not load active contracts for picker filter', err);
     }
@@ -260,13 +267,23 @@ export function Increase() {
 
   // Multi-target mode: percentage / day-unit increases are formulas, so we
   // let the user fan the rule out across many employees in one submit.
-  const isMultiTargetMode = newUnit === 'percentage' || newUnit === 'day';
+  // Exception: 5% Severance is keyed to a single FDC contract's end date —
+  // forcing single-pick keeps the Effective Date aligned with that one
+  // contract's expiry. Cambodian Labour Law requires it as a one-off.
+  const isFdcSeverance = newType === 'fdc_severance';
+  const isMultiTargetMode = !isFdcSeverance && (newUnit === 'percentage' || newUnit === 'day');
 
   /** When the user picks a Type, auto-default the unit + amount from the
    *  category's value_type so day-flavoured categories (seniority_indemnity)
    *  arrive pre-filled with their day count. The user can still override. */
   const handleTypeChange = (code: string) => {
     setNewType(code);
+    // 5% Severance is contract-bound + one-off — force recurrence and
+    // clear any stale multi-pick selection from a prior type.
+    if (code === 'fdc_severance') {
+      setNewRecurrence('once');
+      setMultiEmployeeIds([]);
+    }
     const cat = earningCategories.find((c) => c.code === code);
     if (!cat) return;
     if (cat.valueType === 'day') {
@@ -278,6 +295,15 @@ export function Increase() {
       setNewUnit('amount');
     }
   };
+
+  /** When the user picks the FDC employee on a 5% Severance row, snap
+   *  Effective Date to that contract's natural expiry. Skips silently
+   *  if the contract has no end date on file — HR enters one manually. */
+  useEffect(() => {
+    if (!isFdcSeverance || !newEmployeeId) return;
+    const end = contractEndByEmpId[newEmployeeId];
+    if (end) setNewEffectiveDate(end);
+  }, [isFdcSeverance, newEmployeeId, contractEndByEmpId]);
 
   const handleAddIncrease = async () => {
     // In multi-target mode (% / day) we ignore the single-picker value and
@@ -756,18 +782,25 @@ export function Increase() {
                   >
                     One-time
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewRecurrence('monthly')}
-                    className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
-                      newRecurrence === 'monthly'
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    Repeat Monthly
-                  </button>
+                  {!isFdcSeverance && (
+                    <button
+                      type="button"
+                      onClick={() => setNewRecurrence('monthly')}
+                      className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                        newRecurrence === 'monthly'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Repeat Monthly
+                    </button>
+                  )}
                 </div>
+                {isFdcSeverance && (
+                  <p className="text-xs text-amber-700">
+                    5% Severance is paid <strong>once</strong> on the natural expiry of the FDC contract — Effective Date is locked to the contract's end date.
+                  </p>
+                )}
                 {newRecurrence === 'once' && (newType === 'basic' || newType === 'salary' || newType === 'base') && (
                   <p className="text-xs text-blue-700">
                     Basic / salary increases permanently bump the employee's base salary. Apply once.

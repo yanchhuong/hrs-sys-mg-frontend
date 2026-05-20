@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Calculator, Loader2, Scale } from 'lucide-react';
 
 import * as fdcApi from '../../api/fdcSeverance';
+import { Employee } from '../../types/hrms';
 import { formatMoney } from '../../utils/format';
 import { useDateFormat } from '../../context/DateFormatContext';
 import {
@@ -16,9 +17,9 @@ import {
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
-import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { SearchablePicker } from '../common/SearchablePicker';
 import {
   Table,
   TableBody,
@@ -31,128 +32,153 @@ import {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Re-fetch the parent's batch list after a successful create. */
+  /** Employees with an *active* FDC contract — the only ones who can
+   *  receive a 5% Severance line. Parent computes this from the active
+   *  contracts list so the dialog doesn't have to. */
+  fdcEmployees: Employee[];
+  /** Optional re-fetch hook for the parent's batch list. */
   onCreated?: () => void;
-}
-
-/** Default to the calendar quarter that just ended — typical FDC
- *  payroll cadence is "wrap up last quarter's expiries". Frontend
- *  uses ISO YYYY-MM-DD to match {@code <input type="date">}. */
-function defaultPeriod(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth(); // 0-11
-  const qStart = Math.floor(m / 3) * 3;
-  const startMonth = String(qStart + 1).padStart(2, '0');
-  const endMonth = String(qStart + 3).padStart(2, '0');
-  const lastDay = new Date(y, qStart + 3, 0).getDate();
-  return { from: `${y}-${startMonth}-01`, to: `${y}-${endMonth}-${lastDay}` };
 }
 
 function money(n: number): string {
   return `$${formatMoney(n)}`;
 }
 
-export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
-  const initial = useMemo(defaultPeriod, []);
+/**
+ * Per-employee 5% FDC Severance calculator.
+ *
+ * <p>The earlier window-scan version made HR pick a date range and then
+ * a contract from a multi-row preview — too clicky for what is almost
+ * always a one-at-a-time payout. This redesigned dialog flips it: pick
+ * the FDC employee, the server returns their active contract's monthly
+ * gross earnings, and HR sees the wage base build up row-by-row before
+ * generating a single-line batch. Backed by
+ * {@code GET /api/v1/payroll/fdc-severance/preview-by-employee}.
+ */
+export function FdcSeveranceDialog({ open, onOpenChange, fdcEmployees, onCreated }: Props) {
   const { formatDate } = useDateFormat();
-  const [from, setFrom] = useState<string>(initial.from);
-  const [to, setTo] = useState<string>(initial.to);
+  const [employeeId, setEmployeeId] = useState<string>('');
   const [ratePercent, setRatePercent] = useState<string>('5');
-
-  const [preview, setPreview] = useState<fdcApi.FdcSeverancePreview | null>(null);
+  const [preview, setPreview] = useState<fdcApi.FdcSeveranceEmployeePreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  /** Per-row include toggle keyed by contractId. Seeded from the
-   *  preview's eligible rows; HR can drop rows out without re-running
-   *  the preview. */
-  const [included, setIncluded] = useState<Set<string>>(new Set());
 
-  // Reset state every time the dialog re-opens — a stale preview from
-  // a previous session shouldn't bleed into the next one.
+  // Reset on each open so a stale preview from a prior session doesn't
+  // bleed into the next one.
   useEffect(() => {
     if (!open) return;
-    const d = defaultPeriod();
-    setFrom(d.from);
-    setTo(d.to);
+    setEmployeeId('');
     setRatePercent('5');
     setPreview(null);
-    setIncluded(new Set());
   }, [open]);
 
-  const handlePreview = async () => {
+  // Auto-fetch the preview whenever the selected employee changes —
+  // saves HR an extra click; the rate update has its own Recalc button.
+  useEffect(() => {
+    if (!open || !employeeId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const rate = Number(ratePercent);
+        const res = await fdcApi.previewByEmployee(
+          employeeId,
+          Number.isFinite(rate) && rate > 0 ? rate : undefined,
+        );
+        if (!cancelled) setPreview(res);
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err instanceof Error ? err.message : 'Failed to load severance preview');
+          setPreview(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // ratePercent intentionally omitted — re-runs land via handleRecalc.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeId, open]);
+
+  const handleRecalc = async () => {
+    if (!employeeId) return;
     setLoading(true);
     try {
       const rate = Number(ratePercent);
-      const res = await fdcApi.preview(from, to, Number.isFinite(rate) && rate > 0 ? rate : undefined);
+      const res = await fdcApi.previewByEmployee(
+        employeeId,
+        Number.isFinite(rate) && rate > 0 ? rate : undefined,
+      );
       setPreview(res);
-      setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.contractId)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load FDC severance preview');
+      toast.error(err instanceof Error ? err.message : 'Failed to recalculate severance');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreate = async () => {
-    if (!preview) return;
-    if (included.size === 0) {
-      toast.error('Pick at least one contract to include in the batch');
-      return;
-    }
+    if (!preview || !preview.contractId || !preview.eligible) return;
     setCreating(true);
     try {
       const rate = Number(ratePercent);
+      // Window narrows to the contract's endDate ± 0 so the backend's
+      // window-scan picks the same contract we're previewing. createBatch
+      // re-runs the math server-side; we only ship the contract id.
+      const end = preview.endDate ?? '';
       await fdcApi.createBatch({
-        from,
-        to,
+        from: preview.startDate ?? end,
+        to: end,
         ratePercent: Number.isFinite(rate) && rate > 0 ? rate : undefined,
-        contractIds: Array.from(included),
+        contractIds: [preview.contractId],
       });
-      toast.success(`FDC severance batch created for ${included.size} contract${included.size === 1 ? '' : 's'}`);
+      toast.success(`5% Severance batch created for ${preview.name}`);
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create FDC severance batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create severance batch');
     } finally {
       setCreating(false);
     }
   };
 
-  const toggleAll = () => {
-    if (!preview) return;
-    const all = preview.items.filter(i => i.eligible).map(i => i.contractId);
-    setIncluded(prev => prev.size === all.length ? new Set() : new Set(all));
-  };
-
-  const includedTotal = preview?.items
-    .filter(i => included.has(i.contractId))
-    .reduce((sum, i) => sum + (i.severance || 0), 0) ?? 0;
+  const pickerOptions = fdcEmployees.map(emp => {
+    const val = (emp as { apiId?: string }).apiId ?? emp.id;
+    return {
+      value: val,
+      label: emp.name,
+      secondary: `${emp.id}${emp.position ? ` · ${emp.position}` : ''}`,
+      searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''} ${emp.khmerName ?? ''}`,
+    };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-amber-600" />
             Compute 5% Severance
           </DialogTitle>
           <DialogDescription>
-            Pick a window of FDC contract expiries — the calculator shows the 5% × total-wages owed on each natural expiry. Generate a payroll batch from the eligible rows to route through the standard approval flow.
+            Pick one FDC employee — the calculator pulls every month they were paid under their active contract and applies the 5% rate to the gross wage base.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 overflow-y-auto px-1">
           <Card>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <CardContent className="p-4 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-end">
                 <div className="space-y-1">
-                  <Label className="text-xs">Expiry from</Label>
-                  <Input type="date" value={from} onChange={e => setFrom(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Expiry to</Label>
-                  <Input type="date" value={to} onChange={e => setTo(e.target.value)} />
+                  <Label className="text-xs">FDC employee</Label>
+                  <SearchablePicker
+                    options={pickerOptions}
+                    value={employeeId}
+                    onChange={setEmployeeId}
+                    placeholder="Select FDC employee…"
+                    searchPlaceholder="Search by name, ID, or position…"
+                    allowClear={false}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Rate (%)</Label>
@@ -164,123 +190,97 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                       value={ratePercent}
                       onChange={e => setRatePercent(e.target.value)}
                       placeholder="5"
+                      className="w-24"
                     />
                     <span className="text-sm text-gray-500">%</span>
                   </div>
                 </div>
-                <div className="flex items-end">
-                  <Button onClick={handlePreview} disabled={loading} className="w-full">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
-                    Preview
-                  </Button>
-                </div>
+                <Button onClick={handleRecalc} disabled={loading || !employeeId} variant="outline">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
+                  Recalc
+                </Button>
               </div>
-              <p className="mt-3 text-[11px] text-gray-500">
-                Wage base is gross — sum of monthly_gross_earnings.totalEarnings across the contract's active months. Legal minimum is 5% (Cambodian Labour Law); raise it here for a more generous batch without touching Settings.
+              <p className="text-[11px] text-gray-500">
+                List shows only employees with an <strong>active FDC contract</strong>. Wage base is gross — every <code>monthly_gross_earnings.totalEarnings</code> row inside the contract dates. Legal minimum is 5% (Cambodian Labour Law); raise it here for a more generous batch without touching Settings.
               </p>
             </CardContent>
           </Card>
 
-          {preview && (
+          {fdcEmployees.length === 0 && (
+            <Card>
+              <CardContent className="p-6 text-center text-sm text-gray-500">
+                No employees with an active FDC contract on file. Add or update a contract under <strong>Employees → Contracts</strong> first.
+              </CardContent>
+            </Card>
+          )}
+
+          {preview && !loading && (
             <Card>
               <CardContent className="p-0 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between flex-wrap gap-2">
                   <div className="text-sm">
-                    <span className="font-medium">{preview.items.length}</span> contracts in window
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">Rate {preview.ratePercent}%</span>
-                  </div>
-                  <div className="text-sm">
-                    Included total: <span className="font-semibold">{money(includedTotal)}</span>
-                  </div>
-                </div>
-                <div className="max-h-[40vh] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white z-10">
-                      <TableRow>
-                        <TableHead className="w-10">
-                          <Checkbox
-                            checked={included.size > 0 && included.size === preview.items.filter(i => i.eligible).length}
-                            onCheckedChange={toggleAll}
-                            aria-label="Toggle all eligible rows"
-                          />
-                        </TableHead>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Contract</TableHead>
-                        <TableHead className="text-center">Months</TableHead>
-                        <TableHead className="text-right">Total Wages</TableHead>
-                        <TableHead className="text-right">Severance</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {preview.items.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-6">
-                            No FDC contracts expire in this window.
-                          </TableCell>
-                        </TableRow>
+                    <div className="font-medium">{preview.name}{preview.empNo ? ` · ${preview.empNo}` : ''}</div>
+                    <div className="text-xs text-gray-500">
+                      {preview.startDate && preview.endDate
+                        ? <>Contract {formatDate(preview.startDate)} → {formatDate(preview.endDate)}</>
+                        : 'No active FDC contract on file'}
+                      {preview.terminationReason && (
+                        <Badge
+                          variant="outline"
+                          className={
+                            preview.terminationReason.toLowerCase() === 'misconduct'
+                              ? 'ml-2 text-[10px] bg-red-50 text-red-700 border-red-200'
+                              : 'ml-2 text-[10px] bg-gray-50 text-gray-600 border-gray-200'
+                          }
+                        >
+                          {preview.terminationReason}
+                        </Badge>
                       )}
-                      {preview.items.map(row => (
-                        <TableRow key={row.contractId} className={row.eligible ? '' : 'opacity-60'}>
-                          <TableCell>
-                            <Checkbox
-                              checked={included.has(row.contractId)}
-                              disabled={!row.eligible}
-                              onCheckedChange={() => {
-                                setIncluded(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(row.contractId)) next.delete(row.contractId);
-                                  else next.add(row.contractId);
-                                  return next;
-                                });
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm font-medium">{row.name}</div>
-                            {row.empNo && <div className="text-[11px] text-gray-500">{row.empNo}</div>}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <div>{formatDate(row.startDate)}</div>
-                            <div className="text-gray-500">→ {formatDate(row.endDate)}</div>
-                            {row.terminationReason && (
-                              <div className="mt-1">
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    row.terminationReason.toLowerCase() === 'misconduct'
-                                      ? 'text-[10px] bg-red-50 text-red-700 border-red-200'
-                                      : 'text-[10px] bg-gray-50 text-gray-600 border-gray-200'
-                                  }
-                                >
-                                  {row.terminationReason}
-                                </Badge>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">{row.monthsActive}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{money(row.totalWages)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm font-medium">{money(row.severance)}</TableCell>
-                          <TableCell>
-                            {row.eligible ? (
-                              <Badge className="bg-emerald-100 text-emerald-800 border-0">Eligible</Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="bg-gray-50 text-gray-600 border-gray-200 text-[11px]"
-                                title={row.reason ?? ''}
-                              >
-                                {row.reason ?? 'Not eligible'}
-                              </Badge>
-                            )}
-                          </TableCell>
+                    </div>
+                  </div>
+                  {preview.eligible ? (
+                    <Badge className="bg-emerald-100 text-emerald-800 border-0">Eligible</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">
+                      {preview.reason ?? 'Not eligible'}
+                    </Badge>
+                  )}
+                </div>
+
+                {preview.months.length > 0 && (
+                  <div className="max-h-[40vh] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-white z-10">
+                        <TableRow>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Total Earnings</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {preview.months.map((m, idx) => (
+                          <TableRow key={`${m.month}-${idx}`}>
+                            <TableCell className="text-sm">{m.month}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{money(m.totalEarnings)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                <div className="px-4 py-3 border-t bg-gray-50 grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-gray-500">Total wages</div>
+                    <div className="font-semibold tabular-nums">{money(preview.totalWages)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Rate</div>
+                    <div className="font-semibold tabular-nums">{preview.ratePercent}%</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Severance</div>
+                    <div className="font-semibold text-amber-700 tabular-nums">{money(preview.severance)}</div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -293,10 +293,10 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
           </Button>
           <Button
             onClick={handleCreate}
-            disabled={!preview || included.size === 0 || creating}
+            disabled={!preview || !preview.eligible || creating || loading}
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Generate Batch ({included.size})
+            Generate Batch
           </Button>
         </DialogFooter>
       </DialogContent>

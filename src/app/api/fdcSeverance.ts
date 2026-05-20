@@ -40,6 +40,35 @@ export async function preview(
   });
 }
 
+/** Per-employee severance preview — one FDC contract's worth of monthly
+ *  earnings + the resulting 5% wage base. Mirror of
+ *  {@code FdcSeveranceEmployeePreviewResponse} on the backend. */
+export interface FdcSeveranceEmployeePreview {
+  employeeId: string;
+  contractId: string | null;
+  empNo?: string | null;
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+  contractType?: string | null;
+  terminationReason?: string | null;
+  ratePercent: number;
+  totalWages: number;
+  severance: number;
+  months: Array<{ month: string; totalEarnings: number }>;
+  eligible: boolean;
+  reason?: string | null;
+}
+
+export async function previewByEmployee(
+  employeeId: string,
+  ratePercent?: number,
+): Promise<FdcSeveranceEmployeePreview> {
+  return apiJson<FdcSeveranceEmployeePreview>('/api/v1/payroll/fdc-severance/preview-by-employee', {
+    query: { employeeId, ...(ratePercent ? { ratePercent } : {}) },
+  });
+}
+
 export interface CreateBatchRequest {
   from: string;
   to: string;

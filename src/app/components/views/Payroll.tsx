@@ -47,7 +47,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Scale, Info } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
@@ -69,9 +69,6 @@ import {
 } from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
-import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
-import { FdcSeveranceDialog } from './FdcSeveranceDialog';
-import { TaxCalculatorDialog } from './TaxCalculatorDialog';
 
 // ---------------------------------------------------------------------------
 // API → UI adapters
@@ -196,15 +193,6 @@ export function Payroll() {
    *  dialog title and hides the Excel picker + parse preview when we're
    *  generating directly so HR isn't distracted by upload-only widgets. */
   const [uploadDialogMode, setUploadDialogMode] = useState<'upload' | 'generate'>('upload');
-  // Cambodian Seniority Indemnity dialog — June/December payment calculator.
-  // Generates a payroll batch carrying a single 'seniority_indemnity' line
-  // per eligible UDC employee. See SeniorityIndemnityDialog for the rules.
-  const [seniorityDialogOpen, setSeniorityDialogOpen] = useState(false);
-  // FDC severance — 5% × total wages on the natural expiry of a
-  // Fixed Duration Contract. UDC employees use the seniority dialog
-  // above instead (different legal basis).
-  const [fdcDialogOpen, setFdcDialogOpen] = useState(false);
-  const [taxDialogOpen, setTaxDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchType, setBatchType] = useState<'One Time Salary' | '1st Salary' | '2nd Salary'>('One Time Salary');
@@ -1615,41 +1603,6 @@ export function Payroll() {
           </div>
           {isAdminOrManager && (
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSeniorityDialogOpen(true)}>
-              <Scale className="mr-2 h-4 w-4" />
-              Calculate Seniority
-            </Button>
-            <SeniorityIndemnityDialog
-              open={seniorityDialogOpen}
-              onOpenChange={setSeniorityDialogOpen}
-              onCreated={() => { void loadBatches(); }}
-            />
-            <Button variant="outline" onClick={() => setFdcDialogOpen(true)}>
-              <Scale className="mr-2 h-4 w-4" />
-              Calculate 5% Severance
-            </Button>
-            <FdcSeveranceDialog
-              open={fdcDialogOpen}
-              onOpenChange={setFdcDialogOpen}
-              onCreated={() => { void loadBatches(); }}
-            />
-            <Button variant="outline" onClick={() => setTaxDialogOpen(true)}>
-              <Scale className="mr-2 h-4 w-4" />
-              Calculate Tax
-            </Button>
-            <TaxCalculatorDialog
-              open={taxDialogOpen}
-              onOpenChange={(open) => {
-                setTaxDialogOpen(open);
-                // Refresh employees whenever the dialog opens so changes
-                // saved on the Employees page (decouple / maritalStatus /
-                // numberOfChildren) flow into the TOS preview without a
-                // manual page refresh.
-                if (open) void loadEmployees();
-              }}
-              employees={employees}
-              taxSettings={taxSettings}
-            />
             <Dialog open={uploadDialogOpen} onOpenChange={handleDialogOpenChange}>
               <DialogTrigger asChild>
                 <Button variant="outline" onClick={() => setUploadDialogMode('upload')}>

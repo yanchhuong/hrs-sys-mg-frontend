@@ -20,7 +20,7 @@
 import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
-  Minus, TrendingUp, BarChart3, Settings, Briefcase,
+  Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -28,6 +28,7 @@ import { Employees } from '../components/views/Employees';
 import { Attendance } from '../components/views/Attendance';
 import { Overtime } from '../components/views/Overtime';
 import { Payroll } from '../components/views/Payroll';
+import { BenefitCalculator } from '../components/views/BenefitCalculator';
 import { UserManagement } from '../components/views/UserManagement';
 import { Settings as SettingsView } from '../components/views/Settings';
 import { AllLeave } from '../components/views/AllLeave';
@@ -74,9 +75,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'all-leave',          labelKey: 'nav.allleave',              icon: AlertCircle,     module: 'all-leave',       component: AllLeave,      group: 'time-tracking' },
   { id: 'exception',          labelKey: 'nav.exception',             icon: AlertCircle,     module: 'exception',       component: Exception,     group: 'time-tracking' },
 
-  { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',         component: Payroll,       group: 'payroll-mgmt' },
-  { id: 'increase',           labelKey: 'nav.increase',              icon: TrendingUp,      module: 'increase',        component: Increase,      group: 'payroll-mgmt' },
-  { id: 'deduction',          labelKey: 'nav.deduction',             icon: Minus,           module: 'deduction',       component: Deduction,     group: 'payroll-mgmt' },
+  { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',         component: Payroll,           group: 'payroll-mgmt' },
+  { id: 'benefit-calculator', labelKey: 'nav.benefit_calculator',    icon: Calculator,      module: 'payroll',         component: BenefitCalculator, group: 'payroll-mgmt' },
+  { id: 'increase',           labelKey: 'nav.increase',              icon: TrendingUp,      module: 'increase',        component: Increase,          group: 'payroll-mgmt' },
+  { id: 'deduction',          labelKey: 'nav.deduction',             icon: Minus,           module: 'deduction',       component: Deduction,         group: 'payroll-mgmt' },
 
   { id: 'reports',            labelKey: 'nav.reports',               icon: BarChart3,       module: 'reports',         component: Reports },
 

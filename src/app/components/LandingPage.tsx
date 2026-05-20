@@ -9,7 +9,7 @@ import {
   ArrowRight, Quote, Sparkles, Target, Globe, LineChart,
   Lock, FileSpreadsheet, ShieldCheck, Network, RefreshCw,
   HelpCircle, Mail, Phone, MapPin, Factory, Briefcase, Store,
-  CalendarDays, FileText, Baby,
+  CalendarDays, FileText, Baby, Calculator, Scale,
 } from 'lucide-react';
 // Real product screenshot — uses only the demo-named Payroll Management view.
 // The other two screenshots in src/imports contain real employee names and
@@ -210,6 +210,17 @@ const T = {
     source:  { en: 'Sources: Cambodian Labour Law · 2018 Prakas on Seniority Indemnity · General Department of Taxation · NSSF',
                km: 'ប្រភព៖ ច្បាប់ការងារកម្ពុជា · ប្រកាសឆ្នាំ ២០១៨ ស្តីពីប្រាក់ចូលនិវត្តន៍ · អគ្គនាយកដ្ឋានពន្ធដារ · ប.ស.ស',
                zh: '资料来源：柬埔寨劳动法 · 2018 年关于工龄抚恤金的公告 · 税务总局 · ប.ស.ស' },
+  },
+  benefitFormulas: {
+    eyebrow: { en: 'How the calculators work',
+               km: 'របៀបដែលឧបករណ៍គណនាដំណើរការ',
+               zh: '计算器是如何工作的' },
+    title:   { en: 'Seniority & 5% Severance — the math, with a worked example',
+               km: 'អតីតភាព និងសំណង ៥% — រូបមន្ត និងឧទាហរណ៍',
+               zh: '工龄抚恤金 与 5% 解雇赔偿 — 公式与示例' },
+    desc:    { en: 'Both lines are produced by the in-app Benefit Calculator and routed through the standard payroll-batch approval flow. Here is exactly what the numbers mean.',
+               km: 'ទាំងពីរត្រូវបានបង្កើតដោយឧបករណ៍គណនាអត្ថប្រយោជន៍ និងបញ្ជូនតាមដំណើរការអនុម័តប្រាក់បៀវត្ស។ នេះជាអត្ថន័យពិតប្រាកដនៃលេខទាំងនោះ។',
+               zh: '两项均由应用内的福利计算器生成，并通过标准的薪资批次审批流程发放。下面是这些数字背后的精确含义。' },
   },
   testimonials: {
     eyebrow: { en: 'What teams say', km: 'អ្វីដែលក្រុមការងារនិយាយ', zh: '客户怎么说' },
@@ -1352,6 +1363,155 @@ function WorkingRule({ lang }: { lang: Lang }) {
   );
 }
 
+/**
+ * Knowledge section explaining how the two Cambodian termination-benefit
+ * calculators work — Seniority Indemnity (UDC) and 5% Severance (FDC).
+ * Numbers are taken from the same source of truth the in-app calculators
+ * read at runtime (2018 Prakas + Labour Law Art. 73). Worked examples
+ * use round-number inputs so HR can sanity-check the dialog.
+ */
+function BenefitFormulas({ lang }: { lang: Lang }) {
+  type ML = { en: string; km: string; zh: string };
+  const cards: Array<{
+    icon: React.ElementType;
+    tone: 'emerald' | 'amber';
+    title: ML;
+    eligibility: ML;
+    formula: string;
+    example: { input: ML; steps: string[]; result: ML };
+    cite: ML;
+  }> = [
+    {
+      icon: Scale, tone: 'emerald',
+      title: {
+        en: 'Seniority Indemnity (UDC)',
+        km: 'ប្រាក់ចូលនិវត្តន៍ (UDC)',
+        zh: '工龄抚恤金 (UDC)',
+      },
+      eligibility: {
+        en: 'Paid twice a year (June + December) to every employee on an Undetermined Duration Contract — 7.5 days × daily wage per cycle, covering the prior 6 months.',
+        km: 'បង់ ២ ដងក្នុងមួយឆ្នាំ (មិថុនា + ធ្នូ) ដល់និយោជិតលើកិច្ចសន្យារយៈពេលមិនកំណត់ (UDC) — ៧.៥ ថ្ងៃ × ប្រាក់ឈ្នួលប្រចាំថ្ងៃ ក្នុងមួយវគ្គ។',
+        zh: '每年发放两次（6 月 + 12 月）给所有无固定期合约 (UDC) 员工：每期 7.5 天 × 日薪。',
+      },
+      formula: 'daily_wage = monthly_gross ÷ working_days\nseniority   = daily_wage × 7.5',
+      example: {
+        input: {
+          en: 'UDC employee · monthly gross = $500 · working days = 26 (Mon–Sat)',
+          km: 'និយោជិត UDC · ប្រាក់ខែសរុប = ៥០០ ដុល្លារ · ថ្ងៃធ្វើការ = ២៦ (ច័ន្ទ–សៅរ៍)',
+          zh: 'UDC 员工 · 月度毛工资 = $500 · 工作日 = 26（周一至周六）',
+        },
+        steps: [
+          'daily_wage = 500 ÷ 26     = $19.23',
+          'seniority  = 19.23 × 7.5  = $144.23',
+        ],
+        result: {
+          en: '$144.23 paid in June, again in December → $288.46/year',
+          km: '១៤៤.២៣ ដុល្លារ បង់នៅខែមិថុនា និង ខែធ្នូ → ២៨៨.៤៦ ដុល្លារ/ឆ្នាំ',
+          zh: '6 月发 $144.23，12 月再发 $144.23 → 每年 $288.46',
+        },
+      },
+      cite: {
+        en: '2018 Prakas on Seniority Indemnity · Labour Law of Cambodia Art. 89',
+        km: 'ប្រកាសឆ្នាំ ២០១៨ ស្តីពីប្រាក់ចូលនិវត្តន៍ · ច្បាប់ការងារ មាត្រា ៨៩',
+        zh: '2018 年关于工龄抚恤金的公告 · 柬埔寨劳动法 第 89 条',
+      },
+    },
+    {
+      icon: Calculator, tone: 'amber',
+      title: {
+        en: '5% Severance (FDC)',
+        km: 'សំណង ៥% (FDC)',
+        zh: '5% 解雇赔偿 (FDC)',
+      },
+      eligibility: {
+        en: 'Paid once, on the natural expiry of a Fixed Duration Contract — 5% × total gross wages earned over the contract\'s lifetime. Forfeited if the contract ends for serious misconduct.',
+        km: 'បង់ម្តងតែប៉ុណ្ណោះ នៅពេលផុតកំណត់នៃកិច្ចសន្យារយៈពេលកំណត់ — ៥% × ប្រាក់ឈ្នួលសរុបក្នុងអំឡុងពេលកិច្ចសន្យា។ ប្រាក់សំណងត្រូវផ្ងាក់ប្រសិនបើបញ្ចប់កិច្ចសន្យាដោយការប្រព្រឹត្តខុស។',
+        zh: '在固定期合约 (FDC) 自然到期时一次性发放：合约期内总毛工资 × 5%。若因严重失职终止则丧失资格。',
+      },
+      formula: 'total_wages = Σ monthly_gross_earnings.totalEarnings\nseverance   = total_wages × 5%',
+      example: {
+        input: {
+          en: 'FDC employee · 3-month contract · pay = $500 / $550 / $600',
+          km: 'និយោជិត FDC · កិច្ចសន្យា ៣ ខែ · ប្រាក់ឈ្នួល = ៥០០ / ៥៥០ / ៦០០ ដុល្លារ',
+          zh: 'FDC 员工 · 3 个月合约 · 工资 = $500 / $550 / $600',
+        },
+        steps: [
+          'total_wages = 500 + 550 + 600  = $1,650.00',
+          'severance   = 1,650.00 × 0.05  = $82.50',
+        ],
+        result: {
+          en: '$82.50 added to the final month\'s payslip ($600 + $82.50 = $682.50)',
+          km: '៨២.៥០ ដុល្លារ បន្ថែមលើបង្កាន់ដៃប្រាក់ខែខែចុងក្រោយ ($600 + $82.50 = $682.50)',
+          zh: '$82.50 计入最后一个月的工资单（$600 + $82.50 = $682.50）',
+        },
+      },
+      cite: {
+        en: 'Labour Law of Cambodia Art. 73 · FDC natural-expiry severance',
+        km: 'ច្បាប់ការងារ មាត្រា ៧៣ · សំណងផុតកំណត់ FDC',
+        zh: '柬埔寨劳动法 第 73 条 · FDC 合约自然到期解雇赔偿',
+      },
+    },
+  ];
+
+  const toneStyles: Record<'emerald' | 'amber', { iconBg: string; iconText: string; ring: string; resultBg: string; resultText: string }> = {
+    emerald: { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', ring: 'ring-emerald-100', resultBg: 'bg-emerald-50',  resultText: 'text-emerald-800' },
+    amber:   { iconBg: 'bg-amber-50',   iconText: 'text-amber-600',   ring: 'ring-amber-100',   resultBg: 'bg-amber-50',    resultText: 'text-amber-800'   },
+  };
+
+  return (
+    <section id="benefit-formulas" className="py-20 sm:py-24 bg-slate-50/70">
+      <Container>
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>{t(T.benefitFormulas.eyebrow, lang)}</Eyebrow>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            {t(T.benefitFormulas.title, lang)}
+          </h2>
+          <p className="mt-5 text-base leading-relaxed text-slate-600">
+            {t(T.benefitFormulas.desc, lang)}
+          </p>
+        </div>
+        <div className="mt-14 grid gap-6 lg:grid-cols-2">
+          {cards.map((c, i) => {
+            const Icon = c.icon;
+            const tn = toneStyles[c.tone];
+            return (
+              <Card key={i} className="border-slate-200/70 shadow-sm">
+                <CardContent className="p-6 sm:p-8">
+                  <div className="flex items-start gap-4">
+                    <span className={`inline-flex h-11 w-11 items-center justify-center rounded-xl ${tn.iconBg} ${tn.iconText} ring-4 ${tn.ring}`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-slate-900">{t(c.title, lang)}</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-slate-600">{t(c.eligibility, lang)}</p>
+                    </div>
+                  </div>
+                  <pre className="mt-6 whitespace-pre-wrap rounded-lg bg-slate-900 px-4 py-3 text-[12px] font-mono leading-relaxed text-slate-100">
+{c.formula}
+                  </pre>
+                  <div className="mt-5">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                      {lang === 'km' ? 'ឧទាហរណ៍' : lang === 'zh' ? '示例' : 'Worked example'}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-700">{t(c.example.input, lang)}</p>
+                    <pre className="mt-2 whitespace-pre-wrap rounded-md bg-white border border-slate-200 px-3 py-2 text-[12px] font-mono text-slate-700">
+{c.example.steps.join('\n')}
+                    </pre>
+                    <div className={`mt-3 rounded-md ${tn.resultBg} px-3 py-2 text-sm font-medium ${tn.resultText}`}>
+                      = {t(c.example.result, lang)}
+                    </div>
+                  </div>
+                  <p className="mt-5 text-[11px] text-slate-500">{t(c.cite, lang)}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
 /** Testimonials — three short quotes. Stock names; replace with real once available. */
 function Testimonials({ lang }: { lang: Lang }) {
   const items: Array<{
@@ -1599,6 +1759,7 @@ export function LandingPage({ onSignInClick }: LandingPageProps) {
       <Deployment lang={lang} />
       <CambodiaSection lang={lang} />
       <WorkingRule lang={lang} />
+      <BenefitFormulas lang={lang} />
       <Testimonials lang={lang} />
       <Faq lang={lang} />
       <CtaBanner lang={lang} onSignIn={onSignInClick} />

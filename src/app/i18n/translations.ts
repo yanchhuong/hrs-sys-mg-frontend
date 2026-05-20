@@ -40,6 +40,7 @@ export const dict: Dict = {
   'nav.deduction':            { en: 'Deduction',            km: 'ការកាត់ប្រាក់',      zh: '扣款' },
   'nav.increase':             { en: 'Increase',             km: 'ការដំឡើងប្រាក់',    zh: '加薪' },
   'nav.payroll':              { en: 'Payroll',              km: 'បើកប្រាក់ខែ',       zh: '薪资' },
+  'nav.benefit_calculator':   { en: 'Benefit Calculator',   km: 'ការគណនាអត្ថប្រយោជន៍', zh: '福利计算器' },
   'nav.payroll_mgmt':         { en: 'Payroll Management',   km: 'គ្រប់គ្រងប្រាក់ខែ',   zh: '薪资管理' },
   'nav.time_tracking':        { en: 'Time Tracking',        km: 'តាមដានពេលវេលា',   zh: '考勤管理' },
   'nav.reports':              { en: 'Reports',              km: 'របាយការណ៍',        zh: '报表' },
