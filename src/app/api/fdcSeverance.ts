@@ -14,6 +14,9 @@ export interface FdcSeverancePreviewItem {
   totalWages: number;
   ratePercent: number;
   severance: number;
+  /** Why the contract ended — null = active / treat as natural.
+   *  'misconduct' forfeits severance per Cambodian Labour Law (V66). */
+  terminationReason?: string | null;
   eligible: boolean;
   reason?: string | null;
 }

@@ -629,6 +629,10 @@ export function Employees() {
     salary: 0,
     contractType: 'UDC',
     notes: '',
+    /** Why the contract ended. Empty = still active / natural expiry.
+     *  Only persists on a contract that has actually ended; the form
+     *  leaves it blank for new rows. */
+    terminationReason: '',
   });
   const [savingContract, setSavingContract] = useState(false);
 
@@ -828,6 +832,7 @@ export function Employees() {
       salary: selectedEmployee.baseSalary || 0,
       contractType: 'UDC',
       notes: '',
+      terminationReason: '',
     });
     setContractDialogOpen(true);
   };
@@ -841,6 +846,7 @@ export function Employees() {
       salary: contract.salary || 0,
       contractType: contract.contractType,
       notes: contract.notes || '',
+      terminationReason: (contract.terminationReason as string) || '',
     });
     setContractDialogOpen(true);
   };
@@ -854,6 +860,7 @@ export function Employees() {
       salary: contract.salary || 0,
       contractType: contract.contractType,
       notes: '',
+      terminationReason: '',
     });
     setContractDialogOpen(true);
   };
@@ -929,6 +936,10 @@ export function Employees() {
         contractType: contractForm.contractType.trim(),
         salary: contractForm.salary || null,
         notes: contractForm.notes || undefined,
+        // Empty string means "natural / still active" — send empty
+        // (not null) so the backend's null-leaves-untouched logic
+        // doesn't preserve a stale 'misconduct' from a previous save.
+        terminationReason: contractForm.terminationReason || '',
       };
       if (contractMode === 'add') {
         // Live mode needs the backend employee UUID, not empNo.
@@ -2375,6 +2386,32 @@ export function Employees() {
                   onChange={(e) => setContractForm({ ...contractForm, salary: parseFloat(e.target.value) || 0 })}
                 />
               </div>
+            </div>
+
+            {/* Termination reason — only relevant once a contract has
+                actually ended. Leave blank for new contracts; HR fills
+                this in when editing an expired row. 'Misconduct'
+                forfeits the FDC 5% severance per Cambodian Labour Law. */}
+            <div className="space-y-2">
+              <Label htmlFor="terminationReason">Termination Reason</Label>
+              <select
+                id="terminationReason"
+                value={contractForm.terminationReason}
+                onChange={(e) => setContractForm({ ...contractForm, terminationReason: e.target.value })}
+                className="w-full px-3 py-2 border rounded-md text-sm h-9"
+              >
+                <option value="">— Still active / natural expiry —</option>
+                <option value="natural">Natural — contract ran to its end date</option>
+                <option value="misconduct">Serious misconduct (forfeits FDC severance)</option>
+                <option value="mutual">Mutual agreement</option>
+                <option value="resignation">Resignation</option>
+                <option value="other">Other</option>
+              </select>
+              {contractForm.terminationReason === 'misconduct' && contractForm.contractType === 'FDC' && (
+                <p className="text-[11px] text-amber-700">
+                  ⚠ This contract will be excluded from the FDC severance calculator.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

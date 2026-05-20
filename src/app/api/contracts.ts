@@ -2,18 +2,23 @@ import { apiJson, apiVoid } from './client';
 
 export type ContractStatus = 'active' | 'expired' | 'terminated';
 
+export type TerminationReason = 'natural' | 'misconduct' | 'mutual' | 'resignation' | 'other';
+
 export interface Contract {
   id: string;
   employeeId: string;
   startDate: string;
   endDate: string;
   status: ContractStatus | string;
-  /** Free-text role/position label, e.g. "Permanent", "Fixed Term", "Probation". */
+  /** One of UDC | FDC | Probation | Internship (V64). */
   contractType: string;
   salary?: number;
   notes?: string;
   /** ID of the contract this one renewed (set by the backend renew endpoint). */
   renewedFromId?: string | null;
+  /** Why the contract ended. null = active / treat as natural expiry.
+   *  'misconduct' forfeits the 5% FDC severance per Cambodian Labour Law (V66). */
+  terminationReason?: TerminationReason | string | null;
   createdAt?: string;
 }
 
@@ -24,6 +29,7 @@ export interface ContractRequest {
   contractType: string;
   salary?: number | null;
   notes?: string;
+  terminationReason?: TerminationReason | string | null;
 }
 
 export interface ListParams {

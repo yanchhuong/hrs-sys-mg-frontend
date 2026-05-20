@@ -246,6 +246,20 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                           <TableCell className="text-xs">
                             <div>{formatDate(row.startDate)}</div>
                             <div className="text-gray-500">→ {formatDate(row.endDate)}</div>
+                            {row.terminationReason && (
+                              <div className="mt-1">
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    row.terminationReason.toLowerCase() === 'misconduct'
+                                      ? 'text-[10px] bg-red-50 text-red-700 border-red-200'
+                                      : 'text-[10px] bg-gray-50 text-gray-600 border-gray-200'
+                                  }
+                                >
+                                  {row.terminationReason}
+                                </Badge>
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="text-center text-sm">{row.monthsActive}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.totalWages)}</TableCell>
