@@ -447,7 +447,7 @@ function adaptApiContract(c: contractsApi.Contract): Contract {
     startDate: c.startDate,
     endDate: c.endDate,
     status,
-    contractType: c.contractType || 'Fixed Term',
+    contractType: c.contractType || 'UDC',
     salary: c.salary,
     notes: c.notes,
     createdAt: c.createdAt ?? new Date().toISOString(),
@@ -627,7 +627,7 @@ export function Employees() {
     startDate: '',
     endDate: '',
     salary: 0,
-    contractType: 'Fixed Term',
+    contractType: 'UDC',
     notes: '',
   });
   const [savingContract, setSavingContract] = useState(false);
@@ -826,7 +826,7 @@ export function Employees() {
       startDate: new Date().toISOString().slice(0, 10),
       endDate: '',
       salary: selectedEmployee.baseSalary || 0,
-      contractType: 'Fixed Term',
+      contractType: 'UDC',
       notes: '',
     });
     setContractDialogOpen(true);
@@ -2120,7 +2120,20 @@ export function Employees() {
                                   </TableRow>
                                 ) : contracts.map((contract) => (
                                   <TableRow key={contract.id} className={`text-xs ${contract.id === activeContract?.id ? 'bg-blue-50/50' : ''}`}>
-                                    <TableCell className="py-2 font-medium">{contract.contractType}</TableCell>
+                                    <TableCell className="py-2 font-medium">
+                                      <Badge
+                                        variant="outline"
+                                        className={
+                                          contract.contractType === 'UDC' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          contract.contractType === 'FDC' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                          contract.contractType === 'Probation' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                          contract.contractType === 'Internship' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                          'bg-slate-50 text-slate-700 border-slate-200'
+                                        }
+                                      >
+                                        {contract.contractType}
+                                      </Badge>
+                                    </TableCell>
                                     <TableCell className="py-2">{formatDate(contract.startDate)}</TableCell>
                                     <TableCell className="py-2">{formatDate(contract.endDate)}</TableCell>
                                     <TableCell className="py-2">${contract.salary?.toLocaleString() || '-'}</TableCell>
@@ -2341,12 +2354,15 @@ export function Employees() {
                   onChange={(e) => setContractForm({ ...contractForm, contractType: e.target.value })}
                   className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
-                  <option value="Fixed Term">Fixed Term</option>
-                  <option value="Permanent">Permanent</option>
+                  <option value="UDC">UDC — Undetermined Duration</option>
+                  <option value="FDC">FDC — Fixed Duration</option>
                   <option value="Probation">Probation</option>
-                  <option value="Contract">Contract</option>
                   <option value="Internship">Internship</option>
                 </select>
+                <p className="text-[11px] text-gray-500">
+                  UDC: open-ended; qualifies for seniority indemnity (7.5d × 2/year).
+                  FDC: fixed term; entitled to 5% of total wages severance on expiry.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contractSalary">Salary ($)</Label>

@@ -70,6 +70,7 @@ import {
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
+import { FdcSeveranceDialog } from './FdcSeveranceDialog';
 import { TaxCalculatorDialog } from './TaxCalculatorDialog';
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,10 @@ export function Payroll() {
   // Generates a payroll batch carrying a single 'seniority_indemnity' line
   // per eligible UDC employee. See SeniorityIndemnityDialog for the rules.
   const [seniorityDialogOpen, setSeniorityDialogOpen] = useState(false);
+  // FDC severance — 5% × total wages on the natural expiry of a
+  // Fixed Duration Contract. UDC employees use the seniority dialog
+  // above instead (different legal basis).
+  const [fdcDialogOpen, setFdcDialogOpen] = useState(false);
   const [taxDialogOpen, setTaxDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
@@ -1617,6 +1622,15 @@ export function Payroll() {
             <SeniorityIndemnityDialog
               open={seniorityDialogOpen}
               onOpenChange={setSeniorityDialogOpen}
+              onCreated={() => { void loadBatches(); }}
+            />
+            <Button variant="outline" onClick={() => setFdcDialogOpen(true)}>
+              <Scale className="mr-2 h-4 w-4" />
+              Calculate FDC Severance
+            </Button>
+            <FdcSeveranceDialog
+              open={fdcDialogOpen}
+              onOpenChange={setFdcDialogOpen}
               onCreated={() => { void loadBatches(); }}
             />
             <Button variant="outline" onClick={() => setTaxDialogOpen(true)}>
