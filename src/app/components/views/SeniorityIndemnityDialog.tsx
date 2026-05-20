@@ -181,7 +181,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
       'Included',
     ];
     const sheetRows: (string | number)[][] = [];
-    sheetRows.push([`Seniority Indemnity — ${preview.startDate} → ${preview.endDate} · ${preview.daysPaid} days × daily wage`]);
+    sheetRows.push([`Seniority — ${preview.startDate} → ${preview.endDate} · ${preview.daysPaid} days × daily wage`]);
     sheetRows.push(headers);
     let totalSeniority = 0;
     // Per-month totals across the selected rows so the auditor can
@@ -228,8 +228,8 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Seniority Indemnity');
-    XLSX.writeFile(wb, `Seniority-Indemnity-${preview.startDate}-to-${preview.endDate}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Seniority');
+    XLSX.writeFile(wb, `Seniority-${preview.startDate}-to-${preview.endDate}.xlsx`);
   };
 
   const toggleAll = (allOn: boolean) => {

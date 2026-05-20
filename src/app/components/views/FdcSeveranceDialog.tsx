@@ -135,7 +135,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-amber-600" />
-            Compute FDC Severance
+            Compute 5% Severance
           </DialogTitle>
           <DialogDescription>
             Pick a window of FDC contract expiries — the calculator shows the 5% × total-wages owed on each natural expiry. Generate a payroll batch from the eligible rows to route through the standard approval flow.

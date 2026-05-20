@@ -1626,7 +1626,7 @@ export function Payroll() {
             />
             <Button variant="outline" onClick={() => setFdcDialogOpen(true)}>
               <Scale className="mr-2 h-4 w-4" />
-              Calculate FDC Severance
+              Calculate 5% Severance
             </Button>
             <FdcSeveranceDialog
               open={fdcDialogOpen}
@@ -2261,66 +2261,14 @@ export function Payroll() {
               </DialogContent>
             </Dialog>
 
-            {/* Template-aware export. Each bank publishes its own bulk-payment
-                Excel format, so let the user pick before generating. The
-                Standard report is the legacy multi-sheet HR file; bank
-                templates (ABA, ACLEDA, Wing) produce a single beneficiary
-                list ready to upload to the bank portal. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Excel
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuLabel>Choose export template</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {PAYROLL_TEMPLATES.map((tpl, i) => (
-                  <div key={tpl.id}>
-                    {i === 1 && <DropdownMenuSeparator />}
-                    {i === 2 && (
-                      <DropdownMenuLabel className="text-xs text-gray-400 font-normal pt-2">
-                        Bank portals (draft)
-                      </DropdownMenuLabel>
-                    )}
-                    <DropdownMenuItem
-                      className="flex flex-col items-start gap-0.5 py-2"
-                      onClick={() => {
-                        const periodLabel =
-                          selectedYear !== 'all' && selectedMonth !== 'all' ? `${selectedYear}-${selectedMonth}` :
-                          selectedYear !== 'all' ? selectedYear :
-                          'All';
-                        exportPayrollToExcel({
-                          payrollItems: payrollRecords,
-                          employees,
-                          period: periodLabel,
-                          template: tpl.id as PayrollTemplate,
-                          deptName,
-                        });
-                        if (tpl.draft) {
-                          toast.warning(
-                            `${tpl.label} (draft) — exported ${payrollRecords.length} records. Verify columns before uploading to the portal.`,
-                          );
-                        } else {
-                          toast.success(`Exported ${payrollRecords.length} records (${tpl.label})`);
-                        }
-                      }}
-                    >
-                      <span className="text-sm font-medium flex items-center gap-1.5">
-                        {tpl.label}
-                        {tpl.draft && (
-                          <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                            draft
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-xs text-gray-500">{tpl.description}</span>
-                    </DropdownMenuItem>
-                  </div>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Export Excel used to live here on the main page header,
+                covering the whole filtered roster. HR pointed out the
+                button is only meaningful when you're focused on a
+                specific batch — exporting "everything" rarely matches
+                what they actually want to send to a bank portal. The
+                dropdown now lives inside the Payroll Details card
+                (rendered below when selectedBatch is set) and only
+                exports the rows of the batch you're looking at. */}
             {/* Generate Payroll is a 3-way dropdown — picking an option
                 sets the batch type and opens the upload dialog in
                 generate mode so HR jumps straight to a pre-typed batch
@@ -2738,15 +2686,77 @@ export function Payroll() {
                   <p className="text-sm text-gray-500 mt-1">Month/Year: {selectedBatch.monthYear} | Type: {selectedBatch.type}</p>
                 </div>
               </div>
-              <Badge className={
-                selectedBatch.status === 'approved'
-                  ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                  : selectedBatch.status === 'processed'
-                  ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
-                  : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
-              }>
-                {selectedBatch.status}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {/* Export Excel — scoped to the batch in view. Uses the
+                    same template menu as before (Standard + bank
+                    portals), but the payload is this batch's items
+                    rather than the page-wide roster. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Excel
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuLabel>Choose export template</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {PAYROLL_TEMPLATES.map((tpl, i) => (
+                      <div key={tpl.id}>
+                        {i === 1 && <DropdownMenuSeparator />}
+                        {i === 2 && (
+                          <DropdownMenuLabel className="text-xs text-gray-400 font-normal pt-2">
+                            Bank portals (draft)
+                          </DropdownMenuLabel>
+                        )}
+                        <DropdownMenuItem
+                          className="flex flex-col items-start gap-0.5 py-2"
+                          onClick={() => {
+                            // Always export THIS batch's rows. In mock
+                            // mode batchItems is empty, so fall back to
+                            // payrollRecords (which already filters to
+                            // selectedBatch when one is set elsewhere).
+                            const rows = USE_MOCKS ? payrollRecords : batchItems;
+                            exportPayrollToExcel({
+                              payrollItems: rows as unknown as typeof payrollRecords,
+                              employees,
+                              period: selectedBatch.monthYear,
+                              template: tpl.id as PayrollTemplate,
+                              deptName,
+                            });
+                            if (tpl.draft) {
+                              toast.warning(
+                                `${tpl.label} (draft) — exported ${rows.length} records from this batch. Verify columns before uploading to the portal.`,
+                              );
+                            } else {
+                              toast.success(`Exported ${rows.length} records from "${selectedBatch.subject}" (${tpl.label})`);
+                            }
+                          }}
+                        >
+                          <span className="text-sm font-medium flex items-center gap-1.5">
+                            {tpl.label}
+                            {tpl.draft && (
+                              <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                draft
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-xs text-gray-500">{tpl.description}</span>
+                        </DropdownMenuItem>
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Badge className={
+                  selectedBatch.status === 'approved'
+                    ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                    : selectedBatch.status === 'processed'
+                    ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
+                    : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
+                }>
+                  {selectedBatch.status}
+                </Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent>

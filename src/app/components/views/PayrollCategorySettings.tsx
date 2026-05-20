@@ -84,7 +84,7 @@ import {
 const CATEGORY_HELP: Record<string, React.ReactNode> = {
   seniority_indemnity: (
     <div className="space-y-1.5">
-      <p className="font-semibold">Seniority Indemnity — Cambodian Labour Law (2018 Prakas)</p>
+      <p className="font-semibold">Seniority — Cambodian Labour Law (2018 Prakas)</p>
       <p>
         Paid <strong>twice a year</strong> to UDC (Permanent) employees:
         <br />• <strong>7.5 days in June</strong> (covers Jan–Jun)
@@ -102,11 +102,45 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
         Settings &gt; Weekend Days: Mon–Sat → 26, Mon–Fri → 22, Mon–Thu → 17.
       </p>
       <p>
-        FDC employees aren't eligible — they receive a separate <strong>5% severance</strong>
+        FDC employees aren't eligible — they receive a separate <strong>5% Severance</strong>
         at contract end. Payments ≤ 4,000,000 KHR are tax-exempt (Circular 002).
       </p>
       <p className="text-[11px] opacity-80">
-        Use the <strong>Compute Seniority Indemnity</strong> button on the Payroll page
+        Use the <strong>Calculate Seniority</strong> button on the Payroll page
+        to generate the batch.
+      </p>
+    </div>
+  ),
+  fdc_severance: (
+    <div className="space-y-1.5">
+      <p className="font-semibold">5% Severance — Cambodian Labour Law (FDC expiry)</p>
+      <p>
+        Paid <strong>once</strong>, on the natural expiry of a Fixed
+        Duration Contract (FDC). Equals at least <strong>5%</strong> of
+        the total wages the employee earned over the contract's
+        lifetime.
+      </p>
+      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+        severance = total_wages × 5%
+      </p>
+      <p>
+        Wage base = sum of <em>total_earnings</em> across every month the
+        contract was active (gross, includes OT and allowances). The
+        rate can be raised per batch in the dialog if HR's policy is
+        more generous; the legal minimum is 5%.
+      </p>
+      <p>
+        <strong>Forfeited</strong> when the contract ends for serious
+        misconduct (the calculator excludes those rows automatically
+        when you've set <em>Termination Reason = Misconduct</em> on the
+        Contract).
+      </p>
+      <p>
+        UDC employees aren't eligible — they receive the twice-yearly
+        <strong> Seniority</strong> indemnity instead. Never compound the two.
+      </p>
+      <p className="text-[11px] opacity-80">
+        Use the <strong>Calculate 5% Severance</strong> button on the Payroll page
         to generate the batch.
       </p>
     </div>
