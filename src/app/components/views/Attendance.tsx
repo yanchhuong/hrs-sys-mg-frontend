@@ -44,6 +44,7 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { AnnualLeaveSetup } from '../common/AnnualLeaveSetup';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { detectOtRule } from '../../utils/otRates';
 import {
   loadRule, daysForTenure, tenureYears, loadValuesForYear,
 } from '../../utils/annualLeave';
@@ -277,6 +278,21 @@ export function Attendance() {
    */
   const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
   /**
+   * OT rate settings for the rule-type badge on the Apply OT section.
+   * Loaded lazily on mount; defaults to the Cambodian Labour Law
+   * baselines so the badge stays sensible while the GET is in flight.
+   */
+  const [otRates, setOtRates] = useState<{
+    weekday: number; weekend: number; holiday: number;
+    nightEnabled: boolean; nightRate: number; nightStart: string; nightEnd: string;
+  }>({
+    weekday: 1.5, weekend: 2, holiday: 3,
+    nightEnabled: true, nightRate: 1.3, nightStart: '22:00', nightEnd: '05:00',
+  });
+  /** Admin-only day-type override for the Apply OT branch. `null` = use
+   *  the auto-detected value (driven by date + holidayDates). */
+  const [editOtDayTypeOverride, setEditOtDayTypeOverride] = useState<'workday' | 'weekend' | 'holiday' | null>(null);
+  /**
    * Set of (date|employeeApiId) keys for which a non-rejected OT
    * request already exists. Used to dim the OT badge in the daily
    * table — once an admin or employee has filed an OT request for that
@@ -298,6 +314,10 @@ export function Attendance() {
     || (!!currentUser?.role
         && currentUser.role !== 'employee');
   const isEmployee = currentUser?.role === 'employee';
+  /** Stricter check used by the Apply OT rule-type override Select.
+   *  Manager + Employee see the auto-detected badge as read-only;
+   *  only the true 'admin' role can force a different day-type. */
+  const canOverrideOtRule = currentUser?.role === 'admin';
   const { isTenantWide, matchesScope, showScopePicker } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
@@ -493,6 +513,27 @@ export function Attendance() {
           });
         } catch (err) {
           console.warn('Could not load general attendance settings', err);
+        }
+      })();
+      // OT settings — feed the rule-type badge on the Apply OT branch.
+      void (async () => {
+        try {
+          const s = await settingsApi.getOtSettings();
+          const nested = (k: keyof settingsApi.OtSettings): number | undefined => {
+            const v = (s[k] as Record<string, unknown> | undefined)?.rate;
+            return typeof v === 'number' && v > 0 ? v : undefined;
+          };
+          setOtRates({
+            weekday: nested('workdayRule') ?? (Number(s.weekdayRate) || 1.5),
+            weekend: nested('weekendRule') ?? (Number(s.weekendRate) || 2),
+            holiday: nested('holidayRule') ?? (Number(s.holidayRate) || 3),
+            nightEnabled: s.nightEnabled ?? true,
+            nightRate:    Number(s.nightRate)   || 1.3,
+            nightStart:   (s.nightStartTime ?? '22:00').slice(0, 5),
+            nightEnd:     (s.nightEndTime   ?? '05:00').slice(0, 5),
+          });
+        } catch (err) {
+          console.warn('Could not load OT settings — Apply OT badge will use defaults', err);
         }
       })();
     }
@@ -1173,6 +1214,9 @@ export function Attendance() {
     // End Date defaults to same day; the wrap-detector effect below will
     // bump it to date+1 the moment the picked hours imply cross-midnight.
     setEditOtEndDate(record.date);
+    // Reset the rule-type override — every fresh dialog starts from
+    // auto-detection so a previous admin pick doesn't leak across rows.
+    setEditOtDayTypeOverride(null);
     setEditApplyOt(false); // explicit opt-in even when hours suggest OT
     setEditDialogOpen(true);
   };
@@ -1428,6 +1472,10 @@ export function Attendance() {
               hours: otHoursNum,
               startHour: editOtStartHour || undefined,
               endHour: editOtEndHour || undefined,
+              // Day-type override — only sent when an admin explicitly
+              // picked one in the rule-type Select. Backend leaves it
+              // null/auto otherwise.
+              dayType: editOtDayTypeOverride ?? undefined,
               reason: editOtReason.trim(),
             });
             toast.success(`OT request filed for ${emp?.name ?? 'employee'} (${otHoursNum}h)`);
@@ -2757,6 +2805,81 @@ export function Attendance() {
                         {' = '}{editOtHours}h
                       </p>
                     )}
+
+                    {/* Rule-type badge — read-only for Manager / Employee,
+                        editable Select for Admin. Detection uses the row's
+                        date + the configured holiday calendar + the
+                        picked start/end hours (for the night overlay). */}
+                    {editRecord && (() => {
+                      const rule = detectOtRule({
+                        date: editRecord.date,
+                        startHour: editOtStartHour,
+                        endHour: editOtEndHour,
+                        holidayDates,
+                        weekdayRate: otRates.weekday,
+                        weekendRate: otRates.weekend,
+                        holidayRate: otRates.holiday,
+                        nightEnabled: otRates.nightEnabled,
+                        nightRate: otRates.nightRate,
+                        nightStart: otRates.nightStart,
+                        nightEnd: otRates.nightEnd,
+                        override: editOtDayTypeOverride ?? undefined,
+                      });
+                      const dayBadgeColor = rule.dayType === 'holiday'
+                        ? 'bg-red-100 text-red-800 border-red-200'
+                        : rule.dayType === 'weekend'
+                          ? 'bg-orange-100 text-orange-800 border-orange-200'
+                          : 'bg-blue-100 text-blue-800 border-blue-200';
+                      return (
+                        <div className="rounded-md border border-indigo-200 bg-indigo-50/40 p-2 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Label className="text-xs">OT Rule:</Label>
+                            <Badge variant="outline" className={dayBadgeColor}>
+                              {rule.dayType === 'holiday' ? 'Holiday' : rule.dayType === 'weekend' ? 'Weekend' : 'Workday'}
+                            </Badge>
+                            {rule.isNight && otRates.nightEnabled && (
+                              <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200">+ Night</Badge>
+                            )}
+                            <span className="text-xs text-gray-600 font-medium">→ {rule.effectiveRate}×</span>
+                            {editOtDayTypeOverride && (
+                              <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
+                                manual override
+                              </Badge>
+                            )}
+                          </div>
+                          {canOverrideOtRule ? (
+                            <div className="grid grid-cols-2 gap-2 items-end">
+                              <div className="space-y-1">
+                                <Label className="text-[11px] text-gray-500">Override day-type (admin)</Label>
+                                <Select
+                                  value={editOtDayTypeOverride ?? 'auto'}
+                                  onValueChange={(v) =>
+                                    setEditOtDayTypeOverride(v === 'auto' ? null : (v as 'workday' | 'weekend' | 'holiday'))
+                                  }
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="auto">Auto-detect</SelectItem>
+                                    <SelectItem value="workday">Workday</SelectItem>
+                                    <SelectItem value="weekend">Weekend</SelectItem>
+                                    <SelectItem value="holiday">Holiday</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <p className="text-[11px] text-gray-500 pb-2">
+                                Night overlay is always auto-detected from the configured 22:00–05:00 window.
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-gray-500">
+                              Rule is auto-detected from the row's date and OT settings — only admins can override.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

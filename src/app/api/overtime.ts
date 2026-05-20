@@ -52,6 +52,12 @@ export interface CreateOtRequest {
   /** Optional HH:mm labels surfaced in the OT Request History (since V20). */
   startHour?: string;
   endHour?: string;
+  /** Admin-only override for the day-type rate bucket. When omitted the
+   *  backend auto-derives from the start date's day-of-week + holiday
+   *  calendar. Pass 'workday' | 'weekend' | 'holiday' to force a
+   *  specific rate against the auto-detection (e.g. HR marks a
+   *  special-cause weekday as holiday-rated). */
+  dayType?: 'workday' | 'weekend' | 'holiday';
 }
 
 export interface ListParams {

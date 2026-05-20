@@ -12,6 +12,7 @@ import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import {
   otOverlapsNightWindow, effectiveOtMultiplier,
   splitOtRequestByDay, defaultDayTypeRateFor, computeOtPay, isDateWeekend,
+  detectOtRule,
 } from '../../utils/otRates';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { ScopePicker } from '../common/ScopePicker';
@@ -41,6 +42,7 @@ import {
 } from '../ui/dialog';
 import { Calendar } from '../ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
@@ -114,6 +116,7 @@ export function Overtime() {
   const { formatDate, formatDateTime } = useDateFormat();
   const {
     role,
+    isAdmin,
     isEmployee,
     isManager,
     isTenantWide,
@@ -121,6 +124,9 @@ export function Overtime() {
     matchesScope,
     canApproveFor: canApproveOTOf,
   } = useTeamScope();
+  /** Admin-only day-type override for the Request OT dialog. `null` =
+   *  use the auto-detected rule (driven by date + holiday calendar). */
+  const [reqOtDayTypeOverride, setReqOtDayTypeOverride] = useState<'workday' | 'weekend' | 'holiday' | null>(null);
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   /** Submit-dialog End Date. Auto-bumps to selectedDate+1 when the picked
@@ -353,6 +359,7 @@ export function Overtime() {
       setEndHour('');
       setHours('');
       setReason('');
+      setReqOtDayTypeOverride(null);
       return;
     }
     // Hours is the canonical value the backend persists. Parse from the
@@ -371,6 +378,7 @@ export function Overtime() {
         hours: hoursNum,
         startHour,
         endHour,
+        dayType: reqOtDayTypeOverride ?? undefined,
         reason: reason.trim(),
       });
       toast.success('OT request submitted successfully');
@@ -379,6 +387,7 @@ export function Overtime() {
       setEndHour('');
       setHours('');
       setReason('');
+      setReqOtDayTypeOverride(null);
       await loadOtRequests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit OT request');
@@ -678,6 +687,82 @@ export function Overtime() {
                     rows={3}
                   />
                 </div>
+
+                {/* Rule-type badge — Admin can override the day-type
+                    bucket via the Select; Manager / Employee see the
+                    auto-detected rule as read-only. Holiday detection
+                    is admin-driven here (the dialog doesn't load the
+                    tenant's holiday calendar); pick "Holiday" manually
+                    if filing OT for a known holiday. */}
+                {(() => {
+                  const startStr = format(selectedDate, 'yyyy-MM-dd');
+                  const rule = detectOtRule({
+                    date: startStr,
+                    startHour,
+                    endHour,
+                    weekdayRate: otRates.weekday,
+                    weekendRate: otRates.weekend,
+                    holidayRate: otRates.holiday,
+                    nightEnabled: otRates.nightEnabled,
+                    nightRate: otRates.nightRate,
+                    nightStart: otRates.nightStart,
+                    nightEnd: otRates.nightEnd,
+                    override: reqOtDayTypeOverride ?? undefined,
+                  });
+                  const dayBadgeColor = rule.dayType === 'holiday'
+                    ? 'bg-red-100 text-red-800 border-red-200'
+                    : rule.dayType === 'weekend'
+                      ? 'bg-orange-100 text-orange-800 border-orange-200'
+                      : 'bg-blue-100 text-blue-800 border-blue-200';
+                  return (
+                    <div className="rounded-md border border-indigo-200 bg-indigo-50/40 p-2 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Label className="text-xs">OT Rule:</Label>
+                        <Badge variant="outline" className={dayBadgeColor}>
+                          {rule.dayType === 'holiday' ? 'Holiday' : rule.dayType === 'weekend' ? 'Weekend' : 'Workday'}
+                        </Badge>
+                        {rule.isNight && otRates.nightEnabled && (
+                          <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200">+ Night</Badge>
+                        )}
+                        <span className="text-xs text-gray-600 font-medium">→ {rule.effectiveRate}×</span>
+                        {reqOtDayTypeOverride && (
+                          <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-50 text-amber-800 border-amber-200">
+                            manual override
+                          </Badge>
+                        )}
+                      </div>
+                      {isAdmin ? (
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-gray-500">Override day-type (admin)</Label>
+                          <Select
+                            value={reqOtDayTypeOverride ?? 'auto'}
+                            onValueChange={(v) =>
+                              setReqOtDayTypeOverride(v === 'auto' ? null : (v as 'workday' | 'weekend' | 'holiday'))
+                            }
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">Auto-detect</SelectItem>
+                              <SelectItem value="workday">Workday</SelectItem>
+                              <SelectItem value="weekend">Weekend</SelectItem>
+                              <SelectItem value="holiday">Holiday</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[11px] text-gray-500">
+                            Night overlay is always auto-detected from the configured {otRates.nightStart}–{otRates.nightEnd} window.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500">
+                          Rule is auto-detected from the date and OT settings — only admins can override.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <Button onClick={handleSubmitRequest} className="w-full">
                   Submit Request
                 </Button>

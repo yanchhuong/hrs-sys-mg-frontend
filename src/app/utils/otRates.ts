@@ -214,3 +214,77 @@ export function defaultDayTypeRateFor(args: {
     return weekdayRate;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Rule-type detection — drives the "Workday / Weekend / Holiday + Night"
+// badge on the Apply OT and Request OT dialogs.
+// ---------------------------------------------------------------------------
+
+export type OtDayType = 'workday' | 'weekend' | 'holiday';
+
+export interface DetectedOtRule {
+  dayType: OtDayType;
+  isNight: boolean;
+  effectiveRate: number;
+  /** Human-readable summary, e.g. "Weekend + Night → 2.0x". */
+  label: string;
+}
+
+/**
+ * Resolve the day-type + night overlay + effective rate for an OT
+ * request. Centralises the badge logic so the Apply OT (Edit Attendance)
+ * and Request OT (Overtime page) dialogs render the same answer.
+ *
+ * The caller can pass {@code override} (= the admin's pick) to force a
+ * specific day-type regardless of what the date implies; otherwise day-
+ * type is derived from the explicit isHoliday flag, then a holiday-date
+ * set, then day-of-week (Sat/Sun = weekend), falling back to workday.
+ */
+export function detectOtRule(args: {
+  date: string;
+  startHour?: string;
+  endHour?: string;
+  isHoliday?: boolean;
+  holidayDates?: ReadonlySet<string>;
+  weekdayRate: number;
+  weekendRate: number;
+  holidayRate: number;
+  nightEnabled: boolean;
+  nightRate: number;
+  nightStart: string;
+  nightEnd: string;
+  /** Admin override — when set, wins over auto-detection. */
+  override?: OtDayType;
+}): DetectedOtRule {
+  const {
+    date, startHour, endHour, isHoliday, holidayDates,
+    weekdayRate, weekendRate, holidayRate,
+    nightEnabled, nightRate, nightStart, nightEnd, override,
+  } = args;
+
+  let dayType: OtDayType;
+  if (override) {
+    dayType = override;
+  } else if (isHoliday || holidayDates?.has(date)) {
+    dayType = 'holiday';
+  } else if (isDateWeekend(date)) {
+    dayType = 'weekend';
+  } else {
+    dayType = 'workday';
+  }
+
+  const dayTypeRate =
+    dayType === 'holiday' ? holidayRate :
+    dayType === 'weekend' ? weekendRate :
+    weekdayRate;
+
+  const isNight = otOverlapsNightWindow(startHour, endHour, nightStart, nightEnd);
+  const effectiveRate = effectiveOtMultiplier({
+    dayTypeRate, nightEnabled, nightRate, isNight,
+  });
+
+  const dayLabel = dayType === 'holiday' ? 'Holiday' : dayType === 'weekend' ? 'Weekend' : 'Workday';
+  const label = `${dayLabel}${nightEnabled && isNight ? ' + Night' : ''} → ${effectiveRate}x`;
+
+  return { dayType, isNight, effectiveRate, label };
+}
