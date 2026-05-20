@@ -759,11 +759,11 @@ export function AttendanceSettings() {
                     <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
                     <div className="font-mono text-xs space-y-1.5 text-indigo-900">
                       <p>if OT interval overlaps [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
-                      <p className="pl-4">→ effective_rate = max(dayTypeRate, {otSettings.nightRule.rate})</p>
+                      <p className="pl-4">→ effective_rate = {otSettings.nightRule.rate} <span className="text-indigo-600">(night replaces day-type)</span></p>
                       <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
                     </div>
                     <p className="mt-3 text-[11px] text-indigo-800/80">
-                      The window wraps past midnight when end ≤ start. Cross-date OT (e.g. check-in 22:00 yesterday → check-out 05:00 today) is handled by splitting the request interval at midnight before the overlap check — start date drives the day-type, night overlay tops it up.
+                      The window wraps past midnight when end ≤ start. Cross-date OT (e.g. check-in 22:00 yesterday → check-out 05:00 today) is handled by splitting the request interval at midnight — each side picks its own day-type, and the night rate replaces whichever bucket overlaps the window.
                     </p>
                   </div>
 
@@ -774,10 +774,10 @@ export function AttendanceSettings() {
                       <div className="flex justify-between"><span className="text-gray-600">Check-out</span><span className="font-medium">05:00 today</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">Day type (start date)</span><Badge className="bg-blue-100 text-blue-700 border-0">Weekday · {otSettings.workdayRule.rate}x</Badge></div>
                       <div className="flex justify-between"><span className="text-gray-600">Fully in night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">max({otSettings.workdayRule.rate}, {otSettings.nightRule.rate}) = {Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)}x</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{otSettings.nightRule.rate}x <span className="text-gray-500">(night replaces {otSettings.workdayRule.rate}x weekday)</span></span></div>
                       <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
                         <span className="font-medium text-indigo-800">OT pay</span>
-                        <span className="font-semibold text-indigo-800">7h × {Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)}x = {(7 * Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
+                        <span className="font-semibold text-indigo-800">7h × {otSettings.nightRule.rate}x = {(7 * otSettings.nightRule.rate).toFixed(2)}h equivalent</span>
                       </div>
                     </div>
                   </div>
@@ -787,10 +787,10 @@ export function AttendanceSettings() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between"><span className="text-gray-600">Day type (Saturday start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {otSettings.weekendRule.rate}x</Badge></div>
                       <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {otSettings.nightRule.rate}x</Badge></div>
-                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">max({otSettings.weekendRule.rate}, {otSettings.nightRule.rate}) = {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x</span></div>
-                      <div className="border-t pt-2 flex justify-between bg-orange-100 -mx-4 px-4 py-2 rounded">
-                        <span className="font-medium text-orange-800">Weekend wins</span>
-                        <span className="font-semibold text-orange-800">2h × {Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)}x = {(2 * Math.max(otSettings.weekendRule.rate, otSettings.nightRule.rate)).toFixed(2)}h equivalent</span>
+                      <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{otSettings.nightRule.rate}x <span className="text-gray-500">(night replaces {otSettings.weekendRule.rate}x weekend)</span></span></div>
+                      <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
+                        <span className="font-medium text-indigo-800">OT pay</span>
+                        <span className="font-semibold text-indigo-800">2h × {otSettings.nightRule.rate}x = {(2 * otSettings.nightRule.rate).toFixed(2)}h equivalent</span>
                       </div>
                     </div>
                   </div>
@@ -798,7 +798,7 @@ export function AttendanceSettings() {
                   <div className="bg-white border rounded-lg p-4 text-xs leading-relaxed text-gray-600">
                     <p className="font-medium text-gray-700 mb-1.5">Cambodian Labour Law reference</p>
                     <p><strong>Art. 144</strong> — Night work is performed between 22:00 and 05:00.</p>
-                    <p className="mt-1"><strong>Art. 162</strong> — Night work is paid at no less than 130% of the normal hourly wage. When the OT also falls on a weekend or holiday, this implementation picks the higher of the two multipliers (single rate, not multiplicative).</p>
+                    <p className="mt-1"><strong>Art. 162</strong> — Night work is paid at no less than 130% of the normal hourly wage. This implementation treats the night rate as <em>the</em> rate for night hours — it replaces the day-type multiplier whenever the OT overlaps the configured night window (rather than layering on top via max).</p>
                   </div>
                 </CardContent>
               </Card>
@@ -812,7 +812,7 @@ export function AttendanceSettings() {
                 <Shield className="h-5 w-5" />
                 Rule Priority Order
               </CardTitle>
-              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night-work overlays on top, capping the day-type rate at max(dayType, night).</CardDescription>
+              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night work overrides the day-type rate whenever the OT falls inside the configured night window.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
@@ -838,7 +838,7 @@ export function AttendanceSettings() {
                   <Moon className="h-4 w-4" />
                   <div className="flex-1">
                     <p className="font-medium text-sm">Night-work overlay</p>
-                    <p className="text-xs opacity-75">OT in [{otSettings.nightRule.startTime} → {otSettings.nightRule.endTime}) uses max(dayType, {otSettings.nightRule.rate}x).</p>
+                    <p className="text-xs opacity-75">OT in [{otSettings.nightRule.startTime} → {otSettings.nightRule.endTime}) is paid at {otSettings.nightRule.rate}x — replaces the day-type rate.</p>
                   </div>
                 </div>
               )}
@@ -1001,9 +1001,10 @@ export function AttendanceSettings() {
                   <div className="text-xs text-red-600 space-y-1"><p>Highest priority rule</p><p>{otSettings.holidayRule.specialBonusEnabled ? `+ $${otSettings.holidayRule.specialBonusAmount} bonus` : 'No special bonus'}</p></div>
                   <div className="font-mono text-xs text-red-900 bg-white rounded p-2">5h work → 5h × {otSettings.holidayRule.rate} = {(5 * otSettings.holidayRule.rate).toFixed(1)}h</div>
                 </div>
-                {/* Night Work — overlays on top of the day-type rate via
-                    max(dayType, night). Greys out when the toggle is off
-                    so HR can see it's configured but inactive. */}
+                {/* Night Work — when in window, the night rate replaces
+                    the day-type rate (rather than max-ing on top of it).
+                    Greys out when the toggle is off so HR can see it's
+                    configured but inactive. */}
                 <div className={`rounded-lg p-4 space-y-3 border ${otSettings.nightRule.enabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="flex items-center gap-2">
                     <Moon className={`h-4 w-4 ${otSettings.nightRule.enabled ? 'text-indigo-600' : 'text-gray-400'}`} />
@@ -1019,10 +1020,10 @@ export function AttendanceSettings() {
                   </div>
                   <div className={`text-xs space-y-1 ${otSettings.nightRule.enabled ? 'text-indigo-600' : 'text-gray-500'}`}>
                     <p>Window {otSettings.nightRule.startTime}–{otSettings.nightRule.endTime}</p>
-                    <p>max(dayType, night) — cross-date OK</p>
+                    <p>Replaces day-type rate · cross-date OK</p>
                   </div>
                   <div className={`font-mono text-xs bg-white rounded p-2 ${otSettings.nightRule.enabled ? 'text-indigo-900' : 'text-gray-500'}`}>
-                    Fri 22:00 → Sat 05:00, 7h × max({otSettings.workdayRule.rate}, {otSettings.nightRule.rate}) = {(7 * Math.max(otSettings.workdayRule.rate, otSettings.nightRule.rate)).toFixed(1)}h
+                    Fri 22:00 → Sat 05:00, 7h × {otSettings.nightRule.rate} = {(7 * otSettings.nightRule.rate).toFixed(1)}h
                   </div>
                 </div>
               </div>

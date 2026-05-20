@@ -670,7 +670,7 @@ export function Overtime() {
                         {otRates.nightEnabled && isNight && (
                           <p className="inline-flex items-center gap-1 text-[11px] text-indigo-700">
                             <Moon className="h-3 w-3" />
-                            Overlaps {otRates.nightStart}–{otRates.nightEnd} → night rate applies (max with day-type, {otRates.nightRate}×).
+                            Overlaps {otRates.nightStart}–{otRates.nightEnd} → night rate ({otRates.nightRate}×) replaces the day-type rate.
                           </p>
                         )}
                       </div>
@@ -978,7 +978,7 @@ export function Overtime() {
                                   })}
                                 </ul>
                                 <p className="mt-1.5 opacity-80">
-                                  Each bucket uses max(dayType, {otRates.nightRate}×) when night-window overlap is detected.
+                                  Buckets whose hours overlap the night window use the night rate ({otRates.nightRate}×); others use the day-type rate above.
                                 </p>
                               </TooltipContent>
                             </Tooltip>

@@ -2,11 +2,13 @@
  * OT rate helpers — keep the Overtime page, Payroll generator and any
  * Excel template that needs to estimate OT pay all reading the same math.
  *
- * The night-work overlay (V58 / Cambodian Labour Law Art. 144 + 162):
- *   if any portion of [reqStart, reqEnd) overlaps [nightStart, nightEnd),
- *   the effective rate is max(dayTypeRate, nightRate) — single rate, not
- *   multiplicative. When the night toggle is off, the day-type rate
- *   stands alone.
+ * Night-work rule (V58 / Cambodian Labour Law Art. 144 + 162):
+ *   if any portion of [reqStart, reqEnd) overlaps [nightStart, nightEnd)
+ *   AND the night-work toggle is on, the night rate REPLACES the day-
+ *   type rate for that segment. When the toggle is off (or no overlap),
+ *   the day-type rate stands alone. The night rate is the canonical
+ *   "this is night work" pay — it doesn't compose multiplicatively or
+ *   floor against weekend / holiday rates.
  *
  * Both intervals here are open-on-the-right and treat the end-time as
  * exclusive so a window of 22:00 → 05:00 correctly wraps past midnight.
@@ -54,9 +56,17 @@ export function otOverlapsNightWindow(
 }
 
 /**
- * Resolves the effective hourly multiplier for an OT request, layering
- * the night-work overlay on top of the day-type rate. Higher-of-two
- * semantics — see file-level docstring for the rationale.
+ * Resolves the effective hourly multiplier for an OT request. When the
+ * picked hours overlap the night window AND the night-work toggle is
+ * on, the night rate REPLACES the day-type rate — the configured
+ * 1.30× (Art. 162) is the canonical night-work pay regardless of
+ * whether the date is a weekday, weekend or holiday. Outside the night
+ * window the day-type rate stands alone.
+ *
+ * (Earlier we used max(dayType, night), but tenants treat the night
+ * row in Settings as "the rate for night hours" not "a floor on top
+ * of day-type" — replacement matches HR's mental model and what the
+ * Settings preview promises.)
  */
 export function effectiveOtMultiplier(args: {
   dayTypeRate: number;
@@ -66,18 +76,19 @@ export function effectiveOtMultiplier(args: {
 }): number {
   const { dayTypeRate, nightEnabled, nightRate, isNight } = args;
   if (!nightEnabled || !isNight) return dayTypeRate;
-  return Math.max(dayTypeRate, nightRate);
+  return nightRate;
 }
 
 // ---------------------------------------------------------------------------
 // Cross-date OT (V59) — split by day, apply per-day day-type
 // ---------------------------------------------------------------------------
 //
-// A night shift filed as `date=Fri 22:00 → endDate=Sat 05:00` should bill
-// the first 2 hours at the Friday weekday rate and the last 5 at the
-// Saturday weekend rate. The night overlay still layers on top of each
-// bucket independently — Saturday 00:00–05:00 stays in the night window,
-// so its effective rate is max(weekendRate, nightRate).
+// A night shift filed as `date=Fri 22:00 → endDate=Sat 05:00` splits into
+// two same-day buckets at midnight. Each bucket picks its own day-type
+// rate from the calendar; the night rule still applies on each bucket
+// independently — Saturday 00:00–05:00 is inside the night window, so
+// its effective rate is the night rate (replacing the weekend rate for
+// those hours).
 //
 // `splitOtRequestByDay` does the bucketing; `computeOtPay` walks the
 // buckets and returns the total $ amount. Same-day OT collapses to a
