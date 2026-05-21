@@ -104,6 +104,12 @@ export const dict: Dict = {
   'nav.platform.backups.desc':   { en: 'Per-tenant snapshots & restore', km: 'រូបថត និងស្ដារតាមអតិថិជន', zh: '按租户的快照与恢复' },
   'nav.platform.plans.desc':     { en: 'Pricing tiers and limits',   km: 'កម្រិតតម្លៃ និងដែនកំណត់', zh: '定价层级与限额' },
   'nav.platform.policy.desc':    { en: 'Global security + features', km: 'សុវត្ថិភាព និងមុខងារសាកល', zh: '全局安全与功能' },
+  'nav.platform.settings':       { en: 'Settings',                   km: 'ការកំណត់',            zh: '设置' },
+  'nav.platform.settings.desc':  { en: 'Activity, backups, policy, payroll & holidays', km: 'សកម្មភាព, ស្ដារ, គោលការណ៍, ប្រាក់ខែ', zh: '活动、备份、策略、薪资与节假日' },
+  'nav.platform.payrollcat':     { en: 'Payroll Categories',         km: 'ប្រភេទប្រាក់ខែ',     zh: '薪资类别' },
+  'nav.platform.payrollcat.desc':{ en: 'Per-tenant earning & deduction lines', km: 'ប្រាក់ចំណូល និងប្រាក់កាត់តាមអតិថិជន', zh: '按租户的收入与扣减项' },
+  'nav.platform.holidays':       { en: 'Holidays',                   km: 'ថ្ងៃឈប់សម្រាក',    zh: '节假日' },
+  'nav.platform.holidays.desc':  { en: 'Per-tenant public holidays', km: 'ថ្ងៃឈប់សម្រាកជាតិ', zh: '按租户的公共假日' },
 
   // --- Common actions ------------------------------------------------------
   'action.save':              { en: 'Save',                 km: 'រក្សាទុក',          zh: '保存' },

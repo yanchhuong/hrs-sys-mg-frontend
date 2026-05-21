@@ -8,20 +8,24 @@ import { SyncMonitor } from './SyncMonitor';
 import { ActivityLog } from './ActivityLog';
 import { Backups } from './Backups';
 import { PlatformPolicy } from './PlatformPolicy';
+import { PlatformPayrollCategories } from './PlatformPayrollCategories';
+import { PlatformHolidays } from './PlatformHolidays';
 
 export function SuperAdminApp() {
   const [view, setView] = useState<SuperAdminView>('dashboard');
 
   const render = () => {
     switch (view) {
-      case 'dashboard': return <PlatformDashboard />;
-      case 'companies': return <Companies />;
-      case 'plans':     return <Plans />;
-      case 'users':     return <CrossTenantUsers />;
-      case 'sync':      return <SyncMonitor />;
-      case 'activity':  return <ActivityLog />;
-      case 'backups':   return <Backups />;
-      case 'policy':    return <PlatformPolicy />;
+      case 'dashboard':          return <PlatformDashboard />;
+      case 'companies':          return <Companies />;
+      case 'plans':              return <Plans />;
+      case 'users':              return <CrossTenantUsers />;
+      case 'sync':               return <SyncMonitor />;
+      case 'activity':           return <ActivityLog />;
+      case 'backups':            return <Backups />;
+      case 'policy':             return <PlatformPolicy />;
+      case 'payroll_categories': return <PlatformPayrollCategories />;
+      case 'holidays':           return <PlatformHolidays />;
     }
   };
 

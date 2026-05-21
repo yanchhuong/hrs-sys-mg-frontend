@@ -9,13 +9,17 @@ import {
 } from '../../ui/dropdown-menu';
 import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
-  ScrollText, Database, LogOut, Menu, X, UserCog, Layers,
+  ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
+  ChevronRight, ChevronDown, DollarSign, CalendarDays,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
 import { LanguageSwitcher } from '../../common/LanguageSwitcher';
 import { useI18n } from '../../../i18n/I18nContext';
 
-export type SuperAdminView = 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'activity' | 'backups' | 'policy';
+export type SuperAdminView =
+  | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync'
+  // Settings sub-menu
+  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays';
 
 interface Props {
   children: ReactNode;
@@ -23,15 +27,30 @@ interface Props {
   onViewChange: (view: SuperAdminView) => void;
 }
 
-const MENU_ITEMS: { id: SuperAdminView; icon: typeof LayoutDashboard; tKey: string; tDesc: string }[] = [
-  { id: 'dashboard', icon: LayoutDashboard,   tKey: 'nav.platform.dashboard', tDesc: 'nav.platform.dashboard.desc' },
-  { id: 'companies', icon: Building2,         tKey: 'nav.platform.companies', tDesc: 'nav.platform.companies.desc' },
-  { id: 'plans',     icon: Layers,            tKey: 'nav.platform.plans',     tDesc: 'nav.platform.plans.desc' },
-  { id: 'users',     icon: UsersRound,        tKey: 'nav.platform.users',     tDesc: 'nav.platform.users.desc' },
-  { id: 'sync',      icon: Link2,             tKey: 'nav.platform.sync',      tDesc: 'nav.platform.sync.desc' },
-  { id: 'activity',  icon: ScrollText,        tKey: 'nav.platform.activity',  tDesc: 'nav.platform.activity.desc' },
-  { id: 'backups',   icon: Database,          tKey: 'nav.platform.backups',   tDesc: 'nav.platform.backups.desc' },
-  { id: 'policy',    icon: SlidersHorizontal, tKey: 'nav.platform.policy',    tDesc: 'nav.platform.policy.desc' },
+type LeafItem = {
+  kind: 'leaf';
+  id: SuperAdminView;
+  icon: typeof LayoutDashboard;
+  label: string;
+  description: string;
+};
+
+type GroupItem = {
+  kind: 'group';
+  id: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  description: string;
+  children: LeafItem[];
+};
+
+type MenuNode = LeafItem | GroupItem;
+
+/** Sub-menu ids that live under the Settings parent. Used both to
+ *  build the nested nav and to keep Settings expanded automatically
+ *  whenever one of its children is the active view. */
+const SETTINGS_CHILDREN: SuperAdminView[] = [
+  'payroll_categories', 'holidays', 'activity', 'backups', 'policy',
 ];
 
 export function SuperAdminLayout({ children, currentView, onViewChange }: Props) {
@@ -39,12 +58,63 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const MENU = MENU_ITEMS.map(m => ({ ...m, label: t(m.tKey), description: t(m.tDesc) }));
+  // Keep Settings auto-expanded when the active view is one of its
+  // children so HR doesn't lose context after a deep-link reload.
+  const [settingsOpen, setSettingsOpen] = useState(
+    SETTINGS_CHILDREN.includes(currentView),
+  );
+
+  const MENU: MenuNode[] = [
+    { kind: 'leaf', id: 'dashboard', icon: LayoutDashboard,
+      label: t('nav.platform.dashboard'), description: t('nav.platform.dashboard.desc') },
+    { kind: 'leaf', id: 'companies', icon: Building2,
+      label: t('nav.platform.companies'), description: t('nav.platform.companies.desc') },
+    { kind: 'leaf', id: 'plans', icon: Layers,
+      label: t('nav.platform.plans'), description: t('nav.platform.plans.desc') },
+    { kind: 'leaf', id: 'users', icon: UsersRound,
+      label: t('nav.platform.users'), description: t('nav.platform.users.desc') },
+    { kind: 'leaf', id: 'sync', icon: Link2,
+      label: t('nav.platform.sync'), description: t('nav.platform.sync.desc') },
+    {
+      kind: 'group', id: 'settings', icon: Settings,
+      label: t('nav.platform.settings'),
+      description: t('nav.platform.settings.desc'),
+      children: [
+        { kind: 'leaf', id: 'payroll_categories', icon: DollarSign,
+          label: t('nav.platform.payrollcat'), description: t('nav.platform.payrollcat.desc') },
+        { kind: 'leaf', id: 'holidays', icon: CalendarDays,
+          label: t('nav.platform.holidays'), description: t('nav.platform.holidays.desc') },
+        { kind: 'leaf', id: 'activity', icon: ScrollText,
+          label: t('nav.platform.activity'), description: t('nav.platform.activity.desc') },
+        { kind: 'leaf', id: 'backups', icon: Database,
+          label: t('nav.platform.backups'), description: t('nav.platform.backups.desc') },
+        { kind: 'leaf', id: 'policy', icon: SlidersHorizontal,
+          label: t('nav.platform.policy'), description: t('nav.platform.policy.desc') },
+      ],
+    },
+  ];
 
   const handleNav = (id: SuperAdminView) => {
     onViewChange(id);
     setSidebarOpen(false);
   };
+
+  /** Resolve the friendly label + description for the top-bar title.
+   *  Walks both leaves and group children so a sub-item lands the right
+   *  header even though it isn't at the top of MENU. */
+  const activeMeta = (() => {
+    for (const node of MENU) {
+      if (node.kind === 'leaf' && node.id === currentView) return node;
+      if (node.kind === 'group') {
+        for (const child of node.children) {
+          if (child.id === currentView) {
+            return { label: `${node.label} · ${child.label}`, description: child.description };
+          }
+        }
+      }
+    }
+    return { label: '', description: '' };
+  })();
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -67,28 +137,82 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
         </div>
 
         <nav className="p-3 space-y-1 flex-1">
-          {MENU.map((item) => {
-            const active = currentView === item.id;
-            const Icon = item.icon;
+          {MENU.map((node) => {
+            if (node.kind === 'leaf') {
+              const active = currentView === node.id;
+              const Icon = node.icon;
+              return (
+                <button
+                  key={node.id}
+                  onClick={() => handleNav(node.id)}
+                  className={`
+                    w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors
+                    ${active
+                      ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30'
+                      : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
+                  `}
+                >
+                  <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">{node.label}</p>
+                    <p className={`text-[11px] truncate ${active ? 'text-amber-300/70' : 'text-slate-500'}`}>
+                      {node.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            }
+            // Group — expandable parent (Settings)
+            const expanded = settingsOpen || node.children.some(c => c.id === currentView);
+            const Icon = node.icon;
+            const groupActive = node.children.some(c => c.id === currentView);
             return (
-              <button
-                key={item.id}
-                onClick={() => handleNav(item.id)}
-                className={`
-                  w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors
-                  ${active
-                    ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30'
-                    : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
-                `}
-              >
-                <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">{item.label}</p>
-                  <p className={`text-[11px] truncate ${active ? 'text-amber-300/70' : 'text-slate-500'}`}>
-                    {item.description}
-                  </p>
-                </div>
-              </button>
+              <div key={node.id}>
+                <button
+                  onClick={() => setSettingsOpen(o => !o)}
+                  className={`
+                    w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors
+                    ${groupActive
+                      ? 'text-amber-200 border border-amber-500/30 bg-amber-500/5'
+                      : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
+                  `}
+                  aria-expanded={expanded}
+                >
+                  <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${groupActive ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">{node.label}</p>
+                    <p className={`text-[11px] truncate ${groupActive ? 'text-amber-300/70' : 'text-slate-500'}`}>
+                      {node.description}
+                    </p>
+                  </div>
+                  {expanded
+                    ? <ChevronDown className="h-4 w-4 mt-0.5 text-slate-400" />
+                    : <ChevronRight className="h-4 w-4 mt-0.5 text-slate-400" />}
+                </button>
+                {expanded && (
+                  <div className="mt-1 ml-3 pl-3 border-l border-slate-700 space-y-1">
+                    {node.children.map((child) => {
+                      const active = currentView === child.id;
+                      const ChildIcon = child.icon;
+                      return (
+                        <button
+                          key={child.id}
+                          onClick={() => handleNav(child.id)}
+                          className={`
+                            w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors
+                            ${active
+                              ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30'
+                              : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
+                          `}
+                        >
+                          <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-amber-400' : 'text-slate-500'}`} />
+                          <span className="text-sm flex-1 min-w-0 truncate">{child.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -113,12 +237,8 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
               <div>
-                <h1 className="text-sm font-semibold capitalize">
-                  {MENU.find(m => m.id === currentView)?.label}
-                </h1>
-                <p className="text-xs text-gray-500">
-                  {MENU.find(m => m.id === currentView)?.description}
-                </p>
+                <h1 className="text-sm font-semibold capitalize">{activeMeta.label}</h1>
+                <p className="text-xs text-gray-500">{activeMeta.description}</p>
               </div>
             </div>
 
