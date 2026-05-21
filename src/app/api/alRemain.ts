@@ -10,6 +10,9 @@ export interface AlRemainPreviewItem {
   usedDays: number;
   remainingDays: number;
   monthlyGross: number;
+  /** YYYY-MM → gross earnings for that month. Always populated for every
+   *  month in monthList; missing payroll rows surface as 0. */
+  monthlyBreakdown: Record<string, number>;
   dailyWage: number;
   amount: number;
   eligible: boolean;
@@ -20,6 +23,9 @@ export interface AlRemainPreview {
   fromMonth: string;
   toMonth: string;
   monthsInWindow: number;
+  /** Ordered list of YYYY-MM strings in the window — drives the per-month
+   *  columns on the dialog. */
+  monthList: string[];
   daysDivisor: number;
   eligibleCount: number;
   rosterSize: number;

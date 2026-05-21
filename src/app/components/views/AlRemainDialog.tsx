@@ -36,6 +36,17 @@ function money(n: number): string {
   return `$${formatMoney(n)}`;
 }
 
+/** "2026-01" → "Jan '26" (single-year window keeps the column header
+ *  compact; cross-year windows still show the suffix so HR can tell
+ *  Jan 2025 apart from Jan 2026). */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-');
+  const idx = Number(m) - 1;
+  const name = MONTH_ABBR[idx] ?? m;
+  return `${name} '${y.slice(2)}`;
+}
+
 type Period = 'full' | 'h1' | 'h2';
 
 /** Map (year + period) → fromMonth/toMonth pair the backend expects.
@@ -225,15 +236,18 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                         <TableHead className="text-right" title="Sum of annual allocations across years touched by window">Annual</TableHead>
                         <TableHead className="text-right">Used</TableHead>
                         <TableHead className="text-right">Remaining</TableHead>
-                        <TableHead className="text-right" title="Most-recent monthly_gross_earnings.totalEarnings — falls back to prior months, then base + position + evaluation">Monthly Gross</TableHead>
-                        <TableHead className="text-right" title="Monthly Gross ÷ working days (Mon-Sat = 26, Mon-Fri = 22)">Daily Wage</TableHead>
+                        {preview.monthList.map(ym => (
+                          <TableHead key={ym} className="text-right whitespace-nowrap" title={ym}>{monthLabel(ym)}</TableHead>
+                        ))}
+                        <TableHead className="text-right" title="Average of non-zero in-window months">Avg Gross</TableHead>
+                        <TableHead className="text-right" title="Avg Gross ÷ working days (Mon-Sat = 26, Mon-Fri = 22)">Daily Wage</TableHead>
                         <TableHead className="text-right" title="Remaining × Daily Wage">Amount</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {preview.items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-6">
+                          <TableCell colSpan={7 + preview.monthList.length} className="text-center text-sm text-gray-500 py-6">
                             No active employees for this window.
                           </TableCell>
                         </TableRow>
@@ -261,6 +275,17 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                           <TableCell className="text-right tabular-nums text-sm">{row.annualAllocatedDays}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{row.usedDays}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-medium">{row.remainingDays}</TableCell>
+                          {preview.monthList.map(ym => {
+                            const v = row.monthlyBreakdown?.[ym] ?? 0;
+                            return (
+                              <TableCell
+                                key={ym}
+                                className={`text-right tabular-nums text-sm whitespace-nowrap ${v <= 0 ? 'text-gray-300' : ''}`}
+                              >
+                                {money(v)}
+                              </TableCell>
+                            );
+                          })}
                           <TableCell className="text-right tabular-nums text-sm">{money(row.monthlyGross)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.dailyWage)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-semibold text-indigo-700">{money(row.amount)}</TableCell>
