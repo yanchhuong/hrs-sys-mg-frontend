@@ -72,6 +72,11 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
   // eligible row" the first time a preview lands; lets HR drop someone out
   // (e.g. one-off side-payment scenarios) without touching the spreadsheet.
   const [included, setIncluded] = useState<Set<string>>(new Set());
+  /** Status filter — same pattern as the FDC / NSSF / AL Remain dialogs.
+   *  Defaults to 'eligible' so HR sees the actionable UDC cohort first;
+   *  switching to 'all' surfaces non-UDC / FDC / Probation rows alongside
+   *  with their reason badge. */
+  const [statusFilter, setStatusFilter] = useState<'eligible' | 'all'>('eligible');
 
   // Reset state every time the dialog opens — stops a stale preview from a
   // previous session bleeding into the next one. Also re-reads the
@@ -85,6 +90,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     setDays('7.5');
     setPreview(null);
     setIncluded(new Set());
+    setStatusFilter('eligible');
     let cancelled = false;
     (async () => {
       try {
@@ -125,10 +131,11 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     try {
       const res = await seniorityApi.preview(startDate, endDate, daysNum);
       setPreview(res);
-      // Default to "every row included" — HR can uncheck rows that
-      // shouldn't get the payment. Eligibility is no longer enforced
-      // here; the backend honours whatever the user selects.
-      setIncluded(new Set(res.items.map(i => i.employeeId)));
+      // Seed selection from the eligible cohort only — matches the
+      // default Eligible filter so HR doesn't open the dialog with
+      // ineligible rows pre-ticked. HR can flip the All filter and
+      // tick extras manually for one-off side payments.
+      setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to compute seniority indemnity');
     } finally {
@@ -234,8 +241,10 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
 
   const toggleAll = (allOn: boolean) => {
     if (!preview) return;
+    // Bulk-toggle respects the eligibility filter — Select-all only
+    // ticks the eligible cohort even if HR is on the "All" tab.
     setIncluded(allOn
-      ? new Set(preview.items.map(i => i.employeeId))
+      ? new Set(preview.items.filter(i => i.eligible).map(i => i.employeeId))
       : new Set());
   };
 
@@ -406,11 +415,34 @@ to $500/mo, not $167.`}
 
           {preview && (
             <>
-              {/* Bulk toggle row */}
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-500">
-                  Uncheck a row to exclude that employee from the generated payroll batch.
-                </p>
+              {/* Status filter + bulk toggle — same pattern as the FDC /
+                  NSSF / AL Remain dialogs. Default Eligible so HR sees the
+                  actionable UDC cohort first. */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('eligible')}
+                    className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                      statusFilter === 'eligible'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    Eligible ({preview.items.filter(i => i.eligible).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                      statusFilter === 'all'
+                        ? 'border-gray-500 bg-gray-100 text-gray-800 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    All ({preview.items.length})
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => toggleAll(true)}>
                     Select all
@@ -454,14 +486,22 @@ to $500/mo, not $167.`}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {preview.items.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={totalCols} className="text-center text-sm text-gray-500 py-6">
-                              No employees on the roster for the selected semester.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {preview.items.map(row => {
+                        {(() => {
+                          const visible = statusFilter === 'eligible'
+                            ? preview.items.filter(i => i.eligible)
+                            : preview.items;
+                          if (visible.length === 0) {
+                            return (
+                              <TableRow>
+                                <TableCell colSpan={totalCols} className="text-center text-sm text-gray-500 py-6">
+                                  {statusFilter === 'eligible'
+                                    ? 'No eligible UDC employees in this semester — switch to All to see why rows dropped.'
+                                    : 'No employees on the roster for the selected semester.'}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+                          return visible.map(row => {
                           const checked = included.has(row.employeeId);
                           return (
                             <TableRow key={row.employeeId}>
@@ -504,7 +544,8 @@ to $500/mo, not $167.`}
                               </TableCell>
                             </TableRow>
                           );
-                        })}
+                          });
+                        })()}
                       </TableBody>
                     </Table>
                   </div>
