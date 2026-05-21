@@ -263,6 +263,9 @@ interface CompanyInfo {
   /** date-fns pattern that drives every visible date across the app
    *  (V60). Picked from the preset dropdown below. */
   dateFormat?: string;
+  /** Day-of-month payroll lands (V71). Drives the 5% Severance
+   *  maturity gate so the first installment matches the 3rd salary. */
+  payDayOfMonth?: number;
 }
 
 const COMPANY_INFO_KEY = 'hrms:companyInfo';
@@ -277,6 +280,7 @@ const defaultCompanyInfo: CompanyInfo = {
   logoUrl: '',
   currency: 'USD',
   dateFormat: 'MMM dd, yyyy',
+  payDayOfMonth: 25,
 };
 
 function loadCompanyInfo(): CompanyInfo {
@@ -290,7 +294,7 @@ function loadCompanyInfo(): CompanyInfo {
 
 function CompanyInformationCard() {
   const [info, setInfo] = useState<CompanyInfo>(
-    USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD', dateFormat: 'MMM dd, yyyy' },
+    USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD', dateFormat: 'MMM dd, yyyy', payDayOfMonth: 25 },
   );
   const { refresh: refreshDateFormat } = useDateFormat();
   const [dirty, setDirty] = useState(false);
@@ -313,6 +317,7 @@ function CompanyInformationCard() {
           logoUrl: remote.logoUrl ?? '',
           currency: remote.currency ?? 'USD',
           dateFormat: remote.dateFormat ?? 'MMM dd, yyyy',
+          payDayOfMonth: remote.payDayOfMonth ?? 25,
         });
         setDirty(false);
       } catch (err) {
@@ -367,6 +372,7 @@ function CompanyInformationCard() {
         logoUrl: remote.logoUrl ?? '',
         currency: remote.currency ?? 'USD',
         dateFormat: remote.dateFormat ?? 'MMM dd, yyyy',
+        payDayOfMonth: remote.payDayOfMonth ?? 25,
       });
       setDirty(false);
     } catch (err) {
@@ -493,6 +499,28 @@ function CompanyInformationCard() {
             </Select>
             <p className="text-xs text-gray-500">
               Applies to every visible date across Attendance, Overtime, Leave, Payroll, Reports, etc. Date inputs and exports keep ISO (yyyy-MM-dd).
+            </p>
+          </div>
+
+          {/* V71 — Pay Day of Month drives the 5% Severance maturity gate.
+              MatureDate = 3rd Pay Day at-or-after the FDC contract's
+              startDate so severance ships with the 3rd salary cycle. */}
+          <div className="space-y-2">
+            <Label htmlFor="ci-pay-day">Pay Day (day of month)</Label>
+            <Input
+              id="ci-pay-day"
+              type="number"
+              min={1}
+              max={31}
+              value={info.payDayOfMonth ?? 25}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                if (Number.isFinite(n)) patch({ payDayOfMonth: Math.max(1, Math.min(31, n)) });
+              }}
+              disabled={loading}
+            />
+            <p className="text-xs text-gray-500">
+              Day-of-month payroll is paid (1–31). Drives the 5% Severance maturity gate — the 1st installment matures with the <strong>3rd Pay Day</strong> at-or-after the FDC contract's start date.
             </p>
           </div>
 

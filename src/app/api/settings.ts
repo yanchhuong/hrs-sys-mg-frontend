@@ -84,6 +84,10 @@ export interface CompanyInfo {
   /** date-fns pattern used to render visible dates across the app (V60).
    *  Null on the wire leaves the persisted value untouched on PUT. */
   dateFormat?: string;
+  /** Day-of-month payroll is paid (1-31, V71). Drives the maturity
+   *  alignment on the 5% Severance calculator. Null on PUT leaves the
+   *  persisted value untouched; default is 25. */
+  payDayOfMonth?: number;
 }
 
 export async function getCompanyInfo(): Promise<CompanyInfo> {
