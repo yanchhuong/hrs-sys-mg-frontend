@@ -78,6 +78,40 @@ export async function previewByEmployee(
   });
 }
 
+/** Bulk preview — every active FDC contract with quarter-based severance
+ *  pre-computed. Mirror of {@code FdcSeveranceAllResponse}. */
+export interface FdcSeveranceAllRow {
+  employeeId: string;
+  contractId: string;
+  empNo?: string | null;
+  name: string;
+  startDate: string;
+  endDate: string;
+  contractType?: string | null;
+  terminationReason?: string | null;
+  startSalary: number;
+  contractMonths: number;
+  fullQuarters: number;
+  totalWages: number;
+  severance: number;
+  eligible: boolean;
+  reason?: string | null;
+}
+
+export interface FdcSeveranceAll {
+  ratePercent: number;
+  eligibleCount: number;
+  rosterSize: number;
+  totalSeverance: number;
+  items: FdcSeveranceAllRow[];
+}
+
+export async function previewAll(ratePercent?: number): Promise<FdcSeveranceAll> {
+  return apiJson<FdcSeveranceAll>('/api/v1/payroll/fdc-severance/preview-all', {
+    query: { ...(ratePercent ? { ratePercent } : {}) },
+  });
+}
+
 export interface CreateBatchRequest {
   from: string;
   to: string;
