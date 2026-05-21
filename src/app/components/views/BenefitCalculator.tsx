@@ -161,6 +161,17 @@ export function BenefitCalculator() {
       onClick: () => setSeniorityOpen(true),
     },
     {
+      id: 'al_remain',
+      title: 'AL Remain',
+      description:
+        'Unused-annual-leave payout. Pick a month window; each employee’s annual allocation is pro-rated by months_in_window ÷ 12, minus approved usage, then multiplied by daily wage. Lists only employees with an active AL allocation.',
+      kind: 'earning',
+      tone: 'indigo',
+      icon: CalendarDays,
+      cite: 'Cambodian Labour Law · unused annual-leave payout',
+      onClick: () => setAlRemainOpen(true),
+    },
+    {
       id: 'fdc',
       title: '5% Severance',
       description:
@@ -197,17 +208,6 @@ export function BenefitCalculator() {
       icon: ShieldCheck,
       cite: 'NSSF Law · 1,200,000 KHR contributory wage cap',
       onClick: () => setNssfOpen(true),
-    },
-    {
-      id: 'al_remain',
-      title: 'AL Remain',
-      description:
-        'Year-end / on-resignation payout of unused annual leave. Reads each employee’s al_allocations.totalDays minus approved annual-leave usage, then multiplies by their daily wage (same divisor as Seniority).',
-      kind: 'earning',
-      tone: 'indigo',
-      icon: CalendarDays,
-      cite: 'Cambodian Labour Law · unused annual-leave payout',
-      onClick: () => setAlRemainOpen(true),
     },
   ];
 

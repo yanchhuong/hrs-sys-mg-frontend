@@ -204,16 +204,17 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                         <TableHead className="text-right" title="Annual × months_in_window ÷ 12">In Window</TableHead>
                         <TableHead className="text-right">Used</TableHead>
                         <TableHead className="text-right">Remaining</TableHead>
-                        <TableHead className="text-right">Daily Wage</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right" title="Most-recent monthly_gross_earnings.totalEarnings — falls back to prior months, then base + position + evaluation">Monthly Gross</TableHead>
+                        <TableHead className="text-right" title="Monthly Gross ÷ working days (Mon-Sat = 26, Mon-Fri = 22)">Daily Wage</TableHead>
+                        <TableHead className="text-right" title="Remaining × Daily Wage">Amount</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {preview.items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-6">
-                            No employees on roster for the window.
+                          <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-6">
+                            No employees have an active annual-leave allocation for the year(s) in this window. Add allocations under <strong>Settings → Annual Leave</strong> first.
                           </TableCell>
                         </TableRow>
                       )}
@@ -241,6 +242,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                           <TableCell className="text-right tabular-nums text-sm">{row.allocatedInWindow}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{row.usedDays}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-medium">{row.remainingDays}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{money(row.monthlyGross)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.dailyWage)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-semibold text-indigo-700">{money(row.amount)}</TableCell>
                           <TableCell>
