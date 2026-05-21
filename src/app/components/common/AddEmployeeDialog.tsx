@@ -122,6 +122,10 @@ export function AddEmployeeDialog({
         // NOT NULL DEFAULT 0.
         positionAllowance: form.positionAllowance ?? 0,
         evaluationAllowance: form.evaluationAllowance ?? 0,
+        // V70 — skill level. Blank/null leaves the column unset on the
+        // server; the Add Contract dialog falls back to 3-month probation
+        // until HR fills it in.
+        level: form.level ?? null,
         managerId: form.managerId || null,
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
@@ -369,6 +373,25 @@ export function AddEmployeeDialog({
                   value={form.evaluationAllowance ?? 0}
                   onChange={(e) => patch({ evaluationAllowance: parseFloat(e.target.value) || 0 })}
                 />
+              </Field>
+            </div>
+            {/* V70 — Cambodian Labour Law skill level. Drives the
+                probation-max default on the Add Contract dialog
+                (3 / 3 / 1 / 2 months). Left blank by default so the
+                form doesn't force a value HR hasn't decided on. */}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Level (Cambodian Labour Law)">
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                  value={form.level ?? ''}
+                  onChange={(e) => patch({ level: (e.target.value || undefined) as typeof form.level })}
+                >
+                  <option value="">— not set —</option>
+                  <option value="office">Office Personnel (3-month probation)</option>
+                  <option value="specialized">Specialized (3-month probation)</option>
+                  <option value="ns_cook">Non-Specialized · Cook (1-month probation)</option>
+                  <option value="ns_labour">Non-Specialized · Labour (2-month probation)</option>
+                </select>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">

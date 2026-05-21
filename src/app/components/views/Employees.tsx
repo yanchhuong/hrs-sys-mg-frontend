@@ -413,6 +413,8 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // to 0 so the input + payslip line read a number, not blank.
     positionAllowance: e.positionAllowance ?? 0,
     evaluationAllowance: e.evaluationAllowance ?? 0,
+    // V70 — Cambodian Labour Law skill level; nullable until HR sets it.
+    level: (e.level as Employee['level']) ?? undefined,
     // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
     // the Author/Modifier columns can read them. Cast to a dynamic
     // shape since the FE Employee type doesn't declare them yet.
@@ -820,6 +822,37 @@ export function Employees() {
       setEmployees(prev => prev.map(e => e.id === employee.id ? before : e));
       toast.error(err instanceof Error ? err.message : 'Failed to update');
     }
+  };
+
+  /** V70 — Cambodian Labour Law probation max by employee level.
+   *  Returns the legal probation length in months for the picked level.
+   *  Unset / unknown levels fall back to the 3-month default used for
+   *  office / specialized roles so HR isn't blocked when the field is
+   *  empty on legacy employees. */
+  const probationMonthsForLevel = (level?: string | null): number => {
+    switch (level) {
+      case 'ns_cook':   return 1;
+      case 'ns_labour': return 2;
+      case 'office':
+      case 'specialized':
+      default:          return 3;
+    }
+  };
+
+  /** Add N months to {@code yyyymmdd} and clamp the resulting day so
+   *  the end-date lands on a valid calendar day. Used when HR flips a
+   *  contract to {@code Probation} so the End Date snaps to the legal
+   *  cap derived from the employee's level. */
+  const addMonths = (yyyymmdd: string, months: number): string => {
+    if (!yyyymmdd) return '';
+    const d = new Date(yyyymmdd);
+    if (isNaN(d.getTime())) return '';
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + months);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, lastDay));
+    return d.toISOString().slice(0, 10);
   };
 
   const handleAddContract = () => {
@@ -2362,7 +2395,24 @@ export function Employees() {
                 <select
                   id="contractType"
                   value={contractForm.contractType}
-                  onChange={(e) => setContractForm({ ...contractForm, contractType: e.target.value })}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    // V70 — when HR picks Probation, snap End Date to the
+                    // legal probation cap for the employee's level
+                    // (Office/Specialized = 3, NS Cook = 1, NS Labour = 2).
+                    // HR can still adjust afterwards; this just provides
+                    // a sensible default so the field isn't left blank.
+                    if (next === 'Probation' && contractForm.startDate) {
+                      const months = probationMonthsForLevel(selectedEmployee?.level);
+                      setContractForm({
+                        ...contractForm,
+                        contractType: next,
+                        endDate: addMonths(contractForm.startDate, months),
+                      });
+                    } else {
+                      setContractForm({ ...contractForm, contractType: next });
+                    }
+                  }}
                   className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
                   <option value="UDC">UDC — Undetermined Duration</option>
@@ -2373,6 +2423,12 @@ export function Employees() {
                 <p className="text-[11px] text-gray-500">
                   UDC: open-ended; qualifies for seniority indemnity (7.5d × 2/year).
                   FDC: fixed term; entitled to 5% of total wages severance on expiry.
+                  {contractForm.contractType === 'Probation' && selectedEmployee?.level && (
+                    <span className="block mt-1 text-amber-700">
+                      Probation cap for <strong>{selectedEmployee.level}</strong>: {probationMonthsForLevel(selectedEmployee.level)} month
+                      {probationMonthsForLevel(selectedEmployee.level) === 1 ? '' : 's'} (Cambodian Labour Law).
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="space-y-2">

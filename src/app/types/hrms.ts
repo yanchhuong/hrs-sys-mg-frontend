@@ -92,6 +92,10 @@ export interface Employee {
   /** Fixed Evaluation Allowance — standing earning shown on every payslip.
    *  Same NOT NULL DEFAULT 0 semantics as {@link positionAllowance}. */
   evaluationAllowance?: number;
+  /** V70 — Cambodian Labour Law skill / occupational level. One of:
+   *  'office', 'specialized', 'ns_cook', 'ns_labour'. Drives the
+   *  probation-max auto-fill on the Add Contract dialog. */
+  level?: 'office' | 'specialized' | 'ns_cook' | 'ns_labour';
   // Banking
   bankName?: string;
   bankAccount?: string;

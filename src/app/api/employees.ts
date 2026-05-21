@@ -54,6 +54,8 @@ export interface Employee {
   positionAllowance?: number;
   /** Fixed Evaluation Allowance — NOT NULL DEFAULT 0 since V43. */
   evaluationAllowance?: number;
+  /** V70 — Cambodian skill level: office | specialized | ns_cook | ns_labour. */
+  level?: string | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;
