@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Calculator, Loader2, CalendarDays } from 'lucide-react';
 
@@ -37,13 +37,18 @@ function money(n: number): string {
   return `$${formatMoney(n)}`;
 }
 
-/** Default window — the calendar year that's currently in progress. HR
- *  can narrow it (e.g. Jan–Jun for a half-year cash-out) or widen it
- *  across year boundaries for a resignation that bridges two years. */
-function defaultWindow(): { from: string; to: string } {
-  const d = new Date();
-  const y = d.getFullYear();
-  return { from: `${y}-01`, to: `${y}-12` };
+type Period = 'full' | 'h1' | 'h2';
+
+/** Map (year + period) → fromMonth/toMonth pair the backend expects.
+ *  H1 = Jan–Jun, H2 = Jul–Dec, Full = Jan–Dec. */
+function windowFor(year: number, period: Period): { from: string; to: string } {
+  const y = String(year);
+  switch (period) {
+    case 'h1':   return { from: `${y}-01`, to: `${y}-06` };
+    case 'h2':   return { from: `${y}-07`, to: `${y}-12` };
+    case 'full':
+    default:     return { from: `${y}-01`, to: `${y}-12` };
+  }
 }
 
 /**
@@ -53,9 +58,9 @@ function defaultWindow(): { from: string; to: string } {
  * × months_in_window) minus approved usage inside the window.
  */
 export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
-  const initial = useMemo(defaultWindow, []);
-  const [fromMonth, setFromMonth] = useState<string>(initial.from);
-  const [toMonth, setToMonth] = useState<string>(initial.to);
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState<number>(currentYear);
+  const [period, setPeriod] = useState<Period>('full');
   const [preview, setPreview] = useState<alApi.AlRemainPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -64,25 +69,21 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    const w = defaultWindow();
-    setFromMonth(w.from);
-    setToMonth(w.to);
+    setYear(new Date().getFullYear());
+    setPeriod('full');
     setPreview(null);
     setIncluded(new Set());
   }, [open]);
 
   const handlePreview = async () => {
-    if (!fromMonth || !toMonth) {
-      toast.error('Pick a start and end month');
-      return;
-    }
-    if (toMonth < fromMonth) {
-      toast.error('End month must be on or after start month');
+    if (!year || year < 2000 || year > 2100) {
+      toast.error('Enter a valid year');
       return;
     }
     setLoading(true);
     try {
-      const res = await alApi.preview(fromMonth, toMonth);
+      const { from, to } = windowFor(year, period);
+      const res = await alApi.preview(from, to);
       setPreview(res);
       setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
     } catch (err) {
@@ -141,32 +142,54 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
         <div className="space-y-4 overflow-y-auto px-1">
           <Card>
             <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-end">
                 <div className="space-y-1">
-                  <Label className="text-xs">From month</Label>
+                  <Label className="text-xs">Year</Label>
                   <Input
-                    type="month"
-                    value={fromMonth}
-                    onChange={e => setFromMonth(e.target.value)}
+                    type="number"
+                    min={2000}
+                    max={2100}
+                    value={year}
+                    onChange={e => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setYear(n);
+                    }}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">To month</Label>
-                  <Input
-                    type="month"
-                    value={toMonth}
-                    onChange={e => setToMonth(e.target.value)}
-                  />
+                  <Label className="text-xs">Period</Label>
+                  <div className="flex gap-2">
+                    {([
+                      { value: 'full', label: 'Full Year', sub: 'Jan – Dec' },
+                      { value: 'h1',   label: 'Half (H1)', sub: 'Jan – Jun' },
+                      { value: 'h2',   label: 'Half (H2)', sub: 'Jul – Dec' },
+                    ] as Array<{ value: Period; label: string; sub: string }>).map(opt => {
+                      const active = period === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setPeriod(opt.value)}
+                          className={`flex-1 px-3 py-2 text-sm border rounded-md transition text-left ${
+                            active
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div>{opt.label}</div>
+                          <div className="text-[10px] opacity-80">{opt.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex items-end">
-                  <Button onClick={handlePreview} disabled={loading || !fromMonth || !toMonth} className="w-full">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
-                    Preview
-                  </Button>
-                </div>
+                <Button onClick={handlePreview} disabled={loading || !year} className="md:w-32">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
+                  Preview
+                </Button>
               </div>
               <p className="mt-3 text-[11px] text-gray-500">
-                Half-year window (e.g. Jan–Jun) pro-rates each allocation by 6/12. Cross-year windows sum each year's pro-rated share. Daily wage = most-recent <code>monthly_gross_earnings.totalEarnings</code> ÷ working days (Mon–Sat = 26, Mon–Fri = 22). Half-day leaves count 0.5.
+                Half-year (H1 or H2) pro-rates each allocation by 6 ÷ 12. Daily wage = most-recent <code>monthly_gross_earnings.totalEarnings</code> ÷ working days (Mon–Sat = 26, Mon–Fri = 22). Half-day leaves count 0.5.
               </p>
             </CardContent>
           </Card>
