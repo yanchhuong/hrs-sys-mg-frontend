@@ -156,7 +156,7 @@ export function PlatformHolidays() {
                 <TableHead>Date</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead className="text-center w-16">Paid</TableHead>
+                <TableHead className="text-center w-24">Status</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
@@ -184,7 +184,18 @@ export function PlatformHolidays() {
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>
                   </TableCell>
                   <TableCell className="text-center">
-                    <Switch checked={r.paid} onCheckedChange={(v) => handleTogglePaid(r, v)} />
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePaid(r, !r.paid)}
+                      className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border transition ${
+                        r.paid
+                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200'
+                          : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                      }`}
+                      title="Click to toggle"
+                    >
+                      {r.paid ? 'Paid' : 'Unpaid'}
+                    </button>
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">{r.description ?? '—'}</TableCell>
                   <TableCell>
