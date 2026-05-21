@@ -40,8 +40,8 @@ export async function preview(
   });
 }
 
-/** Per-employee severance preview — one FDC contract's worth of monthly
- *  earnings + the resulting 5% wage base. Mirror of
+/** Per-employee severance preview — quarter-based installments locked
+ *  to the contract's starting salary. Mirror of
  *  {@code FdcSeveranceEmployeePreviewResponse} on the backend. */
 export interface FdcSeveranceEmployeePreview {
   employeeId: string;
@@ -52,10 +52,19 @@ export interface FdcSeveranceEmployeePreview {
   endDate: string | null;
   contractType?: string | null;
   terminationReason?: string | null;
+  /** Salary at contract start — fixed for the whole contract life. */
+  startSalary: number;
+  /** Inclusive whole-month count between startDate and endDate. */
+  contractMonths: number;
+  /** floor(contractMonths / 3) — completed 3-month blocks. */
+  fullQuarters: number;
   ratePercent: number;
+  /** fullQuarters × 3 × startSalary — the wage base for severance. */
   totalWages: number;
+  /** totalWages × ratePercent / 100. */
   severance: number;
-  months: Array<{ month: string; totalEarnings: number }>;
+  /** One row per completed quarter. */
+  quarters: Array<{ number: number; monthRange: string; amount: number }>;
   eligible: boolean;
   reason?: string | null;
 }

@@ -201,7 +201,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, fdcEmployees, onCreated
                 </Button>
               </div>
               <p className="text-[11px] text-gray-500">
-                List shows only employees with an <strong>active FDC contract</strong>. Wage base is gross — every <code>monthly_gross_earnings.totalEarnings</code> row inside the contract dates. Legal minimum is 5% (Cambodian Labour Law); raise it here for a more generous batch without touching Settings.
+                One installment per completed <strong>3-month block</strong>, locked to the <strong>salary at contract start</strong> (pay raises during the contract do not change the severance). Trailing 1–2 months of a non-multiple-of-3 contract don't contribute. Legal minimum 5% (Cambodian Labour Law); raise here for a more generous batch.
               </p>
             </CardContent>
           </Card>
@@ -247,20 +247,42 @@ export function FdcSeveranceDialog({ open, onOpenChange, fdcEmployees, onCreated
                   )}
                 </div>
 
-                {preview.months.length > 0 && (
+                {/* Summary row: start salary, months, quarters that count. */}
+                <div className="px-4 py-3 border-b bg-white grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-gray-500">Start Salary</div>
+                    <div className="font-semibold tabular-nums">{money(preview.startSalary)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Contract Months</div>
+                    <div className="font-semibold tabular-nums">{preview.contractMonths}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Full Quarters</div>
+                    <div className="font-semibold tabular-nums">{preview.fullQuarters}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Rate</div>
+                    <div className="font-semibold tabular-nums">{preview.ratePercent}%</div>
+                  </div>
+                </div>
+
+                {preview.quarters.length > 0 && (
                   <div className="max-h-[40vh] overflow-y-auto">
                     <Table>
                       <TableHeader className="sticky top-0 bg-white z-10">
                         <TableRow>
-                          <TableHead>Month</TableHead>
-                          <TableHead className="text-right">Total Earnings</TableHead>
+                          <TableHead className="w-16">Quarter</TableHead>
+                          <TableHead>Months</TableHead>
+                          <TableHead className="text-right" title="Start Salary × 3 × rate%">Installment</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {preview.months.map((m, idx) => (
-                          <TableRow key={`${m.month}-${idx}`}>
-                            <TableCell className="text-sm">{m.month}</TableCell>
-                            <TableCell className="text-right tabular-nums text-sm">{money(m.totalEarnings)}</TableCell>
+                        {preview.quarters.map((q) => (
+                          <TableRow key={q.number}>
+                            <TableCell className="text-sm font-medium">Q{q.number}</TableCell>
+                            <TableCell className="text-sm">{q.monthRange}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{money(q.amount)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -268,17 +290,27 @@ export function FdcSeveranceDialog({ open, onOpenChange, fdcEmployees, onCreated
                   </div>
                 )}
 
+                {preview.quarters.length === 0 && preview.startDate && preview.endDate && (
+                  <div className="px-4 py-6 text-center text-xs text-gray-500">
+                    This contract is shorter than one full 3-month block — no severance installment accrues.
+                  </div>
+                )}
+
                 <div className="px-4 py-3 border-t bg-gray-50 grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <div className="text-xs text-gray-500">Total wages</div>
+                    <div className="text-xs text-gray-500">Total Wages</div>
                     <div className="font-semibold tabular-nums">{money(preview.totalWages)}</div>
+                    <div className="text-[10px] text-gray-400">{preview.fullQuarters} × 3 × {money(preview.startSalary)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500">Rate</div>
-                    <div className="font-semibold tabular-nums">{preview.ratePercent}%</div>
+                    <div className="text-xs text-gray-500">Quarter Installment</div>
+                    <div className="font-semibold tabular-nums">
+                      {preview.fullQuarters > 0 ? money(preview.severance / preview.fullQuarters) : money(0)}
+                    </div>
+                    <div className="text-[10px] text-gray-400">{money(preview.startSalary)} × 3 × {preview.ratePercent}%</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500">Severance</div>
+                    <div className="text-xs text-gray-500">Total Severance</div>
                     <div className="font-semibold text-amber-700 tabular-nums">{money(preview.severance)}</div>
                   </div>
                 </div>
