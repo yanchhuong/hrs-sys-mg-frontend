@@ -63,8 +63,9 @@ import { EmployeeCell } from '../common/EmployeeCell';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 pb-2 border-b">
-      <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{children}</h3>
+    <div className="flex items-center gap-2 pb-2 border-b border-gray-300">
+      <span className="inline-block h-4 w-1 rounded-sm bg-blue-600" aria-hidden />
+      <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{children}</h3>
     </div>
   );
 }
@@ -1912,7 +1913,7 @@ export function Employees() {
                           <p>{deptName(selectedEmployee.department)}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="Reports To" isEditing={isEditing} full>
+                      <FieldRow label="Reports To" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <SearchablePicker
                             options={employees
@@ -1936,6 +1937,34 @@ export function Employees() {
                             {selectedEmployee.managerId
                               ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee.managerId)?.name || '—'
                               : 'No manager'}
+                          </p>
+                        )}
+                      </FieldRow>
+                      {/* V70 — Cambodian Labour Law skill level. Drives the
+                          probation-max default on the Add Contract dialog. */}
+                      <FieldRow label="Level (Labour Law)" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                            value={editedEmployee.level ?? ''}
+                            onChange={e => setEditedEmployee({
+                              ...editedEmployee,
+                              level: (e.target.value || undefined) as Employee['level'],
+                            })}
+                          >
+                            <option value="">— not set —</option>
+                            <option value="office">Office Personnel (3-month probation)</option>
+                            <option value="specialized">Specialized (3-month probation)</option>
+                            <option value="ns_cook">Non-Specialized · Cook (1-month probation)</option>
+                            <option value="ns_labour">Non-Specialized · Labour (2-month probation)</option>
+                          </select>
+                        ) : (
+                          <p>
+                            {selectedEmployee.level === 'office'      ? 'Office Personnel' :
+                             selectedEmployee.level === 'specialized' ? 'Specialized' :
+                             selectedEmployee.level === 'ns_cook'     ? 'Non-Specialized · Cook' :
+                             selectedEmployee.level === 'ns_labour'   ? 'Non-Specialized · Labour' :
+                             <span className="text-gray-400">— not set —</span>}
                           </p>
                         )}
                       </FieldRow>
