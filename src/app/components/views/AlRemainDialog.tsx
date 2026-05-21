@@ -233,7 +233,9 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                           />
                         </TableHead>
                         <TableHead>Employee</TableHead>
-                        <TableHead className="text-right" title="Sum of annual allocations across years touched by window">Annual</TableHead>
+                        <TableHead className="text-right" title="Years of service as of window end. +1 day annual leave per completed 3 years.">Tenure</TableHead>
+                        <TableHead className="text-right" title="Base allocation + seniority bonus (+1 day per 3 years)">Annual</TableHead>
+                        <TableHead className="text-right" title="Fractional months worked inside the window (handles mid-month hire / resignation)">Months</TableHead>
                         <TableHead className="text-right">Used</TableHead>
                         <TableHead className="text-right">Remaining</TableHead>
                         {preview.monthList.map(ym => (
@@ -247,7 +249,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                     <TableBody>
                       {preview.items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7 + preview.monthList.length} className="text-center text-sm text-gray-500 py-6">
+                          <TableCell colSpan={9 + preview.monthList.length} className="text-center text-sm text-gray-500 py-6">
                             No active employees for this window.
                           </TableCell>
                         </TableRow>
@@ -272,7 +274,16 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                             <div className="text-sm font-medium">{row.name}</div>
                             {row.empNo && <div className="text-[11px] text-gray-500">{row.empNo}</div>}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{row.annualAllocatedDays}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {row.yearsOfService.toFixed(1)}<span className="text-gray-400 text-[11px]">y</span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            <div>{row.annualAllocatedDays}</div>
+                            {row.seniorityBonusDays > 0 && (
+                              <div className="text-[10px] text-indigo-600">+{row.seniorityBonusDays} bonus</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{row.monthsWorked.toFixed(2)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{row.usedDays}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-medium">{row.remainingDays}</TableCell>
                           {preview.monthList.map(ym => {

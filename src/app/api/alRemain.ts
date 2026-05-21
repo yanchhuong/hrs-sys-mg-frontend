@@ -5,13 +5,20 @@ export interface AlRemainPreviewItem {
   employeeId: string;
   empNo?: string | null;
   name: string;
+  /** Base allocation + seniority bonus, summed across years touched. */
   annualAllocatedDays: number;
+  /** +1 day per 3 years of service (Cambodian Labour Law). */
+  seniorityBonusDays: number;
+  /** Decimal years of service at window end. */
+  yearsOfService: number;
+  /** Fractional months the employee actually worked inside the window
+   *  (mid-month hire / resignation contributes a partial month). */
+  monthsWorked: number;
   allocatedInWindow: number;
   usedDays: number;
   remainingDays: number;
   monthlyGross: number;
-  /** YYYY-MM → gross earnings for that month. Always populated for every
-   *  month in monthList; missing payroll rows surface as 0. */
+  /** YYYY-MM → gross earnings for that month. */
   monthlyBreakdown: Record<string, number>;
   dailyWage: number;
   amount: number;
