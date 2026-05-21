@@ -83,6 +83,30 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
     setStatusFilter('eligible');
   }, [open]);
 
+  // Auto-fire the preview when the dialog opens or the month changes
+  // — FX changes go through the Preview button since HR typically
+  // tweaks the rate iteratively. cancelled-flag guards against late
+  // responses after the dialog closes.
+  useEffect(() => {
+    if (!open || !month) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await nssfApi.preview(month);
+        if (!cancelled) {
+          setPreview(res);
+          setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
+        }
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load NSSF preview');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, month]);
+
   const handlePreview = async () => {
     setLoading(true);
     try {
