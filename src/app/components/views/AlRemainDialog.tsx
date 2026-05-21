@@ -92,7 +92,35 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
     setIncluded(new Set());
   }, [open]);
 
+  // Auto-fire the preview whenever the dialog opens or the user changes
+  // year / period — saves the extra Preview click and matches how the
+  // 5% Severance and NSSF dialogs feel. Cancelled-flag guards against
+  // late responses landing after the dialog closed.
+  useEffect(() => {
+    if (!open || !year || year < 2000 || year > 2100) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const { from, to } = windowFor(year, period);
+        const res = await alApi.preview(from, to);
+        if (!cancelled) {
+          setPreview(res);
+          setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
+        }
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load AL Remain preview');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, year, period]);
+
   const handlePreview = async () => {
+    // Manual recalc — same flow as the auto effect above. Kept on the
+    // button so HR can force a refresh after creating allocations or
+    // approving leaves in another tab.
     if (!year || year < 2000 || year > 2100) {
       toast.error('Enter a valid year');
       return;
