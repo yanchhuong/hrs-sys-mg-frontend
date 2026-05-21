@@ -64,12 +64,17 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
   /** Per-row include toggle keyed by employeeId. Seeded from the
    *  preview's eligible rows. */
   const [included, setIncluded] = useState<Set<string>>(new Set());
+  /** Status filter — 'eligible' is the default since that's the only
+   *  cohort HR can actually generate a batch for. 'all' is a peek mode
+   *  to spot-check why a row dropped out (inactive / resigned / no base). */
+  const [statusFilter, setStatusFilter] = useState<'eligible' | 'all'>('eligible');
 
   useEffect(() => {
     if (!open) return;
     setMonth(defaultMonth());
     setPreview(null);
     setIncluded(new Set());
+    setStatusFilter('eligible');
   }, [open]);
 
   const handlePreview = async () => {
@@ -162,14 +167,43 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
             <Card>
               <CardContent className="p-0 overflow-hidden">
                 <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between flex-wrap gap-2">
-                  <div className="text-sm">
-                    <span className="font-medium">{preview.items.length}</span> employees on roster
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">FX {preview.khrPerUsd} KHR/$</span>
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">Cap {fmtKhr(preview.wageCapKhr)} KHR</span>
+                  <div className="flex items-center gap-3 flex-wrap text-sm">
+                    <div>
+                      <span className="font-medium">{preview.items.length}</span> on roster
+                      <span className="text-gray-400 mx-2">·</span>
+                      <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
+                      <span className="text-gray-400 mx-2">·</span>
+                      <span className="text-gray-600">FX {preview.khrPerUsd} KHR/$</span>
+                      <span className="text-gray-400 mx-2">·</span>
+                      <span className="text-gray-600">Cap {fmtKhr(preview.wageCapKhr)} KHR</span>
+                    </div>
+                    {/* Status filter — defaults to Eligible so HR sees the
+                        actionable cohort first; toggle to All when they
+                        need to spot-check why a row dropped out. */}
+                    <div className="flex items-center gap-1 ml-2">
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('eligible')}
+                        className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                          statusFilter === 'eligible'
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        Eligible ({preview.eligibleCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('all')}
+                        className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                          statusFilter === 'all'
+                            ? 'border-gray-500 bg-gray-100 text-gray-800 font-medium'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        All ({preview.items.length})
+                      </button>
+                    </div>
                   </div>
                   <div className="text-sm space-x-3">
                     <span>
@@ -201,57 +235,66 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {preview.items.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-6">
-                            No employees on roster for this month.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {preview.items.map(row => (
-                        <TableRow key={row.employeeId} className={row.eligible ? '' : 'opacity-60'}>
-                          <TableCell>
-                            <Checkbox
-                              checked={included.has(row.employeeId)}
-                              disabled={!row.eligible}
-                              onCheckedChange={() => {
-                                setIncluded(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(row.employeeId)) next.delete(row.employeeId);
-                                  else next.add(row.employeeId);
-                                  return next;
-                                });
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm font-medium">{row.name}</div>
-                            {row.empNo && <div className="text-[11px] text-gray-500">{row.empNo}</div>}
-                            <div className="text-[11px] text-gray-500">{money(row.baseSalaryUsd)} base</div>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{fmtKhr(row.grossKhr)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{fmtKhr(row.contributoryKhr)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">
-                            <div className="font-medium">{fmtKhr(row.employeePensionKhr)}</div>
-                            <div className="text-[10px] text-gray-500">≈ {money(row.employeePensionUsd)}</div>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">
-                            <div className="font-medium">{fmtKhr(row.employerTotalKhr)}</div>
-                            <div className="text-[10px] text-gray-500">
-                              {fmtKhr(row.employerOccupationalKhr)} + {fmtKhr(row.employerHealthcareKhr)} + {fmtKhr(row.employerPensionKhr)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {row.eligible ? (
-                              <Badge className="bg-emerald-100 text-emerald-800 border-0">Eligible</Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 text-[11px]" title={row.reason ?? ''}>
-                                {row.reason ?? 'Not eligible'}
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {(() => {
+                        const visible = statusFilter === 'eligible'
+                          ? preview.items.filter(i => i.eligible)
+                          : preview.items;
+                        if (visible.length === 0) {
+                          return (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-6">
+                                {statusFilter === 'eligible'
+                                  ? 'No eligible employees for this month — switch to All to see why rows dropped out.'
+                                  : 'No employees on roster for this month.'}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        }
+                        return visible.map(row => (
+                          <TableRow key={row.employeeId} className={row.eligible ? '' : 'opacity-60'}>
+                            <TableCell>
+                              <Checkbox
+                                checked={included.has(row.employeeId)}
+                                disabled={!row.eligible}
+                                onCheckedChange={() => {
+                                  setIncluded(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(row.employeeId)) next.delete(row.employeeId);
+                                    else next.add(row.employeeId);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">{row.name}</div>
+                              {row.empNo && <div className="text-[11px] text-gray-500">{row.empNo}</div>}
+                              <div className="text-[11px] text-gray-500">{money(row.baseSalaryUsd)} base</div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{fmtKhr(row.grossKhr)}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">{fmtKhr(row.contributoryKhr)}</TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">
+                              <div className="font-medium">{fmtKhr(row.employeePensionKhr)}</div>
+                              <div className="text-[10px] text-gray-500">≈ {money(row.employeePensionUsd)}</div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-sm">
+                              <div className="font-medium">{fmtKhr(row.employerTotalKhr)}</div>
+                              <div className="text-[10px] text-gray-500">
+                                {fmtKhr(row.employerOccupationalKhr)} + {fmtKhr(row.employerHealthcareKhr)} + {fmtKhr(row.employerPensionKhr)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {row.eligible ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-0">Eligible</Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 text-[11px]" title={row.reason ?? ''}>
+                                  {row.reason ?? 'Not eligible'}
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ));
+                      })()}
                     </TableBody>
                   </Table>
                 </div>
