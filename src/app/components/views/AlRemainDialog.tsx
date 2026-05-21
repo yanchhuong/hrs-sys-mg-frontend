@@ -138,90 +138,86 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-4 pb-3 border-b shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
             <CalendarDays className="h-5 w-5 text-indigo-600" />
             Compute AL Remain
+            <span className="text-xs font-normal text-gray-500 ml-1">— unused annual-leave payout</span>
           </DialogTitle>
-          <DialogDescription>
-            Unused annual-leave payout. Pick a window; the calculator pro-rates each employee's annual allocation by months_in_window ÷ 12, subtracts approved usage inside the window, then multiplies by daily wage.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-end">
-                <div className="space-y-1">
-                  <Label className="text-xs">Year</Label>
-                  <Input
-                    type="number"
-                    min={2000}
-                    max={2100}
-                    value={year}
-                    onChange={e => {
-                      const n = Number(e.target.value);
-                      if (Number.isFinite(n)) setYear(n);
-                    }}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Period</Label>
-                  <div className="flex gap-2">
-                    {([
-                      { value: 'full', label: 'Full Year', sub: 'Jan – Dec' },
-                      { value: 'h1',   label: 'Half (H1)', sub: 'Jan – Jun' },
-                      { value: 'h2',   label: 'Half (H2)', sub: 'Jul – Dec' },
-                    ] as Array<{ value: Period; label: string; sub: string }>).map(opt => {
-                      const active = period === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setPeriod(opt.value)}
-                          className={`flex-1 px-3 py-2 text-sm border rounded-md transition text-left ${
-                            active
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
-                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div>{opt.label}</div>
-                          <div className="text-[10px] opacity-80">{opt.sub}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <Button onClick={handlePreview} disabled={loading || !year} className="md:w-32">
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
-                  Preview
-                </Button>
+        {/* Controls strip — fixed, doesn't scroll with the body. */}
+        <div className="px-6 py-3 border-b shrink-0 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs">Year</Label>
+              <Input
+                type="number"
+                min={2000}
+                max={2100}
+                value={year}
+                onChange={e => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n)) setYear(n);
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Period</Label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'full', label: 'Full Year', sub: 'Jan – Dec' },
+                  { value: 'h1',   label: 'Half (H1)', sub: 'Jan – Jun' },
+                  { value: 'h2',   label: 'Half (H2)', sub: 'Jul – Dec' },
+                ] as Array<{ value: Period; label: string; sub: string }>).map(opt => {
+                  const active = period === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPeriod(opt.value)}
+                      className={`flex-1 px-3 py-2 text-sm border rounded-md transition text-left ${
+                        active
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div>{opt.label}</div>
+                      <div className="text-[10px] opacity-80">{opt.sub}</div>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-3 text-[11px] text-gray-500">
-                Half-year (H1 or H2) pro-rates each allocation by 6 ÷ 12. Daily wage = most-recent <code>monthly_gross_earnings.totalEarnings</code> ÷ working days (Mon–Sat = 26, Mon–Fri = 22). Half-day leaves count 0.5.
-              </p>
-            </CardContent>
-          </Card>
+            </div>
+            <Button onClick={handlePreview} disabled={loading || !year} className="md:w-32">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
+              Preview
+            </Button>
+          </div>
+        </div>
 
+        {/* Summary chips — fixed when preview loaded. */}
+        {preview && (
+          <div className="flex items-center justify-between px-6 py-2 border-b bg-gray-50 shrink-0 flex-wrap gap-2">
+            <div className="text-sm">
+              <span className="font-medium">{preview.rosterSize}</span> on roster
+              <span className="text-gray-400 mx-2">·</span>
+              <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
+              <span className="text-gray-400 mx-2">·</span>
+              <span className="text-gray-600">{preview.monthsInWindow} months</span>
+              <span className="text-gray-400 mx-2">·</span>
+              <span className="text-gray-600">Divisor {preview.daysDivisor}</span>
+            </div>
+            <div className="text-sm">
+              Included total: <span className="font-semibold tabular-nums">{money(includedTotal)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Table — only this scrolls. */}
+        <div className="flex-1 min-h-0 overflow-auto">
           {preview && (
-            <Card>
-              <CardContent className="p-0 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 flex-wrap gap-2">
-                  <div className="text-sm">
-                    <span className="font-medium">{preview.rosterSize}</span> on roster
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">{preview.monthsInWindow} months</span>
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">Divisor {preview.daysDivisor}</span>
-                  </div>
-                  <div className="text-sm">
-                    Included total: <span className="font-semibold tabular-nums">{money(includedTotal)}</span>
-                  </div>
-                </div>
-                <div className="max-h-[50vh] overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
@@ -304,13 +300,10 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
           )}
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t shrink-0">
+        <DialogFooter className="px-6 py-3 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             Cancel
           </Button>

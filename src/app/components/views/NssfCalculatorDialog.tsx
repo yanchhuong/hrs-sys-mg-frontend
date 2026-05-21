@@ -135,118 +135,109 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-4 pb-3 border-b shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
             <ShieldCheck className="h-5 w-5 text-emerald-600" />
             Compute NSSF Contributions
+            <span className="text-xs font-normal text-gray-500 ml-1">— employee 2% + employer 5.4% on 1.2M KHR cap</span>
           </DialogTitle>
-          <DialogDescription>
-            Cambodia National Social Security Fund — employee 2% pension + employer 0.8% (occupational risk) + 2.6% (healthcare) + 2% (pension), all on a contributory wage capped at 1,200,000 KHR.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                <div className="space-y-1">
-                  <Label className="text-xs">Month</Label>
-                  <Input
-                    type="month"
-                    value={month}
-                    onChange={e => setMonth(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center gap-2">
-                    Rate (KHR / USD)
-                    {fxOverride.trim() !== '' && (
-                      <button
-                        type="button"
-                        onClick={() => setFxOverride('')}
-                        className="text-[10px] uppercase tracking-wide text-emerald-700 hover:underline"
-                      >
-                        reset
-                      </button>
-                    )}
-                  </Label>
-                  <Input
-                    inputMode="decimal"
-                    placeholder={preview && preview.khrPerUsd > 0 ? String(preview.khrPerUsd) : '4100'}
-                    value={fxOverride}
-                    onChange={e => setFxOverride(e.target.value.replace(/[^\d.]/g, ''))}
-                  />
-                  {fxOverride.trim() !== '' && preview && preview.khrPerUsd > 0 && (
-                    <p className="text-[11px] text-amber-700">
-                      Overriding configured rate ({preview.khrPerUsd} KHR/USD) — dialog-only.
-                    </p>
-                  )}
-                </div>
-                <Button onClick={handlePreview} disabled={loading || !month}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
-                  Preview
-                </Button>
-              </div>
-              <p className="mt-3 text-[11px] text-amber-700">
-                <strong>Warning:</strong> the regular Salary batch already deducts NSSF on each payslip. Generate this standalone batch <em>only</em> when running NSSF as its own payment cycle — otherwise employees will be deducted twice for the same month.
-              </p>
-            </CardContent>
-          </Card>
+        {/* Controls strip — fixed. */}
+        <div className="px-6 py-3 border-b shrink-0 bg-white space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs">Month</Label>
+              <Input
+                type="month"
+                value={month}
+                onChange={e => setMonth(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs flex items-center gap-2">
+                Rate (KHR / USD)
+                {fxOverride.trim() !== '' && (
+                  <button
+                    type="button"
+                    onClick={() => setFxOverride('')}
+                    className="text-[10px] uppercase tracking-wide text-emerald-700 hover:underline"
+                  >
+                    reset
+                  </button>
+                )}
+              </Label>
+              <Input
+                inputMode="decimal"
+                placeholder={preview && preview.khrPerUsd > 0 ? String(preview.khrPerUsd) : '4100'}
+                value={fxOverride}
+                onChange={e => setFxOverride(e.target.value.replace(/[^\d.]/g, ''))}
+              />
+            </div>
+            <Button onClick={handlePreview} disabled={loading || !month}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
+              Preview
+            </Button>
+          </div>
+          <p className="text-[11px] text-amber-700">
+            <strong>Warning:</strong> the regular Salary batch already deducts NSSF on each payslip. Generate this standalone batch <em>only</em> when running NSSF as its own payment cycle.
+          </p>
+        </div>
 
+        {/* Summary chips — fixed when preview loaded. */}
+        {preview && (
+          <div className="px-6 py-2 border-b bg-gray-50 shrink-0 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3 flex-wrap text-sm">
+              <div>
+                <span className="font-medium">{preview.items.length}</span> on roster
+                <span className="text-gray-400 mx-2">·</span>
+                <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
+                <span className="text-gray-400 mx-2">·</span>
+                <span className="text-gray-600">FX {preview.khrPerUsd} KHR/$</span>
+                <span className="text-gray-400 mx-2">·</span>
+                <span className="text-gray-600">Cap {fmtKhr(preview.wageCapKhr)} KHR</span>
+              </div>
+              <div className="flex items-center gap-1 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('eligible')}
+                  className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                    statusFilter === 'eligible'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Eligible ({preview.eligibleCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2.5 py-1 text-xs rounded-md border transition ${
+                    statusFilter === 'all'
+                      ? 'border-gray-500 bg-gray-100 text-gray-800 font-medium'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  All ({preview.items.length})
+                </button>
+              </div>
+            </div>
+            <div className="text-sm space-x-3">
+              <span>
+                Employee total: <span className="font-semibold tabular-nums">{fmtKhr(includedEmployeeTotalKhr)} KHR</span>
+              </span>
+              <span className="text-gray-400">·</span>
+              <span>
+                Employer: <span className="font-semibold tabular-nums">{fmtKhr(includedEmployerTotalKhr)} KHR</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Table — only this scrolls. */}
+        <div className="flex-1 min-h-0 overflow-auto">
           {preview && (
-            <Card>
-              <CardContent className="p-0 overflow-hidden">
-                <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-3 flex-wrap text-sm">
-                    <div>
-                      <span className="font-medium">{preview.items.length}</span> on roster
-                      <span className="text-gray-400 mx-2">·</span>
-                      <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
-                      <span className="text-gray-400 mx-2">·</span>
-                      <span className="text-gray-600">FX {preview.khrPerUsd} KHR/$</span>
-                      <span className="text-gray-400 mx-2">·</span>
-                      <span className="text-gray-600">Cap {fmtKhr(preview.wageCapKhr)} KHR</span>
-                    </div>
-                    {/* Status filter — defaults to Eligible so HR sees the
-                        actionable cohort first; toggle to All when they
-                        need to spot-check why a row dropped out. */}
-                    <div className="flex items-center gap-1 ml-2">
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter('eligible')}
-                        className={`px-2.5 py-1 text-xs rounded-md border transition ${
-                          statusFilter === 'eligible'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
-                            : 'border-gray-200 text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        Eligible ({preview.eligibleCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter('all')}
-                        className={`px-2.5 py-1 text-xs rounded-md border transition ${
-                          statusFilter === 'all'
-                            ? 'border-gray-500 bg-gray-100 text-gray-800 font-medium'
-                            : 'border-gray-200 text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        All ({preview.items.length})
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-sm space-x-3">
-                    <span>
-                      Employee total: <span className="font-semibold tabular-nums">{fmtKhr(includedEmployeeTotalKhr)} KHR</span>
-                    </span>
-                    <span className="text-gray-400">·</span>
-                    <span>
-                      Employer: <span className="font-semibold tabular-nums">{fmtKhr(includedEmployerTotalKhr)} KHR</span>
-                    </span>
-                  </div>
-                </div>
-                <div className="max-h-[50vh] overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
@@ -328,13 +319,10 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
                       })()}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
           )}
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t shrink-0">
+        <DialogFooter className="px-6 py-3 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             Cancel
           </Button>
