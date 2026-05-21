@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Calculator, Scale, Receipt, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Calculator, Scale, Receipt, ShieldCheck, CalendarDays, ArrowRight } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -16,6 +16,7 @@ import { SeniorityIndemnityDialog } from './SeniorityIndemnityDialog';
 import { FdcSeveranceDialog } from './FdcSeveranceDialog';
 import { TaxCalculatorDialog } from './TaxCalculatorDialog';
 import { NssfCalculatorDialog } from './NssfCalculatorDialog';
+import { AlRemainDialog } from './AlRemainDialog';
 
 /** Adapter mirrors the one in Payroll.tsx — the calculator dialogs
  *  expect the front-end Employee shape, not the raw API row. */
@@ -72,6 +73,7 @@ export function BenefitCalculator() {
   const [fdcOpen, setFdcOpen] = useState(false);
   const [taxOpen, setTaxOpen] = useState(false);
   const [nssfOpen, setNssfOpen] = useState(false);
+  const [alRemainOpen, setAlRemainOpen] = useState(false);
 
   /** Pulls everything the three dialogs need so we don't surprise HR
    *  with a half-loaded TaxCalculator (which depends on khrPerUsd +
@@ -134,7 +136,7 @@ export function BenefitCalculator() {
   }, []);
 
   const cards: Array<{
-    id: 'seniority' | 'fdc' | 'tax' | 'nssf';
+    id: 'seniority' | 'fdc' | 'tax' | 'nssf' | 'al_remain';
     title: string;
     description: string;
     /** What side of the payslip this calculator produces — drives the
@@ -142,7 +144,7 @@ export function BenefitCalculator() {
      *  a card adds money to the payslip or takes it off. Matches the
      *  {@code kind} column on payroll_categories. */
     kind: 'earning' | 'deduction';
-    tone: 'emerald' | 'amber' | 'blue' | 'rose';
+    tone: 'emerald' | 'amber' | 'blue' | 'rose' | 'indigo';
     icon: typeof Scale;
     cite: string;
     onClick: () => void;
@@ -196,6 +198,17 @@ export function BenefitCalculator() {
       cite: 'NSSF Law · 1,200,000 KHR contributory wage cap',
       onClick: () => setNssfOpen(true),
     },
+    {
+      id: 'al_remain',
+      title: 'AL Remain',
+      description:
+        'Year-end / on-resignation payout of unused annual leave. Reads each employee’s al_allocations.totalDays minus approved annual-leave usage, then multiplies by their daily wage (same divisor as Seniority).',
+      kind: 'earning',
+      tone: 'indigo',
+      icon: CalendarDays,
+      cite: 'Cambodian Labour Law · unused annual-leave payout',
+      onClick: () => setAlRemainOpen(true),
+    },
   ];
 
   const kindBadgeStyles = {
@@ -208,18 +221,21 @@ export function BenefitCalculator() {
     amber:   'border-amber-200 bg-amber-50/50 text-amber-700',
     blue:    'border-blue-200 bg-blue-50/50 text-blue-700',
     rose:    'border-rose-200 bg-rose-50/50 text-rose-700',
+    indigo:  'border-indigo-200 bg-indigo-50/50 text-indigo-700',
   } as const;
   const iconStyles = {
     emerald: 'bg-emerald-100 text-emerald-700',
     amber:   'bg-amber-100 text-amber-700',
     blue:    'bg-blue-100 text-blue-700',
     rose:    'bg-rose-100 text-rose-700',
+    indigo:  'bg-indigo-100 text-indigo-700',
   } as const;
   const buttonStyles = {
     emerald: 'bg-emerald-600 hover:bg-emerald-700 text-white',
     amber:   'bg-amber-600 hover:bg-amber-700 text-white',
     blue:    'bg-blue-600 hover:bg-blue-700 text-white',
     rose:    'bg-rose-600 hover:bg-rose-700 text-white',
+    indigo:  'bg-indigo-600 hover:bg-indigo-700 text-white',
   } as const;
 
   void t; // useI18n is wired for future label work; keeps the hook stable.
@@ -236,7 +252,7 @@ export function BenefitCalculator() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {cards.map(card => {
           const Icon = card.icon;
           return (
@@ -304,6 +320,10 @@ export function BenefitCalculator() {
       <NssfCalculatorDialog
         open={nssfOpen}
         onOpenChange={setNssfOpen}
+      />
+      <AlRemainDialog
+        open={alRemainOpen}
+        onOpenChange={setAlRemainOpen}
       />
     </div>
   );
