@@ -252,38 +252,59 @@ export function BenefitCalculator() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {cards.map(card => {
-          const Icon = card.icon;
-          return (
-            <Card key={card.id} className={`border ${toneStyles[card.tone]}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start gap-3">
-                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${iconStyles[card.tone]}`}>
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <CardTitle className="text-lg">{card.title}</CardTitle>
-                      <span className={`inline-flex items-center text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${kindBadgeStyles[card.kind]}`}>
-                        {card.kind === 'earning' ? 'Earning' : 'Deduction'}
-                      </span>
-                    </div>
-                    <CardDescription className="text-[11px] mt-0.5 opacity-80">{card.cite}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-gray-700 leading-relaxed">{card.description}</p>
-                <Button onClick={card.onClick} className={`w-full ${buttonStyles[card.tone]}`}>
-                  Open Calculator
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      {/* Two-row layout — earnings on top (Seniority, AL Remain, 5% Severance),
+          deductions below (TOS, NSSF). Grouped so HR can see at a glance which
+          calculators add money to the payslip vs. take it off. */}
+      {(['earning', 'deduction'] as const).map(kind => {
+        const groupCards = cards.filter(c => c.kind === kind);
+        if (groupCards.length === 0) return null;
+        return (
+          <div key={kind} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded border ${kindBadgeStyles[kind]}`}>
+                {kind === 'earning' ? 'Earnings' : 'Deductions'}
+              </span>
+              <span className="text-xs text-gray-500">
+                {kind === 'earning'
+                  ? 'Pays the employee — adds to the payslip total.'
+                  : 'Withheld from the employee — taken off the payslip total.'}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {groupCards.map(card => {
+                const Icon = card.icon;
+                return (
+                  <Card key={card.id} className={`border ${toneStyles[card.tone]}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start gap-3">
+                        <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${iconStyles[card.tone]}`}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <CardTitle className="text-lg">{card.title}</CardTitle>
+                            <span className={`inline-flex items-center text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${kindBadgeStyles[card.kind]}`}>
+                              {card.kind === 'earning' ? 'Earning' : 'Deduction'}
+                            </span>
+                          </div>
+                          <CardDescription className="text-[11px] mt-0.5 opacity-80">{card.cite}</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-gray-700 leading-relaxed">{card.description}</p>
+                      <Button onClick={card.onClick} className={`w-full ${buttonStyles[card.tone]}`}>
+                        Open Calculator
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Calculator dialogs — mounted here so they survive page re-render
           while open. onCreated callbacks are no-ops: the Payroll page
