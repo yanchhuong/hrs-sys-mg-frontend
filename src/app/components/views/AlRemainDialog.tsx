@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Calculator, Loader2, CalendarDays } from 'lucide-react';
 
@@ -37,14 +37,25 @@ function money(n: number): string {
   return `$${formatMoney(n)}`;
 }
 
+/** Default window — the calendar year that's currently in progress. HR
+ *  can narrow it (e.g. Jan–Jun for a half-year cash-out) or widen it
+ *  across year boundaries for a resignation that bridges two years. */
+function defaultWindow(): { from: string; to: string } {
+  const d = new Date();
+  const y = d.getFullYear();
+  return { from: `${y}-01`, to: `${y}-12` };
+}
+
 /**
- * AL Remain calculator — payout for unused annual leave at year end or
- * on resignation. Same daily-wage math as Seniority Indemnity; only the
- * day count is different (al_allocations − approved-used per employee).
+ * AL Remain calculator — payout for unused annual leave at year end,
+ * half-year, or on resignation. Same daily-wage math as Seniority; the
+ * day count is the employee's pro-rated annual leave (allocation ÷ 12
+ * × months_in_window) minus approved usage inside the window.
  */
 export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState<number>(currentYear);
+  const initial = useMemo(defaultWindow, []);
+  const [fromMonth, setFromMonth] = useState<string>(initial.from);
+  const [toMonth, setToMonth] = useState<string>(initial.to);
   const [preview, setPreview] = useState<alApi.AlRemainPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -53,15 +64,25 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setYear(new Date().getFullYear());
+    const w = defaultWindow();
+    setFromMonth(w.from);
+    setToMonth(w.to);
     setPreview(null);
     setIncluded(new Set());
   }, [open]);
 
   const handlePreview = async () => {
+    if (!fromMonth || !toMonth) {
+      toast.error('Pick a start and end month');
+      return;
+    }
+    if (toMonth < fromMonth) {
+      toast.error('End month must be on or after start month');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await alApi.preview(year);
+      const res = await alApi.preview(fromMonth, toMonth);
       setPreview(res);
       setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
     } catch (err) {
@@ -79,7 +100,11 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
     }
     setCreating(true);
     try {
-      await alApi.createBatch({ year, includeEmployeeIds: Array.from(included) });
+      await alApi.createBatch({
+        fromMonth: preview.fromMonth,
+        toMonth: preview.toMonth,
+        includeEmployeeIds: Array.from(included),
+      });
       toast.success(`AL Remain batch created for ${included.size} employee${included.size === 1 ? '' : 's'}`);
       onCreated?.();
       onOpenChange(false);
@@ -109,7 +134,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
             Compute AL Remain
           </DialogTitle>
           <DialogDescription>
-            Unused annual-leave payout — remaining days (allocated − approved used) × daily wage. Pick a year and generate a payroll batch from the eligible rows.
+            Unused annual-leave payout. Pick a window; the calculator pro-rates each employee's annual allocation by months_in_window ÷ 12, subtracts approved usage inside the window, then multiplies by daily wage.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,27 +143,30 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
             <CardContent className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Year</Label>
+                  <Label className="text-xs">From month</Label>
                   <Input
-                    type="number"
-                    min={2000}
-                    max={2100}
-                    value={year}
-                    onChange={e => {
-                      const n = Number(e.target.value);
-                      if (Number.isFinite(n)) setYear(n);
-                    }}
+                    type="month"
+                    value={fromMonth}
+                    onChange={e => setFromMonth(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">To month</Label>
+                  <Input
+                    type="month"
+                    value={toMonth}
+                    onChange={e => setToMonth(e.target.value)}
                   />
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={handlePreview} disabled={loading || !year} className="w-full">
+                  <Button onClick={handlePreview} disabled={loading || !fromMonth || !toMonth} className="w-full">
                     {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
                     Preview
                   </Button>
                 </div>
               </div>
               <p className="mt-3 text-[11px] text-gray-500">
-                Daily wage = most-recent <code>monthly_gross_earnings.totalEarnings</code> ÷ working days (Mon–Sat = 26, Mon–Fri = 22). Half-day leaves count 0.5. Rows without an annual-leave allocation for the year fall out automatically.
+                Half-year window (e.g. Jan–Jun) pro-rates each allocation by 6/12. Cross-year windows sum each year's pro-rated share. Daily wage = most-recent <code>monthly_gross_earnings.totalEarnings</code> ÷ working days (Mon–Sat = 26, Mon–Fri = 22). Half-day leaves count 0.5.
               </p>
             </CardContent>
           </Card>
@@ -151,6 +179,8 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                     <span className="font-medium">{preview.rosterSize}</span> on roster
                     <span className="text-gray-400 mx-2">·</span>
                     <span className="font-medium text-emerald-700">{preview.eligibleCount}</span> eligible
+                    <span className="text-gray-400 mx-2">·</span>
+                    <span className="text-gray-600">{preview.monthsInWindow} months</span>
                     <span className="text-gray-400 mx-2">·</span>
                     <span className="text-gray-600">Divisor {preview.daysDivisor}</span>
                   </div>
@@ -170,10 +200,10 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                           />
                         </TableHead>
                         <TableHead>Employee</TableHead>
-                        <TableHead className="text-right">Allocated</TableHead>
+                        <TableHead className="text-right" title="Sum of annual allocations across years touched by window">Annual</TableHead>
+                        <TableHead className="text-right" title="Annual × months_in_window ÷ 12">In Window</TableHead>
                         <TableHead className="text-right">Used</TableHead>
                         <TableHead className="text-right">Remaining</TableHead>
-                        <TableHead className="text-right">Monthly Gross</TableHead>
                         <TableHead className="text-right">Daily Wage</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                         <TableHead>Status</TableHead>
@@ -183,7 +213,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                       {preview.items.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-6">
-                            No employees on roster for the year.
+                            No employees on roster for the window.
                           </TableCell>
                         </TableRow>
                       )}
@@ -207,10 +237,10 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                             <div className="text-sm font-medium">{row.name}</div>
                             {row.empNo && <div className="text-[11px] text-gray-500">{row.empNo}</div>}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{row.allocatedDays}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{row.annualAllocatedDays}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{row.allocatedInWindow}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{row.usedDays}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-medium">{row.remainingDays}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">{money(row.monthlyGross)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.dailyWage)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-semibold text-indigo-700">{money(row.amount)}</TableCell>
                           <TableCell>

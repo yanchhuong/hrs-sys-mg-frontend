@@ -5,8 +5,8 @@ export interface AlRemainPreviewItem {
   employeeId: string;
   empNo?: string | null;
   name: string;
-  year: number;
-  allocatedDays: number;
+  annualAllocatedDays: number;
+  allocatedInWindow: number;
   usedDays: number;
   remainingDays: number;
   monthlyGross: number;
@@ -17,7 +17,9 @@ export interface AlRemainPreviewItem {
 }
 
 export interface AlRemainPreview {
-  year: number;
+  fromMonth: string;
+  toMonth: string;
+  monthsInWindow: number;
   daysDivisor: number;
   eligibleCount: number;
   rosterSize: number;
@@ -25,12 +27,15 @@ export interface AlRemainPreview {
   items: AlRemainPreviewItem[];
 }
 
-export async function preview(year: number): Promise<AlRemainPreview> {
-  return apiJson<AlRemainPreview>('/api/v1/payroll/al-remain/preview', { query: { year } });
+export async function preview(fromMonth: string, toMonth: string): Promise<AlRemainPreview> {
+  return apiJson<AlRemainPreview>('/api/v1/payroll/al-remain/preview', {
+    query: { fromMonth, toMonth },
+  });
 }
 
 export interface CreateBatchRequest {
-  year: number;
+  fromMonth: string;
+  toMonth: string;
   includeEmployeeIds: string[];
   subject?: string;
   approverIds?: string[];
