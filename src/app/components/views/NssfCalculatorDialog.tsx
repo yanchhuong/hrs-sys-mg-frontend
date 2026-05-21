@@ -122,8 +122,8 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-[95vw] sm:max-w-[1400px] max-h-[90vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-emerald-600" />
             Compute NSSF Contributions
@@ -133,7 +133,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 overflow-y-auto px-1">
+        <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
           <Card>
             <CardContent className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -260,7 +260,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             Cancel
           </Button>
