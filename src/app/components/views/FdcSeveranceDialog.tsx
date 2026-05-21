@@ -254,9 +254,10 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                         <TableHead className="w-12 text-center">Status</TableHead>
                         <TableHead>Employee</TableHead>
                         <TableHead>Contract</TableHead>
+                        <TableHead title="First installment matures on startDate + 3 months">Mature Date</TableHead>
                         <TableHead className="text-right">Start Salary</TableHead>
                         <TableHead className="text-center">Months</TableHead>
-                        <TableHead className="text-center" title="floor(months ÷ 3)">Quarters</TableHead>
+                        <TableHead className="text-center" title="matured ÷ total quarters">Quarters</TableHead>
                         <TableHead className="text-right">Total Wages</TableHead>
                         <TableHead className="text-right">Severance</TableHead>
                       </TableRow>
@@ -264,7 +265,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                     <TableBody>
                       {visibleRows.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-6">
+                          <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-6">
                             {statusFilter === 'eligible'
                               ? 'No eligible FDC employees. Switch to All to see why any rows dropped.'
                               : 'No active FDC contracts on file.'}
@@ -325,9 +326,27 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                               </div>
                             )}
                           </TableCell>
+                          <TableCell className="text-xs">
+                            {row.matureDate ? (
+                              <div className={row.maturedQuarters > 0 ? 'text-emerald-700 font-medium' : 'text-amber-700'}>
+                                {formatDate(row.matureDate)}
+                                <div className="text-[10px] opacity-80">
+                                  {row.maturedQuarters > 0 ? 'matured' : 'pending'}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.startSalary)}</TableCell>
                           <TableCell className="text-center text-sm">{row.contractMonths}</TableCell>
-                          <TableCell className="text-center text-sm font-medium">{row.fullQuarters}</TableCell>
+                          <TableCell className="text-center text-sm font-medium" title={`${row.maturedQuarters} matured of ${row.fullQuarters} total`}>
+                            <span className={row.maturedQuarters > 0 ? 'text-emerald-700' : 'text-gray-400'}>
+                              {row.maturedQuarters}
+                            </span>
+                            <span className="text-gray-400 mx-0.5">/</span>
+                            <span>{row.fullQuarters}</span>
+                          </TableCell>
                           <TableCell className="text-right tabular-nums text-sm">{money(row.totalWages)}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm font-semibold text-amber-700">{money(row.severance)}</TableCell>
                         </TableRow>

@@ -56,14 +56,18 @@ export interface FdcSeveranceEmployeePreview {
   startSalary: number;
   /** Inclusive whole-month count between startDate and endDate. */
   contractMonths: number;
-  /** floor(contractMonths / 3) — completed 3-month blocks. */
+  /** floor(contractMonths / 3) — total quarters at natural expiry. */
   fullQuarters: number;
+  /** startDate + 3 months — when the first installment matures. */
+  matureDate: string | null;
+  /** Quarters actually matured as of today, clamped to [0, fullQuarters]. */
+  maturedQuarters: number;
   ratePercent: number;
-  /** fullQuarters × 3 × startSalary — the wage base for severance. */
+  /** maturedQuarters × 3 × startSalary — the wage base actually payable. */
   totalWages: number;
   /** totalWages × ratePercent / 100. */
   severance: number;
-  /** One row per completed quarter. */
+  /** One row per quarter in the contract. */
   quarters: Array<{ number: number; monthRange: string; amount: number }>;
   eligible: boolean;
   reason?: string | null;
@@ -91,7 +95,12 @@ export interface FdcSeveranceAllRow {
   terminationReason?: string | null;
   startSalary: number;
   contractMonths: number;
+  /** Total possible quarters at natural expiry. */
   fullQuarters: number;
+  /** startDate + 3 months — first-installment maturity. */
+  matureDate: string | null;
+  /** Quarters matured to-date, clamped to [0, fullQuarters]. */
+  maturedQuarters: number;
   totalWages: number;
   severance: number;
   eligible: boolean;
