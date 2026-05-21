@@ -61,6 +61,13 @@ function windowFor(year: number, period: Period): { from: string; to: string } {
   }
 }
 
+/** Default to the current calendar half — H1 (Jan→Jun) when we're before
+ *  July, otherwise H2 (Jul→Dec). Mirrors the Seniority Indemnity
+ *  dialog's defaulting logic so the two calculators feel consistent. */
+function defaultPeriod(): Period {
+  return new Date().getMonth() + 1 <= 6 ? 'h1' : 'h2';
+}
+
 /**
  * AL Remain calculator — payout for unused annual leave at year end,
  * half-year, or on resignation. Same daily-wage math as Seniority; the
@@ -70,7 +77,7 @@ function windowFor(year: number, period: Period): { from: string; to: string } {
 export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState<number>(currentYear);
-  const [period, setPeriod] = useState<Period>('full');
+  const [period, setPeriod] = useState<Period>(defaultPeriod());
   const [preview, setPreview] = useState<alApi.AlRemainPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -80,7 +87,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
   useEffect(() => {
     if (!open) return;
     setYear(new Date().getFullYear());
-    setPeriod('full');
+    setPeriod(defaultPeriod());
     setPreview(null);
     setIncluded(new Set());
   }, [open]);
