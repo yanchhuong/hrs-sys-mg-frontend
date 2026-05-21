@@ -35,8 +35,10 @@ export interface NssfPreview {
   grandTotalKhr: number;
 }
 
-export async function preview(month: string): Promise<NssfPreview> {
-  return apiJson<NssfPreview>('/api/v1/payroll/nssf/preview', { query: { month } });
+export async function preview(month: string, fx?: number): Promise<NssfPreview> {
+  return apiJson<NssfPreview>('/api/v1/payroll/nssf/preview', {
+    query: { month, ...(fx && fx > 0 ? { fx } : {}) },
+  });
 }
 
 export interface CreateBatchRequest {

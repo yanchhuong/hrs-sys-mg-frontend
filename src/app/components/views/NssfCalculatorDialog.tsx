@@ -58,6 +58,11 @@ function money(n: number): string {
 export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
   const initialMonth = useMemo(defaultMonth, []);
   const [month, setMonth] = useState<string>(initialMonth);
+  /** Dialog-only FX override (KHR/USD). Blank = use the tenant's
+   *  configured rate from Settings → Tax Brackets. Lets HR preview
+   *  "what would NSSF look like at 4,050 next month" without touching
+   *  the tenant config. */
+  const [fxOverride, setFxOverride] = useState<string>('');
   const [preview, setPreview] = useState<nssfApi.NssfPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -72,6 +77,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
   useEffect(() => {
     if (!open) return;
     setMonth(defaultMonth());
+    setFxOverride('');
     setPreview(null);
     setIncluded(new Set());
     setStatusFilter('eligible');
@@ -80,7 +86,9 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
   const handlePreview = async () => {
     setLoading(true);
     try {
-      const res = await nssfApi.preview(month);
+      const fxNum = fxOverride.trim() === '' ? undefined : Number(fxOverride);
+      const fxArg = fxNum !== undefined && Number.isFinite(fxNum) && fxNum > 0 ? fxNum : undefined;
+      const res = await nssfApi.preview(month, fxArg);
       setPreview(res);
       setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.employeeId)));
     } catch (err) {
@@ -141,7 +149,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
         <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
           <Card>
             <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Month</Label>
                   <Input
@@ -150,12 +158,35 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
                     onChange={e => setMonth(e.target.value)}
                   />
                 </div>
-                <div className="flex items-end">
-                  <Button onClick={handlePreview} disabled={loading || !month} className="w-full">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
-                    Preview
-                  </Button>
+                <div className="space-y-1">
+                  <Label className="text-xs flex items-center gap-2">
+                    Rate (KHR / USD)
+                    {fxOverride.trim() !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setFxOverride('')}
+                        className="text-[10px] uppercase tracking-wide text-emerald-700 hover:underline"
+                      >
+                        reset
+                      </button>
+                    )}
+                  </Label>
+                  <Input
+                    inputMode="decimal"
+                    placeholder={preview && preview.khrPerUsd > 0 ? String(preview.khrPerUsd) : '4100'}
+                    value={fxOverride}
+                    onChange={e => setFxOverride(e.target.value.replace(/[^\d.]/g, ''))}
+                  />
+                  {fxOverride.trim() !== '' && preview && preview.khrPerUsd > 0 && (
+                    <p className="text-[11px] text-amber-700">
+                      Overriding configured rate ({preview.khrPerUsd} KHR/USD) — dialog-only.
+                    </p>
+                  )}
                 </div>
+                <Button onClick={handlePreview} disabled={loading || !month}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
+                  Preview
+                </Button>
               </div>
               <p className="mt-3 text-[11px] text-amber-700">
                 <strong>Warning:</strong> the regular Salary batch already deducts NSSF on each payslip. Generate this standalone batch <em>only</em> when running NSSF as its own payment cycle — otherwise employees will be deducted twice for the same month.
