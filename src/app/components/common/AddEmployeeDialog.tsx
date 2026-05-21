@@ -6,7 +6,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { User, Briefcase, CreditCard, UserPlus } from 'lucide-react';
+import { User, Briefcase, CreditCard, UserPlus, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
 import { Employee } from '../../types/hrms';
@@ -376,21 +377,50 @@ export function AddEmployeeDialog({
               </Field>
             </div>
             {/* V70 — Cambodian Labour Law skill level. Drives the
-                probation-max default on the Add Contract dialog
-                (3 / 3 / 1 / 2 months). Left blank by default so the
-                form doesn't force a value HR hasn't decided on. */}
+                probation-max default on the Add Contract dialog. The
+                probation breakdown lives in a tooltip on the label so
+                the dropdown stays compact. */}
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Level (Cambodian Labour Law)">
+              <Field
+                label={
+                  <TooltipProvider delayDuration={150}>
+                    <span className="inline-flex items-center gap-1">
+                      Level (Cambodian Labour Law)
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-600 hover:bg-blue-50"
+                            aria-label="Probation caps by level"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs text-left text-xs leading-relaxed">
+                          <p className="font-semibold mb-1">Probation maximum (Cambodian Labour Law)</p>
+                          <ul className="space-y-0.5">
+                            <li>• <strong>Office Personnel</strong>: 3 months</li>
+                            <li>• <strong>Specialized</strong>: 3 months</li>
+                            <li>• <strong>Non-Specialized · Cook</strong>: 1 month</li>
+                            <li>• <strong>Non-Specialized · Labour</strong>: 2 months</li>
+                          </ul>
+                          <p className="mt-1.5 opacity-80">The Add Contract dialog reads this to pre-fill the probation end date.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </span>
+                  </TooltipProvider>
+                }
+              >
                 <select
                   className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                   value={form.level ?? ''}
                   onChange={(e) => patch({ level: (e.target.value || undefined) as typeof form.level })}
                 >
                   <option value="">— not set —</option>
-                  <option value="office">Office Personnel (3-month probation)</option>
-                  <option value="specialized">Specialized (3-month probation)</option>
-                  <option value="ns_cook">Non-Specialized · Cook (1-month probation)</option>
-                  <option value="ns_labour">Non-Specialized · Labour (2-month probation)</option>
+                  <option value="office">Office Personnel</option>
+                  <option value="specialized">Specialized</option>
+                  <option value="ns_cook">Non-Specialized · Cook</option>
+                  <option value="ns_labour">Non-Specialized · Labour</option>
                 </select>
               </Field>
             </div>
@@ -458,7 +488,7 @@ export function AddEmployeeDialog({
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, children }: { label: React.ReactNode; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-gray-600">

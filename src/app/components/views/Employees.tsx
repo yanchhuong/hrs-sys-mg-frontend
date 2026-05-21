@@ -41,7 +41,8 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2, GraduationCap } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2, GraduationCap, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -73,7 +74,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 function FieldRow({
   label, children, isEditing, required, full, icon,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
   isEditing?: boolean;
   required?: boolean;
@@ -1954,8 +1955,40 @@ export function Employees() {
                         )}
                       </FieldRow>
                       {/* V70 — Cambodian Labour Law skill level. Drives the
-                          probation-max default on the Add Contract dialog. */}
-                      <FieldRow label="Level (Labour Law)" isEditing={isEditing}>
+                          probation-max default on the Add Contract dialog.
+                          Probation breakdown lives in the label tooltip so
+                          the dropdown stays compact. */}
+                      <FieldRow
+                        label={
+                          <TooltipProvider delayDuration={150}>
+                            <span className="inline-flex items-center gap-1">
+                              Level (Labour Law)
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-600 hover:bg-blue-50"
+                                    aria-label="Probation caps by level"
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-xs text-left text-xs leading-relaxed">
+                                  <p className="font-semibold mb-1">Probation maximum (Cambodian Labour Law)</p>
+                                  <ul className="space-y-0.5">
+                                    <li>• <strong>Office Personnel</strong>: 3 months</li>
+                                    <li>• <strong>Specialized</strong>: 3 months</li>
+                                    <li>• <strong>Non-Specialized · Cook</strong>: 1 month</li>
+                                    <li>• <strong>Non-Specialized · Labour</strong>: 2 months</li>
+                                  </ul>
+                                  <p className="mt-1.5 opacity-80">The Add Contract dialog reads this to pre-fill the probation end date.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                          </TooltipProvider>
+                        }
+                        isEditing={isEditing}
+                      >
                         {isEditing && editedEmployee ? (
                           <select
                             className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
@@ -1966,10 +1999,10 @@ export function Employees() {
                             })}
                           >
                             <option value="">— not set —</option>
-                            <option value="office">Office Personnel (3-month probation)</option>
-                            <option value="specialized">Specialized (3-month probation)</option>
-                            <option value="ns_cook">Non-Specialized · Cook (1-month probation)</option>
-                            <option value="ns_labour">Non-Specialized · Labour (2-month probation)</option>
+                            <option value="office">Office Personnel</option>
+                            <option value="specialized">Specialized</option>
+                            <option value="ns_cook">Non-Specialized · Cook</option>
+                            <option value="ns_labour">Non-Specialized · Labour</option>
                           </select>
                         ) : (
                           <p>
