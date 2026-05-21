@@ -60,14 +60,17 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
   const [creating, setCreating] = useState(false);
   /** Per-row include toggle keyed by contractId. Seeded from eligible rows. */
   const [included, setIncluded] = useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<'eligible' | 'all'>('eligible');
+  // 'all' default — FDC contracts spend most of their first quarter
+  // pre-maturity, so the "Eligible" view is often empty. Showing
+  // everything keeps HR's first impression of the dialog informative.
+  const [statusFilter, setStatusFilter] = useState<'eligible' | 'all'>('all');
 
   useEffect(() => {
     if (!open) return;
     setRatePercent('5');
     setPreview(null);
     setIncluded(new Set());
-    setStatusFilter('eligible');
+    setStatusFilter('all');
   }, [open]);
 
   // Auto-pull the full list as soon as the dialog opens so HR doesn't
