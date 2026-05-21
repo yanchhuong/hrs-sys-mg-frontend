@@ -41,7 +41,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2 } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2, GraduationCap } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -1585,6 +1585,19 @@ export function Employees() {
                       <Building2 className="h-3 w-3" />
                       {deptName(selectedEmployee.department)}
                     </span>
+                    {/* V70 — quick-glance Level chip so HR doesn't have
+                        to open the Employment tab to see the Cambodian
+                        Labour Law classification. Hidden when unset. */}
+                    {selectedEmployee.level && (
+                      <span className="inline-flex items-center gap-1 text-gray-600" title="Cambodian Labour Law level — drives the probation cap">
+                        <GraduationCap className="h-3 w-3" />
+                        {selectedEmployee.level === 'office'      ? 'Office Personnel' :
+                         selectedEmployee.level === 'specialized' ? 'Specialized' :
+                         selectedEmployee.level === 'ns_cook'     ? 'NS · Cook' :
+                         selectedEmployee.level === 'ns_labour'   ? 'NS · Labour' :
+                         selectedEmployee.level}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
