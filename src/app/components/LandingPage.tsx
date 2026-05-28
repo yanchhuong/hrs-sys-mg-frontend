@@ -1674,7 +1674,7 @@ function Testimonials({ lang }: { lang: Lang }) {
     { quote: { en: 'We closed our monthly payroll in 40 minutes instead of three days. The TOS engine just works.',
                km: 'យើងបិទប្រាក់ខែប្រចាំខែក្នុង ៤០ នាទី ជំនួសឱ្យ ៣ ថ្ងៃ។ ម៉ាស៊ីនពន្ធលើប្រាក់ខែដំណើរការល្អ។',
                zh: '我们月度发薪从 3 天缩短到 40 分钟。薪资税引擎非常好用。' },
-      name: 'Sophea Chan', role: { en: 'HR Manager · Manufacturing',
+      name: 'Oun Saovady', role: { en: 'HR Manager · Manufacturing',
                                    km: 'ប្រធានធនធានមនុស្ស · ផលិតកម្ម',
                                    zh: 'HR 经理 · 制造业' } },
     { quote: { en: 'Five sites, one dashboard. We finally see who is at work in real-time without calling each branch.',
@@ -1870,7 +1870,13 @@ function LandingFooter({ lang }: { lang: Lang }) {
               {t(T.footer.contact, lang)}
             </h4>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> yanchhuong@kosign.com.kh</li>
+              <li className="flex items-center gap-2">
+                <Mail className="h-3.5 w-3.5" />
+                <a href="https://t.me/Maxwells_CX" target="_blank" rel="noopener noreferrer"
+                   className="hover:text-blue-600 hover:underline">
+                  @Maxwells_CX
+                </a>
+              </li>
               <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +855 98 844 504</li>
               <li className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Phnom Penh, Cambodia</li>
             </ul>
