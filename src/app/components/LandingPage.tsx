@@ -20,6 +20,9 @@ type Lang = 'en' | 'km' | 'zh';
 
 interface LandingPageProps {
   onSignInClick: () => void;
+  /** Optional — when provided, renders a "Try Demo" button that opens
+   *  the login page with admin@demo.com / admin123 pre-filled. */
+  onDemoClick?: () => void;
 }
 
 /** Bilingual copy. Keep keys terse, values short — long marketing copy lives inline below. */
@@ -32,6 +35,7 @@ const T = {
     faq:        { en: 'FAQ',          km: 'សំណួរញឹកញាប់',   zh: '常见问题' },
     signIn:     { en: 'Sign in',      km: 'ចូលប្រើប្រាស់',  zh: '登录' },
     getStarted: { en: 'Get started',  km: 'ចាប់ផ្តើម',      zh: '立即开始' },
+    tryDemo:    { en: 'Try Demo',     km: 'សាកល្បងគំរូ',     zh: '试用 Demo' },
   },
   hero: {
     eyebrow:  { en: 'For factories, companies, and teams of every size',
@@ -275,8 +279,8 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 
 /** Top navigation: brand on the left, anchor links + language + Sign In on the right. */
 function LandingNav({
-  lang, setLang, onSignIn,
-}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void }) {
+  lang, setLang, onSignIn, onDemo,
+}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void; onDemo?: () => void }) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <Container className="flex h-16 items-center justify-between">
@@ -305,6 +309,17 @@ function LandingNav({
             <Languages className="h-3.5 w-3.5" />
             {lang === 'en' ? 'ខ្មែរ' : lang === 'km' ? '中文' : 'EN'}
           </button>
+          {onDemo && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDemo}
+              className="hidden sm:inline-flex border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              title="Sign in as admin@demo.com"
+            >
+              {t(T.nav.tryDemo, lang)}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={onSignIn} className="hidden sm:inline-flex">
             {t(T.nav.signIn, lang)}
           </Button>
@@ -319,7 +334,7 @@ function LandingNav({
 }
 
 /** Hero block with gradient background, dual CTA, and a stylised dashboard preview on the right. */
-function Hero({ lang, onSignIn }: { lang: Lang; onSignIn: () => void }) {
+function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; onDemo?: () => void }) {
   return (
     <section id="top" className="relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-indigo-50" aria-hidden />
@@ -346,6 +361,17 @@ function Hero({ lang, onSignIn }: { lang: Lang; onSignIn: () => void }) {
               {t(T.hero.ctaPrimary, lang)}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            {onDemo && (
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={onDemo}
+                className="h-12 px-6 text-base border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                title="Sign in as admin@demo.com"
+              >
+                {t(T.nav.tryDemo, lang)}
+              </Button>
+            )}
             <Button size="lg" variant="outline" asChild className="h-12 px-6 text-base">
               <a href="#how">{t(T.hero.ctaSecondary, lang)}</a>
             </Button>
@@ -1736,7 +1762,7 @@ function LandingFooter({ lang }: { lang: Lang }) {
   );
 }
 
-export function LandingPage({ onSignInClick }: LandingPageProps) {
+export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
   // Drive the landing language off the global I18nContext so the toggle here
   // also flips the html.lang-km class (which triggers Khmer typography) and
   // persists into the post-login UI. I18nContext supports 'en' | 'km' | 'zh';
@@ -1749,8 +1775,8 @@ export function LandingPage({ onSignInClick }: LandingPageProps) {
   const setLang = (next: Lang) => i18n.setLang(next);
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased">
-      <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} />
-      <Hero lang={lang} onSignIn={onSignInClick} />
+      <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} />
+      <Hero lang={lang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <MetricsStrip lang={lang} />
       <Industries lang={lang} />
       <ModulesGrid lang={lang} />

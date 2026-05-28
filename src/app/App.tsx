@@ -33,6 +33,10 @@ function AppContent() {
   // user clicks Sign In / Get Started. Reset to landing on every logout so
   // the next visitor doesn't drop straight into the login form.
   const [showLogin, setShowLogin] = useState(false);
+  /** Optional credentials to pre-fill on the login form — non-null when
+   *  the visitor clicked the landing-page "Try Demo" button. Cleared on
+   *  Back so a normal Sign In click doesn't carry the demo values over. */
+  const [loginPrefill, setLoginPrefill] = useState<{ email: string; password: string } | null>(null);
 
   // Reset the view whenever the logged-in user changes (logout → login as a
   // different role). Without this, currentView is sticky and a freshly-
@@ -48,8 +52,17 @@ function AppContent() {
 
   if (!currentUser) {
     return showLogin
-      ? <LoginPage onBack={() => setShowLogin(false)} />
-      : <LandingPage onSignInClick={() => setShowLogin(true)} />;
+      ? <LoginPage
+          onBack={() => { setShowLogin(false); setLoginPrefill(null); }}
+          prefill={loginPrefill}
+        />
+      : <LandingPage
+          onSignInClick={() => { setLoginPrefill(null); setShowLogin(true); }}
+          onDemoClick={() => {
+            setLoginPrefill({ email: 'admin@demo.com', password: 'admin123' });
+            setShowLogin(true);
+          }}
+        />;
   }
 
   // Super Admin operates the platform, not tenant data — give them a separate shell.

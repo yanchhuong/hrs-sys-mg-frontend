@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { USE_MOCKS } from '../api/client';
 import { Button } from './ui/button';
@@ -11,14 +11,29 @@ import { Building2, Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react
 interface LoginPageProps {
   /** Optional — when provided, renders a "Back to home" link above the card. */
   onBack?: () => void;
+  /** Optional — pre-fill the email/password inputs on mount. Used by the
+   *  landing-page Demo button so visitors land on the form with the
+   *  demo credentials already typed. */
+  prefill?: { email: string; password: string } | null;
 }
 
-export function LoginPage({ onBack }: LoginPageProps = {}) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
+  const [email, setEmail] = useState(prefill?.email ?? '');
+  const [password, setPassword] = useState(prefill?.password ?? '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const { login, switchRole } = useAuth();
+
+  // Reflect prefill updates from the parent — covers the case where the
+  // user clicks "Demo" after the LoginPage has already mounted (e.g.
+  // typed something, hit Back, clicked Demo).
+  useEffect(() => {
+    if (prefill) {
+      setEmail(prefill.email);
+      setPassword(prefill.password);
+      setError('');
+    }
+  }, [prefill]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
