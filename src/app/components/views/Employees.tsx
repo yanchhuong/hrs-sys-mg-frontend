@@ -1105,6 +1105,14 @@ export function Employees() {
       setAvatarSrc(undefined);
       return;
     }
+    // Skip the blob fetch when the row has no stored image — the DTO's
+    // profileImage carries the storage path, so an empty value means the
+    // employee hasn't uploaded one. Without this guard every avatar render
+    // logs a 404 from /profile-image to the network panel.
+    if (!selectedEmployee?.profileImage) {
+      setAvatarSrc(undefined);
+      return;
+    }
     let cancelled = false;
     let activeUrl: string | null = null;
     (async () => {
