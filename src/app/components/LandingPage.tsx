@@ -265,6 +265,17 @@ const T = {
     company: { en: 'Company',  km: 'ក្រុមហ៊ុន', zh: '公司' },
     contact: { en: 'Contact',  km: 'ទំនាក់ទំនង', zh: '联系我们' },
     rights:  { en: 'All rights reserved.', km: 'រក្សាសិទ្ធិគ្រប់យ៉ាង។', zh: '版权所有。' },
+    references: { en: 'References', km: 'ឯកសារយោង', zh: '参考资料' },
+    mlvtLacmsTitle: {
+      en: 'How to request a worker book and Cambodian worker ID card via LACMS',
+      km: 'របៀបស្នើសុំសៀវភៅការងារ និងបណ្ណសម្គាល់កម្មករនិយោជិតខ្មែរ តាមប្រព័ន្ធ LACMS',
+      zh: '通过 LACMS 申请工人手册与柬埔寨劳工身份证的方法',
+    },
+    mlvtLacmsSrc: {
+      en: 'Ministry of Labour & Vocational Training',
+      km: 'ក្រសួងការងារ និងបណ្តុះបណ្តាលវិជ្ជាជីវៈ',
+      zh: '柬埔寨劳动与职业培训部',
+    },
   },
 } as const;
 
@@ -1883,7 +1894,35 @@ function LandingFooter({ lang }: { lang: Lang }) {
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
+        {/* Government / labour-law references — primary citation for the
+            Cambodian worker book + worker ID card flow that the platform
+            mirrors. Opens in a new tab; rel includes noreferrer because we
+            don't need to leak our origin to the gov host. */}
+        <div className="mt-10 border-t border-slate-200 pt-6">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {t(T.footer.references, lang)}
+          </h4>
+          <ul className="mt-3 space-y-2 text-sm text-slate-600">
+            <li>
+              <a
+                href="https://lacms.mlvt.gov.kh"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-start gap-2 hover:text-blue-600 hover:underline"
+              >
+                <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {t(T.footer.mlvtLacmsTitle, lang)}
+                  <span className="ml-1 text-xs text-slate-400">
+                    — {t(T.footer.mlvtLacmsSrc, lang)} · lacms.mlvt.gov.kh
+                  </span>
+                </span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
           <p>© {new Date().getFullYear()} HRMS Portal. {t(T.footer.rights, lang)}</p>
           <div className="flex items-center gap-4">
             <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> SOC2-ready</span>
