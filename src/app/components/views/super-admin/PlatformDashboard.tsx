@@ -6,7 +6,7 @@ import {
 } from '../../ui/table';
 import {
   Building2, UsersRound, DollarSign, Activity, AlertTriangle, CheckCircle,
-  TrendingUp, HardDrive, Gauge,
+  TrendingUp, HardDrive, Gauge, Eye, LogIn,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../../../data/platformData';
 import * as platformApi from '../../../api/platform';
 import { USE_MOCKS } from '../../../api/client';
+import { getMetricsSummary, PlatformMetricsSummary } from '../../../api/platformMetrics';
 
 // Adapter: map a live PlatformTenant to the legacy Company shape so the JSX
 // and computeUsage helper keep working without churn. Numeric fields not on
@@ -74,6 +75,7 @@ export function PlatformDashboard() {
   const [auditEvents, setAuditEvents] = useState<platformApi.PlatformAuditEntry[]>(
     USE_MOCKS ? (mockAuditTrail as unknown as platformApi.PlatformAuditEntry[]) : [],
   );
+  const [metrics, setMetrics] = useState<PlatformMetricsSummary | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -86,17 +88,19 @@ export function PlatformDashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [t, i, u, a] = await Promise.all([
+        const [t, i, u, a, m] = await Promise.all([
           platformApi.tenants.list(),
           platformApi.installs.list(),
           platformApi.users.list(),
           platformApi.activity.list({ unacked: true }),
+          getMetricsSummary().catch(() => null),
         ]);
         if (cancelled) return;
         setCompanies(t);
         setInstalls(i);
         setUsersList(u);
         setAuditEvents(a);
+        setMetrics(m);
       } catch { /* leave empty arrays */ }
       finally { if (!cancelled) setLoading(false); }
     })();
@@ -163,6 +167,62 @@ export function PlatformDashboard() {
           icon={stats.syncIssues > 0 ? AlertTriangle : CheckCircle}
           tone={stats.syncIssues > 0 ? 'red' : 'green'}
         />
+      </div>
+
+      {/* Engagement metrics — anonymous landing-page views + admin@demo.com logins.
+          Backed by GET /platform/metrics (totals + today + 30-day daily series). */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            label="Landing Views"
+            value={(metrics?.landingViewsTotal ?? 0).toLocaleString()}
+            hint="All-time"
+            icon={Eye}
+            tone="blue"
+          />
+          <StatCard
+            label="Views Today"
+            value={(metrics?.landingViewsToday ?? 0).toLocaleString()}
+            hint="UTC day so far"
+            icon={Eye}
+            tone="purple"
+          />
+          <StatCard
+            label="Demo Logins"
+            value={(metrics?.demoLoginsTotal ?? 0).toLocaleString()}
+            hint="admin@demo.com"
+            icon={LogIn}
+            tone="green"
+          />
+          <StatCard
+            label="Demo Today"
+            value={(metrics?.demoLoginsToday ?? 0).toLocaleString()}
+            hint="UTC day so far"
+            icon={LogIn}
+            tone="blue"
+          />
+        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              30-Day Engagement
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DailySeriesBars
+              label="Landing Views"
+              colorClass="bg-blue-500"
+              series={metrics?.landingViewsDaily ?? []}
+            />
+            <div className="h-3" />
+            <DailySeriesBars
+              label="Demo Logins"
+              colorClass="bg-green-500"
+              series={metrics?.demoLoginsDaily ?? []}
+            />
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -337,6 +397,41 @@ function StatCard({ label, value, hint, icon: Icon, tone }: {
         <p className="text-xs text-gray-500">{hint}</p>
       </CardContent>
     </Card>
+  );
+}
+
+/** Inline 30-day bar series. No chart lib — relative bar heights scaled to
+ *  the local max so a quiet week still reads, and a zero-count day renders as
+ *  a 1px floor so the time axis is visually continuous. */
+function DailySeriesBars({ label, colorClass, series }: {
+  label: string;
+  colorClass: string;
+  series: { day: string; count: number }[];
+}) {
+  const total = series.reduce((s, p) => s + p.count, 0);
+  const max = series.reduce((m, p) => Math.max(m, p.count), 0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5 text-xs">
+        <span className="text-gray-600">{label}</span>
+        <span className="text-gray-500">{total.toLocaleString()} in 30d</span>
+      </div>
+      <div className="flex items-end gap-0.5 h-12">
+        {series.length === 0 ? (
+          <p className="text-xs text-gray-400 self-center">No data yet</p>
+        ) : series.map(p => {
+          const h = max > 0 ? Math.max(2, Math.round((p.count / max) * 100)) : 2;
+          return (
+            <div
+              key={p.day}
+              title={`${p.day}: ${p.count}`}
+              className={`flex-1 ${p.count > 0 ? colorClass : 'bg-gray-200'} rounded-sm`}
+              style={{ height: `${h}%` }}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

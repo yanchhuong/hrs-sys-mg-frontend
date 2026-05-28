@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { useI18n } from '../i18n/I18nContext';
+import { trackLandingView } from '../api/platformMetrics';
 import {
   Building2, Users, Clock, DollarSign, TimerIcon, BarChart3,
   Cloud, Fingerprint, Receipt, Check, Languages,
@@ -1898,6 +1900,10 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
     ? (i18n.lang as Lang)
     : 'en';
   const setLang = (next: Lang) => i18n.setLang(next);
+  // Anonymous landing-view tracker. Fires once per mount; the API endpoint is
+  // open by design and swallows its own errors, so this is safe to call without
+  // session-dedup here.
+  useEffect(() => { trackLandingView(); }, []);
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased">
       <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} />
