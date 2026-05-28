@@ -215,6 +215,17 @@ const T = {
                km: 'ប្រភព៖ ច្បាប់ការងារកម្ពុជា · ប្រកាសឆ្នាំ ២០១៨ ស្តីពីប្រាក់ចូលនិវត្តន៍ · អគ្គនាយកដ្ឋានពន្ធដារ · ប.ស.ស',
                zh: '资料来源：柬埔寨劳动法 · 2018 年关于工龄抚恤金的公告 · 税务总局 · ប.ស.ស' },
   },
+  benefitCalcs: {
+    eyebrow: { en: 'Five one-shot calculators',
+               km: 'ឧបករណ៍គណនាប្រាំ',
+               zh: '五个一次性计算器' },
+    title:   { en: 'Benefit Calculator — built into Payroll Management',
+               km: 'ឧបករណ៍គណនាអត្ថប្រយោជន៍ — នៅក្នុងការគ្រប់គ្រងប្រាក់ខែ',
+               zh: '福利计算器 — 内建于薪资管理' },
+    desc:    { en: 'A dedicated sub-menu under Payroll with five calculators for the lines that don\'t fit the regular monthly Salary batch. Each picks the right window, previews the eligibility table, and routes a dedicated payroll batch through the standard approval flow.',
+               km: 'អនុម៉ឺនុយឧទ្ទិសក្នុងប្រាក់ខែ ដែលមានឧបករណ៍គណនាប្រាំ សម្រាប់បន្ទាត់ដែលមិនសមនឹង Salary ប្រចាំខែ។',
+               zh: '薪资管理下的专用子菜单，包含 5 个计算器，处理常规月度薪资批次无法涵盖的项目。每个计算器都会选择合适的时间窗口、预览资格表，并通过标准审批流程生成专用薪资批次。' },
+  },
   benefitFormulas: {
     eyebrow: { en: 'How the calculators work',
                km: 'របៀបដែលឧបករណ៍គណនាដំណើរការ',
@@ -954,8 +965,8 @@ function ModulesGrid({ lang }: { lang: Lang }) {
   //   contract renewal — plus the supporting reports & multi-site sync cards.
   const modules: Array<{
     icon: React.ElementType; tone: Tone;
-    title: { en: string; km: string };
-    desc:  { en: string; km: string };
+    title: { en: string; km: string; zh: string };
+    desc:  { en: string; km: string; zh: string };
   }> = [
     { icon: ShieldCheck, tone: 'emerald',
       title: { en: 'NSSF-Compliant Payroll',
@@ -1070,8 +1081,8 @@ function ModulesGrid({ lang }: { lang: Lang }) {
 function HowItWorks({ lang }: { lang: Lang }) {
   const steps: Array<{
     icon: React.ElementType;
-    title: { en: string; km: string };
-    desc:  { en: string; km: string };
+    title: { en: string; km: string; zh: string };
+    desc:  { en: string; km: string; zh: string };
   }> = [
     { icon: Users,
       title: { en: 'Onboard your team', km: 'បញ្ចូលក្រុមការងាររបស់អ្នក', zh: '导入您的团队' },
@@ -1538,6 +1549,120 @@ function BenefitFormulas({ lang }: { lang: Lang }) {
   );
 }
 
+/**
+ * Benefit Calculators showcase — one read-only card per calculator that
+ * lives on the in-app Benefit Calculator page. Visitors see what the
+ * product can do without needing to sign in. Each card mirrors the
+ * tone + icon used inside the app so the visual signal carries over
+ * post-login.
+ */
+function BenefitCalculatorsShowcase({ lang }: { lang: Lang }) {
+  type ML = { en: string; km: string; zh: string };
+  type Tone = 'emerald' | 'indigo' | 'amber' | 'blue' | 'rose';
+
+  const cards: Array<{
+    icon: React.ElementType;
+    tone: Tone;
+    kind: 'earning' | 'deduction';
+    title: ML;
+    cite: ML;
+    desc: ML;
+  }> = [
+    {
+      icon: Scale, tone: 'emerald', kind: 'earning',
+      title: { en: 'Seniority',         km: 'អតីតភាព',          zh: '工龄抚恤金' },
+      cite:  { en: 'UDC · 2018 Prakas', km: 'UDC · ប្រកាស ២០១៨', zh: 'UDC · 2018 公告' },
+      desc:  { en: '7.5 days × daily wage, paid twice a year (June + December) to every UDC employee.',
+               km: '៧.៥ ថ្ងៃ × ប្រាក់ឈ្នួលប្រចាំថ្ងៃ បង់ ២ ដងក្នុងមួយឆ្នាំ (មិថុនា + ធ្នូ) ដល់និយោជិត UDC។',
+               zh: '每年 6 月与 12 月各发放 7.5 天 × 日薪给所有 UDC（无固定期）员工。' },
+    },
+    {
+      icon: CalendarDays, tone: 'indigo', kind: 'earning',
+      title: { en: 'AL Remain',                 km: 'ប្រាក់ឈប់សម្រាក',       zh: '剩余年假' },
+      cite:  { en: 'Unused annual-leave payout', km: 'បំណល់ឈប់សម្រាកប្រចាំឆ្នាំ', zh: '未休年假折现' },
+      desc:  { en: 'Annual allocation × months_in_window ÷ 12, minus approved usage, times daily wage. Pick a half or full year.',
+               km: 'ការបែងចែកប្រចាំឆ្នាំ × ខែក្នុងបង្អួច ÷ ១២ ដក ការប្រើប្រាស់ដែលបានអនុម័ត គុណនឹងប្រាក់ឈ្នួលប្រចាំថ្ងៃ។',
+               zh: '年度配额 × 窗口内月数 ÷ 12，减去已批准用量，再乘以日薪。可选半年或整年。' },
+    },
+    {
+      icon: Calculator, tone: 'amber', kind: 'earning',
+      title: { en: '5% Severance',                       km: 'សំណង ៥%',              zh: '5% 解雇赔偿' },
+      cite:  { en: 'FDC · Labour Law Art. 73',           km: 'FDC · មាត្រា ៧៣',       zh: 'FDC · 劳动法 第 73 条' },
+      desc:  { en: 'One installment per completed 3-month block of the FDC contract, locked to the salary at contract start.',
+               km: '១ ការបង់ក្នុងបន្ទប់ ៣ ខែនៃកិច្ចសន្យា FDC ភ្ជាប់ទៅនឹងប្រាក់ខែដំបូងនៃកិច្ចសន្យា។',
+               zh: '固定期合约每完成 3 个月发放一次，金额锁定为合约起始薪资。' },
+    },
+    {
+      icon: Receipt, tone: 'blue', kind: 'deduction',
+      title: { en: 'Tax on Salary (TOS)',           km: 'ពន្ធលើប្រាក់បៀវត្ស',     zh: '薪资税' },
+      cite:  { en: 'Cambodia GDT · 5 / 10 / 15 / 20 %', km: 'GDT · ៥/១០/១៥/២០ %', zh: '柬埔寨税务总局 · 5/10/15/20%' },
+      desc:  { en: 'Progressive monthly tax preview using the tenant\'s configured KHR/USD FX rate, dependent deductions, and bracket table.',
+               km: 'មើលជាមុនពន្ធប្រចាំខែតាមលំដាប់ ដោយប្រើអត្រាប្តូរ KHR/USD ការដកដែលនៅក្នុងបន្ទុក និងតារាងថ្នាក់ពន្ធ។',
+               zh: '使用租户配置的 KHR/USD 汇率、被扶养人扣减和税率表预览月度累进税。' },
+    },
+    {
+      icon: ShieldCheck, tone: 'rose', kind: 'deduction',
+      title: { en: 'NSSF Contributions',                          km: 'ការបង់ ប.ស.ស',                 zh: 'ប.ស.ស 缴费' },
+      cite:  { en: 'Employee 2% + Employer 5.4%',                  km: 'និយោជិត ២% + និយោជក ៥.៤%',     zh: '员工 2% + 雇主 5.4%' },
+      desc:  { en: 'Pension, occupational risk, and healthcare contributions on a contributory wage capped at 1,200,000 KHR.',
+               km: 'ការចូលរួមសោធននិវត្តន៍ ហានិភ័យការងារ និងសុខភាព លើប្រាក់ឈ្នួលចំណែកដែលកំណត់ត្រឹម ១,២០០,០០០ រៀល។',
+               zh: '在缴费工资上限 1,200,000 瑞尔范围内缴纳养老、职业风险与医疗保险。' },
+    },
+  ];
+
+  const toneStyles: Record<Tone, { card: string; iconBg: string; iconText: string; chip: string }> = {
+    emerald: { card: 'border-emerald-100', iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    indigo:  { card: 'border-indigo-100',  iconBg: 'bg-indigo-50',  iconText: 'text-indigo-600',  chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    amber:   { card: 'border-amber-100',   iconBg: 'bg-amber-50',   iconText: 'text-amber-600',   chip: 'bg-amber-50 text-amber-700 border-amber-200' },
+    blue:    { card: 'border-blue-100',    iconBg: 'bg-blue-50',    iconText: 'text-blue-600',    chip: 'bg-blue-50 text-blue-700 border-blue-200' },
+    rose:    { card: 'border-rose-100',    iconBg: 'bg-rose-50',    iconText: 'text-rose-600',    chip: 'bg-rose-50 text-rose-700 border-rose-200' },
+  };
+
+  return (
+    <section id="benefit-calculators" className="py-20 sm:py-24 bg-white">
+      <Container>
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>{t(T.benefitCalcs.eyebrow, lang)}</Eyebrow>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            {t(T.benefitCalcs.title, lang)}
+          </h2>
+          <p className="mt-5 text-base leading-relaxed text-slate-600">
+            {t(T.benefitCalcs.desc, lang)}
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((c, i) => {
+            const Icon = c.icon;
+            const tn = toneStyles[c.tone];
+            return (
+              <Card key={i} className={`border ${tn.card} shadow-sm`}>
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-3">
+                    <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${tn.iconBg} ${tn.iconText}`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base font-semibold text-slate-900">{t(c.title, lang)}</h3>
+                        <span className={`inline-flex items-center text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${tn.chip}`}>
+                          {c.kind === 'earning' ? 'Earning' : 'Deduction'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] mt-0.5 text-slate-500">{t(c.cite, lang)}</p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm leading-relaxed text-slate-600">{t(c.desc, lang)}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
 /** Testimonials — three short quotes. Stock names; replace with real once available. */
 function Testimonials({ lang }: { lang: Lang }) {
   const items: Array<{
@@ -1786,6 +1911,7 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
       <CambodiaSection lang={lang} />
       <WorkingRule lang={lang} />
       <BenefitFormulas lang={lang} />
+      <BenefitCalculatorsShowcase lang={lang} />
       <Testimonials lang={lang} />
       <Faq lang={lang} />
       <CtaBanner lang={lang} onSignIn={onSignInClick} />
