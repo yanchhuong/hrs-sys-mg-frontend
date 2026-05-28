@@ -35,7 +35,7 @@ const T = {
     faq:        { en: 'FAQ',          km: 'សំណួរញឹកញាប់',   zh: '常见问题' },
     signIn:     { en: 'Sign in',      km: 'ចូលប្រើប្រាស់',  zh: '登录' },
     getStarted: { en: 'Get started',  km: 'ចាប់ផ្តើម',      zh: '立即开始' },
-    tryDemo:    { en: 'Try Demo',     km: 'សាកល្បងគំរូ',     zh: '试用 Demo' },
+    tryDemo:    { en: 'Try Demo',     km: 'ចូលប្រើសាកល្បង',  zh: '试用 Demo' },
   },
   hero: {
     eyebrow:  { en: 'For factories, companies, and teams of every size',
