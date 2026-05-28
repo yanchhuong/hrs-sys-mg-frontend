@@ -1870,8 +1870,8 @@ function LandingFooter({ lang }: { lang: Lang }) {
               {t(T.footer.contact, lang)}
             </h4>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> hello@hrms.local</li>
-              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +855 12 345 678</li>
+              <li className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> yanchhuong@kosign.com.kh</li>
+              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +855 98 844 504</li>
               <li className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Phnom Penh, Cambodia</li>
             </ul>
           </div>
