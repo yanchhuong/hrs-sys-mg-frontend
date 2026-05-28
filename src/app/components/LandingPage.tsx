@@ -445,9 +445,9 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
               <div className="mt-4 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2.5 text-xs">
                 <span className="flex items-center gap-2 font-medium text-emerald-700">
                   <Fingerprint className="h-3.5 w-3.5" />
-                  4 of 5 devices syncing
+                  Device sync · 4× / day
                 </span>
-                <span className="text-emerald-600">30s ago</span>
+                <span className="text-emerald-600">Next in 2h</span>
               </div>
             </CardContent>
           </Card>
