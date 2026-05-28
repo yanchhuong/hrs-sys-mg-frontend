@@ -2198,7 +2198,7 @@ export function Employees() {
                             {canCreateContract && (
                               <Button size="sm" onClick={handleAddContract} className="h-7 text-xs">
                                 <Plus className="h-3 w-3 mr-1" />
-                                Add Contract
+                                {t('contract.add')}
                               </Button>
                             )}
                           </div>
@@ -2234,7 +2234,7 @@ export function Employees() {
                                 {contracts.length === 0 ? (
                                   <TableRow>
                                     <TableCell colSpan={6} className="text-center py-6 text-xs text-gray-400">
-                                      No contracts yet. {canCreateContract && 'Click "Add Contract" to create one.'}
+                                      {t('contract.empty')} {canCreateContract && t('contract.empty.hint')}
                                     </TableCell>
                                   </TableRow>
                                 ) : contracts.map((contract) => (
@@ -2358,31 +2358,31 @@ export function Employees() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {contractMode === 'add' ? 'Add Contract'
-                : contractMode === 'edit' ? 'Edit Contract'
-                : 'Renew Contract'}
+              {contractMode === 'add' ? t('contract.add')
+                : contractMode === 'edit' ? t('contract.edit')
+                : t('contract.renew')}
             </DialogTitle>
             <DialogDescription>
-              {contractMode === 'add' && `Create a new contract for ${selectedEmployee?.name}.`}
-              {contractMode === 'edit' && `Update the contract details for ${selectedEmployee?.name}.`}
-              {contractMode === 'renew' && `Renewing creates a new active contract and marks the current one expired.`}
+              {contractMode === 'add' && `${t('contract.add.desc')} ${selectedEmployee?.name}.`}
+              {contractMode === 'edit' && `${t('contract.edit.desc')} ${selectedEmployee?.name}.`}
+              {contractMode === 'renew' && t('contract.renew.desc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {contractMode === 'renew' && selectedContract && (
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm font-medium mb-2">Current Contract</p>
+                <p className="text-sm font-medium mb-2">{t('contract.current')}</p>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <p className="text-gray-600">Type</p>
+                    <p className="text-gray-600">{t('contract.type')}</p>
                     <p className="font-medium">{selectedContract.contractType}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">End Date</p>
+                    <p className="text-gray-600">{t('contract.end_date')}</p>
                     <p className="font-medium">{formatDate(selectedContract.endDate)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Current Salary</p>
+                    <p className="text-gray-600">{t('contract.salary.current')}</p>
                     <p className="font-medium">${selectedContract.salary?.toLocaleString() || '-'}</p>
                   </div>
                 </div>
@@ -2392,13 +2392,13 @@ export function Employees() {
             {/* Duration presets — auto-fill end date relative to start. The
                 user can still pick a custom end date manually below. */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-600">Duration</Label>
+              <Label className="text-xs text-gray-600">{t('contract.duration')}</Label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { label: '3 Months', months: 3 },
-                  { label: '6 Months', months: 6 },
-                  { label: '1 Year', months: 12 },
-                  { label: '2 Years', months: 24 },
+                  { label: t('contract.duration.3mo'), months: 3 },
+                  { label: t('contract.duration.6mo'), months: 6 },
+                  { label: t('contract.duration.1yr'), months: 12 },
+                  { label: t('contract.duration.2yr'), months: 24 },
                 ].map(p => (
                   <Button
                     key={p.months}
@@ -2408,7 +2408,7 @@ export function Employees() {
                     className="h-8 text-xs"
                     onClick={() => {
                       if (!contractForm.startDate) {
-                        notify.validate('Pick a start date first');
+                        notify.validate(t('contract.validate.start_required'));
                         return;
                       }
                       const start = new Date(contractForm.startDate);
@@ -2434,7 +2434,7 @@ export function Employees() {
                   onClick={() => setContractForm({ ...contractForm, endDate: '' })}
                   title="Clear end date and pick custom"
                 >
-                  Custom
+                  {t('contract.duration.custom')}
                 </Button>
               </div>
             </div>
@@ -2442,7 +2442,7 @@ export function Employees() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contractStart">
-                  {contractMode === 'renew' ? 'New Start Date' : 'Start Date'} *
+                  {contractMode === 'renew' ? t('contract.start_date.new') : t('contract.start_date')} *
                 </Label>
                 <Input
                   id="contractStart"
@@ -2453,7 +2453,7 @@ export function Employees() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contractEnd">
-                  {contractMode === 'renew' ? 'New End Date' : 'End Date'} *
+                  {contractMode === 'renew' ? t('contract.end_date.new') : t('contract.end_date')} *
                 </Label>
                 <Input
                   id="contractEnd"
@@ -2466,7 +2466,7 @@ export function Employees() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="contractType">Contract Type *</Label>
+                <Label htmlFor="contractType">{t('contract.contract_type')} *</Label>
                 <select
                   id="contractType"
                   value={contractForm.contractType}
@@ -2490,24 +2490,22 @@ export function Employees() {
                   }}
                   className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
-                  <option value="UDC">UDC — Undetermined Duration</option>
-                  <option value="FDC">FDC — Fixed Duration</option>
-                  <option value="Probation">Probation</option>
-                  <option value="Internship">Internship</option>
+                  <option value="UDC">{t('contract.type.udc')}</option>
+                  <option value="FDC">{t('contract.type.fdc')}</option>
+                  <option value="Probation">{t('contract.type.probation')}</option>
+                  <option value="Internship">{t('contract.type.internship')}</option>
                 </select>
                 <p className="text-[11px] text-gray-500">
-                  UDC: open-ended; qualifies for seniority indemnity (7.5d × 2/year).
-                  FDC: fixed term; entitled to 5% of total wages severance on expiry.
+                  {t('contract.type.helper')}
                   {contractForm.contractType === 'Probation' && selectedEmployee?.level && (
                     <span className="block mt-1 text-amber-700">
-                      Probation cap for <strong>{selectedEmployee.level}</strong>: {probationMonthsForLevel(selectedEmployee.level)} month
-                      {probationMonthsForLevel(selectedEmployee.level) === 1 ? '' : 's'} (Cambodian Labour Law).
+                      {t('contract.probation.cap_prefix')} <strong>{selectedEmployee.level}</strong>: {probationMonthsForLevel(selectedEmployee.level)} {t('contract.probation.cap_suffix')}
                     </span>
                   )}
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contractSalary">Salary ($)</Label>
+                <Label htmlFor="contractSalary">{t('contract.salary')}</Label>
                 <Input
                   id="contractSalary"
                   type="number"
@@ -2524,29 +2522,29 @@ export function Employees() {
                 this in when editing an expired row. 'Misconduct'
                 forfeits the FDC 5% severance per Cambodian Labour Law. */}
             <div className="space-y-2">
-              <Label htmlFor="terminationReason">Termination Reason</Label>
+              <Label htmlFor="terminationReason">{t('contract.termination_reason')}</Label>
               <select
                 id="terminationReason"
                 value={contractForm.terminationReason}
                 onChange={(e) => setContractForm({ ...contractForm, terminationReason: e.target.value })}
                 className="w-full px-3 py-2 border rounded-md text-sm h-9"
               >
-                <option value="">— Still active / natural expiry —</option>
-                <option value="natural">Natural — contract ran to its end date</option>
-                <option value="misconduct">Serious misconduct (forfeits FDC severance)</option>
-                <option value="mutual">Mutual agreement</option>
-                <option value="resignation">Resignation</option>
-                <option value="other">Other</option>
+                <option value="">{t('contract.term.still_active')}</option>
+                <option value="natural">{t('contract.term.natural')}</option>
+                <option value="misconduct">{t('contract.term.misconduct')}</option>
+                <option value="mutual">{t('contract.term.mutual')}</option>
+                <option value="resignation">{t('contract.term.resignation')}</option>
+                <option value="other">{t('contract.term.other')}</option>
               </select>
               {contractForm.terminationReason === 'misconduct' && contractForm.contractType === 'FDC' && (
                 <p className="text-[11px] text-amber-700">
-                  ⚠ This contract will be excluded from the FDC severance calculator.
+                  {t('contract.term.misconduct.warn')}
                 </p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="contractNotes">Notes</Label>
+              <Label htmlFor="contractNotes">{t('contract.notes')}</Label>
               <textarea
                 id="contractNotes"
                 rows={3}
@@ -2554,24 +2552,24 @@ export function Employees() {
                 onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
                 className="w-full px-3 py-2 border rounded-md text-sm"
                 placeholder={
-                  contractMode === 'renew' ? 'Reason for renewal, salary change rationale…'
-                    : 'Optional notes about this contract…'
+                  contractMode === 'renew' ? t('contract.notes.placeholder.renew')
+                    : t('contract.notes.placeholder')
                 }
               />
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setContractDialogOpen(false)} disabled={savingContract}>
-                Cancel
+                {t('action.cancel')}
               </Button>
               <Button onClick={handleSaveContract} disabled={savingContract}>
                 {contractMode === 'renew' && <RefreshCw className="mr-2 h-4 w-4" />}
                 {contractMode === 'add' && <Plus className="mr-2 h-4 w-4" />}
                 {contractMode === 'edit' && <Edit className="mr-2 h-4 w-4" />}
-                {savingContract ? 'Saving…'
-                  : contractMode === 'add' ? 'Create Contract'
-                  : contractMode === 'edit' ? 'Save Changes'
-                  : 'Renew Contract'}
+                {savingContract ? t('contract.btn.saving')
+                  : contractMode === 'add' ? t('contract.btn.create')
+                  : contractMode === 'edit' ? t('contract.btn.save')
+                  : t('contract.renew')}
               </Button>
             </div>
           </div>
