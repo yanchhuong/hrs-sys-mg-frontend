@@ -155,7 +155,7 @@ function adaptApiPayroll(p: payrollApi.PayrollItem): PayrollItem {
 export function Reports() {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
-  const { currentUser } = useAuth();
+  const { currentUser, isModuleAvailable } = useAuth();
 
   // Shared datasets pulled once at this level. Children re-use them so we
   // don't fetch the same employee list twice when the user toggles tabs.
@@ -217,39 +217,74 @@ export function Reports() {
         </Badge>
       </div>
 
-      <Tabs defaultValue="attendance" className="space-y-6">
-        <TabsList className="grid w-full max-w-xl grid-cols-3">
-          <TabsTrigger value="attendance">
-            <Clock className="h-4 w-4 mr-2" />
-            Attendance
-          </TabsTrigger>
-          <TabsTrigger value="payroll">
-            <DollarSign className="h-4 w-4 mr-2" />
-            Payroll
-          </TabsTrigger>
-          <TabsTrigger value="compliance">
-            <FileText className="h-4 w-4 mr-2" />
-            Compliance
-          </TabsTrigger>
-        </TabsList>
+      {/* Each tab corresponds to a sub-module under the 'reports'
+          parent in the platform catalog (V77). When the Super Admin
+          marks one of these as draft, or a tenant turns it off in
+          Tenant Modules, the tab drops out automatically. Tabs whose
+          sub-module isn't declared at all stay visible — pre-V77
+          deploys and forks that haven't run the migration shouldn't
+          end up with an empty Reports page. */}
+      {(() => {
+        const tabs: Array<{
+          id: 'attendance' | 'payroll' | 'compliance';
+          subModule: string;
+          label: string;
+          icon: typeof Clock;
+        }> = [
+          { id: 'attendance', subModule: 'attendance-report', label: 'Attendance', icon: Clock },
+          { id: 'payroll',    subModule: 'payroll-report',    label: 'Payroll',    icon: DollarSign },
+          { id: 'compliance', subModule: 'compliance',        label: 'Compliance', icon: FileText },
+        ];
+        // isModuleAvailable returns false for drafts (not in catalog),
+        // for explicitly disabled, and for unknown keys post-fetch.
+        // Pre-fetch it stays optimistic so the page doesn't render
+        // empty during the initial /me/modules load.
+        const visible = tabs.filter(t => isModuleAvailable(t.subModule));
+        if (visible.length === 0) {
+          return (
+            <p className="text-sm text-gray-500">
+              No report views are enabled for this company. Ask Super Admin to
+              enable a Reports sub-module under Tenant Modules.
+            </p>
+          );
+        }
+        const defaultTab = visible[0].id;
+        const gridCols = visible.length === 1 ? 'grid-cols-1'
+          : visible.length === 2 ? 'grid-cols-2' : 'grid-cols-3';
+        return (
+          <Tabs defaultValue={defaultTab} className="space-y-6">
+            <TabsList className={`grid w-full max-w-xl ${gridCols}`}>
+              {visible.map(t => (
+                <TabsTrigger key={t.id} value={t.id}>
+                  <t.icon className="h-4 w-4 mr-2" />
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-        <TabsContent value="attendance" className="space-y-6">
-          <AttendanceReport employees={employees} departments={departments} sharedLoading={loadingShared} />
-        </TabsContent>
-
-        <TabsContent value="payroll" className="space-y-6">
-          <PayrollReport
-            employees={employees}
-            departments={departments}
-            sharedLoading={loadingShared}
-            categories={payrollCategories}
-          />
-        </TabsContent>
-
-        <TabsContent value="compliance" className="space-y-6">
-          <ComplianceReport departments={departments} />
-        </TabsContent>
-      </Tabs>
+            {visible.some(t => t.id === 'attendance') && (
+              <TabsContent value="attendance" className="space-y-6">
+                <AttendanceReport employees={employees} departments={departments} sharedLoading={loadingShared} />
+              </TabsContent>
+            )}
+            {visible.some(t => t.id === 'payroll') && (
+              <TabsContent value="payroll" className="space-y-6">
+                <PayrollReport
+                  employees={employees}
+                  departments={departments}
+                  sharedLoading={loadingShared}
+                  categories={payrollCategories}
+                />
+              </TabsContent>
+            )}
+            {visible.some(t => t.id === 'compliance') && (
+              <TabsContent value="compliance" className="space-y-6">
+                <ComplianceReport departments={departments} />
+              </TabsContent>
+            )}
+          </Tabs>
+        );
+      })()}
     </div>
   );
 }

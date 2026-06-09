@@ -38,6 +38,14 @@ interface AuthContextType {
    *  flag list has finished loading) so we never accidentally blank
    *  the sidebar during the initial fetch. */
   isModuleEnabled: (module: string) => boolean;
+  /** True when the module appears in the tenant's effective catalog
+   *  (status='complete' on the platform side) AND is enabled for this
+   *  tenant. False for drafts, unknown modules, or modules explicitly
+   *  disabled. Use this when a UI section is gated on a sub-module
+   *  that may or may not be in the catalog yet — isModuleEnabled
+   *  defaults to true for unknown keys which would render the section
+   *  even though the platform never declared it. */
+  isModuleAvailable: (module: string) => boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   switchRole: (role: UserRole) => void;
@@ -59,6 +67,7 @@ const defaultAuthContext: AuthContextType = {
   canDelete: denyAll,
   refreshPermissions: noopAsync,
   isModuleEnabled: () => true,
+  isModuleAvailable: () => true,
   login: async () => ({ success: false }),
   logout: () => {},
   switchRole: () => {},
@@ -120,25 +129,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [disabledModules, setDisabledModules] = useState<Set<string> | null>(null);
 
   /**
+   * Every module key the platform considers complete (real controller
+   * behind it) for this tenant — i.e. the keys present in /me/modules
+   * regardless of enabled/disabled value. Drafts + unknown keys are
+   * NOT in this set. Lets consumers tell apart "module exists & is on"
+   * vs "module is a planning placeholder" vs "key was never declared".
+   */
+  const [availableModules, setAvailableModules] = useState<Set<string> | null>(null);
+
+  /**
    * Hydrate or refresh the tenant's module-disabled set from /me/modules.
    * Mock mode and unauthenticated states resolve to an empty set so
    * isModuleEnabled returns true universally.
    */
-  const loadModuleFlags = useCallback(async (): Promise<Set<string>> => {
-    if (USE_MOCKS) return new Set();
+  const loadModuleFlags = useCallback(async (): Promise<{ disabled: Set<string>; available: Set<string> }> => {
+    if (USE_MOCKS) return { disabled: new Set(), available: new Set() };
     try {
       const res = await platformApi.myModules.get();
       const disabled = new Set<string>();
+      const available = new Set<string>();
       for (const [k, on] of Object.entries(res.modules)) {
+        available.add(k);
         if (!on) disabled.add(k);
       }
-      return disabled;
+      return { disabled, available };
     } catch (err) {
       // Non-fatal — treat as nothing-disabled so the UI doesn't go blank
       // if the endpoint is briefly unreachable. The backend's gate is
       // the authoritative check; the frontend filter is convenience.
       console.warn('Failed to load /me/modules', err);
-      return new Set();
+      return { disabled: new Set(), available: new Set() };
     }
   }, []);
 
@@ -188,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Run permission and module-flag fetches in parallel so the
         // initial paint isn't blocked twice on the network.
         const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
-        if (!cancelled) { setGrants(g); setDisabledModules(m); }
+        if (!cancelled) { setGrants(g); setDisabledModules(m.disabled); setAvailableModules(m.available); }
       } catch {
         authApi.logout();
       } finally {
@@ -261,6 +281,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return !disabledModules.has(module);
   }, [disabledModules]);
 
+  const isModuleAvailable = useCallback((module: string): boolean => {
+    // Pre-fetch: optimistic so a slow /me/modules doesn't blank
+    // gated sections during the initial paint.
+    if (availableModules == null) return true;
+    // Post-fetch: the module must be declared in the catalog (so
+    // drafts and never-declared keys return false) AND not
+    // explicitly disabled for this tenant.
+    if (!availableModules.has(module)) return false;
+    return !(disabledModules?.has(module) ?? false);
+  }, [availableModules, disabledModules]);
+
   const canDo = useCallback((module: string, action: PermissionAction): boolean => {
     // Tenant-level module gate wins. Even an admin with role wildcard
     // can't act on a module the platform has disabled for the tenant.
@@ -306,7 +337,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentUser(user);
       const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
       setGrants(g);
-      setDisabledModules(m);
+      setDisabledModules(m.disabled);
+      setAvailableModules(m.available);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
@@ -317,6 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
     setGrants(new Set());
     setDisabledModules(null);
+    setAvailableModules(null);
     authApi.logout();
   };
 
@@ -335,7 +368,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser, currentEmployee, loading,
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
-      isModuleEnabled,
+      isModuleEnabled, isModuleAvailable,
       login, logout, switchRole,
     }}>
       {children}
