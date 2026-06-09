@@ -101,31 +101,44 @@ interface ModuleDef {
    *  sub-tab of Reports). Cascading behaviour is intentionally NOT
    *  applied — independent permission per sub-module is the point. */
   parent?: string;
+  /** Section divider — renders as a labelled separator spanning all
+   *  role columns instead of a per-action checkbox row. Used for the
+   *  sidebar groups (Time Tracking, Payroll Management, Settings)
+   *  that organize children but aren't real permission gates
+   *  themselves. */
+  header?: boolean;
 }
+// Matrix order mirrors the sidebar (nav.ts NAV_GROUPS + NAV_LEAVES)
+// so admins reading rows top-to-bottom see the same shape they see
+// in the navigation. Header rows (`header: true`) are the sidebar
+// group labels — Time Tracking / Payroll Management / Settings —
+// and don't carry their own permissions (no backend gate). Reports
+// is a real permission module so it keeps its checkbox row + indents
+// its sub-tabs underneath, same as the other parents.
 const MODULES: ModuleDef[] = [
-  { key: 'dashboard', label: 'Dashboard', description: 'Home overview and widgets' },
-  { key: 'employees', label: 'Employees', description: 'Employee master data' },
-  { key: 'attendance', label: 'Attendance', description: 'Daily and monthly attendance' },
-  { key: 'all-leave', label: 'All Leave', description: 'Leave requests (Annual / Sick / Special / Maternity)' },
-  { key: 'exception', label: 'Exception', description: 'Long-term opt-outs and day exceptions' },
-  { key: 'overtime', label: 'Overtime', description: 'OT requests and approvals' },
-  { key: 'deduction', label: 'Deduction', description: 'Salary deductions' },
-  { key: 'increase', label: 'Increase', description: 'Salary increases and bonuses' },
-  { key: 'payroll', label: 'Payroll', description: 'Admin: all batches & payslips. Manager / Employee: own payslip only.' },
-  // Benefit Calculator is its own sidebar leaf (Payroll Management
-  // group); split out so a role can have payslip access without the
-  // benefit calculator and vice versa. V78 seeded existing roles
-  // with parent's grants so no one loses access on deploy.
-  { key: 'benefit-calculator', label: 'Benefit Calculator', description: 'Severance / NSSF / FdC simulators',  parent: 'payroll' },
-  { key: 'reports', label: 'Reports', description: 'Attendance & payroll reporting' },
-  // Reports sub-tabs (V77 module_assignments). Each one drives a
-  // sidebar leaf under the Reports group and a Permission Matrix
-  // row indented under Reports above.
-  { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',           parent: 'reports' },
-  { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',   parent: 'reports' },
-  { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',       parent: 'reports' },
-  { key: 'settings', label: 'Settings', description: 'System and policy settings' },
-  { key: 'user-management', label: 'User Management', description: 'Users, roles, permissions' },
+  { key: 'dashboard',         label: 'Dashboard',         description: 'Home overview and widgets' },
+  { key: 'employees',         label: 'Employees',         description: 'Employee master data' },
+
+  { key: 'time-tracking',     label: 'Time Tracking',     description: '',                                                            header: true },
+  { key: 'attendance',        label: 'Attendance',        description: 'Daily and monthly attendance',                                parent: 'time-tracking' },
+  { key: 'overtime',          label: 'Overtime',          description: 'OT requests and approvals',                                   parent: 'time-tracking' },
+  { key: 'all-leave',         label: 'All Leave',         description: 'Leave requests (Annual / Sick / Special / Maternity)',       parent: 'time-tracking' },
+  { key: 'exception',         label: 'Exception',         description: 'Long-term opt-outs and day exceptions',                      parent: 'time-tracking' },
+
+  { key: 'payroll-mgmt',      label: 'Payroll Management', description: '',                                                           header: true },
+  { key: 'payroll',           label: 'Payroll',           description: 'Admin: all batches & payslips. Manager / Employee: own payslip only.', parent: 'payroll-mgmt' },
+  { key: 'benefit-calculator',label: 'Benefit Calculator', description: 'Severance / NSSF / FdC simulators',                          parent: 'payroll-mgmt' },
+  { key: 'increase',          label: 'Increase',          description: 'Salary increases and bonuses',                                parent: 'payroll-mgmt' },
+  { key: 'deduction',         label: 'Deduction',         description: 'Salary deductions',                                           parent: 'payroll-mgmt' },
+
+  { key: 'reports',           label: 'Reports',           description: 'Attendance & payroll reporting' },
+  { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
+  { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
+  { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
+
+  { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
+  { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
+  { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },
 ];
 
 /**
@@ -159,10 +172,18 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
 
   // Sub-modules inherit the default of their parent — Attendance
   // Report defaults to whatever Reports defaults to, Benefit
-  // Calculator defaults to Payroll's defaults, etc. Keeps "Reset
-  // to Defaults" sensible without restating per role.
-  const parent = MODULES.find(m => m.key === moduleKey)?.parent;
-  if (parent) return defaultPermissionFor(parent, role, action);
+  // Calculator defaults to Payroll's defaults, etc. Skip when the
+  // parent is a header (Time Tracking, Payroll Mgmt, Settings) —
+  // those exist only for visual grouping and have no real defaults
+  // of their own; the child should fall through to its own switch
+  // case below instead of inheriting deny.
+  const parentKey = MODULES.find(m => m.key === moduleKey)?.parent;
+  if (parentKey) {
+    const parentDef = MODULES.find(m => m.key === parentKey);
+    if (parentDef && !parentDef.header) {
+      return defaultPermissionFor(parentKey, role, action);
+    }
+  }
 
   // Per-module Menu Access defaults. Anything not listed → no grant
   // (Dashboard, Employees, Deduction, Increase, Reports, Contracts,
@@ -193,6 +214,8 @@ type PermissionMatrix = Record<string, Record<string, Record<Action, boolean>>>;
 const buildDefaultMatrix = (): PermissionMatrix => {
   const m: PermissionMatrix = {};
   for (const mod of MODULES) {
+    // Header rows are visual-only — they don't carry permission state.
+    if (mod.header) continue;
     m[mod.key] = {};
     for (const role of ['admin', 'manager', 'employee'] as UserRole[]) {
       m[mod.key][role] = {} as Record<Action, boolean>;
@@ -1151,7 +1174,12 @@ export function UserManagement() {
             {roles.map((role) => {
               const Icon = role.icon;
               const userCount = userCountByRole(role.key);
-              const grants = MODULES.filter(m =>
+              // Headers are visual-only — exclude from both the
+              // "modules with a grant" count and the total so the
+              // X / Y summary reflects real permissions, not section
+              // dividers.
+              const permModules = MODULES.filter(m => !m.header);
+              const grants = permModules.filter(m =>
                 ACTIONS.some(a => permissions[m.key]?.[role.key]?.[a])
               ).length;
               return (
@@ -1178,7 +1206,7 @@ export function UserManagement() {
                       />
                     </div>
                     <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
-                      <span>Access to <strong className="text-gray-900">{grants}</strong> / {MODULES.length} modules</span>
+                      <span>Access to <strong className="text-gray-900">{grants}</strong> / {permModules.length} modules</span>
                       {role.builtIn ? (
                         <Badge variant="outline" className="text-[10px]">Built-in</Badge>
                       ) : (
@@ -1284,7 +1312,26 @@ export function UserManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {MODULES.map((mod) => (
+                    {MODULES.map((mod) => {
+                      // Section headers (Time Tracking, Payroll Management,
+                      // Settings) span every column — they're sidebar group
+                      // labels, not permission gates. Children render
+                      // indented underneath with the regular checkbox row.
+                      if (mod.header) {
+                        // 1 label cell + N role cells, computed dynamically
+                        // so adding a new role doesn't break the colSpan.
+                        const cols = 1 + roles.filter(r => r.key !== 'admin').length;
+                        return (
+                          <TableRow key={mod.key} className="bg-gray-50 hover:bg-gray-50">
+                            <TableCell colSpan={cols} className="py-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                {mod.label}
+                              </p>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      return (
                       <TableRow key={mod.key}>
                         <TableCell>
                           {/* Sub-modules render with a left pad + tree
@@ -1360,7 +1407,8 @@ export function UserManagement() {
                           );
                         })}
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
