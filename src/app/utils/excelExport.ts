@@ -57,12 +57,18 @@ const fmt = (d: Date) => {
  * payment formats — adjust column headers if your bank-supplied template
  * names them differently.
  */
-export type PayrollTemplate = 'standard' | 'simple' | 'aba' | 'acleda' | 'wing';
+export type PayrollTemplate = 'standard' | 'simple' | 'nssf' | 'aba' | 'acleda' | 'wing';
+
+/** Logical grouping for the export-template menu. Drives the dividers and
+ *  group headers above each block so adding a new template only needs a
+ *  group label, not new index-based separator code in the caller. */
+export type PayrollTemplateGroup = 'hr' | 'gov' | 'bank';
 
 export interface PayrollTemplateInfo {
   id: PayrollTemplate;
   label: string;
   description: string;
+  group: PayrollTemplateGroup;
   /** True when the layout hasn't been verified against the bank's real
    *  upload template yet — UI shows a (draft) tag to discourage portal
    *  uploads until headers are confirmed with a real sample file. */
@@ -70,12 +76,20 @@ export interface PayrollTemplateInfo {
 }
 
 export const PAYROLL_TEMPLATES: PayrollTemplateInfo[] = [
-  { id: 'standard', label: 'Standard Report', description: 'Full multi-sheet HR report (Summary + Detail + Pivot)' },
-  { id: 'simple',   label: 'Simple Summary',  description: 'One sheet, plain-English columns — easy to share' },
-  { id: 'aba',      label: 'ABA Bank',        description: 'Bulk-payroll template for ABA Bank' },
-  { id: 'acleda',   label: 'ACLEDA Bank',     description: 'Draft layout — confirm headers with a real ACLEDA template before uploading', draft: true },
-  { id: 'wing',     label: 'Wing',            description: 'Draft layout — confirm headers with a real Wing template before uploading',   draft: true },
+  { id: 'standard', label: 'Standard Report', description: 'Full multi-sheet HR report (Summary + Detail + Pivot)', group: 'hr' },
+  { id: 'simple',   label: 'Simple Summary',  description: 'One sheet, plain-English columns — easy to share',      group: 'hr' },
+  { id: 'nssf',     label: 'NSSF Submission', description: 'ប.ស.ស. registration template — bilingual headers, KHR + USD salary columns', group: 'gov' },
+  { id: 'aba',      label: 'ABA Bank',        description: 'Bulk-payroll template for ABA Bank',                    group: 'bank' },
+  { id: 'acleda',   label: 'ACLEDA Bank',     description: 'Draft layout — confirm headers with a real ACLEDA template before uploading', group: 'bank', draft: true },
+  { id: 'wing',     label: 'Wing',            description: 'Draft layout — confirm headers with a real Wing template before uploading',   group: 'bank', draft: true },
 ];
+
+/** Display label rendered above the first template in each group. */
+export const PAYROLL_TEMPLATE_GROUP_LABELS: Record<PayrollTemplateGroup, string> = {
+  hr:   'HR reports',
+  gov:  'Government / regulator',
+  bank: 'Bank portals (draft)',
+};
 
 export interface PayrollExportOptions {
   payrollItems: PayrollItem[];
@@ -89,9 +103,14 @@ export interface PayrollExportOptions {
    *  Caller passes the same helper used to render the on-screen tables.
    *  Falls back to the raw value when omitted. */
   deptName?: (raw: string | undefined) => string;
+  /** USD → KHR rate used by the NSSF template's "Salary (រៀល)" column.
+   *  When omitted the template falls back to 4,100 KHR/USD (the common
+   *  default used elsewhere in the app) so a stale FX setting still
+   *  produces a usable file. */
+  khrPerUsd?: number;
 }
 
-export function exportPayrollToExcel({ payrollItems, employees, period, fileName, template = 'standard', deptName }: PayrollExportOptions) {
+export function exportPayrollToExcel({ payrollItems, employees, period, fileName, template = 'standard', deptName, khrPerUsd }: PayrollExportOptions) {
   // Live mode keys PayrollItem.employeeId by the backend UUID, while the
   // human-readable empNo lives on Employee.id and the UUID on Employee.apiId.
   // Index by both so every row resolves regardless of which side it came from.
@@ -109,6 +128,7 @@ export function exportPayrollToExcel({ payrollItems, employees, period, fileName
   });
   const ctx = { payrollItems, empById, period, fileName, deptName: resolveDept };
   if (template === 'simple')  return exportSimpleSummary(ctx);
+  if (template === 'nssf')    return exportNssfTemplate({ ...ctx, khrPerUsd: khrPerUsd ?? 4100 });
   if (template === 'aba')     return exportAbaTemplate(ctx);
   if (template === 'acleda')  return exportBankTemplate({ ...ctx, bank: 'acleda' });
   if (template === 'wing')    return exportWingTemplate({ ...ctx, employees });
@@ -329,6 +349,55 @@ function exportAbaTemplate({ payrollItems, empById, period, fileName }: Template
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } }];
   XLSX.utils.book_append_sheet(wb, ws, 'ABA Payroll');
   XLSX.writeFile(wb, fileName || `ABA-Payroll-${period || fmt(new Date())}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
+// NSSF (ប.ស.ស.) submission template. Mirrors the Cambodian National Social
+// Security Fund's enrolment / monthly-roster spreadsheet — bilingual headers
+// (Khmer + English) and a salary column in both KHR and USD because the
+// portal accepts either. One row per employee in the selected payroll batch.
+// ---------------------------------------------------------------------------
+function exportNssfTemplate({ payrollItems, empById, period, fileName, khrPerUsd }: TemplateCtx & { khrPerUsd: number }) {
+  const wb = XLSX.utils.book_new();
+  const header = [
+    'ល.រ',
+    'អត្ត.នៅសហគ្រាស Employee ID',
+    'អត្ត.សមាជិកប.ស.ស. (NSSF Member ID)',
+    'គោតនាម នាម Name in Khmer',
+    'គោតនាម នាមឡាតាំង Name in English',
+    'ភេទ/Sex',
+    'ថ្ងៃខែឆ្នាំកំណើត Date of birth',
+    'ប្រាក់បៀវត្ស(រៀល) Salary',
+    'ប្រាក់បៀវត្ស(ដុល្លារ) Salary',
+    'ស្ថានភាព Status',
+  ];
+  // Sex/Status are emitted bilingually so the portal accepts either side.
+  const sexLabel = (g?: string) => g === 'female' ? 'ស្រី / Female' : g === 'male' ? 'ប្រុស / Male' : '';
+  const statusLabel = (s?: string) => s === 'active' ? 'សកម្ម / Active' : s === 'inactive' ? 'អសកម្ម / Inactive' : (s ?? '');
+
+  const data: any[][] = payrollItems.map((p, idx) => {
+    const emp = empById.get(p.employeeId);
+    const usdSalary = p.baseSalary ?? emp?.baseSalary ?? 0;
+    const khrSalary = Math.round(usdSalary * khrPerUsd);
+    return [
+      idx + 1,
+      emp?.empNo ?? emp?.id ?? '',
+      emp?.nffNo ?? '',
+      emp?.khmerName ?? '',
+      emp?.name ?? p.employeeName ?? '',
+      sexLabel(emp?.gender),
+      emp?.dateOfBirth ?? '',
+      khrSalary,
+      usdSalary,
+      statusLabel(emp?.status),
+    ];
+  });
+
+  const rows: any[][] = [header, ...data];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = autoSizeColumns(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'NSSF');
+  XLSX.writeFile(wb, fileName || `NSSF-${period || fmt(new Date())}.xlsx`);
 }
 
 /** Rough month-hours estimate (working days × 8h) so the Simple Summary

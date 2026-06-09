@@ -59,7 +59,7 @@ import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
-import { exportPayrollToExcel, PAYROLL_TEMPLATES, PayrollTemplate } from '../../utils/excelExport';
+import { exportPayrollToExcel, PAYROLL_TEMPLATES, PAYROLL_TEMPLATE_GROUP_LABELS, PayrollTemplate } from '../../utils/excelExport';
 import {
   splitOtRequestByDay, defaultDayTypeRateFor, computeOtPay,
 } from '../../utils/otRates';
@@ -2654,50 +2654,62 @@ export function Payroll() {
                   <DropdownMenuContent align="end" className="w-72">
                     <DropdownMenuLabel>Choose export template</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {PAYROLL_TEMPLATES.map((tpl, i) => (
-                      <div key={tpl.id}>
-                        {i === 1 && <DropdownMenuSeparator />}
-                        {i === 2 && (
-                          <DropdownMenuLabel className="text-xs text-gray-400 font-normal pt-2">
-                            Bank portals (draft)
-                          </DropdownMenuLabel>
-                        )}
-                        <DropdownMenuItem
-                          className="flex flex-col items-start gap-0.5 py-2"
-                          onClick={() => {
-                            // Always export THIS batch's rows. In mock
-                            // mode batchItems is empty, so fall back to
-                            // payrollRecords (which already filters to
-                            // selectedBatch when one is set elsewhere).
-                            const rows = USE_MOCKS ? payrollRecords : batchItems;
-                            exportPayrollToExcel({
-                              payrollItems: rows as unknown as typeof payrollRecords,
-                              employees,
-                              period: selectedBatch.monthYear,
-                              template: tpl.id as PayrollTemplate,
-                              deptName,
-                            });
-                            if (tpl.draft) {
-                              toast.warning(
-                                `${tpl.label} (draft) — exported ${rows.length} records from this batch. Verify columns before uploading to the portal.`,
-                              );
-                            } else {
-                              toast.success(`Exported ${rows.length} records from "${selectedBatch.subject}" (${tpl.label})`);
-                            }
-                          }}
-                        >
-                          <span className="text-sm font-medium flex items-center gap-1.5">
-                            {tpl.label}
-                            {tpl.draft && (
-                              <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                                draft
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-xs text-gray-500">{tpl.description}</span>
-                        </DropdownMenuItem>
-                      </div>
-                    ))}
+                    {PAYROLL_TEMPLATES.map((tpl, i) => {
+                      // Insert a group header + separator the first time we
+                      // see each group. Keeps the menu layout data-driven so
+                      // adding a new group only needs an entry in
+                      // PAYROLL_TEMPLATE_GROUP_LABELS.
+                      const prevGroup = i > 0 ? PAYROLL_TEMPLATES[i - 1].group : null;
+                      const startsGroup = tpl.group !== prevGroup;
+                      return (
+                        <div key={tpl.id}>
+                          {startsGroup && i > 0 && <DropdownMenuSeparator />}
+                          {startsGroup && tpl.group !== 'hr' && (
+                            <DropdownMenuLabel className="text-xs text-gray-400 font-normal pt-2">
+                              {PAYROLL_TEMPLATE_GROUP_LABELS[tpl.group]}
+                            </DropdownMenuLabel>
+                          )}
+                          <DropdownMenuItem
+                            className="flex flex-col items-start gap-0.5 py-2"
+                            onClick={() => {
+                              // Always export THIS batch's rows. In mock
+                              // mode batchItems is empty, so fall back to
+                              // payrollRecords (which already filters to
+                              // selectedBatch when one is set elsewhere).
+                              const rows = USE_MOCKS ? payrollRecords : batchItems;
+                              exportPayrollToExcel({
+                                payrollItems: rows as unknown as typeof payrollRecords,
+                                employees,
+                                period: selectedBatch.monthYear,
+                                template: tpl.id as PayrollTemplate,
+                                deptName,
+                                // NSSF template needs the live FX rate to
+                                // compute the KHR salary column; ignored by
+                                // other templates.
+                                khrPerUsd: taxSettings?.khrPerUsd,
+                              });
+                              if (tpl.draft) {
+                                toast.warning(
+                                  `${tpl.label} (draft) — exported ${rows.length} records from this batch. Verify columns before uploading to the portal.`,
+                                );
+                              } else {
+                                toast.success(`Exported ${rows.length} records from "${selectedBatch.subject}" (${tpl.label})`);
+                              }
+                            }}
+                          >
+                            <span className="text-sm font-medium flex items-center gap-1.5">
+                              {tpl.label}
+                              {tpl.draft && (
+                                <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                  draft
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-xs text-gray-500">{tpl.description}</span>
+                          </DropdownMenuItem>
+                        </div>
+                      );
+                    })}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Badge className={
