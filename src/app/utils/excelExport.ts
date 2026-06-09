@@ -371,9 +371,11 @@ function exportNssfTemplate({ payrollItems, empById, period, fileName, khrPerUsd
     'ប្រាក់បៀវត្ស(ដុល្លារ) Salary',
     'ស្ថានភាព Status',
   ];
-  // Sex/Status are emitted bilingually so the portal accepts either side.
-  const sexLabel = (g?: string) => g === 'female' ? 'ស្រី / Female' : g === 'male' ? 'ប្រុស / Male' : '';
-  const statusLabel = (s?: string) => s === 'active' ? 'សកម្ម / Active' : s === 'inactive' ? 'អសកម្ម / Inactive' : (s ?? '');
+  // Sex column is Khmer-only (portal labels rows in Khmer); Status column is
+  // emitted in English ('Active' / 'Inactive') so downstream filters / pivots
+  // key off ASCII.
+  const sexLabel = (g?: string) => g === 'female' ? 'ស្រី' : g === 'male' ? 'ប្រុស' : '';
+  const statusLabel = (s?: string) => s === 'active' ? 'Active' : s === 'inactive' ? 'Inactive' : (s ?? '');
 
   const data: any[][] = payrollItems.map((p, idx) => {
     const emp = empById.get(p.employeeId);
@@ -396,6 +398,16 @@ function exportNssfTemplate({ payrollItems, empById, period, fileName, khrPerUsd
   const rows: any[][] = [header, ...data];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = autoSizeColumns(rows);
+  // Apply number formats to the salary columns. Excel cell addresses are
+  // 1-based row + letter column; data starts on row 2 (row 1 = headers).
+  // Column H = KHR (###,###), column I = USD (#,##0.00).
+  for (let r = 0; r < data.length; r++) {
+    const row = r + 2;
+    const khrCell = ws[`H${row}`];
+    if (khrCell) khrCell.z = '#,##0';
+    const usdCell = ws[`I${row}`];
+    if (usdCell) usdCell.z = '#,##0.00';
+  }
   XLSX.utils.book_append_sheet(wb, ws, 'NSSF');
   XLSX.writeFile(wb, fileName || `NSSF-${period || fmt(new Date())}.xlsx`);
 }
