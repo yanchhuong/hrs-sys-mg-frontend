@@ -14,47 +14,82 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
-import { Layers, Plus, Pencil, Trash2, MoveRight } from 'lucide-react';
+import {
+  Layers, Plus, Pencil, Trash2, CheckCircle2, CircleDashed, Lock,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 
 /**
- * Super Admin → Module Categories. Manages the platform-wide module
- * groupings (V74) that drive both Tenant Modules and the tenant
- * sidebar. Modules themselves come from the code-defined catalog
- * ({@link platformApi.ModuleCatalogResponse.allModules}); this page
- * only sets which category a module belongs to and how the category
- * itself is labelled / ordered.
+ * Super Admin → Module Categories. Plans the platform-wide menu
+ * structure: categories (apps), modules under them, sub-menus
+ * under modules. Each module carries a status — green 'complete'
+ * = real controller behind it, orange 'draft' = planning
+ * placeholder. Drafts surface here for planning but are hidden
+ * from tenant sidebars + the Tenant Modules toggles.
  */
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
 
-type EditState = {
-  /** Empty when creating; carries the original key when editing. */
+type CategoryEditState = {
   key: string;
   label: string;
   sortOrder: string;
-  /** True = edit existing (key field disabled), false = create new. */
   isEdit: boolean;
 };
+const EMPTY_CAT: CategoryEditState = { key: '', label: '', sortOrder: '', isEdit: false };
 
-const EMPTY_EDIT: EditState = { key: '', label: '', sortOrder: '', isEdit: false };
+type ModuleEditState = {
+  /** Module key — immutable when editing. */
+  key: string;
+  label: string;
+  status: 'complete' | 'draft';
+  categoryKey: string;
+  parentModuleKey: string;
+  sortOrder: string;
+  isEdit: boolean;
+  /** Source from the row (set when editing) — code modules have label
+   *  editable but status + delete locked. */
+  source: 'code' | 'manual';
+};
+const EMPTY_MOD: ModuleEditState = {
+  key: '', label: '', status: 'draft', categoryKey: '',
+  parentModuleKey: '', sortOrder: '', isEdit: false, source: 'manual',
+};
+
+/** Flatten the tree once so dropdowns (parent selector, etc.) can
+ *  list every node regardless of depth. */
+function flatten(nodes: platformApi.ModuleNode[], depth = 0): Array<platformApi.ModuleNode & { depth: number }> {
+  const out: Array<platformApi.ModuleNode & { depth: number }> = [];
+  for (const n of nodes) {
+    out.push({ ...n, depth });
+    if (n.children?.length) out.push(...flatten(n.children, depth + 1));
+  }
+  return out;
+}
 
 export function ModuleCategories() {
   const [catalog, setCatalog] = useState<platformApi.ModuleCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editState, setEditState] = useState<EditState>(EMPTY_EDIT);
-  const [deleteTarget, setDeleteTarget] = useState<platformApi.ModuleCategory | null>(null);
+
+  // Category create / edit dialog state
+  const [catEditOpen, setCatEditOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState<CategoryEditState>(EMPTY_CAT);
+  const [catSaving, setCatSaving] = useState(false);
+  const [deleteCatTarget, setDeleteCatTarget] = useState<platformApi.ModuleCategory | null>(null);
+
+  // Module create / edit dialog state
+  const [modEditOpen, setModEditOpen] = useState(false);
+  const [modEdit, setModEdit] = useState<ModuleEditState>(EMPTY_MOD);
+  const [modSaving, setModSaving] = useState(false);
+  const [deleteModTarget, setDeleteModTarget] = useState<platformApi.ModuleNode | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await platformApi.moduleCategories.list();
-      setCatalog(res);
+      setCatalog(await platformApi.moduleCategories.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load categories');
+      toast.error(e instanceof Error ? e.message : 'Failed to load catalog');
     } finally {
       setLoading(false);
     }
@@ -62,85 +97,231 @@ export function ModuleCategories() {
 
   useEffect(() => { void load(); }, []);
 
-  // Map for the reassign dropdown — every other category becomes a
-  // "Move to …" option per module row.
-  const allCategories = catalog?.categories ?? [];
-  const totalAssigned = useMemo(
-    () => allCategories.reduce((acc, c) => acc + c.moduleKeys.length, 0),
-    [allCategories],
-  );
+  const allCats = catalog?.categories ?? [];
+  const counts = useMemo(() => {
+    let total = 0, complete = 0, draft = 0;
+    for (const c of allCats) {
+      for (const m of flatten(c.modules)) {
+        total++;
+        if (m.status === 'complete') complete++;
+        else draft++;
+      }
+    }
+    return { total, complete, draft };
+  }, [allCats]);
 
-  const openCreate = () => {
-    setEditState({
-      ...EMPTY_EDIT,
-      sortOrder: String((allCategories[allCategories.length - 1]?.moduleKeys.length ?? 0) + allCategories.length + 1),
-    });
-    setEditOpen(true);
+  /* -------------------- category handlers -------------------- */
+
+  const openCreateCat = () => {
+    setCatEdit({ ...EMPTY_CAT, sortOrder: String(allCats.length + 1) });
+    setCatEditOpen(true);
   };
-
-  const openEdit = (cat: platformApi.ModuleCategory, sortOrderHint: number) => {
-    setEditState({ key: cat.key, label: cat.label, sortOrder: String(sortOrderHint), isEdit: true });
-    setEditOpen(true);
+  const openEditCat = (cat: platformApi.ModuleCategory, idx: number) => {
+    setCatEdit({ key: cat.key, label: cat.label, sortOrder: String(idx + 1), isEdit: true });
+    setCatEditOpen(true);
   };
-
-  const handleSubmit = async () => {
-    setSaving(true);
+  const submitCat = async () => {
+    setCatSaving(true);
     try {
-      const sort = editState.sortOrder.trim() === '' ? undefined : Number(editState.sortOrder);
-      if (editState.isEdit) {
-        await platformApi.moduleCategories.update(editState.key, {
-          label: editState.label.trim(),
+      const sort = catEdit.sortOrder.trim() === '' ? undefined : Number(catEdit.sortOrder);
+      if (catEdit.isEdit) {
+        await platformApi.moduleCategories.update(catEdit.key, {
+          label: catEdit.label.trim(),
           sortOrder: Number.isFinite(sort) ? sort : undefined,
         });
         toast.success('Category updated');
       } else {
-        const key = slugify(editState.key || editState.label);
-        if (!key) {
-          toast.error('Key is required and must contain letters/digits');
-          setSaving(false);
-          return;
-        }
+        const key = slugify(catEdit.key || catEdit.label);
+        if (!key) { toast.error('Key is required'); setCatSaving(false); return; }
         await platformApi.moduleCategories.create({
-          key,
-          label: editState.label.trim() || key,
+          key, label: catEdit.label.trim() || key,
           sortOrder: Number.isFinite(sort) ? sort : undefined,
         });
         toast.success('Category created');
       }
-      setEditOpen(false);
+      setCatEditOpen(false);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save category');
     } finally {
-      setSaving(false);
+      setCatSaving(false);
     }
   };
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
+  const confirmDeleteCat = async () => {
+    if (!deleteCatTarget) return;
     try {
-      await platformApi.moduleCategories.delete(deleteTarget.key);
-      toast.success(`Deleted '${deleteTarget.label}'`);
-      setDeleteTarget(null);
+      await platformApi.moduleCategories.delete(deleteCatTarget.key);
+      toast.success(`Deleted '${deleteCatTarget.label}'`);
+      setDeleteCatTarget(null);
       await load();
     } catch (e) {
-      // Backend returns 409 with the "N modules still assigned" message;
-      // surface it verbatim so the admin knows what to reassign first.
       toast.error(e instanceof Error ? e.message : 'Failed to delete category');
-      setDeleteTarget(null);
+      setDeleteCatTarget(null);
     }
   };
 
-  const handleReassign = async (moduleKey: string, newCategoryKey: string, sourceCategoryKey: string) => {
-    if (newCategoryKey === sourceCategoryKey) return;
+  /* -------------------- module handlers -------------------- */
+
+  const openCreateModule = (categoryKey: string, parentKey: string | null = null) => {
+    setModEdit({
+      ...EMPTY_MOD,
+      categoryKey,
+      parentModuleKey: parentKey ?? '',
+      status: 'draft',  // new admin-added modules default to draft
+      isEdit: false,
+      source: 'manual',
+    });
+    setModEditOpen(true);
+  };
+  const openEditModule = (mod: platformApi.ModuleNode, parentKey: string | null, catKey: string) => {
+    setModEdit({
+      key: mod.key, label: mod.label, status: mod.status,
+      categoryKey: catKey, parentModuleKey: parentKey ?? '',
+      sortOrder: '', isEdit: true, source: mod.source,
+    });
+    setModEditOpen(true);
+  };
+  const submitModule = async () => {
+    setModSaving(true);
     try {
-      await platformApi.moduleCategories.reassign(moduleKey, newCategoryKey);
-      toast.success(`Moved '${moduleKey}'`);
+      const sort = modEdit.sortOrder.trim() === '' ? undefined : Number(modEdit.sortOrder);
+      if (modEdit.isEdit) {
+        await platformApi.moduleCategories.updateModule(modEdit.key, {
+          label: modEdit.label.trim() || undefined,
+          status: modEdit.status,
+          parentModuleKey: modEdit.parentModuleKey || '',
+          categoryKey: modEdit.categoryKey || undefined,
+          sortOrder: Number.isFinite(sort) ? sort : undefined,
+        });
+        toast.success('Module updated');
+      } else {
+        const key = slugify(modEdit.key || modEdit.label);
+        if (!key) { toast.error('Key is required'); setModSaving(false); return; }
+        if (!modEdit.categoryKey) { toast.error('Pick a category'); setModSaving(false); return; }
+        await platformApi.moduleCategories.createModule({
+          key, label: modEdit.label.trim() || key,
+          categoryKey: modEdit.categoryKey,
+          parentModuleKey: modEdit.parentModuleKey || null,
+          status: modEdit.status,
+          sortOrder: Number.isFinite(sort) ? sort : undefined,
+        });
+        toast.success('Module created');
+      }
+      setModEditOpen(false);
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to reassign');
+      toast.error(e instanceof Error ? e.message : 'Failed to save module');
+    } finally {
+      setModSaving(false);
     }
   };
+  const confirmDeleteModule = async () => {
+    if (!deleteModTarget) return;
+    try {
+      await platformApi.moduleCategories.deleteModule(deleteModTarget.key);
+      toast.success(`Deleted '${deleteModTarget.label}'`);
+      setDeleteModTarget(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete module');
+      setDeleteModTarget(null);
+    }
+  };
+
+  /* -------------------- render -------------------- */
+
+  const StatusBadge = ({ status }: { status: 'complete' | 'draft' }) => (
+    <Badge
+      variant="outline"
+      className={status === 'complete'
+        ? 'border-emerald-300 text-emerald-700 bg-emerald-50 gap-1'
+        : 'border-amber-300 text-amber-700 bg-amber-50 gap-1'}
+    >
+      {status === 'complete' ? <CheckCircle2 className="h-3 w-3" /> : <CircleDashed className="h-3 w-3" />}
+      {status}
+    </Badge>
+  );
+
+  // Single module row + recursive children. Indented per depth so the
+  // tree is readable without dedicated tree-line glyphs.
+  const ModuleRow = ({
+    node, depth, categoryKey, parentKey,
+  }: {
+    node: platformApi.ModuleNode;
+    depth: number;
+    categoryKey: string;
+    parentKey: string | null;
+  }) => (
+    <>
+      <div
+        className={`flex items-center justify-between px-3 py-2 rounded-md border ${
+          node.status === 'complete' ? 'border-slate-200 bg-white' : 'border-amber-100 bg-amber-50/30'
+        }`}
+        style={{ marginLeft: depth * 18 }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Layers className={`h-3.5 w-3.5 shrink-0 ${
+            node.status === 'complete' ? 'text-emerald-500' : 'text-amber-500'
+          }`} />
+          <span className="text-sm capitalize truncate">{node.label}</span>
+          <code className="text-[11px] text-slate-400">{node.key}</code>
+          <StatusBadge status={node.status} />
+          {node.source === 'code' && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+              <Lock className="h-2.5 w-2.5" /> code
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            size="sm" variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => openCreateModule(categoryKey, node.key)}
+            title="Add sub-menu"
+          >
+            <Plus className="h-3 w-3 mr-1" /> Sub
+          </Button>
+          <Button
+            size="sm" variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => openEditModule(node, parentKey, categoryKey)}
+          >
+            <Pencil className="h-3 w-3 mr-1" /> Edit
+          </Button>
+          <Button
+            size="sm" variant="ghost"
+            className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={() => setDeleteModTarget(node)}
+            disabled={node.source === 'code'}
+            title={node.source === 'code' ? 'Code modules cannot be deleted from the UI' : 'Delete'}
+          >
+            <Trash2 className="h-3 w-3 mr-1" /> Del
+          </Button>
+        </div>
+      </div>
+      {node.children?.map(child => (
+        <ModuleRow
+          key={child.key}
+          node={child}
+          depth={depth + 1}
+          categoryKey={categoryKey}
+          parentKey={node.key}
+        />
+      ))}
+    </>
+  );
+
+  // For the parent-module dropdown — every node from every category,
+  // shown indented so the admin sees the tree position.
+  const allModulesFlat = useMemo(() => {
+    const out: Array<{ key: string; label: string; depth: number; categoryKey: string }> = [];
+    for (const c of allCats) {
+      for (const n of flatten(c.modules)) {
+        out.push({ key: n.key, label: n.label, depth: n.depth, categoryKey: c.key });
+      }
+    }
+    return out;
+  }, [allCats]);
 
   return (
     <div className="space-y-6">
@@ -148,186 +329,280 @@ export function ModuleCategories() {
         <div>
           <h2 className="text-xl font-semibold">Module Categories</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Group modules into apps that appear on the Tenant Modules page
-            and the tenant sidebar. Today: HR Management, Payroll &amp;
-            Compensation, Administration. Add more (Accountant, Stock, …)
-            as their modules ship.
+            Plan apps and menus. Each module is either <strong className="text-emerald-700">complete</strong>
+            {' '}(real controller, shows up for tenants) or
+            {' '}<strong className="text-amber-700">draft</strong>
+            {' '}(planning placeholder, hidden from tenants). Add sub-menus to nest as deep as needed.
           </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreateCat}>
           <Plus className="h-4 w-4 mr-1.5" />
           New Category
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Badge variant="outline" className="border-slate-300 text-slate-700 bg-slate-50">
-          {allCategories.length} categor{allCategories.length === 1 ? 'y' : 'ies'}
+          {allCats.length} categor{allCats.length === 1 ? 'y' : 'ies'}
         </Badge>
         <Badge variant="outline" className="border-slate-300 text-slate-700 bg-slate-50">
-          {totalAssigned} of {catalog?.allModules.length ?? 0} modules assigned
+          {counts.total} module{counts.total === 1 ? '' : 's'}
+        </Badge>
+        <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 gap-1">
+          <CheckCircle2 className="h-3 w-3" /> {counts.complete} complete
+        </Badge>
+        <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 gap-1">
+          <CircleDashed className="h-3 w-3" /> {counts.draft} draft
         </Badge>
       </div>
 
       {loading && !catalog ? (
-        <p className="text-sm text-gray-500">Loading categories…</p>
+        <p className="text-sm text-gray-500">Loading catalog…</p>
       ) : (
         <div className="space-y-4">
-          {allCategories.map((cat, idx) => {
-            const otherCats = allCategories.filter(c => c.key !== cat.key);
-            return (
-              <Card key={cat.key}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Layers className="h-4 w-4 text-slate-500 shrink-0" />
-                      <div className="min-w-0">
-                        <CardTitle className="text-sm font-semibold">{cat.label}</CardTitle>
-                        <CardDescription className="text-xs">
-                          <code className="text-slate-500">{cat.key}</code>
-                          <span className="mx-1.5 text-slate-300">·</span>
-                          sort {idx + 1}
-                          <span className="mx-1.5 text-slate-300">·</span>
-                          {cat.moduleKeys.length} module{cat.moduleKeys.length === 1 ? '' : 's'}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Button size="sm" variant="outline" onClick={() => openEdit(cat, idx + 1)}>
-                        <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-                        onClick={() => setDeleteTarget(cat)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                      </Button>
+          {allCats.map((cat, idx) => (
+            <Card key={cat.key}>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Layers className="h-4 w-4 text-slate-500 shrink-0" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-sm font-semibold">{cat.label}</CardTitle>
+                      <CardDescription className="text-xs">
+                        <code className="text-slate-500">{cat.key}</code>
+                        <span className="mx-1.5 text-slate-300">·</span>
+                        sort {idx + 1}
+                        <span className="mx-1.5 text-slate-300">·</span>
+                        {flatten(cat.modules).length} module{flatten(cat.modules).length === 1 ? '' : 's'}
+                      </CardDescription>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {cat.moduleKeys.length === 0 ? (
-                    <p className="text-xs text-gray-500">No modules in this category yet.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {cat.moduleKeys.map(modKey => (
-                        <div
-                          key={modKey}
-                          className="flex items-center justify-between px-3 py-2 rounded-md border border-slate-200 bg-white"
-                        >
-                          <span className="text-sm capitalize truncate">
-                            {modKey.replace(/-/g, ' ')}
-                          </span>
-                          {otherCats.length > 0 && (
-                            <Select
-                              value=""
-                              onValueChange={v => handleReassign(modKey, v, cat.key)}
-                            >
-                              <SelectTrigger className="h-8 w-[140px] text-xs">
-                                <SelectValue placeholder={
-                                  <span className="flex items-center gap-1 text-slate-500">
-                                    <MoveRight className="h-3 w-3" /> Move to…
-                                  </span>
-                                } />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {otherCats.map(c => (
-                                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button size="sm" variant="outline" onClick={() => openCreateModule(cat.key)}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add Module
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => openEditCat(cat, idx)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      size="sm" variant="outline"
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      onClick={() => setDeleteCatTarget(cat)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {cat.modules.length === 0 ? (
+                  <p className="text-xs text-gray-500">No modules yet — click <em>Add Module</em>.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {cat.modules.map(node => (
+                      <ModuleRow
+                        key={node.key}
+                        node={node}
+                        depth={0}
+                        categoryKey={cat.key}
+                        parentKey={null}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* Create / Edit dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      {/* Category create/edit */}
+      <Dialog open={catEditOpen} onOpenChange={setCatEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editState.isEdit ? `Edit '${editState.key}'` : 'New category'}</DialogTitle>
+            <DialogTitle>{catEdit.isEdit ? `Edit '${catEdit.key}'` : 'New category'}</DialogTitle>
             <DialogDescription>
-              {editState.isEdit
-                ? 'Rename or re-order the category. The key is the primary key and stays fixed — create a new category if you need a different one.'
-                : 'Create a new app/category. The key is URL-safe and immutable once set; the label is what tenants see.'}
+              Categories are the app-level groupings shown on Tenant Modules and the
+              tenant sidebar.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="cat-key" className="text-xs">
-                Key {editState.isEdit && <span className="text-gray-400">(immutable)</span>}
+              <Label htmlFor="catkey" className="text-xs">
+                Key {catEdit.isEdit && <span className="text-gray-400">(immutable)</span>}
               </Label>
               <Input
-                id="cat-key"
-                value={editState.key}
-                onChange={e => setEditState(s => ({ ...s, key: slugify(e.target.value) }))}
+                id="catkey"
+                value={catEdit.key}
+                onChange={e => setCatEdit(s => ({ ...s, key: slugify(e.target.value) }))}
                 placeholder="accounting"
-                disabled={editState.isEdit}
+                disabled={catEdit.isEdit}
               />
-              <p className="text-[11px] text-gray-500">
-                Lowercase a–z, 0–9, dashes. 2–32 chars. Used in the URL + DB.
-              </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cat-label" className="text-xs">Label</Label>
-              <Input
-                id="cat-label"
-                value={editState.label}
-                onChange={e => setEditState(s => ({ ...s, label: e.target.value }))}
-                placeholder="Accountant"
-              />
-              <p className="text-[11px] text-gray-500">
-                Display name shown on Tenant Modules and the tenant sidebar.
-              </p>
+              <Label htmlFor="catlabel" className="text-xs">Label</Label>
+              <Input id="catlabel" value={catEdit.label}
+                onChange={e => setCatEdit(s => ({ ...s, label: e.target.value }))}
+                placeholder="Accountant" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cat-sort" className="text-xs">Sort order</Label>
-              <Input
-                id="cat-sort"
-                type="number"
-                value={editState.sortOrder}
-                onChange={e => setEditState(s => ({ ...s, sortOrder: e.target.value }))}
-                placeholder="1"
-              />
-              <p className="text-[11px] text-gray-500">
-                Lower number renders first. Leave blank on create to append at the end.
-              </p>
+              <Label htmlFor="catsort" className="text-xs">Sort order</Label>
+              <Input id="catsort" type="number" value={catEdit.sortOrder}
+                onChange={e => setCatEdit(s => ({ ...s, sortOrder: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving}>
-              {saving ? 'Saving…' : editState.isEdit ? 'Save changes' : 'Create'}
+            <Button variant="outline" onClick={() => setCatEditOpen(false)} disabled={catSaving}>Cancel</Button>
+            <Button onClick={submitCat} disabled={catSaving}>
+              {catSaving ? 'Saving…' : catEdit.isEdit ? 'Save' : 'Create'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      {/* Module create/edit */}
+      <Dialog open={modEditOpen} onOpenChange={setModEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {modEdit.isEdit ? `Edit '${modEdit.key}'` : 'New module'}
+            </DialogTitle>
+            <DialogDescription>
+              {modEdit.isEdit
+                ? (modEdit.source === 'code'
+                    ? 'Code-defined module — label, category, sort, and parent are editable; status is locked to complete.'
+                    : 'Manual/planning module — fully editable.')
+                : 'New modules default to draft. Promote to complete once the real controller ships.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="modkey" className="text-xs">
+                Key {modEdit.isEdit && <span className="text-gray-400">(immutable)</span>}
+              </Label>
+              <Input id="modkey"
+                value={modEdit.key}
+                onChange={e => setModEdit(s => ({ ...s, key: slugify(e.target.value) }))}
+                placeholder="invoices"
+                disabled={modEdit.isEdit} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="modlabel" className="text-xs">Label</Label>
+              <Input id="modlabel" value={modEdit.label}
+                onChange={e => setModEdit(s => ({ ...s, label: e.target.value }))}
+                placeholder="Invoices" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Status</Label>
+                <Select
+                  value={modEdit.status}
+                  onValueChange={v => setModEdit(s => ({ ...s, status: v as 'complete' | 'draft' }))}
+                  disabled={modEdit.source === 'code'}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft (orange)</SelectItem>
+                    <SelectItem value="complete">Complete (green)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Sort order</Label>
+                <Input type="number" value={modEdit.sortOrder}
+                  onChange={e => setModEdit(s => ({ ...s, sortOrder: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category</Label>
+              <Select
+                value={modEdit.categoryKey}
+                onValueChange={v => setModEdit(s => ({ ...s, categoryKey: v, parentModuleKey: '' }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Pick a category" /></SelectTrigger>
+                <SelectContent>
+                  {allCats.map(c => (
+                    <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Parent module (optional)</Label>
+              <Select
+                value={modEdit.parentModuleKey || '__none__'}
+                onValueChange={v => setModEdit(s => ({ ...s, parentModuleKey: v === '__none__' ? '' : v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Top-level under category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Top-level (no parent) —</SelectItem>
+                  {allModulesFlat
+                    .filter(m => m.key !== modEdit.key && m.categoryKey === modEdit.categoryKey)
+                    .map(m => (
+                      <SelectItem key={m.key} value={m.key}>
+                        {'  '.repeat(m.depth)}{m.label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-gray-500">
+                Pick another module to nest this one underneath. Only siblings in the
+                same category are listed.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModEditOpen(false)} disabled={modSaving}>Cancel</Button>
+            <Button onClick={submitModule} disabled={modSaving}>
+              {modSaving ? 'Saving…' : modEdit.isEdit ? 'Save' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete category confirm */}
+      <AlertDialog open={!!deleteCatTarget} onOpenChange={(o) => !o && setDeleteCatTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete '{deleteTarget?.label}'?</AlertDialogTitle>
+            <AlertDialogTitle>Delete '{deleteCatTarget?.label}'?</AlertDialogTitle>
             <AlertDialogDescription>
-              {(deleteTarget?.moduleKeys.length ?? 0) === 0
+              {flatten(deleteCatTarget?.modules ?? []).length === 0
                 ? 'This category has no modules assigned, so it can be safely removed.'
-                : `${deleteTarget?.moduleKeys.length} module(s) are still assigned to this category. The backend will reject the delete with the list of modules to reassign first.`}
+                : `${flatten(deleteCatTarget?.modules ?? []).length} module(s) still in this category. The backend will reject the delete with the list of modules to reassign first.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteCat} className="bg-red-600 text-white hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete module confirm */}
+      <AlertDialog open={!!deleteModTarget} onOpenChange={(o) => !o && setDeleteModTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete module '{deleteModTarget?.label}'?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteModTarget?.source === 'code'
+                ? 'Code-defined module — cannot be deleted from the UI.'
+                : (deleteModTarget?.children?.length ?? 0) > 0
+                  ? `${deleteModTarget?.children?.length} sub-menu(s) still attached. The backend will reject the delete; re-parent or delete the children first.`
+                  : 'This module has no sub-menus, so it can be safely removed.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={confirmDeleteModule}
               className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deleteModTarget?.source === 'code'}
             >
               Delete
             </AlertDialogAction>

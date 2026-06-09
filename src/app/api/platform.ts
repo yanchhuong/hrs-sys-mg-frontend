@@ -397,12 +397,29 @@ export const syncState = {
 // Cloud absence of a key = enabled by default; UI renders the catalog so a
 // stale client never has to guess which modules exist.
 // ---------------------------------------------------------------------------
+/**
+ * One node in the module catalog tree. {@code status='complete'} are
+ * green (real controller behind the key); {@code 'draft'} are orange
+ * (planning placeholder, no controller yet). {@code source='code'}
+ * nodes are auto-seeded from the backend's ALL_MODULES list and
+ * locked (can't delete from UI, status can't be flipped to draft);
+ * {@code 'manual'} nodes are admin-created planning entries.
+ */
+export interface ModuleNode {
+  key: string;
+  label: string;
+  status: 'complete' | 'draft';
+  source: 'code' | 'manual';
+  /** Direct sub-menus. Nesting is unbounded. */
+  children: ModuleNode[];
+}
+
 /** One category in the Super Admin grouping (e.g. HR Management). */
 export interface ModuleCategory {
   key: string;
   label: string;
-  /** Module keys belonging to this category, in render order. */
-  moduleKeys: string[];
+  /** Top-level module nodes under this category. */
+  modules: ModuleNode[];
 }
 
 export interface TenantModulesPayload {
@@ -456,6 +473,17 @@ export interface ModuleCatalogResponse {
   categories: ModuleCategory[];
 }
 
+/** Row returned by module CRUD. The tree-view comes from `list()`. */
+export interface ModuleDetail {
+  key: string;
+  label: string;
+  categoryKey: string;
+  parentModuleKey: string | null;
+  status: 'complete' | 'draft';
+  sortOrder: number;
+  source: 'code' | 'manual';
+}
+
 export const moduleCategories = {
   list: (): Promise<ModuleCatalogResponse> =>
     apiJson('/api/v1/platform/module-categories'),
@@ -469,9 +497,30 @@ export const moduleCategories = {
   delete: (key: string): Promise<void> =>
     apiVoid(`/api/v1/platform/module-categories/${encodeURIComponent(key)}`, { method: 'DELETE' }),
 
-  reassign: (moduleKey: string, categoryKey: string): Promise<{ moduleKey: string; categoryKey: string }> =>
-    apiJson(`/api/v1/platform/module-categories/assignments/${encodeURIComponent(moduleKey)}`, {
-      method: 'PUT',
-      json: { categoryKey },
+  /* Module-level CRUD (planning placeholders + reassignment). */
+  createModule: (req: {
+    key: string; label: string; categoryKey: string;
+    parentModuleKey?: string | null; status?: 'complete' | 'draft'; sortOrder?: number;
+  }): Promise<ModuleDetail> =>
+    apiJson('/api/v1/platform/module-categories/modules', { method: 'POST', json: req }),
+
+  updateModule: (moduleKey: string, req: {
+    label?: string; status?: 'complete' | 'draft';
+    parentModuleKey?: string | null; sortOrder?: number; categoryKey?: string;
+  }): Promise<ModuleDetail> =>
+    apiJson(`/api/v1/platform/module-categories/modules/${encodeURIComponent(moduleKey)}`, {
+      method: 'PUT', json: req,
+    }),
+
+  deleteModule: (moduleKey: string): Promise<void> =>
+    apiVoid(`/api/v1/platform/module-categories/modules/${encodeURIComponent(moduleKey)}`, {
+      method: 'DELETE',
+    }),
+
+  /** Convenience wrapper for the most common edit: move a module to a
+   *  different category (keeps everything else as-is). */
+  reassign: (moduleKey: string, categoryKey: string): Promise<ModuleDetail> =>
+    apiJson(`/api/v1/platform/module-categories/modules/${encodeURIComponent(moduleKey)}`, {
+      method: 'PUT', json: { categoryKey, parentModuleKey: '' },
     }),
 };

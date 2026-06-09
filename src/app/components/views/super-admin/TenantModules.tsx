@@ -60,7 +60,12 @@ export function TenantModules() {
         // Fallback when backend predates categories: render every module
         // under a single ungrouped pseudo-category so the UI still works.
         setCategories(res.categories ?? [
-          { key: 'all', label: 'Modules', moduleKeys: res.catalog },
+          {
+            key: 'all', label: 'Modules',
+            modules: res.catalog.map(k => ({
+              key: k, label: k, status: 'complete' as const, source: 'code' as const, children: [],
+            })),
+          },
         ]);
         setOriginal(res.modules);
         setDraft(res.modules);
@@ -81,6 +86,21 @@ export function TenantModules() {
     setDraft(d => ({ ...d, [key]: !d[key] }));
 
   /**
+   * Flatten a category's module tree to its leaf keys for the toggle
+   * grid. Tree position (parent module / sub-menu) is a planning
+   * concept managed in Module Categories; here we just enumerate
+   * every togglable key so a tenant admin can flip each one.
+   */
+  const flattenModules = (nodes: platformApi.ModuleNode[]): string[] => {
+    const out: string[] = [];
+    const walk = (ns: platformApi.ModuleNode[]) => {
+      for (const n of ns) { out.push(n.key); if (n.children?.length) walk(n.children); }
+    };
+    walk(nodes);
+    return out;
+  };
+
+  /**
    * Parent (category) toggle: bulk-flip every child to the same state.
    * Click semantics:
    *   - All children currently ON  → turn all OFF
@@ -89,11 +109,12 @@ export function TenantModules() {
    * checkbox in spreadsheet UIs.
    */
   const handleCategoryToggle = (cat: platformApi.ModuleCategory) => {
-    const allOn = cat.moduleKeys.every(k => Boolean(draft[k]));
+    const keys = flattenModules(cat.modules);
+    const allOn = keys.every(k => Boolean(draft[k]));
     const next = !allOn;
     setDraft(d => {
       const out = { ...d };
-      for (const k of cat.moduleKeys) out[k] = next;
+      for (const k of keys) out[k] = next;
       return out;
     });
   };
@@ -176,9 +197,10 @@ export function TenantModules() {
           ) : (
             <div className="space-y-4">
               {categories.map(cat => {
-                const total = cat.moduleKeys.length;
-                const on = cat.moduleKeys.filter(k => draft[k]).length;
-                const allOn = on === total;
+                const moduleKeys = flattenModules(cat.modules);
+                const total = moduleKeys.length;
+                const on = moduleKeys.filter(k => draft[k]).length;
+                const allOn = on === total && total > 0;
                 const noneOn = on === 0;
                 return (
                   <div
@@ -226,7 +248,7 @@ export function TenantModules() {
                         propagates through the same draft object so this
                         view stays in sync without extra wiring. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
-                      {cat.moduleKeys.map(key => (
+                      {moduleKeys.map(key => (
                         <div
                           key={key}
                           className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
