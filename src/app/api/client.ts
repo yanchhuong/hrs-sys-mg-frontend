@@ -108,11 +108,28 @@ export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<R
   });
 }
 
+/**
+ * Recognise the structured body the backend's TenantModuleGuard returns
+ * for a tenant whose tenant-modules row says the requested module is
+ * off. The frontend menu already hides those modules via canView, so
+ * any call hitting this path is from a stale tab or a background
+ * poll — we swallow it silently rather than turning every poll into a
+ * red toast. List endpoints resolve to undefined and most call sites
+ * already coalesce that to [] for rendering.
+ */
+function isModuleDisabledResponse(status: number, body: any): boolean {
+  return status === 403 && body && body.code === 'ModuleDisabled';
+}
+
 /** JSON request that throws ApiError on non-2xx. */
 export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   const res = await apiFetch(path, opts);
   if (res.status === 401) setToken(null);
   const body = await safeJson<any>(res);
+  if (isModuleDisabledResponse(res.status, body)) {
+    // Resolve quietly — caller usually does `setItems(data ?? [])` etc.
+    return undefined as unknown as T;
+  }
   if (!res.ok) {
     const msg = body?.message ?? `Request failed (${res.status})`;
     throw new ApiError(msg, res.status, path, body);
@@ -126,6 +143,7 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
   if (res.status === 401) setToken(null);
   if (!res.ok) {
     const body = await safeJson<any>(res);
+    if (isModuleDisabledResponse(res.status, body)) return;
     const msg = body?.message ?? `Request failed (${res.status})`;
     throw new ApiError(msg, res.status, path, body);
   }
