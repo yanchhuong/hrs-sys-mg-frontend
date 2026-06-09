@@ -64,11 +64,14 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  /** Combined visibility check: leaf passes when the role can view its
-   *  permission module AND (if a sub-module is declared) the Super
-   *  Admin catalog says the sub-module is available + enabled. */
+  /** Combined visibility check: leaf passes when the role can view
+   *  its permission module (role_permissions) AND the Super Admin
+   *  catalog says the module is available + tenant-enabled. The same
+   *  module key drives both gates — they're orthogonal axes (role-
+   *  scoped vs tenant-scoped) but answer the same question from
+   *  different sides. */
   const isLeafVisible = (l: typeof NAV_LEAVES[number]) =>
-    canView(l.module) && (l.subModule == null || isModuleAvailable(l.subModule));
+    canView(l.module) && isModuleAvailable(l.module);
 
   const visibleTree = useMemo<MenuNode[]>(() => {
     // Each leaf maps to a permission `module` matching the role-permissions

@@ -95,6 +95,12 @@ interface ModuleDef {
   key: string;
   label: string;
   description: string;
+  /** Optional parent module key. When set, this row renders indented
+   *  under its parent in the Permission Matrix so admins can see at
+   *  a glance which rows are sub-menus (e.g. Attendance Report is a
+   *  sub-tab of Reports). Cascading behaviour is intentionally NOT
+   *  applied — independent permission per sub-module is the point. */
+  parent?: string;
 }
 const MODULES: ModuleDef[] = [
   { key: 'dashboard', label: 'Dashboard', description: 'Home overview and widgets' },
@@ -106,7 +112,18 @@ const MODULES: ModuleDef[] = [
   { key: 'deduction', label: 'Deduction', description: 'Salary deductions' },
   { key: 'increase', label: 'Increase', description: 'Salary increases and bonuses' },
   { key: 'payroll', label: 'Payroll', description: 'Admin: all batches & payslips. Manager / Employee: own payslip only.' },
+  // Benefit Calculator is its own sidebar leaf (Payroll Management
+  // group); split out so a role can have payslip access without the
+  // benefit calculator and vice versa. V78 seeded existing roles
+  // with parent's grants so no one loses access on deploy.
+  { key: 'benefit-calculator', label: 'Benefit Calculator', description: 'Severance / NSSF / FdC simulators',  parent: 'payroll' },
   { key: 'reports', label: 'Reports', description: 'Attendance & payroll reporting' },
+  // Reports sub-tabs (V77 module_assignments). Each one drives a
+  // sidebar leaf under the Reports group and a Permission Matrix
+  // row indented under Reports above.
+  { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',           parent: 'reports' },
+  { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',   parent: 'reports' },
+  { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',       parent: 'reports' },
   { key: 'settings', label: 'Settings', description: 'System and policy settings' },
   { key: 'user-management', label: 'User Management', description: 'Users, roles, permissions' },
 ];
@@ -139,6 +156,13 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
   }
 
   if (role === 'admin') return true;
+
+  // Sub-modules inherit the default of their parent — Attendance
+  // Report defaults to whatever Reports defaults to, Benefit
+  // Calculator defaults to Payroll's defaults, etc. Keeps "Reset
+  // to Defaults" sensible without restating per role.
+  const parent = MODULES.find(m => m.key === moduleKey)?.parent;
+  if (parent) return defaultPermissionFor(parent, role, action);
 
   // Per-module Menu Access defaults. Anything not listed → no grant
   // (Dashboard, Employees, Deduction, Increase, Reports, Contracts,
@@ -1263,8 +1287,17 @@ export function UserManagement() {
                     {MODULES.map((mod) => (
                       <TableRow key={mod.key}>
                         <TableCell>
-                          <div>
-                            <p className="font-medium text-sm">{mod.label}</p>
+                          {/* Sub-modules render with a left pad + tree
+                              prefix so the admin can see at a glance
+                              that 'Attendance Report' belongs under
+                              'Reports'. Cascading isn't applied —
+                              independent permission per sub-module
+                              is the whole point of splitting them. */}
+                          <div style={mod.parent ? { paddingLeft: 20 } : undefined}>
+                            <p className="font-medium text-sm">
+                              {mod.parent && <span className="text-gray-300 mr-1">└</span>}
+                              {mod.label}
+                            </p>
                             <p className="text-xs text-gray-400">{mod.description}</p>
                           </div>
                         </TableCell>

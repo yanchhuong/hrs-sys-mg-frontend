@@ -51,11 +51,6 @@ export interface NavLeaf {
   component: ComponentType;
   /** Optional group id — leaves with the same group are nested in the sidebar. */
   group?: string;
-  /** Optional sub-module key (V77 module_assignments child). When set,
-   *  Layout filters by isModuleAvailable(subModule) on top of the
-   *  module permission check — so a Super-Admin-managed sub-tab can
-   *  drop out of the sidebar without code changes. */
-  subModule?: string;
   /** Optional initial view for components that render multiple
    *  sub-pages (currently just Reports). Lets one component back
    *  several sidebar leaves without duplicating the data-fetch. */
@@ -86,19 +81,19 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'all-leave',          labelKey: 'nav.allleave',              icon: AlertCircle,     module: 'all-leave',       component: AllLeave,      group: 'time-tracking' },
   { id: 'exception',          labelKey: 'nav.exception',             icon: AlertCircle,     module: 'exception',       component: Exception,     group: 'time-tracking' },
 
-  { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',         component: Payroll,           group: 'payroll-mgmt' },
-  { id: 'benefit-calculator', labelKey: 'nav.benefit_calculator',    icon: Calculator,      module: 'payroll',         component: BenefitCalculator, group: 'payroll-mgmt' },
+  { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',            component: Payroll,           group: 'payroll-mgmt' },
+  { id: 'benefit-calculator', labelKey: 'nav.benefit_calculator',    icon: Calculator,      module: 'benefit-calculator', component: BenefitCalculator, group: 'payroll-mgmt' },
   { id: 'increase',           labelKey: 'nav.increase',              icon: TrendingUp,      module: 'increase',        component: Increase,          group: 'payroll-mgmt' },
   { id: 'deduction',          labelKey: 'nav.deduction',             icon: Minus,           module: 'deduction',       component: Deduction,         group: 'payroll-mgmt' },
 
-  // Reports has been split into one leaf per sub-module (V77). All
-  // three go through the same Reports component, just initialView
-  // changes — keeps the heavy data-load (employees/depts/attendance)
-  // in one place and means promoting a draft sub-tab to a sidebar
-  // entry later is a one-line add here, not a new component.
-  { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'reports',         component: Reports, group: 'reports-group', subModule: 'attendance-report', initialView: 'attendance' },
-  { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'reports',         component: Reports, group: 'reports-group', subModule: 'payroll-report',    initialView: 'payroll' },
-  { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'reports',         component: Reports, group: 'reports-group', subModule: 'compliance',        initialView: 'compliance' },
+  // Reports has been split into one leaf per sub-module (V77). Each
+  // leaf's `module` is the sub-module key so the Permission Matrix
+  // gates them independently (a custom role can be granted Attendance
+  // Report but not Compliance). Same key drives both gates: canView
+  // (role permission) AND isModuleAvailable (tenant catalog).
+  { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'attendance-report',  component: Reports, group: 'reports-group', initialView: 'attendance' },
+  { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'payroll-report',     component: Reports, group: 'reports-group', initialView: 'payroll' },
+  { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },
