@@ -397,10 +397,21 @@ export const syncState = {
 // Cloud absence of a key = enabled by default; UI renders the catalog so a
 // stale client never has to guess which modules exist.
 // ---------------------------------------------------------------------------
+/** One category in the Super Admin grouping (e.g. HR Management). */
+export interface ModuleCategory {
+  key: string;
+  label: string;
+  /** Module keys belonging to this category, in render order. */
+  moduleKeys: string[];
+}
+
 export interface TenantModulesPayload {
   tenantId: string;
   catalog: string[];
   modules: Record<string, boolean>;
+  /** Optional — older deploys may omit; UI falls back to a single flat
+   *  group containing every catalog entry. */
+  categories?: ModuleCategory[];
 }
 
 export const tenantModules = {
@@ -420,6 +431,7 @@ export const tenantModules = {
 export interface MyModulesPayload {
   catalog: string[];
   modules: Record<string, boolean>;
+  categories?: ModuleCategory[];
 }
 
 export const myModules = {

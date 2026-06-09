@@ -22,6 +22,7 @@ export function TenantModules() {
   const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [catalog, setCatalog] = useState<string[]>([]);
+  const [categories, setCategories] = useState<platformApi.ModuleCategory[]>([]);
   const [original, setOriginal] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Record<string, boolean>>({});
   const [loadingTenants, setLoadingTenants] = useState(false);
@@ -56,6 +57,11 @@ export function TenantModules() {
       try {
         const res = await platformApi.tenantModules.get(selectedTenantId);
         setCatalog(res.catalog);
+        // Fallback when backend predates categories: render every module
+        // under a single ungrouped pseudo-category so the UI still works.
+        setCategories(res.categories ?? [
+          { key: 'all', label: 'Modules', moduleKeys: res.catalog },
+        ]);
         setOriginal(res.modules);
         setDraft(res.modules);
       } catch (e) {
@@ -73,6 +79,24 @@ export function TenantModules() {
 
   const handleToggle = (key: string) =>
     setDraft(d => ({ ...d, [key]: !d[key] }));
+
+  /**
+   * Parent (category) toggle: bulk-flip every child to the same state.
+   * Click semantics:
+   *   - All children currently ON  → turn all OFF
+   *   - Any child currently OFF    → turn all ON
+   * Matches the most common pattern users expect from a "select all"
+   * checkbox in spreadsheet UIs.
+   */
+  const handleCategoryToggle = (cat: platformApi.ModuleCategory) => {
+    const allOn = cat.moduleKeys.every(k => Boolean(draft[k]));
+    const next = !allOn;
+    setDraft(d => {
+      const out = { ...d };
+      for (const k of cat.moduleKeys) out[k] = next;
+      return out;
+    });
+  };
 
   const handleReset = () => setDraft(original);
 
@@ -150,27 +174,83 @@ export function TenantModules() {
           ) : selectedTenant == null ? (
             <p className="text-sm text-gray-500">No company selected.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {catalog.map(key => (
-                <div
-                  key={key}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-md border transition-colors ${
-                    draft[key]
-                      ? 'border-emerald-200 bg-emerald-50/40'
-                      : 'border-slate-200 bg-slate-50/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Layers className={`h-4 w-4 shrink-0 ${draft[key] ? 'text-emerald-600' : 'text-slate-400'}`} />
-                    <span className="text-sm capitalize truncate">{key.replace(/-/g, ' ')}</span>
+            <div className="space-y-4">
+              {categories.map(cat => {
+                const total = cat.moduleKeys.length;
+                const on = cat.moduleKeys.filter(k => draft[k]).length;
+                const allOn = on === total;
+                const noneOn = on === 0;
+                return (
+                  <div
+                    key={cat.key}
+                    className={`rounded-lg border ${
+                      allOn ? 'border-emerald-200' : noneOn ? 'border-slate-200' : 'border-amber-200'
+                    }`}
+                  >
+                    {/* Parent header — bulk-flip toggle + counter. The
+                        category-level switch is the "App" gate the admin
+                        flips when they want every sub-module on or off
+                        in one click. */}
+                    <div
+                      className={`flex items-center justify-between px-4 py-3 rounded-t-lg ${
+                        allOn ? 'bg-emerald-50/60' : noneOn ? 'bg-slate-50' : 'bg-amber-50/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Layers className={`h-4 w-4 shrink-0 ${
+                          allOn ? 'text-emerald-600' : noneOn ? 'text-slate-400' : 'text-amber-600'
+                        }`} />
+                        <p className="text-sm font-semibold">{cat.label}</p>
+                        <Badge
+                          variant="outline"
+                          className={`text-[11px] ${
+                            allOn
+                              ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                              : noneOn
+                              ? 'border-slate-300 text-slate-700 bg-slate-100'
+                              : 'border-amber-300 text-amber-700 bg-amber-50'
+                          }`}
+                        >
+                          {on} / {total} enabled
+                        </Badge>
+                      </div>
+                      <Switch
+                        checked={allOn}
+                        onCheckedChange={() => handleCategoryToggle(cat)}
+                        aria-label={`Toggle entire ${cat.label} category for ${selectedTenant.name}`}
+                      />
+                    </div>
+
+                    {/* Children — individual module toggles. Same per-row
+                        styling as before; bulk-flip from the parent
+                        propagates through the same draft object so this
+                        view stays in sync without extra wiring. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
+                      {cat.moduleKeys.map(key => (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
+                            draft[key]
+                              ? 'border-emerald-200 bg-emerald-50/40'
+                              : 'border-slate-200 bg-slate-50/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-sm capitalize truncate ${draft[key] ? 'text-slate-900' : 'text-slate-500'}`}>
+                              {key.replace(/-/g, ' ')}
+                            </span>
+                          </div>
+                          <Switch
+                            checked={Boolean(draft[key])}
+                            onCheckedChange={() => handleToggle(key)}
+                            aria-label={`Toggle ${key} for ${selectedTenant.name}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <Switch
-                    checked={Boolean(draft[key])}
-                    onCheckedChange={() => handleToggle(key)}
-                    aria-label={`Toggle ${key} for ${selectedTenant.name}`}
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
