@@ -914,11 +914,13 @@ export function UserManagement() {
                             deptName={deptName}
                             value={formData.employeeId}
                             onChange={v => {
-                              // Selecting an employee auto-fills the dept and
-                              // (when blank) the email — same data already lives
-                              // on the Employee row, so the admin doesn't have
-                              // to retype it. Email is only filled when blank
-                              // so a manually-typed login isn't overwritten.
+                              // Selecting an employee pulls their email + dept
+                              // onto the form — those values already live on
+                              // the Employee row, so the admin doesn't retype.
+                              // Email overwrites whatever was there (HR's
+                              // expectation: pick employee → see their email),
+                              // since a deliberate manual edit happens after
+                              // picking, not before.
                               const picked = employees.find(
                                 e => e.id === v || (e as Employee).apiId === v,
                               );
@@ -928,7 +930,7 @@ export function UserManagement() {
                                 departmentId: picked?.department && picked.department !== '-'
                                   ? picked.department
                                   : prev.departmentId,
-                                email: prev.email || picked?.email || '',
+                                email: picked?.email || prev.email,
                               }));
                             }}
                           />
