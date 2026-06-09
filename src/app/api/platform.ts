@@ -438,3 +438,40 @@ export const myModules = {
   get: (): Promise<MyModulesPayload> =>
     apiJson('/api/v1/me/modules'),
 };
+
+// ---------------------------------------------------------------------------
+// Module Categories — Super Admin → Module Categories
+// Manages the platform-wide module groupings (HR, Payroll, Admin, …).
+// Modules themselves are code-defined; this surface only sets how they're
+// presented to tenants and which app/category they group under.
+// ---------------------------------------------------------------------------
+export interface ModuleCategoryRow {
+  key: string;
+  label: string;
+  sortOrder: number;
+}
+
+export interface ModuleCatalogResponse {
+  allModules: string[];
+  categories: ModuleCategory[];
+}
+
+export const moduleCategories = {
+  list: (): Promise<ModuleCatalogResponse> =>
+    apiJson('/api/v1/platform/module-categories'),
+
+  create: (req: { key: string; label: string; sortOrder?: number }): Promise<ModuleCategoryRow> =>
+    apiJson('/api/v1/platform/module-categories', { method: 'POST', json: req }),
+
+  update: (key: string, req: { label?: string; sortOrder?: number }): Promise<ModuleCategoryRow> =>
+    apiJson(`/api/v1/platform/module-categories/${encodeURIComponent(key)}`, { method: 'PUT', json: req }),
+
+  delete: (key: string): Promise<void> =>
+    apiVoid(`/api/v1/platform/module-categories/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
+  reassign: (moduleKey: string, categoryKey: string): Promise<{ moduleKey: string; categoryKey: string }> =>
+    apiJson(`/api/v1/platform/module-categories/assignments/${encodeURIComponent(moduleKey)}`, {
+      method: 'PUT',
+      json: { categoryKey },
+    }),
+};

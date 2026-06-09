@@ -11,6 +11,7 @@ import { PlatformPolicy } from './PlatformPolicy';
 import { PlatformPayrollCategories } from './PlatformPayrollCategories';
 import { PlatformHolidays } from './PlatformHolidays';
 import { TenantModules } from './TenantModules';
+import { ModuleCategories } from './ModuleCategories';
 
 export function SuperAdminApp() {
   const [view, setView] = useState<SuperAdminView>('dashboard');
@@ -23,6 +24,7 @@ export function SuperAdminApp() {
       case 'users':              return <CrossTenantUsers />;
       case 'sync':               return <SyncMonitor />;
       case 'tenant_modules':     return <TenantModules />;
+      case 'module_categories':  return <ModuleCategories />;
       case 'activity':           return <ActivityLog />;
       case 'backups':            return <Backups />;
       case 'policy':             return <PlatformPolicy />;

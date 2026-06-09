@@ -110,6 +110,8 @@ export const dict: Dict = {
   'nav.platform.settings.desc':  { en: 'Activity, backups, policy, payroll & holidays', km: 'សកម្មភាព, ស្ដារ, គោលការណ៍, ប្រាក់ខែ', zh: '活动、备份、策略、薪资与节假日' },
   'nav.platform.payrollcat':     { en: 'Payroll Categories',         km: 'ប្រភេទប្រាក់ខែ',     zh: '薪资类别' },
   'nav.platform.payrollcat.desc':{ en: 'Per-tenant earning & deduction lines', km: 'ប្រាក់ចំណូល និងប្រាក់កាត់តាមអតិថិជន', zh: '按租户的收入与扣减项' },
+  'nav.platform.modulecat':      { en: 'Module Categories',          km: 'ប្រភេទម៉ូឌុល',       zh: '模块类别' },
+  'nav.platform.modulecat.desc': { en: 'Group menu modules into apps', km: 'ដាក់ម៉ូឌុលក្នុងក្រុមជាកម្មវិធី', zh: '将菜单模块分组为应用' },
   'nav.platform.holidays':       { en: 'Holidays',                   km: 'ថ្ងៃឈប់សម្រាក',    zh: '节假日' },
   'nav.platform.holidays.desc':  { en: 'Per-tenant public holidays', km: 'ថ្ងៃឈប់សម្រាកជាតិ', zh: '按租户的公共假日' },
 

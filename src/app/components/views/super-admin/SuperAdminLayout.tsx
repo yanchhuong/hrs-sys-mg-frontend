@@ -19,7 +19,7 @@ import { useI18n } from '../../../i18n/I18nContext';
 export type SuperAdminView =
   | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules'
   // Settings sub-menu
-  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays';
+  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'module_categories';
 
 interface Props {
   children: ReactNode;
@@ -50,7 +50,7 @@ type MenuNode = LeafItem | GroupItem;
  *  build the nested nav and to keep Settings expanded automatically
  *  whenever one of its children is the active view. */
 const SETTINGS_CHILDREN: SuperAdminView[] = [
-  'payroll_categories', 'holidays', 'activity', 'backups', 'policy',
+  'module_categories', 'payroll_categories', 'holidays', 'activity', 'backups', 'policy',
 ];
 
 export function SuperAdminLayout({ children, currentView, onViewChange }: Props) {
@@ -82,6 +82,8 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
       label: t('nav.platform.settings'),
       description: t('nav.platform.settings.desc'),
       children: [
+        { kind: 'leaf', id: 'module_categories', icon: Layers,
+          label: t('nav.platform.modulecat'), description: t('nav.platform.modulecat.desc') },
         { kind: 'leaf', id: 'payroll_categories', icon: DollarSign,
           label: t('nav.platform.payrollcat'), description: t('nav.platform.payrollcat.desc') },
         { kind: 'leaf', id: 'holidays', icon: CalendarDays,
