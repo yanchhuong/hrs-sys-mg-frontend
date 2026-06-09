@@ -17,7 +17,7 @@ import { LanguageSwitcher } from '../../common/LanguageSwitcher';
 import { useI18n } from '../../../i18n/I18nContext';
 
 export type SuperAdminView =
-  | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync'
+  | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules'
   // Settings sub-menu
   | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays';
 
@@ -75,6 +75,8 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
       label: t('nav.platform.users'), description: t('nav.platform.users.desc') },
     { kind: 'leaf', id: 'sync', icon: Link2,
       label: t('nav.platform.sync'), description: t('nav.platform.sync.desc') },
+    { kind: 'leaf', id: 'tenant_modules', icon: SlidersHorizontal,
+      label: t('nav.platform.tenantmodules'), description: t('nav.platform.tenantmodules.desc') },
     {
       kind: 'group', id: 'settings', icon: Settings,
       label: t('nav.platform.settings'),

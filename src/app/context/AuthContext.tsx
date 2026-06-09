@@ -4,6 +4,7 @@ import { mockUsers, mockEmployees } from '../data/mockData';
 import * as authApi from '../api/auth';
 import * as rolesApi from '../api/roles';
 import * as employeesApi from '../api/employees';
+import * as platformApi from '../api/platform';
 import { USE_MOCKS } from '../api/client';
 import { Employee } from '../types/hrms';
 
@@ -30,6 +31,13 @@ interface AuthContextType {
   canDelete: (module: string) => boolean;
   /** Force-refetch the current role's permission grid (e.g. after the matrix changes). */
   refreshPermissions: () => Promise<void>;
+  /** True when the user's tenant has the module enabled in Super Admin →
+   *  Tenant Modules. Independent of role permissions: a module disabled
+   *  by the platform hides the menu and rejects API calls regardless of
+   *  the role grant. Defaults to true for unknown keys (e.g. before the
+   *  flag list has finished loading) so we never accidentally blank
+   *  the sidebar during the initial fetch. */
+  isModuleEnabled: (module: string) => boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   switchRole: (role: UserRole) => void;
@@ -50,6 +58,7 @@ const defaultAuthContext: AuthContextType = {
   canUpdate: denyAll,
   canDelete: denyAll,
   refreshPermissions: noopAsync,
+  isModuleEnabled: () => true,
   login: async () => ({ success: false }),
   logout: () => {},
   switchRole: () => {},
@@ -103,6 +112,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [grants, setGrants] = useState<Set<string>>(new Set());
 
   /**
+   * Modules the tenant has explicitly disabled in Super Admin → Tenant
+   * Modules. Absence of an entry = enabled (matches the backend's
+   * default-on semantics). Null while still loading the first time so
+   * the sidebar doesn't flicker hidden then shown on initial render.
+   */
+  const [disabledModules, setDisabledModules] = useState<Set<string> | null>(null);
+
+  /**
+   * Hydrate or refresh the tenant's module-disabled set from /me/modules.
+   * Mock mode and unauthenticated states resolve to an empty set so
+   * isModuleEnabled returns true universally.
+   */
+  const loadModuleFlags = useCallback(async (): Promise<Set<string>> => {
+    if (USE_MOCKS) return new Set();
+    try {
+      const res = await platformApi.myModules.get();
+      const disabled = new Set<string>();
+      for (const [k, on] of Object.entries(res.modules)) {
+        if (!on) disabled.add(k);
+      }
+      return disabled;
+    } catch (err) {
+      // Non-fatal — treat as nothing-disabled so the UI doesn't go blank
+      // if the endpoint is briefly unreachable. The backend's gate is
+      // the authoritative check; the frontend filter is convenience.
+      console.warn('Failed to load /me/modules', err);
+      return new Set();
+    }
+  }, []);
+
+  /**
    * Fetch + adapt the role-permissions grid into a flat Set keyed by
    * `module:action`. Admin short-circuits to a wildcard set without a fetch.
    * Mock mode falls back to the seeded grids above.
@@ -145,8 +185,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         const user = fromApi(apiUser);
         setCurrentUser(user);
-        const g = await loadGrants(user.role);
-        if (!cancelled) setGrants(g);
+        // Run permission and module-flag fetches in parallel so the
+        // initial paint isn't blocked twice on the network.
+        const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
+        if (!cancelled) { setGrants(g); setDisabledModules(m); }
       } catch {
         authApi.logout();
       } finally {
@@ -154,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [loadGrants]);
+  }, [loadGrants, loadModuleFlags]);
 
   // Linked employee fetched from /api/v1/employees/me in live mode. Without
   // this, currentEmployee fell back to mockEmployees and never matched a
@@ -212,10 +254,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ? (currentUser ? mockEmployees.find(emp => emp.id === currentUser.employeeId) ?? null : null)
     : linkedEmployee;
 
+  const isModuleEnabled = useCallback((module: string): boolean => {
+    // Until /me/modules has responded, treat everything as enabled so
+    // the sidebar doesn't render hidden then unhide on first load.
+    if (disabledModules == null) return true;
+    return !disabledModules.has(module);
+  }, [disabledModules]);
+
   const canDo = useCallback((module: string, action: PermissionAction): boolean => {
+    // Tenant-level module gate wins. Even an admin with role wildcard
+    // can't act on a module the platform has disabled for the tenant.
+    if (!isModuleEnabled(module)) return false;
     if (grants.has('*')) return true;
     return grants.has(`${module}:${action}`);
-  }, [grants]);
+  }, [grants, isModuleEnabled]);
 
   /**
    * Dashboard used to be implicitly granted to every authenticated user
@@ -252,7 +304,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUser = await authApi.login({ email, password });
       const user = fromApi(apiUser);
       setCurrentUser(user);
-      setGrants(await loadGrants(user.role));
+      const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
+      setGrants(g);
+      setDisabledModules(m);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
@@ -262,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setCurrentUser(null);
     setGrants(new Set());
+    setDisabledModules(null);
     authApi.logout();
   };
 
@@ -280,6 +335,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser, currentEmployee, loading,
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
+      isModuleEnabled,
       login, logout, switchRole,
     }}>
       {children}

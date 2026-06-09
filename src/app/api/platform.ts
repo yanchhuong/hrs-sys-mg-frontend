@@ -390,3 +390,39 @@ export const syncState = {
   byTenant: (tenantId: string): Promise<TenantSyncState> =>
     apiJson(`/api/v1/platform/sync-state/${tenantId}`),
 };
+
+// ---------------------------------------------------------------------------
+// Tenant Modules — Super Admin → Tenant Modules
+// Per-tenant feature flags layered on top of the role-permissions matrix.
+// Cloud absence of a key = enabled by default; UI renders the catalog so a
+// stale client never has to guess which modules exist.
+// ---------------------------------------------------------------------------
+export interface TenantModulesPayload {
+  tenantId: string;
+  catalog: string[];
+  modules: Record<string, boolean>;
+}
+
+export const tenantModules = {
+  get: (tenantId: string): Promise<TenantModulesPayload> =>
+    apiJson(`/api/v1/platform/tenant-modules?tenantId=${tenantId}`),
+
+  /** Bulk set — absent keys are left untouched on the server. */
+  set: (tenantId: string, modules: Record<string, boolean>): Promise<TenantModulesPayload> =>
+    apiJson(`/api/v1/platform/tenant-modules?tenantId=${tenantId}`, {
+      method: 'PUT',
+      json: modules,
+    }),
+};
+
+// Tenant-side read used by AuthContext to hydrate the user's effective
+// module list at login so disabled menus drop out of the sidebar.
+export interface MyModulesPayload {
+  catalog: string[];
+  modules: Record<string, boolean>;
+}
+
+export const myModules = {
+  get: (): Promise<MyModulesPayload> =>
+    apiJson('/api/v1/me/modules'),
+};
