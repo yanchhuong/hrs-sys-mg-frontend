@@ -21,6 +21,7 @@ import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
+  FileText,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -50,6 +51,15 @@ export interface NavLeaf {
   component: ComponentType;
   /** Optional group id — leaves with the same group are nested in the sidebar. */
   group?: string;
+  /** Optional sub-module key (V77 module_assignments child). When set,
+   *  Layout filters by isModuleAvailable(subModule) on top of the
+   *  module permission check — so a Super-Admin-managed sub-tab can
+   *  drop out of the sidebar without code changes. */
+  subModule?: string;
+  /** Optional initial view for components that render multiple
+   *  sub-pages (currently just Reports). Lets one component back
+   *  several sidebar leaves without duplicating the data-fetch. */
+  initialView?: string;
 }
 
 export interface NavGroup {
@@ -62,6 +72,7 @@ export interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   { id: 'time-tracking',  labelKey: 'nav.time_tracking', icon: Clock },
   { id: 'payroll-mgmt',   labelKey: 'nav.payroll_mgmt',  icon: DollarSign },
+  { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -80,7 +91,14 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'increase',           labelKey: 'nav.increase',              icon: TrendingUp,      module: 'increase',        component: Increase,          group: 'payroll-mgmt' },
   { id: 'deduction',          labelKey: 'nav.deduction',             icon: Minus,           module: 'deduction',       component: Deduction,         group: 'payroll-mgmt' },
 
-  { id: 'reports',            labelKey: 'nav.reports',               icon: BarChart3,       module: 'reports',         component: Reports },
+  // Reports has been split into one leaf per sub-module (V77). All
+  // three go through the same Reports component, just initialView
+  // changes — keeps the heavy data-load (employees/depts/attendance)
+  // in one place and means promoting a draft sub-tab to a sidebar
+  // entry later is a one-line add here, not a new component.
+  { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'reports',         component: Reports, group: 'reports-group', subModule: 'attendance-report', initialView: 'attendance' },
+  { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'reports',         component: Reports, group: 'reports-group', subModule: 'payroll-report',    initialView: 'payroll' },
+  { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'reports',         component: Reports, group: 'reports-group', subModule: 'compliance',        initialView: 'compliance' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },

@@ -59,10 +59,16 @@ function AutoTag() {
 }
 
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
-  const { currentUser, currentEmployee, canView, logout } = useAuth();
+  const { currentUser, currentEmployee, canView, isModuleAvailable, logout } = useAuth();
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  /** Combined visibility check: leaf passes when the role can view its
+   *  permission module AND (if a sub-module is declared) the Super
+   *  Admin catalog says the sub-module is available + enabled. */
+  const isLeafVisible = (l: typeof NAV_LEAVES[number]) =>
+    canView(l.module) && (l.subModule == null || isModuleAvailable(l.subModule));
 
   const visibleTree = useMemo<MenuNode[]>(() => {
     // Each leaf maps to a permission `module` matching the role-permissions
@@ -80,7 +86,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
     const topLeaves: MenuNode[] = [];
 
     NAV_LEAVES.forEach(l => {
-      if (!canView(l.module)) return;
+      if (!isLeafVisible(l)) return;
       const node: MenuNode = {
         id: l.id,
         label: t(l.labelKey),
@@ -97,7 +103,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
     const seenGroups = new Set<string>();
     const ordered: MenuNode[] = [];
     NAV_LEAVES.forEach(l => {
-      if (!canView(l.module)) return;
+      if (!isLeafVisible(l)) return;
       if (l.group) {
         if (seenGroups.has(l.group)) return;
         seenGroups.add(l.group);
@@ -118,7 +124,11 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
     });
     void groupOrder;
     return ordered;
-  }, [canView, t]);
+    // isModuleAvailable is captured through isLeafVisible's closure;
+    // referenced here so the deps array signals re-renders when the
+    // catalog or per-tenant disabled set changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView, isModuleAvailable, t]);
 
   // If the user lands on a view they're not allowed to see (default
   // 'dashboard' when their role doesn't grant it), redirect them to the

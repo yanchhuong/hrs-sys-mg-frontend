@@ -152,7 +152,15 @@ function adaptApiPayroll(p: payrollApi.PayrollItem): PayrollItem {
   };
 }
 
-export function Reports() {
+interface ReportsProps {
+  /** When set, render only this report section and skip the tabs
+   *  header. Used by the per-sub-module sidebar leaves so each menu
+   *  entry takes the user straight to one report instead of going
+   *  through the tabs at the top of the page. */
+  initialView?: 'attendance' | 'payroll' | 'compliance';
+}
+
+export function Reports({ initialView }: ReportsProps = {}) {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
   const { currentUser, isModuleAvailable } = useAuth();
@@ -220,10 +228,11 @@ export function Reports() {
       {/* Each tab corresponds to a sub-module under the 'reports'
           parent in the platform catalog (V77). When the Super Admin
           marks one of these as draft, or a tenant turns it off in
-          Tenant Modules, the tab drops out automatically. Tabs whose
-          sub-module isn't declared at all stay visible — pre-V77
-          deploys and forks that haven't run the migration shouldn't
-          end up with an empty Reports page. */}
+          Tenant Modules, the tab drops out automatically. When
+          rendered with `initialView` (one sidebar leaf per sub-module
+          in nav.ts), we skip the tabs header and render the chosen
+          section directly — sidebar IS the navigation, no double
+          chrome. */}
       {(() => {
         const tabs: Array<{
           id: 'attendance' | 'payroll' | 'compliance';
@@ -235,10 +244,31 @@ export function Reports() {
           { id: 'payroll',    subModule: 'payroll-report',    label: 'Payroll',    icon: DollarSign },
           { id: 'compliance', subModule: 'compliance',        label: 'Compliance', icon: FileText },
         ];
-        // isModuleAvailable returns false for drafts (not in catalog),
-        // for explicitly disabled, and for unknown keys post-fetch.
-        // Pre-fetch it stays optimistic so the page doesn't render
-        // empty during the initial /me/modules load.
+
+        // Single-view mode: nav leaf maps directly to one section.
+        if (initialView) {
+          if (!isModuleAvailable(tabs.find(t => t.id === initialView)?.subModule ?? '')) {
+            return (
+              <p className="text-sm text-gray-500">
+                This report is not enabled for your company.
+              </p>
+            );
+          }
+          if (initialView === 'attendance') {
+            return <AttendanceReport employees={employees} departments={departments} sharedLoading={loadingShared} />;
+          }
+          if (initialView === 'payroll') {
+            return <PayrollReport employees={employees} departments={departments} sharedLoading={loadingShared} categories={payrollCategories} />;
+          }
+          if (initialView === 'compliance') {
+            return <ComplianceReport departments={departments} />;
+          }
+        }
+
+        // Tabs fallback — for the legacy 'reports' route or any caller
+        // that wants the all-in-one tabbed view. isModuleAvailable
+        // returns false for drafts and per-tenant disables; pre-fetch
+        // it's optimistic so the page doesn't blank during load.
         const visible = tabs.filter(t => isModuleAvailable(t.subModule));
         if (visible.length === 0) {
           return (

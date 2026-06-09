@@ -80,9 +80,16 @@ function AppContent() {
   const allowed = entry ? canView(entry.module) : false;
   const ViewComponent = allowed ? entry!.component : NotAuthorizedView;
 
+  // Some leaves back the same component with different initial state
+  // (e.g. the Reports sub-menu leaves all render Reports but pass an
+  // initialView so the page jumps straight to one section). NavLeaf.
+  // initialView is the props-shaped contract — Reports reads it, other
+  // components ignore the unknown key.
+  const viewProps = entry?.initialView ? { initialView: entry.initialView } : {};
+
   return (
     <Layout currentView={currentView} onViewChange={setCurrentView}>
-      <ViewComponent />
+      <ViewComponent {...viewProps} />
     </Layout>
   );
 }
