@@ -20,6 +20,16 @@ export interface InvoiceItem {
   sortOrder: number;
 }
 
+/** Slim row used in the parent invoice's Ledger panel. */
+export interface Adjustment {
+  id: string;
+  invoiceNo: string;
+  kind: 'credit_note' | 'debit_note';
+  total: number;
+  issueDate: string;
+  status: InvoiceStatus;
+}
+
 export interface Invoice {
   id: string;
   invoiceNo: string;
@@ -41,6 +51,14 @@ export interface Invoice {
   /** Customer-facing terms & conditions text printed on the invoice. */
   terms?: string | null;
   items: InvoiceItem[];
+  /** Child Credit / Debit Notes attached to this invoice. Populated
+   *  on the single-invoice GET; empty on the list payload. */
+  adjustments?: Adjustment[];
+  /** Net amount the customer still owes:
+   *  `total + ΣDN.total − ΣCN.total − paidAmount` ignoring void
+   *  children. Populated on the single-invoice GET; list payloads
+   *  fall back to `total − paidAmount`. */
+  netBalance?: number;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -1218,20 +1218,93 @@ function InvoiceDetailDialog({
                     <div className="text-gray-400 italic text-xs">No terms recorded for this invoice.</div>
                   )}
                 </div>
-                <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
-                  <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6 font-medium"><span>Balance</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total - invoice.paidAmount, invoice.currency)}</span></div>
-                  <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
-                    <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
-                    <span className="tabular-nums w-32 text-right">KHR {((invoice.total - invoice.paidAmount) * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                {/* Net-balance summary using the full ledger formula:
+                    total + ΣDN − ΣCN − payments. Void children are
+                    excluded server-side. When no adjustments exist
+                    the DN/CN lines fold away so the summary stays
+                    compact for the common single-document case. */}
+                {(() => {
+                  const nonVoidAdj = (invoice.adjustments ?? [])
+                    .filter(a => a.status !== 'void');
+                  const sumDn = nonVoidAdj
+                    .filter(a => a.kind === 'debit_note')
+                    .reduce((s, a) => s + a.total, 0);
+                  const sumCn = nonVoidAdj
+                    .filter(a => a.kind === 'credit_note')
+                    .reduce((s, a) => s + a.total, 0);
+                  const net = invoice.netBalance ?? (invoice.total + sumDn - sumCn - invoice.paidAmount);
+                  return (
+                  <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
+                    <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
+                    {sumDn > 0 && (
+                      <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>
+                    )}
+                    {sumCn > 0 && (
+                      <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
+                    )}
+                    <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Net balance</span><span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
+                      <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
+                      <span className="tabular-nums w-32 text-right">KHR {(net * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    </div>
                   </div>
-                </div>
+                  );
+                })()}
               </div>
             </div>
+
+            {/* Adjustments panel — Credit / Debit Notes attached to
+                this invoice. Shown only on root invoices (CN/DN
+                themselves have no children). Void rows render with a
+                muted strikethrough so the audit trail stays visible
+                without inflating the net-balance math. */}
+            {!invoice.parentInvoiceId && (invoice.adjustments ?? []).length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Credit / Debit Notes</Label>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Document</TableHead>
+                      <TableHead className="w-[120px]">Type</TableHead>
+                      <TableHead className="w-[120px]">Issue Date</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(invoice.adjustments ?? []).map(a => {
+                      const isVoid = a.status === 'void';
+                      const sign = a.kind === 'credit_note' ? '−' : '+';
+                      return (
+                        <TableRow key={a.id} className={isVoid ? 'text-gray-400' : ''}>
+                          <TableCell className={`font-mono text-sm ${isVoid ? 'line-through' : ''}`}>{a.invoiceNo}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={KIND_BADGE_CLASS[a.kind]}>
+                              {KIND_LABEL[a.kind]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600">{a.issueDate}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[a.status]}`}>
+                              {a.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className={`text-right text-sm tabular-nums ${isVoid ? 'line-through' : ''} ${
+                            !isVoid && a.kind === 'credit_note' ? 'text-emerald-700' : !isVoid && a.kind === 'debit_note' ? 'text-amber-700' : ''
+                          }`}>
+                            {sign} {fmtMoney(a.total, invoice.currency)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
             {/* Payments panel */}
             <div className="space-y-2">
