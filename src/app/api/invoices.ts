@@ -38,6 +38,8 @@ export interface Invoice {
   paidAmount: number;
   status: InvoiceStatus;
   notes?: string | null;
+  /** Customer-facing terms & conditions text printed on the invoice. */
+  terms?: string | null;
   items: InvoiceItem[];
   createdAt?: string;
   updatedAt?: string;
@@ -66,6 +68,7 @@ export interface InvoiceRequest {
   taxAmount?: number;
   discountAmount?: number;
   notes?: string | null;
+  terms?: string | null;
   items: InvoiceItemRequest[];
 }
 

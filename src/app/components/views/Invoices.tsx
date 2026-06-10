@@ -470,6 +470,7 @@ function InvoiceFormDialog({
   const [taxAmount, setTaxAmount] = useState('0');
   const [discountAmount, setDiscountAmount] = useState('0');
   const [notes, setNotes] = useState('');
+  const [terms, setTerms] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
@@ -495,6 +496,7 @@ function InvoiceFormDialog({
       setTaxAmount(String(editing.taxAmount));
       setDiscountAmount(String(editing.discountAmount));
       setNotes(editing.notes ?? '');
+      setTerms(editing.terms ?? '');
     } else {
       setCustomerId('');
       setParentInvoiceId('');
@@ -506,6 +508,7 @@ function InvoiceFormDialog({
       setTaxAmount('0');
       setDiscountAmount('0');
       setNotes('');
+      setTerms('');
     }
   }, [open, kind, editing]);
 
@@ -539,6 +542,7 @@ function InvoiceFormDialog({
     taxAmount: Number(taxAmount) || 0,
     discountAmount: Number(discountAmount) || 0,
     notes: notes || undefined,
+    terms: terms || undefined,
     items: items.map(it => ({
       name: it.name.trim(),
       description: it.description?.trim() || undefined,
@@ -601,6 +605,7 @@ function InvoiceFormDialog({
       setTaxAmount('0');
       setDiscountAmount('0');
       setNotes('');
+      setTerms('');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
     } finally {
@@ -774,40 +779,51 @@ function InvoiceFormDialog({
             </div>
           </div>
 
-          {/* Two-column layout matching the detail view — Notes on
-              the left (resizes-via-rows since the user might paste a
-              paragraph), Summary on the right. Same shape for create
-              + edit + view so the eye doesn't relearn each surface. */}
+          {/* Two-column layout: Notes on the left (internal memo),
+              Terms + Summary stacked on the right (customer-facing
+              terms above the totals card). Same shape on create,
+              edit, and detail surfaces. */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 flex flex-col">
               <Label className="text-xs">Notes</Label>
               <Textarea
                 rows={8}
                 value={notes} onChange={e => setNotes(e.target.value)}
-                placeholder="Internal note or memo printed on the invoice"
-                className="h-full"
+                placeholder="Internal note or memo (not printed on the invoice)"
+                className="flex-1 resize-none"
               />
             </div>
-            <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
-              <div className="flex justify-end gap-6">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
+            <div className="space-y-3 flex flex-col">
+              <div className="space-y-1.5 flex-1 flex flex-col">
+                <Label className="text-xs">Terms &amp; conditions</Label>
+                <Textarea
+                  rows={3}
+                  value={terms} onChange={e => setTerms(e.target.value)}
+                  placeholder="Payment terms, bank details, or disclaimers — printed on the invoice"
+                  className="flex-1 resize-none"
+                />
               </div>
-              <div className="flex justify-end gap-6">
-                <span className="text-gray-600">Tax</span>
-                <span className="tabular-nums w-32 text-right">+ {fmtMoney(Number(taxAmount) || 0, currency)}</span>
-              </div>
-              <div className="flex justify-end gap-6">
-                <span className="text-gray-600">Discount</span>
-                <span className="tabular-nums w-32 text-right">− {fmtMoney(Number(discountAmount) || 0, currency)}</span>
-              </div>
-              <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
-                <span>Total USD</span>
-                <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
-              </div>
-              <div className="flex justify-end gap-6 text-gray-700">
-                <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-                <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
+                <div className="flex justify-end gap-6">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
+                </div>
+                <div className="flex justify-end gap-6">
+                  <span className="text-gray-600">Tax</span>
+                  <span className="tabular-nums w-32 text-right">+ {fmtMoney(Number(taxAmount) || 0, currency)}</span>
+                </div>
+                <div className="flex justify-end gap-6">
+                  <span className="text-gray-600">Discount</span>
+                  <span className="tabular-nums w-32 text-right">− {fmtMoney(Number(discountAmount) || 0, currency)}</span>
+                </div>
+                <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
+                  <span>Total USD</span>
+                  <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
+                </div>
+                <div className="flex justify-end gap-6 text-gray-700">
+                  <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
+                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -995,10 +1011,9 @@ function InvoiceDetailDialog({
               </Table>
             </div>
 
-            {/* Two-column layout — left holds the invoice memo / Note,
-                right holds the amount summary. They share the same
-                row so they stay visually paired and the dialog isn't
-                stretched vertically by the summary block alone. */}
+            {/* Two-column layout matching the create / edit dialog —
+                Notes (internal memo) on the left, Terms (customer-
+                facing) + amount summary stacked on the right. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-slate-50 rounded-md p-3 text-sm">
                 <div className="text-xs text-gray-500 mb-1">Notes</div>
@@ -1008,16 +1023,26 @@ function InvoiceDetailDialog({
                   <div className="text-gray-400 italic text-xs">No notes recorded for this invoice.</div>
                 )}
               </div>
-              <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
-                <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6 font-medium"><span>Balance</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total - invoice.paidAmount, invoice.currency)}</span></div>
-                <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
-                  <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
-                  <span className="tabular-nums w-32 text-right">KHR {((invoice.total - invoice.paidAmount) * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              <div className="space-y-3">
+                <div className="bg-slate-50 rounded-md p-3 text-sm">
+                  <div className="text-xs text-gray-500 mb-1">Terms &amp; conditions</div>
+                  {invoice.terms ? (
+                    <div className="whitespace-pre-wrap">{invoice.terms}</div>
+                  ) : (
+                    <div className="text-gray-400 italic text-xs">No terms recorded for this invoice.</div>
+                  )}
+                </div>
+                <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
+                  <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6 font-medium"><span>Balance</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total - invoice.paidAmount, invoice.currency)}</span></div>
+                  <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
+                    <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
+                    <span className="tabular-nums w-32 text-right">KHR {((invoice.total - invoice.paidAmount) * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
                 </div>
               </div>
             </div>
