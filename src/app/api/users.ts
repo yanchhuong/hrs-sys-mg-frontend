@@ -28,6 +28,10 @@ export interface UpdateUserRequest {
   employeeId?: string | null;
   departmentId?: string | null;
   isActive?: boolean;
+  /** Optional new password. Empty / undefined = keep current.
+   *  Server re-hashes via BCrypt. For a random temporary password,
+   *  use {@link resetPassword} instead. */
+  password?: string;
 }
 
 export interface ListParams {

@@ -543,8 +543,21 @@ export function UserManagement() {
         if ((formData.departmentId || '') !== (editingUser.departmentId ?? '')) {
           patch.departmentId = formData.departmentId || null;
         }
+        // Password is only sent when the admin typed a new one. The
+        // form's placeholder reads 'Leave blank to keep current' so
+        // the empty-string case is the explicit no-op signal. Server
+        // re-hashes via BCrypt and enforces the 8-char minimum; a
+        // shorter value bounces back as a 400 with the policy
+        // message which we surface in the catch toast below.
+        if (formData.password) {
+          patch.password = formData.password;
+        }
         await usersApi.update(editingUser.id, patch);
-        toast.success('User updated successfully');
+        toast.success(
+          formData.password
+            ? 'User updated. New password is active immediately.'
+            : 'User updated successfully',
+        );
       } else {
         await usersApi.create({
           email: formData.email,
