@@ -21,7 +21,7 @@ import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
-  FileText, UserCheck,
+  FileText, UserCheck, ShoppingCart, ReceiptText,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -41,6 +41,7 @@ import { EmployeeSettings } from '../components/views/EmployeeSettings';
 import { PayrollCategorySettings } from '../components/views/PayrollCategorySettings';
 import { Reports } from '../components/views/Reports';
 import { Customers } from '../components/views/Customers';
+import { Invoices } from '../components/views/Invoices';
 
 export interface NavLeaf {
   id: string;
@@ -69,6 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'time-tracking',  labelKey: 'nav.time_tracking', icon: Clock },
   { id: 'payroll-mgmt',   labelKey: 'nav.payroll_mgmt',  icon: DollarSign },
   { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
+  { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -97,6 +99,8 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
 
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers },
+
+  { id: 'invoices',          labelKey: 'nav.invoices',               icon: ReceiptText,     module: 'invoice',            component: Invoices,                 group: 'sales-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },

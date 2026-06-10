@@ -138,6 +138,11 @@ const MODULES: ModuleDef[] = [
 
   { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)' },
 
+  { key: 'sales',             label: 'Sale',              description: '',                                                            header: true },
+  { key: 'invoice',           label: 'Invoice',           description: 'Commercial / Tax invoices + Credit / Debit notes',            parent: 'sales' },
+  { key: 'payment',           label: 'Payment',           description: 'Receipts recorded against an invoice',                        parent: 'sales' },
+  { key: 'stock',             label: 'Stock',             description: 'Sellable products / services catalog',                        parent: 'sales' },
+
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
   { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },

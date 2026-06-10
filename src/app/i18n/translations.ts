@@ -49,6 +49,8 @@ export const dict: Dict = {
   'nav.reports.compliance':   { en: 'Compliance',           km: 'អនុលោមភាព',        zh: '合规报表' },
   'nav.accounting':           { en: 'Accountant',           km: 'គណនេយ្យ',           zh: '会计' },
   'nav.customers':            { en: 'Customers',            km: 'អតិថិជន',            zh: '客户' },
+  'nav.sales':                { en: 'Sale',                 km: 'ការលក់',             zh: '销售' },
+  'nav.invoices':             { en: 'Invoice',              km: 'វិក្កយបត្រ',           zh: '发票' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },
   'nav.setting.general':      { en: 'General Settings',     km: 'ការកំណត់ទូទៅ',      zh: '常规设置' },
