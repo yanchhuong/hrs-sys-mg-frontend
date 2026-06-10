@@ -95,6 +95,13 @@ export async function create(req: InvoiceRequest): Promise<Invoice> {
   return apiJson('/api/v1/invoices', { method: 'POST', json: req });
 }
 
+/** Edit a draft or progress invoice. Server rejects updates on paid /
+ *  partially / overdue / void rows with a 409 — issue a credit / debit
+ *  note to adjust those instead. */
+export async function update(id: string, req: InvoiceRequest): Promise<Invoice> {
+  return apiJson(`/api/v1/invoices/${id}`, { method: 'PUT', json: req });
+}
+
 /** Move a draft invoice to status=issued. */
 export async function issue(id: string): Promise<Invoice> {
   return apiJson(`/api/v1/invoices/${id}/issue`, { method: 'POST' });

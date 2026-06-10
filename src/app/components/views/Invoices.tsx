@@ -24,12 +24,13 @@ import {
 } from '../ui/dropdown-menu';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { SearchablePicker } from '../common/SearchablePicker';
 import * as invoicesApi from '../../api/invoices';
 import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight,
-  Send, Ban, Eye, ChevronDown, Printer,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -86,6 +87,9 @@ export function Invoices() {
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
   const [formKind, setFormKind] = useState<invoicesApi.InvoiceKind>('commercial');
+  /** When set, the form dialog runs in edit-mode against this invoice
+   *  instead of opening blank for a fresh create. */
+  const [formEditing, setFormEditing] = useState<invoicesApi.Invoice | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<invoicesApi.Invoice | null>(null);
 
@@ -116,7 +120,18 @@ export function Invoices() {
   const pagination = usePagination(rows, 25);
 
   const openCreate = (kind: invoicesApi.InvoiceKind) => {
+    setFormEditing(null);
     setFormKind(kind);
+    setFormOpen(true);
+  };
+
+  /** Switch from the detail dialog into edit-mode on the form dialog
+   *  pre-filled with this invoice. The detail dialog closes; on save
+   *  the list refetches and the user lands back on the list view. */
+  const openEdit = (inv: invoicesApi.Invoice) => {
+    setFormEditing(inv);
+    setFormKind(inv.kind);
+    setDetailId(null);
     setFormOpen(true);
   };
 
@@ -264,14 +279,15 @@ export function Invoices() {
         </CardContent>
       </Card>
 
-      {/* Create dialog */}
+      {/* Create / edit dialog */}
       <InvoiceFormDialog
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) setFormEditing(null); }}
         kind={formKind}
         customers={customers}
         invoices={rows}
-        onCreated={async () => { setFormOpen(false); await load(); }}
+        editing={formEditing}
+        onCreated={async () => { setFormOpen(false); setFormEditing(null); await load(); }}
       />
 
       {/* Detail dialog */}
@@ -282,6 +298,7 @@ export function Invoices() {
           canEdit={canEdit}
           onClose={() => setDetailId(null)}
           onChanged={() => { void load(); }}
+          onEdit={openEdit}
         />
       )}
 
@@ -319,16 +336,21 @@ interface FormItem {
 const blankItem: FormItem = { name: '', quantity: '1', unitPrice: '0' };
 
 function InvoiceFormDialog({
-  open, onOpenChange, kind, customers, invoices, onCreated,
+  open, onOpenChange, kind, customers, invoices, editing, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   kind: invoicesApi.InvoiceKind;
   customers: customersApi.Customer[];
   invoices: invoicesApi.Invoice[];
+  /** When set, the dialog runs in edit mode against this invoice
+   *  instead of creating a new one. Submit calls PUT /invoices/{id}
+   *  instead of POST /invoices. */
+  editing?: invoicesApi.Invoice | null;
   onCreated: () => Promise<void> | void;
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
+  const isEdit = !!editing;
 
   const [customerId, setCustomerId] = useState('');
   const [parentInvoiceId, setParentInvoiceId] = useState('');
@@ -342,9 +364,29 @@ function InvoiceFormDialog({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Reset whenever the dialog opens (kind may have changed).
+  // Reset whenever the dialog opens. In edit mode, hydrate from the
+  // invoice being edited; otherwise blank state for a fresh create.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (editing) {
+      setCustomerId(editing.customerId);
+      setParentInvoiceId(editing.parentInvoiceId ?? '');
+      setIssueDate(editing.issueDate);
+      setDueDate(editing.dueDate ?? '');
+      setCurrency(editing.currency);
+      setExchangeRate(String(editing.exchangeRate));
+      setItems(editing.items.length === 0
+        ? [{ ...blankItem }]
+        : editing.items.map(it => ({
+            name: it.name,
+            description: it.description ?? undefined,
+            quantity: String(it.quantity),
+            unitPrice: String(it.unitPrice),
+          })));
+      setTaxAmount(String(editing.taxAmount));
+      setDiscountAmount(String(editing.discountAmount));
+      setNotes(editing.notes ?? '');
+    } else {
       setCustomerId('');
       setParentInvoiceId('');
       setIssueDate(new Date().toISOString().slice(0, 10));
@@ -356,7 +398,7 @@ function InvoiceFormDialog({
       setDiscountAmount('0');
       setNotes('');
     }
-  }, [open, kind]);
+  }, [open, kind, editing]);
 
   const rootInvoiceOptions = useMemo(() =>
     invoices.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
@@ -375,37 +417,51 @@ function InvoiceFormDialog({
   const addItem = () => setItems(prev => [...prev, { ...blankItem }]);
   const removeItem = (idx: number) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
-  const submit = async () => {
-    if (!customerId) { toast.error('Customer is required'); return; }
-    if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return; }
+  /** Build the request payload from the current form state. Used by
+   *  every save flow (create / update / save & add new). */
+  const buildPayload = (): invoicesApi.InvoiceRequest => ({
+    kind,
+    parentInvoiceId: isAdjustment ? parentInvoiceId : undefined,
+    customerId,
+    issueDate,
+    dueDate: dueDate || undefined,
+    currency,
+    exchangeRate: Number(exchangeRate) || 1,
+    taxAmount: Number(taxAmount) || 0,
+    discountAmount: Number(discountAmount) || 0,
+    notes: notes || undefined,
+    items: items.map(it => ({
+      name: it.name.trim(),
+      description: it.description,
+      quantity: Number(it.quantity) || 0,
+      unitPrice: Number(it.unitPrice) || 0,
+    })),
+  });
+
+  const validate = (): boolean => {
+    if (!customerId) { toast.error('Customer is required'); return false; }
+    if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return false; }
     if (items.length === 0 || items.some(it => !it.name.trim())) {
       toast.error('Each line item needs a name');
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const submit = async () => {
+    if (!validate()) return;
     setSaving(true);
     try {
-      await invoicesApi.create({
-        kind,
-        parentInvoiceId: isAdjustment ? parentInvoiceId : undefined,
-        customerId,
-        issueDate,
-        dueDate: dueDate || undefined,
-        currency,
-        exchangeRate: Number(exchangeRate) || 1,
-        taxAmount: Number(taxAmount) || 0,
-        discountAmount: Number(discountAmount) || 0,
-        notes: notes || undefined,
-        items: items.map(it => ({
-          name: it.name.trim(),
-          description: it.description,
-          quantity: Number(it.quantity) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-        })),
-      });
-      toast.success(`${KIND_LABEL[kind]} created as draft`);
+      if (isEdit && editing) {
+        await invoicesApi.update(editing.id, buildPayload());
+        toast.success(`${editing.invoiceNo} updated`);
+      } else {
+        await invoicesApi.create(buildPayload());
+        toast.success(`${KIND_LABEL[kind]} created as draft`);
+      }
       await onCreated();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
+      toast.error(e instanceof Error ? e.message : 'Failed to save invoice');
     } finally {
       setSaving(false);
     }
@@ -413,39 +469,24 @@ function InvoiceFormDialog({
 
   const totalKhr = total * (Number(exchangeRate) || 0);
 
-  /** Save and keep the dialog open with a freshly-armed form so the
-   *  bookkeeper can enter the next invoice without re-opening the
-   *  dialog. Customer + dates carry over; lines + amounts reset. */
+  /** Save the current entry as a *progress* invoice (create → issue
+   *  chained) and keep the dialog open with a freshly-armed form so
+   *  the bookkeeper can chain entries without re-opening the dialog.
+   *  Customer + dates carry over; lines + amounts reset. */
   const submitAndNew = async () => {
-    if (!customerId) { toast.error('Customer is required'); return; }
-    if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return; }
-    if (items.length === 0 || items.some(it => !it.name.trim())) {
-      toast.error('Each line item needs a name');
-      return;
-    }
+    if (!validate()) return;
     setSaving(true);
     try {
-      await invoicesApi.create({
-        kind,
-        parentInvoiceId: isAdjustment ? parentInvoiceId : undefined,
-        customerId,
-        issueDate,
-        dueDate: dueDate || undefined,
-        currency,
-        exchangeRate: Number(exchangeRate) || 1,
-        taxAmount: Number(taxAmount) || 0,
-        discountAmount: Number(discountAmount) || 0,
-        notes: notes || undefined,
-        items: items.map(it => ({
-          name: it.name.trim(),
-          description: it.description,
-          quantity: Number(it.quantity) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-        })),
-      });
-      toast.success(`${KIND_LABEL[kind]} created — ready for next entry`);
-      // Reset for the next entry; keep customer/dates so chained
-      // entries against the same customer stay quick.
+      const created = await invoicesApi.create(buildPayload());
+      // Immediately flip to progress per the UX requirement. If the
+      // issue step 4xx's we still report the create — the row exists
+      // as a draft and HR can promote it from the list page.
+      try {
+        await invoicesApi.issue(created.id);
+        toast.success(`${KIND_LABEL[kind]} ${created.invoiceNo} issued — ready for next entry`);
+      } catch (e) {
+        toast.warning(`${created.invoiceNo} created as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
+      }
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountAmount('0');
@@ -464,7 +505,7 @@ function InvoiceFormDialog({
           the 640px breakpoint. */}
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New {KIND_LABEL[kind]}</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit ${editing?.invoiceNo}` : `New ${KIND_LABEL[kind]}`}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -490,18 +531,24 @@ function InvoiceFormDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Customer *</Label>
-            <Select value={customerId} onValueChange={setCustomerId}>
-              <SelectTrigger><SelectValue placeholder="Pick customer" /></SelectTrigger>
-              <SelectContent>
-                {customers.length === 0 ? (
-                  <SelectItem value="_none" disabled>No customers yet</SelectItem>
-                ) : customers.map(c => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} {c.type === 'business' ? '(B)' : '(I)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* SearchablePicker (cmdk under the hood) lets HR type a few
+                letters of the customer's name / phone / TIN to filter
+                the list — a plain Select gets unwieldy past ~30 rows. */}
+            <SearchablePicker
+              value={customerId}
+              onChange={setCustomerId}
+              placeholder="Pick customer"
+              searchPlaceholder="Search by name, phone, or TIN…"
+              allowClear={false}
+              options={customers.map(c => ({
+                value: c.id,
+                label: c.name,
+                secondary: c.type === 'business'
+                  ? `Business · ${c.tin ?? c.phone ?? ''}`
+                  : `Individual · ${c.phone ?? ''}`,
+                searchKey: `${c.name} ${c.phone ?? ''} ${c.tin ?? ''} ${c.representative ?? ''}`,
+              }))}
+            />
           </div>
 
           <div className="grid grid-cols-4 gap-3">
@@ -637,10 +684,16 @@ function InvoiceFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save then reset the form for the next entry">
-            {saving ? 'Saving…' : 'Save & add new'}
+          {/* Save & add new only makes sense for fresh entries — on edit
+              it would orphan the row mid-flow. */}
+          {!isEdit && (
+            <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save and issue, then reset the form for the next entry">
+              {saving ? 'Saving…' : 'Save & add new'}
+            </Button>
+          )}
+          <Button onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
           </Button>
-          <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Create draft'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -651,13 +704,16 @@ function InvoiceFormDialog({
 /* Detail dialog — read-only view + actions + payments                        */
 /* -------------------------------------------------------------------------- */
 function InvoiceDetailDialog({
-  invoiceId, customers, canEdit, onClose, onChanged,
+  invoiceId, customers, canEdit, onClose, onChanged, onEdit,
 }: {
   invoiceId: string;
   customers: customersApi.Customer[];
   canEdit: boolean;
   onClose: () => void;
   onChanged: () => void;
+  /** Called when the user clicks Edit. The parent should close this
+   *  dialog and open the form dialog in edit-mode with the invoice. */
+  onEdit: (inv: invoicesApi.Invoice) => void;
 }) {
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [payments, setPayments] = useState<paymentsApi.Payment[]>([]);
@@ -703,7 +759,7 @@ function InvoiceDetailDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         {loading || !invoice ? (
           <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
         ) : (
@@ -726,6 +782,17 @@ function InvoiceDetailDialog({
                   <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
                     <Printer className="h-3.5 w-3.5 mr-1" /> Print
                   </Button>
+                  {/* Edit available only on draft + progress per the
+                      legal-document rule — paid / partially / overdue /
+                      void rows must be adjusted via a credit or debit
+                      note, not by rewriting the original. */}
+                  {canEdit && (invoice.status === 'draft' || invoice.status === 'progress') && (
+                    <Button size="sm" variant="outline" disabled={busy}
+                      onClick={() => onEdit(invoice)}
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Button>
+                  )}
                   {canEdit && invoice.status === 'draft' && (
                     <Button size="sm" disabled={busy}
                       onClick={() => doAction('Invoice issued',
