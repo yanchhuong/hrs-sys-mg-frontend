@@ -136,8 +136,7 @@ const MODULES: ModuleDef[] = [
   { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
   { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
 
-  { key: 'accounting',        label: 'Accountant',        description: '',                                                            header: true },
-  { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'accounting' },
+  { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)' },
 
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
