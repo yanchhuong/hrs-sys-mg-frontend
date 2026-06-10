@@ -462,6 +462,11 @@ function InvoiceFormDialog({
 
   const [customerId, setCustomerId] = useState('');
   const [parentInvoiceId, setParentInvoiceId] = useState('');
+  /** Document number — pre-filled from /invoices/next-number on open
+   *  for fresh creates and from the row on edit. Free-form input so
+   *  HR can override the auto-sequential when needed (e.g. matching
+   *  an external paper invoice). */
+  const [invoiceNo, setInvoiceNo] = useState('');
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -474,12 +479,15 @@ function InvoiceFormDialog({
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
-  // invoice being edited; otherwise blank state for a fresh create.
+  // invoice being edited; otherwise blank state for a fresh create,
+  // and kick off a /next-number fetch so the doc-number input shows
+  // the auto-generated default without waiting for the user to type.
   useEffect(() => {
     if (!open) return;
     if (editing) {
       setCustomerId(editing.customerId);
       setParentInvoiceId(editing.parentInvoiceId ?? '');
+      setInvoiceNo(editing.invoiceNo);
       setIssueDate(editing.issueDate);
       setDueDate(editing.dueDate ?? '');
       setCurrency(editing.currency);
@@ -500,6 +508,7 @@ function InvoiceFormDialog({
     } else {
       setCustomerId('');
       setParentInvoiceId('');
+      setInvoiceNo('');
       setIssueDate(new Date().toISOString().slice(0, 10));
       setDueDate('');
       setCurrency('USD');
@@ -509,6 +518,13 @@ function InvoiceFormDialog({
       setDiscountAmount('0');
       setNotes('');
       setTerms('');
+      // Fetch the preview after state resets — race-protected so a
+      // rapid kind switch doesn't land the wrong value.
+      let cancelled = false;
+      invoicesApi.nextNumber(kind)
+        .then(res => { if (!cancelled) setInvoiceNo(res.invoiceNo); })
+        .catch(() => { /* non-fatal — user can type their own */ });
+      return () => { cancelled = true; };
     }
   }, [open, kind, editing]);
 
@@ -534,6 +550,7 @@ function InvoiceFormDialog({
   const buildPayload = (): invoicesApi.InvoiceRequest => ({
     kind,
     parentInvoiceId: isAdjustment ? parentInvoiceId : undefined,
+    invoiceNo: invoiceNo.trim() || undefined,
     customerId,
     issueDate,
     dueDate: dueDate || undefined,
@@ -644,26 +661,45 @@ function InvoiceFormDialog({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Customer *</Label>
-            {/* SearchablePicker (cmdk under the hood) lets HR type a few
-                letters of the customer's name / phone / TIN to filter
-                the list — a plain Select gets unwieldy past ~30 rows. */}
-            <SearchablePicker
-              value={customerId}
-              onChange={setCustomerId}
-              placeholder="Pick customer"
-              searchPlaceholder="Search by name, phone, or TIN…"
-              allowClear={false}
-              options={customers.map(c => ({
-                value: c.id,
-                label: c.name,
-                secondary: c.type === 'business'
-                  ? `Business · ${c.tin ?? c.phone ?? ''}`
-                  : `Individual · ${c.phone ?? ''}`,
-                searchKey: `${c.name} ${c.phone ?? ''} ${c.tin ?? ''} ${c.representative ?? ''}`,
-              }))}
-            />
+          {/* Customer picker on the left, document number on the
+              right. The number input is pre-filled by /next-number
+              when the dialog opens — HR can keep the sequential default
+              or type their own (e.g. matching a paper invoice). Edit
+              mode hydrates the existing row's number; changes flow
+              through PUT and the unique (tenant, invoice_no)
+              constraint catches conflicts. */}
+          <div className="grid grid-cols-[1fr_280px] gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Customer *</Label>
+              <SearchablePicker
+                value={customerId}
+                onChange={setCustomerId}
+                placeholder="Pick customer"
+                searchPlaceholder="Search by name, phone, or TIN…"
+                allowClear={false}
+                options={customers.map(c => ({
+                  value: c.id,
+                  label: c.name,
+                  secondary: c.type === 'business'
+                    ? `Business · ${c.tin ?? c.phone ?? ''}`
+                    : `Individual · ${c.phone ?? ''}`,
+                  searchKey: `${c.name} ${c.phone ?? ''} ${c.tin ?? ''} ${c.representative ?? ''}`,
+                }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                {kind === 'credit_note' ? 'Credit Note No.'
+                  : kind === 'debit_note' ? 'Debit Note No.'
+                  : 'Invoice No.'}
+              </Label>
+              <Input
+                value={invoiceNo}
+                onChange={e => setInvoiceNo(e.target.value)}
+                className="font-mono"
+                placeholder="Auto-generated"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-4 gap-3">
@@ -863,6 +899,7 @@ function InvoiceDetailDialog({
   onEdit: (inv: invoicesApi.Invoice) => void;
 }) {
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
+  const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [payments, setPayments] = useState<paymentsApi.Payment[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -881,6 +918,18 @@ function InvoiceDetailDialog({
       ]);
       setInvoice(inv);
       setPayments(pays);
+      // If this is an adjustment, follow the parent edge so the
+      // "Adjusts invoice" row can show the human-readable number
+      // instead of a raw UUID. Soft-fail — a deleted parent
+      // (theoretically impossible since we block delete with kids)
+      // shouldn't crash the read.
+      if (inv.parentInvoiceId) {
+        invoicesApi.get(inv.parentInvoiceId)
+          .then(setParentInvoice)
+          .catch(() => setParentInvoice(null));
+      } else {
+        setParentInvoice(null);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load invoice');
     } finally {
@@ -975,7 +1024,11 @@ function InvoiceDetailDialog({
               {invoice.parentInvoiceId && (
                 <>
                   <div className="text-gray-500">Adjusts invoice</div>
-                  <div className="font-mono text-xs">{invoice.parentInvoiceId}</div>
+                  <div className="font-mono text-sm">
+                    {parentInvoice
+                      ? parentInvoice.invoiceNo
+                      : <span className="text-gray-400 text-xs italic">loading…</span>}
+                  </div>
                 </>
               )}
             </div>

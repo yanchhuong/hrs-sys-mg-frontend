@@ -60,6 +60,10 @@ export interface InvoiceRequest {
   kind: InvoiceKind;
   /** Required when kind is credit_note / debit_note. */
   parentInvoiceId?: string | null;
+  /** Optional caller-supplied document number. Blank/null → server
+   *  auto-generates; supplied → taken verbatim. Must be unique per
+   *  tenant (DB enforces). */
+  invoiceNo?: string;
   customerId: string;
   issueDate?: string;
   dueDate?: string | null;
@@ -98,6 +102,13 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Invoi
 
 export async function get(id: string): Promise<Invoice> {
   return apiJson(`/api/v1/invoices/${id}`);
+}
+
+/** Preview the next auto-generated document number for `kind`. The
+ *  New Invoice dialog calls this on open to pre-fill its editable
+ *  number input so HR sees the default but can override before save. */
+export async function nextNumber(kind: InvoiceKind): Promise<{ kind: InvoiceKind; invoiceNo: string }> {
+  return apiJson(`/api/v1/invoices/next-number`, { query: { kind } });
 }
 
 export async function create(req: InvoiceRequest): Promise<Invoice> {
