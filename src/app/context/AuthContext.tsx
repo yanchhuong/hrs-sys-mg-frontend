@@ -284,9 +284,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isModuleAvailable = useCallback((module: string): boolean => {
     // Pre-fetch: optimistic so a slow /me/modules doesn't blank
     // gated sections during the initial paint.
-    if (availableModules == null) return true;
-    // Post-fetch: the module must be declared in the catalog (so
-    // drafts and never-declared keys return false) AND not
+    //
+    // Empty-set fallback (size === 0) follows the same rule: a
+    // tenant whose module_assignments hasn't been seeded yet, or a
+    // /me/modules call that errored into the defensive {} return,
+    // would otherwise blank the entire sidebar and bounce the user
+    // onto a view they can't see ("Access denied"). The authoritative
+    // gates are @perm.allow + TenantModuleGuard server-side; the
+    // frontend filter is convenience, so being permissive here when
+    // the catalog is missing is the right safety valve.
+    if (availableModules == null || availableModules.size === 0) return true;
+    // Post-fetch with a real catalog: the module must be declared
+    // (so drafts + never-declared keys return false) AND not
     // explicitly disabled for this tenant.
     if (!availableModules.has(module)) return false;
     return !(disabledModules?.has(module) ?? false);
