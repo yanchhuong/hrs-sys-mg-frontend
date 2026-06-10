@@ -50,6 +50,7 @@ import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
+import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -149,7 +150,22 @@ function EmployeeDocuments({
     if (USE_MOCKS) return;
     setLoading(true);
     try {
-      setLiveDocs(await documentsApi.listForEmployee(employeeApiId));
+      const fetched = await documentsApi.listForEmployee(employeeApiId);
+      setLiveDocs(fetched);
+      // Mirror into the parent's selectedEmployee.documents so the
+      // tab-header badge count (read upstream) reflects what's on file
+      // — otherwise it stays stuck at the empty array the API adapter
+      // ships with.
+      onChange?.(fetched.map(d => ({
+        id: d.id,
+        employeeId: d.employeeId,
+        name: d.name,
+        type: d.type as import('../../types/hrms').EmployeeDocumentType,
+        mimeType: d.mimeType,
+        sizeBytes: d.sizeBytes,
+        uploadedAt: d.uploadedAt,
+        notes: d.notes ?? undefined,
+      })));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load documents');
     } finally {
@@ -345,11 +361,16 @@ function EmployeeDocuments({
         <ul className="divide-y border rounded-md">
           {visible.map(doc => {
             const label = DOC_TYPES.find(t => t.value === doc.type)?.label ?? doc.type;
+            const family = familyOf(extOf(doc.name), doc.mimeType);
+            const chipLabel = chipLabelOf(doc.name);
             return (
               <li key={doc.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
-                <div className="h-9 w-9 rounded-md bg-blue-50 flex items-center justify-center shrink-0">
-                  <FileText className="h-4 w-4 text-blue-700" />
-                </div>
+                <span
+                  className={`shrink-0 inline-flex items-center justify-center min-w-[2.25rem] h-9 px-1.5 rounded-md border text-[10px] font-semibold tracking-wide uppercase ${EXT_CHIP_CLASS[family]}`}
+                  title={doc.mimeType}
+                >
+                  {chipLabel}
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{doc.name}</p>
                   <p className="text-xs text-gray-500">

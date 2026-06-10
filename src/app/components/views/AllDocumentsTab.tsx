@@ -20,6 +20,7 @@ import * as documentsApi from '../../api/documents';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
+import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 
 /**
  * "All Documents" tab on the Employees page. Tenant-wide listing of
@@ -53,41 +54,6 @@ const TYPE_LABEL: Record<string, string> = TYPE_OPTIONS.reduce((acc, o) => {
   if (o.value !== 'all') acc[o.value] = o.label;
   return acc;
 }, {} as Record<string, string>);
-
-/**
- * Extension chip family. HR readers spot 'PDF' / 'XLSX' / 'JPG'
- * faster than a generic file glyph, so the row gets a colored
- * 2-4 letter pill instead. Colors mirror the typical office-suite
- * conventions admins see in Drive / OneDrive.
- */
-type ExtFamily = 'pdf' | 'word' | 'excel' | 'ppt' | 'image' | 'archive' | 'text' | 'other';
-
-function extOf(filename: string): string {
-  const m = /\.([a-z0-9]{1,5})$/i.exec(filename);
-  return m ? m[1].toLowerCase() : '';
-}
-
-function familyOf(ext: string, mime: string): ExtFamily {
-  if (['pdf'].includes(ext) || mime.includes('pdf')) return 'pdf';
-  if (['doc', 'docx', 'odt', 'rtf'].includes(ext)) return 'word';
-  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return 'excel';
-  if (['ppt', 'pptx', 'odp', 'key'].includes(ext)) return 'ppt';
-  if (mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','heic','bmp','svg'].includes(ext)) return 'image';
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
-  if (['txt', 'md', 'log'].includes(ext)) return 'text';
-  return 'other';
-}
-
-const EXT_CHIP_CLASS: Record<ExtFamily, string> = {
-  pdf:     'bg-red-100 text-red-700 border-red-200',
-  word:    'bg-blue-100 text-blue-700 border-blue-200',
-  excel:   'bg-emerald-100 text-emerald-700 border-emerald-200',
-  ppt:     'bg-orange-100 text-orange-700 border-orange-200',
-  image:   'bg-purple-100 text-purple-700 border-purple-200',
-  archive: 'bg-amber-100 text-amber-700 border-amber-200',
-  text:    'bg-slate-100 text-slate-700 border-slate-200',
-  other:   'bg-slate-100 text-slate-600 border-slate-200',
-};
 
 /** Human-readable file size. Server reports bytes; HR thinks in KB / MB. */
 function fmtSize(bytes: number): string {
@@ -264,9 +230,8 @@ export function AllDocumentsTab() {
                   </TableRow>
                 ) : (
                   pagination.paginatedItems.map(doc => {
-                    const ext = extOf(doc.name);
-                    const family = familyOf(ext, doc.mimeType);
-                    const chipLabel = ext ? ext.toUpperCase() : 'FILE';
+                    const family = familyOf(extOf(doc.name), doc.mimeType);
+                    const chipLabel = chipLabelOf(doc.name);
                     return (
                       <TableRow key={doc.id}>
                         <TableCell>

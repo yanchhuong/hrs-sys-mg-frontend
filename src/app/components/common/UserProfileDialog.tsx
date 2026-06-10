@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock,
-  Paperclip, Upload, Download, Trash2, FileText,
+  Paperclip, Upload, Download, Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -23,6 +23,7 @@ import * as departmentsApi from '../../api/departments';
 import * as documentsApi from '../../api/documents';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
+import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
 
 interface Props {
   open: boolean;
@@ -564,13 +565,21 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  {attachments.map(doc => (
+                  {attachments.map(doc => {
+                    const family = familyOf(extOf(doc.name), doc.mimeType);
+                    const chipLabel = chipLabelOf(doc.name);
+                    return (
                     <div
                       key={doc.id}
                       className="flex items-center justify-between px-3 py-2 rounded-md border bg-white"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span
+                          className={`shrink-0 inline-flex items-center justify-center min-w-[2.25rem] h-7 px-1.5 rounded border text-[10px] font-semibold tracking-wide uppercase ${EXT_CHIP_CLASS[family]}`}
+                          title={doc.mimeType}
+                        >
+                          {chipLabel}
+                        </span>
                         <div className="min-w-0">
                           <p className="text-sm truncate" title={doc.name}>{doc.name}</p>
                           <p className="text-[11px] text-gray-500">
@@ -603,7 +612,8 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                         </Button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>
