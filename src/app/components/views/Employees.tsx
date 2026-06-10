@@ -49,6 +49,7 @@ import {
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
+import { AllDocumentsTab } from './AllDocumentsTab';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -1234,6 +1235,23 @@ export function Employees() {
         existingEmails={USE_MOCKS ? employees.map(e => e.email) : rawEmployees.map(e => e.email)}
       />
 
+      {/* Two tabs: the existing roster table, and a tenant-wide
+          documents browser. The roster is the default so existing
+          muscle-memory stays intact; All Documents is opt-in. */}
+      <Tabs defaultValue="roster" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="roster">
+            <User className="h-4 w-4 mr-1.5" />
+            Employees
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            <FileText className="h-4 w-4 mr-1.5" />
+            All Documents
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="roster" className="mt-0">
+
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex items-center gap-4">
@@ -1489,6 +1507,13 @@ export function Employees() {
           />
         </CardContent>
       </Card>
+
+        </TabsContent>
+
+        <TabsContent value="documents" className="mt-0">
+          <AllDocumentsTab />
+        </TabsContent>
+      </Tabs>
 
       <Sheet open={sheetOpen} onOpenChange={(open) => {
         if (!open && isEditing && editedEmployee && hasUnsavedChanges(selectedEmployee, editedEmployee)) {

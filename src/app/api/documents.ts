@@ -21,6 +21,23 @@ export async function listForEmployee(employeeId: string): Promise<EmployeeDocum
 }
 
 /**
+ * Tenant-wide document listing backing the "All Documents" tab on
+ * the Employees page. Adds {@code empNo} + {@code employeeName} to
+ * each row so the table can display whose document it is without a
+ * second round-trip. Either field may be null if the employee was
+ * deleted after the document was uploaded.
+ */
+export interface DocumentWithEmployee extends EmployeeDocument {
+  empNo: string | null;
+  employeeName: string | null;
+}
+
+export async function listAll(type?: EmployeeDocumentType): Promise<DocumentWithEmployee[]> {
+  const q = type ? `?type=${encodeURIComponent(type)}` : '';
+  return apiJson<DocumentWithEmployee[]>(`/api/v1/documents${q}`);
+}
+
+/**
  * Multipart upload. We don't go through {@link apiJson} because that sets a
  * JSON content-type — for multipart we must let the browser set the boundary
  * automatically by leaving Content-Type blank.
