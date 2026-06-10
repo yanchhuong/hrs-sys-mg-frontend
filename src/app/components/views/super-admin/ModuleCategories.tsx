@@ -370,19 +370,29 @@ export function ModuleCategories() {
       <div
         draggable
         onDragStart={(e) => {
+          // Stop the dragstart from bubbling into the parent Card —
+          // otherwise the Card also enters "category drag" mode and its
+          // onDragEnd never fires (dragend only runs on the actual
+          // drag source), leaving the whole card stuck at opacity-40.
+          e.stopPropagation();
           setDragModule({ key: node.key, groupKey });
           e.dataTransfer.effectAllowed = 'move';
           // Firefox requires data to be set or the drag won't fire.
           e.dataTransfer.setData('text/plain', node.key);
         }}
-        onDragEnd={() => { setDragModule(null); setDragOverKey(null); }}
+        onDragEnd={(e) => {
+          e.stopPropagation();
+          setDragModule(null); setDragOverKey(null);
+        }}
         onDragOver={(e) => {
           if (!canAcceptDrop) return;
           e.preventDefault();
+          e.stopPropagation();
           e.dataTransfer.dropEffect = 'move';
           if (dragOverKey !== node.key) setDragOverKey(node.key);
         }}
-        onDragLeave={() => {
+        onDragLeave={(e) => {
+          e.stopPropagation();
           if (dragOverKey === node.key) setDragOverKey(null);
         }}
         onDrop={(e) => {
