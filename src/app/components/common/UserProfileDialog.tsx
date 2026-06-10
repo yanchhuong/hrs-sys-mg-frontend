@@ -18,6 +18,9 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
 import { mockEmployees } from '../../data/mockData';
 import { Employee } from '../../types/hrms';
+import * as departmentsApi from '../../api/departments';
+import { USE_MOCKS } from '../../api/client';
+import { makeDeptName } from '../../utils/deptName';
 
 interface Props {
   open: boolean;
@@ -38,6 +41,25 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   // Profile tab state
   const [profile, setProfile] = useState<Partial<Employee>>(employeeRef);
   const [accountEmail, setAccountEmail] = useState(currentUser?.email ?? '');
+
+  // Departments list — only used to resolve the dept UUID on
+  // currentEmployee.department into a human label for the badge
+  // + the Profile-tab dept field. Fetched lazily on dialog open
+  // so closed-dialog renders don't pay the round-trip.
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    if (!open || USE_MOCKS) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await departmentsApi.list();
+        if (!cancelled) setDepartments(list.map(d => ({ id: d.id, name: d.name })));
+      } catch { /* badge falls back to '—'; non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+  const deptName = useMemo(() => makeDeptName(departments, ''), [departments]);
+  const employeeDeptLabel = deptName(currentEmployee?.department);
 
   // Password tab state
   const [currentPw, setCurrentPw] = useState('');
@@ -132,8 +154,8 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 <Shield className="h-2.5 w-2.5 mr-1" />
                 {currentUser?.role.replace('_', ' ')}
               </Badge>
-              {currentEmployee?.department && (
-                <Badge variant="outline" className="text-gray-600">{currentEmployee.department}</Badge>
+              {employeeDeptLabel && (
+                <Badge variant="outline" className="text-gray-600">{employeeDeptLabel}</Badge>
               )}
             </div>
           </div>
@@ -245,8 +267,12 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 </div>
               </FieldBox>
               <FieldBox label="Employee ID">
+                {/* Human emp_no (e.g. EMP002), never the backend UUID
+                    — currentUser.employeeId is the FK to employees,
+                    which is internal plumbing nobody wants to see in
+                    a profile card. */}
                 <div className="h-9 flex items-center px-3 border rounded-md bg-gray-50 text-sm font-mono text-gray-700">
-                  {currentUser?.employeeId || '—'}
+                  {currentEmployee?.empNo || currentEmployee?.id || '—'}
                 </div>
               </FieldBox>
             </div>
