@@ -66,6 +66,13 @@ export function DateFormatProvider({ children }: { children: ReactNode }) {
       setPattern(DEFAULT_DATE_FORMAT);
       return;
     }
+    // Super admins operate on the platform surface; /settings/company is
+    // tenant-scoped and 403s for them. Keep the default pattern instead
+    // of logging a spurious permission error.
+    if (currentUser.role === 'super_admin') {
+      setPattern(DEFAULT_DATE_FORMAT);
+      return;
+    }
     try {
       const info = await settingsApi.getCompanyInfo();
       const next = (info as { dateFormat?: string }).dateFormat;

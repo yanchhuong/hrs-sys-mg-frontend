@@ -140,10 +140,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /**
    * Hydrate or refresh the tenant's module-disabled set from /me/modules.
    * Mock mode and unauthenticated states resolve to an empty set so
-   * isModuleEnabled returns true universally.
+   * isModuleEnabled returns true universally. Super admins never use a
+   * tenant-scoped catalog (the Super Admin app runs on the platform
+   * surface), so we skip the fetch entirely — calling /me/modules as a
+   * platform principal returns 403 and would log scary console noise.
    */
-  const loadModuleFlags = useCallback(async (): Promise<{ disabled: Set<string>; available: Set<string> }> => {
+  const loadModuleFlags = useCallback(async (role?: string): Promise<{ disabled: Set<string>; available: Set<string> }> => {
     if (USE_MOCKS) return { disabled: new Set(), available: new Set() };
+    if (role === 'super_admin') return { disabled: new Set(), available: new Set() };
     try {
       const res = await platformApi.myModules.get();
       const disabled = new Set<string>();
@@ -170,6 +174,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadGrants = useCallback(async (role: string | undefined): Promise<Set<string>> => {
     if (!role) return new Set();
     if (role === 'admin') return new Set(['*']);
+    // Platform principal: there's no tenant permission grid to fetch and
+    // /roles/self/permissions would 403. Return wildcard so any local
+    // `canDo` check defaults to allow — real Super Admin surfaces are
+    // gated by the SuperAdmin app shell, not by canDo.
+    if (role === 'super_admin') return new Set(['*']);
     if (USE_MOCKS) return new Set(MOCK_GRIDS[role] ?? new Set());
     try {
       // The 'self' route lets a non-admin caller fetch their own grid
@@ -207,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentUser(user);
         // Run permission and module-flag fetches in parallel so the
         // initial paint isn't blocked twice on the network.
-        const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
+        const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags(user.role)]);
         if (!cancelled) { setGrants(g); setDisabledModules(m.disabled); setAvailableModules(m.available); }
       } catch {
         authApi.logout();
@@ -344,7 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const apiUser = await authApi.login({ email, password });
       const user = fromApi(apiUser);
       setCurrentUser(user);
-      const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags()]);
+      const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags(user.role)]);
       setGrants(g);
       setDisabledModules(m.disabled);
       setAvailableModules(m.available);
