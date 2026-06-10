@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock,
+  Paperclip, Upload, Download, Trash2, FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -19,6 +20,7 @@ import { toast } from 'sonner';
 import { mockEmployees } from '../../data/mockData';
 import { Employee } from '../../types/hrms';
 import * as departmentsApi from '../../api/departments';
+import * as documentsApi from '../../api/documents';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 
@@ -60,6 +62,106 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   }, [open]);
   const deptName = useMemo(() => makeDeptName(departments, ''), [departments]);
   const employeeDeptLabel = deptName(currentEmployee?.department);
+
+  // Attachments tab — the user uploads files against their own
+  // employee record. Hidden when the account isn't linked to an
+  // employee (e.g. a super_admin or service account); the backend's
+  // /api/v1/employees/{id}/documents endpoint requires the FK.
+  const empApiId: string | undefined =
+    (currentEmployee as { apiId?: string } | null | undefined)?.apiId
+    ?? currentEmployee?.id;
+  const showAttachments = !!empApiId && !USE_MOCKS;
+
+  const DOC_TYPES: ReadonlyArray<{ value: documentsApi.EmployeeDocumentType; label: string }> = [
+    { value: 'contract',    label: 'Contract' },
+    { value: 'id_card',     label: 'ID Card' },
+    { value: 'passport',    label: 'Passport' },
+    { value: 'certificate', label: 'Certificate' },
+    { value: 'resume',      label: 'Resume' },
+    { value: 'tax_form',    label: 'Tax Form' },
+    { value: 'other',       label: 'Other' },
+  ];
+  const DOC_TYPE_LABEL: Record<string, string> = DOC_TYPES.reduce(
+    (acc, t) => { acc[t.value] = t.label; return acc; }, {} as Record<string, string>,
+  );
+
+  const [attachments, setAttachments] = useState<documentsApi.EmployeeDocument[]>([]);
+  const [attachLoading, setAttachLoading] = useState(false);
+  const [attachUploadType, setAttachUploadType] = useState<documentsApi.EmployeeDocumentType>('other');
+  const [attachUploading, setAttachUploading] = useState(false);
+  const [attachDownloadingId, setAttachDownloadingId] = useState<string | null>(null);
+
+  const refreshAttachments = async () => {
+    if (!showAttachments || !empApiId) return;
+    setAttachLoading(true);
+    try {
+      setAttachments(await documentsApi.listForEmployee(empApiId));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load attachments');
+    } finally {
+      setAttachLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Lazy-load when the dialog opens AND the user has an employee
+    // record. Avoids a per-render fetch on closed-dialog re-renders.
+    if (open && showAttachments) void refreshAttachments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, empApiId]);
+
+  const handleAttachUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !empApiId) return;
+    setAttachUploading(true);
+    let ok = 0;
+    try {
+      // Sequential upload so a failure on file N doesn't trash the
+      // already-saved 1..N-1 — same pattern as the per-employee
+      // Documents tab on the Employees page.
+      for (const f of Array.from(files)) {
+        try {
+          await documentsApi.upload(empApiId, f, attachUploadType);
+          ok++;
+        } catch (e) {
+          toast.error(`Failed to upload ${f.name}: ${e instanceof Error ? e.message : 'unknown'}`);
+        }
+      }
+      if (ok > 0) {
+        toast.success(`Uploaded ${ok} file${ok === 1 ? '' : 's'}`);
+        await refreshAttachments();
+      }
+    } finally {
+      setAttachUploading(false);
+    }
+  };
+
+  const handleAttachDownload = async (doc: documentsApi.EmployeeDocument) => {
+    setAttachDownloadingId(doc.id);
+    try {
+      await documentsApi.download(doc);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setAttachDownloadingId(null);
+    }
+  };
+
+  const handleAttachDelete = async (doc: documentsApi.EmployeeDocument) => {
+    if (!confirm(`Delete '${doc.name}'?`)) return;
+    try {
+      await documentsApi.remove(doc.id);
+      setAttachments(prev => prev.filter(d => d.id !== doc.id));
+      toast.success('Deleted');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  /** Human file size for the Attachments list. */
+  const fmtAttachSize = (bytes: number) =>
+    bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : bytes >= 1024 ? `${(bytes / 1024).toFixed(0)} KB`
+    : `${bytes} B`;
 
   // Password tab state
   const [currentPw, setCurrentPw] = useState('');
@@ -133,13 +235,18 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        {/* Title + description kept sr-only so the dialog still has a
+            programmatic label, but the visible "header" is the
+            identity strip — avatar + name + role/dept badges already
+            convey what the dialog is about; the redundant "Your
+            Profile" line was just chrome. */}
+        <DialogHeader className="sr-only">
           <DialogTitle>Your Profile</DialogTitle>
           <DialogDescription>Update personal information, login email, or password.</DialogDescription>
         </DialogHeader>
 
-        {/* Identity strip */}
-        <div className="px-6 py-4 flex items-center gap-4 border-b">
+        {/* Identity strip = the visible header */}
+        <div className="px-6 pt-6 pb-4 flex items-center gap-4 border-b">
           <Avatar className="h-14 w-14 rounded-lg border border-gray-200">
             <AvatarImage src={profile.profileImage} className="rounded-lg object-cover" />
             <AvatarFallback className="rounded-lg bg-blue-100 text-blue-700 text-sm font-semibold">
@@ -162,7 +269,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
         </div>
 
         <Tabs defaultValue="profile" className="px-6 pt-4 pb-2">
-          <TabsList className="grid grid-cols-3 max-w-md">
+          <TabsList className={`grid ${showAttachments ? 'grid-cols-4 max-w-xl' : 'grid-cols-3 max-w-md'}`}>
             <TabsTrigger value="profile">
               <UserIcon className="h-3.5 w-3.5 mr-1.5" />
               Profile
@@ -175,6 +282,12 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               <KeyRound className="h-3.5 w-3.5 mr-1.5" />
               Password
             </TabsTrigger>
+            {showAttachments && (
+              <TabsTrigger value="attachments">
+                <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+                Attachments
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Profile tab */}
@@ -397,6 +510,104 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               </Button>
             </DialogFooter>
           </TabsContent>
+
+          {/* Attachments tab — only when the account is linked to an
+              employee. Lets the user upload personal docs (ID copies,
+              certificates, etc.) and pull existing ones back down. */}
+          {showAttachments && (
+            <TabsContent value="attachments" className="space-y-4 pt-4 pb-2">
+              <div className="p-4 rounded-md border-2 border-dashed border-gray-300 space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[180px] space-y-1.5">
+                    <Label className="text-xs text-gray-600">Document type</Label>
+                    <select
+                      value={attachUploadType}
+                      onChange={e => setAttachUploadType(e.target.value as documentsApi.EmployeeDocumentType)}
+                      className="w-full h-9 px-3 border rounded-md text-sm bg-white"
+                    >
+                      {DOC_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 min-w-[200px] space-y-1.5">
+                    <Label htmlFor="profile-attach-file" className="text-xs text-gray-600">
+                      Pick file{attachUploading && <span className="text-amber-600 ml-2">uploading…</span>}
+                    </Label>
+                    <Input
+                      id="profile-attach-file"
+                      type="file"
+                      multiple
+                      disabled={attachUploading}
+                      onChange={e => {
+                        void handleAttachUpload(e.target.files);
+                        // Allow re-uploading the same file later by
+                        // clearing the input value after the request
+                        // kicks off.
+                        e.currentTarget.value = '';
+                      }}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                  <Upload className="h-3 w-3" />
+                  Files are stored against your employee record and visible to your HR admin.
+                </p>
+              </div>
+
+              {attachLoading && attachments.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Loading attachments…</p>
+              ) : attachments.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  No attachments yet. Upload your first file above.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {attachments.map(doc => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-md border bg-white"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm truncate" title={doc.name}>{doc.name}</p>
+                          <p className="text-[11px] text-gray-500">
+                            {DOC_TYPE_LABEL[doc.type] ?? doc.type}
+                            <span className="mx-1.5 text-gray-300">·</span>
+                            {fmtAttachSize(doc.sizeBytes)}
+                            <span className="mx-1.5 text-gray-300">·</span>
+                            {formatDate(doc.uploadedAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="inline-flex gap-1 shrink-0">
+                        <Button
+                          size="sm" variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => handleAttachDownload(doc)}
+                          disabled={attachDownloadingId === doc.id}
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1" />
+                          {attachDownloadingId === doc.id ? '…' : 'Get'}
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost"
+                          className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleAttachDelete(doc)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>
