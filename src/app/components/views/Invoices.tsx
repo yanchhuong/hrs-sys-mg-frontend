@@ -30,7 +30,7 @@ import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -83,6 +83,12 @@ export function Invoices() {
   const [loading, setLoading] = useState(false);
   const [kindFilter, setKindFilter] = useState<invoicesApi.InvoiceKind | 'all'>('all');
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
+  // Date-range + keyword filters — applied client-side over the rows
+  // we already loaded so HR sees instant feedback when scrubbing dates
+  // or typing without round-tripping for each keystroke.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [search, setSearch] = useState('');
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -118,19 +124,42 @@ export function Invoices() {
   }, [customers]);
 
   /**
-   * Re-order the rows so that credit / debit notes sit immediately
-   * after their parent commercial / tax invoice. Backend returns
-   * everything newest-first; we walk the list and slot each
-   * adjustment under its root. Adjustments whose root isn't in the
-   * current rows (e.g. while a single-kind tab is selected) fall
-   * through to the end so they still appear instead of vanishing.
+   * Filter by date range + free-text keyword, then group adjustments
+   * under their parents. Filters are client-side over the loaded
+   * page so HR gets instant feedback. Keyword matches invoice
+   * number, customer name, or notes (case-insensitive); date range
+   * is inclusive and either end may be open.
    */
   const groupedRows = useMemo(() => {
     if (rows.length === 0) return rows;
+    const q = search.trim().toLowerCase();
+    const passesFilters = (r: invoicesApi.Invoice): boolean => {
+      if (dateFrom && r.issueDate < dateFrom) return false;
+      if (dateTo   && r.issueDate > dateTo)   return false;
+      if (!q) return true;
+      const customerName = customerById.get(r.customerId)?.name?.toLowerCase() ?? '';
+      return r.invoiceNo.toLowerCase().includes(q)
+          || customerName.includes(q)
+          || (r.notes ?? '').toLowerCase().includes(q);
+    };
+
+    // For grouping: keep an adjustment visible if it OR its parent passes.
+    // The parent stays visible too in that case so the chain isn't broken.
+    const parentOf = new Map<string, invoicesApi.Invoice>();
+    rows.forEach(r => parentOf.set(r.id, r));
+    const keepIds = new Set<string>();
+    for (const r of rows) {
+      if (passesFilters(r)) {
+        keepIds.add(r.id);
+        if (r.parentInvoiceId && parentOf.has(r.parentInvoiceId)) keepIds.add(r.parentInvoiceId);
+      }
+    }
+    const visible = rows.filter(r => keepIds.has(r.id));
+
     const adjustmentsByParent = new Map<string, invoicesApi.Invoice[]>();
     const orphans: invoicesApi.Invoice[] = [];
-    const rowIds = new Set(rows.map(r => r.id));
-    for (const r of rows) {
+    const rowIds = new Set(visible.map(r => r.id));
+    for (const r of visible) {
       if (!r.parentInvoiceId) continue;
       if (rowIds.has(r.parentInvoiceId)) {
         if (!adjustmentsByParent.has(r.parentInvoiceId)) adjustmentsByParent.set(r.parentInvoiceId, []);
@@ -140,14 +169,14 @@ export function Invoices() {
       }
     }
     const out: invoicesApi.Invoice[] = [];
-    for (const r of rows) {
-      if (r.parentInvoiceId) continue; // adjustments are slotted under their root, not in the outer pass
+    for (const r of visible) {
+      if (r.parentInvoiceId) continue;
       out.push(r);
       const kids = adjustmentsByParent.get(r.id);
       if (kids) out.push(...kids);
     }
     return [...out, ...orphans];
-  }, [rows]);
+  }, [rows, search, dateFrom, dateTo, customerById]);
 
   const pagination = usePagination(groupedRows, 25);
 
@@ -185,10 +214,6 @@ export function Invoices() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Invoice</h1>
-          <p className="text-gray-500">
-            Commercial &amp; tax invoices plus credit / debit notes. Adjustments
-            reference the root invoice they correct so the audit chain stays intact.
-          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -225,19 +250,59 @@ export function Invoices() {
 
       <Card>
         <CardHeader className="pb-3">
-          <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
-            <TabsList>
-              {KIND_FILTERS.map(f => (
-                <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
+              <TabsList>
+                {KIND_FILTERS.map(f => (
+                  <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            <div className="flex items-center gap-2">
+              {/* Date range — inclusive, either end may be open. Backend
+                  returns the most recent rows; the range narrows the
+                  loaded page so HR doesn't need to re-fetch per scrub. */}
+              <Label className="text-xs text-gray-500">From</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="h-8 w-36 text-sm"
+              />
+              <Label className="text-xs text-gray-500">To</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="h-8 w-36 text-sm"
+              />
+              {(dateFrom || dateTo) && (
+                <Button
+                  size="sm" variant="ghost" className="h-8 text-xs"
+                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                >
+                  Clear
+                </Button>
+              )}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search invoice no, customer, notes…"
+                  className="h-8 pl-7 w-64 text-sm"
+                />
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No invoices yet.</p>
+          ) : groupedRows.length === 0 ? (
+            <p className="text-sm text-gray-500 py-6 text-center">
+              {rows.length === 0 ? 'No invoices yet.' : 'No invoices match your filters.'}
+            </p>
           ) : (
             <>
               <Table>
