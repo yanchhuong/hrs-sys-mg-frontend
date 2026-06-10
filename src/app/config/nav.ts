@@ -21,7 +21,7 @@ import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
-  FileText,
+  FileText, UserCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -40,6 +40,7 @@ import { AttendanceSettings } from '../components/views/AttendanceSettings';
 import { EmployeeSettings } from '../components/views/EmployeeSettings';
 import { PayrollCategorySettings } from '../components/views/PayrollCategorySettings';
 import { Reports } from '../components/views/Reports';
+import { Customers } from '../components/views/Customers';
 
 export interface NavLeaf {
   id: string;
@@ -94,6 +95,8 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'attendance-report',  component: Reports, group: 'reports-group', initialView: 'attendance' },
   { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'payroll-report',     component: Reports, group: 'reports-group', initialView: 'payroll' },
   { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
+
+  { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },
