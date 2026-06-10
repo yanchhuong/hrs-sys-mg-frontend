@@ -52,7 +52,9 @@ export async function upload(
   fd.append('file', file);
   fd.append('type', type);
   if (notes) fd.append('notes', notes);
-  const res = await apiFetch(`/api/v1/employees/${employeeId}/documents?type=${encodeURIComponent(type)}`, {
+  // type goes in the multipart body only — sending it as a query param too
+  // makes Spring's @RequestParam concatenate both values ("certificate,certificate").
+  const res = await apiFetch(`/api/v1/employees/${employeeId}/documents`, {
     method: 'POST',
     body: fd,
   });
