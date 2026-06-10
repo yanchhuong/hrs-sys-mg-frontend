@@ -96,6 +96,21 @@ export function ModuleCategories() {
   const [dragCategory, setDragCategory] = useState<string | null>(null);
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
 
+  // Safety net: window-level dragend always clears any in-flight drag.
+  // The row's own onDragEnd can be missed when React reorders DOM nodes
+  // during the optimistic catalog update — the original drag-source div
+  // gets reparented and the browser-attached event never reaches us, so
+  // dragModule stays set and the row stays stuck at opacity-40.
+  // Listening on window catches the bubble unconditionally.
+  useEffect(() => {
+    const reset = () => {
+      setDragModule(null); setDragOverKey(null);
+      setDragCategory(null); setDragOverCategory(null);
+    };
+    window.addEventListener('dragend', reset);
+    return () => window.removeEventListener('dragend', reset);
+  }, []);
+
   // Expanded category keys — persisted so the admin's expand/collapse
   // choice survives reloads. We track expanded (not collapsed) so the
   // default for any unseen / newly-created category is folded.
