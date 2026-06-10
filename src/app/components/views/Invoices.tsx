@@ -117,7 +117,39 @@ export function Invoices() {
     return m;
   }, [customers]);
 
-  const pagination = usePagination(rows, 25);
+  /**
+   * Re-order the rows so that credit / debit notes sit immediately
+   * after their parent commercial / tax invoice. Backend returns
+   * everything newest-first; we walk the list and slot each
+   * adjustment under its root. Adjustments whose root isn't in the
+   * current rows (e.g. while a single-kind tab is selected) fall
+   * through to the end so they still appear instead of vanishing.
+   */
+  const groupedRows = useMemo(() => {
+    if (rows.length === 0) return rows;
+    const adjustmentsByParent = new Map<string, invoicesApi.Invoice[]>();
+    const orphans: invoicesApi.Invoice[] = [];
+    const rowIds = new Set(rows.map(r => r.id));
+    for (const r of rows) {
+      if (!r.parentInvoiceId) continue;
+      if (rowIds.has(r.parentInvoiceId)) {
+        if (!adjustmentsByParent.has(r.parentInvoiceId)) adjustmentsByParent.set(r.parentInvoiceId, []);
+        adjustmentsByParent.get(r.parentInvoiceId)!.push(r);
+      } else {
+        orphans.push(r);
+      }
+    }
+    const out: invoicesApi.Invoice[] = [];
+    for (const r of rows) {
+      if (r.parentInvoiceId) continue; // adjustments are slotted under their root, not in the outer pass
+      out.push(r);
+      const kids = adjustmentsByParent.get(r.id);
+      if (kids) out.push(...kids);
+    }
+    return [...out, ...orphans];
+  }, [rows]);
+
+  const pagination = usePagination(groupedRows, 25);
 
   const openCreate = (kind: invoicesApi.InvoiceKind) => {
     setFormEditing(null);
@@ -222,9 +254,16 @@ export function Invoices() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pagination.paginatedItems.map(inv => (
-                    <TableRow key={inv.id}>
-                      <TableCell className="font-mono text-sm">{inv.invoiceNo}</TableCell>
+                  {pagination.paginatedItems.map(inv => {
+                    const isAdjustment = !!inv.parentInvoiceId;
+                    return (
+                    <TableRow key={inv.id} className={isAdjustment ? 'bg-slate-50/50' : ''}>
+                      <TableCell className="font-mono text-sm">
+                        {isAdjustment && (
+                          <span className="text-gray-400 mr-1.5" title="Adjusts the parent invoice above">↳</span>
+                        )}
+                        {inv.invoiceNo}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`gap-1 ${KIND_BADGE_CLASS[inv.kind]}`}>
                           {KIND_LABEL[inv.kind]}
@@ -259,7 +298,8 @@ export function Invoices() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
               {pagination.totalPages > 1 && (
@@ -269,8 +309,8 @@ export function Invoices() {
                     totalPages={pagination.totalPages}
                     onPageChange={pagination.goToPage}
                     startIndex={(pagination.currentPage - 1) * 25}
-                    endIndex={Math.min(pagination.currentPage * 25, rows.length)}
-                    totalItems={rows.length}
+                    endIndex={Math.min(pagination.currentPage * 25, groupedRows.length)}
+                    totalItems={groupedRows.length}
                   />
                 </div>
               )}
@@ -669,39 +709,42 @@ function InvoiceFormDialog({
             </div>
           </div>
 
-          {/* Right-aligned summary: labels sit next to their amounts
-              rather than spanning the full dialog width. Easier to
-              scan vertically and keeps the eye in one column. */}
-          <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
-            <div className="flex justify-end gap-6">
-              <span className="text-gray-600">Subtotal</span>
-              <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
+          {/* Two-column layout matching the detail view — Notes on
+              the left (resizes-via-rows since the user might paste a
+              paragraph), Summary on the right. Same shape for create
+              + edit + view so the eye doesn't relearn each surface. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notes</Label>
+              <Textarea
+                rows={8}
+                value={notes} onChange={e => setNotes(e.target.value)}
+                placeholder="Internal note or memo printed on the invoice"
+                className="h-full"
+              />
             </div>
-            <div className="flex justify-end gap-6">
-              <span className="text-gray-600">Tax</span>
-              <span className="tabular-nums w-32 text-right">+ {fmtMoney(Number(taxAmount) || 0, currency)}</span>
+            <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
+              <div className="flex justify-end gap-6">
+                <span className="text-gray-600">Subtotal</span>
+                <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
+              </div>
+              <div className="flex justify-end gap-6">
+                <span className="text-gray-600">Tax</span>
+                <span className="tabular-nums w-32 text-right">+ {fmtMoney(Number(taxAmount) || 0, currency)}</span>
+              </div>
+              <div className="flex justify-end gap-6">
+                <span className="text-gray-600">Discount</span>
+                <span className="tabular-nums w-32 text-right">− {fmtMoney(Number(discountAmount) || 0, currency)}</span>
+              </div>
+              <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
+                <span>Total USD</span>
+                <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
+              </div>
+              <div className="flex justify-end gap-6 text-gray-700">
+                <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
+                <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              </div>
             </div>
-            <div className="flex justify-end gap-6">
-              <span className="text-gray-600">Discount</span>
-              <span className="tabular-nums w-32 text-right">− {fmtMoney(Number(discountAmount) || 0, currency)}</span>
-            </div>
-            <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
-              <span>Total USD</span>
-              <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
-            </div>
-            <div className="flex justify-end gap-6 text-gray-700">
-              <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-              <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Notes</Label>
-            <Textarea
-              rows={2}
-              value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Internal note or memo printed on the invoice"
-            />
           </div>
         </div>
 
