@@ -328,12 +328,15 @@ export function Invoices() {
 /* -------------------------------------------------------------------------- */
 interface FormItem {
   name: string;
+  /** Free-form specification (DB column: description). */
   description?: string;
+  /** UOM string. */
+  unit?: string;
   quantity: string;
   unitPrice: string;
 }
 
-const blankItem: FormItem = { name: '', quantity: '1', unitPrice: '0' };
+const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
 
 function InvoiceFormDialog({
   open, onOpenChange, kind, customers, invoices, editing, onCreated,
@@ -379,7 +382,8 @@ function InvoiceFormDialog({
         ? [{ ...blankItem }]
         : editing.items.map(it => ({
             name: it.name,
-            description: it.description ?? undefined,
+            description: it.description ?? '',
+            unit: it.unit ?? '',
             quantity: String(it.quantity),
             unitPrice: String(it.unitPrice),
           })));
@@ -432,7 +436,8 @@ function InvoiceFormDialog({
     notes: notes || undefined,
     items: items.map(it => ({
       name: it.name.trim(),
-      description: it.description,
+      description: it.description?.trim() || undefined,
+      unit: it.unit?.trim() || undefined,
       quantity: Number(it.quantity) || 0,
       unitPrice: Number(it.unitPrice) || 0,
     })),
@@ -575,7 +580,11 @@ function InvoiceFormDialog({
             </div>
           </div>
 
-          {/* Line items editor */}
+          {/* Line items editor — Item / Specification / UOM / Qty /
+              Unit price / Line total. Specification is a free-form
+              detail ("Coke 330ml can" / "WD-40 1L spray", etc.); UOM
+              is the unit it's sold in. Both feed the printed invoice
+              line and stay snapshotted on the row at issue time. */}
           <div className="space-y-2 border rounded-md p-3">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-semibold">Line items</Label>
@@ -584,10 +593,12 @@ function InvoiceFormDialog({
               </Button>
             </div>
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
-              <div className="col-span-5">Item</div>
-              <div className="col-span-2 text-right">Qty</div>
+              <div className="col-span-3">Item</div>
+              <div className="col-span-3">Specification</div>
+              <div className="col-span-1">UOM</div>
+              <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-2 text-right">Line total</div>
+              <div className="col-span-1 text-right">Line total</div>
               <div className="col-span-1" />
             </div>
             {items.map((it, idx) => {
@@ -595,13 +606,25 @@ function InvoiceFormDialog({
               return (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
                   <Input
-                    className="col-span-5 h-8 text-sm"
+                    className="col-span-3 h-8 text-sm"
                     value={it.name}
                     onChange={e => updateItem(idx, { name: e.target.value })}
                     placeholder="Item or service name"
                   />
                   <Input
-                    className="col-span-2 h-8 text-sm text-right"
+                    className="col-span-3 h-8 text-sm"
+                    value={it.description ?? ''}
+                    onChange={e => updateItem(idx, { description: e.target.value })}
+                    placeholder="Model, size, variant…"
+                  />
+                  <Input
+                    className="col-span-1 h-8 text-sm"
+                    value={it.unit ?? ''}
+                    onChange={e => updateItem(idx, { unit: e.target.value })}
+                    placeholder="pcs"
+                  />
+                  <Input
+                    className="col-span-1 h-8 text-sm text-right"
                     type="number" min={0} step="0.01"
                     value={it.quantity}
                     onChange={e => updateItem(idx, { quantity: e.target.value })}
@@ -612,7 +635,7 @@ function InvoiceFormDialog({
                     value={it.unitPrice}
                     onChange={e => updateItem(idx, { unitPrice: e.target.value })}
                   />
-                  <div className="col-span-2 text-right text-sm tabular-nums px-2">
+                  <div className="col-span-1 text-right text-sm tabular-nums px-2">
                     {lineTotal.toFixed(2)}
                   </div>
                   <Button
@@ -833,13 +856,18 @@ function InvoiceDetailDialog({
               )}
             </div>
 
-            {/* Line items */}
+            {/* Line items — Specification + UOM surfaced as their own
+                columns so the read view matches what the create dialog
+                captures and what the printed invoice will eventually
+                show. */}
             <div className="border rounded-md overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>Specification</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
+                    <TableHead className="text-right w-[80px]">Qty</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Line total</TableHead>
                   </TableRow>
@@ -847,12 +875,9 @@ function InvoiceDetailDialog({
                 <TableBody>
                   {invoice.items.map(it => (
                     <TableRow key={it.id}>
-                      <TableCell className="text-sm">
-                        <div>{it.name}</div>
-                        {it.description && (
-                          <div className="text-xs text-gray-500">{it.description}</div>
-                        )}
-                      </TableCell>
+                      <TableCell className="text-sm">{it.name}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{it.quantity}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, invoice.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, invoice.currency)}</TableCell>

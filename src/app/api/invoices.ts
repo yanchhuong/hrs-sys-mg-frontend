@@ -10,7 +10,10 @@ export interface InvoiceItem {
   id: string;
   stockItemId?: string | null;
   name: string;
+  /** Free-form specification — surfaces as "Specification" in the UI. */
   description?: string | null;
+  /** UOM ('pcs', 'box', 'kg', 'hour', …). Snapshot at line-time. */
+  unit?: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -43,7 +46,10 @@ export interface Invoice {
 export interface InvoiceItemRequest {
   stockItemId?: string | null;
   name: string;
+  /** Free-form specification. */
   description?: string | null;
+  /** UOM; service falls back to the stock item's unit when omitted. */
+  unit?: string | null;
   quantity: number;
   unitPrice: number;
 }
