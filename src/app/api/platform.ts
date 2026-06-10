@@ -517,6 +517,23 @@ export const moduleCategories = {
       method: 'DELETE',
     }),
 
+  /** Atomic bulk-reorder of modules in one sibling group. Send the new
+   *  sequence as {key, sortOrder} pairs; the server rewrites them in
+   *  one transaction so concurrent readers never see a half-reordered
+   *  tree. */
+  reorderModules: (items: Array<{ key: string; sortOrder: number }>): Promise<void> =>
+    apiVoid('/api/v1/platform/module-categories/modules/reorder', {
+      method: 'POST',
+      json: { items },
+    }),
+
+  /** Same shape as {@link reorderModules} but for top-level categories. */
+  reorderCategories: (items: Array<{ key: string; sortOrder: number }>): Promise<void> =>
+    apiVoid('/api/v1/platform/module-categories/reorder', {
+      method: 'POST',
+      json: { items },
+    }),
+
   /** Convenience wrapper for the most common edit: move a module to a
    *  different category (keeps everything else as-is). */
   reassign: (moduleKey: string, categoryKey: string): Promise<ModuleDetail> =>

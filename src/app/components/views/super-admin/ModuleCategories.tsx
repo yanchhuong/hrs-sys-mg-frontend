@@ -15,7 +15,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import {
-  Layers, Plus, Pencil, Trash2, CheckCircle2, CircleDashed, Lock,
+  Layers, Plus, Pencil, Trash2, CheckCircle2, CircleDashed, Lock, GripVertical,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
@@ -83,6 +84,38 @@ export function ModuleCategories() {
   const [modEdit, setModEdit] = useState<ModuleEditState>(EMPTY_MOD);
   const [modSaving, setModSaving] = useState(false);
   const [deleteModTarget, setDeleteModTarget] = useState<platformApi.ModuleNode | null>(null);
+
+  // Drag-and-drop reorder state. We only allow same-sibling-group
+  // reorders (same category + same parentKey) — re-parenting stays in
+  // the Edit dialog where the cycle check + category move are explicit.
+  // groupKey shape: `${categoryKey}::${parentKey ?? ''}` so a single
+  // string identifies the drop target group.
+  const [dragModule, setDragModule] = useState<{ key: string; groupKey: string } | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  // Same idea for the category cards themselves.
+  const [dragCategory, setDragCategory] = useState<string | null>(null);
+  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+
+  // Collapsed category keys — persisted so the admin's expand/collapse
+  // choice survives reloads. Stored as a JSON array (the natural Set
+  // shape doesn't serialize); we rehydrate into a Set in state.
+  const COLLAPSED_KEY = 'hrms.moduleCategories.collapsed';
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSED_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === 'string')) : new Set();
+    } catch { return new Set(); }
+  });
+  const toggleCollapsed = (key: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch { /* quota / private mode */ }
+      return next;
+    });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -228,6 +261,78 @@ export function ModuleCategories() {
     }
   };
 
+  /* -------------------- drag-and-drop reorder -------------------- */
+
+  /** Collect the live sibling list for one group from the current catalog. */
+  const siblingsOf = (categoryKey: string, parentKey: string | null): platformApi.ModuleNode[] => {
+    const cat = allCats.find(c => c.key === categoryKey);
+    if (!cat) return [];
+    if (parentKey === null) return cat.modules;
+    // depth > 0 — find the parent in the tree and return its children.
+    const stack: platformApi.ModuleNode[] = [...cat.modules];
+    while (stack.length) {
+      const n = stack.shift()!;
+      if (n.key === parentKey) return n.children ?? [];
+      if (n.children?.length) stack.push(...n.children);
+    }
+    return [];
+  };
+
+  /** Apply the new order to a sibling group: optimistically rewrite the
+   *  local catalog so the UI stays responsive, then POST the new
+   *  sequence. On failure, refetch so the server is the source of
+   *  truth and any drift is corrected. */
+  const reorderModuleSiblings = async (
+    categoryKey: string,
+    parentKey: string | null,
+    newOrder: platformApi.ModuleNode[],
+  ) => {
+    // Build the bulk update — 1-indexed so the order shown in the
+    // tree matches what an admin types when they edit by hand.
+    const items = newOrder.map((n, i) => ({ key: n.key, sortOrder: i + 1 }));
+
+    // Optimistic local rewrite.
+    setCatalog(prev => {
+      if (!prev) return prev;
+      const rewriteList = (list: platformApi.ModuleNode[]): platformApi.ModuleNode[] => {
+        if (parentKey === null) return newOrder.map(o => list.find(n => n.key === o.key) ?? o);
+        return list.map(n => {
+          if (n.key === parentKey) {
+            const kids = n.children ?? [];
+            return { ...n, children: newOrder.map(o => kids.find(k => k.key === o.key) ?? o) };
+          }
+          if (n.children?.length) return { ...n, children: rewriteList(n.children) };
+          return n;
+        });
+      };
+      return {
+        ...prev,
+        categories: prev.categories.map(c =>
+          c.key === categoryKey ? { ...c, modules: rewriteList(c.modules) } : c
+        ),
+      };
+    });
+
+    try {
+      await platformApi.moduleCategories.reorderModules(items);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save new order');
+      await load();
+    }
+  };
+
+  /** Same idea but at the category level. */
+  const reorderCategorySiblings = async (newOrder: platformApi.ModuleCategory[]) => {
+    const items = newOrder.map((c, i) => ({ key: c.key, sortOrder: i + 1 }));
+    setCatalog(prev => prev ? { ...prev, categories: newOrder } : prev);
+    try {
+      await platformApi.moduleCategories.reorderCategories(items);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save new order');
+      await load();
+    }
+  };
+
   /* -------------------- render -------------------- */
 
   const StatusBadge = ({ status }: { status: 'complete' | 'draft' }) => (
@@ -251,15 +356,59 @@ export function ModuleCategories() {
     depth: number;
     categoryKey: string;
     parentKey: string | null;
-  }) => (
+  }) => {
+    const groupKey = `${categoryKey}::${parentKey ?? ''}`;
+    const isDragging = dragModule?.key === node.key;
+    // Only highlight the drop slot when the active drag belongs to the
+    // same sibling group — cross-group drops are rejected.
+    const canAcceptDrop = !!dragModule && dragModule.groupKey === groupKey && dragModule.key !== node.key;
+    const isDropTarget = canAcceptDrop && dragOverKey === node.key;
+    return (
     <>
       <div
-        className={`flex items-center justify-between px-3 py-2 rounded-md border ${
+        draggable
+        onDragStart={(e) => {
+          setDragModule({ key: node.key, groupKey });
+          e.dataTransfer.effectAllowed = 'move';
+          // Firefox requires data to be set or the drag won't fire.
+          e.dataTransfer.setData('text/plain', node.key);
+        }}
+        onDragEnd={() => { setDragModule(null); setDragOverKey(null); }}
+        onDragOver={(e) => {
+          if (!canAcceptDrop) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (dragOverKey !== node.key) setDragOverKey(node.key);
+        }}
+        onDragLeave={() => {
+          if (dragOverKey === node.key) setDragOverKey(null);
+        }}
+        onDrop={(e) => {
+          if (!canAcceptDrop || !dragModule) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const siblings = siblingsOf(categoryKey, parentKey);
+          const fromIdx = siblings.findIndex(s => s.key === dragModule.key);
+          const toIdx = siblings.findIndex(s => s.key === node.key);
+          if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) {
+            setDragModule(null); setDragOverKey(null); return;
+          }
+          const next = [...siblings];
+          const [moved] = next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, moved);
+          setDragModule(null); setDragOverKey(null);
+          void reorderModuleSiblings(categoryKey, parentKey, next);
+        }}
+        className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
           node.status === 'complete' ? 'border-slate-200 bg-white' : 'border-amber-100 bg-amber-50/30'
-        }`}
+        } ${isDragging ? 'opacity-40' : ''} ${isDropTarget ? 'ring-2 ring-blue-300 ring-offset-1' : ''}`}
         style={{ marginLeft: depth * 18 }}
       >
         <div className="flex items-center gap-2 min-w-0">
+          <GripVertical
+            className="h-3.5 w-3.5 shrink-0 text-slate-300 cursor-grab active:cursor-grabbing"
+            aria-label="Drag to reorder"
+          />
           <Layers className={`h-3.5 w-3.5 shrink-0 ${
             node.status === 'complete' ? 'text-emerald-500' : 'text-amber-500'
           }`} />
@@ -309,7 +458,8 @@ export function ModuleCategories() {
         />
       ))}
     </>
-  );
+    );
+  };
 
   // For the parent-module dropdown — every node from every category,
   // shown indented so the admin sees the tree position.
@@ -335,10 +485,28 @@ export function ModuleCategories() {
             {' '}(planning placeholder, hidden from tenants). Add sub-menus to nest as deep as needed.
           </p>
         </div>
-        <Button onClick={openCreateCat}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          New Category
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {allCats.length > 0 && (
+            collapsed.size === allCats.length
+              ? <Button variant="outline" size="sm" onClick={() => {
+                  setCollapsed(new Set());
+                  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([])); } catch { /* ignore */ }
+                }}>
+                  <ChevronDown className="h-3.5 w-3.5 mr-1" /> Expand all
+                </Button>
+              : <Button variant="outline" size="sm" onClick={() => {
+                  const all = new Set(allCats.map(c => c.key));
+                  setCollapsed(all);
+                  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...all])); } catch { /* ignore */ }
+                }}>
+                  <ChevronRight className="h-3.5 w-3.5 mr-1" /> Collapse all
+                </Button>
+          )}
+          <Button onClick={openCreateCat}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Category
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -360,13 +528,66 @@ export function ModuleCategories() {
         <p className="text-sm text-gray-500">Loading catalog…</p>
       ) : (
         <div className="space-y-4">
-          {allCats.map((cat, idx) => (
-            <Card key={cat.key}>
+          {allCats.map((cat, idx) => {
+            const isCatDragging = dragCategory === cat.key;
+            const isCatDropTarget = !!dragCategory && dragCategory !== cat.key && dragOverCategory === cat.key;
+            return (
+            <Card
+              key={cat.key}
+              draggable
+              onDragStart={(e) => {
+                setDragCategory(cat.key);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', `cat:${cat.key}`);
+              }}
+              onDragEnd={() => { setDragCategory(null); setDragOverCategory(null); }}
+              onDragOver={(e) => {
+                if (!dragCategory || dragCategory === cat.key) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverCategory !== cat.key) setDragOverCategory(cat.key);
+              }}
+              onDragLeave={() => {
+                if (dragOverCategory === cat.key) setDragOverCategory(null);
+              }}
+              onDrop={(e) => {
+                if (!dragCategory || dragCategory === cat.key) return;
+                e.preventDefault();
+                const fromIdx = allCats.findIndex(c => c.key === dragCategory);
+                const toIdx = allCats.findIndex(c => c.key === cat.key);
+                setDragCategory(null); setDragOverCategory(null);
+                if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+                const next = [...allCats];
+                const [moved] = next.splice(fromIdx, 1);
+                next.splice(toIdx, 0, moved);
+                void reorderCategorySiblings(next);
+              }}
+              className={`transition-all ${isCatDragging ? 'opacity-40' : ''} ${isCatDropTarget ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
+                    <GripVertical
+                      className="h-4 w-4 text-slate-300 shrink-0 cursor-grab active:cursor-grabbing"
+                      aria-label="Drag category to reorder"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapsed(cat.key)}
+                      className="shrink-0 p-0.5 rounded hover:bg-slate-100 text-slate-500"
+                      aria-label={collapsed.has(cat.key) ? 'Expand category' : 'Collapse category'}
+                      title={collapsed.has(cat.key) ? 'Expand' : 'Collapse'}
+                    >
+                      {collapsed.has(cat.key)
+                        ? <ChevronRight className="h-4 w-4" />
+                        : <ChevronDown className="h-4 w-4" />}
+                    </button>
                     <Layers className="h-4 w-4 text-slate-500 shrink-0" />
-                    <div className="min-w-0">
+                    <div
+                      className="min-w-0 cursor-pointer select-none"
+                      onClick={() => toggleCollapsed(cat.key)}
+                      title={collapsed.has(cat.key) ? 'Expand' : 'Collapse'}
+                    >
                       <CardTitle className="text-sm font-semibold">{cat.label}</CardTitle>
                       <CardDescription className="text-xs">
                         <code className="text-slate-500">{cat.key}</code>
@@ -394,25 +615,28 @@ export function ModuleCategories() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                {cat.modules.length === 0 ? (
-                  <p className="text-xs text-gray-500">No modules yet — click <em>Add Module</em>.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {cat.modules.map(node => (
-                      <ModuleRow
-                        key={node.key}
-                        node={node}
-                        depth={0}
-                        categoryKey={cat.key}
-                        parentKey={null}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
+              {!collapsed.has(cat.key) && (
+                <CardContent>
+                  {cat.modules.length === 0 ? (
+                    <p className="text-xs text-gray-500">No modules yet — click <em>Add Module</em>.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {cat.modules.map(node => (
+                        <ModuleRow
+                          key={node.key}
+                          node={node}
+                          depth={0}
+                          categoryKey={cat.key}
+                          parentKey={null}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
