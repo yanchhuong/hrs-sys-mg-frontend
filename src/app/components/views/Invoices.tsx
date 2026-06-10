@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -70,6 +70,49 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
 const fmtMoney = (n: number, currency: string): string =>
   `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/**
+ * Inline confirmation card shown below the customer picker in the
+ * invoice form. Business customers expose the columns the printed
+ * invoice will pick up (TIN / representative / site / address);
+ * individuals show phone + address. Renders nothing when no
+ * customer is selected.
+ */
+function CustomerInfoCard({ customer }: { customer: customersApi.Customer | undefined }) {
+  if (!customer) return null;
+  const rows: Array<{ label: string; value: string | null | undefined }> =
+    customer.type === 'business'
+      ? [
+          { label: 'Company',        value: customer.name },
+          { label: 'TIN',            value: customer.tin },
+          { label: 'Representative', value: customer.representative },
+          { label: 'Phone',          value: customer.phone },
+          { label: 'Site',           value: customer.site },
+          { label: 'Address',        value: customer.address },
+        ]
+      : [
+          { label: 'Name',    value: customer.name },
+          { label: 'Phone',   value: customer.phone },
+          { label: 'Address', value: customer.address },
+        ];
+  return (
+    <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${
+      customer.type === 'business' ? 'bg-violet-50 border-violet-200' : 'bg-emerald-50 border-emerald-200'
+    }`}>
+      <div className="flex items-center gap-1.5 mb-1 font-medium text-[11px] uppercase tracking-wide text-gray-500">
+        {customer.type === 'business' ? 'Business customer' : 'Individual customer'}
+      </div>
+      <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-0.5">
+        {rows.filter(r => r.value && String(r.value).trim()).map(r => (
+          <div key={r.label} className="contents">
+            <div className="text-gray-500">{r.label}</div>
+            <div className="text-gray-800">{r.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Main page component                                                        */
 /* -------------------------------------------------------------------------- */
@@ -96,6 +139,10 @@ export function Invoices() {
   /** When set, the form dialog runs in edit-mode against this invoice
    *  instead of opening blank for a fresh create. */
   const [formEditing, setFormEditing] = useState<invoicesApi.Invoice | null>(null);
+  /** When set, the form dialog opens for a CN/DN pre-pointing at this
+   *  invoice id (skips the parent picker — saves a click from the
+   *  inline "adjust" dropdown on each commercial/tax row). */
+  const [formParentPrefill, setFormParentPrefill] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<invoicesApi.Invoice | null>(null);
 
@@ -180,8 +227,36 @@ export function Invoices() {
 
   const pagination = usePagination(groupedRows, 25);
 
+  /** Per-currency sum of total + paid across the *filtered* set (not
+   *  just the current page) so HR can see the receivable book at a
+   *  glance. Mixed currencies stay grouped — adding USD to KHR would
+   *  produce nonsense. */
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, { total: number; paid: number }>();
+    for (const r of groupedRows) {
+      const c = r.currency || 'USD';
+      if (!m.has(c)) m.set(c, { total: 0, paid: 0 });
+      const slot = m.get(c)!;
+      slot.total += r.total;
+      slot.paid  += r.paidAmount;
+    }
+    return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
+  }, [groupedRows]);
+
   const openCreate = (kind: invoicesApi.InvoiceKind) => {
     setFormEditing(null);
+    setFormParentPrefill(null);
+    setFormKind(kind);
+    setFormOpen(true);
+  };
+
+  /** Open the form dialog for a credit / debit note pre-pointing at
+   *  the given parent invoice. Used by the inline dropdown on each
+   *  commercial / tax row so HR doesn't have to manually pick the
+   *  parent in the form. */
+  const openAdjustment = (parent: invoicesApi.Invoice, kind: 'credit_note' | 'debit_note') => {
+    setFormEditing(null);
+    setFormParentPrefill(parent.id);
     setFormKind(kind);
     setFormOpen(true);
   };
@@ -191,6 +266,7 @@ export function Invoices() {
    *  the list refetches and the user lands back on the list view. */
   const openEdit = (inv: invoicesApi.Invoice) => {
     setFormEditing(inv);
+    setFormParentPrefill(null);
     setFormKind(inv.kind);
     setDetailId(null);
     setFormOpen(true);
@@ -309,13 +385,13 @@ export function Invoices() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[160px]">Invoice No.</TableHead>
-                    <TableHead className="w-[130px]">Kind</TableHead>
+                    <TableHead className="w-[130px]">Type</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead className="w-[110px]">Status</TableHead>
-                    <TableHead className="text-right w-[110px]">Actions</TableHead>
+                    <TableHead className="text-right w-[160px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -350,6 +426,27 @@ export function Invoices() {
                           <Button size="sm" variant="ghost" className="h-7" onClick={() => setDetailId(inv.id)}>
                             <Eye className="h-3 w-3 mr-1" /> View
                           </Button>
+                          {/* Only root invoices (commercial / tax) can
+                              carry adjustments; voided rows are sealed.
+                              The dropdown skips the parent-picker step
+                              in the form by setting formParentPrefill. */}
+                          {canAdd && !isAdjustment && inv.status !== 'void' && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="ghost" className="h-7 px-2" title="Add adjustment note">
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openAdjustment(inv, 'credit_note')}>
+                                  <CornerDownRight className="h-3.5 w-3.5 mr-2 text-emerald-600" /> Credit Note
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openAdjustment(inv, 'debit_note')}>
+                                  <CornerUpRight className="h-3.5 w-3.5 mr-2 text-amber-600" /> Debit Note
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                           {canRemove && inv.status === 'draft' && (
                             <Button
                               size="sm" variant="ghost"
@@ -366,6 +463,24 @@ export function Invoices() {
                     );
                   })}
                 </TableBody>
+                {totalsByCurrency.length > 0 && (
+                  <TableFooter>
+                    {totalsByCurrency.map(t => (
+                      <TableRow key={t.currency}>
+                        <TableCell colSpan={4} className="text-right text-xs font-semibold text-gray-600">
+                          Totals ({t.currency})
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold tabular-nums">
+                          {fmtMoney(t.total, t.currency)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
+                          {fmtMoney(t.paid, t.currency)}
+                        </TableCell>
+                        <TableCell colSpan={2} />
+                      </TableRow>
+                    ))}
+                  </TableFooter>
+                )}
               </Table>
               {pagination.totalPages > 1 && (
                 <div className="mt-4">
@@ -387,12 +502,13 @@ export function Invoices() {
       {/* Create / edit dialog */}
       <InvoiceFormDialog
         open={formOpen}
-        onOpenChange={(o) => { setFormOpen(o); if (!o) setFormEditing(null); }}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
         kind={formKind}
         customers={customers}
         invoices={rows}
         editing={formEditing}
-        onCreated={async () => { setFormOpen(false); setFormEditing(null); await load(); }}
+        parentPrefill={formParentPrefill}
+        onCreated={async () => { setFormOpen(false); setFormEditing(null); setFormParentPrefill(null); await load(); }}
       />
 
       {/* Detail dialog */}
@@ -444,7 +560,7 @@ interface FormItem {
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
 
 function InvoiceFormDialog({
-  open, onOpenChange, kind, customers, invoices, editing, onCreated,
+  open, onOpenChange, kind, customers, invoices, editing, parentPrefill, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -455,6 +571,10 @@ function InvoiceFormDialog({
    *  instead of creating a new one. Submit calls PUT /invoices/{id}
    *  instead of POST /invoices. */
   editing?: invoicesApi.Invoice | null;
+  /** When set on a create-mode open, seeds parentInvoiceId so the
+   *  parent picker is pre-filled. Used by the inline "adjust"
+   *  dropdown on commercial / tax rows. */
+  parentPrefill?: string | null;
   onCreated: () => Promise<void> | void;
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
@@ -506,13 +626,17 @@ function InvoiceFormDialog({
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
     } else {
-      setCustomerId('');
-      setParentInvoiceId('');
+      // For a CN/DN opened via the inline dropdown, seed the parent
+      // (and customer + currency) from the parent invoice so HR doesn't
+      // re-pick them.
+      const seedParent = parentPrefill ? invoices.find(i => i.id === parentPrefill) : undefined;
+      setCustomerId(seedParent?.customerId ?? '');
+      setParentInvoiceId(parentPrefill ?? '');
       setInvoiceNo('');
       setIssueDate(new Date().toISOString().slice(0, 10));
       setDueDate('');
-      setCurrency('USD');
-      setExchangeRate('4100');
+      setCurrency(seedParent?.currency ?? 'USD');
+      setExchangeRate(seedParent ? String(seedParent.exchangeRate) : '4100');
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountAmount('0');
@@ -526,7 +650,7 @@ function InvoiceFormDialog({
         .catch(() => { /* non-fatal — user can type their own */ });
       return () => { cancelled = true; };
     }
-  }, [open, kind, editing]);
+  }, [open, kind, editing, parentPrefill, invoices]);
 
   const rootInvoiceOptions = useMemo(() =>
     invoices.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
@@ -686,6 +810,12 @@ function InvoiceFormDialog({
                   searchKey: `${c.name} ${c.phone ?? ''} ${c.tin ?? ''} ${c.representative ?? ''}`,
                 }))}
               />
+              {/* Business customers carry extra info that HR needs to
+                  see on the invoice (TIN / representative / address);
+                  individuals show their phone + address. The card is
+                  a quick-glance review so the bookkeeper can confirm
+                  the right party is selected before saving. */}
+              <CustomerInfoCard customer={customers.find(c => c.id === customerId)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">
@@ -977,8 +1107,11 @@ function InvoiceDetailDialog({
                 {/* mr-8 reserves room for the dialog's built-in close (X)
                     button which sits at top:1rem right:1rem inside the
                     DialogContent — without the inset the Void button
-                    sat directly under it. */}
-                <div className="flex gap-1.5 mr-8">
+                    sat directly under it.
+                    print:hidden drops the whole action row from the
+                    Print output so the printed page only carries the
+                    invoice itself, not the management controls. */}
+                <div className="flex gap-1.5 mr-8 print:hidden">
                   <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
                     <Printer className="h-3.5 w-3.5 mr-1" /> Print
                   </Button>
@@ -1105,7 +1238,7 @@ function InvoiceDetailDialog({
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">Payments</Label>
                 {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && (
-                  <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)}>
+                  <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
                 )}
@@ -1134,7 +1267,7 @@ function InvoiceDetailDialog({
                           {canEdit && (
                             <Button
                               size="sm" variant="ghost"
-                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"
                               onClick={() => doAction('Payment removed',
                                 () => paymentsApi.remove(p.id))}
                               title="Delete payment"
@@ -1150,7 +1283,7 @@ function InvoiceDetailDialog({
               )}
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="print:hidden">
               <Button variant="outline" onClick={onClose}>Close</Button>
             </DialogFooter>
           </>
