@@ -41,11 +41,8 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, ChevronDown, UserPlus, FileSpreadsheet, Download, Trash2, GraduationCap, Info } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
@@ -1199,42 +1196,34 @@ export function Employees() {
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           {/* Add/Bulk-upload are admin+manager only — employees (if they reach this view) see a read-only, team-scoped roster. */}
           {canManageRoster && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Employee
-                  <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Add Single Employee
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setBulkDialogOpen(true)}>
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Upload Bulk (Excel)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={filteredEmployees.length === 0}
-                  onClick={() => {
-                    // Re-importable Excel: same column order as the Bulk
-                    // Upload template, so HR can round-trip edits through
-                    // Excel and re-upload without reshaping.
-                    if (filteredEmployees.length === 0) {
-                      toast.error('No employees match the current filters');
-                      return;
-                    }
-                    exportEmployeesToExcel(filteredEmployees, deptName);
-                    toast.success(`Exported ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'}`);
-                  }}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Excel ({filteredEmployees.length})
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <>
+              <Button variant="outline" onClick={() => setBulkDialogOpen(true)}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Upload Bulk
+              </Button>
+              <Button
+                variant="outline"
+                disabled={filteredEmployees.length === 0}
+                onClick={() => {
+                  // Re-importable Excel: same column order as the Bulk
+                  // Upload template, so HR can round-trip edits through
+                  // Excel and re-upload without reshaping.
+                  if (filteredEmployees.length === 0) {
+                    toast.error('No employees match the current filters');
+                    return;
+                  }
+                  exportEmployeesToExcel(filteredEmployees, deptName);
+                  toast.success(`Exported ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'}`);
+                }}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Excel ({filteredEmployees.length})
+              </Button>
+              <Button onClick={() => setAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Employee
+              </Button>
+            </>
           )}
         </div>
       </div>
