@@ -459,7 +459,10 @@ function InvoiceFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] w-[1330px] max-h-[90vh] overflow-y-auto">
+      {/* sm:max-w-[1400px] beats the dialog default `sm:max-w-lg` —
+          without the sm: prefix the variant rule keeps winning above
+          the 640px breakpoint. */}
+      <DialogContent className="sm:max-w-[1400px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New {KIND_LABEL[kind]}</DialogTitle>
         </DialogHeader>
