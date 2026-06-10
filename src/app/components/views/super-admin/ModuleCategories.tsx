@@ -96,23 +96,25 @@ export function ModuleCategories() {
   const [dragCategory, setDragCategory] = useState<string | null>(null);
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
 
-  // Collapsed category keys — persisted so the admin's expand/collapse
-  // choice survives reloads. Stored as a JSON array (the natural Set
-  // shape doesn't serialize); we rehydrate into a Set in state.
-  const COLLAPSED_KEY = 'hrms.moduleCategories.collapsed';
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+  // Expanded category keys — persisted so the admin's expand/collapse
+  // choice survives reloads. We track expanded (not collapsed) so the
+  // default for any unseen / newly-created category is folded.
+  // Stored as a JSON array (the natural Set shape doesn't serialize);
+  // we rehydrate into a Set in state.
+  const EXPANDED_KEY = 'hrms.moduleCategories.expanded';
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(COLLAPSED_KEY);
+      const raw = localStorage.getItem(EXPANDED_KEY);
       if (!raw) return new Set();
       const arr = JSON.parse(raw);
       return Array.isArray(arr) ? new Set(arr.filter((x): x is string => typeof x === 'string')) : new Set();
     } catch { return new Set(); }
   });
-  const toggleCollapsed = (key: string) => {
-    setCollapsed(prev => {
+  const toggleExpanded = (key: string) => {
+    setExpanded(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
-      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch { /* quota / private mode */ }
+      try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next])); } catch { /* quota / private mode */ }
       return next;
     });
   };
@@ -487,19 +489,19 @@ export function ModuleCategories() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {allCats.length > 0 && (
-            collapsed.size === allCats.length
+            expanded.size === allCats.length
               ? <Button variant="outline" size="sm" onClick={() => {
-                  setCollapsed(new Set());
-                  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([])); } catch { /* ignore */ }
+                  setExpanded(new Set());
+                  try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([])); } catch { /* ignore */ }
                 }}>
-                  <ChevronDown className="h-3.5 w-3.5 mr-1" /> Expand all
+                  <ChevronRight className="h-3.5 w-3.5 mr-1" /> Collapse all
                 </Button>
               : <Button variant="outline" size="sm" onClick={() => {
                   const all = new Set(allCats.map(c => c.key));
-                  setCollapsed(all);
-                  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...all])); } catch { /* ignore */ }
+                  setExpanded(all);
+                  try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...all])); } catch { /* ignore */ }
                 }}>
-                  <ChevronRight className="h-3.5 w-3.5 mr-1" /> Collapse all
+                  <ChevronDown className="h-3.5 w-3.5 mr-1" /> Expand all
                 </Button>
           )}
           <Button onClick={openCreateCat}>
@@ -573,20 +575,20 @@ export function ModuleCategories() {
                     />
                     <button
                       type="button"
-                      onClick={() => toggleCollapsed(cat.key)}
+                      onClick={() => toggleExpanded(cat.key)}
                       className="shrink-0 p-0.5 rounded hover:bg-slate-100 text-slate-500"
-                      aria-label={collapsed.has(cat.key) ? 'Expand category' : 'Collapse category'}
-                      title={collapsed.has(cat.key) ? 'Expand' : 'Collapse'}
+                      aria-label={expanded.has(cat.key) ? 'Collapse category' : 'Expand category'}
+                      title={expanded.has(cat.key) ? 'Collapse' : 'Expand'}
                     >
-                      {collapsed.has(cat.key)
-                        ? <ChevronRight className="h-4 w-4" />
-                        : <ChevronDown className="h-4 w-4" />}
+                      {expanded.has(cat.key)
+                        ? <ChevronDown className="h-4 w-4" />
+                        : <ChevronRight className="h-4 w-4" />}
                     </button>
                     <Layers className="h-4 w-4 text-slate-500 shrink-0" />
                     <div
                       className="min-w-0 cursor-pointer select-none"
-                      onClick={() => toggleCollapsed(cat.key)}
-                      title={collapsed.has(cat.key) ? 'Expand' : 'Collapse'}
+                      onClick={() => toggleExpanded(cat.key)}
+                      title={expanded.has(cat.key) ? 'Collapse' : 'Expand'}
                     >
                       <CardTitle className="text-sm font-semibold">{cat.label}</CardTitle>
                       <CardDescription className="text-xs">
@@ -615,7 +617,7 @@ export function ModuleCategories() {
                   </div>
                 </div>
               </CardHeader>
-              {!collapsed.has(cat.key) && (
+              {expanded.has(cat.key) && (
                 <CardContent>
                   {cat.modules.length === 0 ? (
                     <p className="text-xs text-gray-500">No modules yet — click <em>Add Module</em>.</p>
