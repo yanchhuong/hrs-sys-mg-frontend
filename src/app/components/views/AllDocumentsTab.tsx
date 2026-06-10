@@ -13,9 +13,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import {
-  Search, Download, Trash2, FileText, FileImage, FileType2, RefreshCw,
-} from 'lucide-react';
+import { Search, Download, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import * as documentsApi from '../../api/documents';
@@ -57,14 +55,39 @@ const TYPE_LABEL: Record<string, string> = TYPE_OPTIONS.reduce((acc, o) => {
 }, {} as Record<string, string>);
 
 /**
- * Friendly icon per MIME-family. Visual cue only — the actual
- * download still respects the server-sent content type.
+ * Extension chip family. HR readers spot 'PDF' / 'XLSX' / 'JPG'
+ * faster than a generic file glyph, so the row gets a colored
+ * 2-4 letter pill instead. Colors mirror the typical office-suite
+ * conventions admins see in Drive / OneDrive.
  */
-function iconForMime(mime: string) {
-  if (mime.startsWith('image/')) return FileImage;
-  if (mime.includes('pdf')) return FileType2;
-  return FileText;
+type ExtFamily = 'pdf' | 'word' | 'excel' | 'ppt' | 'image' | 'archive' | 'text' | 'other';
+
+function extOf(filename: string): string {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(filename);
+  return m ? m[1].toLowerCase() : '';
 }
+
+function familyOf(ext: string, mime: string): ExtFamily {
+  if (['pdf'].includes(ext) || mime.includes('pdf')) return 'pdf';
+  if (['doc', 'docx', 'odt', 'rtf'].includes(ext)) return 'word';
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return 'excel';
+  if (['ppt', 'pptx', 'odp', 'key'].includes(ext)) return 'ppt';
+  if (mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','heic','bmp','svg'].includes(ext)) return 'image';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'archive';
+  if (['txt', 'md', 'log'].includes(ext)) return 'text';
+  return 'other';
+}
+
+const EXT_CHIP_CLASS: Record<ExtFamily, string> = {
+  pdf:     'bg-red-100 text-red-700 border-red-200',
+  word:    'bg-blue-100 text-blue-700 border-blue-200',
+  excel:   'bg-emerald-100 text-emerald-700 border-emerald-200',
+  ppt:     'bg-orange-100 text-orange-700 border-orange-200',
+  image:   'bg-purple-100 text-purple-700 border-purple-200',
+  archive: 'bg-amber-100 text-amber-700 border-amber-200',
+  text:    'bg-slate-100 text-slate-700 border-slate-200',
+  other:   'bg-slate-100 text-slate-600 border-slate-200',
+};
 
 /** Human-readable file size. Server reports bytes; HR thinks in KB / MB. */
 function fmtSize(bytes: number): string {
@@ -241,7 +264,9 @@ export function AllDocumentsTab() {
                   </TableRow>
                 ) : (
                   pagination.paginatedItems.map(doc => {
-                    const Icon = iconForMime(doc.mimeType);
+                    const ext = extOf(doc.name);
+                    const family = familyOf(ext, doc.mimeType);
+                    const chipLabel = ext ? ext.toUpperCase() : 'FILE';
                     return (
                       <TableRow key={doc.id}>
                         <TableCell>
@@ -256,7 +281,16 @@ export function AllDocumentsTab() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 min-w-0">
-                            <Icon className="h-4 w-4 text-slate-400 shrink-0" />
+                            {/* Extension chip: HR reads 'PDF' / 'XLSX' /
+                                'JPG' faster than a generic file glyph.
+                                Family colour-codes office vs image vs
+                                archive so a column scan groups visually. */}
+                            <span
+                              className={`shrink-0 inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded border text-[10px] font-semibold tracking-wide uppercase ${EXT_CHIP_CLASS[family]}`}
+                              title={doc.mimeType}
+                            >
+                              {chipLabel}
+                            </span>
                             <div className="min-w-0">
                               <p className="text-sm truncate" title={doc.name}>{doc.name}</p>
                               {doc.notes && (
