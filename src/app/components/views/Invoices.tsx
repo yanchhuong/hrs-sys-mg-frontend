@@ -1260,7 +1260,7 @@ function InvoiceDetailDialog({
                       <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
                     )}
                     <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Net balance</span><span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Remain</span><span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span></div>
                     <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
                       <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
                       <span className="tabular-nums w-32 text-right">KHR {(net * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
