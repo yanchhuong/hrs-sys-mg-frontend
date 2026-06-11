@@ -430,7 +430,20 @@ export function Invoices() {
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(inv.total, inv.currency)}</TableCell>
-                      <TableCell className="text-right text-sm text-gray-600">{fmtMoney(inv.paidAmount, inv.currency)}</TableCell>
+                      {/* Paid on a CN row is a refund — money out — so
+                          render it as a negative amount in red so the
+                          ledger sign reads correctly at a glance. The
+                          stored paidAmount may be positive (legacy
+                          credit-direction) or negative (new debit-
+                          direction); we take the magnitude and prepend
+                          the minus so display is consistent either way. */}
+                      <TableCell className={`text-right text-sm tabular-nums ${
+                        inv.kind === 'credit_note' ? 'text-red-700' : 'text-gray-600'
+                      }`}>
+                        {inv.kind === 'credit_note'
+                          ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
+                          : fmtMoney(inv.paidAmount, inv.currency)}
+                      </TableCell>
                       {/* Remain is meaningful only on the root invoice
                           — CN/DN rows already roll their balance up
                           into the parent's netBalance. Show a muted
