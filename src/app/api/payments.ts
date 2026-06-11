@@ -1,6 +1,10 @@
 import { apiJson, apiVoid } from './client';
 
 export type PaymentMethod = 'cash' | 'bank' | 'card' | 'cheque' | 'other';
+/** `credit` = money in (customer paying the invoice or a debit note).
+ *  `debit`  = money out (refund — settling a credit note). The invoice's
+ *  net Paid total = Σ credit amounts − Σ debit amounts. */
+export type PaymentDirection = 'credit' | 'debit';
 
 export interface Payment {
   id: string;
@@ -8,6 +12,7 @@ export interface Payment {
   paymentDate: string;
   amount: number;
   method: PaymentMethod;
+  direction: PaymentDirection;
   referenceNo?: string | null;
   notes?: string | null;
   createdAt?: string;
@@ -19,6 +24,7 @@ export interface PaymentRequest {
   paymentDate?: string;
   amount: number;
   method?: PaymentMethod;
+  direction?: PaymentDirection;
   referenceNo?: string;
   notes?: string;
 }

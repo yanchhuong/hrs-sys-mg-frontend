@@ -1323,6 +1323,7 @@ function InvoiceDetailDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
+                      <TableHead className="w-[80px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
@@ -1330,12 +1331,23 @@ function InvoiceDetailDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payments.map(p => (
+                    {payments.map(p => {
+                      const isDebit = p.direction === 'debit';
+                      return (
                       <TableRow key={p.id}>
                         <TableCell className="text-sm">{p.paymentDate}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={isDebit
+                            ? 'border-red-300 text-red-700 bg-red-50'
+                            : 'border-emerald-300 text-emerald-700 bg-emerald-50'}>
+                            {isDebit ? '− Debit' : '+ Credit'}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
-                        <TableCell className="text-right text-sm tabular-nums">{fmtMoney(p.amount, invoice.currency)}</TableCell>
+                        <TableCell className={`text-right text-sm tabular-nums ${isDebit ? 'text-red-700' : ''}`}>
+                          {isDebit ? '− ' : '+ '}{fmtMoney(p.amount, invoice.currency)}
+                        </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
                             <Button
@@ -1350,7 +1362,8 @@ function InvoiceDetailDialog({
                           )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -1388,7 +1401,11 @@ function RecordPaymentDialog({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  const outstanding = Math.max(0, invoice.total - invoice.paidAmount);
+  // Outstanding uses the ledger's net balance when available; falls
+  // back to the simple total - paid otherwise. Default pre-fill flips
+  // sign with direction so a refund offers an outflow amount.
+  const outstanding = Math.max(0, invoice.netBalance ?? (invoice.total - invoice.paidAmount));
+  const [direction, setDirection] = useState<paymentsApi.PaymentDirection>('credit');
   const [amount, setAmount] = useState(outstanding.toFixed(2));
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<paymentsApi.PaymentMethod>('cash');
@@ -1409,10 +1426,11 @@ function RecordPaymentDialog({
         paymentDate,
         amount: amt,
         method,
+        direction,
         referenceNo: referenceNo || undefined,
         notes: notes || undefined,
       });
-      toast.success('Payment recorded');
+      toast.success(direction === 'debit' ? 'Refund recorded' : 'Payment recorded');
       await onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to record payment');
@@ -1432,6 +1450,37 @@ function RecordPaymentDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Direction toggle — credit is the normal case (customer
+              paid us); debit covers refunding a credit note (we paid
+              the customer back). The signed sum feeds the invoice's
+              net Paid total. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Direction</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDirection('credit')}
+                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
+                  direction === 'credit'
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <span className="text-base leading-none">+</span> Credit · money in
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection('debit')}
+                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
+                  direction === 'debit'
+                    ? 'bg-red-50 border-red-300 text-red-700'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <span className="text-base leading-none">−</span> Debit · refund out
+              </button>
+            </div>
+          </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Amount *</Label>
             <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
