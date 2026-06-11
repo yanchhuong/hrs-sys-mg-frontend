@@ -227,18 +227,21 @@ export function Invoices() {
 
   const pagination = usePagination(groupedRows, 25);
 
-  /** Per-currency sum of total + paid across the *filtered* set (not
-   *  just the current page) so HR can see the receivable book at a
-   *  glance. Mixed currencies stay grouped — adding USD to KHR would
-   *  produce nonsense. */
+  /** Per-currency sum of total / paid / remaining across the
+   *  *filtered* set (not just the current page) so HR can see the
+   *  receivable book at a glance. Mixed currencies stay grouped —
+   *  adding USD to KHR would produce nonsense. Remain uses each
+   *  row's netBalance when present (root rows get it from the
+   *  ledger), otherwise falls back to total − paid. */
   const totalsByCurrency = useMemo(() => {
-    const m = new Map<string, { total: number; paid: number }>();
+    const m = new Map<string, { total: number; paid: number; remain: number }>();
     for (const r of groupedRows) {
       const c = r.currency || 'USD';
-      if (!m.has(c)) m.set(c, { total: 0, paid: 0 });
+      if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
       const slot = m.get(c)!;
-      slot.total += r.total;
-      slot.paid  += r.paidAmount;
+      slot.total  += r.total;
+      slot.paid   += r.paidAmount;
+      slot.remain += r.netBalance ?? (r.total - r.paidAmount);
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
   }, [groupedRows]);
@@ -390,6 +393,7 @@ export function Invoices() {
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Remain</TableHead>
                     <TableHead className="w-[110px]">Status</TableHead>
                     <TableHead className="text-right w-[160px]">Actions</TableHead>
                   </TableRow>
@@ -416,6 +420,11 @@ export function Invoices() {
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(inv.total, inv.currency)}</TableCell>
                       <TableCell className="text-right text-sm text-gray-600">{fmtMoney(inv.paidAmount, inv.currency)}</TableCell>
+                      <TableCell className={`text-right text-sm tabular-nums ${
+                        (inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium' : 'text-gray-500'
+                      }`}>
+                        {fmtMoney(inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
                           {inv.status}
@@ -475,6 +484,11 @@ export function Invoices() {
                         </TableCell>
                         <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
                           {fmtMoney(t.paid, t.currency)}
+                        </TableCell>
+                        <TableCell className={`text-right text-sm font-semibold tabular-nums ${
+                          t.remain > 0 ? 'text-red-700' : 'text-gray-500'
+                        }`}>
+                          {fmtMoney(t.remain, t.currency)}
                         </TableCell>
                         <TableCell colSpan={2} />
                       </TableRow>
