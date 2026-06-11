@@ -1332,21 +1332,33 @@ function InvoiceDetailDialog({
                   </TableHeader>
                   <TableBody>
                     {payments.map(p => {
-                      const isDebit = p.direction === 'debit';
+                      // Label + sign depend on the document being
+                      // viewed, not on the stored direction:
+                      //   Credit Note  → "Refund"   (− outflow)
+                      //   Debit Note   → "Received" (+ inflow)
+                      //   Invoice      → "+ Credit" / "− Debit" per direction
+                      const isCnView = invoice.kind === 'credit_note';
+                      const isDnView = invoice.kind === 'debit_note';
+                      const isDebit  = p.direction === 'debit';
+                      const isOutflow = isCnView || (!isDnView && isDebit);
+                      const typeLabel = isCnView ? 'Refund'
+                        : isDnView ? 'Received'
+                        : (isDebit ? '− Debit' : '+ Credit');
+                      const chipClass = isOutflow
+                        ? 'border-red-300 text-red-700 bg-red-50'
+                        : 'border-emerald-300 text-emerald-700 bg-emerald-50';
                       return (
                       <TableRow key={p.id}>
                         <TableCell className="text-sm">{p.paymentDate}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={isDebit
-                            ? 'border-red-300 text-red-700 bg-red-50'
-                            : 'border-emerald-300 text-emerald-700 bg-emerald-50'}>
-                            {isDebit ? '− Debit' : '+ Credit'}
+                          <Badge variant="outline" className={chipClass}>
+                            {typeLabel}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
-                        <TableCell className={`text-right text-sm tabular-nums ${isDebit ? 'text-red-700' : ''}`}>
-                          {isDebit ? '− ' : '+ '}{fmtMoney(p.amount, invoice.currency)}
+                        <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
+                          {isOutflow ? '− ' : '+ '}{fmtMoney(p.amount, invoice.currency)}
                         </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
@@ -1402,10 +1414,16 @@ function RecordPaymentDialog({
   onSaved: () => void | Promise<void>;
 }) {
   // Outstanding uses the ledger's net balance when available; falls
-  // back to the simple total - paid otherwise. Default pre-fill flips
-  // sign with direction so a refund offers an outflow amount.
+  // back to the simple total - paid otherwise.
   const outstanding = Math.max(0, invoice.netBalance ?? (invoice.total - invoice.paidAmount));
-  const [direction, setDirection] = useState<paymentsApi.PaymentDirection>('credit');
+  // Default direction depends on what's being settled:
+  //   Credit Note  → debit  (we refund the customer)
+  //   Debit Note   → credit (customer pays extra)
+  //   Invoice      → credit (customer pays)
+  // HR can still flip it via the toggle for unusual cases.
+  const [direction, setDirection] = useState<paymentsApi.PaymentDirection>(
+    invoice.kind === 'credit_note' ? 'debit' : 'credit'
+  );
   const [amount, setAmount] = useState(outstanding.toFixed(2));
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<paymentsApi.PaymentMethod>('cash');
