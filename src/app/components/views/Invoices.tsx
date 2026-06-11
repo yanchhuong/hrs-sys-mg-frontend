@@ -248,7 +248,9 @@ export function Invoices() {
       const c = r.currency || 'USD';
       if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
       const slot = m.get(c)!;
-      slot.total += r.total;
+      // CN total represents what we owe the customer → subtract from
+      // the running Total. INV + DN add as receivables.
+      slot.total += r.kind === 'credit_note' ? -r.total : r.total;
       // CN's paid is a refund — subtract magnitude so the net Paid
       // total reflects what we actually received from the customer.
       slot.paid += r.kind === 'credit_note' ? -Math.abs(r.paidAmount) : r.paidAmount;
@@ -431,7 +433,16 @@ export function Invoices() {
                         {customerById.get(inv.customerId)?.name ?? <span className="text-gray-400">(unknown)</span>}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
-                      <TableCell className="text-right text-sm">{fmtMoney(inv.total, inv.currency)}</TableCell>
+                      {/* CN amount represents money we owe customer →
+                          render signed negative in red so the column
+                          and footer sum match the ledger direction. */}
+                      <TableCell className={`text-right text-sm tabular-nums ${
+                        inv.kind === 'credit_note' ? 'text-red-700' : ''
+                      }`}>
+                        {inv.kind === 'credit_note'
+                          ? `− ${fmtMoney(inv.total, inv.currency)}`
+                          : fmtMoney(inv.total, inv.currency)}
+                      </TableCell>
                       {/* Paid display rules:
                           - Adjustment with zero paid → em-dash (no
                             payment recorded yet; "$0.00" reads like
