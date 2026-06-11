@@ -39,15 +39,22 @@ import { useAuth } from '../../context/AuthContext';
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
 /* -------------------------------------------------------------------------- */
+/** Bills come in one root flavour ("Bill") plus the two adjustment
+ *  shapes — there's no Commercial vs Tax split like the sale side
+ *  has. The schema still uses `commercial` as the root kind so the
+ *  ledger logic and the parent_bill_id CHECK constraint stay
+ *  aligned; it just reads as "Bill" everywhere in the UI, and we
+ *  refuse `tax` on the create dropdown / filter so no one creates a
+ *  Bill of the other shape by accident. */
 const KIND_LABEL: Record<billsApi.BillKind, string> = {
-  commercial:  'Commercial',
-  tax:         'Tax',
+  commercial:  'Bill',
+  tax:         'Bill',
   credit_note: 'Credit Note',
   debit_note:  'Debit Note',
 };
 const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
   commercial:  'border-blue-300 text-blue-700 bg-blue-50',
-  tax:         'border-violet-300 text-violet-700 bg-violet-50',
+  tax:         'border-blue-300 text-blue-700 bg-blue-50',
   credit_note: 'border-emerald-300 text-emerald-700 bg-emerald-50',
   debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
 };
@@ -62,8 +69,7 @@ const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
 
 const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: string }> = [
   { value: 'all',         label: 'All' },
-  { value: 'commercial',  label: 'Commercial' },
-  { value: 'tax',         label: 'Tax' },
+  { value: 'commercial',  label: 'Bills' },
   { value: 'credit_note', label: 'Credit Notes' },
   { value: 'debit_note',  label: 'Debit Notes' },
 ];
@@ -91,12 +97,12 @@ const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
 /** Which datakeys each kind can pick. CN/DN inherit the parent's set
  *  in service-layer guard; the UI receives the parent's kind via
  *  prop so the dropdown filters to the right subset. */
-const TAX_TYPES_FOR_KIND = (kind: billsApi.BillKind, parentKind?: billsApi.BillKind): typeof TAX_TYPES => {
-  if (kind === 'tax') return TAX_TYPES;
-  if (kind === 'commercial') return TAX_TYPES.filter(t => t.key === '2' || t.key === '3');
-  // CN/DN: inherit from parent's allowed set
-  const effective = parentKind ?? 'tax';
-  return TAX_TYPES_FOR_KIND(effective);
+/** Bills only have one root kind — treated as a full "Tax Bill" so
+ *  every taxation pattern is available. CN/DN against a Bill inherit
+ *  the same full set. parentKind is kept in the signature for API
+ *  parity with the Invoices surface but has no effect here. */
+const TAX_TYPES_FOR_KIND = (_kind: billsApi.BillKind, _parentKind?: billsApi.BillKind): typeof TAX_TYPES => {
+  return TAX_TYPES;
 };
 
 /**
@@ -347,11 +353,11 @@ export function Bills() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                {/* Bills have a single root kind ("Bill") — no
+                    Commercial / Tax split like the sale side. The
+                    Bill row gets all five tax patterns. */}
                 <DropdownMenuItem onClick={() => openCreate('commercial')}>
-                  <FileText className="h-4 w-4 mr-2 text-blue-600" /> Commercial Bill
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openCreate('tax')}>
-                  <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Bill
+                  <FileText className="h-4 w-4 mr-2 text-blue-600" /> Bill
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => openCreate('credit_note')}>
                   <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
@@ -436,11 +442,11 @@ export function Bills() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 cursor-help">
-                              AR
+                              AP
                               <Info className="h-3 w-3 text-gray-400" />
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>Accounts Payable — what we still owe the vendor after the full ledger (invoice + DN − CN − net payments).</TooltipContent>
+                          <TooltipContent>Accounts Payable — what we still owe the vendor after the full ledger (bill + DN − CN − net payments).</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </TableHead>
@@ -1477,7 +1483,7 @@ function BillDetailDialog({
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 cursor-help">
-                              AR
+                              AP
                               <Info className="h-3 w-3 text-gray-400" />
                             </span>
                           </TooltipTrigger>
