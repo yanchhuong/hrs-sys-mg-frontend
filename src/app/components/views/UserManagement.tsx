@@ -143,6 +143,9 @@ const MODULES: ModuleDef[] = [
   { key: 'payment',           label: 'Payment',           description: 'Receipts recorded against an invoice',                        parent: 'sales' },
   { key: 'stock',             label: 'Stock',             description: 'Sellable products / services catalog',                        parent: 'sales' },
 
+  { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
+  { key: 'bill',              label: 'Bill',              description: 'Vendor bills + Credit / Debit notes (Accounts Payable)',     parent: 'expenses' },
+
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
   { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },

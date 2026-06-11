@@ -21,7 +21,7 @@ import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
-  FileText, UserCheck, ShoppingCart, ReceiptText,
+  FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -42,6 +42,7 @@ import { PayrollCategorySettings } from '../components/views/PayrollCategorySett
 import { Reports } from '../components/views/Reports';
 import { Customers } from '../components/views/Customers';
 import { Invoices } from '../components/views/Invoices';
+import { Bills } from '../components/views/Bills';
 
 export interface NavLeaf {
   id: string;
@@ -71,6 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'payroll-mgmt',   labelKey: 'nav.payroll_mgmt',  icon: DollarSign },
   { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
+  { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -101,6 +103,8 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers },
 
   { id: 'invoices',          labelKey: 'nav.invoices',               icon: ReceiptText,     module: 'invoice',            component: Invoices,                 group: 'sales-group' },
+
+  { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },
