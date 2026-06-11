@@ -30,6 +30,20 @@ export interface Adjustment {
   status: InvoiceStatus;
 }
 
+/** Taxation pattern datakey from the cross-system reference matrix.
+ *  Server maps it to a rate and auto-computes tax_amount on save.
+ *  Which keys are allowed depends on the invoice's kind — see
+ *  TAX_TYPES_FOR_KIND on the frontend / validateTaxTypeForKind on
+ *  the service.
+ *
+ *    '1'  → VAT 10%
+ *    '2'  → VAT 0%
+ *    '3'  → Exclusive VAT
+ *    '11' → WHT 15%
+ *    '12' → WHT 14%
+ */
+export type InvoiceTaxType = '1' | '2' | '3' | '11' | '12';
+
 export interface Invoice {
   id: string;
   invoiceNo: string;
@@ -41,6 +55,7 @@ export interface Invoice {
   currency: string;
   /** USD → KHR rate captured at issue time. */
   exchangeRate: number;
+  taxType?: InvoiceTaxType | null;
   subtotal: number;
   taxAmount: number;
   discountAmount: number;
@@ -87,6 +102,8 @@ export interface InvoiceRequest {
   dueDate?: string | null;
   currency?: string;
   exchangeRate?: number;
+  /** Taxation pattern datakey. Service computes tax_amount from rate. */
+  taxType?: InvoiceTaxType | null;
   taxAmount?: number;
   discountAmount?: number;
   notes?: string | null;

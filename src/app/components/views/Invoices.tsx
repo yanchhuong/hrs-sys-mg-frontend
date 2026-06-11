@@ -19,6 +19,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -30,7 +31,7 @@ import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -74,6 +75,28 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
 const fmtMoney = (n: number, currency: string): string => {
   const num = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+};
+
+/** Taxation matrix — datakey → display label + percentage. Mirrors
+ *  the cross-system reference; backend service uses the same rates. */
+const TAX_TYPES: ReadonlyArray<{ key: invoicesApi.InvoiceTaxType; label: string; rate: number }> = [
+  { key: '1',  label: 'VAT 10%',                rate: 10 },
+  { key: '2',  label: 'VAT 0%',                 rate: 0 },
+  { key: '3',  label: 'Exclusive VAT',          rate: 0 },
+  { key: '11', label: 'WHT Tax on Service 15%', rate: 15 },
+  { key: '12', label: 'WHT Tax on Service 14%', rate: 14 },
+];
+const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
+  TAX_TYPES.reduce((acc, t) => ({ ...acc, [t.key]: t }), {});
+/** Which datakeys each kind can pick. CN/DN inherit the parent's set
+ *  in service-layer guard; the UI receives the parent's kind via
+ *  prop so the dropdown filters to the right subset. */
+const TAX_TYPES_FOR_KIND = (kind: invoicesApi.InvoiceKind, parentKind?: invoicesApi.InvoiceKind): typeof TAX_TYPES => {
+  if (kind === 'tax') return TAX_TYPES;
+  if (kind === 'commercial') return TAX_TYPES.filter(t => t.key === '2' || t.key === '3');
+  // CN/DN: inherit from parent's allowed set
+  const effective = parentKind ?? 'tax';
+  return TAX_TYPES_FOR_KIND(effective);
 };
 
 /**
@@ -408,7 +431,19 @@ export function Invoices() {
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Remain</TableHead>
+                    <TableHead className="text-right">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">
+                              AR
+                              <Info className="h-3 w-3 text-gray-400" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Accounts Receivable — what the customer still owes after the full ledger (invoice + DN − CN − net payments).</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableHead>
                     <TableHead className="w-[110px]">Status</TableHead>
                     <TableHead className="text-right w-[160px]">Actions</TableHead>
                   </TableRow>
@@ -652,6 +687,7 @@ function InvoiceFormDialog({
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
+  const [taxType, setTaxType] = useState<invoicesApi.InvoiceTaxType | ''>('');
   const [taxAmount, setTaxAmount] = useState('0');
   const [discountAmount, setDiscountAmount] = useState('0');
   const [notes, setNotes] = useState('');
@@ -681,14 +717,15 @@ function InvoiceFormDialog({
             quantity: String(it.quantity),
             unitPrice: String(it.unitPrice),
           })));
+      setTaxType((editing.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount(String(editing.taxAmount));
       setDiscountAmount(String(editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
     } else {
       // For a CN/DN opened via the inline dropdown, seed the parent
-      // (and customer + currency) from the parent invoice so HR doesn't
-      // re-pick them.
+      // (and customer + currency + taxType) from the parent invoice
+      // so HR doesn't re-pick them.
       const seedParent = parentPrefill ? invoices.find(i => i.id === parentPrefill) : undefined;
       setCustomerId(seedParent?.customerId ?? '');
       setParentInvoiceId(parentPrefill ?? '');
@@ -698,6 +735,7 @@ function InvoiceFormDialog({
       setCurrency(seedParent?.currency ?? 'USD');
       setExchangeRate(seedParent ? String(seedParent.exchangeRate) : '4100');
       setItems([{ ...blankItem }]);
+      setTaxType((seedParent?.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount('0');
       setDiscountAmount('0');
       setNotes('');
@@ -721,7 +759,13 @@ function InvoiceFormDialog({
     items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0),
     [items]
   );
-  const total = subtotal + (Number(taxAmount) || 0) - (Number(discountAmount) || 0);
+  // When a Taxation pattern is selected, tax = subtotal × rate (server
+  // applies the same formula on save); the manual Tax input is locked.
+  // Otherwise fall back to whatever the user typed.
+  const computedTax = taxType
+    ? subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100
+    : (Number(taxAmount) || 0);
+  const total = subtotal + computedTax - (Number(discountAmount) || 0);
 
   const updateItem = (idx: number, patch: Partial<FormItem>) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
@@ -740,7 +784,11 @@ function InvoiceFormDialog({
     dueDate: dueDate || undefined,
     currency,
     exchangeRate: Number(exchangeRate) || 1,
-    taxAmount: Number(taxAmount) || 0,
+    taxType: (taxType || null) as invoicesApi.InvoiceTaxType | null,
+    // computedTax mirrors what the server will write — sending it
+    // keeps the printed amount in sync if someone reads the request
+    // body before the server's recompute lands.
+    taxAmount: computedTax,
     discountAmount: Number(discountAmount) || 0,
     notes: notes || undefined,
     terms: terms || undefined,
@@ -988,12 +1036,47 @@ function InvoiceFormDialog({
             })}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Tax controls — pick a Taxation pattern from the
+              cross-system reference; server applies subtotal × rate.
+              Commercial / CN-DN-against-commercial → just VAT 0% +
+              Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Tax</Label>
+              <Label className="text-xs">Taxation</Label>
+              <Select
+                value={taxType || '_none'}
+                onValueChange={v => setTaxType(v === '_none' ? '' : v as invoicesApi.InvoiceTaxType)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {TAX_TYPES_FOR_KIND(
+                    kind,
+                    parentPrefill
+                      ? (invoices.find(i => i.id === parentPrefill)?.kind)
+                      : (editing?.parentInvoiceId
+                          ? invoices.find(i => i.id === editing.parentInvoiceId)?.kind
+                          : undefined),
+                  ).map(t => (
+                    <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
+                  <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
+                )}
+              </Label>
               <Input
                 type="number" min={0} step="0.01"
-                value={taxAmount} onChange={e => setTaxAmount(e.target.value)}
+                value={taxType
+                  ? (subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
+                  : taxAmount}
+                onChange={e => setTaxAmount(e.target.value)}
+                disabled={!!taxType}
+                title={taxType ? 'Auto-computed from the taxation type' : ''}
               />
             </div>
             <div className="space-y-1.5">
@@ -1036,7 +1119,7 @@ function InvoiceFormDialog({
                 </div>
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Tax</span>
-                  <span className="tabular-nums w-32 text-right">+ {fmtMoney(Number(taxAmount) || 0, currency)}</span>
+                  <span className="tabular-nums w-32 text-right">+ {fmtMoney(computedTax, currency)}</span>
                 </div>
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Discount</span>
@@ -1246,6 +1329,12 @@ function InvoiceDetailDialog({
               <div>{invoice.dueDate ?? '—'}</div>
               <div className="text-gray-500">Currency</div>
               <div>{invoice.currency}</div>
+              <div className="text-gray-500">Taxation</div>
+              <div>
+                {invoice.taxType && TAX_TYPE_BY_KEY[invoice.taxType]
+                  ? `${TAX_TYPE_BY_KEY[invoice.taxType].label} (${TAX_TYPE_BY_KEY[invoice.taxType].rate}%)`
+                  : <span className="text-gray-400 italic">None</span>}
+              </div>
               {invoice.parentInvoiceId && (
                 <>
                   <div className="text-gray-500">Adjusts invoice</div>
@@ -1338,7 +1427,20 @@ function InvoiceDetailDialog({
                       <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
                     )}
                     <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Remain</span><span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">
+                              AR
+                              <Info className="h-3 w-3 text-gray-400" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Accounts Receivable — what the customer still owes after the full ledger.</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span>
+                    </div>
                     <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
                       <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
                       <span className="tabular-nums w-32 text-right">KHR {(net * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
