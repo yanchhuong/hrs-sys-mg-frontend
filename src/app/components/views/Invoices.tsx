@@ -1062,7 +1062,14 @@ function InvoiceDetailDialog({
 }) {
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
-  const [payments, setPayments] = useState<paymentsApi.Payment[]>([]);
+  // Payments augmented with the source document they were recorded
+  // against — so the unified table on a root invoice can show
+  // payments + DN receipts + CN refunds in one chronological view.
+  type LedgerPayment = paymentsApi.Payment & {
+    documentNo: string;
+    documentKind: invoicesApi.InvoiceKind;
+  };
+  const [payments, setPayments] = useState<LedgerPayment[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
@@ -1072,14 +1079,39 @@ function InvoiceDetailDialog({
   const load = async () => {
     setLoading(true);
     try {
-      const [inv, pays] = await Promise.all([
-        invoicesApi.get(invoiceId),
-        // 4xx is normal when the user has no payment:view; swallow rather
-        // than tossing a toast for the read-only audit panel.
-        paymentsApi.listForInvoice(invoiceId).catch(() => [] as paymentsApi.Payment[]),
-      ]);
+      const inv = await invoicesApi.get(invoiceId);
       setInvoice(inv);
-      setPayments(pays);
+      // Build the list of documents that contribute payments to this
+      // dialog: the invoice itself + each non-void adjustment if this
+      // is a root invoice. For an adjustment view (CN/DN) we just
+      // fetch its own payments.
+      const sources: { id: string; invoiceNo: string; kind: invoicesApi.InvoiceKind }[] = [
+        { id: inv.id, invoiceNo: inv.invoiceNo, kind: inv.kind },
+      ];
+      if (!inv.parentInvoiceId) {
+        for (const a of inv.adjustments ?? []) {
+          if (a.status !== 'void') {
+            sources.push({ id: a.id, invoiceNo: a.invoiceNo, kind: a.kind });
+          }
+        }
+      }
+      const payArrays = await Promise.all(
+        sources.map(s =>
+          // 4xx is normal when the user has no payment:view; swallow rather
+          // than tossing a toast for the read-only audit panel.
+          paymentsApi.listForInvoice(s.id).catch(() => [] as paymentsApi.Payment[]),
+        ),
+      );
+      const combined: LedgerPayment[] = [];
+      payArrays.forEach((arr, idx) => {
+        const src = sources[idx];
+        for (const p of arr) {
+          combined.push({ ...p, documentNo: src.invoiceNo, documentKind: src.kind });
+        }
+      });
+      // Sort chronological so the table reads like a ledger.
+      combined.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
+      setPayments(combined);
       // If this is an adjustment, follow the parent edge so the
       // "Adjusts invoice" row can show the human-readable number
       // instead of a raw UUID. Soft-fail — a deleted parent
@@ -1355,7 +1387,8 @@ function InvoiceDetailDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead className="w-[80px]">Type</TableHead>
+                      <TableHead className="w-[140px]">Document</TableHead>
+                      <TableHead className="w-[100px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
@@ -1364,17 +1397,19 @@ function InvoiceDetailDialog({
                   </TableHeader>
                   <TableBody>
                     {payments.map(p => {
-                      // Label + sign depend on the document being
-                      // viewed, not on the stored direction:
-                      //   Credit Note  → "Refund"   (− outflow)
-                      //   Debit Note   → "Received" (+ inflow)
-                      //   Invoice      → "+ Credit" / "− Debit" per direction
-                      const isCnView = invoice.kind === 'credit_note';
-                      const isDnView = invoice.kind === 'debit_note';
-                      const isDebit  = p.direction === 'debit';
-                      const isOutflow = isCnView || (!isDnView && isDebit);
-                      const typeLabel = isCnView ? 'Refund'
-                        : isDnView ? 'Received'
+                      // Label + sign depend on the document the payment
+                      // was recorded against, not on the dialog's
+                      // current view — so a unified payments table on
+                      // a root invoice can label each row correctly:
+                      //   Credit Note   → "Refund"   (− outflow)
+                      //   Debit Note    → "Received" (+ inflow)
+                      //   Invoice/root  → "+ Credit" / "− Debit" per direction
+                      const isCnSrc = p.documentKind === 'credit_note';
+                      const isDnSrc = p.documentKind === 'debit_note';
+                      const isDebit = p.direction === 'debit';
+                      const isOutflow = isCnSrc || (!isDnSrc && isDebit);
+                      const typeLabel = isCnSrc ? 'Refund'
+                        : isDnSrc ? 'Received'
                         : (isDebit ? '− Debit' : '+ Credit');
                       const chipClass = isOutflow
                         ? 'border-red-300 text-red-700 bg-red-50'
@@ -1382,6 +1417,7 @@ function InvoiceDetailDialog({
                       return (
                       <TableRow key={p.id}>
                         <TableCell className="text-sm">{p.paymentDate}</TableCell>
+                        <TableCell className="text-xs font-mono text-gray-600">{p.documentNo}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={chipClass}>
                             {typeLabel}
