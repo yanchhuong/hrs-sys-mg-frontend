@@ -689,7 +689,8 @@ function InvoiceFormDialog({
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
   const [taxType, setTaxType] = useState<invoicesApi.InvoiceTaxType | ''>('');
   const [taxAmount, setTaxAmount] = useState('0');
-  const [discountAmount, setDiscountAmount] = useState('0');
+  const [discountType, setDiscountType] = useState<invoicesApi.DiscountType>('amount');
+  const [discountValue, setDiscountValue] = useState('0');
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
   const [saving, setSaving] = useState(false);
@@ -719,7 +720,8 @@ function InvoiceFormDialog({
           })));
       setTaxType((editing.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount(String(editing.taxAmount));
-      setDiscountAmount(String(editing.discountAmount));
+      setDiscountType(editing.discountType ?? 'amount');
+      setDiscountValue(String(editing.discountValue ?? editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
     } else {
@@ -737,7 +739,8 @@ function InvoiceFormDialog({
       setItems([{ ...blankItem }]);
       setTaxType((seedParent?.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount('0');
-      setDiscountAmount('0');
+      setDiscountType('amount');
+      setDiscountValue('0');
       setNotes('');
       setTerms('');
       // Fetch the preview after state resets — race-protected so a
@@ -765,7 +768,12 @@ function InvoiceFormDialog({
   const computedTax = taxType
     ? subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100
     : (Number(taxAmount) || 0);
-  const total = subtotal + computedTax - (Number(discountAmount) || 0);
+  // Discount is either a flat amount or a % of subtotal. The toggle
+  // determines which; server applies the same formula on save.
+  const computedDiscount = discountType === 'percent'
+    ? subtotal * (Number(discountValue) || 0) / 100
+    : (Number(discountValue) || 0);
+  const total = subtotal + computedTax - computedDiscount;
 
   const updateItem = (idx: number, patch: Partial<FormItem>) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
@@ -789,7 +797,9 @@ function InvoiceFormDialog({
     // keeps the printed amount in sync if someone reads the request
     // body before the server's recompute lands.
     taxAmount: computedTax,
-    discountAmount: Number(discountAmount) || 0,
+    discountType,
+    discountValue: Number(discountValue) || 0,
+    discountAmount: computedDiscount,
     notes: notes || undefined,
     terms: terms || undefined,
     items: items.map(it => ({
@@ -852,7 +862,7 @@ function InvoiceFormDialog({
       }
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
-      setDiscountAmount('0');
+      setDiscountValue('0');
       setNotes('');
       setTerms('');
     } catch (e) {
@@ -1080,11 +1090,38 @@ function InvoiceFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Discount</Label>
-              <Input
-                type="number" min={0} step="0.01"
-                value={discountAmount} onChange={e => setDiscountAmount(e.target.value)}
-              />
+              <Label className="text-xs">
+                Discount {discountType === 'percent' && (
+                  <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
+                )}
+              </Label>
+              {/* Input + segmented type toggle on the right end. The
+                  $ button = flat money-off, % button = percent of
+                  subtotal. Server recomputes discount_amount on save. */}
+              <div className="flex">
+                <Input
+                  type="number" min={0} step="0.01"
+                  value={discountValue}
+                  onChange={e => setDiscountValue(e.target.value)}
+                  className="rounded-r-none"
+                />
+                <div className="inline-flex border border-l-0 rounded-r-md overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('amount')}
+                    className={`px-3 text-sm ${discountType === 'amount'
+                      ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                    title="Flat money-off"
+                  >$</button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percent')}
+                    className={`px-3 text-sm border-l ${discountType === 'percent'
+                      ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                    title="Percentage of subtotal"
+                  >%</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1123,7 +1160,7 @@ function InvoiceFormDialog({
                 </div>
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Discount</span>
-                  <span className="tabular-nums w-32 text-right">− {fmtMoney(Number(discountAmount) || 0, currency)}</span>
+                  <span className="tabular-nums w-32 text-right">− {fmtMoney(computedDiscount, currency)}</span>
                 </div>
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                   <span>Total USD</span>
@@ -1418,7 +1455,15 @@ function InvoiceDetailDialog({
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
-                    <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6">
+                      <span className="text-gray-600">
+                        Discount
+                        {invoice.discountType === 'percent' && (
+                          <span className="text-[10px] text-gray-400 ml-1">@ {invoice.discountValue}%</span>
+                        )}
+                      </span>
+                      <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
+                    </div>
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
                     {sumDn > 0 && (
                       <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>

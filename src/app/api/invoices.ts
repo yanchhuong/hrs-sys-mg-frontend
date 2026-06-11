@@ -44,6 +44,9 @@ export interface Adjustment {
  */
 export type InvoiceTaxType = '1' | '2' | '3' | '11' | '12';
 
+/** Discount shape — "amount" (flat money-off) or "percent" (of subtotal). */
+export type DiscountType = 'amount' | 'percent';
+
 export interface Invoice {
   id: string;
   invoiceNo: string;
@@ -58,6 +61,8 @@ export interface Invoice {
   taxType?: InvoiceTaxType | null;
   subtotal: number;
   taxAmount: number;
+  discountType: DiscountType;
+  discountValue: number;
   discountAmount: number;
   total: number;
   paidAmount: number;
@@ -105,6 +110,10 @@ export interface InvoiceRequest {
   /** Taxation pattern datakey. Service computes tax_amount from rate. */
   taxType?: InvoiceTaxType | null;
   taxAmount?: number;
+  /** "amount" (default) or "percent". Service derives discount_amount. */
+  discountType?: DiscountType;
+  /** Raw discount magnitude — currency units or % points by type. */
+  discountValue?: number;
   discountAmount?: number;
   notes?: string | null;
   terms?: string | null;
