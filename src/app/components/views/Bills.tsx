@@ -1253,7 +1253,7 @@ function BillDetailDialog({
         sources.map(s =>
           // 4xx is normal when the user has no payment:view; swallow rather
           // than tossing a toast for the read-only audit panel.
-          billPaymentsApi.listForInvoice(s.id).catch(() => [] as billPaymentsApi.Payment[]),
+          billPaymentsApi.listForBill(s.id).catch(() => [] as billPaymentsApi.Payment[]),
         ),
       );
       const combined: LedgerPayment[] = [];
