@@ -1698,7 +1698,7 @@ function RecordBillPaymentDialog({
     setSaving(true);
     try {
       await billPaymentsApi.create({
-        invoiceId: invoice.id,
+        billId: invoice.id,
         paymentDate,
         amount: amt,
         method,
