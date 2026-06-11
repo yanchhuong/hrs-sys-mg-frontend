@@ -238,10 +238,10 @@ export function Invoices() {
    *  receivable book at a glance. Mixed currencies stay grouped —
    *  adding USD to KHR would produce nonsense.
    *
-   *  Remain only sums root invoices (no parentInvoiceId) — adjustments
-   *  already roll up into the root's netBalance, so adding them would
-   *  double-count. Total + Paid still cover every row so the column
-   *  matches what's visible above the footer. */
+   *  Paid is the *net* customer inflow: invoice + DN receipts add,
+   *  CN refunds subtract (regardless of how the row's direction
+   *  column was stored). Remain only sums root invoices since
+   *  adjustments already roll up into the root's netBalance. */
   const totalsByCurrency = useMemo(() => {
     const m = new Map<string, { total: number; paid: number; remain: number }>();
     for (const r of groupedRows) {
@@ -249,7 +249,9 @@ export function Invoices() {
       if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
       const slot = m.get(c)!;
       slot.total += r.total;
-      slot.paid  += r.paidAmount;
+      // CN's paid is a refund — subtract magnitude so the net Paid
+      // total reflects what we actually received from the customer.
+      slot.paid += r.kind === 'credit_note' ? -Math.abs(r.paidAmount) : r.paidAmount;
       if (!r.parentInvoiceId) {
         slot.remain += r.netBalance ?? (r.total - r.paidAmount);
       }
@@ -430,19 +432,21 @@ export function Invoices() {
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(inv.total, inv.currency)}</TableCell>
-                      {/* Paid on a CN row is a refund — money out — so
-                          render it as a negative amount in red so the
-                          ledger sign reads correctly at a glance. The
-                          stored paidAmount may be positive (legacy
-                          credit-direction) or negative (new debit-
-                          direction); we take the magnitude and prepend
-                          the minus so display is consistent either way. */}
+                      {/* Paid display rules:
+                          - Adjustment with zero paid → em-dash (no
+                            payment recorded yet; "$0.00" reads like
+                            a real receipt and clutters the column).
+                          - CN with payment → "− $X" in red (refund =
+                            money out, signed for ledger clarity).
+                          - INV / DN → plain gray amount. */}
                       <TableCell className={`text-right text-sm tabular-nums ${
                         inv.kind === 'credit_note' ? 'text-red-700' : 'text-gray-600'
                       }`}>
-                        {inv.kind === 'credit_note'
-                          ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
-                          : fmtMoney(inv.paidAmount, inv.currency)}
+                        {isAdjustment && inv.paidAmount === 0
+                          ? <span className="text-gray-300">—</span>
+                          : inv.kind === 'credit_note'
+                            ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
+                            : fmtMoney(inv.paidAmount, inv.currency)}
                       </TableCell>
                       {/* Remain is meaningful only on the root invoice
                           — CN/DN rows already roll their balance up
