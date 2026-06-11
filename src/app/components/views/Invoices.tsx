@@ -67,8 +67,14 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
   { value: 'debit_note',  label: 'Debit Notes' },
 ];
 
-const fmtMoney = (n: number, currency: string): string =>
-  `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Render an amount with the currency in front. USD collapses to "$"
+ *  (no space — matches how customers read it on a printed invoice);
+ *  other currencies keep the ISO code prefix with a space so the
+ *  symbol stays unambiguous. */
+const fmtMoney = (n: number, currency: string): string => {
+  const num = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+};
 
 /**
  * Inline confirmation card shown below the customer picker in the
@@ -230,18 +236,23 @@ export function Invoices() {
   /** Per-currency sum of total / paid / remaining across the
    *  *filtered* set (not just the current page) so HR can see the
    *  receivable book at a glance. Mixed currencies stay grouped —
-   *  adding USD to KHR would produce nonsense. Remain uses each
-   *  row's netBalance when present (root rows get it from the
-   *  ledger), otherwise falls back to total − paid. */
+   *  adding USD to KHR would produce nonsense.
+   *
+   *  Remain only sums root invoices (no parentInvoiceId) — adjustments
+   *  already roll up into the root's netBalance, so adding them would
+   *  double-count. Total + Paid still cover every row so the column
+   *  matches what's visible above the footer. */
   const totalsByCurrency = useMemo(() => {
     const m = new Map<string, { total: number; paid: number; remain: number }>();
     for (const r of groupedRows) {
       const c = r.currency || 'USD';
       if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
       const slot = m.get(c)!;
-      slot.total  += r.total;
-      slot.paid   += r.paidAmount;
-      slot.remain += r.netBalance ?? (r.total - r.paidAmount);
+      slot.total += r.total;
+      slot.paid  += r.paidAmount;
+      if (!r.parentInvoiceId) {
+        slot.remain += r.netBalance ?? (r.total - r.paidAmount);
+      }
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
   }, [groupedRows]);
@@ -420,10 +431,17 @@ export function Invoices() {
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(inv.total, inv.currency)}</TableCell>
                       <TableCell className="text-right text-sm text-gray-600">{fmtMoney(inv.paidAmount, inv.currency)}</TableCell>
+                      {/* Remain is meaningful only on the root invoice
+                          — CN/DN rows already roll their balance up
+                          into the parent's netBalance. Show a muted
+                          em-dash on adjustment rows so the column
+                          stays visually aligned. */}
                       <TableCell className={`text-right text-sm tabular-nums ${
-                        (inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium' : 'text-gray-500'
+                        isAdjustment ? 'text-gray-300'
+                          : (inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium'
+                          : 'text-gray-500'
                       }`}>
-                        {fmtMoney(inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
+                        {isAdjustment ? '—' : fmtMoney(inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
