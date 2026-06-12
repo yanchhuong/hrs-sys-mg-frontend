@@ -199,8 +199,10 @@ export function Increase() {
       return;
     }
     try {
+      // apiJson returns undefined on module-disabled — default to []
+      // so we don't crash on `.map`.
       const res = await increasesApi.list({ size: 500 });
-      setIncreases(res.data.map(adaptApiIncrease));
+      setIncreases((res?.data ?? []).map(adaptApiIncrease));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load salary increases');
     }
@@ -213,7 +215,7 @@ export function Increase() {
     }
     try {
       const res = await employeesApi.list({ size: 500 });
-      setEmployees(res.content.map(adaptApiEmployee));
+      setEmployees((res?.content ?? []).map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
     }

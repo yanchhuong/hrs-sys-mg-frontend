@@ -41,8 +41,12 @@ import { EmployeeSettings } from '../components/views/EmployeeSettings';
 import { PayrollCategorySettings } from '../components/views/PayrollCategorySettings';
 import { Reports } from '../components/views/Reports';
 import { Customers } from '../components/views/Customers';
+import { Vendors } from '../components/views/Vendors';
 import { Invoices } from '../components/views/Invoices';
 import { Bills } from '../components/views/Bills';
+import { Receipts } from '../components/views/Receipts';
+import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
+import { ProfitLossReport } from '../components/views/ProfitLossReport';
 
 export interface NavLeaf {
   id: string;
@@ -99,12 +103,24 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'attendance-report',  component: Reports, group: 'reports-group', initialView: 'attendance' },
   { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'payroll-report',     component: Reports, group: 'reports-group', initialView: 'payroll' },
   { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
+  // Sale / Purchase Ledger reports — gated by the parent module
+  // (`invoice` / `bill`) so they show up whenever Super Admin has
+  // enabled the Sale or Purchase side for the tenant, without
+  // needing a separate flag in the tenant module catalog.
+  { id: 'sale-ledger',       labelKey: 'nav.reports.sale_ledger',     icon: FileText,        module: 'invoice',            component: SaleLedger,     group: 'reports-group' },
+  { id: 'purchase-ledger',   labelKey: 'nav.reports.purchase_ledger', icon: FileText,        module: 'bill',               component: PurchaseLedger, group: 'reports-group' },
+  // Profit & Loss — pulls income from the Sale side and expenses from
+  // the Purchase side. Gated on `invoice` for visibility (matches Sale
+  // Ledger); the backend additionally requires bill.view so a Sales-
+  // only user can't see the expense numbers.
+  { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'invoice',            component: ProfitLossReport, group: 'reports-group' },
 
-  { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers },
-
+  { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers,                group: 'sales-group' },
   { id: 'invoices',          labelKey: 'nav.invoices',               icon: ReceiptText,     module: 'invoice',            component: Invoices,                 group: 'sales-group' },
 
+  { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
+  { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'receipt',            component: Receipts,                 group: 'purchases' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },

@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { UserProfileDialog } from './common/UserProfileDialog';
 import { LanguageSwitcher } from './common/LanguageSwitcher';
+import { AppLauncher } from './common/AppLauncher';
 import { useI18n } from '../i18n/I18nContext';
 import {
   DropdownMenu,
@@ -267,6 +268,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-3">
+              <AppLauncher currentView={currentView} onSelect={handleMenuClick} />
               <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
                 {t(`role.${currentUser?.role ?? 'employee'}`).toUpperCase()}

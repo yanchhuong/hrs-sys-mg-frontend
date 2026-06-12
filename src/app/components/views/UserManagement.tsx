@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { mockUsers, mockEmployees, mockDepartments } from '../../data/mockData';
 import { Employee, User, UserRole } from '../../types/hrms';
 import * as usersApi from '../../api/users';
@@ -136,15 +137,16 @@ const MODULES: ModuleDef[] = [
   { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
   { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
 
-  { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)' },
-
   { key: 'sales',             label: 'Sale',              description: '',                                                            header: true },
+  { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'sales' },
   { key: 'invoice',           label: 'Invoice',           description: 'Commercial / Tax invoices + Credit / Debit notes',            parent: 'sales' },
   { key: 'payment',           label: 'Payment',           description: 'Receipts recorded against an invoice',                        parent: 'sales' },
   { key: 'stock',             label: 'Stock',             description: 'Sellable products / services catalog',                        parent: 'sales' },
 
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
+  { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
   { key: 'bill',              label: 'Bill',              description: 'Vendor bills + Credit / Debit notes (Accounts Payable)',     parent: 'expenses' },
+  { key: 'receipt',           label: 'Receipt',           description: 'Single-amount tax receipts (WHT) tied to a vendor',           parent: 'expenses' },
 
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
@@ -322,6 +324,7 @@ function adaptApiUser(u: usersApi.User): User {
 export function UserManagement() {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
+  const { isModuleAvailable, isModuleEnabled } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
@@ -335,8 +338,14 @@ export function UserManagement() {
       return;
     }
     try {
+      // apiJson resolves to `undefined` when the module is disabled
+      // for the tenant (403 + code='ModuleDisabled'). Default the
+      // page to an empty array instead of crashing on `.data` —
+      // happens transiently right after the admin uninstalls
+      // user-management via the Apps launcher while still mounted
+      // on this page.
       const res = await usersApi.list({ size: 200 });
-      setUsers(res.data.map(adaptApiUser));
+      setUsers((res?.data ?? []).map(adaptApiUser));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load users');
     }
@@ -349,7 +358,7 @@ export function UserManagement() {
     }
     try {
       const res = await employeesApi.list({ size: 500 });
-      setEmployees(res.content.map(adaptApiEmployee));
+      setEmployees((res?.content ?? []).map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
     }
@@ -361,7 +370,8 @@ export function UserManagement() {
       return;
     }
     try {
-      setDeptList(await departmentsApi.list());
+      const list = await departmentsApi.list();
+      setDeptList(list ?? []);
     } catch (err) {
       console.warn('Could not load departments', err);
     }
@@ -373,6 +383,35 @@ export function UserManagement() {
     Object.fromEntries(BUILT_IN_ROLES.map(r => [r.key, r.description]))
   );
 
+  /** Permission Matrix is filtered down to the modules that are
+   *  installed for the tenant (Super Admin enabled + admin hasn't
+   *  uninstalled via the Apps launcher). Uninstalled rows drop out
+   *  entirely so the grid only shows what's actually reachable —
+   *  configuring a permission on a hidden module would just be dead
+   *  config. Header rows whose children all disappeared are dropped
+   *  too so we don't leave orphan section labels. */
+  const visibleModules = useMemo(() => {
+    const installed = (key: string) => isModuleAvailable(key) && isModuleEnabled(key);
+    // First pass: keep all headers (we resolve them in pass two) +
+    // installed leaves.
+    const kept = MODULES.filter(m => m.header || installed(m.key));
+    // Second pass: drop a header if the next non-header before another
+    // header is missing — i.e. no children survived the install filter.
+    const result: ModuleDef[] = [];
+    for (let i = 0; i < kept.length; i++) {
+      const cur = kept[i];
+      if (!cur.header) { result.push(cur); continue; }
+      let hasChild = false;
+      for (let j = i + 1; j < kept.length; j++) {
+        if (kept[j].header) break;
+        hasChild = true;
+        break;
+      }
+      if (hasChild) result.push(cur);
+    }
+    return result;
+  }, [isModuleAvailable, isModuleEnabled]);
+
   /**
    * Load roles + their permission grids from the backend and merge into local
    * state. Custom roles (isBuiltin=false) become entries in `customRoles`.
@@ -381,10 +420,13 @@ export function UserManagement() {
   const loadRolesAndPermissions = async () => {
     if (USE_MOCKS) return;
     try {
-      const apiRoles = await rolesApi.list();
+      // Same module-disabled defensive: apiJson returns undefined when
+      // the tenant has user-management uninstalled. Empty list = no
+      // custom roles to render.
+      const apiRoles = (await rolesApi.list()) ?? [];
       // Pull every grid in parallel; one failure shouldn't kill the others.
       const grids = await Promise.all(apiRoles.map(async r => {
-        try { return [r.key, await rolesApi.getPermissions(r.key)] as const; }
+        try { return [r.key, (await rolesApi.getPermissions(r.key)) ?? []] as const; }
         catch { return [r.key, [] as rolesApi.RolePermission[]] as const; }
       }));
       const gridMap = new Map(grids);
@@ -694,7 +736,12 @@ export function UserManagement() {
     try {
       await Promise.all(targets.map(role => {
         const grid: rolesApi.RolePermission[] = [];
+        // Skip visual-only group headers (time-tracking / payroll-mgmt
+        // / settings-group / sales / expenses). They're rendered as
+        // section labels in the matrix UI; sending them as if they
+        // were real module keys trips the backend regex validator.
         for (const mod of MODULES) {
+          if (mod.header) continue;
           for (const action of ACTIONS) {
             grid.push({
               module: mod.key as rolesApi.PermissionModule,
@@ -789,8 +836,11 @@ export function UserManagement() {
       await rolesApi.create({ key, name: trimmedName, description, baseRole });
       if (newRoleBase === 'admin') {
         const fullGrid: rolesApi.RolePermission[] = [];
-        // Visible modules from the matrix.
+        // Visible modules from the matrix — skip visual-only group
+        // headers (time-tracking / payroll-mgmt / settings-group /
+        // sales / expenses). They're labels, not real module keys.
         for (const mod of MODULES) {
+          if (mod.header) continue;
           for (const action of ACTIONS) {
             fullGrid.push({
               module: mod.key as rolesApi.PermissionModule,
@@ -1200,8 +1250,10 @@ export function UserManagement() {
               // Headers are visual-only — exclude from both the
               // "modules with a grant" count and the total so the
               // X / Y summary reflects real permissions, not section
-              // dividers.
-              const permModules = MODULES.filter(m => !m.header);
+              // dividers. Walk the install-filtered list so the
+              // denominator matches what the Permission Matrix
+              // actually shows.
+              const permModules = visibleModules.filter(m => !m.header);
               const grants = permModules.filter(m =>
                 ACTIONS.some(a => permissions[m.key]?.[role.key]?.[a])
               ).length;
@@ -1335,7 +1387,7 @@ export function UserManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {MODULES.map((mod) => {
+                    {visibleModules.map((mod) => {
                       // Section headers (Time Tracking, Payroll Management,
                       // Settings) span every column — they're sidebar group
                       // labels, not permission gates. Children render

@@ -46,6 +46,15 @@ interface AuthContextType {
    *  defaults to true for unknown keys which would render the section
    *  even though the platform never declared it. */
   isModuleAvailable: (module: string) => boolean;
+  /** True when Super Admin has enabled the top-bar Apps launcher for
+   *  this tenant. Independent of the user's role — the launcher's UI
+   *  additionally checks {@code currentUser.role === 'admin'} before
+   *  rendering. Defaults to true while the bootstrap fetch is in
+   *  flight so the icon doesn't flicker. */
+  isAppLauncherEnabled: () => boolean;
+  /** Tenant-admin self-service module install / uninstall. Throws on
+   *  network / permission errors so callers can show a toast. */
+  setModuleEnabled: (moduleKey: string, enabled: boolean) => Promise<void>;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   switchRole: (role: UserRole) => void;
@@ -68,6 +77,8 @@ const defaultAuthContext: AuthContextType = {
   refreshPermissions: noopAsync,
   isModuleEnabled: () => true,
   isModuleAvailable: () => true,
+  isAppLauncherEnabled: () => true,
+  setModuleEnabled: noopAsync,
   login: async () => ({ success: false }),
   logout: () => {},
   switchRole: () => {},
@@ -138,6 +149,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [availableModules, setAvailableModules] = useState<Set<string> | null>(null);
 
   /**
+   * Tenant-scope feature flags Super Admin toggles on the Companies
+   * edit dialog. Null while still loading the first time so consumers
+   * can default to "show" during bootstrap (matches the optimistic
+   * behaviour of {@code isModuleAvailable}).
+   */
+  const [tenantFeatures, setTenantFeatures] = useState<platformApi.TenantFeatures | null>(null);
+
+  /**
    * Hydrate or refresh the tenant's module-disabled set from /me/modules.
    * Mock mode and unauthenticated states resolve to an empty set so
    * isModuleEnabled returns true universally. Super admins never use a
@@ -145,9 +164,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * surface), so we skip the fetch entirely — calling /me/modules as a
    * platform principal returns 403 and would log scary console noise.
    */
-  const loadModuleFlags = useCallback(async (role?: string): Promise<{ disabled: Set<string>; available: Set<string> }> => {
-    if (USE_MOCKS) return { disabled: new Set(), available: new Set() };
-    if (role === 'super_admin') return { disabled: new Set(), available: new Set() };
+  const loadModuleFlags = useCallback(async (role?: string): Promise<{
+    disabled: Set<string>;
+    available: Set<string>;
+    features: platformApi.TenantFeatures | null;
+  }> => {
+    if (USE_MOCKS) return { disabled: new Set(), available: new Set(), features: null };
+    if (role === 'super_admin') return { disabled: new Set(), available: new Set(), features: null };
     try {
       const res = await platformApi.myModules.get();
       const disabled = new Set<string>();
@@ -156,13 +179,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         available.add(k);
         if (!on) disabled.add(k);
       }
-      return { disabled, available };
+      return { disabled, available, features: res.features ?? null };
     } catch (err) {
       // Non-fatal — treat as nothing-disabled so the UI doesn't go blank
       // if the endpoint is briefly unreachable. The backend's gate is
       // the authoritative check; the frontend filter is convenience.
       console.warn('Failed to load /me/modules', err);
-      return { disabled: new Set(), available: new Set() };
+      return { disabled: new Set(), available: new Set(), features: null };
     }
   }, []);
 
@@ -217,7 +240,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Run permission and module-flag fetches in parallel so the
         // initial paint isn't blocked twice on the network.
         const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags(user.role)]);
-        if (!cancelled) { setGrants(g); setDisabledModules(m.disabled); setAvailableModules(m.available); }
+        if (!cancelled) {
+          setGrants(g);
+          setDisabledModules(m.disabled);
+          setAvailableModules(m.available);
+          setTenantFeatures(m.features);
+        }
       } catch {
         authApi.logout();
       } finally {
@@ -339,6 +367,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGrants(await loadGrants(currentUser.role));
   }, [currentUser, loadGrants]);
 
+  /** Tenant-scope Apps-launcher flag from /me/modules. Defaults to true
+   *  while loading so the icon doesn't flicker hidden→shown on first
+   *  paint; the actual role-side gate (admin only) is enforced by the
+   *  AppLauncher component itself. */
+  const isAppLauncherEnabled = useCallback((): boolean => {
+    if (tenantFeatures == null) return true;
+    return tenantFeatures.appLauncherEnabled !== false;
+  }, [tenantFeatures]);
+
+  /** Tenant-admin self-service install / uninstall for a single
+   *  module. Calls the {@code PUT /api/v1/me/modules/{key}} endpoint
+   *  (admin-only on the backend) and merges the returned snapshot
+   *  into local state so the sidebar + AppLauncher update without
+   *  another fetch. The backend re-validates so any client tampering
+   *  is harmless. */
+  const setModuleEnabled = useCallback(async (moduleKey: string, enabled: boolean): Promise<void> => {
+    if (USE_MOCKS) {
+      // Mock mode: maintain the local set so the UI still demonstrates
+      // the toggle, no server call.
+      setDisabledModules(prev => {
+        const next = new Set(prev ?? new Set<string>());
+        if (enabled) next.delete(moduleKey); else next.add(moduleKey);
+        return next;
+      });
+      return;
+    }
+    const res = await platformApi.myModules.setOne(moduleKey, enabled);
+    // apiJson resolves undefined when the tenant gate denies the call
+    // (shouldn't happen here since /me/modules is module-agnostic, but
+    // guard anyway so a future gate change can't crash the toggle).
+    if (!res) return;
+    const disabled = new Set<string>();
+    const available = new Set<string>();
+    for (const [k, on] of Object.entries(res.modules)) {
+      available.add(k);
+      if (!on) disabled.add(k);
+    }
+    setDisabledModules(disabled);
+    setAvailableModules(available);
+    setTenantFeatures(res.features ?? null);
+  }, []);
+
   const login = async (email: string, password: string): Promise<LoginResult> => {
     if (USE_MOCKS) {
       const user = mockUsers.find(u => u.email === email && u.password === password);
@@ -357,6 +427,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setGrants(g);
       setDisabledModules(m.disabled);
       setAvailableModules(m.available);
+      setTenantFeatures(m.features);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
@@ -368,6 +439,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGrants(new Set());
     setDisabledModules(null);
     setAvailableModules(null);
+    setTenantFeatures(null);
     authApi.logout();
   };
 
@@ -386,7 +458,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser, currentEmployee, loading,
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
-      isModuleEnabled, isModuleAvailable,
+      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, setModuleEnabled,
       login, logout, switchRole,
     }}>
       {children}

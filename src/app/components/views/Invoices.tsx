@@ -26,11 +26,14 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
+import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import * as invoicesApi from '../../api/invoices';
 import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
+import * as accountingSettingsApi from '../../api/accountingSettings';
 import {
-  Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight,
+  Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -162,6 +165,14 @@ export function Invoices() {
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
 
+  // Per-side Accountant settings (V92) — Sale row is independent
+  // from Purchase, so toggling Discount off here doesn't flip it on
+  // the Bill page. Fetched on mount; the Settings popup refreshes
+  // this when the user saves.
+  const [settings, setSettings] = useState<accountingSettingsApi.AccountingSettings>(
+    accountingSettingsApi.defaultsFor('sale'));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
   const [formKind, setFormKind] = useState<invoicesApi.InvoiceKind>('commercial');
@@ -192,6 +203,15 @@ export function Invoices() {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [kindFilter]);
+
+  // One-shot fetch of the Sale-side Accountant settings. Failures
+  // fall back to defaults — the page still functions, just without
+  // the user's tenant-level customisation.
+  useEffect(() => {
+    accountingSettingsApi.get('sale').then(setSettings).catch(() => {
+      setSettings(accountingSettingsApi.defaultsFor('sale'));
+    });
+  }, []);
 
   const customerById = useMemo(() => {
     const m = new Map<string, customersApi.Customer>();
@@ -337,6 +357,14 @@ export function Invoices() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {/* Settings popup gates Notes / Terms / Discount / Tax on
+              the form. Tenant-wide setting; only users with
+              invoice.update see updates persist (read is open to
+              invoice.view). */}
+          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                  title="Accountant settings">
+            <Settings className="h-4 w-4" />
+          </Button>
           {canAdd && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -430,7 +458,7 @@ export function Invoices() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Received</TableHead>
                     <TableHead className="text-right">
                       <TooltipProvider>
                         <Tooltip>
@@ -603,7 +631,17 @@ export function Invoices() {
         invoices={rows}
         editing={formEditing}
         parentPrefill={formParentPrefill}
+        settings={settings}
         onCreated={async () => { setFormOpen(false); setFormEditing(null); setFormParentPrefill(null); await load(); }}
+      />
+
+      {/* Sale-side Accountant settings popup. Independent from the
+          Bill page's popup — each scope has its own row + audit. */}
+      <AccountingSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        scope="sale"
+        onSaved={setSettings}
       />
 
       {/* Detail dialog */}
@@ -612,6 +650,7 @@ export function Invoices() {
           invoiceId={detailId}
           customers={customers}
           canEdit={canEdit}
+          settings={settings}
           onClose={() => setDetailId(null)}
           onChanged={() => { void load(); }}
           onEdit={openEdit}
@@ -655,7 +694,7 @@ interface FormItem {
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
 
 function InvoiceFormDialog({
-  open, onOpenChange, kind, customers, invoices, editing, parentPrefill, onCreated,
+  open, onOpenChange, kind, customers, invoices, editing, parentPrefill, settings, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -670,6 +709,11 @@ function InvoiceFormDialog({
    *  parent picker is pre-filled. Used by the inline "adjust"
    *  dropdown on commercial / tax rows. */
   parentPrefill?: string | null;
+  /** Tenant-wide toggles driving which optional sections of the form
+   *  render (Notes / Terms / Discount / Tax). Comes from the
+   *  Accountant Settings popup; falls back to "all on" if the
+   *  parent didn't pass it. */
+  settings: accountingSettingsApi.AccountingSettings;
   onCreated: () => Promise<void> | void;
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
@@ -842,29 +886,55 @@ function InvoiceFormDialog({
 
   const totalKhr = total * (Number(exchangeRate) || 0);
 
-  /** Save the current entry as a *progress* invoice (create → issue
-   *  chained) and keep the dialog open with a freshly-armed form so
-   *  the bookkeeper can chain entries without re-opening the dialog.
-   *  Customer + dates carry over; lines + amounts reset. */
+  /** Create → issue chain, used by both "Save & add new" and
+   *  "Save & close" so the two share the exact same skip-draft path.
+   *  Returns the created row (with status flipped to progress when
+   *  the issue step succeeds) so the caller can decide what to do
+   *  with the dialog afterwards. */
+  const createAndIssue = async () => {
+    const created = await invoicesApi.create(buildPayload());
+    try {
+      await invoicesApi.issue(created.id);
+      toast.success(`${KIND_LABEL[kind]} ${created.invoiceNo} issued`);
+    } catch (e) {
+      toast.warning(`${created.invoiceNo} created as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
+    }
+    return created;
+  };
+
+  /** Save the current entry as a *progress* invoice and keep the
+   *  dialog open with a freshly-armed form so the bookkeeper can
+   *  chain entries without re-opening. Customer + dates carry over;
+   *  lines + amounts reset. onCreated is intentionally NOT called
+   *  here — the parent uses it to close the dialog, and we want it
+   *  to stay open. The list is refreshed when the dialog is closed
+   *  via Cancel / Save & close. */
   const submitAndNew = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
-      const created = await invoicesApi.create(buildPayload());
-      // Immediately flip to progress per the UX requirement. If the
-      // issue step 4xx's we still report the create — the row exists
-      // as a draft and HR can promote it from the list page.
-      try {
-        await invoicesApi.issue(created.id);
-        toast.success(`${KIND_LABEL[kind]} ${created.invoiceNo} issued — ready for next entry`);
-      } catch (e) {
-        toast.warning(`${created.invoiceNo} created as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
-      }
+      await createAndIssue();
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Save the current entry as a *progress* invoice and close the
+   *  dialog. Same skip-draft path as Save & add new; only the
+   *  follow-up differs. */
+  const submitAndClose = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      await createAndIssue();
+      await onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
     } finally {
@@ -1050,7 +1120,13 @@ function InvoiceFormDialog({
               cross-system reference; server applies subtotal × rate.
               Commercial / CN-DN-against-commercial → just VAT 0% +
               Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
+          {/* Tax + Discount row. Each cell is gated by the tenant
+              Accountant Settings — flip a toggle off in the Settings
+              popup and the matching cell vanishes here. Row only
+              renders if at least one cell is visible. */}
+          {(settings.showTax || settings.showDiscount) && (
           <div className="grid grid-cols-3 gap-3">
+            {settings.showTax && (
             <div className="space-y-1.5">
               <Label className="text-xs">Taxation</Label>
               <Select
@@ -1067,12 +1143,21 @@ function InvoiceFormDialog({
                       : (editing?.parentInvoiceId
                           ? invoices.find(i => i.id === editing.parentInvoiceId)?.kind
                           : undefined),
-                  ).map(t => (
+                  )
+                    // Tenant-enabled set from the Settings popup acts
+                    // as a second filter on top of the kind-based one.
+                    // Keep the existing value visible during edit even
+                    // if it's since been disabled — preserves the row
+                    // without forcing a re-pick on every open.
+                    .filter(t => settings.taxTypesEnabled.includes(t.key) || t.key === editing?.taxType)
+                    .map(t => (
                     <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            )}
+            {settings.showTax && (
             <div className="space-y-1.5">
               <Label className="text-xs">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
@@ -1089,6 +1174,8 @@ function InvoiceFormDialog({
                 title={taxType ? 'Auto-computed from the taxation type' : ''}
               />
             </div>
+            )}
+            {settings.showDiscount && (
             <div className="space-y-1.5">
               <Label className="text-xs">
                 Discount {discountType === 'percent' && (
@@ -1123,13 +1210,23 @@ function InvoiceFormDialog({
                 </div>
               </div>
             </div>
+            )}
           </div>
+          )}
 
           {/* Two-column layout: Notes on the left (internal memo),
               Terms + Summary stacked on the right (customer-facing
               terms above the totals card). Same shape on create,
               edit, and detail surfaces. */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Notes / Terms 2-col + summary. Notes is the internal memo,
+              Terms is customer-facing. Either or both can be hidden
+              via the Accountant Settings popup. When only one is on
+              we drop to a single-column layout so the visible textarea
+              gets full width. */}
+          <div className={`grid gap-3 ${
+            (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+          }`}>
+            {settings.showNotes && (
             <div className="space-y-1.5 flex flex-col">
               <Label className="text-xs">Notes</Label>
               <Textarea
@@ -1139,7 +1236,9 @@ function InvoiceFormDialog({
                 className="flex-1 resize-none"
               />
             </div>
+            )}
             <div className="space-y-3 flex flex-col">
+              {settings.showTerms && (
               <div className="space-y-1.5 flex-1 flex flex-col">
                 <Label className="text-xs">Terms &amp; conditions</Label>
                 <Textarea
@@ -1149,19 +1248,24 @@ function InvoiceFormDialog({
                   className="flex-1 resize-none"
                 />
               </div>
+              )}
               <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
                 </div>
+                {settings.showTax && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Tax</span>
                   <span className="tabular-nums w-32 text-right">+ {fmtMoney(computedTax, currency)}</span>
                 </div>
+                )}
+                {settings.showDiscount && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Discount</span>
                   <span className="tabular-nums w-32 text-right">− {fmtMoney(computedDiscount, currency)}</span>
                 </div>
+                )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                   <span>Total USD</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
@@ -1177,12 +1281,18 @@ function InvoiceFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          {/* Save & add new only makes sense for fresh entries — on edit
-              it would orphan the row mid-flow. */}
+          {/* Save & add new and Save & close both skip Draft and issue
+              directly to Progress — only available on create, since on
+              edit the row already exists with a final state. */}
           {!isEdit && (
-            <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save and issue, then reset the form for the next entry">
-              {saving ? 'Saving…' : 'Save & add new'}
-            </Button>
+            <>
+              <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Progress and reset the form for the next entry">
+                {saving ? 'Saving…' : 'Save & add new'}
+              </Button>
+              <Button variant="outline" onClick={submitAndClose} disabled={saving} title="Save as Progress and close the dialog">
+                {saving ? 'Saving…' : 'Save & close'}
+              </Button>
+            </>
           )}
           <Button onClick={submit} disabled={saving}>
             {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
@@ -1197,11 +1307,15 @@ function InvoiceFormDialog({
 /* Detail dialog — read-only view + actions + payments                        */
 /* -------------------------------------------------------------------------- */
 function InvoiceDetailDialog({
-  invoiceId, customers, canEdit, onClose, onChanged, onEdit,
+  invoiceId, customers, canEdit, settings, onClose, onChanged, onEdit,
 }: {
   invoiceId: string;
   customers: customersApi.Customer[];
   canEdit: boolean;
+  /** Tenant Accountant settings — same flags that drive the create
+   *  form gate the View Details popup too, so a section that's
+   *  hidden on the form (e.g. Discount off) also disappears here. */
+  settings: accountingSettingsApi.AccountingSettings;
   onClose: () => void;
   onChanged: () => void;
   /** Called when the user clicks Edit. The parent should close this
@@ -1366,12 +1480,16 @@ function InvoiceDetailDialog({
               <div>{invoice.dueDate ?? '—'}</div>
               <div className="text-gray-500">Currency</div>
               <div>{invoice.currency}</div>
-              <div className="text-gray-500">Taxation</div>
-              <div>
-                {invoice.taxType && TAX_TYPE_BY_KEY[invoice.taxType]
-                  ? `${TAX_TYPE_BY_KEY[invoice.taxType].label} (${TAX_TYPE_BY_KEY[invoice.taxType].rate}%)`
-                  : <span className="text-gray-400 italic">None</span>}
-              </div>
+              {settings.showTax && (
+                <>
+                  <div className="text-gray-500">Taxation</div>
+                  <div>
+                    {invoice.taxType && TAX_TYPE_BY_KEY[invoice.taxType]
+                      ? `${TAX_TYPE_BY_KEY[invoice.taxType].label} (${TAX_TYPE_BY_KEY[invoice.taxType].rate}%)`
+                      : <span className="text-gray-400 italic">None</span>}
+                  </div>
+                </>
+              )}
               {invoice.parentInvoiceId && (
                 <>
                   <div className="text-gray-500">Adjusts invoice</div>
@@ -1415,10 +1533,15 @@ function InvoiceDetailDialog({
               </Table>
             </div>
 
-            {/* Two-column layout matching the create / edit dialog —
-                Notes (internal memo) on the left, Terms (customer-
-                facing) + amount summary stacked on the right. */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Notes / Terms 2-col + summary. Gated by the same tenant
+                Accountant Settings as the create form — a section
+                hidden on the form is hidden here too. Layout drops to
+                single-column when only one side is on so the summary
+                still aligns to the right. */}
+            <div className={`grid gap-3 ${
+              (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+            }`}>
+              {settings.showNotes && (
               <div className="bg-slate-50 rounded-md p-3 text-sm">
                 <div className="text-xs text-gray-500 mb-1">Notes</div>
                 {invoice.notes ? (
@@ -1427,7 +1550,9 @@ function InvoiceDetailDialog({
                   <div className="text-gray-400 italic text-xs">No notes recorded for this invoice.</div>
                 )}
               </div>
+              )}
               <div className="space-y-3">
+                {settings.showTerms && (
                 <div className="bg-slate-50 rounded-md p-3 text-sm">
                   <div className="text-xs text-gray-500 mb-1">Terms &amp; conditions</div>
                   {invoice.terms ? (
@@ -1436,6 +1561,7 @@ function InvoiceDetailDialog({
                     <div className="text-gray-400 italic text-xs">No terms recorded for this invoice.</div>
                   )}
                 </div>
+                )}
                 {/* Net-balance summary using the full ledger formula:
                     total + ΣDN − ΣCN − payments. Void children are
                     excluded server-side. When no adjustments exist
@@ -1454,7 +1580,10 @@ function InvoiceDetailDialog({
                   return (
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
+                    {settings.showTax && (
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                    )}
+                    {settings.showDiscount && (
                     <div className="flex justify-end gap-6">
                       <span className="text-gray-600">
                         Discount
@@ -1464,6 +1593,7 @@ function InvoiceDetailDialog({
                       </span>
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
+                    )}
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
                     {sumDn > 0 && (
                       <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>
@@ -1471,7 +1601,7 @@ function InvoiceDetailDialog({
                     {sumCn > 0 && (
                       <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
                     )}
-                    <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 text-emerald-700"><span>Received</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                       <TooltipProvider>
                         <Tooltip>
@@ -1622,6 +1752,11 @@ function InvoiceDetailDialog({
                   </TableBody>
                 </Table>
               )}
+            </div>
+
+            <div className="border-t pt-3 print:hidden">
+              <AttachmentsPanel docType="invoice" docId={invoice.id}
+                                readOnly={invoice.status === 'void' || !canEdit} />
             </div>
 
             <DialogFooter className="print:hidden">

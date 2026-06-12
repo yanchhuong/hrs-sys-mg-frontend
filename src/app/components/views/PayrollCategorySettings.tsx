@@ -303,8 +303,13 @@ export function PayrollCategorySettings() {
     }
     setLoading(true);
     try {
+      // apiJson resolves undefined when the tenant has this module
+      // disabled (TenantModuleGuard returns 403 { code: 'ModuleDisabled' }).
+      // Default to empty so the page renders blank instead of
+      // crashing on `.map`. Happens transiently after the admin
+      // uninstalls a related module via the Apps launcher.
       const res = await categoriesApi.list();
-      setCategories(res.map(adaptApi));
+      setCategories((res ?? []).map(adaptApi));
     } catch (err) {
       toast.error(`Failed to load payroll categories: ${(err as Error).message}`);
     } finally {

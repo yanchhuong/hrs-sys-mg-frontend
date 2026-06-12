@@ -21,6 +21,9 @@ export interface PlatformTenant {
   contactPhone: string;
   country: string;
   notes: string;
+  /** Super-Admin toggle for the top-bar Apps launcher inside the tenant's
+   *  app. UI shows it only when this is true AND the user is an Admin. */
+  appLauncherEnabled: boolean;
   suspendedAt: string | null;
   cancelledAt: string | null;
   createdAt: string;
@@ -52,6 +55,8 @@ export interface UpdateTenantRequest {
   notes?: string;
   /** When set, the backend validates against plan_limits and applies. */
   planTier?: string;
+  /** Super-Admin Apps-launcher toggle. Omit to leave unchanged. */
+  appLauncherEnabled?: boolean;
 }
 
 export interface ListTenantsParams {
@@ -449,11 +454,28 @@ export interface MyModulesPayload {
   catalog: string[];
   modules: Record<string, boolean>;
   categories?: ModuleCategory[];
+  /** Tenant-scope feature flags Super Admin can toggle on the
+   *  Companies edit dialog. Optional so older API deploys keep working. */
+  features?: TenantFeatures;
+}
+
+export interface TenantFeatures {
+  appLauncherEnabled: boolean;
 }
 
 export const myModules = {
   get: (): Promise<MyModulesPayload> =>
     apiJson('/api/v1/me/modules'),
+
+  /** Tenant-admin self-service install / uninstall. Backed by the
+   *  same {@code tenant_modules} table Super Admin writes to — admin
+   *  flips the flag for the whole company. Returns the fresh snapshot
+   *  so the caller can update its local state in one round-trip. */
+  setOne: (moduleKey: string, enabled: boolean): Promise<MyModulesPayload> =>
+    apiJson(`/api/v1/me/modules/${encodeURIComponent(moduleKey)}`, {
+      method: 'PUT',
+      json: { enabled },
+    }),
 };
 
 // ---------------------------------------------------------------------------

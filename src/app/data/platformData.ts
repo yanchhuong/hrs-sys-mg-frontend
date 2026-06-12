@@ -64,6 +64,9 @@ export interface Company {
   createdAt: string;
   lastActiveAt: string;
   notes?: string;
+  /** Super-Admin Apps-launcher toggle. Optional on legacy mock rows;
+   *  the toLegacyCompany adapter fills in true when the backend omits it. */
+  appLauncherEnabled?: boolean;
 }
 
 export interface LocalInstall {

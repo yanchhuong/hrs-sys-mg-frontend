@@ -190,8 +190,11 @@ export function Deduction() {
       return;
     }
     try {
+      // apiJson returns undefined when the tenant has the module
+      // disabled (403 ModuleDisabled). Default to empty so the page
+      // renders blank instead of crashing on `.map`.
       const res = await deductionsApi.list({ size: 500 });
-      setDeductions(res.data.map(adaptApiDeduction));
+      setDeductions((res?.data ?? []).map(adaptApiDeduction));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load deductions');
     }
@@ -204,7 +207,7 @@ export function Deduction() {
     }
     try {
       const res = await employeesApi.list({ size: 500 });
-      setEmployees(res.content.map(adaptApiEmployee));
+      setEmployees((res?.content ?? []).map(adaptApiEmployee));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
     }

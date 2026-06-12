@@ -5,6 +5,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
+import { Switch } from '../../ui/switch';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
@@ -58,6 +59,10 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     createdAt: t.createdAt,
     lastActiveAt: t.updatedAt ?? t.createdAt,
     notes: t.notes,
+    // Backend defaults this to true; preserve undefined → true so the
+    // edit dialog's switch defaults to "on" even if a legacy mock row
+    // skips the field.
+    appLauncherEnabled: t.appLauncherEnabled ?? true,
   };
 }
 
@@ -78,6 +83,7 @@ function toTenant(c: Company): platformApi.PlatformTenant {
     cancelledAt: c.status === 'cancelled' ? c.lastActiveAt : null,
     createdAt: c.createdAt,
     updatedAt: c.lastActiveAt,
+    appLauncherEnabled: c.appLauncherEnabled ?? true,
   };
 }
 
@@ -216,6 +222,11 @@ export function Companies() {
           country: form.country ?? undefined,
           notes: form.notes ?? undefined,
           planTier: form.planTier ?? undefined,
+          // Round-trip the Apps-launcher toggle from the edit form. Send
+          // undefined when the user never opened the dialog (form is
+          // freshly seeded from `editing`) so we don't accidentally
+          // overwrite the stored value with the form's default.
+          appLauncherEnabled: form.appLauncherEnabled,
         });
         toast.success(`Updated ${form.name}`);
       } else {
@@ -422,6 +433,26 @@ export function Companies() {
               <div className="space-y-1.5">
                 <Label htmlFor="c-notes">Notes</Label>
                 <Input id="c-notes" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              </div>
+              {/* Feature toggles — Super Admin controls visibility of
+                  tenant-side surfaces that don't fit the per-module
+                  catalog (single-flag features, not a whole sub-app).
+                  Apps launcher is the first; more can stack here later. */}
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Features</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="c-app-launcher" className="cursor-pointer">Apps launcher</Label>
+                    <p className="text-xs text-gray-500">
+                      Show the 3x3 dots icon next to the language picker. Only Admin-role users see it.
+                    </p>
+                  </div>
+                  <Switch
+                    id="c-app-launcher"
+                    checked={form.appLauncherEnabled ?? true}
+                    onCheckedChange={(v) => setForm({ ...form, appLauncherEnabled: v })}
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>

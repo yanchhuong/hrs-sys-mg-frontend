@@ -26,11 +26,14 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
+import { AttachmentsPanel } from '../common/AttachmentsPanel';
+import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as billsApi from '../../api/bills';
 import * as billPaymentsApi from '../../api/billPayments';
-import * as customersApi from '../../api/customers';
+import * as vendorsApi from '../../api/vendors';
 import {
-  Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight,
+  Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -58,13 +61,25 @@ const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
   credit_note: 'border-emerald-300 text-emerald-700 bg-emerald-50',
   debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
 };
+/** V98 simplified the Bill workflow to Progress / Paid (+ Void
+ *  terminal). Legacy draft / partially / overdue values still appear
+ *  in unmigrated data; the badge map shares the Progress style so
+ *  the visible status reads consistently. */
 const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
-  draft:     'border-slate-300 text-slate-700 bg-slate-50',
+  draft:     'border-blue-300 text-blue-700 bg-blue-50',
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
-  partially: 'border-amber-300 text-amber-700 bg-amber-50',
+  partially: 'border-blue-300 text-blue-700 bg-blue-50',
   paid:      'border-emerald-300 text-emerald-700 bg-emerald-50',
-  overdue:   'border-orange-400 text-orange-800 bg-orange-50',
+  overdue:   'border-blue-300 text-blue-700 bg-blue-50',
   void:      'border-red-300 text-red-700 bg-red-50',
+};
+const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
+  draft:     'progress',
+  progress:  'progress',
+  partially: 'progress',
+  paid:      'paid',
+  overdue:   'progress',
+  void:      'void',
 };
 
 const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: string }> = [
@@ -112,29 +127,29 @@ const TAX_TYPES_FOR_KIND = (_kind: billsApi.BillKind, _parentKind?: billsApi.Bil
  * individuals show phone + address. Renders nothing when no
  * customer is selected.
  */
-function CustomerInfoCard({ customer }: { customer: customersApi.Customer | undefined }) {
-  if (!customer) return null;
+function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
+  if (!vendor) return null;
   const rows: Array<{ label: string; value: string | null | undefined }> =
-    customer.type === 'business'
+    vendor.type === 'business'
       ? [
-          { label: 'Company',        value: customer.name },
-          { label: 'TIN',            value: customer.tin },
-          { label: 'Representative', value: customer.representative },
-          { label: 'Phone',          value: customer.phone },
-          { label: 'Site',           value: customer.site },
-          { label: 'Address',        value: customer.address },
+          { label: 'Company',        value: vendor.name },
+          { label: 'TIN',            value: vendor.tin },
+          { label: 'Representative', value: vendor.representative },
+          { label: 'Phone',          value: vendor.phone },
+          { label: 'Site',           value: vendor.site },
+          { label: 'Address',        value: vendor.address },
         ]
       : [
-          { label: 'Name',    value: customer.name },
-          { label: 'Phone',   value: customer.phone },
-          { label: 'Address', value: customer.address },
+          { label: 'Name',    value: vendor.name },
+          { label: 'Phone',   value: vendor.phone },
+          { label: 'Address', value: vendor.address },
         ];
   return (
     <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${
-      customer.type === 'business' ? 'bg-violet-50 border-violet-200' : 'bg-emerald-50 border-emerald-200'
+      vendor.type === 'business' ? 'bg-violet-50 border-violet-200' : 'bg-emerald-50 border-emerald-200'
     }`}>
       <div className="flex items-center gap-1.5 mb-1 font-medium text-[11px] uppercase tracking-wide text-gray-500">
-        {customer.type === 'business' ? 'Business vendor' : 'Individual vendor'}
+        {vendor.type === 'business' ? 'Business vendor' : 'Individual vendor'}
       </div>
       <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-0.5">
         {rows.filter(r => r.value && String(r.value).trim()).map(r => (
@@ -160,13 +175,20 @@ export function Bills() {
   const [rows, setRows] = useState<billsApi.Bill[]>([]);
   const [loading, setLoading] = useState(false);
   const [kindFilter, setKindFilter] = useState<billsApi.BillKind | 'all'>('all');
-  const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
+  const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
+
+  // Per-side Accountant settings (V92) — Purchase row is independent
+  // from Sale. Each side has its own toggles, prefixes, and audit
+  // trail. Fetched on mount; refreshed when the popup saves.
+  const [settings, setSettings] = useState<accountingSettingsApi.AccountingSettings>(
+    accountingSettingsApi.defaultsFor('purchase'));
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -186,10 +208,10 @@ export function Bills() {
     try {
       const [invRes, custRes] = await Promise.all([
         billsApi.list({ kind: kindFilter === 'all' ? undefined : kindFilter, size: 200 }),
-        customersApi.list({ size: 500 }),
+        vendorsApi.list({ size: 500 }),
       ]);
       setRows(invRes.content ?? []);
-      setCustomers(custRes.content ?? []);
+      setVendors(custRes.content ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load bills');
     } finally {
@@ -199,11 +221,19 @@ export function Bills() {
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [kindFilter]);
 
-  const customerById = useMemo(() => {
-    const m = new Map<string, customersApi.Customer>();
-    customers.forEach(c => m.set(c.id, c));
+  // One-shot fetch of the Purchase-side Accountant settings.
+  // Independent from the Sale-side row on the Invoice page.
+  useEffect(() => {
+    accountingSettingsApi.get('purchase').then(setSettings).catch(() => {
+      setSettings(accountingSettingsApi.defaultsFor('purchase'));
+    });
+  }, []);
+
+  const vendorById = useMemo(() => {
+    const m = new Map<string, vendorsApi.Vendor>();
+    vendors.forEach(c => m.set(c.id, c));
     return m;
-  }, [customers]);
+  }, [vendors]);
 
   /**
    * Filter by date range + free-text keyword, then group adjustments
@@ -219,9 +249,9 @@ export function Bills() {
       if (dateFrom && r.issueDate < dateFrom) return false;
       if (dateTo   && r.issueDate > dateTo)   return false;
       if (!q) return true;
-      const customerName = customerById.get(r.customerId)?.name?.toLowerCase() ?? '';
+      const vendorName = vendorById.get(r.vendorId)?.name?.toLowerCase() ?? '';
       return r.billNo.toLowerCase().includes(q)
-          || customerName.includes(q)
+          || vendorName.includes(q)
           || (r.notes ?? '').toLowerCase().includes(q);
     };
 
@@ -258,7 +288,7 @@ export function Bills() {
       if (kids) out.push(...kids);
     }
     return [...out, ...orphans];
-  }, [rows, search, dateFrom, dateTo, customerById]);
+  }, [rows, search, dateFrom, dateTo, vendorById]);
 
   const pagination = usePagination(groupedRows, 25);
 
@@ -280,9 +310,12 @@ export function Bills() {
       // CN total represents what we owe the customer → subtract from
       // the running Total. INV + DN add as receivables.
       slot.total += r.kind === 'credit_note' ? -r.total : r.total;
-      // CN's paid is a refund — subtract magnitude so the net Paid
-      // total reflects what we actually received from the customer.
-      slot.paid += r.kind === 'credit_note' ? -Math.abs(r.paidAmount) : r.paidAmount;
+      // paidAmount is already a signed sum (credit = + cash in,
+      // debit = − cash out), so the column total is just the
+      // arithmetic sum. The previous force-negate on CN double-
+      // counted refunds — fixed when payments grew the credit /
+      // debit direction split.
+      slot.paid += r.paidAmount;
       if (!r.parentBillId) {
         slot.remain += r.netBalance ?? (r.total - r.paidAmount);
       }
@@ -342,6 +375,12 @@ export function Bills() {
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+          {/* Settings popup — same tenant-wide toggles as the Invoice
+              page (Notes / Terms / Discount / Tax). */}
+          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                  title="Accountant settings">
+            <Settings className="h-4 w-4" />
           </Button>
           {canAdd && (
             <DropdownMenu>
@@ -471,7 +510,7 @@ export function Bills() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {customerById.get(inv.customerId)?.name ?? <span className="text-gray-400">(unknown)</span>}
+                        {vendorById.get(inv.vendorId)?.name ?? <span className="text-gray-400">(unknown)</span>}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
                       {/* CN amount represents money we owe customer →
@@ -491,14 +530,27 @@ export function Bills() {
                           - CN with payment → "− $X" in red (refund =
                             money out, signed for ledger clarity).
                           - INV / DN → plain gray amount. */}
+                      {/* Sign-aware render — Bill payments carry a
+                          signed sum (credit = + money in, debit = −
+                          money out). CN with a credit-direction
+                          payment is the vendor refunding us, so the
+                          column reads + $X in emerald. CN with a
+                          debit-direction payment (rare — we paid out
+                          on a CN) reads − $X in rose. Non-CN rows
+                          almost always carry a negative paid (we
+                          paid vendor) — keep the existing render. */}
                       <TableCell className={`text-right text-sm tabular-nums ${
-                        inv.kind === 'credit_note' ? 'text-red-700' : 'text-gray-600'
+                        inv.paidAmount > 0 ? 'text-emerald-700'
+                          : inv.paidAmount < 0 ? 'text-red-700'
+                          : 'text-gray-600'
                       }`}>
                         {isAdjustment && inv.paidAmount === 0
                           ? <span className="text-gray-300">—</span>
-                          : inv.kind === 'credit_note'
-                            ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
-                            : fmtMoney(inv.paidAmount, inv.currency)}
+                          : inv.paidAmount > 0
+                            ? `+ ${fmtMoney(inv.paidAmount, inv.currency)}`
+                            : inv.paidAmount < 0
+                              ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
+                              : fmtMoney(0, inv.currency)}
                       </TableCell>
                       {/* Remain is meaningful only on the root invoice
                           — CN/DN rows already roll their balance up
@@ -514,7 +566,7 @@ export function Bills() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
-                          {inv.status}
+                          {STATUS_LABEL[inv.status] ?? inv.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -605,19 +657,30 @@ export function Bills() {
         open={formOpen}
         onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
         kind={formKind}
-        customers={customers}
+        vendors={vendors}
         bills={rows}
         editing={formEditing}
         parentPrefill={formParentPrefill}
+        settings={settings}
         onCreated={async () => { setFormOpen(false); setFormEditing(null); setFormParentPrefill(null); await load(); }}
+      />
+
+      {/* Purchase-side Accountant settings popup. Independent from
+          the Sale-side row — each scope has its own audit trail. */}
+      <AccountingSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        scope="purchase"
+        onSaved={setSettings}
       />
 
       {/* Detail dialog */}
       {detailId && (
         <BillDetailDialog
           billId={detailId}
-          customers={customers}
+          vendors={vendors}
           canEdit={canEdit}
+          settings={settings}
           onClose={() => setDetailId(null)}
           onChanged={() => { void load(); }}
           onEdit={openEdit}
@@ -661,12 +724,12 @@ interface FormItem {
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
 
 function BillFormDialog({
-  open, onOpenChange, kind, customers, bills, editing, parentPrefill, onCreated,
+  open, onOpenChange, kind, vendors, bills, editing, parentPrefill, settings, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   kind: billsApi.BillKind;
-  customers: customersApi.Customer[];
+  vendors: vendorsApi.Vendor[];
   bills: billsApi.Bill[];
   /** When set, the dialog runs in edit mode against this invoice
    *  instead of creating a new one. Submit calls PUT /invoices/{id}
@@ -676,12 +739,16 @@ function BillFormDialog({
    *  parent picker is pre-filled. Used by the inline "adjust"
    *  dropdown on commercial / tax rows. */
   parentPrefill?: string | null;
+  /** Tenant-wide toggles driving which optional sections of the form
+   *  render (Notes / Terms / Discount / Tax). Shared with the
+   *  Invoice page — same endpoint backs both. */
+  settings: accountingSettingsApi.AccountingSettings;
   onCreated: () => Promise<void> | void;
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
   const isEdit = !!editing;
 
-  const [customerId, setCustomerId] = useState('');
+  const [vendorId, setVendorId] = useState('');
   const [parentBillId, setParentInvoiceId] = useState('');
   /** Document number — pre-filled from /invoices/next-number on open
    *  for fresh creates and from the row on edit. Free-form input so
@@ -708,7 +775,7 @@ function BillFormDialog({
   useEffect(() => {
     if (!open) return;
     if (editing) {
-      setCustomerId(editing.customerId);
+      setVendorId(editing.vendorId);
       setParentInvoiceId(editing.parentBillId ?? '');
       setInvoiceNo(editing.billNo);
       setIssueDate(editing.issueDate);
@@ -735,7 +802,7 @@ function BillFormDialog({
       // (and customer + currency + taxType) from the parent invoice
       // so HR doesn't re-pick them.
       const seedParent = parentPrefill ? bills.find(i => i.id === parentPrefill) : undefined;
-      setCustomerId(seedParent?.customerId ?? '');
+      setVendorId(seedParent?.vendorId ?? '');
       setParentInvoiceId(parentPrefill ?? '');
       setInvoiceNo('');
       setIssueDate(new Date().toISOString().slice(0, 10));
@@ -793,7 +860,7 @@ function BillFormDialog({
     kind,
     parentBillId: isAdjustment ? parentBillId : undefined,
     billNo: billNo.trim() || undefined,
-    customerId,
+    vendorId,
     issueDate,
     dueDate: dueDate || undefined,
     currency,
@@ -818,13 +885,29 @@ function BillFormDialog({
   });
 
   const validate = (): boolean => {
-    if (!customerId) { toast.error('Customer is required'); return false; }
+    if (!vendorId) { toast.error('Vendor is required'); return false; }
     if (isAdjustment && !parentBillId) { toast.error('Pick the invoice this note adjusts'); return false; }
     if (items.length === 0 || items.some(it => !it.name.trim())) {
       toast.error('Each line item needs a name');
       return false;
     }
     return true;
+  };
+
+  /** Create → issue chain so a new Bill lands directly in Progress
+   *  (the V98 / user-requested two-state model: Progress → Paid).
+   *  Edit mode keeps the row's existing status — no auto-flip on
+   *  edit, only on first save. If the issue step ever 4xx's the
+   *  row is still on disk as draft and HR can promote from the
+   *  list page; we toast a warning rather than a hard error. */
+  const createAsProgress = async () => {
+    const created = await billsApi.create(buildPayload());
+    try {
+      await billsApi.issue(created.id);
+    } catch (e) {
+      toast.warning(`${created.billNo} saved as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
+    }
+    return created;
   };
 
   const submit = async () => {
@@ -835,12 +918,12 @@ function BillFormDialog({
         await billsApi.update(editing.id, buildPayload());
         toast.success(`${editing.billNo} updated`);
       } else {
-        await billsApi.create(buildPayload());
-        toast.success(`${KIND_LABEL[kind]} created as draft`);
+        const created = await createAsProgress();
+        toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
       }
       await onCreated();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save invoice');
+      toast.error(e instanceof Error ? e.message : 'Failed to save bill');
     } finally {
       setSaving(false);
     }
@@ -848,31 +931,36 @@ function BillFormDialog({
 
   const totalKhr = total * (Number(exchangeRate) || 0);
 
-  /** Save the current entry as a *progress* invoice (create → issue
-   *  chained) and keep the dialog open with a freshly-armed form so
-   *  the bookkeeper can chain entries without re-opening the dialog.
-   *  Customer + dates carry over; lines + amounts reset. */
+  /** Save as Progress + reset the form so HR can chain entries
+   *  without re-opening the dialog. Same status path as submit. */
   const submitAndNew = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
-      const created = await billsApi.create(buildPayload());
-      // Immediately flip to progress per the UX requirement. If the
-      // issue step 4xx's we still report the create — the row exists
-      // as a draft and HR can promote it from the list page.
-      try {
-        await billsApi.issue(created.id);
-        toast.success(`${KIND_LABEL[kind]} ${created.billNo} issued — ready for next entry`);
-      } catch (e) {
-        toast.warning(`${created.billNo} created as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
-      }
+      const created = await createAsProgress();
+      toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountValue('0');
       setNotes('');
       setTerms('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
+      toast.error(e instanceof Error ? e.message : 'Failed to create bill');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Save as Progress + close the dialog. */
+  const submitAndClose = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const created = await createAsProgress();
+      toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
+      await onCreated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create bill');
     } finally {
       setSaving(false);
     }
@@ -886,6 +974,11 @@ function BillFormDialog({
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit ${editing?.billNo}` : `New ${KIND_LABEL[kind]}`}</DialogTitle>
+          <DialogDescription>
+            {isAdjustment
+              ? 'Record an adjustment against the parent bill — lines and tax recompute the totals.'
+              : 'Capture a vendor bill. Lines and tax type drive the totals; saving as Issued moves it into AP.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -920,12 +1013,12 @@ function BillFormDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Vendor *</Label>
               <SearchablePicker
-                value={customerId}
-                onChange={setCustomerId}
-                placeholder="Pick customer"
+                value={vendorId}
+                onChange={setVendorId}
+                placeholder="Pick vendor"
                 searchPlaceholder="Search by name, phone, or TIN…"
                 allowClear={false}
-                options={customers.map(c => ({
+                options={vendors.map(c => ({
                   value: c.id,
                   label: c.name,
                   secondary: c.type === 'business'
@@ -939,7 +1032,7 @@ function BillFormDialog({
                   individuals show their phone + address. The card is
                   a quick-glance review so the bookkeeper can confirm
                   the right party is selected before saving. */}
-              <CustomerInfoCard customer={customers.find(c => c.id === customerId)} />
+              <VendorInfoCard vendor={vendors.find(c => c.id === vendorId)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">
@@ -1056,7 +1149,12 @@ function BillFormDialog({
               cross-system reference; server applies subtotal × rate.
               Commercial / CN-DN-against-commercial → just VAT 0% +
               Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
+          {/* Tax + Discount row gated by tenant Accountant Settings —
+              flip the matching toggle off in the Settings popup and
+              the cell vanishes here. */}
+          {(settings.showTax || settings.showDiscount) && (
           <div className="grid grid-cols-3 gap-3">
+            {settings.showTax && (
             <div className="space-y-1.5">
               <Label className="text-xs">Taxation</Label>
               <Select
@@ -1073,12 +1171,21 @@ function BillFormDialog({
                       : (editing?.parentBillId
                           ? bills.find(i => i.id === editing.parentBillId)?.kind
                           : undefined),
-                  ).map(t => (
+                  )
+                    // Tenant-enabled set from the Settings popup acts
+                    // as a second filter. Keep the existing value
+                    // visible during edit even if it's since been
+                    // disabled — preserves the row without forcing
+                    // a re-pick on every open.
+                    .filter(t => settings.taxTypesEnabled.includes(t.key) || t.key === editing?.taxType)
+                    .map(t => (
                     <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            )}
+            {settings.showTax && (
             <div className="space-y-1.5">
               <Label className="text-xs">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
@@ -1095,6 +1202,8 @@ function BillFormDialog({
                 title={taxType ? 'Auto-computed from the taxation type' : ''}
               />
             </div>
+            )}
+            {settings.showDiscount && (
             <div className="space-y-1.5">
               <Label className="text-xs">
                 Discount {discountType === 'percent' && (
@@ -1129,13 +1238,18 @@ function BillFormDialog({
                 </div>
               </div>
             </div>
+            )}
           </div>
+          )}
 
-          {/* Two-column layout: Notes on the left (internal memo),
-              Terms + Summary stacked on the right (customer-facing
-              terms above the totals card). Same shape on create,
-              edit, and detail surfaces. */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Notes / Terms 2-col + summary. Either or both can be
+              hidden via the Accountant Settings popup. When only one
+              is on we drop to single-column so the visible textarea
+              gets full width. */}
+          <div className={`grid gap-3 ${
+            (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+          }`}>
+            {settings.showNotes && (
             <div className="space-y-1.5 flex flex-col">
               <Label className="text-xs">Notes</Label>
               <Textarea
@@ -1145,7 +1259,9 @@ function BillFormDialog({
                 className="flex-1 resize-none"
               />
             </div>
+            )}
             <div className="space-y-3 flex flex-col">
+              {settings.showTerms && (
               <div className="space-y-1.5 flex-1 flex flex-col">
                 <Label className="text-xs">Terms &amp; conditions</Label>
                 <Textarea
@@ -1155,19 +1271,24 @@ function BillFormDialog({
                   className="flex-1 resize-none"
                 />
               </div>
+              )}
               <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(subtotal, currency)}</span>
                 </div>
+                {settings.showTax && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Tax</span>
                   <span className="tabular-nums w-32 text-right">+ {fmtMoney(computedTax, currency)}</span>
                 </div>
+                )}
+                {settings.showDiscount && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Discount</span>
                   <span className="tabular-nums w-32 text-right">− {fmtMoney(computedDiscount, currency)}</span>
                 </div>
+                )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                   <span>Total USD</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
@@ -1183,15 +1304,23 @@ function BillFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          {/* Save & add new only makes sense for fresh entries — on edit
-              it would orphan the row mid-flow. */}
+          {/* Save & add new and Save & close both save as Draft on
+              the Bill side — Bills are recorded as drafts during data
+              entry and promoted to Progress / Paid explicitly once
+              the spend is confirmed. Only on create; edit shows a
+              single Save changes button instead. */}
           {!isEdit && (
-            <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save and issue, then reset the form for the next entry">
-              {saving ? 'Saving…' : 'Save & add new'}
-            </Button>
+            <>
+              <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Draft and reset the form for the next entry">
+                {saving ? 'Saving…' : 'Save & add new'}
+              </Button>
+              <Button variant="outline" onClick={submitAndClose} disabled={saving} title="Save as Draft and close the dialog">
+                {saving ? 'Saving…' : 'Save & close'}
+              </Button>
+            </>
           )}
           <Button onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1203,11 +1332,15 @@ function BillFormDialog({
 /* Detail dialog — read-only view + actions + payments                        */
 /* -------------------------------------------------------------------------- */
 function BillDetailDialog({
-  billId, customers, canEdit, onClose, onChanged, onEdit,
+  billId, vendors, canEdit, settings, onClose, onChanged, onEdit,
 }: {
   billId: string;
-  customers: customersApi.Customer[];
+  vendors: vendorsApi.Vendor[];
   canEdit: boolean;
+  /** Tenant Accountant settings — same flags that drive the create
+   *  form gate the View Details popup too, so a section that's
+   *  hidden on the form (e.g. Discount off) also disappears here. */
+  settings: accountingSettingsApi.AccountingSettings;
   onClose: () => void;
   onChanged: () => void;
   /** Called when the user clicks Edit. The parent should close this
@@ -1228,7 +1361,7 @@ function BillDetailDialog({
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
 
-  const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
+  const vendor = invoice ? vendors.find(c => c.id === invoice.vendorId) : undefined;
 
   const load = async () => {
     setLoading(true);
@@ -1304,80 +1437,91 @@ function BillDetailDialog({
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
-        {loading || !invoice ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
-        ) : (
-          <>
-            <DialogHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <DialogTitle className="font-mono">{invoice.billNo}</DialogTitle>
-                  <DialogDescription className="flex items-center gap-2 mt-1">
+        {/* Header always renders so Radix' DialogTitle / Description
+            requirements are met even during the brief load. Actions
+            depend on the loaded bill and are only shown once it's in. */}
+        <DialogHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DialogTitle className="font-mono">{invoice?.billNo ?? 'Bill details'}</DialogTitle>
+              <DialogDescription className="flex items-center gap-2 mt-1">
+                {loading || !invoice ? (
+                  <span className="text-xs text-gray-500">Loading bill…</span>
+                ) : (
+                  <>
                     <Badge variant="outline" className={KIND_BADGE_CLASS[invoice.kind]}>
                       {KIND_LABEL[invoice.kind]}
                     </Badge>
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[invoice.status]}`}>
-                      {invoice.status}
+                      {STATUS_LABEL[invoice.status] ?? invoice.status}
                     </Badge>
                     <span className="text-xs text-gray-500">{invoice.issueDate}</span>
-                  </DialogDescription>
-                </div>
-                {/* mr-8 reserves room for the dialog's built-in close (X)
-                    button which sits at top:1rem right:1rem inside the
-                    DialogContent — without the inset the Void button
-                    sat directly under it.
-                    print:hidden drops the whole action row from the
-                    Print output so the printed page only carries the
-                    invoice itself, not the management controls. */}
-                <div className="flex gap-1.5 mr-8 print:hidden">
-                  <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
-                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                  </>
+                )}
+              </DialogDescription>
+            </div>
+            {/* mr-8 reserves room for the dialog's built-in close (X)
+                button at top:1rem right:1rem — without the inset the
+                Void button sat directly under it. print:hidden drops
+                the whole action row from the Print output. */}
+            {invoice && (
+              <div className="flex gap-1.5 mr-8 print:hidden">
+                <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
+                  <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                </Button>
+                {/* Edit available only on draft + progress per the
+                    legal-document rule — paid / partially / overdue /
+                    void rows must be adjusted via a credit or debit
+                    note, not by rewriting the original. */}
+                {canEdit && (invoice.status === 'draft' || invoice.status === 'progress') && (
+                  <Button size="sm" variant="outline" disabled={busy}
+                    onClick={() => onEdit(invoice)}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                   </Button>
-                  {/* Edit available only on draft + progress per the
-                      legal-document rule — paid / partially / overdue /
-                      void rows must be adjusted via a credit or debit
-                      note, not by rewriting the original. */}
-                  {canEdit && (invoice.status === 'draft' || invoice.status === 'progress') && (
-                    <Button size="sm" variant="outline" disabled={busy}
-                      onClick={() => onEdit(invoice)}
-                    >
-                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                    </Button>
-                  )}
-                  {canEdit && invoice.status === 'draft' && (
-                    <Button size="sm" disabled={busy}
-                      onClick={() => doAction('Bill issued',
-                        () => billsApi.issue(invoice.id).then(setInvoice))}
-                    >
-                      <Send className="h-3.5 w-3.5 mr-1" /> Issue
-                    </Button>
-                  )}
-                  {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
-                    <Button size="sm" variant="outline" disabled={busy}
-                      className="text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => doAction('Bill voided',
-                        () => billsApi.voidBill(invoice.id).then(setInvoice))}
-                    >
-                      <Ban className="h-3.5 w-3.5 mr-1" /> Void
-                    </Button>
-                  )}
-                </div>
+                )}
+                {canEdit && invoice.status === 'draft' && (
+                  <Button size="sm" disabled={busy}
+                    onClick={() => doAction('Bill issued',
+                      () => billsApi.issue(invoice.id).then(setInvoice))}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1" /> Issue
+                  </Button>
+                )}
+                {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
+                  <Button size="sm" variant="outline" disabled={busy}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => doAction('Bill voided',
+                      () => billsApi.voidBill(invoice.id).then(setInvoice))}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1" /> Void
+                  </Button>
+                )}
               </div>
-            </DialogHeader>
-
+            )}
+          </div>
+        </DialogHeader>
+        {loading || !invoice ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+        ) : (
+          <>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
               <div className="text-gray-500">Vendor</div>
-              <div>{customer?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
+              <div>{vendor?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
               <div className="text-gray-500">Due date</div>
               <div>{invoice.dueDate ?? '—'}</div>
               <div className="text-gray-500">Currency</div>
               <div>{invoice.currency}</div>
-              <div className="text-gray-500">Taxation</div>
-              <div>
-                {invoice.taxType && TAX_TYPE_BY_KEY[invoice.taxType]
-                  ? `${TAX_TYPE_BY_KEY[invoice.taxType].label} (${TAX_TYPE_BY_KEY[invoice.taxType].rate}%)`
-                  : <span className="text-gray-400 italic">None</span>}
-              </div>
+              {settings.showTax && (
+                <>
+                  <div className="text-gray-500">Taxation</div>
+                  <div>
+                    {invoice.taxType && TAX_TYPE_BY_KEY[invoice.taxType]
+                      ? `${TAX_TYPE_BY_KEY[invoice.taxType].label} (${TAX_TYPE_BY_KEY[invoice.taxType].rate}%)`
+                      : <span className="text-gray-400 italic">None</span>}
+                  </div>
+                </>
+              )}
               {invoice.parentBillId && (
                 <>
                   <div className="text-gray-500">Adjusts bill</div>
@@ -1421,10 +1565,13 @@ function BillDetailDialog({
               </Table>
             </div>
 
-            {/* Two-column layout matching the create / edit dialog —
-                Notes (internal memo) on the left, Terms (customer-
-                facing) + amount summary stacked on the right. */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Notes / Terms 2-col + summary. Same gating as the
+                create form — a section hidden there is hidden here
+                too. Drops to single-col when only one is on. */}
+            <div className={`grid gap-3 ${
+              (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+            }`}>
+              {settings.showNotes && (
               <div className="bg-slate-50 rounded-md p-3 text-sm">
                 <div className="text-xs text-gray-500 mb-1">Notes</div>
                 {invoice.notes ? (
@@ -1433,7 +1580,9 @@ function BillDetailDialog({
                   <div className="text-gray-400 italic text-xs">No notes recorded for this invoice.</div>
                 )}
               </div>
+              )}
               <div className="space-y-3">
+                {settings.showTerms && (
                 <div className="bg-slate-50 rounded-md p-3 text-sm">
                   <div className="text-xs text-gray-500 mb-1">Terms &amp; conditions</div>
                   {invoice.terms ? (
@@ -1442,6 +1591,7 @@ function BillDetailDialog({
                     <div className="text-gray-400 italic text-xs">No terms recorded for this invoice.</div>
                   )}
                 </div>
+                )}
                 {/* Net-balance summary using the full ledger formula:
                     total + ΣDN − ΣCN − payments. Void children are
                     excluded server-side. When no adjustments exist
@@ -1460,7 +1610,10 @@ function BillDetailDialog({
                   return (
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
+                    {settings.showTax && (
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                    )}
+                    {settings.showDiscount && (
                     <div className="flex justify-end gap-6">
                       <span className="text-gray-600">
                         Discount
@@ -1470,6 +1623,7 @@ function BillDetailDialog({
                       </span>
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
+                    )}
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
                     {sumDn > 0 && (
                       <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>
@@ -1535,7 +1689,7 @@ function BillDetailDialog({
                           <TableCell className="text-sm text-gray-600">{a.issueDate}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[a.status]}`}>
-                              {a.status}
+                              {STATUS_LABEL[a.status] ?? a.status}
                             </Badge>
                           </TableCell>
                           <TableCell className={`text-right text-sm tabular-nums ${isVoid ? 'line-through' : ''} ${
@@ -1633,6 +1787,11 @@ function BillDetailDialog({
                   </TableBody>
                 </Table>
               )}
+            </div>
+
+            <div className="border-t pt-3 print:hidden">
+              <AttachmentsPanel docType="bill" docId={invoice.id}
+                                readOnly={invoice.status === 'void' || !canEdit} />
             </div>
 
             <DialogFooter className="print:hidden">

@@ -111,14 +111,30 @@ export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<R
 /**
  * Recognise the structured body the backend's TenantModuleGuard returns
  * for a tenant whose tenant-modules row says the requested module is
- * off. The frontend menu already hides those modules via canView, so
- * any call hitting this path is from a stale tab or a background
- * poll — we swallow it silently rather than turning every poll into a
- * red toast. List endpoints resolve to undefined and most call sites
- * already coalesce that to [] for rendering.
+ * off. Old behaviour resolved {@link apiJson} to {@code undefined} so
+ * list pages could render empty, but no caller actually wrote
+ * {@code (await x).data ?? []} and every loader crashed on the
+ * undefined unwrap. We now throw a typed sentinel ({@link
+ * ModuleDisabledError}) so the existing try/catch in every loader
+ * turns the failure into a clean toast instead of a React crash.
  */
 function isModuleDisabledResponse(status: number, body: any): boolean {
   return status === 403 && body && body.code === 'ModuleDisabled';
+}
+
+/** Typed sentinel — thrown by {@link apiJson} / {@link apiVoid} when
+ *  the tenant has the called module disabled. Loaders that want the
+ *  silent-empty UX can check with {@link isModuleDisabledError} in
+ *  their catch handler; default catch behaviour is fine (just toast). */
+export class ModuleDisabledError extends Error {
+  constructor(path: string) {
+    super(`This module is not installed for your company (${path}).`);
+    this.name = 'ModuleDisabledError';
+  }
+}
+
+export function isModuleDisabledError(e: unknown): e is ModuleDisabledError {
+  return e instanceof ModuleDisabledError;
 }
 
 /** JSON request that throws ApiError on non-2xx. */
@@ -127,12 +143,10 @@ export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise
   if (res.status === 401) setToken(null);
   const body = await safeJson<any>(res);
   if (isModuleDisabledResponse(res.status, body)) {
-    // Resolve quietly — caller usually does `setItems(data ?? [])` etc.
-    return undefined as unknown as T;
+    throw new ModuleDisabledError(path);
   }
   if (!res.ok) {
-    const msg = body?.message ?? `Request failed (${res.status})`;
-    throw new ApiError(msg, res.status, path, body);
+    throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
   }
   return body as T;
 }
@@ -143,10 +157,31 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
   if (res.status === 401) setToken(null);
   if (!res.ok) {
     const body = await safeJson<any>(res);
-    if (isModuleDisabledResponse(res.status, body)) return;
-    const msg = body?.message ?? `Request failed (${res.status})`;
-    throw new ApiError(msg, res.status, path, body);
+    if (isModuleDisabledResponse(res.status, body)) throw new ModuleDisabledError(path);
+    throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
   }
+}
+
+/** Build the user-visible error string for ApiError.
+ *  - {@code body.message} is the top-level reason ("Validation failed").
+ *  - {@code body.fieldErrors[]} carries per-field reasons; we append the
+ *    first 3 so a toast that previously read just "Validation failed"
+ *    now reads "Validation failed: items must not be empty; …" and
+ *    the operator can fix the form without opening DevTools. */
+function formatErrorMessage(body: any, status: number): string {
+  const base = body?.message ?? `Request failed (${status})`;
+  const issues = Array.isArray(body?.fieldErrors) ? body.fieldErrors : [];
+  if (issues.length === 0) return base;
+  const parts: string[] = [];
+  const take = issues.slice(0, 3);
+  for (const i of take) {
+    if (!i) continue;
+    const field = i.field ?? 'field';
+    const message = i.message ?? 'invalid';
+    parts.push(`${field}: ${message}`);
+  }
+  const tail = issues.length > 3 ? `; +${issues.length - 3} more` : '';
+  return parts.length ? `${base} — ${parts.join('; ')}${tail}` : base;
 }
 
 /** Spring Data Page<T> shape — all list endpoints return this. */

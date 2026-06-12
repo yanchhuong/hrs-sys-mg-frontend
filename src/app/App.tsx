@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+// Side-effect import — monkey-patches sonner's toast.error to swallow
+// module-disabled messages so a tenant with an uninstalled module sees
+// the page render empty instead of a red toast on every fetch.
+import './utils/moduleDisabledToastFilter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DateFormatProvider } from './context/DateFormatContext';
 import { I18nProvider } from './i18n/I18nContext';

@@ -1097,7 +1097,10 @@ export function Payroll() {
     // Use the upload dialog MM/YYYY values, fall back to current month/year.
     const month = periodStart ? String(periodStart).padStart(2, '0') : format(new Date(), 'MM');
     const year = periodEnd || format(new Date(), 'yyyy');
-    const monthYear = `${month}-${year}`;
+    // Backend expects ISO-ish YYYY-MM; the page-state vars are split
+    // as month + year for the two MM / YYYY inputs in the dialog, so
+    // assemble in the right order here.
+    const monthYear = `${year}-${month}`;
     const periodFromIso = `${year}-${month}-01`;
     const periodEndDay = new Date(Number(year), Number(month), 0).getDate(); // last day of month
     const periodToIso = `${year}-${month}-${String(periodEndDay).padStart(2, '0')}`;
@@ -2302,6 +2305,10 @@ export function Payroll() {
 
       {isSelfPayslipView && currentEmployee && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {/* Base Salary + OT Rate come from the employee profile (the
+              configured terms), not payroll history. The "configured"
+              subtitle keeps a reader from mistaking the cards for
+              payment activity when the records table is empty. */}
           <Card className="border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
@@ -2309,37 +2316,63 @@ export function Payroll() {
                 <span className="text-2xl font-bold text-green-600">${formatMoney(currentEmployee.baseSalary)}</span>
               </div>
               <p className="text-xs font-medium text-gray-700 truncate">Base Salary</p>
-              <p className="text-[11px] text-gray-500 truncate">Per month</p>
+              <p className="text-[11px] text-gray-500 truncate">Per month · configured</p>
             </CardContent>
           </Card>
 
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <DollarSign className="h-5 w-5 text-blue-600" />
-                <span className="text-2xl font-bold text-blue-600">
-                  ${formatMoney(calculateOTRate(currentEmployee.baseSalary))}
-                </span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">OT Rate (1.5x)</p>
-              <p className="text-[11px] text-gray-500 truncate">Per hour</p>
-            </CardContent>
-          </Card>
+          {/* OT Rate (1.5x) card removed for Employee + Manager —
+              the configured hourly rate is more of a payroll-admin
+              reference than something a self-view needs at the top
+              of the page. Admins look at OT inside the batch detail
+              anyway, where the per-employee numbers live. */}
 
+          {/* Last Payment is the only card that reflects history. With
+              no payslip on file it renders an em-dash so it doesn't
+              read as "paid $0". */}
           <Card className="border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <DollarSign className="h-5 w-5 text-purple-600" />
-                <span className="text-2xl font-bold text-purple-600">
-                  ${formatMoney(payrollRecords[0]?.totalPay ?? 0)}
+                <span className={`text-2xl font-bold ${payrollRecords[0] ? 'text-purple-600' : 'text-gray-300'}`}>
+                  {payrollRecords[0] ? `$${formatMoney(payrollRecords[0].totalPay)}` : '—'}
                 </span>
               </div>
               <p className="text-xs font-medium text-gray-700 truncate">Last Payment</p>
               <p className="text-[11px] text-gray-500 truncate">
-                {payrollRecords[0] ? format(new Date(payrollRecords[0].month + '-01'), 'MM/yyyy') : '-'}
+                {payrollRecords[0]
+                  ? format(new Date(payrollRecords[0].month + '-01'), 'MM/yyyy')
+                  : 'No payments yet'}
               </p>
             </CardContent>
           </Card>
+
+          {/* Total Annual Payroll — sum of the user's own payslip
+              totals for the current calendar year. Self-only view, so
+              Manager and Employee both see their personal YTD total.
+              Empty state mirrors Last Payment's em-dash for symmetry. */}
+          {(() => {
+            const currentYear = String(new Date().getFullYear());
+            const annualRecords = payrollRecords.filter(r => r.month?.startsWith(currentYear));
+            const total = annualRecords.reduce((s, r) => s + (r.totalPay ?? 0), 0);
+            return (
+              <Card className="border-gray-200">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <DollarSign className="h-5 w-5 text-amber-600" />
+                    <span className={`text-2xl font-bold ${annualRecords.length > 0 ? 'text-amber-600' : 'text-gray-300'}`}>
+                      {annualRecords.length > 0 ? `$${formatMoney(total)}` : '—'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-gray-700 truncate">Total Annual Payroll</p>
+                  <p className="text-[11px] text-gray-500 truncate">
+                    {annualRecords.length > 0
+                      ? `${currentYear} · ${annualRecords.length} payslip${annualRecords.length === 1 ? '' : 's'}`
+                      : `${currentYear} · no payslips`}
+                  </p>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       )}
 
