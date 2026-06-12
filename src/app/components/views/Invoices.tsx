@@ -59,6 +59,11 @@ const STATUS_BADGE_CLASS: Record<invoicesApi.InvoiceStatus, string> = {
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
   partially: 'border-amber-300 text-amber-700 bg-amber-50',
   paid:      'border-emerald-300 text-emerald-700 bg-emerald-50',
+  // Refunded = settled Credit Note (we refunded the customer). Rose
+  // hue distinguishes the cash-out direction from a regular Paid
+  // collection (emerald) while still reading as a positive terminal
+  // state (border / fill rather than red alarm).
+  refunded:  'border-rose-300 text-rose-700 bg-rose-50',
   overdue:   'border-orange-400 text-orange-800 bg-orange-50',
   void:      'border-red-300 text-red-700 bg-red-50',
 };
@@ -76,9 +81,33 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
  *  other currencies keep the ISO code prefix with a space so the
  *  symbol stays unambiguous. */
 const fmtMoney = (n: number, currency: string): string => {
-  const num = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  // Negative amounts render with a leading "− " before the currency
+  // prefix ("− $55.00") instead of letting toLocaleString embed the
+  // sign between the prefix and the digits ("$-55.00"). Keeps the
+  // AR / Remain / Net columns consistent with the existing explicit
+  // "− {fmtMoney(positive)}" patterns used for Discount / Refund
+  // sub-totals across the same view.
+  const abs = Math.abs(n);
+  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  return n < 0 ? `− ${body}` : body;
 };
+
+/** Current-month bounds as ISO yyyy-MM-dd strings. Used to seed the
+ *  toolbar date filter so HR lands on the current month's activity by
+ *  default. Inlined (no date-fns) — one tiny helper keeps the import
+ *  list lean and the math is locale-neutral. */
+function currentMonthBounds(): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const last = new Date(y, m + 1, 0);   // day 0 of next month = last day of current
+  return {
+    from: `${y}-${pad(m + 1)}-01`,
+    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
+  };
+}
 
 /** Taxation matrix — datakey → display label + percentage. Mirrors
  *  the cross-system reference; backend service uses the same rates. */
@@ -161,8 +190,12 @@ export function Invoices() {
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  //
+  // Defaults to the current calendar month so HR lands on the most
+  // recent activity rather than a multi-year scroll. Clear button on
+  // the toolbar empties both inputs to show everything.
+  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
   const [search, setSearch] = useState('');
 
   // Per-side Accountant settings (V92) — Sale row is independent
@@ -275,6 +308,15 @@ export function Invoices() {
   }, [rows, search, dateFrom, dateTo, customerById]);
 
   const pagination = usePagination(groupedRows, 25);
+
+  // Reset pagination to page 1 whenever a filter changes so HR
+  // doesn't sit on page 5 of an empty result set after narrowing the
+  // date range / search. Pagination is intentionally NOT in the dep
+  // array — its functions are unstable across renders and would loop.
+  useEffect(() => {
+    pagination.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, search, kindFilter]);
 
   /** Per-currency sum of total / paid / remaining across the
    *  *filtered* set (not just the current page) so HR can see the
@@ -1679,7 +1721,11 @@ function InvoiceDetailDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">Payments</Label>
-                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && (
+                {/* Refunded = settled CN (cash already moved out);
+                    locks the Record payment button the same way Paid
+                    does, so the operator can't stack another refund
+                    onto an already-refunded note. */}
+                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'refunded' && (
                   <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
@@ -1792,8 +1838,16 @@ function RecordPaymentDialog({
   onSaved: () => void | Promise<void>;
 }) {
   // Outstanding uses the ledger's net balance when available; falls
-  // back to the simple total - paid otherwise.
-  const outstanding = Math.max(0, invoice.netBalance ?? (invoice.total - invoice.paidAmount));
+  // back to the simple total - paid otherwise. For a Credit Note the
+  // chain net is negative (a refund is pending, e.g. AR=−$55), and
+  // the natural default amount to refund is the absolute value of
+  // that imbalance. For regular Invoice / Tax / DN rows the net is
+  // positive (customer still owes) and the default is the positive
+  // outstanding amount. Math.abs() covers both because the dialog's
+  // amount field is unsigned — direction is picked by the toggle.
+  const net = invoice.netBalance ?? (invoice.total - invoice.paidAmount);
+  const isCn = invoice.kind === 'credit_note';
+  const outstanding = isCn ? Math.abs(net) : Math.max(0, net);
   // Default direction depends on what's being settled:
   //   Credit Note  → debit  (we refund the customer)
   //   Debit Note   → credit (customer pays extra)

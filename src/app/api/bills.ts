@@ -3,8 +3,12 @@ import { apiJson, apiVoid } from './client';
 export type BillKind = 'commercial' | 'tax' | 'credit_note' | 'debit_note';
 /** Stored statuses are draft/progress/partially/paid/void. `overdue`
  *  is derived server-side — a progress row whose due_date has elapsed
- *  and isn't fully paid is reported as overdue at read time. */
-export type BillStatus = 'draft' | 'progress' | 'partially' | 'paid' | 'overdue' | 'void';
+ *  and isn't fully paid is reported as overdue at read time.
+ *  `returned` is also a read-time-only label — emitted in place of
+ *  `paid` for a settled purchase Credit Note so the UI distinguishes
+ *  "vendor refunded us" from a regular vendor payment. Stored status
+ *  remains `paid`. */
+export type BillStatus = 'draft' | 'progress' | 'partially' | 'paid' | 'returned' | 'overdue' | 'void';
 
 export interface BillItem {
   id: string;

@@ -70,6 +70,10 @@ const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
   partially: 'border-blue-300 text-blue-700 bg-blue-50',
   paid:      'border-emerald-300 text-emerald-700 bg-emerald-50',
+  // Returned = settled purchase Credit Note (vendor refunded us).
+  // Sky hue separates the cash-in-from-vendor direction from a
+  // regular Paid bill (emerald = we paid the vendor).
+  returned:  'border-sky-300 text-sky-700 bg-sky-50',
   overdue:   'border-blue-300 text-blue-700 bg-blue-50',
   void:      'border-red-300 text-red-700 bg-red-50',
 };
@@ -78,6 +82,7 @@ const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
   progress:  'progress',
   partially: 'progress',
   paid:      'paid',
+  returned:  'returned',
   overdue:   'progress',
   void:      'void',
 };
@@ -94,9 +99,29 @@ const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: str
  *  other currencies keep the ISO code prefix with a space so the
  *  symbol stays unambiguous. */
 const fmtMoney = (n: number, currency: string): string => {
-  const num = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  // Negative amounts render as "− $X" (leading minus + unsigned
+  // amount) so they line up with the explicit "− {fmtMoney(positive)}"
+  // labels used for Discount / Refund elsewhere in this view —
+  // otherwise toLocaleString would embed the sign ("$-55.00") and
+  // the AP column would disagree with the rest of the summary block.
+  const abs = Math.abs(n);
+  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  return n < 0 ? `− ${body}` : body;
 };
+
+/** Current-month ISO bounds for the toolbar date filter default. */
+function currentMonthBounds(): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const last = new Date(y, m + 1, 0);
+  return {
+    from: `${y}-${pad(m + 1)}-01`,
+    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
+  };
+}
 
 /** Taxation matrix — datakey → display label + percentage. Mirrors
  *  the cross-system reference; backend service uses the same rates. */
@@ -179,8 +204,12 @@ export function Bills() {
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  //
+  // Defaults to the current calendar month so HR lands on recent
+  // activity rather than a multi-year scroll. The toolbar Clear
+  // button empties both inputs to show everything.
+  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
   const [search, setSearch] = useState('');
 
   // Per-side Accountant settings (V92) — Purchase row is independent
@@ -291,6 +320,13 @@ export function Bills() {
   }, [rows, search, dateFrom, dateTo, vendorById]);
 
   const pagination = usePagination(groupedRows, 25);
+
+  // Reset pagination to page 1 whenever a filter changes so HR
+  // doesn't sit on a stale page after narrowing the results.
+  useEffect(() => {
+    pagination.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, search, kindFilter]);
 
   /** Per-currency sum of total / paid / remaining across the
    *  *filtered* set (not just the current page) so HR can see the
@@ -1709,7 +1745,11 @@ function BillDetailDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">Payments</Label>
-                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && (
+                {/* Returned = settled purchase CN (vendor already
+                    refunded us). Locks the Record payment button the
+                    same way Paid does so the operator can't double-
+                    book the return. */}
+                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'returned' && (
                   <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
@@ -1827,8 +1867,14 @@ function RecordBillPaymentDialog({
   onSaved: () => void | Promise<void>;
 }) {
   // Outstanding uses the ledger's net balance when available; falls
-  // back to the simple total - paid otherwise.
-  const outstanding = Math.max(0, invoice.netBalance ?? (invoice.total - invoice.paidAmount));
+  // back to the simple total - paid otherwise. For a purchase Credit
+  // Note the chain net is negative (vendor refund pending), and the
+  // natural default amount to record is the absolute value of that
+  // imbalance. Regular Bill / Tax / DN rows keep the positive-only
+  // semantic. Direction toggle picks Debit / Credit explicitly.
+  const net = invoice.netBalance ?? (invoice.total - invoice.paidAmount);
+  const isCn = invoice.kind === 'credit_note';
+  const outstanding = isCn ? Math.abs(net) : Math.max(0, net);
   // Default direction depends on what's being settled:
   //   Credit Note  → debit  (we refund the customer)
   //   Debit Note   → credit (customer pays extra)

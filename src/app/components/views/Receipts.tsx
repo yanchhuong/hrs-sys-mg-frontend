@@ -21,6 +21,8 @@ import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
+import { Pagination } from '../common/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
 import * as receiptPaymentsApi from '../../api/receiptPayments';
 import * as vendorsApi from '../../api/vendors';
@@ -29,9 +31,28 @@ import { useAuth } from '../../context/AuthContext';
 /** Render an amount with the currency prefix. USD collapses to "$";
  *  other currencies keep the ISO code with a space. */
 const fmtMoney = (n: number, currency: string): string => {
-  const num = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  // Consistent negative format across the app: "− $X" (leading minus
+  // + unsigned amount), never "$-X". The Paid column in particular
+  // shows signed values from credit-direction refunds; this keeps it
+  // visually aligned with explicit "− {fmtMoney(positive)}" labels.
+  const abs = Math.abs(n);
+  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  return n < 0 ? `− ${body}` : body;
 };
+
+/** Current-month ISO bounds for the toolbar date filter default. */
+function currentMonthBounds(): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const last = new Date(y, m + 1, 0);
+  return {
+    from: `${y}-${pad(m + 1)}-01`,
+    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
+  };
+}
 
 /** V98 simplified the status set to Progress / Paid (+ Void). Legacy
  *  draft / issued values still appear in any unmigrated test data;
@@ -63,6 +84,11 @@ export function Receipts() {
   const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  // Date-range filter — applied client-side. Defaults to the current
+  // calendar month so HR lands on recent receipts rather than a
+  // multi-year scroll. Clear button on the toolbar empties both inputs.
+  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<receiptsApi.Receipt | null>(null);
@@ -95,14 +121,25 @@ export function Receipts() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter(r => {
+      if (dateFrom && r.issueDate < dateFrom) return false;
+      if (dateTo   && r.issueDate > dateTo)   return false;
+      if (!q) return true;
       const vn = vendorById.get(r.vendorId)?.name?.toLowerCase() ?? '';
       return r.receiptNo.toLowerCase().includes(q)
         || vn.includes(q)
         || (r.taxId ?? '').toLowerCase().includes(q);
     });
-  }, [rows, search, vendorById]);
+  }, [rows, search, dateFrom, dateTo, vendorById]);
+
+  const pagination = usePagination(filtered, 25);
+
+  // Reset pagination to page 1 whenever a filter changes so HR
+  // doesn't sit on a stale page after narrowing the results.
+  useEffect(() => {
+    pagination.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, search]);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit   = (r: receiptsApi.Receipt) => { setEditing(r); setFormOpen(true); };
@@ -137,6 +174,28 @@ export function Receipts() {
               onChange={e => setSearch(e.target.value)}
               className="max-w-xs"
             />
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-gray-500">From</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="w-40"
+              />
+              <Label className="text-xs text-gray-500">To</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="w-40"
+              />
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm"
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -160,7 +219,7 @@ export function Receipts() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(r => {
+                {pagination.paginatedItems.map(r => {
                   const v = vendorById.get(r.vendorId);
                   return (
                     <TableRow key={r.id} className="hover:bg-gray-50">
@@ -205,6 +264,16 @@ export function Receipts() {
                 })}
               </TableBody>
             </Table>
+          )}
+          {pagination.totalPages > 1 && (
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
           )}
         </CardContent>
       </Card>

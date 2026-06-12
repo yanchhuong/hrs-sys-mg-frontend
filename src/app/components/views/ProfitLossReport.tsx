@@ -16,9 +16,10 @@ const fmtMoney = (n: number): string => {
   const num = Math.abs(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `$${num}`;
 };
-/** Signed money — preserves a leading "−" so CN rows read as deductions
- *  on either side of the report. */
-const signedMoney = (n: number): string => (n < 0 ? '−' : '') + fmtMoney(n);
+/** Signed money — preserves a leading "− " (with trailing space) so
+ *  the format reads as "− $X" everywhere, matching the convention used
+ *  in the Invoice / Bill / Receipt / Ledger views. */
+const signedMoney = (n: number): string => (n < 0 ? '− ' : '') + fmtMoney(n);
 
 /** Friendly month label — "Jun 2026" instead of the raw "2026-06"
  *  bucket key. Done in JS so the backend stays locale-neutral. */

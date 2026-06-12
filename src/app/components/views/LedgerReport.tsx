@@ -21,9 +21,11 @@ const fmtMoney = (n: number, currency: string): string => {
 const formatMoney = fmtMoney;
 /** Same as {@link fmtMoney} but preserves a minus sign — used for CN
  *  rows on the Total column and refund rows on the Received column
- *  so the negative contribution is visually distinct. */
+ *  so the negative contribution is visually distinct. Sign formatted
+ *  as "− $X" (space after the minus) to match the convention used in
+ *  the Invoice / Bill / Receipt views. */
 const signedMoney = (n: number, currency: string): string =>
-  (n < 0 ? '−' : '') + fmtMoney(n, currency);
+  (n < 0 ? '− ' : '') + fmtMoney(n, currency);
 
 interface LedgerReportProps {
   /** Drives the endpoint + labels. 'sale' shows AR (customer side);
