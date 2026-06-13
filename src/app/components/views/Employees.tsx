@@ -41,7 +41,10 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
@@ -1190,17 +1193,12 @@ export function Employees() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('page.employees.title')}</h1>
-          <p className="text-gray-500">{t('page.employees.description')}</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           {/* Add/Bulk-upload are admin+manager only — employees (if they reach this view) see a read-only, team-scoped roster. */}
           {canManageRoster && (
             <>
-              <Button variant="outline" onClick={() => setBulkDialogOpen(true)}>
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Upload Bulk
-              </Button>
               <Button
                 variant="outline"
                 disabled={filteredEmployees.length === 0}
@@ -1219,10 +1217,28 @@ export function Employees() {
                 <Download className="mr-2 h-4 w-4" />
                 Export Excel ({filteredEmployees.length})
               </Button>
-              <Button onClick={() => setAddDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Employee
-              </Button>
+              {/* Add Employee + Upload Bulk merged into a single split-style
+                  button: primary action ("Add Employee") fires on click,
+                  chevron opens the dropdown that reveals "Upload Bulk". */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add
+                    <ChevronDown className="ml-2 h-4 w-4 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onSelect={() => setAddDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Employee
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setBulkDialogOpen(true)}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Upload Bulk
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           )}
         </div>

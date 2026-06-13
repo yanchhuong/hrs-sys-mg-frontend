@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -32,12 +33,14 @@ import * as invoicesApi from '../../api/invoices';
 import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import * as accountingSettingsApi from '../../api/accountingSettings';
+import * as settingsApi from '../../api/settings';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -178,6 +181,7 @@ function CustomerInfoCard({ customer }: { customer: customersApi.Customer | unde
 /* Main page component                                                        */
 /* -------------------------------------------------------------------------- */
 export function Invoices() {
+  const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const canAdd = canCreate('invoice');
   const canEdit = canUpdate('invoice');
@@ -392,7 +396,7 @@ export function Invoices() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Invoice</h1>
+          <h1 className="text-3xl font-bold">{t('nav.invoices')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -1366,6 +1370,10 @@ function InvoiceDetailDialog({
 }) {
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
+  // Company info drives the print header (logo, Khmer + English name,
+  // VAT TIN boxes, address, phone). Loaded once when the dialog opens —
+  // soft-fail so the print still renders without it.
+  const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
   // Payments augmented with the source document they were recorded
   // against — so the unified table on a root invoice can show
   // payments + DN receipts + CN refunds in one chronological view.
@@ -1377,6 +1385,7 @@ function InvoiceDetailDialog({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [mailDialogOpen, setMailDialogOpen] = useState(false);
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
 
@@ -1436,6 +1445,9 @@ function InvoiceDetailDialog({
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [invoiceId]);
+  useEffect(() => {
+    settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
+  }, []);
 
   const doAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -1482,6 +1494,18 @@ function InvoiceDetailDialog({
                 <div className="flex gap-1.5 mr-8 print:hidden">
                   <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
                     <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                  </Button>
+                  {/* Mail opens a small composer dialog. We use mailto: so
+                      the user's own mail client (Gmail, Outlook, etc.) sends
+                      the message — no SMTP setup required tenant-side; HR
+                      attaches the printed PDF before hitting send. */}
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => setMailDialogOpen(true)}
+                    disabled={invoice.status === 'draft'}
+                    title={invoice.status === 'draft' ? 'Issue the invoice before mailing' : 'Send invoice via email'}
+                  >
+                    <Mail className="h-3.5 w-3.5 mr-1" /> Mail
                   </Button>
                   {/* Edit available only on draft + progress per the
                       legal-document rule — paid / partially / overdue /
@@ -1808,6 +1832,27 @@ function InvoiceDetailDialog({
             <DialogFooter className="print:hidden">
               <Button variant="outline" onClick={onClose}>Close</Button>
             </DialogFooter>
+
+            {/* Print-only Cambodian Tax Invoice (WABOOKS layout).
+             *  Screen renders the editable dashboard above; window.print()
+             *  swaps to the body-level portal below via @media print:
+             *  display:none on everything else lets a long invoice flow
+             *  top-to-bottom and paginate naturally across A4 sheets. */}
+            <style>{`
+              @media print {
+                html, body { background: white !important; }
+                body > *:not(.print-tax-invoice) { display: none !important; }
+                body > .print-tax-invoice {
+                  display: block !important;
+                  position: static !important;
+                  padding: 14mm !important;
+                  color: black !important;
+                  font-family: 'Noto Sans Khmer', 'Hanuman', 'Battambang', system-ui, sans-serif !important;
+                }
+                @page { margin: 0; size: A4; }
+              }
+            `}</style>
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} />
           </>
         )}
 
@@ -1822,6 +1867,375 @@ function InvoiceDetailDialog({
             }}
           />
         )}
+
+        {mailDialogOpen && invoice && (
+          <MailInvoiceDialog
+            invoice={invoice}
+            customer={customer}
+            company={companyInfo}
+            onClose={() => setMailDialogOpen(false)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cambodian Tax Invoice print template (WABOOKS layout)                       */
+/* -------------------------------------------------------------------------- */
+
+/** Split a Cambodian VAT TIN into per-character boxes. Pattern is letter
+ *  + 3 digits + "-" + 9 digits (e.g. L001-105018384) but we accept any
+ *  string and just render each character — the regulator's only
+ *  requirement is one cell per character, the dash included. */
+function VatTinBoxes({ tin }: { tin: string }) {
+  const chars = tin.trim().split('');
+  return (
+    <div style={{ display: 'inline-flex', gap: '2px', verticalAlign: 'middle' }}>
+      {chars.map((c, i) => (
+        <span
+          key={i}
+          style={{
+            display: 'inline-block',
+            width: '14px',
+            height: '16px',
+            lineHeight: '16px',
+            textAlign: 'center',
+            fontSize: '11px',
+            border: c === '-' ? 'none' : '1px solid #000',
+          }}
+        >
+          {c}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Compact bilingual label cell — Khmer above, smaller English under. */
+function BiLabel({ kh, en }: { kh: string; en: string }) {
+  return (
+    <div style={{ lineHeight: 1.15 }}>
+      <div style={{ fontSize: '11px' }}>{kh}</div>
+      <div style={{ fontSize: '9px', color: '#555' }}>{en}</div>
+    </div>
+  );
+}
+
+function PrintTaxInvoice({
+  invoice, customer, company,
+}: {
+  invoice: invoicesApi.Invoice;
+  customer?: customersApi.Customer;
+  company: settingsApi.CompanyInfo | null;
+}) {
+  // FX rate is captured per-invoice; KHR line uses the snapshot rather
+  // than today's rate so reprinting later still matches the original.
+  const grandKhr = Math.round(invoice.total * (invoice.exchangeRate || 0));
+  const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtKhr = (n: number) => `R${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  // VAT line shows only when the invoice actually has tax — the totals
+  // block stays tight on zero-VAT exports / receipts.
+  const showVat = invoice.taxAmount > 0;
+  const vatPct = invoice.subtotal > 0 ? Math.round((invoice.taxAmount / invoice.subtotal) * 100) : 0;
+  // Issue / due dates rendered as DD-MM-YYYY to match the WABOOKS sample.
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return '';
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : iso;
+  };
+  const companyKh = company?.legalName?.trim() || company?.name || '';
+  const companyEn = company?.name || '';
+
+  const tree = (
+    <div className="print-tax-invoice" style={{ fontSize: '12px', color: '#000', display: 'none' }}>
+      {/* Header — logo on the left (blank slot when absent so the centered
+       *  name doesn't drift), company name centered. No divider line
+       *  below; contact / VAT TIN render in a clean centered block under. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px', alignItems: 'center', gap: '16px' }}>
+        <div style={{ minHeight: '52px' }}>
+          {company?.logoUrl && (
+            <img src={company.logoUrl} alt="" style={{ height: '52px', objectFit: 'contain' }} />
+          )}
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.15 }}>{companyKh}</div>
+          {companyEn && companyEn !== companyKh && (
+            <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px' }}>{companyEn}</div>
+          )}
+        </div>
+        <div />
+      </div>
+
+      {/* Company contact line — centered, plain, no border */}
+      <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px', lineHeight: 1.5 }}>
+        {company?.address && <div>{company.address}</div>}
+        {(company?.phone || company?.taxId) && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            {company?.phone && <span>{company.phone}</span>}
+            {company?.taxId && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                <VatTinBoxes tin={company.taxId} />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Centered bilingual title with side rules */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+        <div style={{ flex: 1, borderTop: '1px solid #000' }} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700 }}>វិក្កយបត្រអាករ</div>
+          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>TAX INVOICE</div>
+        </div>
+        <div style={{ flex: 1, borderTop: '1px solid #000' }} />
+      </div>
+
+      {/* Customer block (left) + Invoice meta (right) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '140px' }}><BiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+          <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '120px' }}><BiLabel kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" /></div>
+          <div style={{ fontFamily: 'monospace' }}>{invoice.invoiceNo}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '140px' }}><BiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
+          <div>{customer?.address ?? ''}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '120px' }}><BiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+          <div>{fmtDate(invoice.issueDate)}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '140px' }}><BiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
+          <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ minWidth: '120px' }}><BiLabel kh="ថ្ងៃផុតកំណត់បង់ប្រាក់" en="Payment Due Date" /></div>
+          <div>{fmtDate(invoice.dueDate)}</div>
+        </div>
+        {customer?.tin && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: '1 / span 2' }}>
+            <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+            <VatTinBoxes tin={customer.tin} />
+          </div>
+        )}
+      </div>
+
+      {/* Items table — bilingual headers, totals folded into the same table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+        <thead>
+          <tr>
+            <th style={thStyle} ><BiLabel kh="ល.រ." en="N°" /></th>
+            <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en="Description" /></th>
+            <th style={thStyle}><BiLabel kh="បរិមាណ" en="Quantity" /></th>
+            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en="Unit Price" /></th>
+            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="បញ្ចុះតម្លៃ" en="Discount" /></th>
+            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en="Amount" /></th>
+          </tr>
+        </thead>
+        <tbody>
+          {invoice.items.map((it, idx) => (
+            <tr key={it.id}>
+              <td style={{ ...tdStyle, textAlign: 'center' }}>{idx + 1}</td>
+              <td style={tdStyle}>
+                <div>{it.name}</div>
+                {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(it.unitPrice)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(0)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(it.lineTotal)}</td>
+            </tr>
+          ))}
+          {/* Totals folded into the same table — looks like the WABOOKS PDF */}
+          <tr>
+            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>សរុប (ដុល្លារ) / Sub Total (USD)</td>
+            <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(invoice.subtotal)}</td>
+          </tr>
+          {showVat && (
+            <tr>
+              <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>
+                អាករលើតម្លៃបន្ថែម {vatPct}% (ដុល្លារ) / VAT {vatPct}% (USD)
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(invoice.taxAmount)}</td>
+            </tr>
+          )}
+          <tr>
+            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (ដុល្លារ) / Grand Total (USD)</td>
+            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtUsd(invoice.total)}</td>
+          </tr>
+          <tr>
+            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (រៀល) / Grand Total (KHR)</td>
+            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtKhr(grandKhr)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Notes block — falls back to the standard payment-method header
+       *  when the invoice has no custom Notes, matching the WABOOKS
+       *  sample which always renders the section heading. */}
+      <div style={{ fontSize: '11px', marginTop: '14px', lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+        {invoice.notes
+          ? <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
+          : <div style={{ color: '#555' }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method:</div>}
+        {(invoice.exchangeRate || 0) > 0 && (
+          <div>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
+        )}
+      </div>
+
+      {/* Signatures */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', marginTop: '60px', fontSize: '11px', textAlign: 'center' }}>
+        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
+          <div>ហត្ថលេខា និងឈ្មោះអ្នកទិញ</div>
+          <div style={{ fontSize: '10px', color: '#555' }}>Customer's Signature &amp; Name</div>
+        </div>
+        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
+          <div>ហត្ថលេខា និងឈ្មោះអ្នកលក់</div>
+          <div style={{ fontSize: '10px', color: '#555' }}>Seller's Signature &amp; Name</div>
+        </div>
+      </div>
+    </div>
+  );
+  // createPortal's return type changed between React 17 / 18 type defs
+  // and a duplicate @types/react in node_modules trips the JSX check.
+  // Cast through React.ReactElement so the caller sees a valid element.
+  return createPortal(tree, document.body) as unknown as React.ReactElement;
+}
+
+const thStyle: React.CSSProperties = {
+  border: '1px solid #000',
+  padding: '4px 6px',
+  textAlign: 'center',
+  verticalAlign: 'middle',
+  fontWeight: 600,
+};
+const tdStyle: React.CSSProperties = {
+  border: '1px solid #000',
+  padding: '4px 6px',
+  verticalAlign: 'top',
+};
+
+/* -------------------------------------------------------------------------- */
+/* Send-invoice-by-email dialog                                                */
+/* -------------------------------------------------------------------------- */
+/**
+ * Compose + dispatch via the user's own mail client (mailto: URL). Keeps
+ * the system free of SMTP plumbing — HR drives the actual send from
+ * Gmail / Outlook / Apple Mail, and any signature / template / PDF
+ * attachment they normally use just works.
+ *
+ * The dialog pre-fills To from the existing payments table if the
+ * customer's email isn't on file (Customer entity has no email column
+ * yet), Subject from the invoice number, and Body from a short summary
+ * the seller can edit before sending.
+ */
+function MailInvoiceDialog({
+  invoice, customer, company, onClose,
+}: {
+  invoice: invoicesApi.Invoice;
+  customer?: customersApi.Customer;
+  company: settingsApi.CompanyInfo | null;
+  onClose: () => void;
+}) {
+  const fmtUsd = (n: number) =>
+    `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const defaultSubject =
+    `Invoice ${invoice.invoiceNo}${company?.name ? ` from ${company.name}` : ''}`;
+  const defaultBody = [
+    `Dear ${customer?.representative || customer?.name || 'Customer'},`,
+    '',
+    `Please find your invoice ${invoice.invoiceNo} dated ${invoice.issueDate}.`,
+    `Amount due: ${fmtUsd(invoice.total)}${invoice.dueDate ? ` — due by ${invoice.dueDate}` : ''}.`,
+    '',
+    'A printed copy is attached. Let us know if you have any questions.',
+    '',
+    `Regards,${company?.name ? `\n${company.name}` : ''}`,
+  ].join('\n');
+
+  const [to, setTo] = useState<string>('');
+  const [cc, setCc] = useState<string>('');
+  const [subject, setSubject] = useState<string>(defaultSubject);
+  const [body, setBody] = useState<string>(defaultBody);
+
+  const handleSend = () => {
+    if (!to.trim()) {
+      toast.error('Recipient email is required');
+      return;
+    }
+    // Encode each field separately so commas and Khmer characters
+    // survive the URL roundtrip on every mail client.
+    const params = new URLSearchParams();
+    params.set('subject', subject);
+    params.set('body', body);
+    if (cc.trim()) params.set('cc', cc.trim());
+    // mailto: needs the address before the query string — URLSearchParams
+    // doesn't encode '@', which mail clients want intact.
+    const href = `mailto:${encodeURIComponent(to.trim())}?${params.toString()}`;
+    window.location.href = href;
+    toast.success('Opened your mail client — review and send.');
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Send invoice by email
+          </DialogTitle>
+          <DialogDescription>
+            Opens your default mail client (Gmail / Outlook / Apple Mail) with
+            the message pre-filled. Print → Save as PDF first if you want to
+            attach the invoice itself.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>To <span className="text-red-500">*</span></Label>
+            <Input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="customer@example.com"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Cc</Label>
+            <Input
+              type="email"
+              value={cc}
+              onChange={(e) => setCc(e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Subject</Label>
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Body</Label>
+            <Textarea
+              rows={8}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSend}>
+            <Send className="h-4 w-4 mr-1.5" /> Open in mail client
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -27,6 +27,7 @@ import * as receiptsApi from '../../api/receipts';
 import * as receiptPaymentsApi from '../../api/receiptPayments';
 import * as vendorsApi from '../../api/vendors';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 /** Render an amount with the currency prefix. USD collapses to "$";
  *  other currencies keep the ISO code with a space. */
@@ -76,6 +77,7 @@ const STATUS_LABEL: Record<receiptsApi.ReceiptStatus, string> = {
 };
 
 export function Receipts() {
+  const { t } = useI18n();
   const { canView, canCreate, canUpdate } = useAuth();
   const canAdd  = canCreate('receipt');
   const canEdit = canUpdate('receipt');
@@ -147,7 +149,7 @@ export function Receipts() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-3xl font-bold">Receipt</h1>
+        <h1 className="text-3xl font-bold">{t('nav.receipts')}</h1>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />

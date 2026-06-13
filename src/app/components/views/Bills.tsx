@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -192,6 +193,7 @@ function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
 /* Main page component                                                        */
 /* -------------------------------------------------------------------------- */
 export function Bills() {
+  const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const canAdd = canCreate('bill');
   const canEdit = canUpdate('bill');
@@ -405,7 +407,7 @@ export function Bills() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Bill</h1>
+          <h1 className="text-3xl font-bold">{t('nav.bills')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>

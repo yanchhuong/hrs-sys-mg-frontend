@@ -6,6 +6,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { NAV_LEAVES } from '../../config/nav';
 import { Plus, Minus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { APP_TILE_COLOR } from '../../utils/appColors';
 
 /** Google-style 3x3 dot grid used by the apps trigger. Custom SVG so
  *  the visual matches the user spec exactly (lucide's grid icons all
@@ -184,7 +185,7 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
                   const badgeClass = active
                     ? 'bg-blue-600 text-white'
                     : installed
-                      ? cat.installedBadge
+                      ? (APP_TILE_COLOR[leaf.id] ?? cat.installedBadge)
                       : 'bg-gray-100 text-gray-400';
                   const labelClass = active
                     ? 'text-blue-700 font-medium'

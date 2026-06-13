@@ -26,3 +26,14 @@ html.lang-km h4 {
    (e.g. the gradient sub-headline) still wants Moul when in Khmer mode. */
 html.lang-km .km-title { font-family: 'Moul', serif; font-weight: 400; }
 html.lang-km .km-body  { font-family: 'Battambang', sans-serif; }
+
+/* Khmer scale — Moul renders visually heavier than the Latin equivalents
+   at the same pixel size, so titles look too dominant when the UI swaps
+   to Khmer. Pull the Tailwind text-* utilities back by ~20% globally so
+   the page rhythm stays balanced. We override the rem values rather than
+   the heading tags so utility classes win at the same specificity tier. */
+html.lang-km .text-4xl { font-size: 1.8rem;   }  /* was 2.25rem  */
+html.lang-km .text-3xl { font-size: 1.5rem;   }  /* was 1.875rem */
+html.lang-km .text-2xl { font-size: 1.2rem;   }  /* was 1.5rem   */
+html.lang-km .text-xl  { font-size: 1rem;     }  /* was 1.25rem  */
+html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */

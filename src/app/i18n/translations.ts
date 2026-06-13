@@ -208,7 +208,14 @@ export const dict: Dict = {
   'page.usermgmt.description':   { en: 'Manage users, roles, and access permissions', km: 'គ្រប់គ្រងអ្នកប្រើ តួនាទី និងការអនុញ្ញាតចូលប្រើ', zh: '管理用户、角色和访问权限' },
   'page.depsgroup.title':        { en: 'Deps/Group',                  km: 'នាយកដ្ឋាន / ក្រុម',      zh: '部门 / 组' },
   'page.depsgroup.description':  { en: 'Manage departments and employee groups', km: 'គ្រប់គ្រងនាយកដ្ឋាន និងក្រុមបុគ្គលិក', zh: '管理部门和员工组' },
-  'page.attendance_settings.title': { en: 'Attendance Settings',       km: 'ការកំណត់វត្តមាន',       zh: '考勤设置' },
+  'page.attendance_settings.title':       { en: 'Attendance Settings',                       km: 'ការកំណត់វត្តមាន',                                                  zh: '考勤设置' },
+  'page.attendance_settings.description': { en: 'Configure check-in/out rules, schedules, and overtime calculation', km: 'កំណត់ច្បាប់ចូល/ចេញ កាលវិភាគ និងការគណនាម៉ោងបន្ថែម', zh: '配置签到/签退规则、班次和加班计算' },
+  'page.attendance_settings.save_all':    { en: 'Save All Settings',                         km: 'រក្សាទុកការកំណត់ទាំងអស់',                                          zh: '保存所有设置' },
+  'page.attendance_settings.tab.scan':    { en: 'Scan Rule',                                 km: 'ច្បាប់ស្កេន',                                                       zh: '打卡规则' },
+  'page.attendance_settings.tab.flexible':{ en: 'Flexible Work',                             km: 'ការងារទន់ភ្លន់',                                                   zh: '弹性工作' },
+  'page.attendance_settings.tab.ot':      { en: 'OT Rules',                                  km: 'ច្បាប់ម៉ោងបន្ថែម',                                                  zh: '加班规则' },
+  'page.attendance_settings.tab.holiday': { en: 'Holiday',                                   km: 'ថ្ងៃឈប់សម្រាក',                                                    zh: '节假日' },
+  'page.attendance_settings.tab.general': { en: 'General',                                   km: 'ទូទៅ',                                                              zh: '通用' },
   'page.contracts.title':        { en: 'Contract Management',         km: 'ការគ្រប់គ្រងកិច្ចសន្យា',  zh: '合同管理' },
 
   // --- Settings tabs + Company Information ---------------------------------

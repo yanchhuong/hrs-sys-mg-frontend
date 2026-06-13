@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
+import { appIconColor } from '../utils/appColors';
 
 interface LayoutProps {
   children: ReactNode;
@@ -195,6 +196,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           {visibleTree.map((item) => {
             const Icon = item.icon;
             if (!item.children) {
+              const iconColor = appIconColor(item.id);
               return (
                 <Button
                   key={item.id}
@@ -202,7 +204,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                   className="w-full justify-start"
                   onClick={() => handleMenuClick(item.id)}
                 >
-                  <Icon className="mr-2 h-4 w-4" />
+                  <Icon className={`mr-2 h-4 w-4 ${iconColor}`} />
                   {item.label}
                   {AUTO_NAV_IDS.has(item.id) && <AutoTag />}
                 </Button>
@@ -229,6 +231,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                   <div className="ml-4 mt-1 space-y-1">
                     {item.children.map((sub) => {
                       const SubIcon = sub.icon;
+                      const subColor = appIconColor(sub.id);
                       return (
                         <Button
                           key={sub.id}
@@ -237,7 +240,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                           size="sm"
                           onClick={() => handleMenuClick(sub.id)}
                         >
-                          <SubIcon className="mr-2 h-3 w-3" />
+                          <SubIcon className={`mr-2 h-3 w-3 ${subColor}`} />
                           {sub.label}
                           {AUTO_NAV_IDS.has(sub.id) && <AutoTag />}
                         </Button>

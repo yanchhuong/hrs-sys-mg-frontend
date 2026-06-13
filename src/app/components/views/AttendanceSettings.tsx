@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -54,6 +55,7 @@ function adaptHoliday(h: settingsApi.Holiday): Holiday {
 }
 
 export function AttendanceSettings() {
+  const { t } = useI18n();
   // Update permission on the 'settings' module gates the Save All button.
   // Roles that only have View on settings still see the page (helpful as a
   // read-only reference) but can't persist changes.
@@ -320,13 +322,13 @@ export function AttendanceSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Attendance Settings</h1>
-          <p className="text-gray-500">Configure check-in/out rules, schedules, and overtime calculation</p>
+          <h1 className="text-3xl font-bold">{t('page.attendance_settings.title')}</h1>
+          <p className="text-gray-500">{t('page.attendance_settings.description')}</p>
         </div>
         {canEditSettings && (
           <Button onClick={handleSave}>
             <Save className="mr-2 h-4 w-4" />
-            Save All Settings
+            {t('page.attendance_settings.save_all')}
           </Button>
         )}
       </div>
@@ -335,23 +337,23 @@ export function AttendanceSettings() {
         <TabsList className="grid w-full max-w-2xl grid-cols-5">
           <TabsTrigger value="scan" className="gap-1.5">
             <ArrowRightLeft className="h-4 w-4" />
-            Scan Rule
+            {t('page.attendance_settings.tab.scan')}
           </TabsTrigger>
           <TabsTrigger value="flexible" className="gap-1.5">
             <Users className="h-4 w-4" />
-            Flexible Work
+            {t('page.attendance_settings.tab.flexible')}
           </TabsTrigger>
           <TabsTrigger value="ot" className="gap-1.5">
             <Timer className="h-4 w-4" />
-            OT Rules
+            {t('page.attendance_settings.tab.ot')}
           </TabsTrigger>
           <TabsTrigger value="holiday" className="gap-1.5">
             <CalendarDays className="h-4 w-4" />
-            Holiday
+            {t('page.attendance_settings.tab.holiday')}
           </TabsTrigger>
           <TabsTrigger value="general" className="gap-1.5">
             <Settings className="h-4 w-4" />
-            General
+            {t('page.attendance_settings.tab.general')}
           </TabsTrigger>
         </TabsList>
 

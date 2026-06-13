@@ -11,7 +11,7 @@ import {
   ArrowRight, Quote, Sparkles, Target, Globe, LineChart,
   Lock, FileSpreadsheet, ShieldCheck, Network, RefreshCw,
   HelpCircle, Mail, Phone, MapPin, Factory, Briefcase, Store,
-  CalendarDays, FileText, Baby, Calculator, Scale,
+  CalendarDays, FileText, Baby, Calculator, Scale, BookOpen,
 } from 'lucide-react';
 // Real product screenshot — uses only the demo-named Payroll Management view.
 // The other two screenshots in src/imports contain real employee names and
@@ -1051,6 +1051,13 @@ function ModulesGrid({ lang }: { lang: Lang }) {
       desc:  { en: 'Headcount, payroll cost, attendance trends, and contract expiry — all exportable to Excel for finance and senior management.',
                km: 'ចំនួនបុគ្គលិក ចំណាយប្រាក់ខែ និន្នាការវត្តមាន និងការផុតកំណត់កិច្ចសន្យា — នាំចេញទៅ Excel សម្រាប់ហិរញ្ញវត្ថុ និងការគ្រប់គ្រងជាន់ខ្ពស់។',
                zh: '员工人数、薪资成本、考勤趋势与合同到期 — 全部可导出至 Excel，供财务与高层管理使用。' } },
+    { icon: BookOpen, tone: 'violet',
+      title: { en: 'Sales & Purchase — All-in-One Accounting',
+               km: 'លក់ និងទិញ — គណនេយ្យពេញលេញតែមួយ',
+               zh: '销售与采购 — 一体化会计' },
+      desc:  { en: 'Invoices, Bills, Receipts, Credit & Debit Notes, Payments, Sale & Purchase Ledgers, and a live Profit & Loss — your accountant’s workspace lives next to HR, no second system to reconcile.',
+               km: 'វិក្កយបត្រ វិក្កយបត្រទិញ បង្កាន់ដៃ កំណត់ឥណទាន/ឥណពន្ធ ការទូទាត់ បញ្ជីលក់ និងទិញ និង​ ប្រាក់ចំណេញ-ខាត​ផ្ទាល់ — កន្លែងធ្វើការគណនេយ្យក្បែរ HR ដោយឥតប្រព័ន្ធទីពីរ។',
+               zh: '发票、账单、收据、信用与借记凭证、收付款、销售与采购台账，以及实时损益 — 会计的工作区紧贴 HR，无需对账第二套系统。' } },
     { icon: Cloud, tone: 'emerald',
       title: { en: 'Stand-alone + Online Sync',
                km: 'Stand-alone + Online តភ្ជាប់',

@@ -21,6 +21,7 @@ import * as customersApi from '../../api/customers';
 import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 const TYPE_FILTERS: ReadonlyArray<{ value: 'all' | customersApi.CustomerType; label: string }> = [
   { value: 'all',         label: 'All' },
@@ -39,7 +40,7 @@ const emptyForm: customersApi.CustomerRequest = {
 };
 
 /**
- * Accountant → Customers. Tenant-scoped customer book with two shapes:
+ * Accountant → Customers. Two shapes:
  *   - Individual: name, phone, address
  *   - Business:   company name, TIN, representative, phone, address, site
  *
@@ -49,6 +50,7 @@ const emptyForm: customersApi.CustomerRequest = {
  * the round-trip.
  */
 export function Customers() {
+  const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const canAdd = canCreate('customer');
   const canEdit = canUpdate('customer');
@@ -166,10 +168,7 @@ export function Customers() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Customers</h1>
-          <p className="text-gray-500">
-            Tenant-scoped customer book — individuals and businesses, both billable.
-          </p>
+          <h1 className="text-3xl font-bold">{t('nav.customers')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>

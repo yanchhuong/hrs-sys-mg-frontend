@@ -21,6 +21,7 @@ import * as vendorsApi from '../../api/vendors';
 import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 const TYPE_FILTERS: ReadonlyArray<{ value: 'all' | vendorsApi.VendorType; label: string }> = [
   { value: 'all',         label: 'All' },
@@ -39,7 +40,7 @@ const emptyForm: vendorsApi.VendorRequest = {
 };
 
 /**
- * Accountant → Vendors. Tenant-scoped vendor book with two shapes:
+ * Accountant → Vendors. Two shapes:
  *   - Individual: name, phone, address
  *   - Business:   company name, TIN, representative, phone, address, site
  *
@@ -49,6 +50,7 @@ const emptyForm: vendorsApi.VendorRequest = {
  * the round-trip.
  */
 export function Vendors() {
+  const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const canAdd = canCreate('vendor');
   const canEdit = canUpdate('vendor');
@@ -166,10 +168,7 @@ export function Vendors() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Vendors</h1>
-          <p className="text-gray-500">
-            Tenant-scoped vendor book — individuals and businesses, both billable.
-          </p>
+          <h1 className="text-3xl font-bold">{t('nav.vendors')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
