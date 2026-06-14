@@ -2,12 +2,14 @@ import { apiJson, apiVoid } from './client';
 
 export type PaymentMethod = 'cash' | 'bank' | 'card' | 'cheque' | 'other';
 export type PaymentDirection = 'credit' | 'debit';
+export type PaymentCurrency = 'USD' | 'KHR';
 
 export interface ReceiptPayment {
   id: string;
   receiptId: string;
   paymentDate: string;
   amount: number;
+  currency: PaymentCurrency;
   method: PaymentMethod;
   direction: PaymentDirection;
   referenceNo?: string | null;
@@ -20,6 +22,7 @@ export interface ReceiptPaymentRequest {
   receiptId: string;
   paymentDate?: string;
   amount?: number;
+  currency?: PaymentCurrency;
   method?: PaymentMethod;
   direction?: PaymentDirection;
   referenceNo?: string;

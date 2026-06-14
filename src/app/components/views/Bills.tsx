@@ -1768,7 +1768,8 @@ function BillDetailDialog({
                       <TableHead className="w-[100px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right w-[120px]">Paid (USD)</TableHead>
+                      <TableHead className="text-right w-[120px]">Paid (KHR)</TableHead>
                       <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
@@ -1807,8 +1808,18 @@ function BillDetailDialog({
                         </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
+                        {/* Per-currency columns. Empty cell shows a dash
+                         *  so the column alignment stays predictable
+                         *  across rows of mixed currencies. */}
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {isOutflow ? '− ' : '+ '}{fmtMoney(p.amount, invoice.currency)}
+                          {p.currency === 'USD'
+                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'USD')}`
+                            : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
+                          {p.currency === 'KHR'
+                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'KHR')}`
+                            : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
@@ -1890,6 +1901,9 @@ function RecordBillPaymentDialog({
     invoice.kind === 'credit_note' ? 'credit' : 'debit'
   );
   const [amount, setAmount] = useState(outstanding.toFixed(2));
+  const [currency, setCurrency] = useState<billPaymentsApi.PaymentCurrency>(
+    invoice.currency === 'KHR' ? 'KHR' : 'USD',
+  );
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<billPaymentsApi.PaymentMethod>('cash');
   const [referenceNo, setReferenceNo] = useState('');
@@ -1908,6 +1922,7 @@ function RecordBillPaymentDialog({
         billId: invoice.id,
         paymentDate,
         amount: amt,
+        currency,
         method,
         direction,
         referenceNo: referenceNo || undefined,
@@ -1964,9 +1979,34 @@ function RecordBillPaymentDialog({
               </button>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Amount *</Label>
-            <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+          <div className="grid grid-cols-[1fr_120px] gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Amount *</Label>
+              <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Currency</Label>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrency('USD')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'USD'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >USD</button>
+                <button
+                  type="button"
+                  onClick={() => setCurrency('KHR')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'KHR'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >KHR</button>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

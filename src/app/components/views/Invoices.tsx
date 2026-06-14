@@ -34,6 +34,7 @@ import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
+import { loadBankAccounts } from '../../utils/bankAccount';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail,
@@ -1766,7 +1767,8 @@ function InvoiceDetailDialog({
                       <TableHead className="w-[100px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right w-[120px]">Received (USD)</TableHead>
+                      <TableHead className="text-right w-[120px]">Received (KHR)</TableHead>
                       <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
@@ -1800,8 +1802,19 @@ function InvoiceDetailDialog({
                         </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
+                        {/* Per-currency columns — show the amount only
+                         *  in the column that matches the row's recorded
+                         *  currency. Legacy rows persisted before V102
+                         *  default to USD. */}
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {isOutflow ? '− ' : '+ '}{fmtMoney(p.amount, invoice.currency)}
+                          {p.currency === 'USD'
+                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'USD')}`
+                            : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
+                          {p.currency === 'KHR'
+                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'KHR')}`
+                            : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
@@ -1947,6 +1960,17 @@ function PrintTaxInvoice({
   };
   const companyKh = company?.legalName?.trim() || company?.name || '';
   const companyEn = company?.name || '';
+  // Bank info comes from the Settings popup's localStorage store. Render
+  // the block only when the admin has actually filled something in — an
+  // empty config shouldn't print a "Payment method" header followed by
+  // four blank lines.
+  // Bank cards from the Settings popup. Filter out the truly-empty rows
+  // (newly-added card the admin never filled in) so they don't print as
+  // ghost columns; what remains gets rendered in a row below the notes.
+  const banks = loadBankAccounts('sale').filter(
+    b => b.bankName || b.accountName || b.accountNumber || b.notes || b.qrDataUrl,
+  );
+  const showBank = banks.length > 0;
 
   const tree = (
     <div className="print-tax-invoice" style={{ fontSize: '12px', color: '#000', display: 'none' }}>
@@ -2078,16 +2102,69 @@ function PrintTaxInvoice({
         </tbody>
       </table>
 
-      {/* Notes block — falls back to the standard payment-method header
-       *  when the invoice has no custom Notes, matching the WABOOKS
-       *  sample which always renders the section heading. */}
-      <div style={{ fontSize: '11px', marginTop: '14px', lineHeight: 1.5 }}>
+      {/* Notes block — text on the left, optional KHRQR on the right so
+       *  customers can scan to pay. Bank info comes from the Settings
+       *  popup's "Bank Account" tab and only renders when configured. */}
+      <div style={{ marginTop: '14px', fontSize: '11px', lineHeight: 1.5 }}>
         <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-        {invoice.notes
-          ? <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
-          : <div style={{ color: '#555' }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method:</div>}
+        {invoice.notes && (
+          <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
+        )}
+        {showBank && (
+          <>
+            <div style={{ color: '#555', marginTop: invoice.notes ? '6px' : '0' }}>
+              ** គណនីសម្រាប់បង់ប្រាក់ / Payment method:
+            </div>
+            {/* Row of bank cards — QR on top (1:1 aspect), Account
+                Name + Number underneath. Matches the screen layout in
+                the Settings dialog so what HR sees is what prints. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '6px' }}>
+              {banks.map(b => (
+                <div
+                  key={b.id}
+                  style={{
+                    width: '36mm',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    padding: '4px',
+                    textAlign: 'center',
+                    background: '#fff',
+                  }}
+                >
+                  {b.qrDataUrl ? (
+                    <img
+                      src={b.qrDataUrl}
+                      alt="KHRQR"
+                      style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '100%', aspectRatio: '1 / 1',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#999', fontSize: '9px', border: '1px dashed #ddd', borderRadius: '4px',
+                    }}>
+                      (no QR)
+                    </div>
+                  )}
+                  {b.accountName && (
+                    <div style={{ marginTop: '3px', fontWeight: 600, fontSize: '10px' }}>{b.accountName}</div>
+                  )}
+                  {b.accountNumber && (
+                    <div style={{ fontFamily: 'monospace', fontSize: '10px' }}>{b.accountNumber}</div>
+                  )}
+                  {b.bankName && (
+                    <div style={{ fontSize: '9px', color: '#555' }}>{b.bankName}</div>
+                  )}
+                  {b.notes && (
+                    <div style={{ fontSize: '9px', color: '#555' }}>{b.notes}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         {(invoice.exchangeRate || 0) > 0 && (
-          <div>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
+          <div style={{ marginTop: '6px' }}>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
         )}
       </div>
 
@@ -2271,6 +2348,12 @@ function RecordPaymentDialog({
     invoice.kind === 'credit_note' ? 'debit' : 'credit'
   );
   const [amount, setAmount] = useState(outstanding.toFixed(2));
+  const [currency, setCurrency] = useState<paymentsApi.PaymentCurrency>(
+    // Default to the invoice's own currency so the operator usually
+    // just needs to confirm. KHR is one click away when the cashier
+    // received riel against a USD invoice.
+    invoice.currency === 'KHR' ? 'KHR' : 'USD',
+  );
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<paymentsApi.PaymentMethod>('cash');
   const [referenceNo, setReferenceNo] = useState('');
@@ -2289,6 +2372,7 @@ function RecordPaymentDialog({
         invoiceId: invoice.id,
         paymentDate,
         amount: amt,
+        currency,
         method,
         direction,
         referenceNo: referenceNo || undefined,
@@ -2345,9 +2429,34 @@ function RecordPaymentDialog({
               </button>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Amount *</Label>
-            <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+          <div className="grid grid-cols-[1fr_120px] gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Amount *</Label>
+              <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Currency</Label>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrency('USD')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'USD'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >USD</button>
+                <button
+                  type="button"
+                  onClick={() => setCurrency('KHR')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'KHR'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >KHR</button>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

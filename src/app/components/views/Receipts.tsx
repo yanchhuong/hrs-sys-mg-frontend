@@ -838,7 +838,8 @@ function ReceiptPaymentsPanel({
               <TableHead className="w-24">Method</TableHead>
               <TableHead>Reference</TableHead>
               <TableHead className="w-20">Direction</TableHead>
-              <TableHead className="text-right w-28">Amount</TableHead>
+              <TableHead className="text-right w-28">Received (USD)</TableHead>
+              <TableHead className="text-right w-28">Received (KHR)</TableHead>
               {!readOnly && <TableHead className="w-10"></TableHead>}
             </TableRow>
           </TableHeader>
@@ -856,7 +857,14 @@ function ReceiptPaymentsPanel({
                   </Badge>
                 </TableCell>
                 <TableCell className={`text-right font-mono text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                  {r.direction === 'debit' ? '−' : ''}{fmtMoney(r.amount, receiptCurrency)}
+                  {r.currency === 'USD'
+                    ? `${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, 'USD')}`
+                    : <span className="text-gray-300">—</span>}
+                </TableCell>
+                <TableCell className={`text-right font-mono text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  {r.currency === 'KHR'
+                    ? `${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, 'KHR')}`
+                    : <span className="text-gray-300">—</span>}
                 </TableCell>
                 {!readOnly && (
                   <TableCell className="text-right">
@@ -896,6 +904,13 @@ function RecordReceiptPaymentDialog({
 }) {
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState(String(defaultAmount.toFixed(2)));
+  // Distinct from the parent's `currency` prop (which describes the
+  // receipt's display currency) — this is the rail the cashier actually
+  // received in. Defaults to whatever the receipt shows, KHR is one
+  // click away when riel arrived against a USD receipt.
+  const [payCurrency, setPayCurrency] = useState<receiptPaymentsApi.PaymentCurrency>(
+    currency === 'KHR' ? 'KHR' : 'USD',
+  );
   const [method, setMethod] = useState<receiptPaymentsApi.PaymentMethod>('cash');
   // Receipts are typically money out (we paid the supplier and now
   // record the WHT receipt against it), so debit is the natural
@@ -909,11 +924,12 @@ function RecordReceiptPaymentDialog({
     if (!open) return;
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setAmount(String(Math.max(0, defaultAmount).toFixed(2)));
+    setPayCurrency(currency === 'KHR' ? 'KHR' : 'USD');
     setMethod('cash');
     setDirection('debit');
     setReferenceNo('');
     setNotes('');
-  }, [open, defaultAmount]);
+  }, [open, defaultAmount, currency]);
 
   const submit = async () => {
     const amt = Number(amount);
@@ -927,6 +943,7 @@ function RecordReceiptPaymentDialog({
         receiptId,
         paymentDate,
         amount: amt,
+        currency: payCurrency,
         method,
         direction,
         referenceNo: referenceNo.trim() || undefined,
@@ -960,6 +977,29 @@ function RecordReceiptPaymentDialog({
               <Label className="text-xs">Amount *</Label>
               <Input type="number" min={0} step="0.01" value={amount}
                      onChange={e => setAmount(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Currency</Label>
+            <div className="grid grid-cols-2 gap-2 max-w-[200px]">
+              <button
+                type="button"
+                onClick={() => setPayCurrency('USD')}
+                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                  payCurrency === 'USD'
+                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                }`}
+              >USD</button>
+              <button
+                type="button"
+                onClick={() => setPayCurrency('KHR')}
+                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                  payCurrency === 'KHR'
+                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                }`}
+              >KHR</button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

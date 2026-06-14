@@ -5,12 +5,14 @@ export type PaymentMethod = 'cash' | 'bank' | 'card' | 'cheque' | 'other';
  *  `debit`  = money out (refund — settling a credit note). The invoice's
  *  net Paid total = Σ credit amounts − Σ debit amounts. */
 export type PaymentDirection = 'credit' | 'debit';
+export type PaymentCurrency = 'USD' | 'KHR';
 
 export interface Payment {
   id: string;
   billId: string;
   paymentDate: string;
   amount: number;
+  currency: PaymentCurrency;
   method: PaymentMethod;
   direction: PaymentDirection;
   referenceNo?: string | null;
@@ -23,6 +25,7 @@ export interface PaymentRequest {
   billId: string;
   paymentDate?: string;
   amount: number;
+  currency?: PaymentCurrency;
   method?: PaymentMethod;
   direction?: PaymentDirection;
   referenceNo?: string;

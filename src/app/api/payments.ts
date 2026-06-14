@@ -5,12 +5,16 @@ export type PaymentMethod = 'cash' | 'bank' | 'card' | 'cheque' | 'other';
  *  `debit`  = money out (refund — settling a credit note). The invoice's
  *  net Paid total = Σ credit amounts − Σ debit amounts. */
 export type PaymentDirection = 'credit' | 'debit';
+/** Cambodia transacts in both rails; the dialog asks per payment. */
+export type PaymentCurrency = 'USD' | 'KHR';
 
 export interface Payment {
   id: string;
   invoiceId: string;
   paymentDate: string;
   amount: number;
+  /** "USD" or "KHR". Server defaults to USD when missing. */
+  currency: PaymentCurrency;
   method: PaymentMethod;
   direction: PaymentDirection;
   referenceNo?: string | null;
@@ -23,6 +27,7 @@ export interface PaymentRequest {
   invoiceId: string;
   paymentDate?: string;
   amount: number;
+  currency?: PaymentCurrency;
   method?: PaymentMethod;
   direction?: PaymentDirection;
   referenceNo?: string;
