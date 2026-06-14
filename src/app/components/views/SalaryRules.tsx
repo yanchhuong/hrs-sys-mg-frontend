@@ -364,7 +364,7 @@ export function SalaryRules({ embedded = false }: Props = {}) {
                   <TableCell className="font-medium text-sm">{r.name}</TableCell>
                   <TableCell className="text-sm">{formatRange(r)}</TableCell>
                   <TableCell className="text-right text-sm font-mono">
-                    ${r.baseSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${r.baseSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     <span className="text-xs text-gray-400 ml-1">{r.currency}</span>
                   </TableCell>
                   <TableCell className="text-sm text-gray-600 max-w-md">

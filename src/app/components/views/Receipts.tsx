@@ -28,16 +28,17 @@ import * as receiptPaymentsApi from '../../api/receiptPayments';
 import * as vendorsApi from '../../api/vendors';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { formatMoneyForCurrency } from '../../utils/format';
 
-/** Render an amount with the currency prefix. USD collapses to "$";
- *  other currencies keep the ISO code with a space. */
+/** Render an amount with the currency prefix. USD collapses to "$" with
+ *  2dp; KHR uses the ISO code with no decimals ("KHR 17,488,013");
+ *  other currencies keep ISO + 2dp. */
 const fmtMoney = (n: number, currency: string): string => {
   // Consistent negative format across the app: "− $X" (leading minus
   // + unsigned amount), never "$-X". The Paid column in particular
   // shows signed values from credit-direction refunds; this keeps it
   // visually aligned with explicit "− {fmtMoney(positive)}" labels.
-  const abs = Math.abs(n);
-  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = formatMoneyForCurrency(Math.abs(n), currency);
   const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
@@ -96,6 +97,10 @@ export function Receipts() {
   const [editing, setEditing] = useState<receiptsApi.Receipt | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Per-currency Received totals for the visible page. Signed the same
+  // as sumForReceipt (credit positive, debit negative — debit is the
+  // typical "we paid the supplier" case; render flips the sign).
+  const [paidByCurrency, setPaidByCurrency] = useState<Record<string, Partial<Record<receiptPaymentsApi.PaymentCurrency, number>>>>({});
 
   const load = async () => {
     if (!canView('receipt')) return;
@@ -105,8 +110,12 @@ export function Receipts() {
         receiptsApi.list({ size: 500 }),
         vendorsApi.list({ size: 500 }),
       ]);
-      setRows(rRes.content ?? []);
+      const list = rRes.content ?? [];
+      setRows(list);
       setVendors(vRes.content ?? []);
+      receiptPaymentsApi.totalsByCurrency(list.map(r => r.id))
+        .then(setPaidByCurrency)
+        .catch(() => setPaidByCurrency({}));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load receipts');
     } finally {
@@ -215,7 +224,8 @@ export function Receipts() {
                   <TableHead className="w-28">Date</TableHead>
                   <TableHead className="text-right w-32">Amount</TableHead>
                   <TableHead className="text-right w-32">Tax</TableHead>
-                  <TableHead className="text-right w-32">Paid</TableHead>
+                  <TableHead className="text-right w-28">Received (USD)</TableHead>
+                  <TableHead className="text-right w-28">Received (KHR)</TableHead>
                   <TableHead className="w-24">Status</TableHead>
                   <TableHead className="w-40 text-right"></TableHead>
                 </TableRow>
@@ -233,17 +243,35 @@ export function Receipts() {
                       <TableCell className="text-sm">{r.issueDate}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.amount, r.currency)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.taxAmount, r.currency)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {/* Receipt payments default to Debit (money out), so
-                            paidAmount is typically negative. Show magnitude
-                            with a leading "−" when funds went out, "+" on
-                            the rare credit-direction refund. */}
-                        {r.paidAmount === 0
-                          ? <span className="text-gray-300">—</span>
-                          : r.paidAmount < 0
-                            ? `− ${fmtMoney(Math.abs(r.paidAmount), r.currency)}`
-                            : `+ ${fmtMoney(r.paidAmount, r.currency)}`}
-                      </TableCell>
+                      {/* Per-currency Received columns. Signed the same as
+                       *  sumForReceipt — negative when we paid the
+                       *  supplier (typical), positive on refunds. Each
+                       *  column renders only its own currency; the other
+                       *  shows a muted dash. Falls back to the legacy
+                       *  paidAmount in the receipt's native currency
+                       *  until the batched call resolves. */}
+                      {(() => {
+                        const totals = paidByCurrency[r.id];
+                        const loaded = !!totals;
+                        const usd = loaded
+                          ? (totals.USD ?? 0)
+                          : (r.currency === 'USD' ? r.paidAmount : 0);
+                        const khr = loaded
+                          ? (totals.KHR ?? 0)
+                          : (r.currency === 'KHR' ? r.paidAmount : 0);
+                        const render = (val: number, cur: 'USD' | 'KHR') => {
+                          if (!val) return <span className="text-gray-300">—</span>;
+                          return val < 0
+                            ? `− ${fmtMoney(Math.abs(val), cur)}`
+                            : fmtMoney(val, cur);
+                        };
+                        return (
+                          <>
+                            <TableCell className="text-right tabular-nums">{render(usd, 'USD')}</TableCell>
+                            <TableCell className="text-right tabular-nums">{render(khr, 'KHR')}</TableCell>
+                          </>
+                        );
+                      })()}
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[r.status]}`}>
                           {STATUS_LABEL[r.status] ?? r.status}
@@ -838,8 +866,8 @@ function ReceiptPaymentsPanel({
               <TableHead className="w-24">Method</TableHead>
               <TableHead>Reference</TableHead>
               <TableHead className="w-20">Direction</TableHead>
-              <TableHead className="text-right w-28">Received (USD)</TableHead>
-              <TableHead className="text-right w-28">Received (KHR)</TableHead>
+              <TableHead className="w-20">Currency</TableHead>
+              <TableHead className="text-right w-28">Amount</TableHead>
               {!readOnly && <TableHead className="w-10"></TableHead>}
             </TableRow>
           </TableHeader>
@@ -856,15 +884,14 @@ function ReceiptPaymentsPanel({
                     {r.direction === 'debit' ? '− Out' : '+ In'}
                   </Badge>
                 </TableCell>
-                <TableCell className={`text-right font-mono text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                  {r.currency === 'USD'
-                    ? `${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, 'USD')}`
-                    : <span className="text-gray-300">—</span>}
+                {/* Currency badge + single Amount cell. Row sign / color
+                 *  follow the existing direction rule (debit = rose, credit
+                 *  = emerald). */}
+                <TableCell>
+                  <Badge variant="outline" className="font-mono text-[10px]">{r.currency}</Badge>
                 </TableCell>
                 <TableCell className={`text-right font-mono text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                  {r.currency === 'KHR'
-                    ? `${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, 'KHR')}`
-                    : <span className="text-gray-300">—</span>}
+                  {`${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, r.currency)}`}
                 </TableCell>
                 {!readOnly && (
                   <TableCell className="text-right">
@@ -975,22 +1002,19 @@ function RecordReceiptPaymentDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>
-              <Input type="number" min={0} step="0.01" value={amount}
-                     onChange={e => setAmount(e.target.value)} />
+              {/* KHR has no sub-units → step 1; USD keeps cents step 0.01. */}
+              <Input
+                type="number"
+                min={0}
+                step={payCurrency === 'KHR' ? '1' : '0.01'}
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Currency</Label>
             <div className="grid grid-cols-2 gap-2 max-w-[200px]">
-              <button
-                type="button"
-                onClick={() => setPayCurrency('USD')}
-                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                  payCurrency === 'USD'
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                }`}
-              >USD</button>
               <button
                 type="button"
                 onClick={() => setPayCurrency('KHR')}
@@ -1000,6 +1024,15 @@ function RecordReceiptPaymentDialog({
                     : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                 }`}
               >KHR</button>
+              <button
+                type="button"
+                onClick={() => setPayCurrency('USD')}
+                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                  payCurrency === 'USD'
+                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                }`}
+              >USD</button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

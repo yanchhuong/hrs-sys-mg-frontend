@@ -13,7 +13,9 @@ import * as plApi from '../../api/profitLossReport';
 /** Render an amount with the currency prefix. USD collapses to "$"; other
  *  currencies use an ISO-code prefix. */
 const fmtMoney = (n: number): string => {
-  const num = Math.abs(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Locale-locked to en-US so the decimal separator stays "." even when
+  // the browser runs in km-KH / fr / etc. (those default to ",").
+  const num = Math.abs(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `$${num}`;
 };
 /** Signed money — preserves a leading "− " (with trailing space) so

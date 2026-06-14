@@ -31,6 +31,7 @@ import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as billsApi from '../../api/bills';
 import * as billPaymentsApi from '../../api/billPayments';
+import { formatMoneyForCurrency } from '../../utils/format';
 import * as vendorsApi from '../../api/vendors';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
@@ -102,11 +103,10 @@ const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: str
 const fmtMoney = (n: number, currency: string): string => {
   // Negative amounts render as "− $X" (leading minus + unsigned
   // amount) so they line up with the explicit "− {fmtMoney(positive)}"
-  // labels used for Discount / Refund elsewhere in this view —
-  // otherwise toLocaleString would embed the sign ("$-55.00") and
-  // the AP column would disagree with the rest of the summary block.
-  const abs = Math.abs(n);
-  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // labels used for Discount / Refund elsewhere in this view.
+  // KHR formats with no decimals; USD / other keep 2dp — see
+  // formatMoneyForCurrency.
+  const num = formatMoneyForCurrency(Math.abs(n), currency);
   const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
@@ -233,6 +233,11 @@ export function Bills() {
   const [formParentPrefill, setFormParentPrefill] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<billsApi.Bill | null>(null);
+  // Per-currency Paid totals for the visible page. Values come back
+  // signed the same as sumForBill (credit positive, debit negative);
+  // the table flips the sign when rendering so "Paid" reads positive
+  // for the typical "we paid the vendor" case.
+  const [paidByCurrency, setPaidByCurrency] = useState<Record<string, Partial<Record<billPaymentsApi.PaymentCurrency, number>>>>({});
 
   const load = async () => {
     setLoading(true);
@@ -241,8 +246,12 @@ export function Bills() {
         billsApi.list({ kind: kindFilter === 'all' ? undefined : kindFilter, size: 200 }),
         vendorsApi.list({ size: 500 }),
       ]);
-      setRows(invRes.content ?? []);
+      const bills = invRes.content ?? [];
+      setRows(bills);
       setVendors(custRes.content ?? []);
+      billPaymentsApi.totalsByCurrency(bills.map(b => b.id))
+        .then(setPaidByCurrency)
+        .catch(() => setPaidByCurrency({}));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load bills');
     } finally {
@@ -340,26 +349,32 @@ export function Bills() {
    *  column was stored). Remain only sums root invoices since
    *  adjustments already roll up into the root's netBalance. */
   const totalsByCurrency = useMemo(() => {
-    const m = new Map<string, { total: number; paid: number; remain: number }>();
+    const m = new Map<string, { total: number; paid: number; paidUsd: number; paidKhr: number; remain: number }>();
     for (const r of groupedRows) {
       const c = r.currency || 'USD';
-      if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
+      if (!m.has(c)) m.set(c, { total: 0, paid: 0, paidUsd: 0, paidKhr: 0, remain: 0 });
       const slot = m.get(c)!;
       // CN total represents what we owe the customer → subtract from
       // the running Total. INV + DN add as receivables.
       slot.total += r.kind === 'credit_note' ? -r.total : r.total;
       // paidAmount is already a signed sum (credit = + cash in,
       // debit = − cash out), so the column total is just the
-      // arithmetic sum. The previous force-negate on CN double-
-      // counted refunds — fixed when payments grew the credit /
-      // debit direction split.
+      // arithmetic sum.
       slot.paid += r.paidAmount;
+      // Per-currency paid columns. Pull from the batched
+      // /totals-by-currency map; fall back to the legacy paidAmount
+      // bucketed into the row's native currency while loading.
+      const perCur = paidByCurrency[r.id];
+      const usd = perCur ? (perCur.USD ?? 0) : (c === 'USD' ? r.paidAmount : 0);
+      const khr = perCur ? (perCur.KHR ?? 0) : (c === 'KHR' ? r.paidAmount : 0);
+      slot.paidUsd += usd;
+      slot.paidKhr += khr;
       if (!r.parentBillId) {
         slot.remain += r.netBalance ?? (r.total - r.paidAmount);
       }
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
-  }, [groupedRows]);
+  }, [groupedRows, paidByCurrency]);
 
   const openCreate = (kind: billsApi.BillKind) => {
     setFormEditing(null);
@@ -513,7 +528,8 @@ export function Bills() {
                     <TableHead>Vendor</TableHead>
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right w-[110px]">Paid (USD)</TableHead>
+                    <TableHead className="text-right w-[110px]">Paid (KHR)</TableHead>
                     <TableHead className="text-right">
                       <TooltipProvider>
                         <Tooltip>
@@ -577,19 +593,40 @@ export function Bills() {
                           on a CN) reads − $X in rose. Non-CN rows
                           almost always carry a negative paid (we
                           paid vendor) — keep the existing render. */}
-                      <TableCell className={`text-right text-sm tabular-nums ${
-                        inv.paidAmount > 0 ? 'text-emerald-700'
-                          : inv.paidAmount < 0 ? 'text-red-700'
-                          : 'text-gray-600'
-                      }`}>
-                        {isAdjustment && inv.paidAmount === 0
-                          ? <span className="text-gray-300">—</span>
-                          : inv.paidAmount > 0
-                            ? `+ ${fmtMoney(inv.paidAmount, inv.currency)}`
-                            : inv.paidAmount < 0
-                              ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
-                              : fmtMoney(0, inv.currency)}
-                      </TableCell>
+                      {/* Per-currency Paid columns. Values are signed
+                       *  the same as sumForBill (credit = +money in,
+                       *  debit = −money out). The render flips the
+                       *  sign so "Paid" shows positive for the common
+                       *  case of we-paid-vendor (stored as negative). */}
+                      {(() => {
+                        const totals = paidByCurrency[inv.id];
+                        const loaded = !!totals;
+                        const usd = loaded
+                          ? (totals.USD ?? 0)
+                          : (inv.currency === 'USD' ? inv.paidAmount : 0);
+                        const khr = loaded
+                          ? (totals.KHR ?? 0)
+                          : (inv.currency === 'KHR' ? inv.paidAmount : 0);
+                        const render = (val: number, cur: 'USD' | 'KHR') => {
+                          // val < 0 = we paid vendor (typical); render
+                          // as "+ $X" in emerald because that's the
+                          // intuitive "we've paid this much" reading.
+                          // val > 0 = vendor refunded us → "− $X" rose.
+                          if (val === 0) {
+                            return <span className="text-gray-300">—</span>;
+                          }
+                          if (val < 0) {
+                            return <span className="text-emerald-700">{fmtMoney(Math.abs(val), cur)}</span>;
+                          }
+                          return <span className="text-red-700">− {fmtMoney(val, cur)}</span>;
+                        };
+                        return (
+                          <>
+                            <TableCell className="text-right text-sm tabular-nums">{render(usd, 'USD')}</TableCell>
+                            <TableCell className="text-right text-sm tabular-nums">{render(khr, 'KHR')}</TableCell>
+                          </>
+                        );
+                      })()}
                       {/* Remain is meaningful only on the root invoice
                           — CN/DN rows already roll their balance up
                           into the parent's netBalance. Show a muted
@@ -660,7 +697,10 @@ export function Bills() {
                           {fmtMoney(t.total, t.currency)}
                         </TableCell>
                         <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
-                          {fmtMoney(t.paid, t.currency)}
+                          {fmtMoney(Math.abs(t.paidUsd), 'USD')}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
+                          {fmtMoney(Math.abs(t.paidKhr), 'KHR')}
                         </TableCell>
                         <TableCell className={`text-right text-sm font-semibold tabular-nums ${
                           t.remain > 0 ? 'text-red-700' : 'text-gray-500'
@@ -1318,7 +1358,7 @@ function BillFormDialog({
                 {settings.showTax && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Tax</span>
-                  <span className="tabular-nums w-32 text-right">+ {fmtMoney(computedTax, currency)}</span>
+                  <span className="tabular-nums w-32 text-right">{fmtMoney(computedTax, currency)}</span>
                 </div>
                 )}
                 {settings.showDiscount && (
@@ -1333,7 +1373,7 @@ function BillFormDialog({
                 </div>
                 <div className="flex justify-end gap-6 text-gray-700">
                   <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
                 </div>
               </div>
             </div>
@@ -1644,12 +1684,25 @@ function BillDetailDialog({
                   const sumCn = nonVoidAdj
                     .filter(a => a.kind === 'credit_note')
                     .reduce((s, a) => s + a.total, 0);
-                  const net = invoice.netBalance ?? (invoice.total + sumDn - sumCn - invoice.paidAmount);
+                  // Per-currency Paid totals — payments stay in the currency
+                  // they were captured in; a USD bill paid partly in KHR leaves
+                  // the USD AP intact and only chips the KHR AP. Debit direction
+                  // (root bill / DN) = money out, so credit-side here would be a
+                  // refund coming back from the vendor.
+                  const sumByCurrency = (cur: 'USD' | 'KHR') => payments
+                    .filter(p => p.currency === cur)
+                    .reduce((s, p) => s + (p.direction === 'debit' ? p.amount : -p.amount), 0);
+                  const paidUsd = sumByCurrency('USD');
+                  const paidKhr = sumByCurrency('KHR');
+                  const totalUsd = invoice.total + sumDn - sumCn;
+                  const totalKhr = totalUsd * (invoice.exchangeRate || 0);
+                  const apUsd = totalUsd - paidUsd;
+                  const apKhr = totalKhr - paidKhr;
                   return (
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
                     {settings.showTax && (
-                    <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
                     )}
                     {settings.showDiscount && (
                     <div className="flex justify-end gap-6">
@@ -1662,31 +1715,41 @@ function BillDetailDialog({
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
                     )}
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, 'USD')}</span></div>
+                    <div className="flex justify-end gap-6 text-gray-700"><span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, 'KHR')}</span></div>
                     {sumDn > 0 && (
-                      <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>
+                      <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">{fmtMoney(sumDn, invoice.currency)}</span></div>
                     )}
                     {sumCn > 0 && (
                       <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
                     )}
-                    <div className="flex justify-end gap-6 text-emerald-700"><span>Paid</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 cursor-help">
-                              AP
+                              AP (USD)
                               <Info className="h-3 w-3 text-gray-400" />
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>Accounts Payable — what we still owe the vendor after the full ledger.</TooltipContent>
+                          <TooltipContent>Accounts Payable in USD — Total USD − Paid (USD).</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      <span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span>
+                      <span className={`tabular-nums w-32 text-right ${apUsd > 0 ? 'text-red-700' : ''}`}>{fmtMoney(apUsd, 'USD')}</span>
                     </div>
-                    <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
-                      <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
-                      <span className="tabular-nums w-32 text-right">KHR {(net * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    <div className="flex justify-end gap-6 font-semibold">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-1 cursor-help">
+                              AP (KHR)
+                              <Info className="h-3 w-3 text-gray-400" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Accounts Payable in KHR — Total KHR − Paid (KHR). Tracks the riel rail independently.</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <span className={`tabular-nums w-32 text-right ${apKhr > 0 ? 'text-red-700' : ''}`}>{fmtMoney(apKhr, 'KHR')}</span>
                     </div>
                   </div>
                   );
@@ -1768,8 +1831,8 @@ function BillDetailDialog({
                       <TableHead className="w-[100px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
-                      <TableHead className="text-right w-[120px]">Paid (USD)</TableHead>
-                      <TableHead className="text-right w-[120px]">Paid (KHR)</TableHead>
+                      <TableHead className="w-[80px]">Currency</TableHead>
+                      <TableHead className="text-right w-[120px]">Amount</TableHead>
                       <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
@@ -1808,18 +1871,15 @@ function BillDetailDialog({
                         </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
-                        {/* Per-currency columns. Empty cell shows a dash
-                         *  so the column alignment stays predictable
-                         *  across rows of mixed currencies. */}
-                        <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {p.currency === 'USD'
-                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'USD')}`
-                            : <span className="text-gray-300">—</span>}
+                        {/* Currency badge + single Amount cell. Row keeps
+                         *  the captured currency; Amount renders in that
+                         *  currency. Sign / color match the outflow logic
+                         *  above (red = we paid vendor). */}
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono text-[10px]">{p.currency}</Badge>
                         </TableCell>
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {p.currency === 'KHR'
-                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'KHR')}`
-                            : <span className="text-gray-300">—</span>}
+                          {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
                         </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
@@ -1982,20 +2042,18 @@ function RecordBillPaymentDialog({
           <div className="grid grid-cols-[1fr_120px] gap-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>
-              <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+              {/* KHR has no sub-units → step 1; USD keeps cents step 0.01. */}
+              <Input
+                type="number"
+                min={currency === 'KHR' ? '1' : '0.01'}
+                step={currency === 'KHR' ? '1' : '0.01'}
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Currency</Label>
               <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrency('USD')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'USD'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >USD</button>
                 <button
                   type="button"
                   onClick={() => setCurrency('KHR')}
@@ -2005,6 +2063,15 @@ function RecordBillPaymentDialog({
                       : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                   }`}
                 >KHR</button>
+                <button
+                  type="button"
+                  onClick={() => setCurrency('USD')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'USD'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >USD</button>
               </div>
             </div>
           </div>

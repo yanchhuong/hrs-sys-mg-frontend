@@ -48,3 +48,13 @@ export async function create(req: PaymentRequest): Promise<Payment> {
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/bill-payments/${id}`, { method: 'DELETE' });
 }
+
+/** Per-currency Paid totals for a batch of bills. Values are signed
+ *  the same way as the server's existing sumForBill (credit positive,
+ *  debit negative — the UI flips the sign for the "Paid" label). */
+export async function totalsByCurrency(
+  billIds: string[],
+): Promise<Record<string, Partial<Record<PaymentCurrency, number>>>> {
+  if (billIds.length === 0) return {};
+  return apiJson('/api/v1/bill-payments/totals-by-currency', { method: 'POST', json: billIds });
+}

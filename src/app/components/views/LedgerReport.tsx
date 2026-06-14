@@ -10,12 +10,13 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
 import { BookOpen, Printer, Calendar, Eye, ArrowLeft } from 'lucide-react';
 import * as ledgerApi from '../../api/ledgerReports';
+import { formatMoneyForCurrency } from '../../utils/format';
 
 /** Render an amount with the currency in front (matches the Bills /
- *  Invoices list pages). USD collapses to "$"; other currencies use
- *  an ISO-code prefix. */
+ *  Invoices list pages). USD collapses to "$" with 2dp, KHR uses ISO
+ *  prefix with no decimals, other currencies fall back to 2dp. */
 const fmtMoney = (n: number, currency: string): string => {
-  const num = Math.abs(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = formatMoneyForCurrency(Math.abs(n ?? 0), currency);
   return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
 };
 const formatMoney = fmtMoney;

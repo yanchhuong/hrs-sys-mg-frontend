@@ -21,7 +21,7 @@ import * as platformApi from '../../../api/platform';
 /** Cents → $X.XX. Server stores prices in cents to avoid float drift; UI
  *  shows dollars for the admin. Free plans render as "Free". */
 const fmtUsd = (cents: number) =>
-  cents === 0 ? 'Free' : `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  cents === 0 ? 'Free' : `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
 /** Bytes-aware formatting for the storage cap. */
 const fmtStorage = (mb: number) => {

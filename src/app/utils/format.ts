@@ -32,3 +32,20 @@ export function formatMoney(n: number | null | undefined): string {
 export function formatUSD(n: number | null | undefined): string {
   return `$${formatMoney(n)}`;
 }
+
+/**
+ * Currency-aware amount formatter. KHR follows the Cambodian convention
+ * (whole-riel display, "#,###" — riel doesn't ship in sub-units) while
+ * USD and anything else keeps the standard 2-decimal format
+ * ("#,###.00"). Returns the bare number — callers add the symbol /
+ * currency-code prefix themselves so they keep control over negative
+ * sign placement and column alignment.
+ */
+export function formatMoneyForCurrency(n: number | null | undefined, currency: string): string {
+  if (n == null || !Number.isFinite(Number(n))) return currency === 'KHR' ? '0' : '0.00';
+  const isKhr = currency === 'KHR';
+  return Number(n).toLocaleString('en-US', {
+    minimumFractionDigits: isKhr ? 0 : 2,
+    maximumFractionDigits: isKhr ? 0 : 2,
+  });
+}

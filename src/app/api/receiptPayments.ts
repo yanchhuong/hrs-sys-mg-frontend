@@ -45,3 +45,11 @@ export async function create(req: ReceiptPaymentRequest): Promise<ReceiptPayment
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/receipt-payments/${id}`, { method: 'DELETE' });
 }
+
+/** Per-currency Received totals for a batch of receipts. */
+export async function totalsByCurrency(
+  receiptIds: string[],
+): Promise<Record<string, Partial<Record<PaymentCurrency, number>>>> {
+  if (receiptIds.length === 0) return {};
+  return apiJson('/api/v1/receipt-payments/totals-by-currency', { method: 'POST', json: receiptIds });
+}

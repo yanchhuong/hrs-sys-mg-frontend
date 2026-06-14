@@ -35,6 +35,7 @@ import * as customersApi from '../../api/customers';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
 import { loadBankAccounts } from '../../utils/bankAccount';
+import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail,
@@ -91,8 +92,10 @@ const fmtMoney = (n: number, currency: string): string => {
   // AR / Remain / Net columns consistent with the existing explicit
   // "− {fmtMoney(positive)}" patterns used for Discount / Refund
   // sub-totals across the same view.
-  const abs = Math.abs(n);
-  const num = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  //
+  // KHR formats with no decimals ("R17,488,013"); USD and anything
+  // else gets the 2-decimal default ("$55.00") — see formatMoneyForCurrency.
+  const num = formatMoneyForCurrency(Math.abs(n), currency);
   const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
@@ -223,6 +226,10 @@ export function Invoices() {
   const [formParentPrefill, setFormParentPrefill] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<invoicesApi.Invoice | null>(null);
+  // Per-currency Received totals for the visible page — populated by a
+  // single batched call after the invoices land. Splits the single
+  // legacy "paidAmount" into USD + KHR columns.
+  const [receivedByCurrency, setReceivedByCurrency] = useState<Record<string, Partial<Record<paymentsApi.PaymentCurrency, number>>>>({});
 
   const load = async () => {
     setLoading(true);
@@ -231,8 +238,16 @@ export function Invoices() {
         invoicesApi.list({ kind: kindFilter === 'all' ? undefined : kindFilter, size: 200 }),
         customersApi.list({ size: 500 }),
       ]);
-      setRows(invRes.content ?? []);
+      const invoices = invRes.content ?? [];
+      setRows(invoices);
       setCustomers(custRes.content ?? []);
+      // Kick off the per-currency totals in the background — the table
+      // renders the legacy total in the USD column while this resolves,
+      // then refines. Soft-fail so a 403 on the payment module doesn't
+      // wipe the visible list.
+      paymentsApi.totalsByCurrency(invoices.map(i => i.id))
+        .then(setReceivedByCurrency)
+        .catch(() => setReceivedByCurrency({}));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load invoices');
     } finally {
@@ -333,10 +348,10 @@ export function Invoices() {
    *  column was stored). Remain only sums root invoices since
    *  adjustments already roll up into the root's netBalance. */
   const totalsByCurrency = useMemo(() => {
-    const m = new Map<string, { total: number; paid: number; remain: number }>();
+    const m = new Map<string, { total: number; paid: number; paidUsd: number; paidKhr: number; remain: number }>();
     for (const r of groupedRows) {
       const c = r.currency || 'USD';
-      if (!m.has(c)) m.set(c, { total: 0, paid: 0, remain: 0 });
+      if (!m.has(c)) m.set(c, { total: 0, paid: 0, paidUsd: 0, paidKhr: 0, remain: 0 });
       const slot = m.get(c)!;
       // CN total represents what we owe the customer → subtract from
       // the running Total. INV + DN add as receivables.
@@ -344,12 +359,22 @@ export function Invoices() {
       // CN's paid is a refund — subtract magnitude so the net Paid
       // total reflects what we actually received from the customer.
       slot.paid += r.kind === 'credit_note' ? -Math.abs(r.paidAmount) : r.paidAmount;
+      // Per-currency paid columns. Pull from the batched
+      // /totals-by-currency map; fall back to the legacy paidAmount
+      // bucketed into the row's native currency while the call is
+      // still in flight so the footer isn't blank on first paint.
+      const perCur = receivedByCurrency[r.id];
+      const usd = perCur ? (perCur.USD ?? 0) : (c === 'USD' ? r.paidAmount : 0);
+      const khr = perCur ? (perCur.KHR ?? 0) : (c === 'KHR' ? r.paidAmount : 0);
+      const sign = r.kind === 'credit_note' ? -1 : 1;
+      slot.paidUsd += sign * usd;
+      slot.paidKhr += sign * khr;
       if (!r.parentInvoiceId) {
         slot.remain += r.netBalance ?? (r.total - r.paidAmount);
       }
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
-  }, [groupedRows]);
+  }, [groupedRows, receivedByCurrency]);
 
   const openCreate = (kind: invoicesApi.InvoiceKind) => {
     setFormEditing(null);
@@ -505,7 +530,8 @@ export function Invoices() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Received</TableHead>
+                    <TableHead className="text-right w-[110px]">Received (USD)</TableHead>
+                    <TableHead className="text-right w-[110px]">Received (KHR)</TableHead>
                     <TableHead className="text-right">
                       <TooltipProvider>
                         <Tooltip>
@@ -560,15 +586,40 @@ export function Invoices() {
                           - CN with payment → "− $X" in red (refund =
                             money out, signed for ledger clarity).
                           - INV / DN → plain gray amount. */}
-                      <TableCell className={`text-right text-sm tabular-nums ${
-                        inv.kind === 'credit_note' ? 'text-red-700' : 'text-gray-600'
-                      }`}>
-                        {isAdjustment && inv.paidAmount === 0
-                          ? <span className="text-gray-300">—</span>
-                          : inv.kind === 'credit_note'
-                            ? `− ${fmtMoney(Math.abs(inv.paidAmount), inv.currency)}`
-                            : fmtMoney(inv.paidAmount, inv.currency)}
-                      </TableCell>
+                      {/* Per-currency Received columns. Pulled from the
+                       *  batched /totals-by-currency call after the list
+                       *  resolves. Falls back to the legacy paidAmount
+                       *  in the invoice's native currency while the
+                       *  batched call is still in flight so the table
+                       *  isn't visibly blank on first paint. */}
+                      {(() => {
+                        const totals = receivedByCurrency[inv.id];
+                        const loaded = !!totals;
+                        const usd = loaded
+                          ? (totals.USD ?? 0)
+                          : (inv.currency === 'USD' ? inv.paidAmount : 0);
+                        const khr = loaded
+                          ? (totals.KHR ?? 0)
+                          : (inv.currency === 'KHR' ? inv.paidAmount : 0);
+                        const isCn = inv.kind === 'credit_note';
+                        const cellClass = isCn ? 'text-red-700' : 'text-gray-600';
+                        const render = (val: number, cur: 'USD' | 'KHR') => {
+                          if (!val) return <span className="text-gray-300">—</span>;
+                          return isCn
+                            ? `− ${fmtMoney(Math.abs(val), cur)}`
+                            : fmtMoney(val, cur);
+                        };
+                        return (
+                          <>
+                            <TableCell className={`text-right text-sm tabular-nums ${cellClass}`}>
+                              {render(usd, 'USD')}
+                            </TableCell>
+                            <TableCell className={`text-right text-sm tabular-nums ${cellClass}`}>
+                              {render(khr, 'KHR')}
+                            </TableCell>
+                          </>
+                        );
+                      })()}
                       {/* Remain is meaningful only on the root invoice
                           — CN/DN rows already roll their balance up
                           into the parent's netBalance. Show a muted
@@ -639,7 +690,10 @@ export function Invoices() {
                           {fmtMoney(t.total, t.currency)}
                         </TableCell>
                         <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
-                          {fmtMoney(t.paid, t.currency)}
+                          {fmtMoney(t.paidUsd, 'USD')}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
+                          {fmtMoney(t.paidKhr, 'KHR')}
                         </TableCell>
                         <TableCell className={`text-right text-sm font-semibold tabular-nums ${
                           t.remain > 0 ? 'text-red-700' : 'text-gray-500'
@@ -1304,7 +1358,7 @@ function InvoiceFormDialog({
                 {settings.showTax && (
                 <div className="flex justify-end gap-6">
                   <span className="text-gray-600">Tax</span>
-                  <span className="tabular-nums w-32 text-right">+ {fmtMoney(computedTax, currency)}</span>
+                  <span className="tabular-nums w-32 text-right">{fmtMoney(computedTax, currency)}</span>
                 </div>
                 )}
                 {settings.showDiscount && (
@@ -1319,7 +1373,7 @@ function InvoiceFormDialog({
                 </div>
                 <div className="flex justify-end gap-6 text-gray-700">
                   <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
                 </div>
               </div>
             </div>
@@ -1389,6 +1443,26 @@ function InvoiceDetailDialog({
   const [mailDialogOpen, setMailDialogOpen] = useState(false);
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
+
+  // USD-equivalent AR — collapses USD + (KHR ÷ rate) payments against
+  // Total USD (= invoice.total + ΣDN − ΣCN). Used both by the AR row in
+  // the summary block and to gate the Record-payment button: as long as
+  // there's outstanding AR, allow more payments even if the server-side
+  // status flipped to "paid" via the legacy currency-blind sum.
+  const arUsd: number = (() => {
+    if (!invoice) return 0;
+    const nonVoidAdj = (invoice.adjustments ?? []).filter(a => a.status !== 'void');
+    const sumDn = nonVoidAdj.filter(a => a.kind === 'debit_note').reduce((s, a) => s + a.total, 0);
+    const sumCn = nonVoidAdj.filter(a => a.kind === 'credit_note').reduce((s, a) => s + a.total, 0);
+    const sumByCurrency = (cur: 'USD' | 'KHR') => payments
+      .filter(p => p.currency === cur)
+      .reduce((s, p) => s + (p.direction === 'credit' ? p.amount : -p.amount), 0);
+    const receivedUsd = sumByCurrency('USD');
+    const receivedKhr = sumByCurrency('KHR');
+    const rate = invoice.exchangeRate || 0;
+    const receivedTotalUsd = receivedUsd + (rate > 0 ? receivedKhr / rate : 0);
+    return invoice.total + sumDn - sumCn - receivedTotalUsd;
+  })();
 
   const load = async () => {
     setLoading(true);
@@ -1643,12 +1717,29 @@ function InvoiceDetailDialog({
                   const sumCn = nonVoidAdj
                     .filter(a => a.kind === 'credit_note')
                     .reduce((s, a) => s + a.total, 0);
-                  const net = invoice.netBalance ?? (invoice.total + sumDn - sumCn - invoice.paidAmount);
+                  // Per-currency Received totals — each payment row stays in
+                  // the currency the cashier captured. Credit direction = money
+                  // in (positive), debit = refund out (negative). KHR
+                  // payments fold into the USD-side AR via the invoice's
+                  // snapshot exchange rate: received_usd_equiv = KHR ÷ rate.
+                  const sumByCurrency = (cur: 'USD' | 'KHR') => payments
+                    .filter(p => p.currency === cur)
+                    .reduce((s, p) => s + (p.direction === 'credit' ? p.amount : -p.amount), 0);
+                  const receivedUsd = sumByCurrency('USD');
+                  const receivedKhr = sumByCurrency('KHR');
+                  const rate = invoice.exchangeRate || 0;
+                  // Total USD-equivalent received — KHR converted at the
+                  // invoice's snapshot rate so the AR collapses to one
+                  // number even when payments came in on both rails.
+                  const receivedTotalUsd = receivedUsd + (rate > 0 ? receivedKhr / rate : 0);
+                  const totalUsd = invoice.total + sumDn - sumCn;
+                  const totalKhr = totalUsd * rate;
+                  const arUsd = totalUsd - receivedTotalUsd;
                   return (
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
                     {settings.showTax && (
-                    <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.taxAmount, invoice.currency)}</span></div>
                     )}
                     {settings.showDiscount && (
                     <div className="flex justify-end gap-6">
@@ -1661,31 +1752,27 @@ function InvoiceDetailDialog({
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
                     )}
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.total, invoice.currency)}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, 'USD')}</span></div>
+                    <div className="flex justify-end gap-6 text-gray-700"><span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, 'KHR')}</span></div>
                     {sumDn > 0 && (
-                      <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(sumDn, invoice.currency)}</span></div>
+                      <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">{fmtMoney(sumDn, invoice.currency)}</span></div>
                     )}
                     {sumCn > 0 && (
                       <div className="flex justify-end gap-6 text-emerald-700"><span>Credit notes</span><span className="tabular-nums w-32 text-right">− {fmtMoney(sumCn, invoice.currency)}</span></div>
                     )}
-                    <div className="flex justify-end gap-6 text-emerald-700"><span>Received</span><span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.paidAmount, invoice.currency)}</span></div>
                     <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="inline-flex items-center gap-1 cursor-help">
-                              AR
+                              AR (USD)
                               <Info className="h-3 w-3 text-gray-400" />
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>Accounts Receivable — what the customer still owes after the full ledger.</TooltipContent>
+                          <TooltipContent>Accounts Receivable in USD — Total USD minus all payments received. KHR payments are converted to USD at the invoice's snapshot exchange rate.</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      <span className="tabular-nums w-32 text-right">{fmtMoney(net, invoice.currency)}</span>
-                    </div>
-                    <div className="flex justify-end gap-6 text-gray-700 border-t pt-1 mt-1">
-                      <span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span>
-                      <span className="tabular-nums w-32 text-right">KHR {(net * invoice.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      <span className={`tabular-nums w-32 text-right ${arUsd > 0 ? 'text-red-700' : ''}`}>{fmtMoney(arUsd, 'USD')}</span>
                     </div>
                   </div>
                   );
@@ -1746,11 +1833,13 @@ function InvoiceDetailDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold">Payments</Label>
-                {/* Refunded = settled CN (cash already moved out);
-                    locks the Record payment button the same way Paid
-                    does, so the operator can't stack another refund
-                    onto an already-refunded note. */}
-                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'refunded' && (
+                {/* Allow recording another payment whenever there's
+                    outstanding USD AR — even if the server-side status
+                    flipped to "paid" via the legacy currency-blind sum
+                    (a KHR-only payment counted at face value as USD).
+                    Drafts and voids stay locked since there's nothing
+                    to settle against. */}
+                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && arUsd > 0.005 && (
                   <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
@@ -1767,8 +1856,8 @@ function InvoiceDetailDialog({
                       <TableHead className="w-[100px]">Type</TableHead>
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
-                      <TableHead className="text-right w-[120px]">Received (USD)</TableHead>
-                      <TableHead className="text-right w-[120px]">Received (KHR)</TableHead>
+                      <TableHead className="w-[80px]">Currency</TableHead>
+                      <TableHead className="text-right w-[120px]">Amount</TableHead>
                       <TableHead className="w-[60px]" />
                     </TableRow>
                   </TableHeader>
@@ -1802,19 +1891,16 @@ function InvoiceDetailDialog({
                         </TableCell>
                         <TableCell className="text-sm capitalize">{p.method}</TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
-                        {/* Per-currency columns — show the amount only
-                         *  in the column that matches the row's recorded
-                         *  currency. Legacy rows persisted before V102
-                         *  default to USD. */}
-                        <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {p.currency === 'USD'
-                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'USD')}`
-                            : <span className="text-gray-300">—</span>}
+                        {/* Currency badge + single Amount cell — the row
+                         *  carries its own captured currency, and the
+                         *  Amount renders in that currency (USD 2dp, KHR
+                         *  0dp via fmtMoney). Sign / color match the
+                         *  outflow logic above. */}
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono text-[10px]">{p.currency}</Badge>
                         </TableCell>
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
-                          {p.currency === 'KHR'
-                            ? `${isOutflow ? '− ' : '+ '}${fmtMoney(p.amount, 'KHR')}`
-                            : <span className="text-gray-300">—</span>}
+                          {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
                         </TableCell>
                         <TableCell className="text-right">
                           {canEdit && (
@@ -1946,8 +2032,8 @@ function PrintTaxInvoice({
   // FX rate is captured per-invoice; KHR line uses the snapshot rather
   // than today's rate so reprinting later still matches the original.
   const grandKhr = Math.round(invoice.total * (invoice.exchangeRate || 0));
-  const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtKhr = (n: number) => `R${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtKhr = (n: number) => `R${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   // VAT line shows only when the invoice actually has tax — the totals
   // block stays tight on zero-VAT exports / receipts.
   const showVat = invoice.taxAmount > 0;
@@ -2223,7 +2309,7 @@ function MailInvoiceDialog({
   onClose: () => void;
 }) {
   const fmtUsd = (n: number) =>
-    `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const defaultSubject =
     `Invoice ${invoice.invoiceNo}${company?.name ? ` from ${company.name}` : ''}`;
   const defaultBody = [
@@ -2432,20 +2518,20 @@ function RecordPaymentDialog({
           <div className="grid grid-cols-[1fr_120px] gap-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>
-              <Input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+              {/* Step / min track the currency — riel has no sub-units,
+               *  so KHR amounts step by 1 and reject decimals; USD keeps
+               *  the cents-grade 0.01 step. */}
+              <Input
+                type="number"
+                min={currency === 'KHR' ? '1' : '0.01'}
+                step={currency === 'KHR' ? '1' : '0.01'}
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Currency</Label>
               <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrency('USD')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'USD'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >USD</button>
                 <button
                   type="button"
                   onClick={() => setCurrency('KHR')}
@@ -2455,6 +2541,15 @@ function RecordPaymentDialog({
                       : 'border-gray-200 hover:bg-gray-50 text-gray-600'
                   }`}
                 >KHR</button>
+                <button
+                  type="button"
+                  onClick={() => setCurrency('USD')}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    currency === 'USD'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >USD</button>
               </div>
             </div>
           </div>

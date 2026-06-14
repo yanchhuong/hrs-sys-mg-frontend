@@ -50,3 +50,13 @@ export async function create(req: PaymentRequest): Promise<Payment> {
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/payments/${id}`, { method: 'DELETE' });
 }
+
+/** Per-currency Received totals for a batch of invoices. Response:
+ *   { "<invoiceId>": { USD: 250.00, KHR: 5500 } }
+ *  Missing currencies default to 0 client-side. */
+export async function totalsByCurrency(
+  invoiceIds: string[],
+): Promise<Record<string, Partial<Record<PaymentCurrency, number>>>> {
+  if (invoiceIds.length === 0) return {};
+  return apiJson('/api/v1/payments/totals-by-currency', { method: 'POST', json: invoiceIds });
+}
