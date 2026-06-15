@@ -114,6 +114,43 @@ export function LedgerReport({ kind }: LedgerReportProps) {
     : (kind === 'sale' ? (n > 0 ? 'text-amber-700' : 'text-emerald-700')
                        : (n > 0 ? 'text-rose-700'  : 'text-emerald-700'));
 
+  /** Per-group Received/Paid split by currency. Reads
+   *  {@code receivedUsd} / {@code receivedKhr} from each entry —
+   *  the backend tags every payment with its native currency so a
+   *  USD invoice paid partly in KHR keeps both rails visible on the
+   *  summary list instead of mashing the KHR amount into the USD
+   *  column. */
+  const receivedByCurrencyPerGroup = useMemo(() => {
+    const out: Record<string, { usd: number; khr: number }> = {};
+    if (!report) return out;
+    for (const g of report.groups) {
+      const slot = { usd: 0, khr: 0 };
+      for (const e of g.entries) {
+        slot.usd += e.receivedUsd ?? 0;
+        slot.khr += e.receivedKhr ?? 0;
+      }
+      out[g.partyId] = slot;
+    }
+    return out;
+  }, [report]);
+
+  /** Grand-strip Received split: sum of every group's per-currency
+   *  Received. Drives the two cards in the totals strip. */
+  const grandReceivedByCurrency = useMemo(() => {
+    const slot = { usd: 0, khr: 0 };
+    for (const partyId in receivedByCurrencyPerGroup) {
+      slot.usd += receivedByCurrencyPerGroup[partyId].usd;
+      slot.khr += receivedByCurrencyPerGroup[partyId].khr;
+    }
+    return slot;
+  }, [receivedByCurrencyPerGroup]);
+
+  /** Render a cell — em-dash when the rail has no activity so the
+   *  column doesn't fill with $0.00 / ៛0 on parties that only used
+   *  one currency. */
+  const moneyOrDash = (n: number, currency: string) =>
+    n === 0 ? <span className="text-gray-300">—</span> : formatMoney(n, currency);
+
   return (
     <div className="p-6 space-y-6 print:p-0 print:space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
@@ -153,21 +190,25 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         </CardHeader>
       </Card>
 
-      {/* Grand totals strip. Total · Received|Paid · Refund · Closing
-          balance — same shape the user sees on the Invoice / Bill list,
-          with Refund split out so the reverse-direction cash is
-          visible at a glance. */}
+      {/* Grand totals strip. Total · Received(USD) · Received(KHR) ·
+          Refund · Closing — the Received column splits by currency so
+          mixed-currency payments don't get arithmetic-mashed into one
+          USD-looking sum that's actually nonsense. */}
       {report && (
         <Card className="print:shadow-none print:border-0">
           <CardContent className="py-4">
-            <div className="grid grid-cols-4 gap-6 text-sm">
+            <div className="grid grid-cols-5 gap-6 text-sm">
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">Total</div>
                 <div className="text-lg font-mono mt-0.5">{formatMoney(report.grandTotalAmount, 'USD')}</div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.settledHeader}</div>
-                <div className="text-lg font-mono mt-0.5">{formatMoney(report.grandTotalReceived, 'USD')}</div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.settledHeader} (USD)</div>
+                <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.usd, 'USD')}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.settledHeader} (KHR)</div>
+                <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.khr, 'KHR')}</div>
               </div>
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.refundHeader}</div>
@@ -213,14 +254,19 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   <TableHead>{labels.party}</TableHead>
                   <TableHead className="text-right w-28">Opening</TableHead>
                   <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
-                  <TableHead className="text-right w-28">{labels.settledHeader}</TableHead>
+                  {/* Received/Paid splits per-currency so payments
+                      taken in USD vs KHR stay on their own rail. */}
+                  <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+                  <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
                   <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
                   <TableHead className="text-right w-32">Closing ({labels.balanceLabel})</TableHead>
                   <TableHead className="w-28 print:hidden"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.groups.map(g => (
+                {report.groups.map(g => {
+                  const split = receivedByCurrencyPerGroup[g.partyId] ?? { usd: 0, khr: 0 };
+                  return (
                   <TableRow key={g.partyId} className="hover:bg-gray-50 cursor-pointer"
                             onClick={() => setSelectedPartyId(g.partyId)}>
                     <TableCell>
@@ -239,7 +285,8 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                       {formatMoney(g.openingBalance, g.currency)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatMoney(g.totalAmount, g.currency)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{formatMoney(g.totalReceived, g.currency)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{moneyOrDash(split.usd, 'USD')}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{moneyOrDash(split.khr, 'KHR')}</TableCell>
                     <TableCell className={`text-right font-mono text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                       {g.totalRefund === 0
                         ? formatMoney(0, g.currency)
@@ -255,7 +302,8 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -310,7 +358,11 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   <TableHead className="w-32">Type</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
-                  <TableHead className="text-right w-28">{labels.settledHeader}</TableHead>
+                  {/* Received/Paid split per currency — matches the
+                      summary list so the operator sees the same shape
+                      after drilling into a single party. */}
+                  <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+                  <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
                   <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
                   <TableHead className="text-right w-32">Balance</TableHead>
                 </TableRow>
@@ -318,7 +370,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
               <TableBody>
                 {g.openingBalance !== 0 && (
                   <TableRow className="bg-gray-50/60">
-                    <TableCell className="text-xs text-gray-500" colSpan={7}>Opening balance</TableCell>
+                    <TableCell className="text-xs text-gray-500" colSpan={8}>Opening balance</TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {formatMoney(g.openingBalance, g.currency)}
                     </TableCell>
@@ -326,7 +378,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 )}
                 {g.entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-gray-400 py-6 text-sm">
+                    <TableCell colSpan={9} className="text-center text-gray-400 py-6 text-sm">
                       No activity in this period.
                     </TableCell>
                   </TableRow>
@@ -349,7 +401,10 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                       {e.amount === 0 ? '—' : signedMoney(e.amount, e.currency)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
-                      {e.received === 0 ? '—' : formatMoney(e.received, e.currency)}
+                      {moneyOrDash(e.receivedUsd ?? 0, 'USD')}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {moneyOrDash(e.receivedKhr ?? 0, 'KHR')}
                     </TableCell>
                     <TableCell className={`text-right font-mono text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                       {e.refund === 0 ? '—' : `${labels.refundSign}${formatMoney(e.refund, e.currency)}`}
@@ -360,10 +415,18 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   </TableRow>
                   );
                 })}
+                {/* Subtotal — per-currency Received sums from the
+                    entries themselves so the column footer agrees
+                    with the per-row values above. */}
+                {(() => {
+                  const sumUsd = g.entries.reduce((s, e) => s + (e.receivedUsd ?? 0), 0);
+                  const sumKhr = g.entries.reduce((s, e) => s + (e.receivedKhr ?? 0), 0);
+                  return (
                 <TableRow className="bg-gray-50 font-medium">
                   <TableCell colSpan={4}>Subtotal</TableCell>
                   <TableCell className="text-right font-mono">{formatMoney(g.totalAmount, g.currency)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatMoney(g.totalReceived, g.currency)}</TableCell>
+                  <TableCell className="text-right font-mono">{moneyOrDash(sumUsd, 'USD')}</TableCell>
+                  <TableCell className="text-right font-mono">{moneyOrDash(sumKhr, 'KHR')}</TableCell>
                   <TableCell className={`text-right font-mono ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                     {g.totalRefund === 0
                       ? formatMoney(0, g.currency)
@@ -373,6 +436,8 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                     {formatMoney(g.closingBalance, g.currency)}
                   </TableCell>
                 </TableRow>
+                  );
+                })()}
               </TableBody>
             </Table>
           </CardContent>

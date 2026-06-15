@@ -32,6 +32,7 @@ import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as billsApi from '../../api/bills';
 import * as billPaymentsApi from '../../api/billPayments';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { printWithKhmerFonts } from '../../utils/printFonts';
 import * as vendorsApi from '../../api/vendors';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
@@ -106,8 +107,15 @@ const fmtMoney = (n: number, currency: string): string => {
   // labels used for Discount / Refund elsewhere in this view.
   // KHR formats with no decimals; USD / other keep 2dp — see
   // formatMoneyForCurrency.
+  //
+  // Snap floating-point drift to zero so a chain-net like -0.0039
+  // doesn't render as "− $0.00".
+  const epsilon = currency === 'KHR' ? 0.5 : 0.005;
+  if (Math.abs(n) < epsilon) n = 0;
   const num = formatMoneyForCurrency(Math.abs(n), currency);
-  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  const body = currency === 'USD' ? `$${num}`
+    : currency === 'KHR' ? `៛ ${num}`
+    : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
 
@@ -348,6 +356,71 @@ export function Bills() {
    *  CN refunds subtract (regardless of how the row's direction
    *  column was stored). Remain only sums root invoices since
    *  adjustments already roll up into the root's netBalance. */
+  /** Currency-aware AP per root bill — overrides the server's
+   *  {@code netBalance} which sums payment amounts currency-blind
+   *  (e.g. USD 100 + KHR 410,000 against a USD 200 bill produces a
+   *  garbage figure). Convert KHR↔USD via the bill's own exchangeRate
+   *  and walk the chain (root + non-void DN/CN children). On the
+   *  purchase side, debit-direction payments are cash OUT (we paid
+   *  the vendor), credit-direction are vendor refunds. paidByCurrency
+   *  returns positive USD / KHR magnitudes from debit payments
+   *  (matches the per-currency Paid columns on the list). Falls back
+   *  to the server netBalance for rows whose per-currency totals
+   *  haven't loaded yet. */
+  const apByRowId = useMemo(() => {
+    const out: Record<string, number> = {};
+    const childrenByParent = new Map<string, billsApi.Bill[]>();
+    for (const r of rows) {
+      if (!r.parentBillId) continue;
+      if (!childrenByParent.has(r.parentBillId)) childrenByParent.set(r.parentBillId, []);
+      childrenByParent.get(r.parentBillId)!.push(r);
+    }
+    for (const root of rows) {
+      if (root.parentBillId) continue;
+      const rate = root.exchangeRate || 0;
+      const convert = (usd: number, khr: number): number => {
+        if (root.currency === 'USD') return usd + (rate > 0 ? khr / rate : 0);
+        if (root.currency === 'KHR') return khr + usd * rate;
+        return usd;
+      };
+      const nonVoidKids = (childrenByParent.get(root.id) ?? [])
+        .filter(c => c.status !== 'void');
+      const sumDn = nonVoidKids
+        .filter(c => c.kind === 'debit_note')
+        .reduce((s, c) => s + c.total, 0);
+      const sumCn = nonVoidKids
+        .filter(c => c.kind === 'credit_note')
+        .reduce((s, c) => s + c.total, 0);
+      // Server chain formula on the purchase side uses magnitudes:
+      //   outflow = |root.paid| + Σ|DN.paid| − Σ|CN.refund|
+      // The per-currency endpoint returns signed values (credit
+      // positive = vendor refund, debit negative = we paid). For
+      // root + DN we add the magnitude (any cash we sent out counts);
+      // for CN we subtract the magnitude (vendor refund reduces our
+      // net outflow, which raises our AP back up toward the gross).
+      let outflow = 0;
+      const docs = [root, ...nonVoidKids];
+      let anyMissing = false;
+      for (const d of docs) {
+        const t = paidByCurrency[d.id];
+        if (!t) { anyMissing = true; continue; }
+        const signedUsd = convert(t.USD ?? 0, t.KHR ?? 0);
+        const mag = Math.abs(signedUsd);
+        if (d.kind === 'credit_note') {
+          outflow -= mag;
+        } else {
+          outflow += mag;
+        }
+      }
+      if (anyMissing) {
+        out[root.id] = root.netBalance ?? (root.total - root.paidAmount);
+      } else {
+        out[root.id] = root.total + sumDn - sumCn - outflow;
+      }
+    }
+    return out;
+  }, [rows, paidByCurrency]);
+
   const totalsByCurrency = useMemo(() => {
     const m = new Map<string, { total: number; paid: number; paidUsd: number; paidKhr: number; remain: number }>();
     for (const r of groupedRows) {
@@ -370,11 +443,13 @@ export function Bills() {
       slot.paidUsd += usd;
       slot.paidKhr += khr;
       if (!r.parentBillId) {
-        slot.remain += r.netBalance ?? (r.total - r.paidAmount);
+        // Use the currency-aware AP so the footer matches what the
+        // per-row AP column shows.
+        slot.remain += apByRowId[r.id] ?? r.netBalance ?? (r.total - r.paidAmount);
       }
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
-  }, [groupedRows, paidByCurrency]);
+  }, [groupedRows, paidByCurrency, apByRowId]);
 
   const openCreate = (kind: billsApi.BillKind) => {
     setFormEditing(null);
@@ -632,12 +707,19 @@ export function Bills() {
                           into the parent's netBalance. Show a muted
                           em-dash on adjustment rows so the column
                           stays visually aligned. */}
+                      {/* AP = currency-aware chain net. Server's
+                          netBalance is currency-blind so a mixed-
+                          currency payment chain produces garbage
+                          (e.g. − $164,959.76 on a USD bill paid in
+                          KHR). apByRowId walks the chain via the
+                          bill's exchangeRate; falls back to the
+                          server netBalance on first paint. */}
                       <TableCell className={`text-right text-sm tabular-nums ${
                         isAdjustment ? 'text-gray-300'
-                          : (inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium'
+                          : (apByRowId[inv.id] ?? inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium'
                           : 'text-gray-500'
                       }`}>
-                        {isAdjustment ? '—' : fmtMoney(inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
+                        {isAdjustment ? '—' : fmtMoney(apByRowId[inv.id] ?? inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
@@ -1169,7 +1251,7 @@ function BillFormDialog({
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-1 text-right">Line total</div>
+              <div className="col-span-1 text-right">Total</div>
               <div className="col-span-1" />
             </div>
             {items.map((it, idx) => {
@@ -1441,6 +1523,26 @@ function BillDetailDialog({
 
   const vendor = invoice ? vendors.find(c => c.id === invoice.vendorId) : undefined;
 
+  // USD-equivalent AP — collapses USD + (KHR ÷ rate) payments against
+  // Total USD (= bill.total + ΣDN − ΣCN). Used by the big top-right
+  // callout AND the Record-payment gate so the operator can keep
+  // adding payments while AP is non-zero, even if the server's
+  // currency-blind status flipped to "paid".
+  const apUsd: number = (() => {
+    if (!invoice) return 0;
+    const nonVoidAdj = (invoice.adjustments ?? []).filter(a => a.status !== 'void');
+    const sumDn = nonVoidAdj.filter(a => a.kind === 'debit_note').reduce((s, a) => s + a.total, 0);
+    const sumCn = nonVoidAdj.filter(a => a.kind === 'credit_note').reduce((s, a) => s + a.total, 0);
+    const sumByCurrency = (cur: 'USD' | 'KHR') => payments
+      .filter(p => p.currency === cur)
+      .reduce((s, p) => s + (p.direction === 'debit' ? p.amount : -p.amount), 0);
+    const paidUsd = sumByCurrency('USD');
+    const paidKhr = sumByCurrency('KHR');
+    const rate = invoice.exchangeRate || 0;
+    const paidTotalUsd = paidUsd + (rate > 0 ? paidKhr / rate : 0);
+    return invoice.total + sumDn - sumCn - paidTotalUsd;
+  })();
+
   const load = async () => {
     setLoading(true);
     try {
@@ -1544,7 +1646,7 @@ function BillDetailDialog({
                 the whole action row from the Print output. */}
             {invoice && (
               <div className="flex gap-1.5 mr-8 print:hidden">
-                <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
+                <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
                 {/* Edit available only on draft + progress per the
@@ -1583,7 +1685,12 @@ function BillDetailDialog({
           <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            {/* Two-column header row: meta info on the left, big AP
+                callout on the right (sits under the action buttons).
+                Sign-coloured — red = we still owe the vendor, amber
+                = vendor refund pending, emerald = balanced. */}
+            <div className="flex items-start justify-between gap-6">
+              <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1 text-sm flex-1 min-w-0">
               <div className="text-gray-500">Vendor</div>
               <div>{vendor?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
               <div className="text-gray-500">Due date</div>
@@ -1610,6 +1717,23 @@ function BillDetailDialog({
                   </div>
                 </>
               )}
+              </div>
+              {/* AP callout — top-right corner under the action buttons.
+                  mr-8 reserves the same gutter the action-button row
+                  uses so the right edge lines up with the buttons and
+                  stays clear of the dialog's built-in X close.
+                  Sign-coloured: red = we still owe vendor, amber =
+                  vendor refund pending, emerald = balanced. */}
+              <div className="text-right shrink-0 mr-8 print:hidden">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500">AP ({invoice.currency})</div>
+                <div className={`text-3xl font-bold mt-1 tabular-nums ${
+                  apUsd > 0 ? 'text-rose-700'
+                    : apUsd < 0 ? 'text-amber-700'
+                    : 'text-emerald-700'
+                }`}>
+                  {fmtMoney(apUsd, invoice.currency)}
+                </div>
+              </div>
             </div>
 
             {/* Line items — Specification + UOM surfaced as their own
@@ -1625,7 +1749,7 @@ function BillDetailDialog({
                     <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
-                    <TableHead className="text-right">Line total</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1684,20 +1808,31 @@ function BillDetailDialog({
                   const sumCn = nonVoidAdj
                     .filter(a => a.kind === 'credit_note')
                     .reduce((s, a) => s + a.total, 0);
-                  // Per-currency Paid totals — payments stay in the currency
-                  // they were captured in; a USD bill paid partly in KHR leaves
-                  // the USD AP intact and only chips the KHR AP. Debit direction
-                  // (root bill / DN) = money out, so credit-side here would be a
-                  // refund coming back from the vendor.
+                  // Per-currency Paid totals — each payment row stays in
+                  // the currency the cashier captured. Debit direction
+                  // (root bill / DN) = money out; credit-side here =
+                  // refund coming back from the vendor. KHR payments
+                  // fold into the USD-side AP via the bill's snapshot
+                  // exchange rate so the chain collapses to one number
+                  // even when payments came in on both rails (matches
+                  // the AR formula on the Invoice popup).
                   const sumByCurrency = (cur: 'USD' | 'KHR') => payments
                     .filter(p => p.currency === cur)
                     .reduce((s, p) => s + (p.direction === 'debit' ? p.amount : -p.amount), 0);
                   const paidUsd = sumByCurrency('USD');
                   const paidKhr = sumByCurrency('KHR');
+                  const rate = invoice.exchangeRate || 0;
+                  // Total USD-equivalent paid — KHR converted at the
+                  // bill's snapshot rate so AP reads correctly when
+                  // a USD bill was paid (partly) in KHR.
+                  const paidTotalUsd = paidUsd + (rate > 0 ? paidKhr / rate : 0);
                   const totalUsd = invoice.total + sumDn - sumCn;
-                  const totalKhr = totalUsd * (invoice.exchangeRate || 0);
-                  const apUsd = totalUsd - paidUsd;
-                  const apKhr = totalKhr - paidKhr;
+                  const totalKhr = totalUsd * rate;
+                  // Two views of the same chain-collapsed AP: USD-side
+                  // and the KHR-equivalent (apUsd × rate). They always
+                  // agree on whether the chain is settled (== 0).
+                  const apUsd = totalUsd - paidTotalUsd;
+                  const apKhr = apUsd * rate;
                   return (
                   <div className="bg-slate-50 rounded-md p-3 space-y-1 text-sm">
                     <div className="flex justify-end gap-6"><span className="text-gray-600">Subtotal</span><span className="tabular-nums w-32 text-right">{fmtMoney(invoice.subtotal, invoice.currency)}</span></div>
@@ -1746,7 +1881,7 @@ function BillDetailDialog({
                               <Info className="h-3 w-3 text-gray-400" />
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>Accounts Payable in KHR — Total KHR − Paid (KHR). Tracks the riel rail independently.</TooltipContent>
+                          <TooltipContent>Accounts Payable in KHR — same chain-collapsed AP as the USD row, expressed in riel at the bill's snapshot rate. Both views agree on whether the chain is settled.</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                       <span className={`tabular-nums w-32 text-right ${apKhr > 0 ? 'text-red-700' : ''}`}>{fmtMoney(apKhr, 'KHR')}</span>

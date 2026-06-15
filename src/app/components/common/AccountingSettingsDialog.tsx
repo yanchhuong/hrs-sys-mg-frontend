@@ -87,17 +87,30 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   const [banks, setBanks] = useState<BankAccount[]>([]);
 
   const isReceipt = scope === 'receipt';
-  const title = scope === 'sale' ? 'Invoice Settings'
-              : scope === 'purchase' ? 'Bill Settings'
-              : 'Receipt Settings';
-  const sideLabel = scope === 'sale' ? 'Invoice'
-                  : scope === 'purchase' ? 'Bill'
-                  : 'Receipt';
+  // Quotation / Voucher are single-document scopes too — they only
+  // render the first prefix slot (and skip the multi-kind labels)
+  // exactly like Receipt does. Grouping them under one flag keeps
+  // the render branches readable.
+  const isSingleKind = scope === 'receipt' || scope === 'quotation' || scope === 'voucher';
+  const title = scope === 'sale'      ? 'Invoice Settings'
+              : scope === 'purchase'  ? 'Bill Settings'
+              : scope === 'receipt'   ? 'Receipt Settings'
+              : scope === 'quotation' ? 'Quotation Settings'
+              :                         'General Voucher Settings';
+  const sideLabel = scope === 'sale'      ? 'Invoice'
+                  : scope === 'purchase'  ? 'Bill'
+                  : scope === 'receipt'   ? 'Receipt'
+                  : scope === 'quotation' ? 'Quotation'
+                  :                         'Voucher';
   const prefixLabels = scope === 'sale'
-    ? { commercial: 'Invoice', tax: 'Tax Invoice', creditNote: 'Credit Note', debitNote: 'Debit Note' }
+    ? { commercial: 'Invoice',   tax: 'Tax Invoice', creditNote: 'Credit Note', debitNote: 'Debit Note' }
     : scope === 'purchase'
-    ? { commercial: 'Bill',    tax: 'Tax Bill',    creditNote: 'Credit Note', debitNote: 'Debit Note' }
-    : { commercial: 'Receipt', tax: '',            creditNote: '',            debitNote: '' };
+    ? { commercial: 'Bill',      tax: 'Tax Bill',    creditNote: 'Credit Note', debitNote: 'Debit Note' }
+    : scope === 'receipt'
+    ? { commercial: 'Receipt',   tax: '',            creditNote: '',            debitNote: '' }
+    : scope === 'quotation'
+    ? { commercial: 'Quotation', tax: '',            creditNote: '',            debitNote: '' }
+    : { commercial: 'Voucher',   tax: '',            creditNote: '',            debitNote: '' };
 
   useEffect(() => {
     if (!open) return;
@@ -265,9 +278,9 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   {prefixRow(prefixLabels.commercial, 'prefixCommercial')}
-                  {!isReceipt && prefixRow(prefixLabels.tax,        'prefixTax')}
-                  {!isReceipt && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
-                  {!isReceipt && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
+                  {!isSingleKind && prefixRow(prefixLabels.tax,        'prefixTax')}
+                  {!isSingleKind && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
+                  {!isSingleKind && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
                 </div>
               </div>
             )}

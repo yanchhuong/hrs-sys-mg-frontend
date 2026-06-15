@@ -52,6 +52,11 @@ interface AuthContextType {
    *  rendering. Defaults to true while the bootstrap fetch is in
    *  flight so the icon doesn't flicker. */
   isAppLauncherEnabled: () => boolean;
+  /** Resolve a category key (e.g. 'account', 'hr') to the human label
+   *  the Super Admin set on the Module Categories page. Returns
+   *  undefined when the platform doesn't know about the key — callers
+   *  fall back to a hardcoded i18n label. */
+  getModuleCategoryLabel: (key: string) => string | undefined;
   /** Tenant-admin self-service module install / uninstall. Throws on
    *  network / permission errors so callers can show a toast. */
   setModuleEnabled: (moduleKey: string, enabled: boolean) => Promise<void>;
@@ -78,6 +83,7 @@ const defaultAuthContext: AuthContextType = {
   isModuleEnabled: () => true,
   isModuleAvailable: () => true,
   isAppLauncherEnabled: () => true,
+  getModuleCategoryLabel: () => undefined,
   setModuleEnabled: noopAsync,
   login: async () => ({ success: false }),
   logout: () => {},
@@ -156,6 +162,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const [tenantFeatures, setTenantFeatures] = useState<platformApi.TenantFeatures | null>(null);
 
+  /** Super-Admin-managed module categories (Module Categories page).
+   *  Keyed by ISO-ish key (e.g. 'hr', 'account', 'admin'), each
+   *  carries the human-friendly label the platform owner set. Drives
+   *  the AppLauncher heading text — without this, the launcher fell
+   *  back to a hardcoded i18n string and ignored Super Admin's
+   *  rename. Null while loading; consumers default to the i18n label
+   *  during bootstrap. */
+  const [tenantCategories, setTenantCategories] = useState<platformApi.ModuleCategory[] | null>(null);
+
   /**
    * Hydrate or refresh the tenant's module-disabled set from /me/modules.
    * Mock mode and unauthenticated states resolve to an empty set so
@@ -168,9 +183,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     disabled: Set<string>;
     available: Set<string>;
     features: platformApi.TenantFeatures | null;
+    categories: platformApi.ModuleCategory[] | null;
   }> => {
-    if (USE_MOCKS) return { disabled: new Set(), available: new Set(), features: null };
-    if (role === 'super_admin') return { disabled: new Set(), available: new Set(), features: null };
+    if (USE_MOCKS) return { disabled: new Set(), available: new Set(), features: null, categories: null };
+    if (role === 'super_admin') return { disabled: new Set(), available: new Set(), features: null, categories: null };
     try {
       const res = await platformApi.myModules.get();
       const disabled = new Set<string>();
@@ -179,13 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         available.add(k);
         if (!on) disabled.add(k);
       }
-      return { disabled, available, features: res.features ?? null };
+      return { disabled, available, features: res.features ?? null, categories: res.categories ?? null };
     } catch (err) {
       // Non-fatal — treat as nothing-disabled so the UI doesn't go blank
       // if the endpoint is briefly unreachable. The backend's gate is
       // the authoritative check; the frontend filter is convenience.
       console.warn('Failed to load /me/modules', err);
-      return { disabled: new Set(), available: new Set(), features: null };
+      return { disabled: new Set(), available: new Set(), features: null, categories: null };
     }
   }, []);
 
@@ -245,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setDisabledModules(m.disabled);
           setAvailableModules(m.available);
           setTenantFeatures(m.features);
+          setTenantCategories(m.categories);
         }
       } catch {
         authApi.logout();
@@ -376,6 +393,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return tenantFeatures.appLauncherEnabled !== false;
   }, [tenantFeatures]);
 
+  const getModuleCategoryLabel = useCallback((key: string): string | undefined => {
+    if (!tenantCategories) return undefined;
+    return tenantCategories.find(c => c.key === key)?.label;
+  }, [tenantCategories]);
+
   /** Tenant-admin self-service install / uninstall for a single
    *  module. Calls the {@code PUT /api/v1/me/modules/{key}} endpoint
    *  (admin-only on the backend) and merges the returned snapshot
@@ -428,6 +450,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDisabledModules(m.disabled);
       setAvailableModules(m.available);
       setTenantFeatures(m.features);
+      setTenantCategories(m.categories);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
@@ -440,6 +463,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setDisabledModules(null);
     setAvailableModules(null);
     setTenantFeatures(null);
+    setTenantCategories(null);
     authApi.logout();
   };
 
@@ -458,7 +482,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser, currentEmployee, loading,
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
-      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, setModuleEnabled,
+      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, getModuleCategoryLabel, setModuleEnabled,
       login, logout, switchRole,
     }}>
       {children}

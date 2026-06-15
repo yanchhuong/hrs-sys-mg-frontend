@@ -35,6 +35,7 @@ import * as customersApi from '../../api/customers';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
 import { loadBankAccounts } from '../../utils/bankAccount';
+import { printWithKhmerFonts } from '../../utils/printFonts';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
@@ -95,8 +96,21 @@ const fmtMoney = (n: number, currency: string): string => {
   //
   // KHR formats with no decimals ("R17,488,013"); USD and anything
   // else gets the 2-decimal default ("$55.00") — see formatMoneyForCurrency.
+  //
+  // Floating-point drift can leave a chain-net value like -0.0039
+  // that rounds to $0.00 but would render as "− $0.00" without
+  // this guard. Snap to zero when |n| < half a cent so the sign
+  // drops too. The KHR threshold uses 0.5 because KHR has no
+  // decimals (anything under 0.5 KHR rounds to 0).
+  const epsilon = currency === 'KHR' ? 0.5 : 0.005;
+  if (Math.abs(n) < epsilon) n = 0;
   const num = formatMoneyForCurrency(Math.abs(n), currency);
-  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  // KHR uses the riel symbol (៛) rather than the ISO code; USD
+  // collapses to "$" without a space; everything else keeps the
+  // ISO code + space.
+  const body = currency === 'USD' ? `$${num}`
+    : currency === 'KHR' ? `៛ ${num}`
+    : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
 
@@ -347,6 +361,70 @@ export function Invoices() {
    *  CN refunds subtract (regardless of how the row's direction
    *  column was stored). Remain only sums root invoices since
    *  adjustments already roll up into the root's netBalance. */
+  /** Currency-aware AR per root invoice — overrides the server's
+   *  {@code netBalance} field which sums payment amounts currency-blind
+   *  (e.g. USD 124.76 + KHR 165,000 = 165,124.76 against a USD 165
+   *  invoice → wrong AR of −$164,959.76). We convert KHR↔USD using the
+   *  invoice's own exchangeRate and walk the chain (root + non-void
+   *  DN/CN children) summing payments per currency from the
+   *  receivedByCurrency map. Falls back to the server netBalance for
+   *  rows whose per-currency totals haven't loaded yet so the cell
+   *  isn't blank on first paint. */
+  const arByRowId = useMemo(() => {
+    const out: Record<string, number> = {};
+    const childrenByParent = new Map<string, invoicesApi.Invoice[]>();
+    for (const r of rows) {
+      if (!r.parentInvoiceId) continue;
+      if (!childrenByParent.has(r.parentInvoiceId)) childrenByParent.set(r.parentInvoiceId, []);
+      childrenByParent.get(r.parentInvoiceId)!.push(r);
+    }
+    for (const root of rows) {
+      if (root.parentInvoiceId) continue;       // children handled via parent
+      const rate = root.exchangeRate || 0;
+      const convert = (usd: number, khr: number): number => {
+        if (root.currency === 'USD') return usd + (rate > 0 ? khr / rate : 0);
+        if (root.currency === 'KHR') return khr + usd * rate;
+        return usd;                              // unknown currency: assume USD
+      };
+      const nonVoidKids = (childrenByParent.get(root.id) ?? [])
+        .filter(c => c.status !== 'void');
+      const sumDn = nonVoidKids
+        .filter(c => c.kind === 'debit_note')
+        .reduce((s, c) => s + c.total, 0);
+      const sumCn = nonVoidKids
+        .filter(c => c.kind === 'credit_note')
+        .reduce((s, c) => s + c.total, 0);
+      // Sum payments across root + every non-void child. The per-
+      // currency endpoint returns signed values (credit positive,
+      // debit negative). Server chain formula:
+      //   inflow = root.paidAmount + ΣDN.paidAmount − Σ|CN.refund|
+      // So for root + DN we add the signed value directly (credit
+      // payments add, debit refunds subtract); for CN we subtract
+      // the magnitude (refund out reduces inflow regardless of sign).
+      let inflow = 0;
+      const docs = [root, ...nonVoidKids];
+      let anyMissing = false;
+      for (const d of docs) {
+        const t = receivedByCurrency[d.id];
+        if (!t) { anyMissing = true; continue; }
+        const signedUsd = convert(t.USD ?? 0, t.KHR ?? 0);
+        if (d.kind === 'credit_note') {
+          inflow -= Math.abs(signedUsd);
+        } else {
+          inflow += signedUsd;
+        }
+      }
+      if (anyMissing) {
+        // Per-currency totals still loading — fall back to the
+        // server's netBalance so the cell isn't blank.
+        out[root.id] = root.netBalance ?? (root.total - root.paidAmount);
+      } else {
+        out[root.id] = root.total + sumDn - sumCn - inflow;
+      }
+    }
+    return out;
+  }, [rows, receivedByCurrency]);
+
   const totalsByCurrency = useMemo(() => {
     const m = new Map<string, { total: number; paid: number; paidUsd: number; paidKhr: number; remain: number }>();
     for (const r of groupedRows) {
@@ -370,7 +448,9 @@ export function Invoices() {
       slot.paidUsd += sign * usd;
       slot.paidKhr += sign * khr;
       if (!r.parentInvoiceId) {
-        slot.remain += r.netBalance ?? (r.total - r.paidAmount);
+        // Use the currency-aware AR we computed above (which falls
+        // back to netBalance when per-currency totals aren't loaded yet).
+        slot.remain += arByRowId[r.id] ?? r.netBalance ?? (r.total - r.paidAmount);
       }
     }
     return [...m.entries()].map(([currency, sums]) => ({ currency, ...sums }));
@@ -625,12 +705,19 @@ export function Invoices() {
                           into the parent's netBalance. Show a muted
                           em-dash on adjustment rows so the column
                           stays visually aligned. */}
+                      {/* AR = currency-aware chain net. Server's
+                          netBalance is currency-blind so a mixed-
+                          currency payment chain produces a garbage
+                          figure (e.g. − $164,959.76 on a $165 invoice
+                          paid partly in KHR). arByRowId walks the chain
+                          with the invoice's exchange rate; falls back
+                          to netBalance on first paint. */}
                       <TableCell className={`text-right text-sm tabular-nums ${
                         isAdjustment ? 'text-gray-300'
-                          : (inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium'
+                          : (arByRowId[inv.id] ?? inv.netBalance ?? (inv.total - inv.paidAmount)) > 0 ? 'text-red-700 font-medium'
                           : 'text-gray-500'
                       }`}>
-                        {isAdjustment ? '—' : fmtMoney(inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
+                        {isAdjustment ? '—' : fmtMoney(arByRowId[inv.id] ?? inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
@@ -1050,7 +1137,33 @@ function InvoiceFormDialog({
           the 640px breakpoint. */}
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit ${editing?.invoiceNo}` : `New ${KIND_LABEL[kind]}`}</DialogTitle>
+          {/* Tooltip hosts the long copy on hover so the title bar
+              stays compact. Visible label is the short title; the
+              DialogDescription below is sr-only for Radix' a11y. */}
+          <DialogTitle className="flex items-center gap-1.5">
+            {isEdit ? `Edit ${editing?.invoiceNo}` : `New ${KIND_LABEL[kind]}`}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label={`${KIND_LABEL[kind]} form description`}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                {isAdjustment
+                  ? 'Adjustment note against the parent invoice. Totals re-compute as you change line items.'
+                  : 'Capture the line items, taxation, and discount. Totals re-compute as you type.'}
+              </TooltipContent>
+            </Tooltip>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isAdjustment
+              ? 'Adjustment note against the parent invoice. Totals re-compute as you change line items.'
+              : 'Capture the line items, taxation, and discount. Totals re-compute as you type.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -1163,7 +1276,7 @@ function InvoiceFormDialog({
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-1 text-right">Line total</div>
+              <div className="col-span-1 text-right">Total</div>
               <div className="col-span-1" />
             </div>
             {items.map((it, idx) => {
@@ -1451,12 +1564,20 @@ function InvoiceDetailDialog({
   // status flipped to "paid" via the legacy currency-blind sum.
   const arUsd: number = (() => {
     if (!invoice) return 0;
+    const isCn = invoice.kind === 'credit_note';
     const nonVoidAdj = (invoice.adjustments ?? []).filter(a => a.status !== 'void');
     const sumDn = nonVoidAdj.filter(a => a.kind === 'debit_note').reduce((s, a) => s + a.total, 0);
     const sumCn = nonVoidAdj.filter(a => a.kind === 'credit_note').reduce((s, a) => s + a.total, 0);
+    // Sign convention flips on a CN: for invoice / DN, credit-direction
+    // payments settle the AR (customer paid us); for a CN, the
+    // settlement direction is DEBIT (we refunded the customer). Without
+    // this flip a fully-refunded $55 CN reads AR = $55 − (−$55) = $110.
     const sumByCurrency = (cur: 'USD' | 'KHR') => payments
       .filter(p => p.currency === cur)
-      .reduce((s, p) => s + (p.direction === 'credit' ? p.amount : -p.amount), 0);
+      .reduce((s, p) => {
+        const settles = isCn ? p.direction === 'debit' : p.direction === 'credit';
+        return s + (settles ? p.amount : -p.amount);
+      }, 0);
     const receivedUsd = sumByCurrency('USD');
     const receivedKhr = sumByCurrency('KHR');
     const rate = invoice.exchangeRate || 0;
@@ -1538,18 +1659,37 @@ function InvoiceDetailDialog({
     }
   };
 
+  // AR == 0 (snap-to-zero) means the chain is balanced. Use the
+  // same epsilon as fmtMoney so the stamp and the AR figure agree
+  // on what "settled" means.
+  const isPaid = invoice ? Math.abs(arUsd) < 0.005 && invoice.status !== 'draft' && invoice.status !== 'void' : false;
+
   return (
     <Dialog open onOpenChange={onClose}>
+      {/* DO NOT add `relative` here — shadcn's DialogContent base
+          class is `fixed top-[50%] left-[50%]` for centering, and
+          `relative` overrides `fixed` (Tailwind later-wins on the
+          same property) which causes the dialog to mount off-screen
+          below the page flow. The stamp's absolute positioning
+          anchors to DialogContent because `fixed` is already a
+          positioned ancestor — no extra `relative` needed. */}
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
-        {loading || !invoice ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
-        ) : (
-          <>
-            <DialogHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <DialogTitle className="font-mono">{invoice.invoiceNo}</DialogTitle>
-                  <DialogDescription className="flex items-center gap-2 mt-1">
+        {/* Stamp lives at DialogContent root so it overlays the whole
+            preview area regardless of where the user scrolls inside.
+            Only shown for non-draft/void invoices with AR ≈ 0. */}
+        <PaidStamp show={isPaid} />
+        {/* Header is always rendered so Radix' DialogTitle requirement
+            is satisfied even during the brief load. Action buttons +
+            badges only appear once invoice is in. */}
+        <DialogHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DialogTitle className="font-mono">{invoice?.invoiceNo ?? 'Invoice details'}</DialogTitle>
+              <DialogDescription className="flex items-center gap-2 mt-1">
+                {loading || !invoice ? (
+                  <span className="text-xs text-gray-500">Loading invoice…</span>
+                ) : (
+                  <>
                     <Badge variant="outline" className={KIND_BADGE_CLASS[invoice.kind]}>
                       {KIND_LABEL[invoice.kind]}
                     </Badge>
@@ -1557,64 +1697,75 @@ function InvoiceDetailDialog({
                       {invoice.status}
                     </Badge>
                     <span className="text-xs text-gray-500">{invoice.issueDate}</span>
-                  </DialogDescription>
-                </div>
-                {/* mr-8 reserves room for the dialog's built-in close (X)
-                    button which sits at top:1rem right:1rem inside the
-                    DialogContent — without the inset the Void button
-                    sat directly under it.
-                    print:hidden drops the whole action row from the
-                    Print output so the printed page only carries the
-                    invoice itself, not the management controls. */}
-                <div className="flex gap-1.5 mr-8 print:hidden">
-                  <Button size="sm" variant="outline" onClick={() => window.print()} title="Print invoice">
-                    <Printer className="h-3.5 w-3.5 mr-1" /> Print
-                  </Button>
-                  {/* Mail opens a small composer dialog. We use mailto: so
-                      the user's own mail client (Gmail, Outlook, etc.) sends
-                      the message — no SMTP setup required tenant-side; HR
-                      attaches the printed PDF before hitting send. */}
-                  <Button
-                    size="sm" variant="outline"
-                    onClick={() => setMailDialogOpen(true)}
-                    disabled={invoice.status === 'draft'}
-                    title={invoice.status === 'draft' ? 'Issue the invoice before mailing' : 'Send invoice via email'}
+                  </>
+                )}
+              </DialogDescription>
+            </div>
+            {/* mr-8 reserves room for the dialog's built-in close (X)
+                button which sits at top:1rem right:1rem inside the
+                DialogContent. print:hidden drops the whole action row
+                from the Print output so the printed page only carries
+                the invoice itself, not the management controls.
+                The whole row is gated on `invoice` so the buttons
+                don't render before data is in. */}
+            {invoice && (
+              <div className="flex gap-1.5 mr-8 print:hidden">
+                <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }} title="Print invoice">
+                  <Printer className="h-3.5 w-3.5 mr-1" /> Print
+                </Button>
+                <Button
+                  size="sm" variant="outline"
+                  onClick={() => setMailDialogOpen(true)}
+                  disabled={invoice.status === 'draft'}
+                  title={invoice.status === 'draft' ? 'Issue the invoice before mailing' : 'Send invoice via email'}
+                >
+                  <Mail className="h-3.5 w-3.5 mr-1" /> Mail
+                </Button>
+                {/* Edit available only on draft + progress per the
+                    legal-document rule — paid / partially / overdue /
+                    void rows must be adjusted via a credit or debit
+                    note, not by rewriting the original. */}
+                {canEdit && (invoice.status === 'draft' || invoice.status === 'progress') && (
+                  <Button size="sm" variant="outline" disabled={busy}
+                    onClick={() => onEdit(invoice)}
                   >
-                    <Mail className="h-3.5 w-3.5 mr-1" /> Mail
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                   </Button>
-                  {/* Edit available only on draft + progress per the
-                      legal-document rule — paid / partially / overdue /
-                      void rows must be adjusted via a credit or debit
-                      note, not by rewriting the original. */}
-                  {canEdit && (invoice.status === 'draft' || invoice.status === 'progress') && (
-                    <Button size="sm" variant="outline" disabled={busy}
-                      onClick={() => onEdit(invoice)}
-                    >
-                      <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                    </Button>
-                  )}
-                  {canEdit && invoice.status === 'draft' && (
-                    <Button size="sm" disabled={busy}
-                      onClick={() => doAction('Invoice issued',
-                        () => invoicesApi.issue(invoice.id).then(setInvoice))}
-                    >
-                      <Send className="h-3.5 w-3.5 mr-1" /> Issue
-                    </Button>
-                  )}
-                  {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
-                    <Button size="sm" variant="outline" disabled={busy}
-                      className="text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => doAction('Invoice voided',
-                        () => invoicesApi.voidInvoice(invoice.id).then(setInvoice))}
-                    >
-                      <Ban className="h-3.5 w-3.5 mr-1" /> Void
-                    </Button>
-                  )}
-                </div>
+                )}
+                {canEdit && invoice.status === 'draft' && (
+                  <Button size="sm" disabled={busy}
+                    onClick={() => doAction('Invoice issued',
+                      () => invoicesApi.issue(invoice.id).then(setInvoice))}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1" /> Issue
+                  </Button>
+                )}
+                {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
+                  <Button size="sm" variant="outline" disabled={busy}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => doAction('Invoice voided',
+                      () => invoicesApi.voidInvoice(invoice.id).then(setInvoice))}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1" /> Void
+                  </Button>
+                )}
               </div>
-            </DialogHeader>
+            )}
+          </div>
+        </DialogHeader>
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+        {loading || !invoice ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+        ) : (
+          <>
+            {/* Two-column header row: meta info on the left, big AR
+                callout on the right. The callout sits in the area
+                under the action buttons so HR sees the outstanding
+                figure at a glance the moment they open the dialog
+                — colour-coded by sign so red = customer owes,
+                amber = refund pending, emerald = balanced. */}
+            <div className="flex items-start justify-between gap-6">
+              <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1 text-sm flex-1 min-w-0">
               <div className="text-gray-500">Customer</div>
               <div>{customer?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
               <div className="text-gray-500">Due date</div>
@@ -1641,6 +1792,24 @@ function InvoiceDetailDialog({
                   </div>
                 </>
               )}
+              </div>
+              {/* AR callout — top-right corner under the action buttons.
+                  mr-8 reserves the same gutter the action-button row
+                  uses so the callout's right edge lines up with the
+                  buttons and stays clear of the dialog's built-in X
+                  (top:1rem right:1rem inside DialogContent).
+                  Sign-coloured: red = customer owes, amber = refund
+                  pending, emerald = balanced. */}
+              <div className="text-right shrink-0 mr-8 print:hidden">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500">AR ({invoice.currency})</div>
+                <div className={`text-3xl font-bold mt-1 tabular-nums ${
+                  arUsd > 0 ? 'text-rose-700'
+                    : arUsd < 0 ? 'text-amber-700'
+                    : 'text-emerald-700'
+                }`}>
+                  {fmtMoney(arUsd, invoice.currency)}
+                </div>
+              </div>
             </div>
 
             {/* Line items — Specification + UOM surfaced as their own
@@ -1656,7 +1825,7 @@ function InvoiceDetailDialog({
                     <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
-                    <TableHead className="text-right">Line total</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1718,13 +1887,19 @@ function InvoiceDetailDialog({
                     .filter(a => a.kind === 'credit_note')
                     .reduce((s, a) => s + a.total, 0);
                   // Per-currency Received totals — each payment row stays in
-                  // the currency the cashier captured. Credit direction = money
-                  // in (positive), debit = refund out (negative). KHR
-                  // payments fold into the USD-side AR via the invoice's
-                  // snapshot exchange rate: received_usd_equiv = KHR ÷ rate.
+                  // the currency the cashier captured. For invoice / DN
+                  // settlement direction is CREDIT (customer pays us);
+                  // for a Credit Note settlement direction is DEBIT (we
+                  // refund the customer). The "settles" flag picks the
+                  // right sign by kind so a refunded CN reads AR = 0
+                  // instead of double-counting the refund.
+                  const isCn = invoice.kind === 'credit_note';
                   const sumByCurrency = (cur: 'USD' | 'KHR') => payments
                     .filter(p => p.currency === cur)
-                    .reduce((s, p) => s + (p.direction === 'credit' ? p.amount : -p.amount), 0);
+                    .reduce((s, p) => {
+                      const settles = isCn ? p.direction === 'debit' : p.direction === 'credit';
+                      return s + (settles ? p.amount : -p.amount);
+                    }, 0);
                   const receivedUsd = sumByCurrency('USD');
                   const receivedKhr = sumByCurrency('KHR');
                   const rate = invoice.exchangeRate || 0;
@@ -1943,15 +2118,23 @@ function InvoiceDetailDialog({
                 body > *:not(.print-tax-invoice) { display: none !important; }
                 body > .print-tax-invoice {
                   display: block !important;
-                  position: static !important;
+                  position: relative !important;
                   padding: 14mm !important;
                   color: black !important;
-                  font-family: 'Noto Sans Khmer', 'Hanuman', 'Battambang', system-ui, sans-serif !important;
+                  /* Khmer body uses Battambang; titles get Moul (a
+                   *  Khmer display face) via .kh-title below. Latin
+                   *  text falls through to the system stack. */
+                  font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
+                }
+                .print-tax-invoice .kh-title {
+                  font-family: 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
+                  font-weight: 400 !important;
+                  letter-spacing: 0.5px;
                 }
                 @page { margin: 0; size: A4; }
               }
             `}</style>
-            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} />
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} />
           </>
         )}
 
@@ -1983,6 +2166,60 @@ function InvoiceDetailDialog({
 /* -------------------------------------------------------------------------- */
 /* Cambodian Tax Invoice print template (WABOOKS layout)                       */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Rubber-stamp PAID overlay. Used in both the on-screen invoice
+ * detail popup AND the print template — same look, different
+ * positioning controlled by the parent's relative container.
+ * Renders only when {@code show} is true; an em-pty stamp wastes
+ * tree depth. Pure presentation, no hooks.
+ *
+ * <p>Style choices: double red border + bold serif uppercase +
+ * slight rotation mimic a real rubber stamp without needing an
+ * SVG asset. {@code pointer-events-none} so it never blocks clicks
+ * underneath; {@code select-none} keeps it out of accidental
+ * highlight + copy.</p>
+ */
+function PaidStamp({ show, variant = 'popup' }: { show: boolean; variant?: 'popup' | 'print' }) {
+  if (!show) return null;
+  // Two anchor positions for the same stamp:
+  //   • popup  — top-right of DialogContent, next to the action row.
+  //   • print  — lower on the page, over the Invoice N° / Issue
+  //     Date / Payment Due Date meta block on the right column of
+  //     the customer block, so the title and the body table stay
+  //     unobstructed (user spec).
+  const positioning: React.CSSProperties = variant === 'print'
+    ? { top: '170px', right: '40px' }
+    : { top: '40px', right: '60px' };
+  return (
+    <div
+      aria-hidden="true"
+      className="paid-stamp pointer-events-none select-none"
+      style={{
+        position: 'absolute',
+        ...positioning,
+        transform: 'rotate(-14deg)',
+        transformOrigin: 'top right',
+        border: '4px double #dc2626',
+        borderRadius: '8px',
+        padding: '6px 22px',
+        color: '#dc2626',
+        fontSize: '48px',
+        fontWeight: 900,
+        letterSpacing: '6px',
+        textTransform: 'uppercase',
+        fontFamily: '"Times New Roman", Georgia, serif',
+        opacity: 0.85,
+        lineHeight: 1,
+        zIndex: 10,
+        WebkitPrintColorAdjust: 'exact',
+        printColorAdjust: 'exact',
+      }}
+    >
+      PAID
+    </div>
+  );
+}
 
 /** Split a Cambodian VAT TIN into per-character boxes. Pattern is letter
  *  + 3 digits + "-" + 9 digits (e.g. L001-105018384) but we accept any
@@ -2023,17 +2260,21 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
 }
 
 function PrintTaxInvoice({
-  invoice, customer, company,
+  invoice, customer, company, paid,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
   company: settingsApi.CompanyInfo | null;
+  /** When true, overlay the red rubber-stamp "PAID" on the print
+   *  output. Driven by the parent's chain-aware AR == 0 check so
+   *  the stamp on screen and on paper share the same trigger. */
+  paid?: boolean;
 }) {
   // FX rate is captured per-invoice; KHR line uses the snapshot rather
   // than today's rate so reprinting later still matches the original.
   const grandKhr = Math.round(invoice.total * (invoice.exchangeRate || 0));
   const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtKhr = (n: number) => `R${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const fmtKhr = (n: number) => `៛ ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   // VAT line shows only when the invoice actually has tax — the totals
   // block stays tight on zero-VAT exports / receipts.
   const showVat = invoice.taxAmount > 0;
@@ -2059,7 +2300,23 @@ function PrintTaxInvoice({
   const showBank = banks.length > 0;
 
   const tree = (
-    <div className="print-tax-invoice" style={{ fontSize: '12px', color: '#000', display: 'none' }}>
+    <div className="print-tax-invoice" style={{
+      fontSize: '12px',
+      color: '#000',
+      display: 'none',
+      position: 'relative',
+      // Inline so the print engine applies it regardless of how it
+      // ranks @media print rules vs Google-Fonts-supplied @font-face
+      // declarations. Battambang has Khmer + Latin coverage so it
+      // handles both scripts in the body; titles override to Moul
+      // for the heavy display feel.
+      fontFamily: "'Battambang', 'Noto Sans Khmer', system-ui, sans-serif",
+    }}>
+      {/* PAID stamp overlay — gated by the chain-aware AR == 0 check
+          passed in from the parent. The "print" variant anchors the
+          stamp lower on the page so it sits over the Invoice N° /
+          Issue Date / Payment Due Date block on the right column. */}
+      <PaidStamp show={!!paid} variant="print" />
       {/* Header — logo on the left (blank slot when absent so the centered
        *  name doesn't drift), company name centered. No divider line
        *  below; contact / VAT TIN render in a clean centered block under. */}
@@ -2070,7 +2327,15 @@ function PrintTaxInvoice({
           )}
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.15 }}>{companyKh}</div>
+          {/* Moul has a single weight (400). Don't request 700 here
+              or the browser falls back to a substitute that doesn't
+              look like Moul. The face is already heavy by design. */}
+          <div className="kh-title" style={{
+            fontSize: '20px',
+            fontWeight: 400,
+            lineHeight: 1.15,
+            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+          }}>{companyKh}</div>
           {companyEn && companyEn !== companyKh && (
             <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px' }}>{companyEn}</div>
           )}
@@ -2098,7 +2363,11 @@ function PrintTaxInvoice({
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
         <div style={{ flex: 1, borderTop: '1px solid #000' }} />
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '20px', fontWeight: 700 }}>វិក្កយបត្រអាករ</div>
+          <div className="kh-title" style={{
+            fontSize: '20px',
+            fontWeight: 400,
+            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+          }}>វិក្កយបត្រអាករ</div>
           <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>TAX INVOICE</div>
         </div>
         <div style={{ flex: 1, borderTop: '1px solid #000' }} />

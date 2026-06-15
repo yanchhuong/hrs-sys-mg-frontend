@@ -43,6 +43,8 @@ import { Reports } from '../components/views/Reports';
 import { Customers } from '../components/views/Customers';
 import { Vendors } from '../components/views/Vendors';
 import { Invoices } from '../components/views/Invoices';
+import { Quotations } from '../components/views/Quotations';
+import { Vouchers } from '../components/views/Vouchers';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
@@ -116,7 +118,9 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'invoice',            component: ProfitLossReport, group: 'reports-group' },
 
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers,                group: 'sales-group' },
+  { id: 'quotations',        labelKey: 'nav.quotations',             icon: FileText,        module: 'quotation',          component: Quotations,               group: 'sales-group' },
   { id: 'invoices',          labelKey: 'nav.invoices',               icon: ReceiptText,     module: 'invoice',            component: Invoices,                 group: 'sales-group' },
+  { id: 'vouchers',          labelKey: 'nav.vouchers',               icon: FileText,        module: 'voucher',            component: Vouchers,                 group: 'sales-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },

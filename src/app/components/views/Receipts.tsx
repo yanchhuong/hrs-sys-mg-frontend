@@ -39,7 +39,9 @@ const fmtMoney = (n: number, currency: string): string => {
   // shows signed values from credit-direction refunds; this keeps it
   // visually aligned with explicit "− {fmtMoney(positive)}" labels.
   const num = formatMoneyForCurrency(Math.abs(n), currency);
-  const body = currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  const body = currency === 'USD' ? `$${num}`
+    : currency === 'KHR' ? `៛ ${num}`
+    : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
 
@@ -730,7 +732,9 @@ function ReceiptDetailDialog({
           <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            {/* Fixed-width label column keeps each value next to its
+                label instead of stretched across the dialog. */}
+            <div className="grid grid-cols-[160px_1fr] gap-x-4 gap-y-1 text-sm">
               <div className="text-gray-500">Vendor</div>
               <div>{vendor?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
               <div className="text-gray-500">Type of Supplier</div>

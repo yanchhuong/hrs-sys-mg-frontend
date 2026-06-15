@@ -7,11 +7,10 @@ export interface LedgerEntry {
   docType: string;    // "Invoice" | "Tax Invoice" | "Credit Note" | "Debit Note" | "Bill" | "Tax Bill"
   /** Signed contribution to the Total column. +invoice/+DN, −CN. */
   amount: number;
-  /** Positive sum of payments-in on this doc.
-   *  Sales: customer paid us. Purchases: we paid vendor. */
+  /** Currency-blind sum of payments-in on this doc (USD + KHR added
+   *  as raw numbers). Kept for chain math; the UI's per-currency
+   *  columns use {@link receivedUsd} / {@link receivedKhr} instead. */
   received: number;
-  /** Positive sum of reverse-direction payments on this doc.
-   *  Sales: we refunded customer. Purchases: vendor refunded us. */
   refund: number;
   /** Per-chain balance, set only on the parent (Invoice / Bill) row.
    *  Null on Credit Note / Debit Note children — the UI hides the
@@ -19,6 +18,12 @@ export interface LedgerEntry {
    *  (same principle as the Invoice list page). */
   balance: number | null;
   currency: string;
+  /** USD-only portion of received. */
+  receivedUsd: number;
+  /** KHR-only portion of received. */
+  receivedKhr: number;
+  refundUsd: number;
+  refundKhr: number;
   reference: string;
 }
 

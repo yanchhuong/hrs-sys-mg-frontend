@@ -1,9 +1,13 @@
 import { apiJson } from './client';
 
-/** Independent settings per side (V92). Drives form rendering and
- *  document-number prefixes for either Invoice (Sale) or Bill
- *  (Purchase). Each scope is fetched / saved independently. */
-export type AccountingScope = 'sale' | 'purchase' | 'receipt';
+/** Independent settings per Sale-side document (V106). Each scope is
+ *  fetched / saved independently:
+ *  - sale     → Invoice form (INV/TAX/CN/DN prefixes, has Bank Accounts)
+ *  - purchase → Bill form
+ *  - receipt  → Receipt form
+ *  - quotation → Quotation form (single QT prefix, no Bank Accounts)
+ *  - voucher   → General Voucher form (single VCH prefix, no Bank Accounts) */
+export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher';
 
 export interface AccountingSettings {
   showNotes: boolean;
@@ -30,22 +34,31 @@ export interface AccountingSettings {
   updatedByEmail: string | null;
 }
 
+/** Single-prefix scopes (Receipt / Quotation / Voucher) reuse the
+ *  same value in all four prefix slots so the dialog can read just
+ *  {@link AccountingSettings.prefixCommercial} without branching. */
+function defaultPrefix(scope: AccountingScope): string {
+  switch (scope) {
+    case 'sale':      return 'INV';
+    case 'purchase':  return 'BILL';
+    case 'receipt':   return 'RCPT';
+    case 'quotation': return 'QT';
+    case 'voucher':   return 'VCH';
+  }
+}
+
 export function defaultsFor(scope: AccountingScope): AccountingSettings {
-  const sale    = scope === 'sale';
   const receipt = scope === 'receipt';
-  // Receipt only has one document kind (RCPT). All four prefix slots
-  // get the same default so the dialog can render just the first.
-  const commercialDefault = receipt ? 'RCPT' : (sale ? 'INV'  : 'BILL');
   return {
     showNotes: true,
     showTerms: true,
     showDiscount: true,
     showTax: true,
-    prefixCommercial: commercialDefault,
-    prefixTax:        receipt ? 'RCPT' : (sale ? 'TAX'  : 'TBILL'),
-    prefixCreditNote: receipt ? 'RCPT' : (sale ? 'CN'   : 'BCN'),
-    prefixDebitNote:  receipt ? 'RCPT' : (sale ? 'DN'   : 'BDN'),
-    // Receipt = the 4 WHT patterns; Sale / Purchase keep the
+    prefixCommercial: defaultPrefix(scope),
+    prefixTax:        scope === 'sale' ? 'TAX'  : scope === 'purchase' ? 'TBILL' : defaultPrefix(scope),
+    prefixCreditNote: scope === 'sale' ? 'CN'   : scope === 'purchase' ? 'BCN'   : defaultPrefix(scope),
+    prefixDebitNote:  scope === 'sale' ? 'DN'   : scope === 'purchase' ? 'BDN'   : defaultPrefix(scope),
+    // Receipt = the 4 WHT patterns; everything else keeps the
     // original 5 VAT-and-WHT keys.
     taxTypesEnabled: receipt
       ? ['11', '15', '16', '20']
@@ -60,9 +73,11 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
 export const DEFAULT_ACCOUNTING_SETTINGS: AccountingSettings = defaultsFor('sale');
 
 const urlFor = (scope: AccountingScope) =>
-  scope === 'sale'    ? '/api/v1/invoices/settings'
-  : scope === 'receipt' ? '/api/v1/receipts/settings'
-  :                       '/api/v1/bills/settings';
+  scope === 'sale'      ? '/api/v1/invoices/settings'
+  : scope === 'purchase' ? '/api/v1/bills/settings'
+  : scope === 'receipt'  ? '/api/v1/receipts/settings'
+  : scope === 'quotation' ? '/api/v1/quotations/settings'
+  :                        '/api/v1/vouchers/settings';
 
 export async function get(scope: AccountingScope): Promise<AccountingSettings> {
   return apiJson(urlFor(scope));

@@ -32,7 +32,11 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
  *  launcher writes that key (not the leaf id) when toggling install
  *  state — multiple nav leaves can share a module key (e.g. all four
  *  Reports leaves point at their respective sub-modules). */
-type CategoryKey = 'account' | 'hr' | 'admin' | 'report';
+// Keys must match the Super Admin → Module Categories table so the
+// platform-managed labels resolve. Default seed there: 'hr',
+// 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
+// admin additions).
+type CategoryKey = 'accounting' | 'hr' | 'admin' | 'report';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -41,9 +45,9 @@ interface CategoryDef {
 }
 const CATEGORIES: CategoryDef[] = [
   {
-    key: 'account', labelKey: 'apps.category.account',
+    key: 'accounting', labelKey: 'apps.category.account',
     installedBadge: 'bg-emerald-100 text-emerald-700',
-    ids: ['customers', 'invoices', 'vendors', 'bills', 'receipts'],
+    ids: ['customers', 'quotations', 'invoices', 'vouchers', 'vendors', 'bills', 'receipts'],
   },
   {
     key: 'hr', labelKey: 'apps.category.hr',
@@ -107,7 +111,7 @@ interface AppLauncherProps {
  * the bail-outs below the hook block.</p>
  */
 export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherProps) {
-  const { canView, isModuleAvailable, isAppLauncherEnabled, currentUser, setModuleEnabled } = useAuth();
+  const { canView, isModuleAvailable, isAppLauncherEnabled, currentUser, setModuleEnabled, getModuleCategoryLabel } = useAuth();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   /** Module-key being toggled right now. Shows a spinner on the tile
@@ -172,7 +176,12 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
           {tree.map(cat => (
             <div key={cat.key}>
               <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
-                {t(cat.labelKey)}
+                {/* Prefer the Super-Admin-set label from the Module
+                    Categories page (Super Admin → Module Categories
+                    → Edit). Falls through to the hardcoded i18n
+                    label only when the platform hasn't declared the
+                    category yet. */}
+                {getModuleCategoryLabel(cat.key) ?? t(cat.labelKey)}
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {cat.items.map(({ leaf, installed }) => {
