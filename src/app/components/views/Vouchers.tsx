@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -213,6 +213,21 @@ export function Vouchers() {
   }, [rows, statusFilter, purposeFilter, dateFrom, dateTo, search, customerById]);
 
   const pagination = usePagination(filtered, 25);
+
+  // Sub-up Fair Value across the entire filtered set (not just the
+  // current page) — that's the figure the operator cares about when
+  // they ask "how much did we give away this month?". Sums are
+  // bucketed by currency since adding USD + KHR would be apples +
+  // oranges; if there's a single currency the footer shows just
+  // that one line.
+  const fairValueTotals = useMemo(() => {
+    const sums = new Map<string, number>();
+    for (const v of filtered) {
+      sums.set(v.currency, (sums.get(v.currency) ?? 0) + (v.subtotal ?? 0));
+    }
+    return Array.from(sums.entries())
+      .sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
   useEffect(() => {
     pagination.goToPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -394,6 +409,25 @@ export function Vouchers() {
                   );
                 })}
               </TableBody>
+              {fairValueTotals.length > 0 && (
+                <TableFooter>
+                  {fairValueTotals.map(([currency, sum], idx) => (
+                    <TableRow key={currency} className="bg-slate-50">
+                      <TableCell colSpan={4} className="text-right text-sm font-medium text-gray-600">
+                        {idx === 0 ? 'Total fair value' : ''}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold">
+                        {fmtMoney(sum, currency)}
+                      </TableCell>
+                      <TableCell colSpan={2} className="text-[11px] text-gray-500">
+                        {idx === 0 && filtered.length > pagination.paginatedItems.length
+                          ? `across all ${filtered.length} matching rows`
+                          : ''}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableFooter>
+              )}
             </Table>
           )}
           {pagination.totalPages > 1 && (
@@ -1383,16 +1417,23 @@ function VBiLabel({ kh, en }: { kh: string; en: string }) {
 
 function VVatTinBoxes({ tin }: { tin: string }) {
   const chars = tin.trim().split('');
+  // See Invoices.tsx VatTinBoxes for why this uses flex + flex-shrink
+  // instead of inline-block — html2canvas rendered the previous shape
+  // with one digit per line.
   return (
-    <div style={{ display: 'inline-flex', gap: '2px', verticalAlign: 'middle' }}>
+    <span style={{
+      display: 'inline-flex', flexWrap: 'nowrap', gap: '2px',
+      verticalAlign: 'middle', whiteSpace: 'nowrap',
+    }}>
       {chars.map((c, i) => (
         <span key={i} style={{
-          display: 'inline-block', width: '14px', height: '16px', lineHeight: '16px',
-          textAlign: 'center', fontSize: '11px',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          flex: '0 0 auto', width: '14px', height: '16px', fontSize: '11px',
           border: c === '-' ? 'none' : '1px solid #000',
+          boxSizing: 'border-box',
         }}>{c}</span>
       ))}
-    </div>
+    </span>
   );
 }
 

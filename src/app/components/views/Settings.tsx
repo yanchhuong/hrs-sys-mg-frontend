@@ -30,8 +30,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
-  RefreshCw, Eye, EyeOff, Upload,
+  RefreshCw, Eye, EyeOff, Upload, Bot,
 } from 'lucide-react';
+import { TelegramSettings } from './TelegramSettings';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -47,7 +48,8 @@ import { USE_MOCKS, API_BASE, apiJson } from '../../api/client';
 
 export function Settings() {
   const { t } = useI18n();
-  const { currentUser, currentEmployee } = useAuth();
+  const { currentUser, currentEmployee, canView } = useAuth();
+  const canViewTelegram = canView('telegram');
   const [rules, setRules] = useState(mockAttendanceRules);
   const [activeRule, setActiveRule] = useState(rules[0]);
 
@@ -84,6 +86,12 @@ export function Settings() {
             <ShieldCheck className="mr-2 h-4 w-4" />
             Policy
           </TabsTrigger>
+          {canViewTelegram && (
+            <TabsTrigger value="telegram">
+              <Bot className="mr-2 h-4 w-4" />
+              {t('nav.setting.telegram')}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="policy" className="space-y-6">
@@ -239,6 +247,16 @@ export function Settings() {
         {isAdmin && currentUser && (
           <TabsContent value="security" className="space-y-6">
             <DevicesCard />
+          </TabsContent>
+        )}
+
+        {canViewTelegram && (
+          <TabsContent value="telegram" className="space-y-6">
+            {/* Embeds the standalone TelegramSettings page — same
+                bot-registration + customer-link UX, just rendered
+                inside the General Settings tab strip so the admin
+                isn't hunting through a separate sidebar entry. */}
+            <TelegramSettings />
           </TabsContent>
         )}
       </Tabs>

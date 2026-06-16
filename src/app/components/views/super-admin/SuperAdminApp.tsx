@@ -12,6 +12,7 @@ import { PlatformPayrollCategories } from './PlatformPayrollCategories';
 import { PlatformHolidays } from './PlatformHolidays';
 import { TenantModules } from './TenantModules';
 import { ModuleCategories } from './ModuleCategories';
+import { PlatformTelegram } from './PlatformTelegram';
 
 export function SuperAdminApp() {
   const [view, setView] = useState<SuperAdminView>('dashboard');
@@ -30,6 +31,7 @@ export function SuperAdminApp() {
       case 'policy':             return <PlatformPolicy />;
       case 'payroll_categories': return <PlatformPayrollCategories />;
       case 'holidays':           return <PlatformHolidays />;
+      case 'platform_telegram':  return <PlatformTelegram />;
     }
   };
 

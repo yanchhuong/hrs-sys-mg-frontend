@@ -130,3 +130,25 @@ export async function convertToInvoice(id: string): Promise<Invoice> {
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/quotations/${id}`, { method: 'DELETE' });
 }
+
+/** Outcome of {@link sendTelegram}. Same contract as
+ *  invoicesApi.sendTelegram so the toast logic in the dialog can be
+ *  shared shape-wise. */
+export interface TelegramSendResult {
+  status: 'sent' | 'disabled' | 'not_linked' | 'failed';
+  message: string | null;
+}
+
+/** Manual "Send via Telegram" trigger from the Quotation detail
+ *  dialog. {@code imagePngBase64} is optional — when present, the
+ *  AI-Agent sends the rendered print template as a Telegram photo;
+ *  otherwise it falls back to a text-only summary. */
+export async function sendTelegram(
+  id: string,
+  imagePngBase64?: string,
+): Promise<TelegramSendResult> {
+  return apiJson(`/api/v1/quotations/${id}/send-telegram`, {
+    method: 'POST',
+    json: imagePngBase64 ? { imagePngBase64 } : {},
+  });
+}

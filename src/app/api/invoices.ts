@@ -179,6 +179,31 @@ export async function voidInvoice(id: string): Promise<Invoice> {
   return apiJson(`/api/v1/invoices/${id}/void`, { method: 'POST' });
 }
 
+/** Outcome of {@link sendTelegram}. {@code status === 'sent'} means
+ *  the AI-Agent accepted + Telegram delivered; anything else surfaces
+ *  the reason for the operator-facing toast. */
+export interface TelegramSendResult {
+  status: 'sent' | 'disabled' | 'not_linked' | 'failed';
+  message: string | null;
+}
+
+/** Manual "Send via Telegram" trigger from the Invoice detail dialog.
+ *  Distinct from the automatic on-issue notification — this one
+ *  returns synchronously so the UI can render a real toast.
+ *
+ *  When {@code imagePngBase64} is provided, the AI-Agent sends the
+ *  invoice via Telegram sendPhoto with the customer-facing summary
+ *  as caption; otherwise it falls back to a text-only sendMessage. */
+export async function sendTelegram(
+  id: string,
+  imagePngBase64?: string,
+): Promise<TelegramSendResult> {
+  return apiJson(`/api/v1/invoices/${id}/send-telegram`, {
+    method: 'POST',
+    json: imagePngBase64 ? { imagePngBase64 } : {},
+  });
+}
+
 /** Hard delete — only allowed for drafts. Issued/void must use voidInvoice. */
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/invoices/${id}`, { method: 'DELETE' });

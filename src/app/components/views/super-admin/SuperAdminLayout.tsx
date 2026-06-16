@@ -10,7 +10,7 @@ import {
 import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
   ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
-  ChevronRight, ChevronDown, DollarSign, CalendarDays,
+  ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
 import { LanguageSwitcher } from '../../common/LanguageSwitcher';
@@ -19,7 +19,8 @@ import { useI18n } from '../../../i18n/I18nContext';
 export type SuperAdminView =
   | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules'
   // Settings sub-menu
-  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'module_categories';
+  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'module_categories'
+  | 'platform_telegram';
 
 interface Props {
   children: ReactNode;
@@ -50,7 +51,8 @@ type MenuNode = LeafItem | GroupItem;
  *  build the nested nav and to keep Settings expanded automatically
  *  whenever one of its children is the active view. */
 const SETTINGS_CHILDREN: SuperAdminView[] = [
-  'module_categories', 'payroll_categories', 'holidays', 'activity', 'backups', 'policy',
+  'module_categories', 'payroll_categories', 'holidays',
+  'activity', 'backups', 'policy', 'platform_telegram',
 ];
 
 export function SuperAdminLayout({ children, currentView, onViewChange }: Props) {
@@ -94,6 +96,8 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
           label: t('nav.platform.backups'), description: t('nav.platform.backups.desc') },
         { kind: 'leaf', id: 'policy', icon: SlidersHorizontal,
           label: t('nav.platform.policy'), description: t('nav.platform.policy.desc') },
+        { kind: 'leaf', id: 'platform_telegram', icon: Bot,
+          label: t('nav.platform.telegram'), description: t('nav.platform.telegram.desc') },
       ],
     },
   ];

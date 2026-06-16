@@ -22,9 +22,13 @@ import {
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import {
   Plus, RefreshCw, Eye, Pencil, Trash2, Ban, FileText, ArrowRightCircle, Printer,
-  Mail, ChevronDown, Search, Settings,
+  Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2,
 } from 'lucide-react';
+import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
@@ -880,6 +884,11 @@ function QuotationDetailDialog({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
+  // Separate from `busy` so the Send dropdown can show a spinner +
+  // disable itself while a Telegram dispatch is in flight, without
+  // also locking out Convert/Close (which use `busy`). Prevents
+  // double-clicks from firing two sends.
+  const [telegramBusy, setTelegramBusy] = useState(false);
 
   const customer = quotation ? customers.find(c => c.id === quotation.customerId) : undefined;
 
@@ -897,6 +906,38 @@ function QuotationDetailDialog({
   useEffect(() => {
     settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
   }, []);
+
+  /** Manual "Send via Telegram" trigger. Captures the print template
+   *  to a PNG via html2canvas before calling the API so the customer
+   *  receives the actual WABOOKS layout via sendPhoto. The
+   *  {@code telegramBusy} flag blocks double-clicks until the
+   *  round-trip completes. */
+  const sendViaTelegram = async () => {
+    if (!quotation || telegramBusy) return;
+    setTelegramBusy(true);
+    try {
+      const imageDataUrl = await capturePrintImage();
+      const res = await quotationsApi.sendTelegram(quotation.id, imageDataUrl ?? undefined);
+      switch (res.status) {
+        case 'sent':
+          toast.success(`Quotation ${quotation.quotationNo} sent via Telegram`);
+          break;
+        case 'not_linked':
+          toast.error('Customer hasn\'t connected their Telegram yet — share the link from the Customers page first.');
+          break;
+        case 'disabled':
+          toast.error('Telegram delivery isn\'t configured on this server.');
+          break;
+        case 'failed':
+          toast.error(`Telegram send failed: ${res.message ?? 'unknown error'}`);
+          break;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Telegram send failed');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
 
   const doConvert = async () => {
     if (!quotation) return;
@@ -981,9 +1022,38 @@ function QuotationDetailDialog({
                 <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }}>
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setMailOpen(true)} title="Send quotation by email">
-                  <Mail className="h-3.5 w-3.5 mr-1" /> Mail
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" disabled={telegramBusy} title="Send this quotation to the customer">
+                      {telegramBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      {telegramBusy ? 'Sending…' : 'Send'}
+                      <ChevronDown className="h-3 w-3 ml-1.5 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem onSelect={() => setMailOpen(true)}>
+                      <Mail className="h-4 w-4 mr-2 text-blue-600" />
+                      Email
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        // Stop the auto-close so we can drive the
+                        // busy state ourselves; the menu still
+                        // closes via the dropdown's own focus loss.
+                        e.preventDefault();
+                        if (!telegramBusy) void sendViaTelegram();
+                      }}
+                      disabled={telegramBusy}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
+                      Telegram
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {canEdit && quotation.status === 'progress' && (
                   <Button size="sm" variant="outline" disabled={busy}
                           onClick={() => onEdit(quotation)}>
@@ -1240,16 +1310,23 @@ function QBiLabel({ kh, en }: { kh: string; en: string }) {
 
 function QVatTinBoxes({ tin }: { tin: string }) {
   const chars = tin.trim().split('');
+  // See Invoices.tsx VatTinBoxes for why this uses flex + flex-shrink
+  // instead of inline-block — html2canvas rendered the previous shape
+  // with one digit per line.
   return (
-    <div style={{ display: 'inline-flex', gap: '2px', verticalAlign: 'middle' }}>
+    <span style={{
+      display: 'inline-flex', flexWrap: 'nowrap', gap: '2px',
+      verticalAlign: 'middle', whiteSpace: 'nowrap',
+    }}>
       {chars.map((c, i) => (
         <span key={i} style={{
-          display: 'inline-block', width: '14px', height: '16px', lineHeight: '16px',
-          textAlign: 'center', fontSize: '11px',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          flex: '0 0 auto', width: '14px', height: '16px', fontSize: '11px',
           border: c === '-' ? 'none' : '1px solid #000',
+          boxSizing: 'border-box',
         }}>{c}</span>
       ))}
-    </div>
+    </span>
   );
 }
 

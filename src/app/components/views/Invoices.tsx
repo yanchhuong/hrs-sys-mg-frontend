@@ -36,10 +36,11 @@ import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
 import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
+import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -1554,6 +1555,47 @@ function InvoiceDetailDialog({
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [mailDialogOpen, setMailDialogOpen] = useState(false);
+  // Dedicated flag for the Telegram send so the dropdown trigger
+  // can show a spinner + block double-clicks without also locking
+  // out the Edit / Void / Record-payment actions that share `busy`.
+  const [telegramBusy, setTelegramBusy] = useState(false);
+
+  /** Manual "Send via Telegram" trigger. Hits the synchronous
+   *  send endpoint so the operator sees an immediate toast for the
+   *  three outcomes that matter: delivered, customer not linked,
+   *  or agent unreachable.
+   *
+   *  <p>Captures the currently-mounted print template DOM as a PNG
+   *  before calling the API so the customer receives the actual
+   *  WABOOKS layout via Telegram sendPhoto. Capture failures fall
+   *  back silently to a plain text message — never blocks the
+   *  send.</p> */
+  const sendViaTelegram = async () => {
+    if (!invoice || telegramBusy) return;
+    setTelegramBusy(true);
+    try {
+      const imageDataUrl = await capturePrintImage();
+      const res = await invoicesApi.sendTelegram(invoice.id, imageDataUrl ?? undefined);
+      switch (res.status) {
+        case 'sent':
+          toast.success(`Invoice ${invoice.invoiceNo} sent via Telegram`);
+          break;
+        case 'not_linked':
+          toast.error('Customer hasn\'t connected their Telegram yet — share the link from the Customers page first.');
+          break;
+        case 'disabled':
+          toast.error('Telegram delivery isn\'t configured on this server.');
+          break;
+        case 'failed':
+          toast.error(`Telegram send failed: ${res.message ?? 'unknown error'}`);
+          break;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Telegram send failed');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
 
@@ -1713,14 +1755,44 @@ function InvoiceDetailDialog({
                 <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
-                <Button
-                  size="sm" variant="outline"
-                  onClick={() => setMailDialogOpen(true)}
-                  disabled={invoice.status === 'draft'}
-                  title={invoice.status === 'draft' ? 'Issue the invoice before mailing' : 'Send invoice via email'}
-                >
-                  <Mail className="h-3.5 w-3.5 mr-1" /> Mail
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={invoice.status === 'draft' || telegramBusy}
+                      title={invoice.status === 'draft'
+                        ? 'Issue the invoice before sending'
+                        : 'Send invoice to the customer'}
+                    >
+                      {telegramBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      {telegramBusy ? 'Sending…' : 'Send'}
+                      <ChevronDown className="h-3 w-3 ml-1.5 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem onSelect={() => setMailDialogOpen(true)}>
+                      <Mail className="h-4 w-4 mr-2 text-blue-600" />
+                      Email
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        // Keep the menu's auto-close from firing the
+                        // handler twice, then drive the spinner
+                        // ourselves via telegramBusy.
+                        e.preventDefault();
+                        if (!telegramBusy) void sendViaTelegram();
+                      }}
+                      disabled={telegramBusy}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
+                      Telegram
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {/* Edit available only on draft + progress per the
                     legal-document rule — paid / partially / overdue /
                     void rows must be adjusted via a credit or debit
@@ -2227,25 +2299,42 @@ function PaidStamp({ show, variant = 'popup' }: { show: boolean; variant?: 'popu
  *  requirement is one cell per character, the dash included. */
 function VatTinBoxes({ tin }: { tin: string }) {
   const chars = tin.trim().split('');
+  // Layout switched from inline-flex + inline-block to flex with
+  // explicit no-wrap, flex-shrink:0 + box-sizing:border-box on each
+  // cell — under html2canvas the previous shape rendered every digit
+  // on its own line because inline-block descendants inside an
+  // inline-flex parent aren't measured consistently. The new shape
+  // also renders identically in native print, so this isn't a
+  // capture-only workaround.
   return (
-    <div style={{ display: 'inline-flex', gap: '2px', verticalAlign: 'middle' }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        flexWrap: 'nowrap',
+        gap: '2px',
+        verticalAlign: 'middle',
+        whiteSpace: 'nowrap',
+      }}
+    >
       {chars.map((c, i) => (
         <span
           key={i}
           style={{
-            display: 'inline-block',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: '0 0 auto',
             width: '14px',
             height: '16px',
-            lineHeight: '16px',
-            textAlign: 'center',
             fontSize: '11px',
             border: c === '-' ? 'none' : '1px solid #000',
+            boxSizing: 'border-box',
           }}
         >
           {c}
         </span>
       ))}
-    </div>
+    </span>
   );
 }
 

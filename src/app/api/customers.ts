@@ -2,6 +2,10 @@ import { apiJson, apiVoid } from './client';
 
 export type CustomerType = 'individual' | 'business';
 
+/** Business sub-classification (V109). Only meaningful when
+ *  type='business'; drives TIN visibility / required-ness. */
+export type BusinessSubType = 'non_taxable' | 'taxable' | 'oversee';
+
 export interface Customer {
   id: string;
   type: CustomerType;
@@ -9,9 +13,15 @@ export interface Customer {
   name: string;
   phone?: string | null;
   address?: string | null;
+  /** National ID (individuals) or business reg id (businesses). */
+  cid?: string | null;
+  email?: string | null;
+  /** Tax Identification Number — present only on taxable businesses. */
   tin?: string | null;
   representative?: string | null;
   site?: string | null;
+  /** Business sub-type. Null for individuals. */
+  businessType?: BusinessSubType | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -21,10 +31,14 @@ export interface CustomerRequest {
   name: string;
   phone?: string;
   address?: string;
-  /** Required when type='business'; ignored otherwise. */
+  cid?: string;
+  email?: string;
+  /** Required when type='business' AND businessType='taxable'. */
   tin?: string;
   representative?: string;
   site?: string;
+  /** Required when type='business'. */
+  businessType?: BusinessSubType;
 }
 
 export interface ListParams {

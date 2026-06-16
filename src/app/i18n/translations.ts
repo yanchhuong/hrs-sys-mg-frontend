@@ -79,6 +79,7 @@ export const dict: Dict = {
   'nav.setting.usermgmt':     { en: 'User Management',      km: 'គ្រប់គ្រងអ្នកប្រើ',    zh: '用户管理' },
   'nav.setting.empset':       { en: 'Employee Settings',    km: 'ការកំណត់បុគ្គលិក',  zh: '员工设置' },
   'nav.setting.payrollcat':   { en: 'Payroll Categories',   km: 'ប្រភេទប្រាក់ខែ',      zh: '薪资类别' },
+  'nav.setting.telegram':     { en: 'Telegram Bot',         km: 'ប្រព័ន្ធ Telegram',   zh: 'Telegram 机器人' },
 
   // --- Employee Settings page --------------------------------------------
   'page.employeeSettings.title':           { en: 'Employee Settings',    km: 'ការកំណត់បុគ្គលិក',           zh: '员工设置' },
@@ -133,6 +134,8 @@ export const dict: Dict = {
   'nav.platform.plans.desc':     { en: 'Pricing tiers and limits',   km: 'កម្រិតតម្លៃ និងដែនកំណត់', zh: '定价层级与限额' },
   'nav.platform.tenantmodules.desc': { en: 'Per-tenant menu access', km: 'សិទ្ធិម៉ឺនុយតាមអតិថិជន', zh: '按租户的菜单访问' },
   'nav.platform.policy.desc':    { en: 'Global security + features', km: 'សុវត្ថិភាព និងមុខងារសាកល', zh: '全局安全与功能' },
+  'nav.platform.telegram':       { en: 'Telegram Bot',               km: 'Telegram Bot',           zh: 'Telegram 机器人' },
+  'nav.platform.telegram.desc':  { en: 'Shared fallback bot for all tenants', km: 'ប្រព័ន្ធ Telegram សម្រាប់អតិថិជនទាំងអស់', zh: '所有租户共享的备用机器人' },
   'nav.platform.settings':       { en: 'Settings',                   km: 'ការកំណត់',            zh: '设置' },
   'nav.platform.settings.desc':  { en: 'Activity, backups, policy, payroll & holidays', km: 'សកម្មភាព, ស្ដារ, គោលការណ៍, ប្រាក់ខែ', zh: '活动、备份、策略、薪资与节假日' },
   'nav.platform.payrollcat':     { en: 'Payroll Categories',         km: 'ប្រភេទប្រាក់ខែ',     zh: '薪资类别' },

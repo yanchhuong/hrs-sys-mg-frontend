@@ -153,6 +153,7 @@ const MODULES: ModuleDef[] = [
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
   { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },
+  { key: 'telegram',          label: 'Telegram Bot',      description: 'Register a Telegram bot to deliver invoices to customers',   parent: 'settings-group' },
 ];
 
 /**
