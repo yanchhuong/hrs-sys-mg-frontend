@@ -130,6 +130,11 @@ export interface OTSettings {
 export type PayrollCategoryKind = 'earning' | 'deduction';
 export type PayrollCategoryValueType = 'flat' | 'percentage' | 'day';
 
+/** Salary-type tokens shared with the backend (V113). The Payroll
+ *  Settings popup writes these per category to drive upload + generate
+ *  filtering by batch type. */
+export type PayrollSalaryTypeToken = '1st' | '2nd' | 'onetime';
+
 export interface PayrollCategory {
   id: string;
   code: string;              // stable machine key (e.g. "basic", "nssf")
@@ -140,6 +145,16 @@ export interface PayrollCategory {
   order: number;             // display / column order within its kind
   enabled: boolean;          // toggled off = hidden from payroll but preserved for history
   system: boolean;           // true = built-in seed row, cannot be deleted (only disabled/renamed)
+  /** Salary types this category should appear on (V113). Empty array =
+   *  category exists but no batch type includes it. Optional so legacy
+   *  localStorage rows (pre-V113) deserialise — readers default to all
+   *  three tokens when absent. */
+  enabledSalaryTypes?: PayrollSalaryTypeToken[];
+  /** Salary types this category is *allowed* to appear on (V114).
+   *  Different from {@link enabledSalaryTypes}: this one controls
+   *  visibility at all (hides domain-locked rows from irrelevant tabs).
+   *  Optional with the same legacy-row fallback. */
+  applicableSalaryTypes?: PayrollSalaryTypeToken[];
 }
 
 export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';

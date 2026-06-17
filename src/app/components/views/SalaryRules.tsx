@@ -231,7 +231,6 @@ export function SalaryRules({ embedded = false }: Props = {}) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Salary Rules</h1>
-            <p className="text-gray-500">Set base salary tiers based on years of experience.</p>
           </div>
           {canCreateRule && (
             <Button onClick={openAdd}>

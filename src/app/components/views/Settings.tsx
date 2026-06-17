@@ -67,7 +67,6 @@ export function Settings() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">{t('page.settings.title')}</h1>
-        <p className="text-gray-500">{t('page.settings.description')}</p>
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">

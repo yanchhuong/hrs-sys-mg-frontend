@@ -19,7 +19,20 @@ export interface BankAccount {
   /** KHRQR image as a base64 data URL (e.g. `data:image/png;base64,…`).
    *  Empty string when no image uploaded yet. */
   qrDataUrl: string;
+  /** When true this card is one of the rails printed on the invoice.
+   *  Capped at two checked rows — the printed footer only has room
+   *  for two QR cards side by side. Optional on the type so legacy
+   *  localStorage rows (pre-V112) deserialise without an explicit
+   *  value; {@link loadBankAccounts} defaults missing values to
+   *  false so a stored card doesn't suddenly start printing. */
+  showOnInvoice?: boolean;
 }
+
+/** Hard cap on the number of bank cards that can render on the
+ *  printed invoice — two side-by-side QRs fit; a third spills onto
+ *  a second row and breaks the WABOOKS layout. Surfaced as a const
+ *  so the dialog + the print filter stay in lockstep. */
+export const MAX_BANK_ACCOUNTS_ON_INVOICE = 2;
 
 export const EMPTY_BANK_ACCOUNT: BankAccount = {
   id: '',
@@ -28,6 +41,7 @@ export const EMPTY_BANK_ACCOUNT: BankAccount = {
   accountNumber: '',
   notes: '',
   qrDataUrl: '',
+  showOnInvoice: false,
 };
 
 const TENANT_KEY = 'hrms:tenantSlug';

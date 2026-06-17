@@ -268,7 +268,6 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Positions</h1>
-            <p className="text-gray-500">Manage job positions and titles used when assigning employees.</p>
           </div>
           {canCreatePos && (
             <Button onClick={openAdd}>

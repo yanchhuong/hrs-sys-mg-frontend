@@ -150,9 +150,6 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
       {!embedded && (
         <div>
           <h1 className="text-3xl font-bold">Device Users</h1>
-          <p className="text-gray-500">
-            Resolve fingerprint device user-ids that don't match any employee in the tenant.
-          </p>
         </div>
       )}
 

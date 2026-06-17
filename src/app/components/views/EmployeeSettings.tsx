@@ -90,7 +90,6 @@ export function EmployeeSettings() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">{t('page.employeeSettings.title')}</h1>
-        <p className="text-gray-500">{t('page.employeeSettings.description')}</p>
       </div>
 
       {/* Global KPI cards — mirror the User Management page layout: cards

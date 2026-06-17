@@ -1558,7 +1558,6 @@ export function Attendance() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('page.attendance.title')}</h1>
-          <p className="text-gray-500">{t('page.attendance.description')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}

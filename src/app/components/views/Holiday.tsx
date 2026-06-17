@@ -402,7 +402,6 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
         {!embedded && (
           <div>
             <h1 className="text-3xl font-bold">Holiday Management</h1>
-            <p className="text-gray-500">Configure public and company holidays — clone year-over-year, filter, and inspect.</p>
           </div>
         )}
         <div className={`flex flex-wrap gap-2 ${embedded ? 'ml-auto' : ''}`}>

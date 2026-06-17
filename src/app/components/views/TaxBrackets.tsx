@@ -216,7 +216,6 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
       {!embedded && (
         <div>
           <h1 className="text-3xl font-bold">Tax Brackets</h1>
-          <p className="text-gray-500">Cambodia progressive Tax on Salary (TOS) configuration.</p>
         </div>
       )}
 

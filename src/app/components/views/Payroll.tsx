@@ -47,7 +47,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon } from 'lucide-react';
+import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
 import { PayrollBatchStatus } from '../../types/settings';
@@ -188,6 +189,10 @@ export function Payroll() {
   const { currentUser, currentEmployee, canUpdate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  // Settings popup — toggles `enabled` on each payroll-category row
+  // (earnings + deductions) via PATCH. Lives behind the gear icon
+  // next to "Generate Payroll".
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which flow opened the dialog. 'upload' = old Excel roundtrip;
    *  'generate' = direct POST via handleGeneratePayroll. Drives the
    *  dialog title and hides the Excel picker + parse preview when we're
@@ -315,6 +320,10 @@ export function Payroll() {
           valueType: c.valueType, defaultAmount: c.defaultAmount,
           order: (c as any).displayOrder ?? c.order ?? 0,
           enabled: c.enabled, system: (c as any).isSystem ?? c.system ?? false,
+          // V113 / V114 — preserve the per-salary-type settings so
+          // the Upload + Generate flows can filter by batch type.
+          enabledSalaryTypes: c.enabledSalaryTypes,
+          applicableSalaryTypes: c.applicableSalaryTypes,
         })));
       } catch {
         // Non-fatal — template / preview just falls back to localStorage.
@@ -323,13 +332,44 @@ export function Payroll() {
     })();
     return () => { cancelled = true; };
   }, [categoriesVersion]);
+  // Map the batch-type label to the salary-type token stored on each
+  // category (V113 / V114). The Payroll Settings popup writes these
+  // per category so the upload + generate flows below show exactly
+  // the same on/off layout HR configured in the popup.
+  const salaryToken: 'first' | '1st' | '2nd' | 'onetime' =
+      batchType === '1st Salary'      ? '1st'
+    : batchType === '2nd Salary'      ? '2nd'
+    : /* 'One Time Salary' */            'onetime';
+
+  /** True when the category is permitted to appear on the current
+   *  batch type (applicable list) AND is toggled on for it
+   *  (enabled list). Categories missing the new fields (legacy
+   *  localStorage rows pre-V113) fall back to "on everywhere" so
+   *  upgrading users don't suddenly see empty columns. */
+  const matchesSalaryType = (c: PayrollCategory): boolean => {
+    const applicable = c.applicableSalaryTypes;
+    if (applicable && !applicable.includes(salaryToken as any)) return false;
+    const enabled = c.enabledSalaryTypes;
+    if (enabled && !enabled.includes(salaryToken as any)) return false;
+    return true;
+  };
+
   const earningCategories = useMemo(
-    () => payrollCategories.filter((c) => c.kind === 'earning' && c.enabled).sort((a, b) => a.order - b.order),
-    [payrollCategories],
+    () => payrollCategories
+        .filter(c => c.kind === 'earning' && c.enabled && matchesSalaryType(c))
+        .sort((a, b) => a.order - b.order),
+    // matchesSalaryType closes over batchType so the memo must depend
+    // on it too — otherwise switching from "1st Salary" to "2nd Salary"
+    // would keep stale filter results.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [payrollCategories, batchType],
   );
   const deductionCategories = useMemo(
-    () => payrollCategories.filter((c) => c.kind === 'deduction' && c.enabled).sort((a, b) => a.order - b.order),
-    [payrollCategories],
+    () => payrollCategories
+        .filter(c => c.kind === 'deduction' && c.enabled && matchesSalaryType(c))
+        .sort((a, b) => a.order - b.order),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [payrollCategories, batchType],
   );
   // Earning categories shown in the Upload Payroll Batch dialog. For a
   // "1st Salary" mid-month batch only the two valid earnings appear —
@@ -360,11 +400,17 @@ export function Payroll() {
   const isSeniorityAllowed = isSeniorityAllowedBatchType && isSeniorityMonth;
 
   const uploadEarningCategories = useMemo(() => {
-    // On a "1st Salary" mid-month batch only first_salary + bonus apply —
-    // Basic / Position / Evaluation are part of the 2nd-half (full)
-    // payslip and are intentionally hidden here.
+    // `earningCategories` is already settings-filtered (V113/V114),
+    // so we don't repeat the per-batch-type allowlist here. Two
+    // domain-rule augmentations remain on top:
+    //   • Mid-month '1st Salary' batches carry no Employee-field
+    //     columns (Basic / Position / Evaluation belong on the
+    //     end-of-month payslip).
+    //   • Seniority Indemnity prints only on June + December batches
+    //     per Cambodian Labour Law — a rule that's universal across
+    //     tenants and stays hard-coded, not in Settings.
     if (batchType === '1st Salary') {
-      return earningCategories.filter(c => FIRST_SALARY_ALLOWED.has(c.code.toLowerCase()));
+      return earningCategories;
     }
     const withSeniorityFilter = earningCategories.filter(c =>
       c.code.toLowerCase() !== 'seniority_indemnity' || isSeniorityAllowed,
@@ -373,41 +419,40 @@ export function Payroll() {
   }, [earningCategories, batchType, EMPLOYEE_FIELD_EARNINGS, isSeniorityAllowed]);
 
   // Full category list (earnings + deductions) that downloadPayrollTemplate
-  // and the upload parser both consume. Filtering is done by (kind, code)
-  // here — NOT by `excludedCodes` alone — because the same `code`
-  // ('first_salary') exists on both the earning and deduction sides, so
-  // a code-only Set can't distinguish them. The rules:
-  //   • 1st Salary batch  — earnings: first_salary + bonus only;
-  //                         no deductions render on a mid-month payslip.
-  //   • 2nd Salary batch  — drop the first_salary EARNING; keep the
-  //                         first_salary DEDUCTION (clawback).
-  //   • Salary / Salary & Bonus — drop first_salary on BOTH sides.
-  // Per-batch `excludedCodes` filters this further at the call site.
+  // and the upload parser both consume. The per-batch-type filter is
+  // driven by the Payroll Settings popup (V113/V114) — whatever HR
+  // toggled on for the active Salary Type tab is what gets included
+  // here. One domain rule still lives in code: Seniority Indemnity
+  // is paid only on June + December batches per Cambodian Labour Law,
+  // regardless of Settings (universal across tenants).
   const templateCategories = useMemo(() => {
     const filtered = payrollCategories.filter(c => {
-      if (c.kind === 'earning') {
-        if (batchType === '1st Salary') {
-          return FIRST_SALARY_ALLOWED.has(c.code.toLowerCase());
-        }
-        // first_salary EARNING only belongs on a mid-month batch.
-        if (c.code.toLowerCase() === 'first_salary') return false;
-        // Seniority Indemnity only on Salary / 2nd Salary of Jun or Dec.
-        if (c.code.toLowerCase() === 'seniority_indemnity' && !isSeniorityAllowed) return false;
-        return true;
-      }
-      if (c.kind === 'deduction') {
-        if (batchType === '1st Salary') return false;
-        if (c.code.toLowerCase() === 'first_salary') {
-          return batchType === '2nd Salary';
-        }
-        return true;
+      if (!c.enabled) return false;
+      if (!matchesSalaryType(c)) return false;
+      if (c.kind === 'earning'
+          && c.code.toLowerCase() === 'seniority_indemnity'
+          && !isSeniorityAllowed) {
+        return false;
       }
       return true;
     });
+    // Mid-month "1st Salary" payslip carries no Employee-field columns —
+    // Basic / Position / Evaluation are paid on the end-of-month batch.
     return batchType === '1st Salary'
       ? filtered
       : [...EMPLOYEE_FIELD_EARNINGS, ...filtered];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payrollCategories, batchType, EMPLOYEE_FIELD_EARNINGS, isSeniorityAllowed]);
+
+  // Reset excludedCodes whenever the batch type changes so a previous
+  // batch's exclusion choices don't carry over and strike-through
+  // categories that the new batch type's Settings already enable.
+  // V113/V114 made Settings the source of truth for visibility, so
+  // each batch type starts fresh and excludedCodes only carries
+  // *additional* per-upload exclusions HR ticks off afterwards.
+  useEffect(() => {
+    setExcludedCodes(new Set());
+  }, [batchType]);
 
   // Keep excludedCodes in sync with the per-batch-type rules:
   //   • "1st Salary"  — only first_salary + bonus earnings; all
@@ -1579,7 +1624,6 @@ export function Payroll() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('page.payroll.title')}</h1>
-          <p className="text-gray-500">{t('page.payroll.description')}</p>
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-2">
@@ -1615,10 +1659,27 @@ export function Payroll() {
               </DialogTrigger>
               <DialogContent className="max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-                  <DialogTitle>
+                  <DialogTitle className="inline-flex items-center gap-1.5">
                     {uploadDialogMode === 'generate' ? 'Generate Payroll Batch' : 'Upload Payroll Batch'}
+                    {uploadDialogMode === 'generate' && (
+                      <TooltipProvider delayDuration={120}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                              <Info className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                            Auto-fill from Employee record + OT + Increases — no Excel roundtrip.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                   </DialogTitle>
-                  <DialogDescription>
+                  {/* DialogDescription kept (sr-only) for Radix
+                      accessibility, but visually hidden — the tooltip
+                      next to the title carries the hint instead. */}
+                  <DialogDescription className="sr-only">
                     {uploadDialogMode === 'generate'
                       ? 'Auto-fill from Employee record + OT + Increases — no Excel roundtrip.'
                       : 'Upload Excel file with payroll data for multiple employees'}
@@ -1694,8 +1755,21 @@ export function Payroll() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>
+                    <Label className="inline-flex items-center gap-1.5">
                       Approvers <span className="text-xs font-normal text-gray-500">(optional, up to {APPROVER_LIMIT})</span>
+                      <TooltipProvider delayDuration={120}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                              <Info className="h-3.5 w-3.5" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                            Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch.
+                            Leave empty to auto-approve on upload (useful when no second admin is available).
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </Label>
                     <ApproverPicker
                       adminUsers={adminUsers}
@@ -1705,9 +1779,6 @@ export function Payroll() {
                       onChange={setBatchApproverIds}
                       max={APPROVER_LIMIT}
                     />
-                    <p className="text-xs text-gray-500">
-                      Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch. <strong>Leave empty to auto-approve on upload</strong> (useful when no second admin is available).
-                    </p>
                   </div>
 
                   {uploadDialogMode === 'upload' && (
@@ -2086,11 +2157,12 @@ export function Payroll() {
                         </span>
                       )
                     ) : (
-                      <span className="text-xs text-gray-400">
-                        {uploadDialogMode === 'generate'
-                          ? 'Auto-fills from Employee record + OT + Increases on Generate'
-                          : 'Select a file to preview'}
-                      </span>
+                      // Generate mode no longer renders a footer hint —
+                      // the (i) tooltip beside the dialog title carries
+                      // the same message without crowding the footer.
+                      uploadDialogMode === 'generate' ? null : (
+                        <span className="text-xs text-gray-400">Select a file to preview</span>
+                      )
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
@@ -2225,6 +2297,18 @@ export function Payroll() {
                 dropdown now lives inside the Payroll Details card
                 (rendered below when selectedBatch is set) and only
                 exports the rows of the batch you're looking at. */}
+            {/* Gear icon — opens the on/off toggle popup for the
+                earning + deduction categories. Sits to the left of
+                Generate Payroll so HR can tweak the category set
+                before firing a new batch. */}
+            <Button
+              variant="outline"
+              size="icon"
+              title="Payroll settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </Button>
             {/* Generate Payroll is a 3-way dropdown — picking an option
                 sets the batch type and opens the upload dialog in
                 generate mode so HR jumps straight to a pre-typed batch
@@ -2254,6 +2338,14 @@ export function Payroll() {
           )}
         </div>
       </div>
+
+      {/* Category on/off popup — mounted at the page level so the
+          dialog overlays the whole Payroll view, not just the action
+          bar. State stays scoped to this component. */}
+      <PayrollCategoryToggleDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
 
       {isAdminOrManager && !selectedBatch && (() => {
         // In live mode, summary cards are sourced from the batches list — the

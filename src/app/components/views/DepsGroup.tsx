@@ -534,7 +534,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
-            <p className="text-gray-500">{t('page.depsgroup.description')}</p>
           </div>
           {canCreateDept && (
             <Button onClick={openAdd}>

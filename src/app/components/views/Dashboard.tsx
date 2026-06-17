@@ -135,7 +135,6 @@ export function Dashboard() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
         <div className="rounded-md border border-blue-200 bg-blue-50 p-6 flex items-center gap-3">
           <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
@@ -155,7 +154,6 @@ export function Dashboard() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -310,7 +308,6 @@ export function Dashboard() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -383,7 +380,6 @@ export function Dashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-gray-500">Welcome back, {currentEmployee?.name}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

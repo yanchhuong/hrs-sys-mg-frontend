@@ -83,7 +83,6 @@ export function Contracts() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">User Management</h1>
-          <p className="text-gray-500">Manage employee contracts and HR information</p>
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />

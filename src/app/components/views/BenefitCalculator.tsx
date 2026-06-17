@@ -247,9 +247,6 @@ export function BenefitCalculator() {
           <Calculator className="h-7 w-7 text-blue-600" />
           Benefit Calculator
         </h1>
-        <p className="text-gray-500 mt-1 max-w-3xl">
-          One-shot calculators for benefits that don't fit the regular monthly Salary batch — pick the right window, preview the eligibility table, and generate a dedicated payroll batch routed through the standard approval flow.
-        </p>
       </div>
 
       {/* Two-row layout — earnings on top (Seniority, AL Remain, 5% Severance),

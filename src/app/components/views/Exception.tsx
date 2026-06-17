@@ -419,7 +419,6 @@ export function Exception() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
-          <p className="text-gray-500">{t('page.exception.description')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {showScopePicker && mode === 'day' && (

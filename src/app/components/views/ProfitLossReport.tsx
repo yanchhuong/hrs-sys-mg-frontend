@@ -112,10 +112,6 @@ export function ProfitLossReport() {
             <Button onClick={load} disabled={loading}>
               {loading ? 'Loading…' : 'Apply'}
             </Button>
-            <div className="ml-auto text-xs text-gray-500 max-w-xs text-right">
-              Income from Invoices (Sales side); expenses from Bills and Receipts (Purchase side).
-              Drafts and voided documents are excluded.
-            </div>
           </div>
         </CardHeader>
       </Card>

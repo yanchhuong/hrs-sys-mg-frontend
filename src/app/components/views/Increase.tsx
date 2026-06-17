@@ -521,7 +521,6 @@ export function Increase() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('page.increase.title')}</h1>
-          <p className="text-gray-500">{t('page.increase.description')}</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative">

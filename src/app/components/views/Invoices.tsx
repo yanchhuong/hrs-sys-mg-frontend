@@ -34,13 +34,13 @@ import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
-import { loadBankAccounts } from '../../utils/bankAccount';
+import { loadBankAccounts, MAX_BANK_ACCOUNTS_ON_INVOICE } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -429,6 +429,11 @@ export function Invoices() {
   const totalsByCurrency = useMemo(() => {
     const m = new Map<string, { total: number; paid: number; paidUsd: number; paidKhr: number; remain: number }>();
     for (const r of groupedRows) {
+      // Voided rows are still rendered (struck through) so HR can see
+      // *what* was cancelled, but they must not skew any footer sum —
+      // not Total, not Paid, not Remain. A void is, by definition, a
+      // row that doesn't exist in the ledger.
+      if (r.status === 'void') continue;
       const c = r.currency || 'USD';
       if (!m.has(c)) m.set(c, { total: 0, paid: 0, paidUsd: 0, paidKhr: 0, remain: 0 });
       const slot = m.get(c)!;
@@ -633,8 +638,17 @@ export function Invoices() {
                 <TableBody>
                   {pagination.paginatedItems.map(inv => {
                     const isAdjustment = !!inv.parentInvoiceId;
+                    const isVoid = inv.status === 'void';
+                    // Voided rows: strike + grey out so the row reads
+                    // "cancelled, ignore" at a glance. Cells still
+                    // render (operators want to see *what* was voided),
+                    // they just no longer count in the footer sum.
+                    const rowClass = [
+                      isAdjustment ? 'bg-slate-50/50' : '',
+                      isVoid ? 'line-through text-gray-400' : '',
+                    ].filter(Boolean).join(' ');
                     return (
-                    <TableRow key={inv.id} className={isAdjustment ? 'bg-slate-50/50' : ''}>
+                    <TableRow key={inv.id} className={rowClass}>
                       <TableCell className="font-mono text-sm">
                         {isAdjustment && (
                           <span className="text-gray-400 mr-1.5" title="Adjusts the parent invoice above">↳</span>
@@ -685,7 +699,13 @@ export function Invoices() {
                         const isCn = inv.kind === 'credit_note';
                         const cellClass = isCn ? 'text-red-700' : 'text-gray-600';
                         const render = (val: number, cur: 'USD' | 'KHR') => {
-                          if (!val) return <span className="text-gray-300">—</span>;
+                          // inline-block breaks text-decoration
+                          // inheritance from the parent row, so a
+                          // voided row's line-through doesn't stack
+                          // on top of the em-dash glyph (which would
+                          // otherwise look like a double horizontal
+                          // line — bad UI).
+                          if (!val) return <span className="text-gray-300 inline-block">—</span>;
                           return isCn
                             ? `− ${fmtMoney(Math.abs(val), cur)}`
                             : fmtMoney(val, cur);
@@ -878,6 +898,12 @@ interface FormItem {
   unit?: string;
   quantity: string;
   unitPrice: string;
+  /** Holds the raw text the user is typing in the Total cell while
+   *  that cell has focus. Lets the input stay controlled without
+   *  glitching against the round-trip rounded value (the canonical
+   *  state is still {@link #unitPrice}; we back-compute it on every
+   *  total keystroke). Cleared on blur. */
+  totalEditing?: string;
 }
 
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
@@ -1058,12 +1084,35 @@ function InvoiceFormDialog({
     if (!validate()) return;
     setSaving(true);
     try {
+      let saved: invoicesApi.Invoice;
       if (isEdit && editing) {
-        await invoicesApi.update(editing.id, buildPayload());
+        saved = await invoicesApi.update(editing.id, buildPayload());
         toast.success(`${editing.invoiceNo} updated`);
       } else {
-        await invoicesApi.create(buildPayload());
+        saved = await invoicesApi.create(buildPayload());
         toast.success(`${KIND_LABEL[kind]} created as draft`);
+      }
+      // Auto-send via Telegram when the Invoice Settings toggle is
+      // on. Text-only path here — the print template isn't mounted
+      // in the form context so html2canvas would find no element.
+      // The detail dialog's Send → Telegram button still captures
+      // the image when the operator triggers it manually.
+      if (settings.autoSendTelegram) {
+        try {
+          const res = await invoicesApi.sendTelegram(saved.id);
+          if (res.status === 'sent') {
+            toast.success('Sent to customer via Telegram');
+          } else if (res.status === 'not_linked') {
+            toast.info('Customer hasn\'t connected their Telegram yet — saved without sending.');
+          } else if (res.status === 'failed') {
+            toast.error(`Telegram send failed: ${res.message ?? 'unknown error'}`);
+          }
+        } catch (e) {
+          // Auto-send failures shouldn't block the save flow — the
+          // invoice already persisted, only the side-channel
+          // delivery missed. Surface as a warning, then continue.
+          toast.error(e instanceof Error ? e.message : 'Telegram auto-send failed');
+        }
       }
       await onCreated();
     } catch (e) {
@@ -1306,17 +1355,58 @@ function InvoiceFormDialog({
                     className="col-span-1 h-8 text-sm text-right"
                     type="number" min={0} step="0.01"
                     value={it.quantity}
-                    onChange={e => updateItem(idx, { quantity: e.target.value })}
+                    onChange={e => updateItem(idx, {
+                      quantity: e.target.value,
+                      // Changing qty invalidates a stale Total
+                      // override — fall back to the canonical
+                      // qty × unitPrice display.
+                      totalEditing: undefined,
+                    })}
                   />
                   <Input
                     className="col-span-2 h-8 text-sm text-right"
                     type="number" min={0} step="0.01"
                     value={it.unitPrice}
-                    onChange={e => updateItem(idx, { unitPrice: e.target.value })}
+                    onChange={e => updateItem(idx, {
+                      unitPrice: e.target.value,
+                      // Switching focus to Unit Price → Total returns
+                      // to the computed-from-unitPrice path.
+                      totalEditing: undefined,
+                    })}
                   />
-                  <div className="col-span-1 text-right text-sm tabular-nums px-2">
-                    {lineTotal.toFixed(2)}
-                  </div>
+                  {/* Total cell is editable too — typing here
+                      back-computes unitPrice = total ÷ qty. While the
+                      Total input has focus we display the raw user
+                      string verbatim (totalEditing) so the cursor
+                      doesn't jump as the rounded round-trip value
+                      changes; on blur we drop back to the canonical
+                      qty×unitPrice display. */}
+                  <Input
+                    className="col-span-1 h-8 text-sm text-right tabular-nums"
+                    type="number" min={0} step="0.01"
+                    value={it.totalEditing !== undefined
+                      ? it.totalEditing
+                      : lineTotal.toFixed(2)}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      const total = Number(raw);
+                      const qty = Number(it.quantity) || 0;
+                      // Keep enough precision on the back-computed
+                      // unitPrice so that for divisible totals the
+                      // displayed lineTotal lands exactly back on what
+                      // the user typed (e.g. qty=3, total=100 → uP
+                      // = 33.3333 → display = 99.9999). Stored as a
+                      // string so React doesn't rerun toFixed weirdly.
+                      const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
+                        ? String(total / qty)
+                        : it.unitPrice;
+                      updateItem(idx, {
+                        unitPrice: nextUnitPrice,
+                        totalEditing: raw,
+                      });
+                    }}
+                    onBlur={() => updateItem(idx, { totalEditing: undefined })}
+                  />
                   <Button
                     size="sm" variant="ghost"
                     className="col-span-1 h-8 w-8 p-0 text-red-600 hover:bg-red-50"
@@ -2382,10 +2472,15 @@ function PrintTaxInvoice({
   // four blank lines.
   // Bank cards from the Settings popup. Filter out the truly-empty rows
   // (newly-added card the admin never filled in) so they don't print as
-  // ghost columns; what remains gets rendered in a row below the notes.
-  const banks = loadBankAccounts('sale').filter(
+  // ghost columns. Then narrow to the rows the operator ticked "Show on
+  // invoice" — the printed footer only has room for two cards side by
+  // side. If nothing is ticked yet (legacy data, pre-V112 setup) we
+  // fall back to the first MAX so HR's existing setup keeps printing.
+  const filledBanks = loadBankAccounts('sale').filter(
     b => b.bankName || b.accountName || b.accountNumber || b.notes || b.qrDataUrl,
   );
+  const ticked = filledBanks.filter(b => b.showOnInvoice);
+  const banks = (ticked.length > 0 ? ticked : filledBanks).slice(0, MAX_BANK_ACCOUNTS_ON_INVOICE);
   const showBank = banks.length > 0;
 
   const tree = (
@@ -2559,48 +2654,66 @@ function PrintTaxInvoice({
             <div style={{ color: '#555', marginTop: invoice.notes ? '6px' : '0' }}>
               ** គណនីសម្រាប់បង់ប្រាក់ / Payment method:
             </div>
-            {/* Row of bank cards — QR on top (1:1 aspect), Account
-                Name + Number underneath. Matches the screen layout in
-                the Settings dialog so what HR sees is what prints. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '6px' }}>
+            {/* KHQR-card layout (customer-facing). The uploaded image
+                is the full branded KHQR card so we render it edge-to-
+                edge with no extra frame — wrapping it would put a
+                white box around a red brand panel and look amateur.
+                Bank name sits above (with icon), account number +
+                account holder name below in uppercase, matching the
+                screenshot HR pinned in chat. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px' }}>
               {banks.map(b => (
                 <div
                   key={b.id}
                   style={{
-                    width: '36mm',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    padding: '4px',
+                    width: '40mm',
                     textAlign: 'center',
-                    background: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
                   }}
                 >
+                  {b.bankName && (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#1e3a8a',
+                    }}>
+                      <Landmark style={{ width: 12, height: 12 }} />
+                      {b.bankName}
+                    </div>
+                  )}
                   {b.qrDataUrl ? (
                     <img
                       src={b.qrDataUrl}
-                      alt="KHRQR"
+                      alt="KHQR"
                       style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain' }}
                     />
                   ) : (
                     <div style={{
                       width: '100%', aspectRatio: '1 / 1',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: '#999', fontSize: '9px', border: '1px dashed #ddd', borderRadius: '4px',
+                      color: '#999', fontSize: '9px', border: '1px dashed #ddd', borderRadius: '8px',
                     }}>
                       (no QR)
                     </div>
                   )}
-                  {b.accountName && (
-                    <div style={{ marginTop: '3px', fontWeight: 600, fontSize: '10px' }}>{b.accountName}</div>
-                  )}
                   {b.accountNumber && (
-                    <div style={{ fontFamily: 'monospace', fontSize: '10px' }}>{b.accountNumber}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#111', letterSpacing: '0.3px' }}>
+                      {b.accountNumber}
+                    </div>
                   )}
-                  {b.bankName && (
-                    <div style={{ fontSize: '9px', color: '#555' }}>{b.bankName}</div>
+                  {b.accountName && (
+                    <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                      {b.accountName}
+                    </div>
                   )}
                   {b.notes && (
-                    <div style={{ fontSize: '9px', color: '#555' }}>{b.notes}</div>
+                    <div style={{ fontSize: '9px', color: '#666' }}>{b.notes}</div>
                   )}
                 </div>
               ))}

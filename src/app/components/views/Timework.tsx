@@ -29,7 +29,6 @@ export function Timework() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Time Work Management</h1>
-        <p className="text-gray-500">Manage timetables, shifts, and schedules</p>
       </div>
 
       <Tabs defaultValue="timetable" className="space-y-6">

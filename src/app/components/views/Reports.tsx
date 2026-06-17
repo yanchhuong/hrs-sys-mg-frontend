@@ -217,7 +217,6 @@ export function Reports({ initialView }: ReportsProps = {}) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">{t('page.reports.title')}</h1>
-          <p className="text-gray-500">{t('page.reports.description')}</p>
         </div>
         <Badge variant="secondary" className="text-sm">
           <TrendingUp className="h-3.5 w-3.5 mr-1.5" />

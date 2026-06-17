@@ -8,7 +8,8 @@ import {
 } from '../ui/table';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
-import { BookOpen, Printer, Calendar, Eye, ArrowLeft } from 'lucide-react';
+import { BookOpen, Printer, Calendar, Eye, ArrowLeft, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as ledgerApi from '../../api/ledgerReports';
 import { formatMoneyForCurrency } from '../../utils/format';
 
@@ -32,6 +33,31 @@ interface LedgerReportProps {
   /** Drives the endpoint + labels. 'sale' shows AR (customer side);
    *  'purchase' shows AP (vendor side). */
   kind: 'sale' | 'purchase';
+}
+
+/** Hover-hint that sits next to the "Received" / "Paid" header cells
+ *  in the grand totals strip. Spells out what the column actually is
+ *  in P&L terms — Income (+) on the sale side, Expense (-) on
+ *  purchase — so a reader can map the friendly label back to the
+ *  accounting concept without leaving the page. */
+function SettledTooltip({ kind }: { kind: 'sale' | 'purchase' }) {
+  const text = kind === 'sale'
+    ? 'Total Income (+) — money received from customers in this range.'
+    : 'Total Expense (−) — money paid to vendors in this range.';
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+            <Info className="h-3 w-3" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 /**
@@ -181,11 +207,6 @@ export function LedgerReport({ kind }: LedgerReportProps) {
             <Button onClick={load} disabled={loading}>
               {loading ? 'Loading…' : 'Apply'}
             </Button>
-            <div className="ml-auto text-xs text-gray-500 max-w-xs text-right">
-              Balance shows {labels.balanceMeaning}. Drafts and voided
-              documents are excluded; pre-range activity rolls into
-              each group's opening balance.
-            </div>
           </div>
         </CardHeader>
       </Card>
@@ -203,11 +224,17 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 <div className="text-lg font-mono mt-0.5">{formatMoney(report.grandTotalAmount, 'USD')}</div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.settledHeader} (USD)</div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
+                  {labels.settledHeader} (USD)
+                  <SettledTooltip kind={kind} />
+                </div>
                 <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.usd, 'USD')}</div>
               </div>
               <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.settledHeader} (KHR)</div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
+                  {labels.settledHeader} (KHR)
+                  <SettledTooltip kind={kind} />
+                </div>
                 <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.khr, 'KHR')}</div>
               </div>
               <div>

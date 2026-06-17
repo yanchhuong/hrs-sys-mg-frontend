@@ -475,6 +475,11 @@ interface FormLine {
   unit: string;
   quantity: string;
   unitPrice: string;
+  /** Holds the raw text the user is typing in the Total cell while
+   *  that cell has focus. Lets the input stay controlled while we
+   *  back-compute unitPrice = total ÷ qty without the cursor jumping
+   *  on every keystroke. Cleared on blur / qty / unitPrice edits. */
+  totalEditing?: string;
 }
 
 function newLine(): FormLine {
@@ -760,12 +765,51 @@ function QuotationFormDialog({
                           <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
                         </TableCell>
                         <TableCell>
-                          <Input className="text-right" value={l.quantity} onChange={e => updateLine(l.localId, { quantity: e.target.value })} />
+                          <Input className="text-right" value={l.quantity}
+                            onChange={e => updateLine(l.localId, {
+                              quantity: e.target.value,
+                              // Changing qty invalidates any stale
+                              // Total override — fall back to the
+                              // canonical qty × unitPrice display.
+                              totalEditing: undefined,
+                            })} />
                         </TableCell>
                         <TableCell>
-                          <Input className="text-right" value={l.unitPrice} onChange={e => updateLine(l.localId, { unitPrice: e.target.value })} />
+                          <Input className="text-right" value={l.unitPrice}
+                            onChange={e => updateLine(l.localId, {
+                              unitPrice: e.target.value,
+                              totalEditing: undefined,
+                            })} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">{fmtMoney(lineTotal, currency)}</TableCell>
+                        {/* Total is editable too — typing here back-
+                            computes unitPrice = total ÷ qty. While the
+                            input has focus we display the raw user
+                            text verbatim so the cursor doesn't jump
+                            on every rounded round-trip; on blur the
+                            cell snaps to the canonical fmtMoney
+                            display. */}
+                        <TableCell className="text-right tabular-nums text-sm">
+                          <Input
+                            className="text-right tabular-nums"
+                            type="number" min={0} step="0.01"
+                            value={l.totalEditing !== undefined
+                              ? l.totalEditing
+                              : lineTotal.toFixed(2)}
+                            onChange={e => {
+                              const raw = e.target.value;
+                              const total = Number(raw);
+                              const qty = Number(l.quantity) || 0;
+                              const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
+                                ? String(total / qty)
+                                : l.unitPrice;
+                              updateLine(l.localId, {
+                                unitPrice: nextUnitPrice,
+                                totalEditing: raw,
+                              });
+                            }}
+                            onBlur={() => updateLine(l.localId, { totalEditing: undefined })}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Button size="sm" variant="ghost" className="text-red-600" onClick={() => removeLine(l.localId)}>
                             <Trash2 className="h-3.5 w-3.5" />

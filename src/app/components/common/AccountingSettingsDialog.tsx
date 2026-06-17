@@ -6,12 +6,13 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2 } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
 import {
   loadBankAccounts, saveBankAccounts, newBankAccountId,
-  EMPTY_BANK_ACCOUNT, type BankAccount,
+  EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
@@ -40,6 +41,105 @@ interface Props {
   /** Fired after a successful save so the parent page can refresh
    *  whatever it cached about the toggles. */
   onSaved?: (next: settingsApi.AccountingSettings) => void;
+}
+
+/** Renders a small info badge next to a section title. Hover shows
+ *  the longer explanation. Used to replace the visible subtitle
+ *  paragraphs that used to sit under each section heading — they
+ *  pushed the toggles below the fold on a 14" screen for very little
+ *  payoff. */
+function HelpHint({ children }: { children: React.ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {children}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/** Auto-crop an uploaded KHQR image to just the QR square, dropping
+ *  the surrounding red brand frame. We classify a pixel as "QR ink"
+ *  when all three RGB channels are below 100 — that catches the QR's
+ *  neutral-black squares and the center-mark outline without being
+ *  fooled by the saturated red frame (R≥150, G/B≈0). The bounding box
+ *  of those pixels is the QR's body; we pad by 4% to preserve the
+ *  quiet zone, snap to a square (max(w,h)), and re-encode as PNG.
+ *
+ *  Falls back to the original on any failure (cross-origin canvas
+ *  taint, decode error, image without enough dark pixels). */
+async function cropToQrSquare(dataUrl: string): Promise<string> {
+  const img: HTMLImageElement = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload  = () => resolve(el);
+    el.onerror = () => reject(new Error('decode failed'));
+    el.src = dataUrl;
+  });
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+  if (!W || !H) return dataUrl;
+
+  const src = document.createElement('canvas');
+  src.width  = W;
+  src.height = H;
+  const sctx = src.getContext('2d');
+  if (!sctx) return dataUrl;
+  sctx.drawImage(img, 0, 0);
+  const { data } = sctx.getImageData(0, 0, W, H);
+
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      // Skip transparent pixels — a PNG with alpha 0 isn't QR ink.
+      if (data[i + 3] < 200) continue;
+      // QR ink = neutral-dark. Red frame fails this because its R
+      // channel is high while G/B are near zero.
+      if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] < 100) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return dataUrl;
+
+  const w = maxX - minX;
+  const h = maxY - minY;
+  // Padding for the QR quiet zone — without it scanners on some
+  // phones miss the corner finder patterns.
+  const pad = Math.round(Math.max(w, h) * 0.04);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const size = Math.max(w, h) + pad * 2;
+  let sx = Math.round(cx - size / 2);
+  let sy = Math.round(cy - size / 2);
+  // Bound the crop window inside the source — a centered QR on a
+  // tall card can otherwise spill above / below the source image.
+  if (sx < 0) sx = 0;
+  if (sy < 0) sy = 0;
+  const sSize = Math.min(size, Math.min(W - sx, H - sy));
+  if (sSize < 16) return dataUrl;
+
+  const out = document.createElement('canvas');
+  out.width  = sSize;
+  out.height = sSize;
+  const octx = out.getContext('2d');
+  if (!octx) return dataUrl;
+  // Fill white first so any padding outside the source ends up as
+  // the standard QR quiet-zone color, not transparent.
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, sSize, sSize);
+  octx.drawImage(src, sx, sy, sSize, sSize, 0, 0, sSize, sSize);
+  return out.toDataURL('image/png');
 }
 
 /** "x time ago" formatter — small + dependency-free. Falls back to
@@ -156,7 +256,13 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
 
   /** Read a file as a base64 data URL so the KHRQR survives a page
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are
-   *  ~30 KB; anything bigger is almost certainly a wrong file. */
+   *  ~30 KB; anything bigger is almost certainly a wrong file.
+   *
+   *  After load we auto-crop to the QR square — see {@link cropToQrSquare} —
+   *  so the saved image is just the QR pattern, not the surrounding red
+   *  KHQR brand frame. The print template wraps it in its own
+   *  bank-name / account-number layout, so a second branded frame
+   *  inside ours would look amateur. */
   const handleQrUpload = (id: string, file: File) => {
     if (file.size > 1024 * 1024) {
       toast.error('Image too large — keep KHRQR under 1 MB');
@@ -167,22 +273,41 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => updateBank(id, { qrDataUrl: String(reader.result || '') });
+    reader.onload = async () => {
+      const raw = String(reader.result || '');
+      if (!raw) {
+        toast.error('Could not read image');
+        return;
+      }
+      try {
+        const cropped = await cropToQrSquare(raw);
+        updateBank(id, { qrDataUrl: cropped });
+      } catch {
+        // Cropping is opportunistic — if anything fails (canvas
+        // tainted, image decode error, …) fall through to the
+        // original so the operator still sees their upload.
+        updateBank(id, { qrDataUrl: raw });
+      }
+    };
     reader.onerror = () => toast.error('Could not read image');
     reader.readAsDataURL(file);
   };
 
+  // Each setting renders as label + hover-hint instead of label +
+  // visible subtitle. The two-line subtitle pattern pushed Auto-send
+  // + Reminders off the visible area on a 14" screen; condensing to
+  // one line per row keeps the whole sale-side settings list in view.
   const toggleRow = (
     label: string,
     description: string,
     value: boolean,
     onChange: (v: boolean) => void,
   ) => (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="space-y-0.5">
-        <Label className="text-sm font-medium">{label}</Label>
-        <p className="text-xs text-gray-500">{description}</p>
-      </div>
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <Label className="text-sm font-medium inline-flex items-center gap-1.5">
+        {label}
+        <HelpHint>{description}</HelpHint>
+      </Label>
       <Switch checked={value} onCheckedChange={onChange} disabled={loading || saving} />
     </div>
   );
@@ -265,30 +390,217 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}
                 {!isReceipt && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',
                   draft.showTax, v => setDraft({ ...draft, showTax: v }))}
+                {/* Sale-only for now — Invoice is the only doc whose
+                    form fires the Telegram send on save. Other
+                    scopes carry the column but the UI doesn't
+                    expose the toggle until they hook into the
+                    auto-send flow. */}
+                {scope === 'sale' && toggleRow(
+                  'Auto-send via Telegram on save',
+                  'After Save, immediately push the invoice to the customer\'s Telegram chat (if linked). Off by default.',
+                  draft.autoSendTelegram,
+                  v => setDraft({ ...draft, autoSendTelegram: v }),
+                )}
+                {scope === 'sale' && (
+                  <div className="pt-3 mt-3 border-t">
+                    <h3 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5">
+                      Reminders
+                      <HelpHint>Telegram pings to the customer. Skipped silently when the customer hasn't linked yet.</HelpHint>
+                    </h3>
+
+                    {toggleRow(
+                      'Before Due Date',
+                      'Send a "due soon" ping ahead of the due date.',
+                      draft.reminderBeforeDueEnabled,
+                      v => setDraft({ ...draft, reminderBeforeDueEnabled: v }),
+                    )}
+                    {draft.reminderBeforeDueEnabled && (
+                      <div className="ml-1 mb-2 flex items-center gap-2 text-xs text-gray-600">
+                        <span>Send</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={365}
+                          value={draft.reminderBeforeDueDays}
+                          onChange={e => {
+                            const n = parseInt(e.target.value, 10);
+                            setDraft({
+                              ...draft,
+                              reminderBeforeDueDays: Number.isFinite(n) ? Math.max(0, Math.min(365, n)) : 1,
+                            });
+                          }}
+                          disabled={loading || saving}
+                          className="h-7 w-16 text-sm"
+                        />
+                        <span>day(s) before due date.</span>
+                      </div>
+                    )}
+
+                    {toggleRow(
+                      'After Due Date',
+                      'Send a reminder when the invoice is past due and still unpaid.',
+                      draft.reminderAfterDueEnabled,
+                      v => setDraft({ ...draft, reminderAfterDueEnabled: v }),
+                    )}
+                    {draft.reminderAfterDueEnabled && (
+                      <div className="ml-1 mb-2 space-y-1">
+                        {toggleRow(
+                          'Repeat',
+                          'Off: send once. On: keep re-sending on the cadence below until the invoice settles.',
+                          draft.reminderAfterDueRepeat,
+                          v => setDraft({ ...draft, reminderAfterDueRepeat: v }),
+                        )}
+                        {draft.reminderAfterDueRepeat && (
+                          <div className="ml-1 flex items-center gap-3 text-xs text-gray-600">
+                            <span>Frequency:</span>
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="afterDueFreq"
+                                value="daily"
+                                checked={draft.reminderAfterDueFrequency === 'daily'}
+                                onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'daily' })}
+                                disabled={loading || saving}
+                              />
+                              Daily
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="afterDueFreq"
+                                value="weekly"
+                                checked={draft.reminderAfterDueFrequency === 'weekly'}
+                                onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'weekly' })}
+                                disabled={loading || saving}
+                              />
+                              Weekly
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {toggleRow(
+                      'Paid Reminder',
+                      'Send a "payment received" thank-you message when the invoice is fully paid.',
+                      draft.reminderPaidEnabled,
+                      v => setDraft({ ...draft, reminderPaidEnabled: v }),
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {section === 'numbering' && (
+            {section === 'numbering' && (() => {
+              // Live preview of the format the next save will mint —
+              // shows the operator exactly what shape they're choosing.
+              const today = new Date();
+              const dd = String(today.getDate()).padStart(2, '0');
+              const mm = String(today.getMonth() + 1).padStart(2, '0');
+              const yyyy = String(today.getFullYear());
+              const dateStr = draft.numberDateFormat === 'DDMMYYYY' ? `${dd}${mm}${yyyy}`
+                           : draft.numberDateFormat === 'MMYYYY'   ? `${mm}${yyyy}`
+                           :                                          yyyy;
+              const seqWidth = Math.max(2, Math.min(6, draft.numberSeqWidth || 3));
+              const seqExample = '1'.padStart(seqWidth, '0');
+              const previewNo = `${draft.prefixCommercial || 'INV'}-${dateStr}-${seqExample}`;
+              return (
               <div className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-semibold">Document numbering</h3>
-                  <p className="text-xs text-gray-500">
-                    Drives the auto-generated {sideLabel.toLowerCase()} number on save (&lt;prefix&gt;-&lt;year&gt;-&lt;seq&gt;).
-                  </p>
-                </div>
+                <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+                  Document numbering
+                  <HelpHint>
+                    Drives the auto-generated {sideLabel.toLowerCase()} number on save —
+                    {' '}&lt;prefix&gt;-&lt;date&gt;-&lt;seq&gt;. The sequence resets per date bucket
+                    (daily under DDMMYYYY, monthly under MMYYYY, yearly under YYYY).
+                  </HelpHint>
+                </h3>
+                {/* Prefixes first — they're the field HR actually
+                 *  changes day to day; the date format / sequence
+                 *  width are set once per tenant and rarely touched. */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   {prefixRow(prefixLabels.commercial, 'prefixCommercial')}
                   {!isSingleKind && prefixRow(prefixLabels.tax,        'prefixTax')}
                   {!isSingleKind && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
                   {!isSingleKind && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
                 </div>
+                {/* Format controls — shared across all four doc kinds
+                 *  in this scope. Date dropdown drives the middle
+                 *  segment, seq dropdown drives the trailing pad width.
+                 *  Preview below updates live so HR sees the exact
+                 *  shape they're committing to. */}
+                {scope === 'sale' && (
+                  <div className="grid grid-cols-[1fr_1fr] gap-3 pt-3 mt-1 border-t">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                        Date format
+                        <HelpHint>
+                          DDMMYYYY = full date (resets daily). MMYYYY = month + year
+                          (resets monthly). YYYY = just the year (resets annually).
+                        </HelpHint>
+                      </Label>
+                      <select
+                        value={draft.numberDateFormat}
+                        onChange={e => setDraft({ ...draft, numberDateFormat: e.target.value as 'DDMMYYYY' | 'MMYYYY' | 'YYYY' })}
+                        disabled={loading || saving}
+                        className="w-full h-8 text-sm border rounded-md px-2 bg-white"
+                      >
+                        <option value="DDMMYYYY">DDMMYYYY</option>
+                        <option value="MMYYYY">MMYYYY</option>
+                        <option value="YYYY">YYYY</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                        Sequence width
+                        <HelpHint>
+                          Zero-padding on the running counter — wider keeps numbers
+                          aligned in lists but doesn't change the actual count.
+                        </HelpHint>
+                      </Label>
+                      <select
+                        value={draft.numberSeqWidth}
+                        onChange={e => setDraft({ ...draft, numberSeqWidth: parseInt(e.target.value, 10) || 3 })}
+                        disabled={loading || saving}
+                        className="w-full h-8 text-sm border rounded-md px-2 bg-white"
+                      >
+                        <option value={2}>## (2 digits)</option>
+                        <option value={3}>### (3 digits)</option>
+                        <option value={4}>#### (4 digits)</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2 -mt-1 text-[11px] text-gray-500">
+                      Next number example: <code className="font-mono text-gray-700">{previewNo}</code>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
-            {section === 'bank' && (
+            {section === 'bank' && (() => {
+              // "Show on invoice" cap — the printed footer only has
+              // room for two QR cards side by side. We disable the
+              // checkbox on the rest once the cap is reached so the
+              // operator can't silently overflow the layout.
+              const shownCount = banks.filter(b => b.showOnInvoice).length;
+              const atCap = shownCount >= MAX_BANK_ACCOUNTS_ON_INVOICE;
+              return (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold">Bank Account</h3>
+                  <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+                    Bank Account
+                    <HelpHint>
+                      Up to <strong>{MAX_BANK_ACCOUNTS_ON_INVOICE}</strong> bank accounts can show on the printed
+                      invoice — tick <em>Show on invoice</em> on the ones you want printed.
+                    </HelpHint>
+                    {/* Live counter stays visible — it's dynamic state,
+                        not a static explanation, so the operator can
+                        see at a glance how close they are to the cap
+                        without hovering. */}
+                    <span className="text-[11px] font-normal text-gray-400">
+                      ({shownCount}/{MAX_BANK_ACCOUNTS_ON_INVOICE} selected)
+                    </span>
+                  </h3>
                   <Button size="sm" onClick={addBank} disabled={loading || saving} className="shrink-0">
                     <Plus className="h-3.5 w-3.5 mr-1" /> Add Bank Account
                   </Button>
@@ -301,8 +613,32 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  {banks.map(b => (
-                    <div key={b.id} className="border rounded-lg p-3 bg-white space-y-2 relative">
+                  {banks.map(b => {
+                    const checked = !!b.showOnInvoice;
+                    // Disable the toggle on the rows that *aren't*
+                    // already checked once we hit the cap. Already-
+                    // checked rows stay enabled so the user can
+                    // un-check to free up a slot.
+                    const disableShowOnInvoice = !checked && atCap;
+                    return (
+                    <div key={b.id} className={`border rounded-lg p-3 bg-white space-y-2 relative ${
+                      checked ? 'ring-2 ring-blue-200 border-blue-300' : ''
+                    }`}>
+                      <label className={`flex items-center gap-2 text-xs ${
+                        disableShowOnInvoice ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disableShowOnInvoice || loading || saving}
+                          onChange={e => updateBank(b.id, { showOnInvoice: e.target.checked })}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="font-medium">Show on invoice</span>
+                        {disableShowOnInvoice && (
+                          <span className="text-[10px] text-gray-400">(limit {MAX_BANK_ACCOUNTS_ON_INVOICE} reached)</span>
+                        )}
+                      </label>
                       {/* Image area — square (1:1), held to the card's
                        *  full width so the QR is always centered and
                        *  doesn't drift if Acc Name wraps onto two lines. */}
@@ -360,20 +696,35 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       {/* Account name + number live under the image,
                        *  matching the printed card layout. Bank name +
                        *  notes are secondary; tuck them below in small
-                       *  caps so they stay editable without dominating. */}
+                       *  caps so they stay editable without dominating.
+                       *
+                       *  Length caps mirror what fits on the printed
+                       *  KHQR card without overflowing — operators
+                       *  hit the cap and naturally use shorter labels
+                       *  instead of getting a clipped print later. */}
                       <div className="space-y-1.5">
                         <Input
                           value={b.accountName}
                           onChange={e => updateBank(b.id, { accountName: e.target.value })}
                           placeholder="Account name"
                           disabled={loading || saving}
+                          maxLength={25}
                           className="text-sm font-medium"
                         />
                         <Input
                           value={b.accountNumber}
-                          onChange={e => updateBank(b.id, { accountNumber: e.target.value })}
+                          onChange={e => {
+                            // Account No. is digits + dash only — strip
+                            // anything else inline so a paste from a
+                            // copy of "ABA: 0012-345-678" doesn't carry
+                            // letters into the printed card.
+                            const cleaned = e.target.value.replace(/[^0-9-]/g, '').slice(0, 9);
+                            updateBank(b.id, { accountNumber: cleaned });
+                          }}
                           placeholder="Account number"
                           disabled={loading || saving}
+                          inputMode="numeric"
+                          maxLength={9}
                           className="text-sm font-mono"
                         />
                         <Input
@@ -381,6 +732,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           onChange={e => updateBank(b.id, { bankName: e.target.value })}
                           placeholder="Bank name (e.g. ABA)"
                           disabled={loading || saving}
+                          maxLength={15}
                           className="text-xs h-8"
                         />
                         <Input
@@ -388,6 +740,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           onChange={e => updateBank(b.id, { notes: e.target.value })}
                           placeholder="Notes (branch, SWIFT…)"
                           disabled={loading || saving}
+                          maxLength={20}
                           className="text-xs h-8"
                         />
                       </div>
@@ -401,23 +754,25 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
 
                 <p className="text-[11px] text-gray-500">
                   Stored in your browser for now — set them once on the machine that prints invoices.
                 </p>
               </div>
-            )}
+              );
+            })()}
 
             {section === 'tax' && (
               <div className="space-y-2">
-                <div>
-                  <h3 className="text-sm font-semibold">Tax types</h3>
-                  <p className="text-xs text-gray-500">
+                <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+                  Tax types
+                  <HelpHint>
                     Click to enable or disable. Disabled patterns won't appear in the Taxation dropdown.
-                  </p>
-                </div>
+                  </HelpHint>
+                </h3>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {(isReceipt ? RECEIPT_TAX_TYPES : SALE_PURCHASE_TAX_TYPES).map(t => {
                     const on = draft.taxTypesEnabled.includes(t.key);

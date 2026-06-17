@@ -323,7 +323,6 @@ export function AttendanceSettings() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t('page.attendance_settings.title')}</h1>
-          <p className="text-gray-500">{t('page.attendance_settings.description')}</p>
         </div>
         {canEditSettings && (
           <Button onClick={handleSave}>

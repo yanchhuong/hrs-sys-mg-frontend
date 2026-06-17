@@ -750,7 +750,6 @@ export function PayrollCategorySettings() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">{t('payrollCat.title')}</h1>
-          <p className="text-gray-500">{t('payrollCat.description')}</p>
         </div>
         {isAdmin && (
           <Button variant="outline" onClick={() => setConfirmReset(true)}>
