@@ -95,7 +95,6 @@ export function PlatformPolicy() {
           <Card>
             <CardHeader>
               <CardTitle>Password Rules</CardTitle>
-              <CardDescription>Minimum strength requirements for every tenant.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -144,7 +143,6 @@ export function PlatformPolicy() {
           <Card>
             <CardHeader>
               <CardTitle>Session &amp; Sync</CardTitle>
-              <CardDescription>Token lifetime and how often local installs can sync.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -187,7 +185,6 @@ export function PlatformPolicy() {
           <Card>
             <CardHeader>
               <CardTitle>Access Control</CardTitle>
-              <CardDescription>Optional IP allowlist applied to all tenants.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <ToggleRow
@@ -250,7 +247,6 @@ export function PlatformPolicy() {
           <Card>
             <CardHeader>
               <CardTitle>Feature Flags</CardTitle>
-              <CardDescription>Globally enable or disable platform capabilities.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {Object.entries(policy.featureFlags).map(([key, on]) => (

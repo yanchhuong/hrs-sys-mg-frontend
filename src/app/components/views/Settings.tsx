@@ -97,9 +97,6 @@ export function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Company Policy</CardTitle>
-              <CardDescription>
-                Configure standard working hours and overtime calculation mode
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -403,7 +400,6 @@ function CompanyInformationCard() {
     <Card>
       <CardHeader>
         <CardTitle>Company Information</CardTitle>
-        <CardDescription>Public business details shown on payslips, tax reports, and invoices.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading && (
@@ -836,9 +832,6 @@ function CloudConnectionCard() {
               <Cloud className="h-5 w-5" />
               Cloud Connection
             </CardTitle>
-            <CardDescription>
-              Pair this local install with the online HRMS. Data syncs via the tenant API key.
-            </CardDescription>
           </div>
           <div className="flex items-start gap-2">
             <StatusBadge status={status} />

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   ScanMode, ScanRule, DEFAULT_SCAN_RULE,
   loadScanRule, saveScanRule,
@@ -52,6 +53,27 @@ function adaptHoliday(h: settingsApi.Holiday): Holiday {
     type: h.type === 'company' ? 'company' : 'public',
     description: h.description,
   };
+}
+
+/** Small (i) icon + tooltip pair used to demote inline helper text
+ *  into hover-only hints. Same pattern as the AccountingSettings
+ *  dialog so the visual language stays consistent across the
+ *  Settings surface. */
+function HelpHint({ children }: { children: React.ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {children}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function AttendanceSettings() {
@@ -402,7 +424,6 @@ export function AttendanceSettings() {
                     <Briefcase className="h-5 w-5 text-blue-600" />
                     Workday OT Settings
                   </CardTitle>
-                  <CardDescription>OT rules for regular weekdays (Mon-Fri)</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div>
@@ -498,7 +519,6 @@ export function AttendanceSettings() {
                     <Calendar className="h-5 w-5 text-orange-600" />
                     Weekend OT Settings
                   </CardTitle>
-                  <CardDescription>OT rules for Saturday & Sunday. Entire working time = OT</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div className="flex items-center justify-between p-4 border-2 border-orange-200 bg-orange-50 rounded-lg">
@@ -580,7 +600,6 @@ export function AttendanceSettings() {
                     <PartyPopper className="h-5 w-5 text-red-600" />
                     Holiday OT Settings
                   </CardTitle>
-                  <CardDescription>Highest priority rule. All work on holidays = premium OT</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div className="space-y-2">
@@ -691,7 +710,6 @@ export function AttendanceSettings() {
                     <Moon className="h-5 w-5 text-indigo-600" />
                     Night Work Settings
                   </CardTitle>
-                  <CardDescription>Premium multiplier for OT that falls in the night window (Art. 144 + 162)</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div className="flex items-start justify-between gap-4 rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
@@ -875,7 +893,6 @@ export function AttendanceSettings() {
                 <Shield className="h-5 w-5" />
                 Rule Priority Order
               </CardTitle>
-              <CardDescription>When a day matches multiple rules, the highest priority is applied. Night work composes with the day-type rate via the mode picked in the Night Work tab.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
@@ -946,7 +963,6 @@ export function AttendanceSettings() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2"><Users className="h-5 w-5" />Department OT Assignments</CardTitle>
-                  <CardDescription>Assign custom OT rates to specific departments. Overrides default rules.</CardDescription>
                 </div>
                 <Dialog open={deptAssignDialogOpen} onOpenChange={setDeptAssignDialogOpen}>
                   <DialogTrigger asChild>
@@ -1048,7 +1064,6 @@ export function AttendanceSettings() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><Info className="h-5 w-5" />OT Rules Summary</CardTitle>
-              <CardDescription>Side-by-side comparison of all OT types</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1126,7 +1141,6 @@ export function AttendanceSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Absent & Missing Punch Rules</CardTitle>
-                <CardDescription>Configure when and how the system flags issues</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="flex items-center justify-between">
@@ -1173,7 +1187,6 @@ export function AttendanceSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Notifications</CardTitle>
-                <CardDescription>Alert preferences for attendance issues</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="flex items-center justify-between">
@@ -1202,7 +1215,6 @@ export function AttendanceSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Weekend Configuration</CardTitle>
-                <CardDescription>Define which days are weekends (no attendance required)</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-7 gap-2">
@@ -1244,7 +1256,6 @@ export function AttendanceSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Access Permissions</CardTitle>
-                <CardDescription>Who can access and modify attendance settings</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -1334,10 +1345,6 @@ function ScanRuleCard({
               <ArrowRightLeft className="h-5 w-5 text-blue-600" />
               Punch Scan Rule
             </CardTitle>
-            <CardDescription>
-              How many times per day employees are expected to punch, and the
-              target times that determine on-time / late / early status.
-            </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             {dirty && <span className="text-[11px] text-amber-600 font-medium">Unsaved changes</span>}
@@ -1412,7 +1419,14 @@ function ScanRuleCard({
         {/* Grace window */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600">Grace minutes after IN</Label>
+            <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+              Grace minutes after IN
+              {/* Dynamic hint — recomputes from draft so the tooltip
+                  always reflects the in-flight value, not the saved
+                  rule. Late-after time stays in the tooltip instead
+                  of below the input to keep the row tight. */}
+              <HelpHint>Late after {addGrace(draft.morningIn, draft.graceInMinutes)}.</HelpHint>
+            </Label>
             <Input
               type="number"
               min={0}
@@ -1420,12 +1434,12 @@ function ScanRuleCard({
               value={draft.graceInMinutes}
               onChange={e => setDraft({ ...draft, graceInMinutes: clamp(Number(e.target.value), 0, 60) })}
             />
-            <p className="text-[11px] text-gray-500">
-              Late after {addGrace(draft.morningIn, draft.graceInMinutes)}.
-            </p>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600">Grace minutes before OUT</Label>
+            <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+              Grace minutes before OUT
+              <HelpHint>A check-out this many minutes early still counts as on-time.</HelpHint>
+            </Label>
             <Input
               type="number"
               min={0}
@@ -1433,20 +1447,19 @@ function ScanRuleCard({
               value={draft.graceOutMinutes}
               onChange={e => setDraft({ ...draft, graceOutMinutes: clamp(Number(e.target.value), 0, 60) })}
             />
-            <p className="text-[11px] text-gray-500">A check-out this many minutes early still counts as on-time.</p>
           </div>
         </div>
 
         {/* Half-day toggle (2-scan only) */}
         {draft.mode === 'two' && (
-          <div className="flex items-start justify-between gap-4 p-3 rounded-md border bg-gray-50">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Half-day leave counts as half-scan</p>
-              <p className="text-[11px] text-gray-500">
+          <div className="flex items-center justify-between gap-4 p-3 rounded-md border bg-gray-50">
+            <p className="text-sm font-medium inline-flex items-center gap-1.5">
+              Half-day leave counts as half-scan
+              <HelpHint>
                 When an employee has approved half-day leave (AM or PM), skip the absent half
                 and only evaluate the half they worked.
-              </p>
-            </div>
+              </HelpHint>
+            </p>
             <Switch
               checked={draft.halfDayCountsAsHalfScan}
               onCheckedChange={v => setDraft({ ...draft, halfDayCountsAsHalfScan: v })}
@@ -1489,10 +1502,15 @@ function ScanModeOption({
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="font-medium text-sm">{title}</p>
+        <div className="inline-flex items-center gap-1.5">
+          <p className="font-medium text-sm">{title}</p>
+          {/* Subtitle moved into the (i) hover hint — keeps each card
+              to a single line so the two scan-mode tiles sit at the
+              same height regardless of subtitle length. */}
+          <HelpHint>{subtitle}</HelpHint>
+        </div>
         {active && <CheckCircle2 className="h-4 w-4 text-blue-600" />}
       </div>
-      <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
     </button>
   );
 }

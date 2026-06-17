@@ -290,7 +290,6 @@ export function SyncMonitor() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <CardTitle>Local Installations</CardTitle>
-              <CardDescription>Each row is a site paired to a tenant via an API key.</CardDescription>
             </div>
             <Button onClick={() => setCreateDialogOpen(true)} disabled={loading}>
               <Plus className="h-4 w-4 mr-2" />

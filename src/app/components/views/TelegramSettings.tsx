@@ -324,9 +324,6 @@ export function TelegramSettings() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base">Active bot</CardTitle>
-              <CardDescription>
-                Which bot delivers invoices for your customers right now.
-              </CardDescription>
             </div>
             <Button variant="ghost" size="sm" onClick={() => void loadBot()} disabled={loadingBot}>
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loadingBot ? 'animate-spin' : ''}`} />
@@ -539,9 +536,6 @@ export function TelegramSettings() {
           <CardTitle className="text-base flex items-center gap-2">
             <Link2 className="h-4 w-4" /> Connect a customer
           </CardTitle>
-          <CardDescription>
-            Pick a customer, generate a one-time link, and send it to them. When they click <strong>Start</strong> on Telegram, their chat gets bound to that customer record.
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-[1fr_auto] gap-3">

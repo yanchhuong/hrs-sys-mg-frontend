@@ -543,9 +543,6 @@ export function PayrollCategorySettings() {
               {isEarning ? t('payrollCat.earnings') : t('payrollCat.deductions')}
               <Badge variant="secondary">{rows.length}</Badge>
             </CardTitle>
-            <CardDescription>
-              {isEarning ? t('payrollCat.earnings.desc') : t('payrollCat.deductions.desc')}
-            </CardDescription>
           </div>
           {isAdmin && (
             <Button size="sm" onClick={() => startAdd(kind)} disabled={!!editingId}>
