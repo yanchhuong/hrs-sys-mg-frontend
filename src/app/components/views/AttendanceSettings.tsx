@@ -430,17 +430,21 @@ export function AttendanceSettings() {
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Basic Rule</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-sm">OT Start After</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          OT Start After
+                          <HelpHint>Work after this = OT.</HelpHint>
+                        </Label>
                         <Input type="time" value={otSettings.workdayRule.otStartAfter} onChange={e => setOtSettings({ ...otSettings, workdayRule: { ...otSettings.workdayRule, otStartAfter: e.target.value } })} className="h-9" />
-                        <p className="text-xs text-gray-400">Work after this = OT</p>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm">Minimum OT</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          Minimum OT
+                          <HelpHint>Below this = ignored.</HelpHint>
+                        </Label>
                         <div className="flex items-center gap-2">
                           <Input type="number" value={otSettings.workdayRule.minimumOTMinutes} onChange={e => setOtSettings({ ...otSettings, workdayRule: { ...otSettings.workdayRule, minimumOTMinutes: parseInt(e.target.value) || 0 } })} className="h-9" />
                           <span className="text-sm text-gray-500">mins</span>
                         </div>
-                        <p className="text-xs text-gray-400">Below this = ignored</p>
                       </div>
                     </div>
                     <div className="mt-3 space-y-2">
@@ -537,12 +541,14 @@ export function AttendanceSettings() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">Minimum Work Time</Label>
+                      <Label className="text-sm inline-flex items-center gap-1.5">
+                        Minimum Work Time
+                        <HelpHint>Must work at least this to count.</HelpHint>
+                      </Label>
                       <div className="flex items-center gap-2">
                         <Input type="number" value={otSettings.weekendRule.minimumWorkMinutes} onChange={e => setOtSettings({ ...otSettings, weekendRule: { ...otSettings.weekendRule, minimumWorkMinutes: parseInt(e.target.value) || 0 } })} className="h-9" />
                         <span className="text-sm text-gray-500">mins</span>
                       </div>
-                      <p className="text-xs text-gray-400">Must work at least this to count</p>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -635,10 +641,10 @@ export function AttendanceSettings() {
                   </div>
                   <div className="border-t pt-4">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Special Holiday Bonus</p>
-                        <p className="text-xs text-gray-400">Additional flat bonus for working on holidays</p>
-                      </div>
+                      <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                        Special Holiday Bonus
+                        <HelpHint>Additional flat bonus for working on holidays.</HelpHint>
+                      </p>
                       <Switch checked={otSettings.holidayRule.specialBonusEnabled} onCheckedChange={v => setOtSettings({ ...otSettings, holidayRule: { ...otSettings.holidayRule, specialBonusEnabled: v } })} />
                     </div>
                     {otSettings.holidayRule.specialBonusEnabled && (
@@ -727,7 +733,10 @@ export function AttendanceSettings() {
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Night Window</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-sm">Start (inclusive)</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          Start (inclusive)
+                          <HelpHint>Hours at or after this count as night.</HelpHint>
+                        </Label>
                         <Input
                           type="time"
                           value={otSettings.nightRule.startTime}
@@ -735,10 +744,12 @@ export function AttendanceSettings() {
                           onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, startTime: e.target.value } })}
                           className="h-9"
                         />
-                        <p className="text-xs text-gray-400">Hours at or after this count as night.</p>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm">End (exclusive)</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          End (exclusive)
+                          <HelpHint>May wrap past midnight (e.g. 22:00 → 05:00).</HelpHint>
+                        </Label>
                         <Input
                           type="time"
                           value={otSettings.nightRule.endTime}
@@ -746,7 +757,6 @@ export function AttendanceSettings() {
                           onChange={e => setOtSettings({ ...otSettings, nightRule: { ...otSettings.nightRule, endTime: e.target.value } })}
                           className="h-9"
                         />
-                        <p className="text-xs text-gray-400">May wrap past midnight (e.g. 22:00 → 05:00).</p>
                       </div>
                     </div>
                   </div>
@@ -755,7 +765,10 @@ export function AttendanceSettings() {
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Multiplier</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-sm">Night Multiplier</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          Night Multiplier
+                          <HelpHint>Default 1.30× per Cambodian Labour Law Art. 162.</HelpHint>
+                        </Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
@@ -768,10 +781,21 @@ export function AttendanceSettings() {
                           />
                           <span className="text-lg font-semibold text-indigo-600">x</span>
                         </div>
-                        <p className="text-xs text-gray-400">Default 1.30× per Cambodian Labour Law Art. 162.</p>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm">When in night window</Label>
+                        <Label className="text-sm inline-flex items-center gap-1.5">
+                          When in night window
+                          {/* Dynamic hint — depends on compose mode. Tooltip
+                              keeps the row tight; the dropdown label
+                              itself already names the mode. */}
+                          <HelpHint>
+                            {otSettings.nightRule.compose === 'replace'
+                              ? 'Night rate wins outright when overlapping the window.'
+                              : otSettings.nightRule.compose === 'max'
+                                ? 'Effective = max(dayType, night) — never lowers weekend or holiday pay.'
+                                : 'Effective = dayType × night — compound model (Sat night = weekend × night).'}
+                          </HelpHint>
+                        </Label>
                         <Select
                           value={otSettings.nightRule.compose}
                           disabled={!otSettings.nightRule.enabled}
@@ -784,13 +808,6 @@ export function AttendanceSettings() {
                             <SelectItem value="multiply">Multiply day-type × night</SelectItem>
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-gray-400">
-                          {otSettings.nightRule.compose === 'replace'
-                            ? 'Night rate wins outright when overlapping the window.'
-                            : otSettings.nightRule.compose === 'max'
-                              ? 'Effective = max(dayType, night) — never lowers weekend or holiday pay.'
-                              : 'Effective = dayType × night — compound model (Sat night = weekend × night).'}
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -1144,10 +1161,10 @@ export function AttendanceSettings() {
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Auto-mark Absent</p>
-                    <p className="text-xs text-gray-400">Automatically mark employees with no check-in as absent</p>
-                  </div>
+                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                    Auto-mark Absent
+                    <HelpHint>Automatically mark employees with no check-in as absent.</HelpHint>
+                  </p>
                   <Switch
                     checked={generalSettings.autoMarkAbsent}
                     onCheckedChange={v => setGeneralSettings({ ...generalSettings, autoMarkAbsent: v })}
@@ -1156,25 +1173,25 @@ export function AttendanceSettings() {
 
                 {generalSettings.autoMarkAbsent && (
                   <div className="space-y-2 pl-4 border-l-2 border-gray-200">
-                    <Label className="text-sm">Absent Deadline</Label>
+                    <Label className="text-sm inline-flex items-center gap-1.5">
+                      Absent Deadline
+                      <HelpHint>If no check-in by this time, mark as absent.</HelpHint>
+                    </Label>
                     <Input
                       type="time"
                       value={generalSettings.absentDeadlineTime}
                       onChange={e => setGeneralSettings({ ...generalSettings, absentDeadlineTime: e.target.value })}
                       className="w-36 h-9"
                     />
-                    <p className="text-xs text-gray-400">
-                      If no check-in by this time, mark as absent
-                    </p>
                   </div>
                 )}
 
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Track Missing Check-out</p>
-                      <p className="text-xs text-gray-400">Flag employees who checked in but didn't check out</p>
-                    </div>
+                    <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                      Track Missing Check-out
+                      <HelpHint>Flag employees who checked in but didn't check out.</HelpHint>
+                    </p>
                     <Switch
                       checked={generalSettings.trackMissingPunch}
                       onCheckedChange={v => setGeneralSettings({ ...generalSettings, trackMissingPunch: v })}
@@ -1190,20 +1207,20 @@ export function AttendanceSettings() {
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Notify Manager</p>
-                    <p className="text-xs text-gray-400">Send alerts to managers about team attendance issues</p>
-                  </div>
+                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                    Notify Manager
+                    <HelpHint>Send alerts to managers about team attendance issues.</HelpHint>
+                  </p>
                   <Switch
                     checked={generalSettings.notifyManager}
                     onCheckedChange={v => setGeneralSettings({ ...generalSettings, notifyManager: v })}
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Notify Employee</p>
-                    <p className="text-xs text-gray-400">Send reminders to employees about missing punches</p>
-                  </div>
+                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                    Notify Employee
+                    <HelpHint>Send reminders to employees about missing punches.</HelpHint>
+                  </p>
                   <Switch
                     checked={generalSettings.notifyEmployee}
                     onCheckedChange={v => setGeneralSettings({ ...generalSettings, notifyEmployee: v })}

@@ -23,7 +23,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw, ChevronsUpDown, Check } from 'lucide-react';
+import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw, ChevronsUpDown, Check, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { mockEmployees } from '../../data/mockData';
@@ -310,11 +311,11 @@ export function FlexibleWorkCard({ scanRule }: Props) {
             <CardTitle className="flex items-center gap-2">
               <UserCog className="h-5 w-5 text-blue-600" />
               Flexible Work
+              <HelpHint>
+                Per-employee overrides on top of the tenant Scan Rule. Leave a field
+                unchanged to inherit from the default.
+              </HelpHint>
             </CardTitle>
-            <CardDescription>
-              Per-employee overrides on top of the tenant Scan Rule. Leave a field unchanged
-              to inherit from the default.
-            </CardDescription>
           </div>
           <Button size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4 mr-1.5" />
@@ -439,8 +440,15 @@ export function FlexibleWorkCard({ scanRule }: Props) {
             <DialogTitle className="flex items-center gap-2">
               <UserCog className="h-5 w-5 text-blue-600" />
               {form.id ? 'Edit override' : 'Add override'}
+              <HelpHint>
+                Fields prefilled from the tenant Scan Rule. Change only the ones that
+                differ for this employee; the rest stay inherited.
+              </HelpHint>
             </DialogTitle>
-            <DialogDescription>
+            {/* DialogDescription kept (sr-only) for Radix
+                accessibility — the tooltip beside the title carries
+                the hint visually. */}
+            <DialogDescription className="sr-only">
               Fields prefilled from the tenant Scan Rule. Change only the ones that differ
               for this employee; the rest stay inherited.
             </DialogDescription>
@@ -514,14 +522,14 @@ export function FlexibleWorkCard({ scanRule }: Props) {
             </div>
 
             {effectiveMode === 'two' && (
-              <div className="flex items-start justify-between gap-4 p-3 rounded-md border bg-gray-50">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">Half-day leave counts as half-scan</p>
-                  <p className="text-[11px] text-gray-500">
-                    Inherit = follows the tenant Scan Rule. Override only if this employee has
-                    a different half-day policy.
-                  </p>
-                </div>
+              <div className="flex items-center justify-between gap-4 p-3 rounded-md border bg-gray-50">
+                <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                  Half-day leave counts as half-scan
+                  <HelpHint>
+                    Inherit = follows the tenant Scan Rule. Override only if this employee
+                    has a different half-day policy.
+                  </HelpHint>
+                </p>
                 <Select
                   value={form.halfDayOverride}
                   onValueChange={v => setForm({ ...form, halfDayOverride: v as FormState['halfDayOverride'] })}
@@ -685,8 +693,9 @@ function TimeField({
   const overridden = value !== def;
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm flex items-center gap-1.5">
+      <Label className="text-sm inline-flex items-center gap-1.5">
         {label}
+        <HelpHint>Default {def}.</HelpHint>
         {overridden && (
           <Badge className="bg-blue-100 text-blue-800 border-0 text-[10px] h-4 px-1.5">override</Badge>
         )}
@@ -697,7 +706,26 @@ function TimeField({
         onChange={e => onChange(e.target.value)}
         className={overridden ? 'ring-1 ring-blue-300' : ''}
       />
-      <p className="text-[11px] text-gray-400">Default {def}</p>
     </div>
+  );
+}
+
+/** Small (i) icon + tooltip used to demote inline helper text into a
+ *  hover-only hint. Same pattern as the AttendanceSettings + Accounting
+ *  Settings dialogs so the visual language stays consistent. */
+function HelpHint({ children }: { children: React.ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {children}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

@@ -204,16 +204,24 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Pro
               'Earnings',
               <TrendingUp className="h-4 w-4 text-emerald-600" />,
               earnings,
-              // One Time Salary always pays out the full Basic +
-              // Position Allowance from the employee record — these
-              // aren't toggleable categories, but HR needs to see
-              // them so the tab doesn't look like it's missing the
-              // base pay. Listed before the dynamic categories so
-              // the reading order matches a real payslip.
-              activeTab === 'onetime'
+              // 2nd Salary + One Time Salary both pay out the full
+              // Basic + Position Allowance from the employee record
+              // (the 1st Salary tab only carries the mid-month
+              // advance, so these don't apply there). These aren't
+              // toggleable categories — they're info rows so HR sees
+              // the tab isn't missing base pay. Listed before the
+              // dynamic categories so the reading order matches a
+              // real payslip.
+              // Three Employee-record columns: Basic Salary, Position
+              // Allowance, Evaluation Allowance. Must stay in lockstep
+              // with EMPLOYEE_FIELD_EARNINGS in Payroll.tsx so what
+              // the popup shows matches the Upload Bulk Payroll
+              // dialog's earnings list.
+              activeTab === '2nd' || activeTab === 'onetime'
                 ? [
-                    { label: 'Basic',              hint: 'from Employee' },
-                    { label: 'Position Allowance', hint: 'from Employee' },
+                    { label: 'Basic Salary',         hint: 'from Employee' },
+                    { label: 'Position Allowance',   hint: 'from Employee' },
+                    { label: 'Evaluation Allowance', hint: 'from Employee' },
                   ]
                 : undefined,
             )}
