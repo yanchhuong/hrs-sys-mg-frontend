@@ -14,6 +14,15 @@ import { Toaster } from './components/ui/sonner';
 import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
 import { NAV_BY_ID } from './config/nav';
+import { QrScanPage } from './components/views/QrScanPage';
+
+/** True when the URL path is the public QR-scan landing. Read once
+ *  at App mount — this page is meant to be a one-shot landing, so we
+ *  don't reactively listen for History changes. */
+const isPublicScanPath = (): boolean =>
+  typeof window !== 'undefined'
+  && (window.location.pathname === '/scan'
+      || window.location.pathname.startsWith('/scan/'));
 
 function NotAuthorizedView() {
   return (
@@ -89,7 +98,14 @@ function AppContent() {
   // initialView so the page jumps straight to one section). NavLeaf.
   // initialView is the props-shaped contract — Reports reads it, other
   // components ignore the unknown key.
-  const viewProps = entry?.initialView ? { initialView: entry.initialView } : {};
+  //
+  // onNavigate is the cross-page nav escape hatch. Pages that link to
+  // sub-pages (e.g. Attendance's gear-icon menu opens Offices / QR
+  // Display, both `hideFromSidebar`) call it to switch views without
+  // duplicating the setCurrentView wiring. Components that don't
+  // navigate cross-page just ignore the prop.
+  const viewProps: Record<string, unknown> = { onNavigate: setCurrentView };
+  if (entry?.initialView) viewProps.initialView = entry.initialView;
 
   return (
     <Layout currentView={currentView} onViewChange={setCurrentView}>
@@ -99,6 +115,19 @@ function AppContent() {
 }
 
 export default function App() {
+  // Public /scan path — bypass the Auth + i18n + DateFormat providers
+  // entirely. The scan page is meant to be opened on an employee's
+  // phone (no HRMS login expected). Rendering before AuthProvider's
+  // boot fetch keeps the UX instant: no loading flash, no surprise
+  // redirect to /login if cached token expired.
+  if (isPublicScanPath()) {
+    return (
+      <>
+        <QrScanPage />
+        <Toaster />
+      </>
+    );
+  }
   return (
     <I18nProvider>
       <AuthProvider>

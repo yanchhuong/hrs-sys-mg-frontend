@@ -49,6 +49,12 @@ import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
+// Offices + QrDisplay are no longer registered as standalone leaves.
+// Both are reached through popups on the Attendance page:
+//   • Offices  → the gear-icon "Manage Offices" dialog
+//   • QrDisplay → the per-row "View QR" dialog inside Manage Offices
+// The component files still live under views/ — OfficesDialog and
+// QrDisplayDialog import them — but they no longer back any leaf.
 
 export interface NavLeaf {
   id: string;
@@ -64,6 +70,12 @@ export interface NavLeaf {
    *  sub-pages (currently just Reports). Lets one component back
    *  several sidebar leaves without duplicating the data-fetch. */
   initialView?: string;
+  /** When true, the leaf is reachable via `currentView` state +
+   *  programmatic onNavigate() but is NOT rendered in the sidebar.
+   *  Used for sub-pages reached from a parent page's "Settings"
+   *  menu (e.g. Offices + QR Display launched from the Attendance
+   *  page's gear icon). */
+  hideFromSidebar?: boolean;
 }
 
 export interface NavGroup {
@@ -91,6 +103,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'overtime',           labelKey: 'nav.overtime',              icon: TimerIcon,       module: 'overtime',        component: Overtime,      group: 'time-tracking' },
   { id: 'all-leave',          labelKey: 'nav.allleave',              icon: AlertCircle,     module: 'all-leave',       component: AllLeave,      group: 'time-tracking' },
   { id: 'exception',          labelKey: 'nav.exception',             icon: AlertCircle,     module: 'exception',       component: Exception,     group: 'time-tracking' },
+  // QR-attendance (V116) is *not* registered here. Office CRUD lives
+  // in the OfficesDialog popup launched from the Attendance gear
+  // icon, and the per-office QR lives in the QrDisplayDialog popup
+  // launched from each row inside that dialog. No leaf needed.
 
   { id: 'payroll',            labelKey: 'nav.payroll',               icon: DollarSign,      module: 'payroll',            component: Payroll,           group: 'payroll-mgmt' },
   { id: 'benefit-calculator', labelKey: 'nav.benefit_calculator',    icon: Calculator,      module: 'benefit-calculator', component: BenefitCalculator, group: 'payroll-mgmt' },

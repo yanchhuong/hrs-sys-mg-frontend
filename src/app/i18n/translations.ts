@@ -48,6 +48,8 @@ export const dict: Dict = {
   'nav.allleave':             { en: 'All Leave',            km: 'ច្បាប់ឈប់សម្រាកទាំងអស់', zh: '全部请假' },
   'nav.exception':            { en: 'Exception',            km: 'ករណីលើកលែង',         zh: '例外' },
   'nav.overtime':             { en: 'Overtime',             km: 'ការងារបន្ថែម',      zh: '加班' },
+  'nav.offices':              { en: 'Offices',              km: 'ការិយាល័យ',         zh: '办公室' },
+  'nav.qr_display':           { en: 'QR Display',           km: 'បង្ហាញ QR',         zh: 'QR 显示' },
   'nav.deduction':            { en: 'Deduction',            km: 'ការកាត់ប្រាក់',      zh: '扣款' },
   'nav.increase':             { en: 'Increase',             km: 'ការដំឡើងប្រាក់',    zh: '加薪' },
   'nav.payroll':              { en: 'Payroll',              km: 'បើកប្រាក់ខែ',       zh: '薪资' },

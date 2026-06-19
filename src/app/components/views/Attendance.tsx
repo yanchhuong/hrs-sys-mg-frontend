@@ -34,8 +34,9 @@ import {
   Clock, CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
   CheckCircle2, XCircle, AlertTriangle, LogIn, LogOut, Users,
   ChevronLeft, ChevronRight, Pencil, Download, AlertCircle, BarChart3,
-  Search, X, UserMinus,
+  Search, X, UserMinus, Settings as SettingsIcon,
 } from 'lucide-react';
+import { OfficesDialog } from '../common/OfficesDialog';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isToday as isTodayFn, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../hooks/usePagination';
@@ -161,7 +162,14 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
   };
 }
 
-export function Attendance() {
+/** App.tsx passes setCurrentView as onNavigate so pages can switch
+ *  views without their own routing. Used by the gear-icon menu to
+ *  open Offices / QR Display (both hideFromSidebar). */
+interface Props {
+  onNavigate?: (viewId: string) => void;
+}
+
+export function Attendance({ onNavigate }: Props = {}) {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
   const { currentUser } = useAuth();
@@ -172,6 +180,8 @@ export function Attendance() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
+  // Manage Offices popup state — opened from the gear-icon dropdown.
+  const [officesDialogOpen, setOfficesDialogOpen] = useState(false);
   const [monthDate, setMonthDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -329,6 +339,11 @@ export function Attendance() {
    *  Manager + Employee see the auto-detected badge as read-only;
    *  only the true 'admin' role can force a different day-type. */
   const canOverrideOtRule = currentUser?.role === 'admin';
+  /** Strict-admin gate for the per-row edit pencil. Managers still
+   *  need the actions column for the Day-Exception button, but the
+   *  edit pencil is admin-only — a manager fixing a punch could
+   *  hide a late arrival on their own team's row. */
+  const canEditPunches = currentUser?.role === 'admin';
   const { isTenantWide, matchesScope, showScopePicker } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
@@ -501,6 +516,21 @@ export function Attendance() {
       console.warn('Could not load OT requests', err);
     }
   };
+
+  // Refresh the attendance grid whenever the top-bar widget signals
+  // a successful punch. Custom DOM event keeps the components
+  // decoupled — the widget lives in Layout, the page lives here, no
+  // shared context needed. Re-runs the same fetches the date / scope
+  // change does, so the new check-in row appears immediately.
+  useEffect(() => {
+    const handler = () => {
+      void loadAttendance();
+      void loadLeaves();
+    };
+    window.addEventListener('attendance:punched', handler);
+    return () => window.removeEventListener('attendance:punched', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, scopeMode]);
 
   // Initial load on mount.
   useEffect(() => {
@@ -1554,6 +1584,11 @@ export function Attendance() {
 
   return (
     <div className="space-y-6">
+      {/* Manage Offices popup — mounted at page level so it overlays
+          the whole attendance grid, not just the action bar. State
+          is controlled from the gear-icon dropdown above. */}
+      <OfficesDialog open={officesDialogOpen} onOpenChange={setOfficesDialogOpen} />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1582,6 +1617,20 @@ export function Attendance() {
           </div>
           {isAdmin && (
             <>
+              {/* Gear icon → Manage Offices popup. Strict-admin only
+                  — Offices CRUD changes the geofence radius that
+                  gates everyone's check-in, so a manager fiddling
+                  with it could mass-bypass attendance for their
+                  whole team. Same rationale as the edit pencil. */}
+              {canEditPunches && (
+                <Button
+                  variant="outline" size="icon"
+                  title="Manage offices"
+                  onClick={() => setOfficesDialogOpen(true)}
+                >
+                  <SettingsIcon className="h-4 w-4" />
+                </Button>
+              )}
               <FingerprintSyncPill status={fpSyncStatus} />
 
               <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
@@ -2048,15 +2097,17 @@ export function Attendance() {
                           {isAdmin && (
                             <TableCell>
                               <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  title="Edit punches"
-                                  onClick={() => handleEdit(record)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
+                                {canEditPunches && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    title="Edit punches"
+                                    onClick={() => handleEdit(record)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
