@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from '../ui/card';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -19,7 +20,7 @@ import {
 import {
   Fingerprint, Plus, Pencil, Trash2, Wifi, WifiOff, HelpCircle, Zap, Download,
   Eye, EyeOff, Copy, RefreshCw,
-  ScanFace, CreditCard, Layers,
+  ScanFace, CreditCard, Layers, Info,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -332,11 +333,24 @@ export function DevicesCard() {
           <CardTitle className="flex items-center gap-2">
             <Fingerprint className="h-5 w-5 text-blue-600" />
             Attendance Devices
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="What are attendance devices?"
+                  >
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                  Fingerprint, face/camera, RFID, and hybrid terminals registered to this
+                  tenant. Connection is checked over TCP; ZKTeco SDK port is normally{' '}
+                  <code>4370</code>.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </CardTitle>
-          <CardDescription>
-            Fingerprint, face/camera, RFID, and hybrid terminals registered to this tenant.
-            Connection is checked over TCP; ZKTeco SDK port is normally <code>4370</code>.
-          </CardDescription>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleTestAll} disabled={devices.length === 0 || testingIds.size > 0}>

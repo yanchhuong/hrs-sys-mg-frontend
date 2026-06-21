@@ -1617,15 +1617,16 @@ export function Attendance({ onNavigate }: Props = {}) {
           </div>
           {isAdmin && (
             <>
-              {/* Gear icon → Manage Offices popup. Strict-admin only
-                  — Offices CRUD changes the geofence radius that
-                  gates everyone's check-in, so a manager fiddling
-                  with it could mass-bypass attendance for their
-                  whole team. Same rationale as the edit pencil. */}
+              {/* Gear icon → Manage Office popup (Offices + Devices).
+                  Strict-admin only — both screens change attendance
+                  hardware state (geofence radius + on-prem terminals)
+                  so a manager fiddling could mass-bypass scans for
+                  their whole team. */}
               {canEditPunches && (
                 <Button
                   variant="outline" size="icon"
-                  title="Manage offices"
+                  title="Manage office (locations + devices)"
+                  aria-label="Manage office"
                   onClick={() => setOfficesDialogOpen(true)}
                 >
                   <SettingsIcon className="h-4 w-4" />

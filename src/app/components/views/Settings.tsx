@@ -28,11 +28,10 @@ import { mockAttendanceRules } from '../../data/settingsData';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import {
-  Settings as SettingsIcon, ShieldCheck, Save, Fingerprint, Plus,
+  Settings as SettingsIcon, ShieldCheck, Save, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
-  RefreshCw, Eye, EyeOff, Upload, Bot,
+  RefreshCw, Eye, EyeOff, Upload,
 } from 'lucide-react';
-import { TelegramSettings } from './TelegramSettings';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -41,15 +40,13 @@ import {
   CloudConfig, ConnectionStatus, TestResult, HeartbeatResponse,
 } from '../../utils/cloudSync';
 import { useI18n } from '../../i18n/I18nContext';
-import { DevicesCard } from '../common/DevicesCard';
 import * as settingsApi from '../../api/settings';
 import { DATE_FORMAT_PRESETS, useDateFormat } from '../../context/DateFormatContext';
 import { USE_MOCKS, API_BASE, apiJson } from '../../api/client';
 
 export function Settings() {
   const { t } = useI18n();
-  const { currentUser, currentEmployee, canView } = useAuth();
-  const canViewTelegram = canView('telegram');
+  const { currentUser } = useAuth();
   const [rules, setRules] = useState(mockAttendanceRules);
   const [activeRule, setActiveRule] = useState(rules[0]);
 
@@ -75,22 +72,10 @@ export function Settings() {
             <SettingsIcon className="mr-2 h-4 w-4" />
             Company
           </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="security">
-              <Fingerprint className="mr-2 h-4 w-4" />
-              Device Management
-            </TabsTrigger>
-          )}
           <TabsTrigger value="policy">
             <ShieldCheck className="mr-2 h-4 w-4" />
             Policy
           </TabsTrigger>
-          {canViewTelegram && (
-            <TabsTrigger value="telegram">
-              <Bot className="mr-2 h-4 w-4" />
-              {t('nav.setting.telegram')}
-            </TabsTrigger>
-          )}
         </TabsList>
 
         <TabsContent value="policy" className="space-y-6">
@@ -239,22 +224,6 @@ export function Settings() {
           <CompanyInformationCard />
           {isAdmin && <CloudConnectionCard />}
         </TabsContent>
-
-        {isAdmin && currentUser && (
-          <TabsContent value="security" className="space-y-6">
-            <DevicesCard />
-          </TabsContent>
-        )}
-
-        {canViewTelegram && (
-          <TabsContent value="telegram" className="space-y-6">
-            {/* Embeds the standalone TelegramSettings page — same
-                bot-registration + customer-link UX, just rendered
-                inside the General Settings tab strip so the admin
-                isn't hunting through a separate sidebar entry. */}
-            <TelegramSettings />
-          </TabsContent>
-        )}
       </Tabs>
     </div>
   );

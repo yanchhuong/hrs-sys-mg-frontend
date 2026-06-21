@@ -19,7 +19,8 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
-import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings } from 'lucide-react';
+import { CustomerTelegramBotSettingsDialog } from '../common/CustomerTelegramBotSettingsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -75,6 +76,15 @@ export function Customers() {
   const canViewTelegram   = canView('telegram');
   const canShareTelegram  = canCreate('telegram');
   const canUnlinkTelegram = canDelete('telegram');
+  // Surface the bot-config gear only to admins who can actually change
+  // it. Update covers register+toggle+rotate-token; delete is wrapped
+  // inside the dialog with its own confirm.
+  const canManageTelegramBot = canUpdate('telegram');
+
+  // Bot-settings dialog open state. Moved here from the now-removed
+  // Settings → Telegram tab so admins find the config next to the
+  // customer rows that use it.
+  const [botSettingsOpen, setBotSettingsOpen] = useState(false);
 
   const [rows, setRows] = useState<customersApi.Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -224,6 +234,17 @@ export function Customers() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {canManageTelegramBot && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Telegram bot settings"
+              aria-label="Telegram bot settings"
+              onClick={() => setBotSettingsOpen(true)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && (
             <Button onClick={() => openAdd('individual')}>
               <Plus className="h-4 w-4 mr-1.5" /> Add Customer
@@ -594,6 +615,13 @@ export function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {canManageTelegramBot && (
+        <CustomerTelegramBotSettingsDialog
+          open={botSettingsOpen}
+          onOpenChange={setBotSettingsOpen}
+        />
+      )}
     </div>
   );
 }

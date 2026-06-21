@@ -172,23 +172,24 @@ export function Offices({ embedded = false }: Props = {}) {
   return (
     <div className={embedded ? 'space-y-4' : 'space-y-6'}>
       {/* Standalone-view page header. In embedded mode the parent
-       *  Dialog already renders the title + close affordance, so we
-       *  collapse this row down to just the "Add Office" button so
-       *  it floats above the table inside the popup. */}
-      <div className={embedded ? 'flex justify-end' : 'flex items-center justify-between'}>
-        {!embedded && <h1 className="text-3xl font-bold">Offices</h1>}
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Add Office
-        </Button>
-      </div>
+       *  Dialog already renders the title; the Add Office button now
+       *  lives inside the Card header (matches the Devices tab UI). */}
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Offices</h1>
+        </div>
+      )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base flex items-center gap-2">
             <MapPin className="h-4 w-4 text-blue-600" />
             Locations
           </CardTitle>
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Add Office
+          </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
