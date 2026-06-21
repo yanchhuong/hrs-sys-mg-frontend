@@ -35,19 +35,22 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
+import { HrTelegramBotSettingsDialog } from '../common/HrTelegramBotSettingsDialog';
+import * as hrBotApi from '../../api/hrTelegramBots';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
@@ -523,6 +526,43 @@ export function Employees() {
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  // HR Telegram bot config + per-row link generation. Phase 1 only —
+  // mint a deep-link URL and surface it in a dialog the operator
+  // copies + sends out of band. Mirrors the Customers page Share-Link
+  // pattern so HR knows where to look.
+  const [hrBotDialogOpen, setHrBotDialogOpen] = useState(false);
+  const [hrLinkBusy, setHrLinkBusy] = useState<string | null>(null);
+  /** Generated-link dialog state — { employeeName, url, expiresAt }
+   *  is set when the API returns; null hides the dialog. */
+  const [hrShareLink, setHrShareLink] = useState<{
+    employeeName: string; url: string; expiresAt: string;
+  } | null>(null);
+  const [hrLinkCopied, setHrLinkCopied] = useState(false);
+
+  const openShareLinkDialog = async (employeeId: string, employeeName: string) => {
+    if (hrLinkBusy) return;
+    setHrLinkBusy(employeeId);
+    try {
+      const res = await hrBotApi.generateLink(employeeId);
+      setHrShareLink({ employeeName, url: res.url, expiresAt: res.expiresAt });
+      setHrLinkCopied(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to generate connect link');
+    } finally {
+      setHrLinkBusy(null);
+    }
+  };
+  const copyHrShareLink = async () => {
+    if (!hrShareLink) return;
+    try {
+      await navigator.clipboard.writeText(hrShareLink.url);
+      setHrLinkCopied(true);
+      toast.success('Link copied');
+      window.setTimeout(() => setHrLinkCopied(false), 1800);
+    } catch {
+      toast.error('Could not copy to clipboard');
+    }
+  };
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [rawEmployees, setRawEmployees] = useState<employeesApi.Employee[]>([]);
   const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
@@ -1201,7 +1241,19 @@ export function Employees() {
             <>
               <Button
                 variant="outline"
+                size="icon"
+                onClick={() => setHrBotDialogOpen(true)}
+                title="HR Telegram Bot settings"
+                aria-label="HR Telegram Bot settings"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
                 disabled={filteredEmployees.length === 0}
+                title={`Export ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'} to Excel`}
+                aria-label="Export to Excel"
                 onClick={() => {
                   // Re-importable Excel: same column order as the Bulk
                   // Upload template, so HR can round-trip edits through
@@ -1214,8 +1266,7 @@ export function Employees() {
                   toast.success(`Exported ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'}`);
                 }}
               >
-                <Download className="mr-2 h-4 w-4" />
-                Export Excel ({filteredEmployees.length})
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
               </Button>
               {/* Add Employee + Upload Bulk merged into a single split-style
                   button: primary action ("Add Employee") fires on click,
@@ -1239,6 +1290,43 @@ export function Employees() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <HrTelegramBotSettingsDialog
+                open={hrBotDialogOpen}
+                onOpenChange={setHrBotDialogOpen}
+              />
+              {/* Generated link surface — mirrors the Customer page's
+                  Share-Link dialog so HR has a single mental model
+                  whether they're connecting a customer or an employee. */}
+              <Dialog open={!!hrShareLink} onOpenChange={(next) => !next && setHrShareLink(null)}>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Share Telegram link</DialogTitle>
+                    <DialogDescription>
+                      Send this link to <span className="font-medium">{hrShareLink?.employeeName}</span>.
+                      After they click <strong>Start</strong> on Telegram, their chat
+                      will be bound to their employee record.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {hrShareLink && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input value={hrShareLink.url} readOnly className="font-mono text-xs" />
+                        <Button variant="outline" size="sm" onClick={copyHrShareLink}>
+                          {hrLinkCopied
+                            ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>
+                            : <><Copy className="h-3.5 w-3.5 mr-1" /> Copy</>}
+                        </Button>
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        Expires {new Date(hrShareLink.expiresAt).toLocaleString()}. Generate a fresh one if it lapses.
+                      </div>
+                    </div>
+                  )}
+                  <DialogFooter>
+                    <Button onClick={() => setHrShareLink(null)}>Done</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </div>
@@ -1361,8 +1449,10 @@ export function Employees() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Employee ID</TableHead>
-                <TableHead>Name</TableHead>
+                {canManageRoster && (
+                  <TableHead className="w-12" aria-label="Telegram connect" />
+                )}
+                <TableHead>Employee</TableHead>
                 <TableHead>Khmer Name</TableHead>
                 <TableHead>Gender</TableHead>
                 <TableHead>Date of Birth</TableHead>
@@ -1382,12 +1472,30 @@ export function Employees() {
             <TableBody>
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
-                  <TableCell className="font-medium">{employee.id}</TableCell>
-                  {/* Profile + Name is a duplicate trigger for the details
-                      sheet: clicking the avatar or the name opens the same
-                      Sheet as the View Details button. cursor-pointer +
-                      hover:bg cues that the cell is clickable;
-                      role/tabIndex/onKeyDown keep it keyboard-reachable. */}
+                  {/* First column: Telegram connect button. Mints a
+                      single-use deep-link URL via the HR bot and copies
+                      it to the clipboard for the operator to forward. */}
+                  {canManageRoster && (
+                    <TableCell className="w-12">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title="Share Telegram connect link"
+                        aria-label="Share Telegram connect link"
+                        disabled={hrLinkBusy === ((employee as { apiId?: string }).apiId ?? employee.id)}
+                        onClick={() => {
+                          const id = (employee as { apiId?: string }).apiId ?? employee.id;
+                          void openShareLinkDialog(id, employee.name);
+                        }}
+                      >
+                        <Send className="h-3.5 w-3.5 text-sky-600" />
+                      </Button>
+                    </TableCell>
+                  )}
+                  {/* Employee ID + Name merged into one cell. Clicking
+                      the cell opens the details sheet, same as the
+                      action button at the end of the row. */}
                   <TableCell
                     role="button"
                     tabIndex={0}
@@ -1404,7 +1512,11 @@ export function Employees() {
                       }
                     }}
                   >
-                    <EmployeeCell employee={employee} nameOnly />
+                    {/* `subtitle` slot in EmployeeCell renders directly
+                     *  under the name (right of the avatar), so the
+                     *  empNo sits tucked under the name rather than
+                     *  under the profile image. */}
+                    <EmployeeCell employee={employee} subtitle={employee.id} />
                   </TableCell>
                   <TableCell className="text-sm">{employee.khmerName || '-'}</TableCell>
                   <TableCell className="capitalize">{employee.gender || '-'}</TableCell>
