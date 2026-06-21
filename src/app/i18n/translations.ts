@@ -73,6 +73,8 @@ export const dict: Dict = {
   'nav.vendors':              { en: 'Vendors',              km: 'អ្នកលក់',             zh: '供应商' },
   'nav.bills':                { en: 'Bill',                 km: 'វិក្កយបត្រទិញ',      zh: '账单' },
   'nav.receipts':             { en: 'Receipt',              km: 'បង្កាន់ដៃ',          zh: '收据' },
+  'nav.stock':                { en: 'Stock',                km: 'ស្តុក',              zh: '库存' },
+  'nav.items':                { en: 'Items',                km: 'មុខទំនិញ',           zh: '物料' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },
   'nav.setting.general':      { en: 'General Settings',     km: 'ការកំណត់ទូទៅ',      zh: '常规设置' },

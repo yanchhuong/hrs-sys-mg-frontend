@@ -22,6 +22,7 @@ import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
+  Package, Boxes,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -47,6 +48,7 @@ import { Quotations } from '../components/views/Quotations';
 import { Vouchers } from '../components/views/Vouchers';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
+import { Items } from '../components/views/Items';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
 // Offices + QrDisplay are no longer registered as standalone leaves.
@@ -91,6 +93,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
   { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
+  { id: 'stock-group',    labelKey: 'nav.stock',         icon: Boxes },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -141,6 +144,8 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
   { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'receipt',            component: Receipts,                 group: 'purchases' },
+
+  { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },
