@@ -42,6 +42,22 @@ services:
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ORIGINS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      # AI-Agent reachability. The agent runs in its own compose
+      # project (AI-Agent/docker-compose.yml) on a separate docker
+      # network on the same droplet, so we can't address it by service
+      # name from here — instead reach the host gateway and the
+      # agent's published host port (default 5174). Empty/unset =
+      # TelegramNotifier returns SendResult.disabled() and the
+      # operator sees "Telegram delivery is not configured on this
+      # server." TELEGRAM_AGENT_SECRET must match the same env var on
+      # the AI-Agent side or the agent rejects with 403.
+      TELEGRAM_AGENT_BASE_URL: ${TELEGRAM_AGENT_BASE_URL:-http://host.docker.internal:5174}
+      TELEGRAM_AGENT_SECRET: ${TELEGRAM_AGENT_SECRET:-}
+    # Make host.docker.internal resolve on Linux droplets — Docker
+    # Desktop on Mac/Windows ships this hostname for free; on Linux
+    # we have to add it explicitly via the magic host-gateway value.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     expose:
       - "4000"
 
