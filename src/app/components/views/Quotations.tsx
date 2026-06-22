@@ -530,6 +530,14 @@ function QuotationFormDialog({
   // the Invoice form to keep the dialog mount path light.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // Per-tenant gate from the Items → Settings dialog (V120). Hidden
+  // when the tenant hasn't opted in for Quotation.
+  const [pickerEnabled, setPickerEnabled] = useState(false);
+  useEffect(() => {
+    itemsApi.getUsageSettings()
+      .then(s => setPickerEnabled(s.enabledForQuotation))
+      .catch(() => setPickerEnabled(false));
+  }, []);
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
@@ -788,22 +796,24 @@ function QuotationFormDialog({
                         <TableCell>
                           <div className="flex items-center gap-1">
                             {/* Catalog picker — Package icon to the
-                                left, same UX as Invoices. Linking a
-                                line to a stock item records the FK
-                                on the quotation so a future "convert
-                                to invoice" can pull it through. */}
-                            <StockItemPicker
-                              catalog={stockCatalog}
-                              loaded={catalogLoaded}
-                              onOpen={ensureCatalog}
-                              selectedId={l.stockItemId ?? ''}
-                              onPick={si => updateLine(l.localId, {
-                                stockItemId: si.id,
-                                name: si.name,
-                                unit: si.unit ?? l.unit ?? '',
-                                unitPrice: String(si.unitPrice ?? 0),
-                              })}
-                            />
+                                left, same UX as Invoices. Gated by
+                                the per-tenant Items → Settings toggle
+                                (V120); hidden when the tenant hasn't
+                                opted in for Quotation. */}
+                            {pickerEnabled && (
+                              <StockItemPicker
+                                catalog={stockCatalog}
+                                loaded={catalogLoaded}
+                                onOpen={ensureCatalog}
+                                selectedId={l.stockItemId ?? ''}
+                                onPick={si => updateLine(l.localId, {
+                                  stockItemId: si.id,
+                                  name: si.name,
+                                  unit: si.unit ?? l.unit ?? '',
+                                  unitPrice: String(si.unitPrice ?? 0),
+                                })}
+                              />
+                            )}
                             <div className="relative flex-1">
                               <Input
                                 value={l.name}

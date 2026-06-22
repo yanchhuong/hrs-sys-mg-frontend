@@ -964,6 +964,16 @@ function InvoiceFormDialog({
   // initial render stays light when the operator is just adding ad-hoc lines.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // Per-tenant gate from the Items → Settings dialog (V120). When
+  // false, the catalog picker icon is hidden and lines fall back to
+  // the free-text Item column. Soft-fail to false on 403 so a tenant
+  // without stock permissions doesn't see a broken picker.
+  const [pickerEnabled, setPickerEnabled] = useState(false);
+  useEffect(() => {
+    itemsApi.getUsageSettings()
+      .then(s => setPickerEnabled(s.enabledForInvoice))
+      .catch(() => setPickerEnabled(false));
+  }, []);
   // Recent-line-items dropdown — surfaces the last 5 names HR typed
   // across all three doc forms (invoice / quotation / voucher).
   // `focusedItemIdx` tracks which row's Item input is currently
@@ -1381,26 +1391,25 @@ function InvoiceFormDialog({
               return (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-3 flex items-center gap-1">
-                    {/* Stock-catalog picker (V118 Phase-2). The icon
-                        opens a Popover with a fuzzy-search list of
-                        active stock items — pick one to auto-fill
-                        Name / UOM / Unit price and record the
-                        stockItemId so the server decrements stock on
-                        save. Free-text input still works for ad-hoc
-                        lines (no FK, no decrement). */}
-                    <StockItemPicker
-                      catalog={stockCatalog}
-                      loaded={catalogLoaded}
-                      onOpen={ensureCatalog}
-                      selectedId={it.stockItemId ?? ''}
-                      onPick={si => updateItem(idx, {
-                        stockItemId: si.id,
-                        name: si.name,
-                        unit: si.unit ?? it.unit ?? '',
-                        unitPrice: String(si.unitPrice ?? 0),
-                        totalEditing: undefined,
-                      })}
-                    />
+                    {/* Stock-catalog picker (V118 Phase-2). Gated by
+                        the per-tenant Items → Settings toggle (V120) —
+                        hidden when the tenant hasn't opted in for
+                        Invoice. Free-text Item column always works. */}
+                    {pickerEnabled && (
+                      <StockItemPicker
+                        catalog={stockCatalog}
+                        loaded={catalogLoaded}
+                        onOpen={ensureCatalog}
+                        selectedId={it.stockItemId ?? ''}
+                        onPick={si => updateItem(idx, {
+                          stockItemId: si.id,
+                          name: si.name,
+                          unit: si.unit ?? it.unit ?? '',
+                          unitPrice: String(si.unitPrice ?? 0),
+                          totalEditing: undefined,
+                        })}
+                      />
+                    )}
                     <div className="relative flex-1">
                       <Input
                         className="h-8 text-sm w-full"

@@ -555,6 +555,14 @@ function VoucherFormDialog({
   // Same lazy pattern as Invoices / Quotations.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // Per-tenant gate from the Items → Settings dialog (V120). Hidden
+  // when the tenant hasn't opted in for Voucher.
+  const [pickerEnabled, setPickerEnabled] = useState(false);
+  useEffect(() => {
+    itemsApi.getUsageSettings()
+      .then(s => setPickerEnabled(s.enabledForVoucher))
+      .catch(() => setPickerEnabled(false));
+  }, []);
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
@@ -829,8 +837,10 @@ function VoucherFormDialog({
                 <div key={l.localId} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-3 flex items-center gap-1">
                     {/* Stock-catalog picker — same UX as Invoices /
-                        Quotations. Pick fills name + unit + unit
-                        price and records the FK on the voucher. */}
+                        Quotations. Gated by the per-tenant Items →
+                        Settings toggle (V120); hidden when the tenant
+                        hasn't opted in for Voucher. */}
+                    {pickerEnabled && (
                     <StockItemPicker
                       catalog={stockCatalog}
                       loaded={catalogLoaded}
@@ -843,6 +853,7 @@ function VoucherFormDialog({
                         unitPrice: String(si.unitPrice ?? 0),
                       })}
                     />
+                    )}
                     <div className="relative flex-1">
                     <Input
                       className="h-8 text-sm w-full"

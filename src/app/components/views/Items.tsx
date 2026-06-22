@@ -22,10 +22,11 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 
 interface FormState {
   sku: string;
@@ -36,6 +37,9 @@ interface FormState {
   unitCost: string;
   stockQty: string;
   active: boolean;
+  /** V121 — when true, picking this item on an invoice decrements
+   *  stock and refuses to save when qty > on-hand. */
+  deductionEnabled: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -47,6 +51,7 @@ const EMPTY_FORM: FormState = {
   unitCost: '0',
   stockQty: '0',
   active: true,
+  deductionEnabled: false,
 };
 
 interface StockInState {
@@ -78,6 +83,9 @@ export function Items() {
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Usage-settings dialog (V120) — controls which sale/purchase
+  // document forms surface the StockItemPicker.
+  const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<itemsApi.Item | null>(null);
@@ -126,6 +134,7 @@ export function Items() {
       unitCost: String(it.unitCost ?? 0),
       stockQty: String(it.stockQty ?? 0),
       active: it.active,
+      deductionEnabled: it.deductionEnabled,
     });
     setDialogOpen(true);
   };
@@ -151,6 +160,7 @@ export function Items() {
         unitCost,
         stockQty,
         active: form.active,
+        deductionEnabled: form.deductionEnabled,
       };
       if (editing) await itemsApi.update(editing.id, payload);
       else         await itemsApi.create(payload);
@@ -236,6 +246,21 @@ export function Items() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {/* Settings gear — only admins/managers who can mutate the
+              catalog should be able to flip the per-doc-type picker
+              gate. Position matches Customers / Employees: between
+              Refresh and the primary Add action. */}
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setUsageSettingsOpen(true)}
+              title="Item usage settings"
+              aria-label="Item usage settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && (
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4 mr-1.5" /> Add Item
@@ -243,6 +268,11 @@ export function Items() {
           )}
         </div>
       </div>
+
+      <StockItemUsageSettingsDialog
+        open={usageSettingsOpen}
+        onOpenChange={setUsageSettingsOpen}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -281,6 +311,7 @@ export function Items() {
                     <TableHead className="text-right w-[120px]">Unit Price</TableHead>
                     <TableHead className="text-right w-[120px]">Unit Cost</TableHead>
                     <TableHead className="text-right w-[110px]">Stock</TableHead>
+                    <TableHead className="text-center w-[110px]">Deduction</TableHead>
                     <TableHead className="text-center w-[90px]">Status</TableHead>
                     <TableHead className="text-right w-[140px]">Actions</TableHead>
                   </TableRow>
@@ -310,6 +341,16 @@ export function Items() {
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${lowStock ? 'text-red-600 font-medium' : ''}`}>
                           {Number(it.stockQty).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {/* V121 — when on, the invoice save flow
+                              decrements stock and refuses to save
+                              when qty > on-hand. Off = autofill only. */}
+                          {it.deductionEnabled ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">On</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-gray-500">Off</Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant={it.active ? 'default' : 'outline'}>
@@ -461,6 +502,24 @@ export function Items() {
                   onCheckedChange={v => setForm({ ...form, active: v })}
                 />
               </div>
+            </div>
+
+            {/* V121 — per-item stock deduction toggle. When on, the
+                InvoiceService decrements on-hand on save AND refuses
+                to save when the line quantity exceeds the available
+                stock. Off = picker is autofill-only (back-compat). */}
+            <div className="flex items-start justify-between border rounded-md px-3 py-2 gap-3">
+              <div className="flex-1 min-w-0">
+                <Label className="text-sm">Stock deduction</Label>
+                <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
+                  When on: choosing this item on an Invoice decrements stock;
+                  saving is blocked if the requested quantity exceeds on-hand.
+                </div>
+              </div>
+              <Switch
+                checked={form.deductionEnabled}
+                onCheckedChange={v => setForm({ ...form, deductionEnabled: v })}
+              />
             </div>
           </div>
 

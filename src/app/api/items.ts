@@ -19,6 +19,12 @@ export interface Item {
   /** On-hand quantity. Negatives allowed so back-orders show red. */
   stockQty: number;
   active: boolean;
+  /** When true, issuing a Commercial / Tax invoice with a line
+   *  referencing this item decrements stockQty AND refuses to save
+   *  when the requested quantity exceeds the on-hand balance. When
+   *  false (default), the picker is used purely for autofill — the
+   *  line records the FK but the on-hand balance never changes. V121. */
+  deductionEnabled: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -32,6 +38,8 @@ export interface ItemRequest {
   unitCost?: number;
   stockQty?: number;
   active?: boolean;
+  /** Null on update = keep existing value. V121. */
+  deductionEnabled?: boolean;
 }
 
 export interface StockInRequest {
@@ -86,4 +94,26 @@ export async function remove(id: string): Promise<void> {
  */
 export async function stockIn(id: string, req: StockInRequest): Promise<Item> {
   return apiJson(`/api/v1/stock-items/${id}/stock-in`, { method: 'POST', json: req });
+}
+
+/** Per-tenant feature gate for the StockItemPicker on sale/purchase
+ *  document forms (V120). All four flags default to false — items
+ *  module ships hidden behind explicit opt-in per doc type. */
+export interface UsageSettings {
+  enabledForInvoice: boolean;
+  enabledForQuotation: boolean;
+  enabledForVoucher: boolean;
+  enabledForBill: boolean;
+  /** null when no row exists yet (returning baked-in defaults). */
+  updatedAt: string | null;
+}
+
+/** Read the tenant's usage settings. Returns all-off defaults when
+ *  no row exists, so the FE never has to branch on 204. */
+export async function getUsageSettings(): Promise<UsageSettings> {
+  return apiJson('/api/v1/stock-items/usage-settings');
+}
+
+export async function putUsageSettings(req: UsageSettings): Promise<UsageSettings> {
+  return apiJson('/api/v1/stock-items/usage-settings', { method: 'PUT', json: req });
 }
