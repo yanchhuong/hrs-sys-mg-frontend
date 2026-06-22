@@ -1979,7 +1979,34 @@ export function Attendance({ onNavigate }: Props = {}) {
                         e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
                       );
                       const isSynthetic = record.id.startsWith('synthetic:');
-                      const timeCell = (val?: string, icon?: 'in' | 'out') => {
+                      // Half-day leave constrains which punch slots are
+                      // even meaningful. The merge logic at dailyRows
+                      // build time stamps "Leave: <type> — …" into
+                      // `notes`, so we re-derive the structured type
+                      // here without round-tripping through state.
+                      // Unknown leave types fall through to "full"
+                      // (better to over-grey than to suggest a slot
+                      // is available when the data is uncertain).
+                      const activeLeaveType: 'full' | 'half_morning' | 'half_noon' | null = (() => {
+                        if (record.status !== 'leave') return null;
+                        const n = record.notes ?? '';
+                        if (n.startsWith('Leave: half_morning')) return 'half_morning';
+                        if (n.startsWith('Leave: half_noon'))    return 'half_noon';
+                        return 'full';
+                      })();
+                      const morningOnLeave = activeLeaveType === 'full' || activeLeaveType === 'half_morning';
+                      const noonOnLeave    = activeLeaveType === 'full' || activeLeaveType === 'half_noon';
+
+                      const timeCell = (val?: string, icon?: 'in' | 'out', onLeave?: boolean) => {
+                        // On-leave overrides any stored value in that
+                        // slot. A punch sitting in (e.g.) morning_in
+                        // while the employee took half_morning leave
+                        // is a data anomaly — the leave is
+                        // authoritative; HR fixes the row via Edit if
+                        // they want the punch counted.
+                        if (onLeave) {
+                          return <span className="text-center block text-[11px] italic text-blue-400">On leave</span>;
+                        }
                         if (!val) return <span className="text-gray-300 text-center block">--:--</span>;
                         return (
                           <span className="flex items-center justify-center gap-1 text-sm">
@@ -2058,10 +2085,10 @@ export function Attendance({ onNavigate }: Props = {}) {
                               {format(parseISO(record.date), 'MMM dd')}
                             </TableCell>
                           )}
-                          <TableCell className="text-center">{timeCell(record.morningIn, 'in')}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.morningOut, 'out')}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.noonIn, 'in')}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.noonOut, 'out')}</TableCell>
+                          <TableCell className="text-center">{timeCell(record.morningIn, 'in', morningOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(record.morningOut, 'out', morningOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(record.noonIn, 'in', noonOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(record.noonOut, 'out', noonOnLeave)}</TableCell>
                           <TableCell className="text-center">
                             {otDisplay !== null ? (
                               <Badge
