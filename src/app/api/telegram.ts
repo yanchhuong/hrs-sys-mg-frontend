@@ -129,3 +129,26 @@ export async function putPlatformBot(
 export async function deletePlatformBot(): Promise<void> {
   return apiVoid('/api/v1/platform/telegram/bot', { method: 'DELETE' });
 }
+
+/** One row in the Super Admin's unified Telegram Bots table.
+ *  Two filterable axes:
+ *    - {@code kind}     — ownership (Public = platform / Private = tenant)
+ *    - {@code audience} — who the bot talks to (customer or employee)
+ *  Tenant rows carry {@code tenantId} + {@code tenantName} so the
+ *  table can render the owning company alongside the bot username. */
+export interface PlatformBotListItem {
+  kind: 'platform' | 'tenant';
+  audience: 'customer' | 'employee';
+  tenantId: string | null;
+  tenantName: string | null;
+  botUsername: string;
+  tokenTail: string;
+  enabled: boolean;
+  description: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export async function listAllBots(): Promise<PlatformBotListItem[]> {
+  return apiJson('/api/v1/platform/telegram/all-bots');
+}

@@ -31,6 +31,17 @@ export interface HrTelegramLinkResponse {
   expiresAt: string;
 }
 
+/** Linked employee row — what the agent records after the employee
+ *  clicks /start on the HR bot. Mirrors {@code TelegramCustomer}. */
+export interface HrTelegramEmployee {
+  id: string;
+  employeeId: string;
+  chatId: number;
+  telegramUsername?: string | null;
+  displayName?: string | null;
+  linkedAt: string;
+}
+
 /** Returns null when no bot is registered yet (204 from the server). */
 export async function getBot(): Promise<HrTelegramBot | null> {
   // The backend returns 204 No Content when no bot is registered;
@@ -54,4 +65,20 @@ export async function setEnabled(enabled: boolean): Promise<HrTelegramBot> {
 
 export async function generateLink(employeeId: string): Promise<HrTelegramLinkResponse> {
   return apiJson('/api/v1/hr-telegram/links', { method: 'POST', json: { employeeId } });
+}
+
+/** Per-employee linkage lookup — null when the employee hasn't
+ *  redeemed a link yet (controller returns 204). */
+export async function getLinkedEmployee(employeeId: string): Promise<HrTelegramEmployee | null> {
+  return (await apiJson<HrTelegramEmployee | null>(`/api/v1/hr-telegram/employees/${employeeId}`)) ?? null;
+}
+
+/** All linked employees in the tenant — drives the per-row state
+ *  on the Employees roster table without N+1 lookups. */
+export async function listLinkedEmployees(): Promise<HrTelegramEmployee[]> {
+  return apiJson('/api/v1/hr-telegram/employees');
+}
+
+export async function unlinkEmployee(employeeId: string): Promise<void> {
+  return apiVoid(`/api/v1/hr-telegram/employees/${employeeId}`, { method: 'DELETE' });
 }

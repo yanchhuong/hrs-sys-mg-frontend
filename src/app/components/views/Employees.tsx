@@ -42,7 +42,11 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../ui/alert-dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -510,13 +514,20 @@ export function Employees() {
   // create or update employees. Granular create/update/delete are exposed
   // separately so individual buttons (Edit, Delete, Bulk Upload) can gate
   // independently per the matrix the admin configured.
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canView, canCreate, canUpdate, canDelete } = useAuth();
   const canCreateEmp = canCreate('employees');
   const canUpdateEmp = canUpdate('employees');
   const canDeleteEmp = canDelete('employees');
   const canCreateContract = canCreate('contracts');
   const canUpdateContract = canUpdate('contracts');
   const canManageRoster = canCreateEmp || canUpdateEmp;
+  // HR Telegram column visibility + per-action permissions. Mirrors
+  // the Customer page split: 'view' gates the column itself, 'create'
+  // gates Share-link, 'delete' gates Unlink, 'update' gates the gear.
+  const canViewHrTelegram   = canView('hr_telegram');
+  const canShareHrTelegram  = canCreate('hr_telegram');
+  const canUnlinkHrTelegram = canDelete('hr_telegram');
+  const canManageHrTelegramBot = canUpdate('hr_telegram');
   const [searchTerm, setSearchTerm] = useState('');
   // Default to "Active" — administrators almost always work with the
   // current roster; inactive/expired rows are a deliberate lookup.
@@ -526,41 +537,24 @@ export function Employees() {
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
-  // HR Telegram bot config + per-row link generation. Phase 1 only —
-  // mint a deep-link URL and surface it in a dialog the operator
-  // copies + sends out of band. Mirrors the Customers page Share-Link
-  // pattern so HR knows where to look.
+  // HR Telegram bot config + per-row linkage. The Share-link dialog
+  // + per-row state lives inside EmployeeTelegramCell (one dialog
+  // per row) — same pattern as the Customers page. We only keep the
+  // tenant-level bot-settings dialog open state here.
   const [hrBotDialogOpen, setHrBotDialogOpen] = useState(false);
-  const [hrLinkBusy, setHrLinkBusy] = useState<string | null>(null);
-  /** Generated-link dialog state — { employeeName, url, expiresAt }
-   *  is set when the API returns; null hides the dialog. */
-  const [hrShareLink, setHrShareLink] = useState<{
-    employeeName: string; url: string; expiresAt: string;
-  } | null>(null);
-  const [hrLinkCopied, setHrLinkCopied] = useState(false);
-
-  const openShareLinkDialog = async (employeeId: string, employeeName: string) => {
-    if (hrLinkBusy) return;
-    setHrLinkBusy(employeeId);
+  /** employeeApiId → linkage row. Side-fetched alongside the roster
+   *  so each cell can render its state in O(1). Soft-fails to empty
+   *  on 403 / pre-deploy so the table itself never breaks. */
+  const [linkedTelegramById, setLinkedTelegramById] = useState<Map<string, hrBotApi.HrTelegramEmployee>>(new Map());
+  const loadLinkedTelegram = async () => {
+    if (!canViewHrTelegram) { setLinkedTelegramById(new Map()); return; }
     try {
-      const res = await hrBotApi.generateLink(employeeId);
-      setHrShareLink({ employeeName, url: res.url, expiresAt: res.expiresAt });
-      setHrLinkCopied(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to generate connect link');
-    } finally {
-      setHrLinkBusy(null);
-    }
-  };
-  const copyHrShareLink = async () => {
-    if (!hrShareLink) return;
-    try {
-      await navigator.clipboard.writeText(hrShareLink.url);
-      setHrLinkCopied(true);
-      toast.success('Link copied');
-      window.setTimeout(() => setHrLinkCopied(false), 1800);
+      const links = await hrBotApi.listLinkedEmployees();
+      const m = new Map<string, hrBotApi.HrTelegramEmployee>();
+      for (const l of links) m.set(l.employeeId, l);
+      setLinkedTelegramById(m);
     } catch {
-      toast.error('Could not copy to clipboard');
+      setLinkedTelegramById(new Map());
     }
   };
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
@@ -659,6 +653,11 @@ export function Employees() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Telegram linkage is a side-fetch so a 403 on the hr_telegram
+  // module (or running pre-deploy without V117) never breaks the
+  // roster. Re-runs when permission flips on (admin-grant flow).
+  useEffect(() => { void loadLinkedTelegram(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [canViewHrTelegram]);
 
   const handleCreated = (emp: Employee) => {
     if (USE_MOCKS) {
@@ -1236,18 +1235,23 @@ export function Employees() {
         </div>
         <div className="flex gap-2">
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
+          {/* HR Telegram bot config gear — gated by hr_telegram.update so
+              the bot-token surface stays admin-only even when other
+              roster permissions are granted to a manager. */}
+          {canManageHrTelegramBot && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setHrBotDialogOpen(true)}
+              title="HR Telegram Bot settings"
+              aria-label="HR Telegram Bot settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {/* Add/Bulk-upload are admin+manager only — employees (if they reach this view) see a read-only, team-scoped roster. */}
           {canManageRoster && (
             <>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setHrBotDialogOpen(true)}
-                title="HR Telegram Bot settings"
-                aria-label="HR Telegram Bot settings"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
               <Button
                 variant="outline"
                 size="icon"
@@ -1290,44 +1294,16 @@ export function Employees() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <HrTelegramBotSettingsDialog
-                open={hrBotDialogOpen}
-                onOpenChange={setHrBotDialogOpen}
-              />
-              {/* Generated link surface — mirrors the Customer page's
-                  Share-Link dialog so HR has a single mental model
-                  whether they're connecting a customer or an employee. */}
-              <Dialog open={!!hrShareLink} onOpenChange={(next) => !next && setHrShareLink(null)}>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Share Telegram link</DialogTitle>
-                    <DialogDescription>
-                      Send this link to <span className="font-medium">{hrShareLink?.employeeName}</span>.
-                      After they click <strong>Start</strong> on Telegram, their chat
-                      will be bound to their employee record.
-                    </DialogDescription>
-                  </DialogHeader>
-                  {hrShareLink && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Input value={hrShareLink.url} readOnly className="font-mono text-xs" />
-                        <Button variant="outline" size="sm" onClick={copyHrShareLink}>
-                          {hrLinkCopied
-                            ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>
-                            : <><Copy className="h-3.5 w-3.5 mr-1" /> Copy</>}
-                        </Button>
-                      </div>
-                      <div className="text-[11px] text-gray-500">
-                        Expires {new Date(hrShareLink.expiresAt).toLocaleString()}. Generate a fresh one if it lapses.
-                      </div>
-                    </div>
-                  )}
-                  <DialogFooter>
-                    <Button onClick={() => setHrShareLink(null)}>Done</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </>
+          )}
+          {/* HR bot settings dialog — mounted at the page level so it
+              survives the gear button toggle independently of the
+              admin/manager Add-Employee surface above. */}
+          {canManageHrTelegramBot && (
+            <HrTelegramBotSettingsDialog
+              open={hrBotDialogOpen}
+              onOpenChange={setHrBotDialogOpen}
+            />
           )}
         </div>
       </div>
@@ -1449,8 +1425,8 @@ export function Employees() {
           <Table>
             <TableHeader>
               <TableRow>
-                {canManageRoster && (
-                  <TableHead className="w-12" aria-label="Telegram connect" />
+                {canViewHrTelegram && (
+                  <TableHead className="w-[200px]">Telegram</TableHead>
                 )}
                 <TableHead>Employee</TableHead>
                 <TableHead>Khmer Name</TableHead>
@@ -1472,25 +1448,20 @@ export function Employees() {
             <TableBody>
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
-                  {/* First column: Telegram connect button. Mints a
-                      single-use deep-link URL via the HR bot and copies
-                      it to the clipboard for the operator to forward. */}
-                  {canManageRoster && (
-                    <TableCell className="w-12">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        title="Share Telegram connect link"
-                        aria-label="Share Telegram connect link"
-                        disabled={hrLinkBusy === ((employee as { apiId?: string }).apiId ?? employee.id)}
-                        onClick={() => {
-                          const id = (employee as { apiId?: string }).apiId ?? employee.id;
-                          void openShareLinkDialog(id, employee.name);
-                        }}
-                      >
-                        <Send className="h-3.5 w-3.5 text-sky-600" />
-                      </Button>
+                  {/* First column: Telegram link state + actions.
+                      Cell mirrors the Customer page's TelegramCell —
+                      "Share link" when not connected, the linked
+                      person + Unlink when they are. */}
+                  {canViewHrTelegram && (
+                    <TableCell className="w-[200px]">
+                      <EmployeeTelegramCell
+                        employeeApiId={(employee as { apiId?: string }).apiId ?? employee.id}
+                        employeeName={employee.name}
+                        linked={linkedTelegramById.get((employee as { apiId?: string }).apiId ?? employee.id) ?? null}
+                        canShare={canShareHrTelegram}
+                        canUnlink={canUnlinkHrTelegram}
+                        onChanged={() => { void loadLinkedTelegram(); }}
+                      />
                     </TableCell>
                   )}
                   {/* Employee ID + Name merged into one cell. Clicking
@@ -2747,5 +2718,228 @@ export function Employees() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* HR Telegram column cell                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Renders the HR Telegram linkage state for one employee row.
+ *
+ *   • Not linked → "Share link" button. Click mints a 24-hour
+ *     deep-link URL (POST /hr-telegram/links) and pops a dialog
+ *     with a Copy button so HR can paste it to the employee.
+ *   • Linked     → green-check identity ("Display Name" + @handle)
+ *     + a quiet "Unlink" action behind an AlertDialog confirmation.
+ *
+ * Mirrors the Customer-side TelegramCell so HR has a single mental
+ * model whether they're connecting an employee or a customer.
+ */
+function EmployeeTelegramCell({
+  employeeApiId, employeeName, linked, canShare, canUnlink, onChanged,
+}: {
+  employeeApiId: string;
+  employeeName: string;
+  linked: hrBotApi.HrTelegramEmployee | null;
+  canShare: boolean;
+  canUnlink: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // Unlink is destructive — the chat binding goes away, so re-linking
+  // means generating a fresh deep-link and the employee clicking
+  // /start again. Worth a 1-click "are you sure?" interstitial.
+  const [confirmUnlinkOpen, setConfirmUnlinkOpen] = useState(false);
+
+  const share = async () => {
+    setBusy(true);
+    try {
+      const res = await hrBotApi.generateLink(employeeApiId);
+      setLinkUrl(res.url);
+      setExpiresAt(res.expiresAt);
+      setCopied(false);
+      setOpen(true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to generate connect link');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unlink = async () => {
+    setBusy(true);
+    try {
+      await hrBotApi.unlinkEmployee(employeeApiId);
+      toast.success(`${employeeName} unlinked from Telegram`);
+      setConfirmUnlinkOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Unlink failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!linkUrl) return;
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      setCopied(true);
+      toast.success('Link copied');
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error('Could not copy to clipboard');
+    }
+  };
+
+  if (linked) {
+    const display =
+      linked.displayName?.trim()
+      || (linked.telegramUsername ? `@${linked.telegramUsername}` : `Chat #${linked.chatId}`);
+    const handle = linked.telegramUsername && linked.displayName
+      ? `@${linked.telegramUsername}`
+      : null;
+    return (
+      <div className="flex items-center gap-1.5">
+        <div className="flex flex-col leading-tight">
+          <div className="inline-flex items-center gap-1 text-xs">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="font-medium text-emerald-700">{display}</span>
+          </div>
+          {handle && (
+            <span className="font-mono text-[10px] text-gray-500">{handle}</span>
+          )}
+        </div>
+        {canUnlink && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={() => setConfirmUnlinkOpen(true)}
+            disabled={busy}
+            title="Unlink this Telegram chat"
+          >
+            <Link2Off className="h-3 w-3 mr-1" /> Unlink
+          </Button>
+        )}
+        <AlertDialog open={confirmUnlinkOpen} onOpenChange={setConfirmUnlinkOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Unlink {employeeName} from Telegram?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {linked?.telegramUsername
+                  ? <>The chat <span className="font-mono">@{linked.telegramUsername}</span> will no longer receive HR messages for this employee.</>
+                  : <>This chat will no longer receive HR messages for this employee.</>}
+                {' '}You can re-share a fresh link later — the employee will need to click <strong>Start</strong> on Telegram again to reconnect.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={unlink}
+                className="bg-red-600 hover:bg-red-700"
+                disabled={busy}
+              >
+                Unlink
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        {/* Explicit "Not connected" line so the row's state is
+            obvious at a glance — without it every disconnected
+            row looks like every other one. */}
+        <div className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-300" />
+          Not connected
+        </div>
+        <div className="flex items-center gap-1">
+          {canShare ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={share}
+              disabled={busy}
+            >
+              <Send className="h-3 w-3 mr-1" />
+              {busy ? 'Generating…' : 'Share link'}
+            </Button>
+          ) : (
+            <span className="text-xs text-gray-400">—</span>
+          )}
+          {/* Recheck — useful right after sharing a link so HR can
+              poll for the employee's /start click without refreshing
+              the whole roster. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-gray-400 hover:text-gray-700"
+            onClick={() => onChanged()}
+            disabled={busy}
+            title="Check if the employee has connected"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <Dialog open={open} onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) onChanged();
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share Telegram link</DialogTitle>
+            <DialogDescription>
+              Send this link to <span className="font-medium">{employeeName}</span>.
+              After they click <strong>Start</strong> on Telegram, their chat
+              will be bound to their employee record.
+            </DialogDescription>
+          </DialogHeader>
+          {linkUrl && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Input value={linkUrl} readOnly className="font-mono text-xs" />
+                <Button variant="outline" size="sm" onClick={copyLink}>
+                  {copied
+                    ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>
+                    : <><Copy className="h-3.5 w-3.5 mr-1" /> Copy</>}
+                </Button>
+              </div>
+              {expiresAt && (
+                <div className="text-[11px] text-gray-500">
+                  Expires {new Date(expiresAt).toLocaleString()}. Generate a fresh one if it lapses.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { onChanged(); toast.success('Checked'); }}
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Check connection
+            </Button>
+            <Button onClick={() => setOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
