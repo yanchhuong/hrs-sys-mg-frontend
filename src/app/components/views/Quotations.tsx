@@ -37,6 +37,9 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../utils/format';
 import * as quotationsApi from '../../api/quotations';
+import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
+import { StockItemPicker } from '../common/StockItemPicker';
+import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/settings';
 import { loadBankAccounts } from '../../utils/bankAccount';
@@ -518,6 +521,27 @@ function QuotationFormDialog({
   const [terms, setTerms] = useState('');
   const [lines, setLines] = useState<FormLine[]>([newLine()]);
   const [saving, setSaving] = useState(false);
+  // Recent-items typeahead — same pattern as Invoices. Tracks which
+  // row's Item input is focused so the dropdown only renders for it.
+  const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
+  const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
+  // Stock-catalog picker state — lazy-loaded on first open of any
+  // line's picker, then shared across rows. Same lazy pattern as
+  // the Invoice form to keep the dialog mount path light.
+  const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const ensureCatalog = async () => {
+    if (catalogLoaded) return;
+    try {
+      const res = await itemsApi.list({ size: 200 });
+      setStockCatalog(res.content ?? []);
+    } catch {
+      // Silent fail — a 403 (no stock perm) just leaves the picker
+      // empty; free-text lines still work.
+    } finally {
+      setCatalogLoaded(true);
+    }
+  };
 
   // Reset / seed when dialog opens
   useEffect(() => {
@@ -648,6 +672,12 @@ function QuotationFormDialog({
         const created = await quotationsApi.create(buildPayload());
         toast.success(`Quotation ${created.quotationNo} created`);
       }
+      addRecentLineItems(lines.map(l => ({
+        name: l.name,
+        unit: l.unit,
+        unitPrice: Number(l.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       await onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save quotation');
@@ -756,7 +786,68 @@ function QuotationFormDialog({
                     return (
                       <TableRow key={l.localId}>
                         <TableCell>
-                          <Input value={l.name} onChange={e => updateLine(l.localId, { name: e.target.value })} placeholder="Item name" />
+                          <div className="flex items-center gap-1">
+                            {/* Catalog picker — Package icon to the
+                                left, same UX as Invoices. Linking a
+                                line to a stock item records the FK
+                                on the quotation so a future "convert
+                                to invoice" can pull it through. */}
+                            <StockItemPicker
+                              catalog={stockCatalog}
+                              loaded={catalogLoaded}
+                              onOpen={ensureCatalog}
+                              selectedId={l.stockItemId ?? ''}
+                              onPick={si => updateLine(l.localId, {
+                                stockItemId: si.id,
+                                name: si.name,
+                                unit: si.unit ?? l.unit ?? '',
+                                unitPrice: String(si.unitPrice ?? 0),
+                              })}
+                            />
+                            <div className="relative flex-1">
+                              <Input
+                                value={l.name}
+                                onChange={e => updateLine(l.localId, {
+                                  name: e.target.value,
+                                  // Hand-editing unlinks the catalog
+                                  // row — same rationale as Invoices.
+                                  stockItemId: null,
+                                })}
+                                onFocus={() => setFocusedLineId(l.localId)}
+                                onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
+                                placeholder="Item name"
+                              />
+                              {focusedLineId === l.localId && !l.name && recentItems.length > 0 && (
+                              <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+                                  Recent
+                                </div>
+                                {recentItems.map(r => (
+                                  <button
+                                    key={r.name}
+                                    type="button"
+                                    className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                                    onMouseDown={e => {
+                                      e.preventDefault();
+                                      updateLine(l.localId, {
+                                        name: r.name,
+                                        unit: r.unit ?? l.unit ?? '',
+                                        unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
+                                      });
+                                      setFocusedLineId(null);
+                                    }}
+                                  >
+                                    <div className="font-medium truncate">{r.name}</div>
+                                    <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                                      <span>{r.unit ?? 'pcs'}</span>
+                                      <span className="tabular-nums">{(r.unitPrice ?? 0).toFixed(2)}</span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Input value={l.description} onChange={e => updateLine(l.localId, { description: e.target.value })} placeholder="—" />

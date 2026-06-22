@@ -37,6 +37,8 @@ import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as settingsApi from '../../api/settings';
 import * as itemsApi from '../../api/items';
 import { loadBankAccounts, MAX_BANK_ACCOUNTS_ON_INVOICE } from '../../utils/bankAccount';
+import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
+import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { formatMoneyForCurrency } from '../../utils/format';
@@ -915,99 +917,9 @@ interface FormItem {
 
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0', stockItemId: null };
 
-/**
- * Per-line catalog picker (V118 Phase-2). Tiny popover trigger that
- * reuses the existing {@link SearchablePicker} pattern so the visual
- * language matches Customer / Vendor pickers elsewhere in the form.
- *
- * <p>The trigger renders only as a {@link Package} icon — full-width
- * buttons would overflow the 12-col line grid. Active items only:
- * disabled rows shouldn't appear on new invoices.</p>
- */
-function StockItemPicker({
-  catalog, loaded, onOpen, selectedId, onPick,
-}: {
-  catalog: itemsApi.Item[];
-  loaded: boolean;
-  onOpen: () => void;
-  selectedId: string;
-  onPick: (it: itemsApi.Item) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  // Filter to active items only and fuzzy-match on name + sku.
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    const active = catalog.filter(c => c.active);
-    if (!term) return active;
-    return active.filter(c =>
-      c.name.toLowerCase().includes(term)
-      || (c.sku ?? '').toLowerCase().includes(term),
-    );
-  }, [catalog, q]);
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={v => { setOpen(v); if (v) onOpen(); }}
-    >
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={`h-8 w-8 shrink-0 ${selectedId ? 'text-blue-600' : 'text-gray-400'}`}
-          title="Pick from catalog"
-          aria-label="Pick item from stock catalog"
-        >
-          <Package className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
-        <div className="p-2 border-b">
-          <Input
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Search items…"
-            className="h-8 text-sm"
-            autoFocus
-          />
-        </div>
-        <div className="max-h-64 overflow-y-auto">
-          {!loaded ? (
-            <div className="p-3 text-xs text-gray-500 text-center">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="p-3 text-xs text-gray-500 text-center">
-              {catalog.length === 0
-                ? <>No items yet — add some on the <strong>Stock</strong> page.</>
-                : 'No matches'}
-            </div>
-          ) : (
-            filtered.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                onClick={() => { onPick(c); setOpen(false); setQ(''); }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">{c.name}</span>
-                  <span className="text-[11px] text-gray-500 tabular-nums shrink-0">
-                    {Number(c.unitPrice ?? 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
-                  <span className="font-mono truncate">{c.sku || '—'}</span>
-                  <span>{Number(c.stockQty ?? 0).toLocaleString('en-US')} {c.unit || ''}</span>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
+// StockItemPicker moved to ../common/StockItemPicker so Quotations
+// and Vouchers can mount the same picker without duplicating the
+// popover + search logic.
 
 function InvoiceFormDialog({
   open, onOpenChange, kind, customers, invoices, editing, parentPrefill, settings, onCreated,
@@ -1052,6 +964,13 @@ function InvoiceFormDialog({
   // initial render stays light when the operator is just adding ad-hoc lines.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // Recent-line-items dropdown — surfaces the last 5 names HR typed
+  // across all three doc forms (invoice / quotation / voucher).
+  // `focusedItemIdx` tracks which row's Item input is currently
+  // active; the dropdown only renders for that row + only when the
+  // name is empty (no point suggesting recents over their own typing).
+  const [focusedItemIdx, setFocusedItemIdx] = useState<number | null>(null);
+  const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
@@ -1212,6 +1131,14 @@ function InvoiceFormDialog({
         saved = await invoicesApi.create(buildPayload());
         toast.success(`${KIND_LABEL[kind]} created as draft`);
       }
+      // Push the just-saved names into the cross-doc "recent items"
+      // cache so the typeahead surfaces them on the next form open.
+      addRecentLineItems(items.map(it => ({
+        name: it.name,
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       // Auto-send via Telegram when the Invoice Settings toggle is
       // on. Text-only path here — the print template isn't mounted
       // in the form context so html2canvas would find no element.
@@ -1474,18 +1401,67 @@ function InvoiceFormDialog({
                         totalEditing: undefined,
                       })}
                     />
-                    <Input
-                      className="flex-1 h-8 text-sm"
-                      value={it.name}
-                      onChange={e => updateItem(idx, {
-                        name: e.target.value,
-                        // Hand-editing the name unlinks it from the
-                        // catalog item — otherwise the server would
-                        // still decrement the (now-mismatched) stock row.
-                        stockItemId: null,
-                      })}
-                      placeholder="Item or service name"
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        className="h-8 text-sm w-full"
+                        value={it.name}
+                        onChange={e => updateItem(idx, {
+                          name: e.target.value,
+                          // Hand-editing the name unlinks it from the
+                          // catalog item — otherwise the server would
+                          // still decrement the (now-mismatched) stock row.
+                          stockItemId: null,
+                        })}
+                        onFocus={() => setFocusedItemIdx(idx)}
+                        // Delay so a mousedown on a suggestion can
+                        // register before the blur tears down the
+                        // dropdown. mousedown handler also calls
+                        // preventDefault, but the timeout is the safety
+                        // net for keyboard / touch focus transitions.
+                        onBlur={() => setTimeout(() => setFocusedItemIdx(p => p === idx ? null : p), 120)}
+                        placeholder="Item or service name"
+                      />
+                      {/* Recent-items typeahead. Renders only when this
+                          row is focused AND empty — once HR starts
+                          typing we get out of the way (catalog picker
+                          icon + free-text input handle the rest). */}
+                      {focusedItemIdx === idx && !it.name && recentItems.length > 0 && (
+                        <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+                            Recent
+                          </div>
+                          {recentItems.map(r => (
+                            <button
+                              key={r.name}
+                              type="button"
+                              className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                              // mousedown + preventDefault keeps the
+                              // input's focus alive long enough for
+                              // the click handler to fire reliably.
+                              onMouseDown={e => {
+                                e.preventDefault();
+                                updateItem(idx, {
+                                  name: r.name,
+                                  unit: r.unit ?? it.unit ?? '',
+                                  unitPrice: r.unitPrice != null ? String(r.unitPrice) : it.unitPrice,
+                                  totalEditing: undefined,
+                                  stockItemId: null,
+                                });
+                                setFocusedItemIdx(null);
+                              }}
+                            >
+                              <div className="font-medium truncate">{r.name}</div>
+                              <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                                <span>{r.unit ?? 'pcs'}</span>
+                                <span className="tabular-nums">
+                                  {(r.unitPrice ?? 0).toFixed(2)}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <Input
                     className="col-span-3 h-8 text-sm"

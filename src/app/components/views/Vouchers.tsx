@@ -38,6 +38,9 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../utils/format';
 import * as vouchersApi from '../../api/vouchers';
+import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
+import { StockItemPicker } from '../common/StockItemPicker';
+import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as usersApi from '../../api/users';
 import * as settingsApi from '../../api/settings';
@@ -545,6 +548,24 @@ function VoucherFormDialog({
   const [terms, setTerms] = useState('');
   const [lines, setLines] = useState<FormLine[]>([newLine()]);
   const [saving, setSaving] = useState(false);
+  // Recent-items typeahead — shared with Invoices + Quotations.
+  const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
+  const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
+  // Stock-catalog picker state — lazy-loaded on first picker open.
+  // Same lazy pattern as Invoices / Quotations.
+  const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const ensureCatalog = async () => {
+    if (catalogLoaded) return;
+    try {
+      const res = await itemsApi.list({ size: 200 });
+      setStockCatalog(res.content ?? []);
+    } catch {
+      // Silent fail — picker stays empty, free-text lines still work.
+    } finally {
+      setCatalogLoaded(true);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -652,6 +673,12 @@ function VoucherFormDialog({
         const created = await vouchersApi.create(buildPayload());
         toast.success(`Voucher ${created.voucherNo} created`);
       }
+      addRecentLineItems(lines.map(l => ({
+        name: l.name,
+        unit: l.unit,
+        unitPrice: Number(l.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       await onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save voucher');
@@ -800,12 +827,66 @@ function VoucherFormDialog({
               const lineTotal = (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0);
               return (
                 <div key={l.localId} className="grid grid-cols-12 gap-2 items-center">
-                  <Input
-                    className="col-span-3 h-8 text-sm"
-                    value={l.name}
-                    onChange={e => updateLine(l.localId, { name: e.target.value })}
-                    placeholder="Item or service name"
-                  />
+                  <div className="col-span-3 flex items-center gap-1">
+                    {/* Stock-catalog picker — same UX as Invoices /
+                        Quotations. Pick fills name + unit + unit
+                        price and records the FK on the voucher. */}
+                    <StockItemPicker
+                      catalog={stockCatalog}
+                      loaded={catalogLoaded}
+                      onOpen={ensureCatalog}
+                      selectedId={l.stockItemId ?? ''}
+                      onPick={si => updateLine(l.localId, {
+                        stockItemId: si.id,
+                        name: si.name,
+                        unit: si.unit ?? l.unit ?? '',
+                        unitPrice: String(si.unitPrice ?? 0),
+                      })}
+                    />
+                    <div className="relative flex-1">
+                    <Input
+                      className="h-8 text-sm w-full"
+                      value={l.name}
+                      onChange={e => updateLine(l.localId, {
+                        name: e.target.value,
+                        // Hand-editing unlinks the catalog row.
+                        stockItemId: null,
+                      })}
+                      onFocus={() => setFocusedLineId(l.localId)}
+                      onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
+                      placeholder="Item or service name"
+                    />
+                    {focusedLineId === l.localId && !l.name && recentItems.length > 0 && (
+                      <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                        <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+                          Recent
+                        </div>
+                        {recentItems.map(r => (
+                          <button
+                            key={r.name}
+                            type="button"
+                            className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              updateLine(l.localId, {
+                                name: r.name,
+                                unit: r.unit ?? l.unit ?? '',
+                                unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
+                              });
+                              setFocusedLineId(null);
+                            }}
+                          >
+                            <div className="font-medium truncate">{r.name}</div>
+                            <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                              <span>{r.unit ?? 'pcs'}</span>
+                              <span className="tabular-nums">{(r.unitPrice ?? 0).toFixed(2)}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    </div>
+                  </div>
                   <Input
                     className="col-span-3 h-8 text-sm"
                     value={l.description}
