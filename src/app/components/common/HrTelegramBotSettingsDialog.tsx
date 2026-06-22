@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Send, Loader2, Trash2 } from 'lucide-react';
+import { Send, Loader2, Trash2, Info } from 'lucide-react';
 
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -112,11 +113,39 @@ export function HrTelegramBotSettingsDialog({ open, onOpenChange }: Props) {
             <DialogTitle className="flex items-center gap-2">
               <Send className="h-4 w-4 text-sky-600" />
               HR Telegram Bot
+              {/* Verbose intro behind an Info hover so the dialog stays
+                  compact on the return visit (operator already knows
+                  the gist) while first-timers still get the
+                  @BotFather pointer one hover away. Matches the
+                  CustomerTelegramBotSettingsDialog / PlatformTelegram
+                  tooltip pattern. */}
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-gray-400 hover:text-gray-600"
+                      aria-label="About this bot"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    Register the bot employees use to receive payslips
+                    and run <code>/checkin</code> / <code>/checkout</code>.
+                    Create the bot in Telegram with <strong>@BotFather</strong>,
+                    paste the username and token here.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </DialogTitle>
-            <DialogDescription>
+            {/* Keep the same copy in DialogDescription as sr-only so
+                screen readers still announce the bot's purpose — the
+                tooltip is mouse-only and Radix' Dialog warns when
+                DialogDescription is missing. */}
+            <DialogDescription className="sr-only">
               Register the bot employees use to receive payslips and run /checkin / /checkout.
-              Create the bot in Telegram with <strong>@BotFather</strong>, paste the username
-              and token here.
+              Create the bot in Telegram with @BotFather, paste the username and token here.
             </DialogDescription>
           </DialogHeader>
 
