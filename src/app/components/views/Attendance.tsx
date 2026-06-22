@@ -55,7 +55,7 @@ import { parseAttendanceExcel } from '../../utils/attendanceParser';
 import { loadScanRule } from '../../utils/scanRule';
 
 type ViewMode = 'daily' | 'monthly';
-type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'absent' | 'present' | 'leave';
+type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'early_leave' | 'absent' | 'present' | 'leave';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; textColor: string; shortLabel: string }> = {
   present: { label: 'Present', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', shortLabel: 'P' },
@@ -774,15 +774,25 @@ export function Attendance({ onNavigate }: Props = {}) {
     const present = dailyRows.filter(r => r.status === 'present' || r.status === 'early_leave').length;
     const absent = dailyRows.filter(r => r.status === 'absent').length;
     const late = dailyRows.filter(r => r.status === 'late').length;
+    // Early Out = employee left before the scheduled out time.
+    // Server-set status drives this — same predicate the FE uses for
+    // the Late chip.
+    const earlyLeave = dailyRows.filter(r => r.status === 'early_leave').length;
     // "No Check-in" / "No Check-out" are surfaced by field presence rather
-    // than the strict status enum, so an absent employee (morning + noon both
+    // than the strict status enum, so an absent employee (all punch slots
     // null) is counted under both — matches what an admin scanning the
-    // table sees: blank Morning In column → "no check-in". Counts overlap
-    // with Absent intentionally; these are filter views, not exclusive buckets.
-    const noCheckin = dailyRows.filter(r => !r.morningIn && r.status !== 'leave').length;
-    const noCheckout = dailyRows.filter(r => !r.noonOut && r.status !== 'leave').length;
+    // table sees: blank In columns → "no check-in". Counts overlap with
+    // Absent intentionally; these are filter views, not exclusive buckets.
+    //
+    // BOTH slots checked so a half-morning leave employee whose only
+    // punch landed in noon_in still registers as checked in. Same
+    // mirror for the out side (half-noon leave → morning_out).
+    const hasAnyIn  = (r: typeof dailyRows[number]) => !!r.morningIn || !!r.noonIn;
+    const hasAnyOut = (r: typeof dailyRows[number]) => !!r.morningOut || !!r.noonOut;
+    const noCheckin  = dailyRows.filter(r => !hasAnyIn(r)  && r.status !== 'leave').length;
+    const noCheckout = dailyRows.filter(r => !hasAnyOut(r) && r.status !== 'leave').length;
     const leave = dailyRows.filter(r => r.status === 'leave').length;
-    return { totalEmployees, present, absent, late, noCheckin, noCheckout, leave };
+    return { totalEmployees, present, absent, late, earlyLeave, noCheckin, noCheckout, leave };
   }, [dailyRows, employees, isTenantWide, matchesScope, scopeMode]);
 
   // Filtered records — built on top of the roster-driven dailyRows so employees
@@ -794,9 +804,12 @@ export function Attendance({ onNavigate }: Props = {}) {
       // "no_checkout" filter on the *field*, not the strict status enum, so
       // they include absent rows where the column is blank.
       if (activeFilter === 'no_checkin') {
-        records = records.filter(r => !r.morningIn && r.status !== 'leave');
+        // Treat noon_in as a valid check-in too — half-morning leave
+        // employees only punch in the afternoon and would otherwise
+        // wrongly appear in this bucket.
+        records = records.filter(r => !r.morningIn && !r.noonIn && r.status !== 'leave');
       } else if (activeFilter === 'no_checkout') {
-        records = records.filter(r => !r.noonOut && r.status !== 'leave');
+        records = records.filter(r => !r.morningOut && !r.noonOut && r.status !== 'leave');
       } else {
         records = records.filter(r => r.status === activeFilter);
       }
@@ -1194,6 +1207,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     { key: 'no_checkin', label: 'No Check-in', count: summary.noCheckin, icon: <AlertTriangle className="h-4 w-4" /> },
     { key: 'no_checkout', label: 'No Check-out', count: summary.noCheckout, icon: <AlertCircle className="h-4 w-4" /> },
     { key: 'late', label: 'Late', count: summary.late, icon: <Clock className="h-4 w-4" /> },
+    { key: 'early_leave', label: 'Early Out', count: summary.earlyLeave, icon: <LogOut className="h-4 w-4" /> },
     { key: 'absent', label: 'Absent', count: summary.absent, icon: <XCircle className="h-4 w-4" /> },
     { key: 'leave', label: 'Leave', count: summary.leave, icon: <CalendarIcon className="h-4 w-4" /> },
   ];
