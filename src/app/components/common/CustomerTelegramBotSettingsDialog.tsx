@@ -116,8 +116,13 @@ export function CustomerTelegramBotSettingsDialog({ open, onOpenChange }: Props)
               <TooltipProvider delayDuration={150}>
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    {/* tabIndex={-1} so Dialog auto-focus skips
+                        the Info button — Radix Tooltip opens on
+                        focus by default, which would pop the hint
+                        every time the dialog mounts. */}
                     <button
                       type="button"
+                      tabIndex={-1}
                       className="text-gray-400 hover:text-gray-600"
                       aria-label="About this bot"
                     >
