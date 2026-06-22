@@ -4,6 +4,7 @@ import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '../ui/
 import { LogIn, LogOut, MapPin, Loader2, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import * as meApi from '../../api/attendanceMe';
+import { useAuth } from '../../context/AuthContext';
 
 type Coords = { lat: number; lng: number; acc?: number };
 type LocState =
@@ -32,12 +33,22 @@ type LocState =
  * employee can refresh the page to re-prompt.</p>
  */
 export function AttendanceCheckInWidget() {
+  const { currentUser } = useAuth();
   const [loc, setLoc]       = useState<LocState>({ tag: 'idle' });
   const [status, setStatus] = useState<meApi.CheckStatus | null>(null);
   const [busy, setBusy]     = useState(false);
 
+  // Skip the whole widget — including the geolocation prompt — for
+  // signed-in users with no employee profile linked (super admins,
+  // tenant admins without a roster entry, the bootstrap user, …).
+  // /attendance/me/check-status would 404 with "Linked employee
+  // profile" for these users and the widget would render nothing
+  // anyway; bailing here also stops the network-tab noise.
+  const hasEmployee = !!currentUser?.employeeId;
+
   // ── 1. Ask for location once on mount ─────────────────────────
   useEffect(() => {
+    if (!hasEmployee) return;
     if (!navigator.geolocation) {
       setLoc({ tag: 'unavailable', msg: 'Geolocation unavailable.' });
       return;
@@ -72,7 +83,7 @@ export function AttendanceCheckInWidget() {
       },
       { enableHighAccuracy: true, timeout: 20_000, maximumAge: 60_000 },
     );
-  }, []);
+  }, [hasEmployee]);
 
   // ── 2. Probe server for status whenever we have fresh coords ──
   useEffect(() => {
@@ -135,6 +146,10 @@ export function AttendanceCheckInWidget() {
   };
 
   // ── render ────────────────────────────────────────────────────
+  // Non-employee users (super admins, tenant admins without a roster
+  // entry) get nothing — the widget has no meaning for them and we
+  // already skipped the location prompt above.
+  if (!hasEmployee) return null;
   if (loc.tag === 'idle' || loc.tag === 'asking') {
     return (
       <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 text-gray-500 text-xs">
