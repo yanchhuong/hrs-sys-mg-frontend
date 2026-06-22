@@ -44,6 +44,7 @@ export const dict: Dict = {
   // --- Tenant sidebar ------------------------------------------------------
   'nav.home':                 { en: 'Dashboard',            km: 'ផ្ទាំងបញ្ជា',          zh: '仪表板' },
   'nav.employee':             { en: 'Employee',             km: 'បុគ្គលិក',           zh: '员工' },
+  'nav.announcements':        { en: 'Announcements',        km: 'សេចក្តីប្រកាស',        zh: '公告' },
   'nav.attendance':           { en: 'Attendance',           km: 'វត្តមាន',           zh: '考勤' },
   'nav.allleave':             { en: 'All Leave',            km: 'ច្បាប់ឈប់សម្រាកទាំងអស់', zh: '全部请假' },
   'nav.exception':            { en: 'Exception',            km: 'ករណីលើកលែង',         zh: '例外' },

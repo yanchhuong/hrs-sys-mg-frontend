@@ -22,7 +22,7 @@ import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
-  Package, Boxes,
+  Package, Boxes, Megaphone,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -49,6 +49,7 @@ import { Vouchers } from '../components/views/Vouchers';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
+import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
 // Offices + QrDisplay are no longer registered as standalone leaves.
@@ -101,6 +102,7 @@ export const NAV_GROUPS: NavGroup[] = [
 export const NAV_LEAVES: NavLeaf[] = [
   { id: 'dashboard',          labelKey: 'nav.home',                  icon: LayoutDashboard, module: 'dashboard',       component: Dashboard },
   { id: 'employees',          labelKey: 'nav.employee',              icon: Users,           module: 'employees',       component: Employees },
+  { id: 'announcements',      labelKey: 'nav.announcements',         icon: Megaphone,       module: 'announcements',   component: Announcements },
 
   { id: 'attendance',         labelKey: 'nav.attendance',            icon: Clock,           module: 'attendance',      component: Attendance,    group: 'time-tracking' },
   { id: 'overtime',           labelKey: 'nav.overtime',              icon: TimerIcon,       module: 'overtime',        component: Overtime,      group: 'time-tracking' },
