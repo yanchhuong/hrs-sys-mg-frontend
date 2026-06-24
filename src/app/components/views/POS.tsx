@@ -107,6 +107,16 @@ export function POS() {
   // customer screen keeps the thank-you splash visible until the
   // cashier starts a New Sale. Cleared on cart reset.
   const [paidSnapshot, setPaidSnapshot] = useState<DisplayState['paid']>(null);
+  // Auto-dismiss timer for the customer-display Thank-You splash.
+  // After PAID_SPLASH_MS elapses, the snapshot's paid field clears
+  // and the display falls back to ads (when slides are configured
+  // and the cart is still empty) or Welcome.
+  const paidClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** How long the "Thank you!" splash stays before the customer
+   *  display rolls back to ads / Welcome. 5 seconds keeps the slip
+   *  visible long enough to read without the screen lingering empty
+   *  between sales. */
+  const PAID_SPLASH_MS = 5000;
 
   /* ----- initial load ----- */
   useEffect(() => {
@@ -248,6 +258,18 @@ export function POS() {
     paidSnapshot,
   ]);
 
+  // Clear the paid-splash timer on POS-page unmount so a navigation
+  // away mid-splash doesn't fire setPaidSnapshot on a torn-down
+  // component (no warning, just defensive hygiene).
+  useEffect(() => {
+    return () => {
+      if (paidClearTimerRef.current) {
+        clearTimeout(paidClearTimerRef.current);
+        paidClearTimerRef.current = null;
+      }
+    };
+  }, []);
+
   /** Open (or focus) the customer-display window. Same-origin pop-up
    *  with a stable {@code window.name} so a second click brings the
    *  existing window forward instead of spawning duplicates. */
@@ -267,7 +289,13 @@ export function POS() {
   const addItem = (it: itemsApi.Item) => {
     // First item of a fresh ticket — drop the customer-display
     // "Thank you" splash so the new cart starts rendering live.
+    // Also cancel the auto-dismiss timer so a stale firing doesn't
+    // overwrite the next checkout's paidSnapshot.
     if (paidSnapshot) setPaidSnapshot(null);
+    if (paidClearTimerRef.current) {
+      clearTimeout(paidClearTimerRef.current);
+      paidClearTimerRef.current = null;
+    }
     setCart(prev => {
       const at = prev.findIndex(l => l.stockItemId === it.id && !l.notes);
       if (at >= 0) {
@@ -302,6 +330,10 @@ export function POS() {
    *  travel with the line. */
   const addItemWithModifiers = (it: itemsApi.Item, priceDelta: number, noteText: string) => {
     if (paidSnapshot) setPaidSnapshot(null);
+    if (paidClearTimerRef.current) {
+      clearTimeout(paidClearTimerRef.current);
+      paidClearTimerRef.current = null;
+    }
     const unitPrice = +(it.unitPrice + priceDelta).toFixed(2);
     setCart(prev => recomputeLines([
       ...prev,
@@ -411,14 +443,22 @@ export function POS() {
       setOpenOrders(prev => prev.filter(o => o.id !== checked.id));
       setReceipt(checked);
       setCheckoutOpen(false);
-      // Latch the paid splash on the customer display so the customer
-      // sees "Thank you!" until the cashier rings up the next sale.
+      // Latch the paid splash on the customer display. The splash
+      // auto-dismisses after PAID_SPLASH_MS so the screen rolls back
+      // to ads / Welcome without the cashier having to click New
+      // Sale on busy counters. Cashier-side addItem / New Sale still
+      // clear early — the timer is just the floor.
       setPaidSnapshot({
         total: checked.total,
         method: checked.paymentMethod ?? method,
         change: checked.paymentChange ?? 0,
         queueNo: `#${String(checked.queueSeq).padStart(3, '0')}`,
       });
+      if (paidClearTimerRef.current) clearTimeout(paidClearTimerRef.current);
+      paidClearTimerRef.current = setTimeout(() => {
+        setPaidSnapshot(null);
+        paidClearTimerRef.current = null;
+      }, PAID_SPLASH_MS);
       newSale();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Checkout failed');
@@ -510,7 +550,14 @@ export function POS() {
           </Button>
           <Button
             variant="outline" size="sm"
-            onClick={() => { setPaidSnapshot(null); newSale(); }}
+            onClick={() => {
+              if (paidClearTimerRef.current) {
+                clearTimeout(paidClearTimerRef.current);
+                paidClearTimerRef.current = null;
+              }
+              setPaidSnapshot(null);
+              newSale();
+            }}
             disabled={cart.length === 0 && !currentOrder && !paidSnapshot}
           >
             New Sale

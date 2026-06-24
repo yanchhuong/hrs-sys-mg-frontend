@@ -23,6 +23,50 @@ On first boot the backend container applies Flyway migrations (`HRM System API/s
 
 Visit `https://PUBLIC_HOST/` → login with `admin@example.com` / `admin123` using the `acme` tenant slug.
 
+## Telegram AI-Agent (optional but needed for notifications)
+
+The Telegram bot side (Invoice push, Announcement fan-out, payment
+receipts) is a **separate docker-compose project** at
+`AI-Agent/docker-compose.yml`. Bring it up on the **same droplet**
+before the backend so `host.docker.internal:5174` resolves:
+
+```bash
+# 1) Agent first
+cd /path/to/AI-Agent
+cp .env.example .env
+#   …edit .env: set DATABASE_URL (the SAME Postgres the backend uses,
+#   via a Managed Postgres URL or `host.docker.internal:5432` if both
+#   stacks share the host), API_BASE_URL (your backend's public URL
+#   for the agent's outbound calls), and TELEGRAM_AGENT_SECRET (must
+#   match the same var in the backend .env)…
+docker compose up -d --build
+docker compose logs -f ai-agent     # confirm "listening on :5174"
+
+# 2) Backend
+cd /path/to/HRM\ System\ Frontend/deploy/cloud
+# Make sure TELEGRAM_AGENT_BASE_URL + TELEGRAM_AGENT_SECRET in .env
+# are set (see .env.example).
+docker compose up -d --build
+```
+
+If Telegram delivery returns **"Telegram delivery is not configured
+on this server"** or **"ConnectException: Connection refused"** in
+the Announcement detail dialog, check in this order:
+
+1. `docker ps` shows `hrms-ai-agent` running.
+2. From inside the backend container:
+   `docker compose exec backend wget -qO- http://host.docker.internal:5174/health`
+   should return JSON. If it hangs / refuses, the agent isn't
+   reachable.
+3. `TELEGRAM_AGENT_SECRET` is identical in `deploy/cloud/.env` and
+   `AI-Agent/.env`.
+4. The tenant has at least one HR Telegram bot registered AND
+   enabled in Super Admin → Telegram Bots (the agent logs every
+   polling worker on startup; if the tenant's bot isn't in the list,
+   register it then `docker compose restart ai-agent`).
+
+After fixing env vars, `docker compose restart backend` picks them up.
+
 ## Common operations
 
 ```bash
