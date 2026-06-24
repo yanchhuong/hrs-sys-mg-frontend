@@ -6,10 +6,11 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
+import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
   loadBankAccounts, saveBankAccounts, newBankAccountId,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
@@ -172,7 +173,7 @@ function timeAgo(iso: string | null): string {
  * flag, then PUTs the lot on Save. Cancel discards in-flight
  * changes — never persists until Save is clicked.</p>
  */
-type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt';
+type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides';
 
 export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }: Props) {
   const [draft, setDraft] = useState<settingsApi.AccountingSettings>(() => settingsApi.defaultsFor(scope));
@@ -356,6 +357,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     ...(scope === 'pos' ? [
       { key: 'receipt' as Section, label: 'Receipt', hint: 'Print layout: PAID stamp, SKU, paper size', icon: <Printer className="h-4 w-4" /> },
       { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
+      { key: 'slides' as Section, label: 'Display Ads', hint: 'Carousel shown on the customer screen when idle', icon: <MonitorPlay className="h-4 w-4" /> },
     ] : []),
   ];
 
@@ -665,6 +667,20 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   </p>
                 </div>
               </div>
+            )}
+
+            {/* V143 — POS customer-display ads carousel. Toggle +
+                media editor. The carousel shows up on the customer
+                screen when the cart is empty; an active sale snaps
+                the display back to the live order view. */}
+            {section === 'slides' && scope === 'pos' && (
+              <PosSlidesEditor
+                enabled={draft.posSlideEnabled}
+                onEnabledChange={v => setDraft({ ...draft, posSlideEnabled: v })}
+                rawMedia={draft.posSlideMedia}
+                onMediaChange={raw => setDraft({ ...draft, posSlideMedia: raw })}
+                disabled={loading || saving}
+              />
             )}
 
             {section === 'numbering' && (() => {
@@ -1023,5 +1039,208 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ====================================================================
+ *  POS Display Ads editor (V143). Master toggle + list of media items
+ *  the customer-display carousel rotates through while the cart is
+ *  idle. Images can be drag-dropped (stored as base64 data URL);
+ *  videos take a URL (uploads would blow past the column limit).
+ * =================================================================== */
+
+function PosSlidesEditor({
+  enabled, onEnabledChange,
+  rawMedia, onMediaChange,
+  disabled,
+}: {
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  rawMedia: string | null;
+  onMediaChange: (raw: string | null) => void;
+  disabled?: boolean;
+}) {
+  const items = settingsApi.parsePosSlideMedia(rawMedia);
+
+  const commit = (next: settingsApi.PosSlideItem[]) =>
+    onMediaChange(next.length === 0 ? null : settingsApi.serializePosSlideMedia(next));
+
+  const addImage = () => commit([...items, { kind: 'image', src: '' }]);
+  const addVideo = () => commit([...items, { kind: 'video', src: '' }]);
+  const removeAt = (idx: number) => commit(items.filter((_, i) => i !== idx));
+  const setSrc = (idx: number, src: string) =>
+    commit(items.map((m, i) => (i === idx ? { ...m, src } : m)));
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+        Display Ads
+        <HelpHint>
+          Fullscreen carousel shown on the customer-display window while the cart is empty.
+          An active sale (any item in the cart) hides the carousel and snaps the screen to
+          the live order view.
+        </HelpHint>
+      </h3>
+
+      {toggleRowStatic(
+        'Enable slide display',
+        'Off keeps the customer screen on its default Welcome state when idle. On rotates the media list below.',
+        enabled, onEnabledChange, disabled,
+      )}
+
+      {/* Media list — disabled / dimmed when the toggle is off so
+          the operator can pre-load assets and flip the switch when
+          ready. */}
+      <div className={`space-y-2 ${enabled ? '' : 'opacity-60'}`}>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-gray-600">Media ({items.length})</Label>
+          <div className="flex gap-1.5">
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
+              onClick={addImage} disabled={disabled}>
+              <Plus className="h-3 w-3 mr-1" /> Image
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
+              onClick={addVideo} disabled={disabled}>
+              <Plus className="h-3 w-3 mr-1" /> Video
+            </Button>
+          </div>
+        </div>
+
+        {items.length === 0 ? (
+          <p className="text-xs text-gray-500">
+            No slides yet. Add an Image (drag-drop a file) or a Video (paste a URL).
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((m, idx) => (
+              <li key={idx} className="border rounded-md bg-white p-2 flex items-start gap-3">
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-12 shrink-0 pt-1">
+                  {m.kind}
+                </div>
+                <div className="flex-1 min-w-0">
+                  {m.kind === 'image' ? (
+                    <ImageDropZone
+                      value={m.src}
+                      onChange={v => setSrc(idx, v ?? '')}
+                      hint="PNG / JPG · drag-drop or paste a public URL below"
+                      height={120}
+                      disabled={disabled}
+                      maxBytes={2 * 1024 * 1024}
+                    />
+                  ) : (
+                    <VideoSlideInput
+                      src={m.src}
+                      onChange={src => setSrc(idx, src)}
+                      disabled={disabled}
+                    />
+                  )}
+                  {/* URL fallback for images (lets the operator point
+                      at a hosted asset instead of uploading). */}
+                  {m.kind === 'image' && (
+                    <Input
+                      value={m.src.startsWith('data:') ? '' : m.src}
+                      onChange={e => setSrc(idx, e.target.value)}
+                      placeholder="…or paste an image URL"
+                      className="mt-1 text-xs"
+                      disabled={disabled}
+                    />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeAt(idx)}
+                  className="text-gray-400 hover:text-red-600 mt-1"
+                  disabled={disabled}
+                  title="Remove slide"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Video slide URL input + preview (V143). Resolves the URL to one
+ *  of three forms — direct file (mp4/webm) plays in {@code <video>},
+ *  YouTube / Vimeo embed in {@code <iframe>}, anything else shows a
+ *  warning. The operator sees a live label ("YouTube", "Direct file",
+ *  "Unsupported URL") so they know whether the carousel will play
+ *  this slide before they Save. */
+function VideoSlideInput({
+  src, onChange, disabled,
+}: {
+  src: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const embed = resolveVideoEmbed(src);
+  return (
+    <div className="space-y-1.5">
+      <Input
+        value={src}
+        onChange={e => onChange(e.target.value)}
+        placeholder="https://…/promo.mp4   or   youtube.com/watch?v=…"
+        disabled={disabled}
+      />
+      {src.trim().length > 0 && (
+        <>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className={
+              embed.kind === 'invalid' ? 'text-red-600' :
+              embed.kind === 'iframe'  ? 'text-emerald-700' :
+                                          'text-gray-600'
+            }>
+              Detected: <b>{embed.label}</b>
+            </span>
+            {embed.kind === 'invalid' && (
+              <span className="text-red-500">Carousel won't play this URL</span>
+            )}
+          </div>
+          {embed.kind === 'video' && (
+            <video
+              src={embed.src}
+              className="w-full max-h-48 rounded border bg-black"
+              controls
+              muted
+              preload="metadata"
+            />
+          )}
+          {embed.kind === 'iframe' && (
+            <div className="aspect-video rounded border bg-black overflow-hidden">
+              <iframe
+                src={embed.src}
+                className="w-full h-full"
+                style={{ border: 0 }}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                title="Video preview"
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Local copy of the inline toggleRow factory so the slides editor
+ *  can render its own switches without a closure over the parent
+ *  component's saving/loading state. */
+function toggleRowStatic(
+  label: string, hint: string,
+  value: boolean, onChange: (v: boolean) => void,
+  disabled?: boolean,
+) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2 border-b last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-gray-900">{label}</div>
+        <div className="text-xs text-gray-500 leading-snug mt-0.5">{hint}</div>
+      </div>
+      <Switch checked={value} onCheckedChange={onChange} disabled={disabled} />
+    </div>
   );
 }

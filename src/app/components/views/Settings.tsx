@@ -30,8 +30,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
-  RefreshCw, Eye, EyeOff, Upload,
+  RefreshCw, Eye, EyeOff, Upload, KeyRound,
 } from 'lucide-react';
+import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
+import * as paywayApi from '../../api/payway';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -223,6 +225,7 @@ export function Settings() {
         <TabsContent value="general" className="space-y-6">
           <CompanyInformationCard />
           {isAdmin && <CloudConnectionCard />}
+          {isAdmin && <PayWayIntegrationCard />}
         </TabsContent>
       </Tabs>
     </div>
@@ -1253,5 +1256,79 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
       <Icon className="h-3.5 w-3.5" />
       {label}
     </Badge>
+  );
+}
+
+/* ====================================================================
+ *  PayWay (ABA) integration card (V144). Single Configure button
+ *  opens the per-tenant credentials dialog; a small status chip
+ *  reflects whether the integration is enabled + which environment.
+ * =================================================================== */
+
+function PayWayIntegrationCard() {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<paywayApi.PayWayCredentials | null>(null);
+
+  // Load on mount so the status chip reflects reality without
+  // opening the dialog first.
+  useEffect(() => {
+    let cancelled = false;
+    paywayApi.getCredentials()
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(() => { /* non-fatal: card renders the "not configured" state */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const chip = !data?.configured
+    ? { label: 'Not configured', cls: 'border-gray-300 text-gray-600 bg-gray-50' }
+    : !data.enabled
+    ? { label: 'Disabled',       cls: 'border-amber-300 text-amber-700 bg-amber-50' }
+    : data.environment === 'live'
+    ? { label: 'Live',           cls: 'border-emerald-300 text-emerald-700 bg-emerald-50' }
+    :                            { label: 'Sandbox',        cls: 'border-blue-300 text-blue-700 bg-blue-50' };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="inline-flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-blue-600" />
+              PayWay (ABA) Integration
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Real-time card / KHQR payments via PayWay. Once enabled, POS checkout
+              + Invoice "Pay" surface a PayWay option that takes the customer through
+              ABA's hosted checkout (or shows a KHQR on the customer display).
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className={chip.cls}>{chip.label}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-xs text-gray-500 space-y-0.5">
+            {data?.configured ? (
+              <>
+                <div>Merchant: <span className="font-mono text-gray-700">{data.merchantId}</span></div>
+                {data.apiKeyPreview && (
+                  <div>API key: <span className="font-mono text-gray-700">{data.apiKeyPreview}</span></div>
+                )}
+              </>
+            ) : (
+              <div>No credentials saved. Click Configure to add your sandbox keys.</div>
+            )}
+          </div>
+          <Button variant="outline" onClick={() => setOpen(true)}>
+            {data?.configured ? 'Configure' : 'Set up'}
+          </Button>
+        </div>
+      </CardContent>
+      <PayWaySettingsDialog
+        open={open}
+        onOpenChange={setOpen}
+        onSaved={setData}
+      />
+    </Card>
   );
 }

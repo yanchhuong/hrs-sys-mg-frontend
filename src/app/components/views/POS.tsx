@@ -84,6 +84,13 @@ export function POS() {
 
   // Dialog state.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // Lifted from PosCheckoutDialog so we can broadcast the active
+  // payment method to the customer display — when set to 'khqr',
+  // the display swaps to a fullscreen scan-to-pay overlay.
+  const [checkoutMethod, setCheckoutMethod] = useState<PosPaymentMethod>('cash');
+  // Reset to cash whenever the dialog reopens so a previous KHQR
+  // pick doesn't carry over (and surprise the next customer).
+  useEffect(() => { if (checkoutOpen) setCheckoutMethod('cash'); }, [checkoutOpen]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [receipt, setReceipt] = useState<PosOrder | null>(null);
 
@@ -206,6 +213,28 @@ export function POS() {
       // reflect immediately on the customer display.
       exchangeRate: posSettings.posExchangeRate > 0 ? posSettings.posExchangeRate : 0,
       invoiceKind,
+      // V143 — ads carousel toggle + media list. The display only
+      // swaps to the carousel when there are no cart items + no
+      // paid splash; the snapshot just carries the configuration.
+      slideEnabled: posSettings.posSlideEnabled,
+      slideMedia: settingsApi.parsePosSlideMedia(posSettings.posSlideMedia),
+      // Checkout-in-progress payload. Non-null while the cashier has
+      // the Checkout dialog open — the customer display reads this
+      // and overlays the scan-to-pay QR when method='khqr'. We send
+      // a slim view of the bank cards (only the fields the display
+      // needs) so the broadcast stays small.
+      checkout: checkoutOpen ? {
+        method: checkoutMethod,
+        banks: banks
+          .filter(b => b.qrDataUrl && b.qrDataUrl.length > 0)
+          .map(b => ({
+            id: b.id,
+            bankName: b.bankName,
+            accountName: b.accountName,
+            accountNumber: b.accountNumber,
+            qrDataUrl: b.qrDataUrl,
+          })),
+      } : null,
       paid: paidSnapshot,
     };
     latestSnapshotRef.current = snapshot;
@@ -214,6 +243,8 @@ export function POS() {
     cart, customerId, customers, currentOrder, items,
     subtotal, discountAmount, taxAmount, total, invoiceKind,
     posSettings.posShopName, posSettings.posLogoUrl, posSettings.posExchangeRate,
+    posSettings.posSlideEnabled, posSettings.posSlideMedia,
+    checkoutOpen, checkoutMethod, banks,
     paidSnapshot,
   ]);
 
@@ -663,6 +694,8 @@ export function POS() {
         saving={saving}
         invoiceKind={invoiceKind}
         banks={banks}
+        method={checkoutMethod}
+        onMethodChange={setCheckoutMethod}
         onSubmit={onCheckoutSubmit}
       />
       <PosOpenOrdersDrawer
@@ -920,11 +953,16 @@ interface CheckoutProps {
   /** Bank account cards from POS Settings → Bank Account. Used to
    *  render the KHRQR for scan-to-pay when the cashier picks KHQR. */
   banks: BankAccount[];
+  /** Controlled payment method — POS.tsx owns this so the value can
+   *  be broadcast to the customer-display window for the scan-to-pay
+   *  overlay (V143 follow-up). */
+  method: PosPaymentMethod;
+  onMethodChange: (m: PosPaymentMethod) => void;
   onSubmit: (method: PosPaymentMethod, received: number) => void;
 }
 
-function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, banks, onSubmit }: CheckoutProps) {
-  const [method, setMethod] = useState<PosPaymentMethod>('cash');
+function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, banks, method, onMethodChange, onSubmit }: CheckoutProps) {
+  const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
 
   // Re-sync the "received" default to the order total whenever the

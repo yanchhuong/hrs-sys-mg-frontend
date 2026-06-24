@@ -4,6 +4,7 @@ import {
   POS_DISPLAY_CHANNEL,
   emptyState,
   fmtDisplayMoney,
+  resolveVideoEmbed,
   type DisplayItem,
   type DisplayState,
   type DisplayMessage,
@@ -39,6 +40,34 @@ export function PosCustomerDisplay() {
   }, []);
 
   if (state.paid) return <PaidSplash state={state} />;
+
+  // KHQR scan-to-pay overlay (V143 follow-up). Fires the instant the
+  // cashier picks KHQR in the Checkout dialog — the customer screen
+  // shows the bank's QR fullscreen so the customer can scan with
+  // their phone without leaning over the counter to see the cashier's
+  // tablet. Closing the dialog or switching methods snaps us back.
+  if (state.checkout?.method === 'khqr') {
+    return <KhqrPayOverlay state={state} />;
+  }
+
+  // V143 — ads carousel takes over when the toggle is on, there's at
+  // least one media item with a usable src, and the cart is currently
+  // empty. Empty-src placeholders (newly-added rows the operator
+  // hasn't filled in yet) are skipped so the display doesn't flip to
+  // a black screen mid-edit. Any cart activity (item added → items
+  // length > 0) snaps us back to the live order view below.
+  const playableMedia = state.slideMedia.filter(m => m.src.trim().length > 0);
+  const slideIdle = state.slideEnabled && state.items.length === 0;
+  if (slideIdle && playableMedia.length > 0) {
+    return <AdsCarousel state={{ ...state, slideMedia: playableMedia }} />;
+  }
+  // Toggle on but no playable media — covers both "no slides at all"
+  // and "slides with empty src". The notice surfaces the diagnostic
+  // so the operator knows the toggle was registered but the carousel
+  // can't play anything yet.
+  if (slideIdle) {
+    return <SlidesPendingNotice mediaCount={state.slideMedia.length} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-slate-200 text-slate-900">
@@ -244,6 +273,214 @@ function PaidSplash({ state }: { state: DisplayState }) {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+/** Scan-to-pay overlay (V143 follow-up). Renders fullscreen when the
+ *  cashier picks KHQR mid-checkout — the customer scans the QR with
+ *  their banking app to pay the displayed total. Multi-bank tenants
+ *  see a 2-col grid; single-bank tenants see one big QR.
+ *
+ *  When the bank-account section has no QRs uploaded yet, falls
+ *  back to a clear instruction to ask the cashier — better than a
+ *  blank screen. */
+function KhqrPayOverlay({ state }: { state: DisplayState }) {
+  const qrCards = state.checkout?.banks ?? [];
+
+  return (
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-900 to-black text-white">
+      <Header
+        shopName={state.shopName}
+        logoUrl={state.logoUrl}
+        queueNo={state.queueNo}
+        customerName={state.customerName}
+      />
+
+      <main className="flex-1 flex flex-col items-center justify-center px-8 pb-8">
+        <div className="text-center mb-6">
+          <div className="text-xl uppercase tracking-[0.3em] text-emerald-400 font-semibold">Scan to Pay</div>
+          <div className="mt-3 text-6xl font-bold text-white tabular-nums tracking-tight">
+            {fmtDisplayMoney(state.total, state.currency)}
+          </div>
+          {state.currency === 'USD' && state.exchangeRate > 0 && (
+            <div className="mt-1 text-lg text-slate-300 tabular-nums">
+              ៛ {(state.total * state.exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm text-slate-400 ml-2">@ {state.exchangeRate.toLocaleString('en-US')}</span>
+            </div>
+          )}
+        </div>
+
+        {qrCards.length === 0 ? (
+          <div className="rounded-2xl bg-amber-900/40 border border-amber-700 text-amber-100 px-8 py-6 max-w-md text-center">
+            <div className="text-lg font-semibold">No KHRQR configured</div>
+            <p className="text-sm mt-1 text-amber-200">
+              Please pay at the counter — your cashier will help.
+            </p>
+          </div>
+        ) : (
+          <div className={`grid gap-6 ${qrCards.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {qrCards.map(b => (
+              <div key={b.id} className="bg-white rounded-2xl shadow-2xl p-6 text-center">
+                <img
+                  src={b.qrDataUrl}
+                  alt={b.bankName || 'KHRQR'}
+                  className="mx-auto h-72 w-72 object-contain"
+                />
+                <div className="mt-3 text-xl font-bold text-slate-900">{b.bankName || 'KHRQR'}</div>
+                {b.accountName && (
+                  <div className="text-sm text-slate-600 mt-0.5 truncate">{b.accountName}</div>
+                )}
+                {b.accountNumber && (
+                  <div className="text-sm font-mono text-slate-700 mt-0.5">{b.accountNumber}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-8 text-sm text-slate-400">
+          Use any KHQR-compatible app · the cashier confirms when payment lands
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/** Operator-facing hint shown on the display when the slide toggle
+ *  is on but no playable media is available — either no slides at
+ *  all, or all slides have empty src. (V143) */
+function SlidesPendingNotice({ mediaCount }: { mediaCount: number }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-amber-50 text-amber-900 p-8">
+      <div className="max-w-md text-center space-y-3">
+        <div className="text-3xl font-semibold">Slide display enabled</div>
+        <p className="text-base leading-relaxed">
+          {mediaCount === 0
+            ? 'No slides yet. Open POS Settings → Display Ads, click + Image or + Video, drop a file or paste a URL, then Save.'
+            : `${mediaCount} slide${mediaCount === 1 ? '' : 's'} added but every source is empty. Open POS Settings → Display Ads and finish filling each one in.`}
+        </p>
+        <p className="text-xs text-amber-700/80">
+          Tip: video sources must be a direct .mp4/.webm URL — page-share links (YouTube,
+          Google Drive) won't play in a {'<'}video{'>'} tag.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ====================================================================
+ *  Ads carousel (V143). Fullscreen rotation through the tenant's
+ *  configured media list. Images dwell for 8s; videos play to end
+ *  before advancing (subject to a 60s hard cap so a broken stream
+ *  can't stall the carousel). Logo + shop name overlay the bottom-
+ *  left so the brand stays visible.
+ * =================================================================== */
+
+const IMAGE_DWELL_MS = 8000;
+const VIDEO_MAX_MS   = 60000;
+
+function AdsCarousel({ state }: { state: DisplayState }) {
+  const media = state.slideMedia;
+  const [idx, setIdx] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Clamp the index if the media list shrinks while the carousel is
+  // showing (e.g. operator removed the current slide in settings).
+  useEffect(() => {
+    if (idx >= media.length) setIdx(0);
+  }, [media.length, idx]);
+
+  const current = media[idx] ?? media[0];
+  const advance = () => setIdx(i => (media.length === 0 ? 0 : (i + 1) % media.length));
+
+  // Resolve video sources to either a direct <video> URL or a hosted
+  // <iframe> embed (YouTube, Vimeo, …). Iframes can't fire onEnded
+  // reliably, so the resolver returns a dwellMs the timer below uses
+  // as the fixed slide duration.
+  const videoEmbed = current?.kind === 'video' ? resolveVideoEmbed(current.src) : null;
+
+  // Slide dwell timer. Image: fixed dwell. Direct file video: a long
+  // cap so a busted source can't stall (the <video> onEnded fires
+  // first under normal play). Iframe video: the resolver's dwellMs.
+  useEffect(() => {
+    if (!current) return;
+    let dwell = IMAGE_DWELL_MS;
+    if (current.kind === 'video') {
+      dwell = videoEmbed?.kind === 'iframe'
+        ? (videoEmbed.dwellMs ?? VIDEO_MAX_MS)
+        : VIDEO_MAX_MS;
+    }
+    const t = setTimeout(advance, dwell);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, current?.src, videoEmbed?.kind]);
+
+  if (!current) return null;
+
+  return (
+    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+      {/* Media takes the full viewport — `object-contain` so a
+          portrait poster doesn't get cropped, the black background
+          letterboxes whatever doesn't fill. Videos may be either a
+          direct file (mp4/webm) rendered in <video>, or a hosted
+          embed (YouTube / Vimeo) rendered in <iframe>. */}
+      {current.kind === 'image' ? (
+        <img
+          src={current.src}
+          alt=""
+          className="absolute inset-0 w-full h-full object-contain"
+        />
+      ) : videoEmbed?.kind === 'iframe' ? (
+        <iframe
+          src={videoEmbed.src}
+          className="absolute inset-0 w-full h-full"
+          style={{ border: 0 }}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          // referrerpolicy=no-referrer-when-downgrade gives YouTube
+          // enough info to play but doesn't leak the full URL.
+          referrerPolicy="no-referrer-when-downgrade"
+          title="Ad video"
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          src={current.src}
+          className="absolute inset-0 w-full h-full object-contain"
+          autoPlay
+          muted
+          loop={media.length === 1}
+          playsInline
+          onEnded={advance}
+          // Defensive: if the source 404s or fails to decode, advance
+          // so the carousel doesn't stall.
+          onError={advance}
+        />
+      )}
+
+      {/* Bottom-left brand overlay — keeps the shop name + logo on
+          screen even mid-ad so the customer always knows where they
+          are. translucent dark gradient for legibility on bright
+          imagery. */}
+      <div className="absolute inset-x-0 bottom-0 px-8 py-4 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-3">
+        {state.logoUrl && (
+          <img src={state.logoUrl} alt="" className="h-12 w-12 object-contain rounded bg-white/10 p-1" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="text-xl font-semibold truncate">{state.shopName}</div>
+          <div className="text-xs text-white/70">{new Date().toLocaleDateString()}</div>
+        </div>
+        {media.length > 1 && (
+          <div className="flex gap-1.5">
+            {media.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 rounded-full transition-all ${i === idx ? 'w-6 bg-white' : 'w-1.5 bg-white/40'}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

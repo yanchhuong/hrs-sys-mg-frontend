@@ -444,18 +444,24 @@ export function Items() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit single-entry dialog */}
+      {/* Add / Edit single-entry dialog. Responsive layout:
+       *  • DialogContent caps at 90vh and lays itself out as a column
+       *    so the footer stays pinned while the body scrolls.
+       *  • Grids collapse to single-column under the sm breakpoint
+       *    so on a phone every input gets full width.
+       *  • Body is a scrollable region; on desktops the contents
+       *    rarely fill it, so nothing visible changes there. */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
             <DialogTitle>{editing ? 'Edit item' : 'Add item'}</DialogTitle>
             <DialogDescription className="sr-only">
               Catalog item with unit price, cost, unit, and stock quantity.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-[1fr_180px] gap-3">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
               <div className="space-y-1.5">
                 <Label>Name <span className="text-red-500">*</span></Label>
                 <Input
@@ -487,7 +493,7 @@ export function Items() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600">Unit</Label>
                 <Input
@@ -515,7 +521,7 @@ export function Items() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-end">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
                   Stock On Hand
@@ -615,7 +621,10 @@ export function Items() {
             )}
           </div>
 
-          <DialogFooter>
+          {/* Pinned footer — sits outside the scrolling body so Save +
+              Cancel stay reachable no matter how long the form
+              content gets (e.g. many modifier groups on a Drink). */}
+          <DialogFooter className="px-6 py-3 border-t bg-white shrink-0">
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>

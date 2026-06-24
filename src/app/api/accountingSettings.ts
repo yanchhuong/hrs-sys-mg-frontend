@@ -81,6 +81,11 @@ export interface AccountingSettings {
   /** Tenant-wide POS exchange rate (USD → KHR) used to print the
    *  "Total (KHR)" line on the receipt. (V141) */
   posExchangeRate: number;
+  /** Master toggle for the customer-display ads carousel (V143). */
+  posSlideEnabled: boolean;
+  /** JSON string of ad media — array of {kind, src}. Parse with
+   *  {@link parsePosSlideMedia}. (V143) */
+  posSlideMedia: string | null;
   /** Date portion of the auto-generated Sale-scope invoice number
    *  (V112). Drives the format string the backend mints next: e.g.
    *  'DDMMYYYY' → INV-17062026-001. */
@@ -93,6 +98,37 @@ export interface AccountingSettings {
   /** Email of the user who last saved this scope's settings. Null
    *  when no row exists or the lookup failed. */
   updatedByEmail: string | null;
+}
+
+/** One slide on the POS customer-display ads carousel (V143).
+ *  Images can carry a base64 data URL (uploaded via drag-drop)
+ *  or a public URL; videos must be URLs (uploads would blow past
+ *  the TEXT column on heavy media). */
+export interface PosSlideItem {
+  kind: 'image' | 'video';
+  src: string;
+}
+
+/** Defensive JSON parse — bad / empty input becomes an empty list
+ *  so the display falls back to its Welcome state cleanly. */
+export function parsePosSlideMedia(raw: string | null | undefined): PosSlideItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((m): m is PosSlideItem =>
+      m && typeof m.src === 'string' && (m.kind === 'image' || m.kind === 'video'));
+  } catch {
+    return [];
+  }
+}
+
+/** Serialise the typed list back to a JSON string. Empty src entries
+ *  are kept here so the editor can persist a freshly-added Image /
+ *  Video placeholder while the operator is still picking the file or
+ *  URL. The carousel runtime ignores empty entries at render time. */
+export function serializePosSlideMedia(items: PosSlideItem[]): string {
+  return JSON.stringify(items);
 }
 
 /** Single-prefix scopes (Receipt / Quotation / Voucher) reuse the
@@ -163,6 +199,8 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     posShowQueueNo: true,
     posLogoUrl: null,
     posExchangeRate: 4100,
+    posSlideEnabled: false,
+    posSlideMedia: null,
     // Number-format defaults match the dialog preview INV-2026-001.
     numberDateFormat: 'YYYY',
     numberSeqWidth: 3,
