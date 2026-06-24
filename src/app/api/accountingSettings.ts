@@ -7,7 +7,7 @@ import { apiJson } from './client';
  *  - receipt  → Receipt form
  *  - quotation → Quotation form (single QT prefix, no Bank Accounts)
  *  - voucher   → General Voucher form (single VCH prefix, no Bank Accounts) */
-export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher';
+export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher' | 'pos';
 
 export interface AccountingSettings {
   showNotes: boolean;
@@ -19,6 +19,12 @@ export interface AccountingSettings {
    *  Accountant Settings popup only — other scopes carry the column
    *  but the UI doesn't expose it (yet). */
   autoSendTelegram: boolean;
+  /** When true, newly-created invoices land as ISSUED instead of
+   *  DRAFT — skips the manual Issue click for tenants who only ever
+   *  use the issued path. Sale-scope only in the UI; other scopes
+   *  carry the column at the default but the dialog doesn't expose
+   *  it. V128. */
+  autoIssue: boolean;
   /** Scope-relative prefix fields. For 'sale' these mean Invoice /
    *  Tax Invoice / Credit Note / Debit Note (INV / TAX / CN / DN
    *  defaults). For 'purchase' they mean Bill / Tax Bill / Bill CN
@@ -48,6 +54,33 @@ export interface AccountingSettings {
   /** Fires a one-shot "payment received" message on the PAID
    *  ledger transition. Event-driven, no scheduler involvement. */
   reminderPaidEnabled: boolean;
+  /** Shared text template (V129) used for all three reminder
+   *  branches. Supported placeholders: {invoiceNo}, {amount},
+   *  {customerName}, {dueDate}. Unknown tokens pass through. */
+  reminderTemplate: string;
+  /** When true, every reminder dispatch also re-fires the invoice
+   *  details as a second message so the customer doesn't have to
+   *  scroll up to find the previous one. V129. */
+  reminderResendInvoice: boolean;
+  /** POS receipt — show a "PAID" stamp after a successful checkout (V133). */
+  posShowPaidStamp: boolean;
+  /** POS receipt — auto-open the print dialog on checkout (V133). */
+  posAutoPrint: boolean;
+  /** POS receipt — show item SKU as a line prefix (V133). */
+  posShowSku: boolean;
+  /** POS receipt — paper size for the print window. (V133) */
+  posPaperSize: 'thermal_80' | 'a4' | 'a5' | 'a6';
+  /** POS receipt — shop name printed in the header. Null falls back
+   *  to the tenant's display name on the FE. (V133) */
+  posShopName: string | null;
+  /** POS receipt — show the queue / order number on the slip (V137). */
+  posShowQueueNo: boolean;
+  /** POS receipt — base64 data URL of the shop logo printed at the
+   *  top of the slip. Null / empty = no logo. (V138) */
+  posLogoUrl: string | null;
+  /** Tenant-wide POS exchange rate (USD → KHR) used to print the
+   *  "Total (KHR)" line on the receipt. (V141) */
+  posExchangeRate: number;
   /** Date portion of the auto-generated Sale-scope invoice number
    *  (V112). Drives the format string the backend mints next: e.g.
    *  'DDMMYYYY' → INV-17062026-001. */
@@ -72,6 +105,10 @@ function defaultPrefix(scope: AccountingScope): string {
     case 'receipt':   return 'RCPT';
     case 'quotation': return 'QT';
     case 'voucher':   return 'VCH';
+    // POS — keeps a single-prefix shape; the dialog only exposes
+    // prefixCreditNote, but the other three slots default to the
+    // same value so the row stays internally consistent.
+    case 'pos':       return 'POS';
   }
 }
 
@@ -85,10 +122,18 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     // Opt-in: a fresh tenant doesn't auto-send anything until the
     // operator explicitly turns the toggle on.
     autoSendTelegram: false,
+    // Opt-in too — keep the legacy Draft-then-Issue two-step
+    // unchanged for existing tenants. V128.
+    autoIssue: false,
     prefixCommercial: defaultPrefix(scope),
-    prefixTax:        scope === 'sale' ? 'TAX'  : scope === 'purchase' ? 'TBILL' : defaultPrefix(scope),
-    prefixCreditNote: scope === 'sale' ? 'CN'   : scope === 'purchase' ? 'BCN'   : defaultPrefix(scope),
-    prefixDebitNote:  scope === 'sale' ? 'DN'   : scope === 'purchase' ? 'BDN'   : defaultPrefix(scope),
+    prefixTax:        scope === 'sale' ? 'TAX'  : scope === 'purchase' ? 'TBILL' : scope === 'pos' ? 'POST' : defaultPrefix(scope),
+    // POS — prefixCreditNote slot carries the queue prefix ("POSQ"
+    // → POSQ-001), matching the backend AccountingSettingsService
+    // defaults. The dialog edits this single field; the other three
+    // slots track the same prefix to keep the row internally
+    // consistent.
+    prefixCreditNote: scope === 'sale' ? 'CN'   : scope === 'purchase' ? 'BCN'   : scope === 'pos' ? 'POSQ' : defaultPrefix(scope),
+    prefixDebitNote:  scope === 'sale' ? 'DN'   : scope === 'purchase' ? 'BDN'   : scope === 'pos' ? 'POSQ' : defaultPrefix(scope),
     // Receipt = the 4 WHT patterns; everything else keeps the
     // original 5 VAT-and-WHT keys.
     taxTypesEnabled: receipt
@@ -101,6 +146,23 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     reminderAfterDueRepeat: false,
     reminderAfterDueFrequency: 'daily',
     reminderPaidEnabled: false,
+    // V129. Default template uses all four placeholders so the
+    // textarea isn't empty on first open. Mirrors the backend
+    // default so a fresh tenant's GET (no row yet) matches the row
+    // they'll save the first time.
+    reminderTemplate:
+      'Hi {customerName}, this is a reminder for invoice {invoiceNo} ({amount}) due on {dueDate}.',
+    reminderResendInvoice: false,
+    // V133 — POS receipt defaults. Stamp on, auto-print off, SKU on,
+    // thermal-80 paper, no shop name (FE falls back to tenant name).
+    posShowPaidStamp: true,
+    posAutoPrint: false,
+    posShowSku: true,
+    posPaperSize: 'thermal_80',
+    posShopName: null,
+    posShowQueueNo: true,
+    posLogoUrl: null,
+    posExchangeRate: 4100,
     // Number-format defaults match the dialog preview INV-2026-001.
     numberDateFormat: 'YYYY',
     numberSeqWidth: 3,
@@ -118,6 +180,7 @@ const urlFor = (scope: AccountingScope) =>
   : scope === 'purchase' ? '/api/v1/bills/settings'
   : scope === 'receipt'  ? '/api/v1/receipts/settings'
   : scope === 'quotation' ? '/api/v1/quotations/settings'
+  : scope === 'pos'       ? '/api/v1/pos/settings'
   :                        '/api/v1/vouchers/settings';
 
 export async function get(scope: AccountingScope): Promise<AccountingSettings> {

@@ -31,6 +31,11 @@ interface AuthContextType {
   canDelete: (module: string) => boolean;
   /** Force-refetch the current role's permission grid (e.g. after the matrix changes). */
   refreshPermissions: () => Promise<void>;
+  /** Re-fetch /auth/me and update the cached currentUser. Used by
+   *  the Profile dialog after the user updates their display name
+   *  so the sidebar avatar / receipt cashier line refresh without
+   *  a page reload. (V140) */
+  refreshUser: () => Promise<void>;
   /** True when the user's tenant has the module enabled in Super Admin →
    *  Tenant Modules. Independent of role permissions: a module disabled
    *  by the platform hides the menu and rejects API calls regardless of
@@ -80,6 +85,7 @@ const defaultAuthContext: AuthContextType = {
   canUpdate: denyAll,
   canDelete: denyAll,
   refreshPermissions: noopAsync,
+  refreshUser: noopAsync,
   isModuleEnabled: () => true,
   isModuleAvailable: () => true,
   isAppLauncherEnabled: () => true,
@@ -122,6 +128,7 @@ function fromApi(apiUser: authApi.AuthUser): User {
     password: '',
     role: apiUser.role as UserRole,
     employeeId: apiUser.employeeId ?? '',
+    name: apiUser.name,
     createdAt: new Date().toISOString(),
     isActive: true,
   };
@@ -384,6 +391,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGrants(await loadGrants(currentUser.role));
   }, [currentUser, loadGrants]);
 
+  /** V140 — re-fetch /auth/me after the user updates their display
+   *  name in the Profile dialog so the new label propagates to the
+   *  sidebar avatar without a page reload. Silent on failure — the
+   *  cached value stays put. */
+  const refreshUser = useCallback(async () => {
+    if (USE_MOCKS) return;
+    try {
+      const apiUser = await authApi.me();
+      setCurrentUser(fromApi(apiUser));
+    } catch { /* keep cached user */ }
+  }, []);
+
   /** Tenant-scope Apps-launcher flag from /me/modules. Defaults to true
    *  while loading so the icon doesn't flicker hidden→shown on first
    *  paint; the actual role-side gate (admin only) is enforced by the
@@ -482,6 +501,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser, currentEmployee, loading,
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
+      refreshUser,
       isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, getModuleCategoryLabel, setModuleEnabled,
       login, logout, switchRole,
     }}>

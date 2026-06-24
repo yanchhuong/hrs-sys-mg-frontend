@@ -6,7 +6,7 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
@@ -14,6 +14,7 @@ import {
   loadBankAccounts, saveBankAccounts, newBankAccountId,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
+import { ImageDropZone } from './ImageDropZone';
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
  *  original 5-pattern VAT+WHT set; Receipt has its own 4-pattern WHT
@@ -171,7 +172,7 @@ function timeAgo(iso: string | null): string {
  * flag, then PUTs the lot on Save. Cancel discards in-flight
  * changes — never persists until Save is clicked.</p>
  */
-type Section = 'display' | 'numbering' | 'tax' | 'bank';
+type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt';
 
 export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }: Props) {
   const [draft, setDraft] = useState<settingsApi.AccountingSettings>(() => settingsApi.defaultsFor(scope));
@@ -196,11 +197,13 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
               : scope === 'purchase'  ? 'Bill Settings'
               : scope === 'receipt'   ? 'Receipt Settings'
               : scope === 'quotation' ? 'Quotation Settings'
+              : scope === 'pos'       ? 'POS Settings'
               :                         'General Voucher Settings';
   const sideLabel = scope === 'sale'      ? 'Invoice'
                   : scope === 'purchase'  ? 'Bill'
                   : scope === 'receipt'   ? 'Receipt'
                   : scope === 'quotation' ? 'Quotation'
+                  : scope === 'pos'       ? 'POS'
                   :                         'Voucher';
   const prefixLabels = scope === 'sale'
     ? { commercial: 'Invoice',   tax: 'Tax Invoice', creditNote: 'Credit Note', debitNote: 'Debit Note' }
@@ -210,6 +213,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     ? { commercial: 'Receipt',   tax: '',            creditNote: '',            debitNote: '' }
     : scope === 'quotation'
     ? { commercial: 'Quotation', tax: '',            creditNote: '',            debitNote: '' }
+    // POS — 'commercial' = counter-receipt, 'tax' = tax receipt,
+    // 'creditNote' slot repurposed to carry the queue-number prefix
+    // ("POSQ" → POSQ-042). 'debitNote' slot is unused.
+    : scope === 'pos'
+    ? { commercial: 'POS Receipt', tax: 'POS Tax',    creditNote: 'Queue (Q-no)', debitNote: '' }
     : { commercial: 'Voucher',   tax: '',            creditNote: '',            debitNote: '' };
 
   useEffect(() => {
@@ -337,7 +345,17 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     { key: 'numbering', label: 'Numbering',   hint: 'Document number prefixes',     icon: <Hash className="h-4 w-4" /> },
     { key: 'tax',       label: 'Tax types',   hint: 'Patterns in the Tax dropdown', icon: <ReceiptIcon className="h-4 w-4" /> },
     ...(scope === 'sale' ? [
+      { key: 'reminders' as Section, label: 'Reminders', hint: 'Telegram pings: before due, after due, paid', icon: <BellRing className="h-4 w-4" /> },
       { key: 'bank' as Section, label: 'Bank Account', hint: 'Payment info + KHRQR printed on the invoice', icon: <Landmark className="h-4 w-4" /> },
+    ] : []),
+    // POS-only "Receipt" section — controls what prints on the
+    // counter-checkout receipt (PAID stamp, SKU prefix, paper size,
+    // shop name) plus the auto-print-on-checkout behaviour. POS also
+    // gets the Bank Account section so the cashier can show a KHQR
+    // for "scan to pay" at checkout.
+    ...(scope === 'pos' ? [
+      { key: 'receipt' as Section, label: 'Receipt', hint: 'Print layout: PAID stamp, SKU, paper size', icon: <Printer className="h-4 w-4" /> },
+      { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
     ] : []),
   ];
 
@@ -401,93 +419,251 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.autoSendTelegram,
                   v => setDraft({ ...draft, autoSendTelegram: v }),
                 )}
-                {scope === 'sale' && (
-                  <div className="pt-3 mt-3 border-t">
-                    <h3 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5">
-                      Reminders
-                      <HelpHint>Telegram pings to the customer. Skipped silently when the customer hasn't linked yet.</HelpHint>
-                    </h3>
+                {scope === 'sale' && toggleRow(
+                  'Issue Invoice on save',
+                  'After Save & Close, automatically move the invoice from Draft to Issued (Progress). Off by default — invoices stay as Draft until you click Issue manually.',
+                  draft.autoIssue,
+                  v => setDraft({ ...draft, autoIssue: v }),
+                )}
+              </div>
+            )}
 
+            {/* Reminders — sale-scope only. Promoted from a nested
+                block inside Display to its own left-menu section so
+                the cadence + repeat config has breathing room. */}
+            {section === 'reminders' && scope === 'sale' && (
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5">
+                  Reminders
+                  <HelpHint>Telegram pings to the customer. Skipped silently when the customer hasn't linked yet.</HelpHint>
+                </h3>
+
+                {toggleRow(
+                  'Before Due Date',
+                  'Send a "due soon" ping ahead of the due date.',
+                  draft.reminderBeforeDueEnabled,
+                  v => setDraft({ ...draft, reminderBeforeDueEnabled: v }),
+                )}
+                {draft.reminderBeforeDueEnabled && (
+                  <div className="ml-1 mb-2 flex items-center gap-2 text-xs text-gray-600">
+                    <span>Send</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={365}
+                      value={draft.reminderBeforeDueDays}
+                      onChange={e => {
+                        const n = parseInt(e.target.value, 10);
+                        setDraft({
+                          ...draft,
+                          reminderBeforeDueDays: Number.isFinite(n) ? Math.max(0, Math.min(365, n)) : 1,
+                        });
+                      }}
+                      disabled={loading || saving}
+                      className="h-7 w-16 text-sm"
+                    />
+                    <span>day(s) before due date.</span>
+                  </div>
+                )}
+
+                {toggleRow(
+                  'After Due Date',
+                  'Send a reminder when the invoice is past due and still unpaid.',
+                  draft.reminderAfterDueEnabled,
+                  v => setDraft({ ...draft, reminderAfterDueEnabled: v }),
+                )}
+                {draft.reminderAfterDueEnabled && (
+                  <div className="ml-1 mb-2 space-y-1">
                     {toggleRow(
-                      'Before Due Date',
-                      'Send a "due soon" ping ahead of the due date.',
-                      draft.reminderBeforeDueEnabled,
-                      v => setDraft({ ...draft, reminderBeforeDueEnabled: v }),
+                      'Repeat',
+                      'Off: send once. On: keep re-sending on the cadence below until the invoice settles.',
+                      draft.reminderAfterDueRepeat,
+                      v => setDraft({ ...draft, reminderAfterDueRepeat: v }),
                     )}
-                    {draft.reminderBeforeDueEnabled && (
-                      <div className="ml-1 mb-2 flex items-center gap-2 text-xs text-gray-600">
-                        <span>Send</span>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={365}
-                          value={draft.reminderBeforeDueDays}
-                          onChange={e => {
-                            const n = parseInt(e.target.value, 10);
-                            setDraft({
-                              ...draft,
-                              reminderBeforeDueDays: Number.isFinite(n) ? Math.max(0, Math.min(365, n)) : 1,
-                            });
-                          }}
-                          disabled={loading || saving}
-                          className="h-7 w-16 text-sm"
-                        />
-                        <span>day(s) before due date.</span>
+                    {draft.reminderAfterDueRepeat && (
+                      <div className="ml-1 flex items-center gap-3 text-xs text-gray-600">
+                        <span>Frequency:</span>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="afterDueFreq"
+                            value="daily"
+                            checked={draft.reminderAfterDueFrequency === 'daily'}
+                            onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'daily' })}
+                            disabled={loading || saving}
+                          />
+                          Daily
+                        </label>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="afterDueFreq"
+                            value="weekly"
+                            checked={draft.reminderAfterDueFrequency === 'weekly'}
+                            onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'weekly' })}
+                            disabled={loading || saving}
+                          />
+                          Weekly
+                        </label>
                       </div>
-                    )}
-
-                    {toggleRow(
-                      'After Due Date',
-                      'Send a reminder when the invoice is past due and still unpaid.',
-                      draft.reminderAfterDueEnabled,
-                      v => setDraft({ ...draft, reminderAfterDueEnabled: v }),
-                    )}
-                    {draft.reminderAfterDueEnabled && (
-                      <div className="ml-1 mb-2 space-y-1">
-                        {toggleRow(
-                          'Repeat',
-                          'Off: send once. On: keep re-sending on the cadence below until the invoice settles.',
-                          draft.reminderAfterDueRepeat,
-                          v => setDraft({ ...draft, reminderAfterDueRepeat: v }),
-                        )}
-                        {draft.reminderAfterDueRepeat && (
-                          <div className="ml-1 flex items-center gap-3 text-xs text-gray-600">
-                            <span>Frequency:</span>
-                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="radio"
-                                name="afterDueFreq"
-                                value="daily"
-                                checked={draft.reminderAfterDueFrequency === 'daily'}
-                                onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'daily' })}
-                                disabled={loading || saving}
-                              />
-                              Daily
-                            </label>
-                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="radio"
-                                name="afterDueFreq"
-                                value="weekly"
-                                checked={draft.reminderAfterDueFrequency === 'weekly'}
-                                onChange={() => setDraft({ ...draft, reminderAfterDueFrequency: 'weekly' })}
-                                disabled={loading || saving}
-                              />
-                              Weekly
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {toggleRow(
-                      'Paid Reminder',
-                      'Send a "payment received" thank-you message when the invoice is fully paid.',
-                      draft.reminderPaidEnabled,
-                      v => setDraft({ ...draft, reminderPaidEnabled: v }),
                     )}
                   </div>
                 )}
+
+                {toggleRow(
+                  'Paid Reminder',
+                  'Send a "payment received" thank-you message when the invoice is fully paid.',
+                  draft.reminderPaidEnabled,
+                  v => setDraft({ ...draft, reminderPaidEnabled: v }),
+                )}
+
+                {/* V129. Shared message body for all three reminder
+                    branches. Placeholders substituted server-side
+                    before the AI-Agent dispatch — unknown tokens pass
+                    through unchanged. */}
+                <div className="mt-4 pt-3 border-t">
+                  <Label className="text-sm font-semibold inline-flex items-center gap-1.5">
+                    Message Template
+                    <HelpHint>
+                      Used for all three reminders. Leave any placeholder out to drop that field.
+                      Available: <code>{'{invoiceNo}'}</code>, <code>{'{amount}'}</code>,{' '}
+                      <code>{'{customerName}'}</code>, <code>{'{dueDate}'}</code>.
+                    </HelpHint>
+                  </Label>
+                  <textarea
+                    value={draft.reminderTemplate}
+                    onChange={e => setDraft({ ...draft, reminderTemplate: e.target.value })}
+                    disabled={loading || saving}
+                    rows={4}
+                    maxLength={4096}
+                    placeholder="Hi {customerName}, this is a reminder for invoice {invoiceNo} ({amount}) due on {dueDate}."
+                    className="mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Tokens like <code>{'{invoiceNo}'}</code> are replaced when the message is sent.
+                  </p>
+                </div>
+
+                {toggleRow(
+                  'Resend Invoice',
+                  'Along with the reminder text above, push the invoice details (number, customer, due date, total) as a second message — saves the customer scrolling back.',
+                  draft.reminderResendInvoice,
+                  v => setDraft({ ...draft, reminderResendInvoice: v }),
+                )}
+              </div>
+            )}
+
+            {/* POS Receipt section (V133). Surfaces the layout +
+                behaviour controls the counter receipt obeys at print
+                time — PAID stamp, SKU prefix, paper size, auto-print
+                on checkout, and the shop name printed in the header. */}
+            {section === 'receipt' && scope === 'pos' && (
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5">
+                  Receipt
+                  <HelpHint>Controls the layout and print behaviour of the POS receipt.</HelpHint>
+                </h3>
+
+                {/* V138 — logo image. Drag-drop or click to browse;
+                    stored as a base64 data URL on the settings row so
+                    it round-trips with the rest of the receipt prefs. */}
+                <div className="space-y-1.5 mb-3">
+                  <Label className="text-xs text-gray-600">Logo on receipt</Label>
+                  <ImageDropZone
+                    value={draft.posLogoUrl}
+                    onChange={v => setDraft({ ...draft, posLogoUrl: v })}
+                    hint="PNG / JPG · prints centered above the shop name"
+                    height={100}
+                    disabled={loading || saving}
+                  />
+                </div>
+
+                <div className="space-y-1.5 mb-3">
+                  <Label className="text-xs text-gray-600">Shop name on receipt</Label>
+                  <Input
+                    value={draft.posShopName ?? ''}
+                    onChange={e => setDraft({ ...draft, posShopName: e.target.value })}
+                    placeholder="Leave blank to use your company name"
+                    maxLength={255}
+                  />
+                </div>
+
+                {toggleRow(
+                  'Show PAID stamp',
+                  'Print a "PAID" mark on the receipt after the sale completes.',
+                  draft.posShowPaidStamp,
+                  v => setDraft({ ...draft, posShowPaidStamp: v }),
+                )}
+                {toggleRow(
+                  'Auto-print on checkout',
+                  'Open the browser print dialog automatically as soon as payment is confirmed.',
+                  draft.posAutoPrint,
+                  v => setDraft({ ...draft, posAutoPrint: v }),
+                )}
+                {toggleRow(
+                  'Show SKU prefix',
+                  'Print each item\'s SKU code in front of the name (e.g. "15-453574  Men\'s shirt").',
+                  draft.posShowSku,
+                  v => setDraft({ ...draft, posShowSku: v }),
+                )}
+                {toggleRow(
+                  'Show Queue / Order No.',
+                  'Print "#001" on the receipt so customers can match their slip with the order pickup.',
+                  draft.posShowQueueNo,
+                  v => setDraft({ ...draft, posShowQueueNo: v }),
+                )}
+
+                <div className="space-y-1.5 mt-3">
+                  <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                    Paper size
+                    <HelpHint>
+                      Thermal 80mm = standard POS hardware. A4 / A5 / A6 use the
+                      desktop printer's @page rule so margins fit the chosen sheet.
+                    </HelpHint>
+                  </Label>
+                  <select
+                    value={draft.posPaperSize}
+                    onChange={e => setDraft({ ...draft, posPaperSize: e.target.value as settingsApi.AccountingSettings['posPaperSize'] })}
+                    className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    disabled={loading || saving}
+                  >
+                    <option value="thermal_80">Thermal 80mm (POS roll)</option>
+                    <option value="a6">A6 (105 × 148mm)</option>
+                    <option value="a5">A5 (148 × 210mm)</option>
+                    <option value="a4">A4 (210 × 297mm)</option>
+                  </select>
+                </div>
+
+                {/* V141 — exchange rate. New POS orders snapshot
+                    this value into pos_orders.exchange_rate at create
+                    time; the receipt prints "Total (KHR)" = Total USD
+                    × this rate, plus a separate "@ rate" line for
+                    transparency. */}
+                <div className="space-y-1.5 mt-3">
+                  <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                    Exchange rate (USD → KHR)
+                    <HelpHint>
+                      Used on the receipt to print the KHR equivalent next to the USD total.
+                      New POS orders snapshot this value at create time so a later rate change
+                      doesn't rewrite historic receipts.
+                    </HelpHint>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={draft.posExchangeRate}
+                    onChange={e => {
+                      const n = parseFloat(e.target.value);
+                      setDraft({ ...draft, posExchangeRate: Number.isFinite(n) && n > 0 ? n : draft.posExchangeRate });
+                    }}
+                    disabled={loading || saving}
+                    className="font-mono text-sm h-8"
+                  />
+                  <p className="text-[11px] text-gray-500">
+                    Example: <code>4100</code> means $1.00 prints as ៛ 4,100.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -516,13 +692,29 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 </h3>
                 {/* Prefixes first — they're the field HR actually
                  *  changes day to day; the date format / sequence
-                 *  width are set once per tenant and rarely touched. */}
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                  {prefixRow(prefixLabels.commercial, 'prefixCommercial')}
-                  {!isSingleKind && prefixRow(prefixLabels.tax,        'prefixTax')}
-                  {!isSingleKind && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
-                  {!isSingleKind && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
-                </div>
+                 *  width are set once per tenant and rarely touched.
+                 *  POS collapses to ONE field — the queue prefix —
+                 *  since both invoice kinds (commercial / tax) on
+                 *  a POS sale share the same counter, and the queue
+                 *  number itself is the only thing the cashier sees
+                 *  on the receipt. */}
+                {scope === 'pos' ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      {prefixRow('Prefix', 'prefixCreditNote')}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Stored as <code>PREFIX-DDMMYYYY-###</code> · printed on the receipt as just <code>###</code>.
+                    </p>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                    {prefixRow(prefixLabels.commercial, 'prefixCommercial')}
+                    {!isSingleKind && prefixRow(prefixLabels.tax,        'prefixTax')}
+                    {!isSingleKind && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
+                    {!isSingleKind && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
+                  </div>
+                )}
                 {/* Format controls — shared across all four doc kinds
                  *  in this scope. Date dropdown drives the middle
                  *  segment, seq dropdown drives the trailing pad width.

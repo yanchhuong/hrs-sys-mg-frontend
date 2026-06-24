@@ -18,6 +18,23 @@ export type TelegramSentStatus =
   | 'FAILED'    // all attempts failed
   | 'SKIPPED';  // sendTelegram was false
 
+/** Lifecycle status (V123). DRAFT and SCHEDULED hide from non-admin
+ *  viewers and skip Telegram fan-out; the @Scheduled job in
+ *  AnnouncementService promotes SCHEDULED → PUBLISHED at publishAt
+ *  and PUBLISHED → EXPIRED 1 day later. */
+export type LifecycleStatus = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'EXPIRED';
+
+/** Publish mode on create (V123).
+ *  - 'now':      publish immediately, status=PUBLISHED, fan-out fires inline.
+ *  - 'schedule': status=SCHEDULED, publishAt required (future), scheduler
+ *                promotes + fans-out on publishAt.
+ *  - 'draft':    status=DRAFT, no publishAt, no fan-out. */
+export type PublishMode = 'now' | 'schedule' | 'draft';
+
+/** Category for the announcement (V126). Drives the badge on the
+ *  list table + filter chips. Defaults to OTHERS server-side. */
+export type AnnouncementType = 'HOLIDAY' | 'NEWS' | 'EVENTS' | 'OTHERS';
+
 export interface Announcement {
   id: string;
   title: string;
@@ -32,9 +49,33 @@ export interface Announcement {
   telegramSentCount: number | null;
   telegramFailedCount: number | null;
   telegramNotLinkedCount: number | null;
+  /** Lifecycle status (V123). */
+  status: LifecycleStatus;
+  /** When the row goes / went live. Null for DRAFT. */
+  publishAt: string | null;
+  /** Auto-set to publishAt + 1 day. Drives the EXPIRED transition. */
+  expiresAt: string | null;
+  /** Optional Holiday link. */
+  holidayId: string | null;
+  /** Category (V126). */
+  type: AnnouncementType;
+  /** Count of distinct users who have opened (marked read) this
+   *  announcement — drives the "Seen by N" badge. Null only if the
+   *  caller went through a path that skipped the rollup. */
+  readCount: number | null;
   createdAt: string;
   updatedAt: string;
   createdById: string | null;
+}
+
+/** "Seen by" panel row (V127). Resolved server-side so the FE
+ *  doesn't need to chase user / employee ids. */
+export interface AnnouncementReader {
+  userId: string;
+  /** Display name — employee name when linked, otherwise email. */
+  name: string;
+  email: string | null;
+  readAt: string;
 }
 
 export interface AnnouncementRequest {
@@ -44,6 +85,17 @@ export interface AnnouncementRequest {
   /** Required for SPECIFIC_* audiences. */
   recipientIds?: string[];
   sendTelegram: boolean;
+  /** Defaults to 'now' server-side when omitted. */
+  publishMode?: PublishMode;
+  /** ISO timestamp. Required for publishMode='schedule', ignored otherwise. */
+  publishAt?: string;
+  /** Optional explicit expiry. When set, overrides the default
+   *  publishAt + 1 day window. Must be after publishAt. */
+  expiresAt?: string;
+  /** Optional Holiday link — UI uses the holiday's date to default publishAt. */
+  holidayId?: string;
+  /** Category — defaults to 'OTHERS' server-side when omitted. */
+  type?: AnnouncementType;
 }
 
 export type LogStatus = 'SENT' | 'FAILED' | 'NOT_LINKED';
@@ -53,6 +105,10 @@ export interface TelegramLog {
   announcementId: string;
   recipientType: 'EMPLOYEE' | 'CUSTOMER';
   recipientId: string;
+  /** Resolved at fetch time. Null when the source row is gone. */
+  recipientName: string | null;
+  /** Phone for both employees + customers. Null when unset. */
+  recipientContact: string | null;
   telegramChatId: number | null;
   status: LogStatus;
   sentAt: string;
@@ -77,6 +133,11 @@ export async function get(id: string): Promise<Announcement> {
 
 export async function getLogs(id: string): Promise<TelegramLog[]> {
   return apiJson(`/api/v1/announcements/${id}/telegram-logs`);
+}
+
+/** "Seen by" reader list for the detail dialog (V127). */
+export async function getReaders(id: string): Promise<AnnouncementReader[]> {
+  return apiJson(`/api/v1/announcements/${id}/readers`);
 }
 
 export async function create(req: AnnouncementRequest): Promise<Announcement> {

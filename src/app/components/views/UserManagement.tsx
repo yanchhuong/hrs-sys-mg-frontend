@@ -141,6 +141,7 @@ const MODULES: ModuleDef[] = [
   { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'sales' },
   { key: 'quotation',         label: 'Quotation',         description: 'Sale quotes sent to customers (convert to Invoice)',          parent: 'sales' },
   { key: 'invoice',           label: 'Invoice',           description: 'Commercial / Tax invoices + Credit / Debit notes',            parent: 'sales' },
+  { key: 'pos',               label: 'POS',               description: 'Counter checkout — orders, queue, draft, checkout',           parent: 'sales' },
   { key: 'voucher',           label: 'General Voucher',   description: 'Free-of-charge giveaways (charity, donation, sponsorship)',   parent: 'sales' },
   { key: 'payment',           label: 'Payment',           description: 'Receipts recorded against an invoice',                        parent: 'sales' },
   { key: 'stock',             label: 'Stock',             description: 'Sellable products / services catalog',                        parent: 'sales' },

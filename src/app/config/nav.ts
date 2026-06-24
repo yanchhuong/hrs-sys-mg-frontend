@@ -44,6 +44,7 @@ import { Reports } from '../components/views/Reports';
 import { Customers } from '../components/views/Customers';
 import { Vendors } from '../components/views/Vendors';
 import { Invoices } from '../components/views/Invoices';
+import { POS } from '../components/views/POS';
 import { Quotations } from '../components/views/Quotations';
 import { Vouchers } from '../components/views/Vouchers';
 import { Bills } from '../components/views/Bills';
@@ -141,6 +142,11 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers,                group: 'sales-group' },
   { id: 'quotations',        labelKey: 'nav.quotations',             icon: FileText,        module: 'quotation',          component: Quotations,               group: 'sales-group' },
   { id: 'invoices',          labelKey: 'nav.invoices',               icon: ReceiptText,     module: 'invoice',            component: Invoices,                 group: 'sales-group' },
+  // POS (V130). Counter-style sale that spawns a Commercial / Tax
+  // invoice on checkout — sits next to Invoices so the cashier can
+  // jump between counter sales and the invoice ledger without
+  // switching context.
+  { id: 'pos',               labelKey: 'nav.pos',                    icon: ShoppingCart,    module: 'pos',                component: POS,                      group: 'sales-group' },
   { id: 'vouchers',          labelKey: 'nav.vouchers',               icon: FileText,        module: 'voucher',            component: Vouchers,                 group: 'sales-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },

@@ -21,6 +21,7 @@ import { mockEmployees } from '../../data/mockData';
 import { Employee } from '../../types/hrms';
 import * as departmentsApi from '../../api/departments';
 import * as documentsApi from '../../api/documents';
+import * as authApi from '../../api/auth';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
@@ -38,12 +39,19 @@ const BLANK_EMPLOYEE: Partial<Employee> = {
 
 export function UserProfileDialog({ open, onOpenChange }: Props) {
   const { formatDate } = useDateFormat();
-  const { currentUser, currentEmployee } = useAuth();
+  const { currentUser, currentEmployee, refreshUser } = useAuth();
   const employeeRef = currentEmployee ?? BLANK_EMPLOYEE;
 
-  // Profile tab state
-  const [profile, setProfile] = useState<Partial<Employee>>(employeeRef);
+  // Profile tab state. Display name preference: explicit user.name
+  // (set via this dialog, V140) → linked employee name → empty. The
+  // resolved value is what /me returns to currentUser.name, so we
+  // can read it straight off the auth context.
+  const [profile, setProfile] = useState<Partial<Employee>>(() => ({
+    ...employeeRef,
+    name: currentUser?.name ?? employeeRef.name ?? '',
+  }));
   const [accountEmail, setAccountEmail] = useState(currentUser?.email ?? '');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Departments list — only used to resolve the dept UUID on
   // currentEmployee.department into a human label for the badge
@@ -190,18 +198,33 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
     [profile.name, currentUser?.email],
   );
 
-  const handleSaveProfile = () => {
-    if (!profile.name?.trim()) {
+  const handleSaveProfile = async () => {
+    const trimmed = profile.name?.trim() ?? '';
+    if (!trimmed) {
       toast.error('Name is required');
       return;
     }
-    // Mock persistence — in real backend this is PATCH /api/v1/employees/{id}
-    if (currentEmployee) {
-      const idx = mockEmployees.findIndex(e => e.id === currentEmployee.id);
-      if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], ...profile } as Employee;
+    // V140 — persist the display name via PATCH /api/v1/auth/me.
+    // In mock mode we still write to mockEmployees so the
+    // legacy demo flow keeps working.
+    setSavingProfile(true);
+    try {
+      if (USE_MOCKS) {
+        if (currentEmployee) {
+          const idx = mockEmployees.findIndex(e => e.id === currentEmployee.id);
+          if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], ...profile } as Employee;
+        }
+      } else {
+        await authApi.updateProfile({ name: trimmed });
+        await refreshUser();
+      }
+      toast.success('Profile updated');
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save profile');
+    } finally {
+      setSavingProfile(false);
     }
-    toast.success('Profile updated');
-    onOpenChange(false);
   };
 
   const handleSaveAccount = () => {
@@ -352,10 +375,10 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
             </FieldBox>
 
             <DialogFooter className="pt-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleSaveProfile}>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={savingProfile}>Cancel</Button>
+              <Button onClick={() => { void handleSaveProfile(); }} disabled={savingProfile}>
                 <Save className="h-4 w-4 mr-2" />
-                Save Profile
+                {savingProfile ? 'Saving…' : 'Save Profile'}
               </Button>
             </DialogFooter>
           </TabsContent>

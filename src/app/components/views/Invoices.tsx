@@ -41,6 +41,8 @@ import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineIt
 import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
+import { printPosReceipt } from '../../utils/posReceipt';
+import * as posApi from '../../api/pos';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
@@ -661,9 +663,18 @@ export function Invoices() {
                         {inv.invoiceNo}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`gap-1 ${KIND_BADGE_CLASS[inv.kind]}`}>
-                          {KIND_LABEL[inv.kind]}
-                        </Badge>
+                        {/* POS chip (V135) overrides the kind chip so
+                            the list distinguishes counter sales from
+                            regular invoices at a glance. */}
+                        {inv.posOrderId ? (
+                          <Badge variant="outline" className="gap-1 border-emerald-300 text-emerald-700 bg-emerald-50">
+                            POS
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className={`gap-1 ${KIND_BADGE_CLASS[inv.kind]}`}>
+                            {KIND_LABEL[inv.kind]}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">
                         {customerById.get(inv.customerId)?.name ?? <span className="text-gray-400">(unknown)</span>}
@@ -1822,6 +1833,37 @@ function InvoiceDetailDialog({
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
 
+  /** Print routing (V135): POS-origin invoices render the thermal
+   *  receipt; everything else uses the standard Khmer-fonts invoice
+   *  print. Looks up the POS order + POS settings + items catalog
+   *  on demand so the receipt has the cash-tendered / change / queue
+   *  number / per-line notes the regular Invoice payload doesn't
+   *  carry. Falls back to the invoice print if the lookup fails so
+   *  the operator always gets a printable artefact. */
+  const printInvoiceOrReceipt = async (inv: invoicesApi.Invoice) => {
+    if (!inv.posOrderId) {
+      await printWithKhmerFonts();
+      return;
+    }
+    try {
+      const [order, settings, items] = await Promise.all([
+        posApi.getByInvoice(inv.id),
+        accountingSettingsApi.get('pos'),
+        itemsApi.list({ size: 500 }),
+      ]);
+      const ok = printPosReceipt({
+        order,
+        settings,
+        items: items.content,
+        shopNameFallback: companyInfo?.name ?? undefined,
+      });
+      if (!ok) toast.error('Pop-up blocked — allow pop-ups to print the receipt.');
+    } catch (e) {
+      console.warn('POS receipt lookup failed, falling back to invoice print', e);
+      await printWithKhmerFonts();
+    }
+  };
+
   // USD-equivalent AR — collapses USD + (KHR ÷ rate) payments against
   // Total USD (= invoice.total + ΣDN − ΣCN). Used both by the AR row in
   // the summary block and to gate the Record-payment button: as long as
@@ -1955,9 +1997,20 @@ function InvoiceDetailDialog({
                   <span className="text-xs text-gray-500">Loading invoice…</span>
                 ) : (
                   <>
-                    <Badge variant="outline" className={KIND_BADGE_CLASS[invoice.kind]}>
-                      {KIND_LABEL[invoice.kind]}
-                    </Badge>
+                    {/* POS-origin invoices (V135) display "POS" as
+                        the type chip — the underlying kind is still
+                        commercial / tax for ledger purposes, but for
+                        the operator the source matters more than the
+                        kind. */}
+                    {invoice.posOrderId ? (
+                      <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">
+                        POS
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className={KIND_BADGE_CLASS[invoice.kind]}>
+                        {KIND_LABEL[invoice.kind]}
+                      </Badge>
+                    )}
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[invoice.status]}`}>
                       {invoice.status}
                     </Badge>
@@ -1975,7 +2028,7 @@ function InvoiceDetailDialog({
                 don't render before data is in. */}
             {invoice && (
               <div className="flex gap-1.5 mr-8 print:hidden">
-                <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }} title="Print invoice">
+                <Button size="sm" variant="outline" onClick={() => { void printInvoiceOrReceipt(invoice); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
                 <DropdownMenu>
@@ -2676,19 +2729,34 @@ function PrintTaxInvoice({
         )}
       </div>
 
-      {/* Centered bilingual title with side rules */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-        <div style={{ flex: 1, borderTop: '1px solid #000' }} />
-        <div style={{ textAlign: 'center' }}>
-          <div className="kh-title" style={{
-            fontSize: '20px',
-            fontWeight: 400,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
-          }}>វិក្កយបត្រអាករ</div>
-          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>TAX INVOICE</div>
-        </div>
-        <div style={{ flex: 1, borderTop: '1px solid #000' }} />
-      </div>
+      {/* Centered bilingual title with side rules. Per-kind so a
+          Commercial invoice prints "INVOICE" / "វិក្កយបត្រ" rather
+          than the legacy "TAX INVOICE" header that used to fire for
+          every kind. CN / DN carry their own banner so the recipient
+          sees at a glance which document this is. */}
+      {(() => {
+        const kindTitle = invoice.kind === 'tax'
+          ? { kh: 'វិក្កយបត្រអាករ',     en: 'TAX INVOICE' }
+          : invoice.kind === 'credit_note'
+          ? { kh: 'លិខិតឥណទាន',         en: 'CREDIT NOTE' }
+          : invoice.kind === 'debit_note'
+          ? { kh: 'លិខិតឥណពន្ធ',         en: 'DEBIT NOTE' }
+          : { kh: 'វិក្កយបត្រ',           en: 'INVOICE' };
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+            <div style={{ flex: 1, borderTop: '1px solid #000' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div className="kh-title" style={{
+                fontSize: '20px',
+                fontWeight: 400,
+                fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+              }}>{kindTitle.kh}</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>{kindTitle.en}</div>
+            </div>
+            <div style={{ flex: 1, borderTop: '1px solid #000' }} />
+          </div>
+        );
+      })()}
 
       {/* Customer block (left) + Invoice meta (right) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>

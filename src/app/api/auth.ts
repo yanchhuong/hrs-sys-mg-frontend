@@ -12,6 +12,9 @@ export interface AuthUser {
   role: 'super_admin' | 'admin' | 'manager' | 'employee';
   employeeId?: string;
   tenantSlug: string;
+  /** Display name resolved server-side (V140). Falls through
+   *  user.name → linked employee.name → email. */
+  name?: string;
 }
 
 export interface LoginResponse {
@@ -56,4 +59,16 @@ export function isAuthenticated(): boolean {
 
 export async function changePassword(req: { currentPassword: string; newPassword: string }): Promise<void> {
   await apiJson('/api/v1/auth/change-password', { method: 'POST', json: req });
+}
+
+/** Update the current user's display name (V140). Returns the
+ *  refreshed user — caller should also refresh the cached
+ *  localStorage copy + the AuthContext so the new name shows up
+ *  on the avatar / receipt without a page reload. */
+export async function updateProfile(req: { name: string }): Promise<AuthUser> {
+  const user = await apiJson<AuthUser>('/api/v1/auth/me', { method: 'PATCH', json: req });
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  }
+  return user;
 }

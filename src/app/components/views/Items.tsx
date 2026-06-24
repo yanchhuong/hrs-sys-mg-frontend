@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
+import { ImageDropZone } from '../common/ImageDropZone';
 
 interface FormState {
   sku: string;
@@ -40,6 +41,13 @@ interface FormState {
   /** V121 — when true, picking this item on an invoice decrements
    *  stock and refuses to save when qty > on-hand. */
   deductionEnabled: boolean;
+  /** Optional cover image URL (V132). */
+  imageUrl: string;
+  /** POS category (V142). */
+  category: itemsApi.ItemCategory;
+  /** Per-item modifier groups (V142). Empty array = no modifiers,
+   *  serialised to NULL on save. */
+  modifierGroups: itemsApi.ModifierGroup[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -52,7 +60,35 @@ const EMPTY_FORM: FormState = {
   stockQty: '0',
   active: true,
   deductionEnabled: false,
+  imageUrl: '',
+  category: 'other',
+  modifierGroups: [],
 };
+
+/** Two prefilled modifier groups the cashier sets up most often on
+ *  a Drink — Size with S/M/L (price-adjustable) and Sugar Level. The
+ *  "+ Add common Drink modifiers" button drops these in so the
+ *  operator doesn't have to type them by hand every time. */
+const DRINK_DEFAULT_MODIFIERS: itemsApi.ModifierGroup[] = [
+  {
+    name: 'Size', required: true,
+    options: [
+      { label: 'S', priceAdj: 0 },
+      { label: 'M', priceAdj: 0.5 },
+      { label: 'L', priceAdj: 1.0 },
+    ],
+  },
+  {
+    name: 'Sugar Level', required: false,
+    options: [
+      { label: '0%',   priceAdj: 0 },
+      { label: '25%',  priceAdj: 0 },
+      { label: '50%',  priceAdj: 0 },
+      { label: '75%',  priceAdj: 0 },
+      { label: '100%', priceAdj: 0 },
+    ],
+  },
+];
 
 interface StockInState {
   item: itemsApi.Item;
@@ -135,6 +171,9 @@ export function Items() {
       stockQty: String(it.stockQty ?? 0),
       active: it.active,
       deductionEnabled: it.deductionEnabled,
+      imageUrl: it.imageUrl ?? '',
+      category: it.category ?? 'other',
+      modifierGroups: itemsApi.parseModifiers(it.modifiers)?.groups ?? [],
     });
     setDialogOpen(true);
   };
@@ -161,6 +200,13 @@ export function Items() {
         stockQty,
         active: form.active,
         deductionEnabled: form.deductionEnabled,
+        // Empty string is meaningful here — backend treats it as
+        // "clear the field". undefined leaves the existing value.
+        imageUrl: form.imageUrl.trim(),
+        category: form.category,
+        // Serialise the typed groups back to a JSON string. Empty
+        // groups → '' so the server NULLs the column.
+        modifiers: itemsApi.serializeModifiers({ groups: form.modifierGroups }) ?? '',
       };
       if (editing) await itemsApi.update(editing.id, payload);
       else         await itemsApi.create(payload);
@@ -521,6 +567,52 @@ export function Items() {
                 onCheckedChange={v => setForm({ ...form, deductionEnabled: v })}
               />
             </div>
+
+            {/* V132 + V138 — cover image. Drag-drop a file or click
+                the zone to browse; stored as a base64 data URL on the
+                item so it round-trips without external hosting. The
+                POS items grid renders this as the card image, with a
+                placeholder when blank. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-600">Image (optional)</Label>
+              <ImageDropZone
+                value={form.imageUrl}
+                onChange={v => setForm({ ...form, imageUrl: v ?? '' })}
+                hint="PNG / JPG · shown as the product card on POS"
+                height={140}
+                disabled={saving}
+              />
+            </div>
+
+            {/* V142 — category dropdown. Drives the POS items-grid
+                filter tabs. Drink unlocks the Modifiers editor below
+                so the cashier can configure Size / Sugar Level. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-600">Category</Label>
+              <select
+                value={form.category}
+                onChange={e => setForm({ ...form, category: e.target.value as itemsApi.ItemCategory })}
+                disabled={saving}
+                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="drink">Drink</option>
+                <option value="snack">Snack</option>
+                <option value="food">Food</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {/* V142 — modifier editor. Surfaces only for Drinks today
+                (the user-confirmed pattern: Size + Sugar Level). The
+                schema supports any category, so a future iteration
+                can drop the gate without further migrations. */}
+            {form.category === 'drink' && (
+              <ModifiersEditor
+                groups={form.modifierGroups}
+                onChange={g => setForm({ ...form, modifierGroups: g })}
+                disabled={saving}
+              />
+            )}
           </div>
 
           <DialogFooter>
@@ -602,6 +694,140 @@ export function Items() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+/* ====================================================================
+ *  Modifiers editor — per-item groups (V142). A group has a name +
+ *  required toggle + a list of options ({label, priceAdj}). The POS
+ *  modifier picker on the cart side reads this same shape.
+ * =================================================================== */
+
+function ModifiersEditor({
+  groups, onChange, disabled,
+}: {
+  groups: itemsApi.ModifierGroup[];
+  onChange: (next: itemsApi.ModifierGroup[]) => void;
+  disabled?: boolean;
+}) {
+  const setGroup = (idx: number, patch: Partial<itemsApi.ModifierGroup>) =>
+    onChange(groups.map((g, i) => (i === idx ? { ...g, ...patch } : g)));
+  const setOption = (gi: number, oi: number, patch: Partial<itemsApi.ModifierOption>) =>
+    onChange(groups.map((g, i) => {
+      if (i !== gi) return g;
+      return { ...g, options: g.options.map((o, j) => j === oi ? { ...o, ...patch } : o) };
+    }));
+  const addGroup = () =>
+    onChange([...groups, { name: '', required: false, options: [{ label: '', priceAdj: 0 }] }]);
+  const removeGroup = (idx: number) => onChange(groups.filter((_, i) => i !== idx));
+  const addOption = (gi: number) =>
+    onChange(groups.map((g, i) => i === gi ? { ...g, options: [...g.options, { label: '', priceAdj: 0 }] } : g));
+  const removeOption = (gi: number, oi: number) =>
+    onChange(groups.map((g, i) => {
+      if (i !== gi) return g;
+      // Don't let the operator drop the last option — an empty group
+      // can't be picked from at the counter.
+      if (g.options.length <= 1) return g;
+      return { ...g, options: g.options.filter((_, j) => j !== oi) };
+    }));
+
+  return (
+    <div className="space-y-2 border rounded-md p-3 bg-gray-50">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+          Modifier groups
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={-1} className="text-gray-400"><Info className="h-3.5 w-3.5" /></span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                Customisations the cashier picks at ring-up. Each group surfaces a
+                radio list of options — picking one can adjust the line's unit price.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </Label>
+        <div className="flex gap-1.5">
+          {groups.length === 0 && (
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
+              onClick={() => onChange(DRINK_DEFAULT_MODIFIERS)} disabled={disabled}>
+              Use Size + Sugar defaults
+            </Button>
+          )}
+          <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
+            onClick={addGroup} disabled={disabled}>
+            <Plus className="h-3 w-3 mr-1" /> Add group
+          </Button>
+        </div>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="text-xs text-gray-500">
+          No modifiers yet — tapping this item on POS adds it directly with the base price.
+        </p>
+      ) : (
+        groups.map((g, gi) => (
+          <div key={gi} className="rounded border bg-white p-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Input
+                value={g.name}
+                onChange={e => setGroup(gi, { name: e.target.value })}
+                placeholder="Group name (e.g. Size)"
+                className="h-7 text-sm flex-1"
+                disabled={disabled}
+                maxLength={32}
+              />
+              <label className="inline-flex items-center gap-1 text-xs text-gray-600">
+                <input type="checkbox" checked={g.required}
+                  onChange={e => setGroup(gi, { required: e.target.checked })}
+                  disabled={disabled} />
+                Required
+              </label>
+              <button type="button" onClick={() => removeGroup(gi)}
+                className="text-gray-400 hover:text-red-600" disabled={disabled}
+                title="Remove group">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              {g.options.map((o, oi) => (
+                <div key={oi} className="flex items-center gap-1.5">
+                  <Input
+                    value={o.label}
+                    onChange={e => setOption(gi, oi, { label: e.target.value })}
+                    placeholder="Option (e.g. M)"
+                    className="h-7 text-sm flex-1"
+                    disabled={disabled}
+                    maxLength={32}
+                  />
+                  <span className="text-xs text-gray-500">±$</span>
+                  <Input
+                    type="number" step="0.01"
+                    value={o.priceAdj}
+                    onChange={e => setOption(gi, oi, { priceAdj: parseFloat(e.target.value) || 0 })}
+                    className="h-7 text-sm w-20 text-right"
+                    disabled={disabled}
+                  />
+                  <button type="button" onClick={() => removeOption(gi, oi)}
+                    className="text-gray-300 hover:text-red-600 disabled:opacity-30"
+                    disabled={disabled || g.options.length <= 1}
+                    title={g.options.length <= 1 ? 'Group must have at least one option' : 'Remove option'}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm"
+                className="h-6 text-[11px] mt-1"
+                onClick={() => addOption(gi)} disabled={disabled}>
+                <Plus className="h-3 w-3 mr-1" /> Option
+              </Button>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

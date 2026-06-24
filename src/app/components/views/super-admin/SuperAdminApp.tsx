@@ -10,6 +10,7 @@ import { Backups } from './Backups';
 import { PlatformPolicy } from './PlatformPolicy';
 import { PlatformPayrollCategories } from './PlatformPayrollCategories';
 import { PlatformHolidays } from './PlatformHolidays';
+import { SystemHolidays } from './SystemHolidays';
 import { TenantModules } from './TenantModules';
 import { ModuleCategories } from './ModuleCategories';
 import { PlatformTelegram } from './PlatformTelegram';
@@ -31,6 +32,7 @@ export function SuperAdminApp() {
       case 'policy':             return <PlatformPolicy />;
       case 'payroll_categories': return <PlatformPayrollCategories />;
       case 'holidays':           return <PlatformHolidays />;
+      case 'system_holidays':    return <SystemHolidays />;
       case 'platform_telegram':  return <PlatformTelegram />;
     }
   };

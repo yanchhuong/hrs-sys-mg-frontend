@@ -55,6 +55,11 @@ export interface Invoice {
   invoiceNo: string;
   kind: InvoiceKind;
   parentInvoiceId?: string | null;
+  /** Back-link to the POS order that spawned this invoice (V135).
+   *  When set, the row is a counter sale — UI tags it "POS" instead
+   *  of "Commercial" / "Tax" and the Print action routes to the
+   *  receipt template. */
+  posOrderId?: string | null;
   customerId: string;
   issueDate: string;
   dueDate?: string | null;

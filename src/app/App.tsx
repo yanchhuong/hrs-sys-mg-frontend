@@ -15,6 +15,8 @@ import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
 import { NAV_BY_ID } from './config/nav';
 import { QrScanPage } from './components/views/QrScanPage';
+import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
+import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -23,6 +25,15 @@ const isPublicScanPath = (): boolean =>
   typeof window !== 'undefined'
   && (window.location.pathname === '/scan'
       || window.location.pathname.startsWith('/scan/'));
+
+/** True when the URL path is the POS customer-display window. Like
+ *  /scan above, this is a one-shot landing meant to be opened in its
+ *  own pop-out window from the POS page — no auth, no sidebar, just
+ *  the mirror screen. Read once at mount; the customer never
+ *  navigates from here. */
+const isPosDisplayPath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname === POS_DISPLAY_PATH;
 
 function NotAuthorizedView() {
   return (
@@ -124,6 +135,18 @@ export default function App() {
     return (
       <>
         <QrScanPage />
+        <Toaster />
+      </>
+    );
+  }
+  // POS customer display — second-window mirror screen. Bypass
+  // Auth + i18n + DateFormat so the popped window paints instantly
+  // (no /me round-trip, no layout chrome). State arrives via
+  // BroadcastChannel from the cart side.
+  if (isPosDisplayPath()) {
+    return (
+      <>
+        <PosCustomerDisplay />
         <Toaster />
       </>
     );

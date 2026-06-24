@@ -17,6 +17,10 @@ export interface User {
   role: UserRole;
   employeeId: string;
   departmentId?: string;
+  /** Display name set via the Profile dialog (V140). When set,
+   *  takes precedence over the linked employee's name across the
+   *  app (sidebar avatar, POS Cashier line, etc.). */
+  name?: string;
   createdAt: string;
   lastLogin?: string;
   isActive: boolean;

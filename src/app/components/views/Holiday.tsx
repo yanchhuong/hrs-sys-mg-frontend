@@ -26,10 +26,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import * as settingsApi from '../../api/settings';
+import * as systemHolidaysApi from '../../api/systemHolidays';
 import { USE_MOCKS } from '../../api/client';
 import { mockHolidays } from '../../data/timeworkData';
 import {
-  CalendarDays, Plus, Search, Copy, Pencil, Trash2, X,
+  CalendarDays, Plus, Search, Copy, Pencil, Trash2, X, Globe, CheckCheck,
 } from 'lucide-react';
 import {
   format, parseISO, addYears, addDays, getYear, startOfMonth, endOfMonth,
@@ -143,6 +144,113 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
   };
 
   useEffect(() => { void loadHolidays(); }, []);
+
+  // System holidays (V124) — shared catalog Super Admin maintains.
+  // Tenant sees them read-only via a popup launched from the toolbar
+  // (was inline; moved to a Dialog to save vertical space on the
+  // main page).
+  const [systemDialogOpen, setSystemDialogOpen] = useState(false);
+  const [systemHolidays, setSystemHolidays] = useState<systemHolidaysApi.SystemHoliday[]>([]);
+  const [loadingSystem, setLoadingSystem] = useState(false);
+  /** Year to land the copies in. Public holidays repeat yearly; the
+   *  picker lets the operator clone last year's catalog into THIS
+   *  year (or any future year) with one click. Defaults to whatever
+   *  year they're viewing on the filter. */
+  const [targetYear, setTargetYear] = useState<number>(new Date().getFullYear());
+  useEffect(() => {
+    // Keep targetYear in sync with the filter unless the user picked
+    // "All years" — in that case fall back to the calendar year so
+    // the copy still has a sensible default.
+    if (yearFilter === ALL_YEARS_OPT) setTargetYear(new Date().getFullYear());
+    else                              setTargetYear(parseInt(yearFilter, 10));
+  }, [yearFilter]);
+
+  const loadSystemHolidays = async () => {
+    if (USE_MOCKS) { setSystemHolidays([]); return; }
+    setLoadingSystem(true);
+    try {
+      // Pull ALL system rows (no year filter) — the operator might
+      // want to copy a 2026-seeded catalog into 2027 with the
+      // year-shift, so we shouldn't pre-filter by viewed year.
+      setSystemHolidays(await systemHolidaysApi.tenantList());
+    } catch {
+      // Soft-fail — surface nothing rather than a toast. The catalog
+      // is a convenience, not a hard dependency.
+      setSystemHolidays([]);
+    } finally {
+      setLoadingSystem(false);
+    }
+  };
+  useEffect(() => { void loadSystemHolidays(); }, []);
+
+  /** Build "what would land in the tenant's calendar if they copy
+   *  this row into targetYear" and drop anything the tenant already
+   *  has at the resulting (date, name). Lets the operator pull
+   *  2026 system rows into 2027 without seeing already-imported
+   *  ghosts. */
+  const availableSystemHolidays = useMemo(() => {
+    const taken = new Set(holidays.map(h => `${h.date}|${h.name.toLowerCase()}`));
+    return systemHolidays
+      .map(s => {
+        // Compute the shifted date (same month+day, target year).
+        // Feb 29 → Feb 28 in non-leap target, matching the backend.
+        const d = new Date(s.date + 'T00:00:00');
+        const month = d.getMonth();
+        let day = d.getDate();
+        const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+        if (month === 1 && day === 29 && !isLeap(targetYear)) day = 28;
+        const targetDate = `${targetYear}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return { src: s, targetDate };
+      })
+      .filter(({ src, targetDate }) => !taken.has(`${targetDate}|${src.name.toLowerCase()}`))
+      .sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+  }, [systemHolidays, holidays, targetYear]);
+
+  const handleCopyOne = async (s: systemHolidaysApi.SystemHoliday) => {
+    setBusy(true);
+    try {
+      await systemHolidaysApi.copyOne(s.id, targetYear);
+      toast.success(`Copied "${s.name}" into ${targetYear}`);
+      await loadHolidays();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Copy failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopyAll = async () => {
+    if (availableSystemHolidays.length === 0) return;
+    setBusy(true);
+    try {
+      // Source year = the catalog's year (read from the first
+      // available row's stored date). Public holidays repeat yearly
+      // so the seed year is mostly cosmetic — what matters is the
+      // TARGET year, which gets the date shift on the server.
+      const sourceYear = systemHolidays.length > 0
+        ? parseInt(systemHolidays[0].date.slice(0, 4), 10)
+        : new Date().getFullYear();
+      const inserted = await systemHolidaysApi.copyAll(sourceYear, targetYear);
+      toast.success(`Copied ${inserted.length} holiday${inserted.length === 1 ? '' : 's'} into ${targetYear}`);
+      await loadHolidays();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Copy failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Available years for the target picker — current year ± 3, plus
+   *  any year the operator has already filtered to. Keeps the
+   *  dropdown short while covering the realistic "next year setup"
+   *  and "back-fill last year" workflows. */
+  const targetYearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    const set = new Set<number>();
+    for (let y = current - 1; y <= current + 5; y++) set.add(y);
+    if (yearFilter !== ALL_YEARS_OPT) set.add(parseInt(yearFilter, 10));
+    return [...set].sort((a, b) => a - b);
+  }, [yearFilter]);
 
   // ---------------------------------------------------------------------------
   // Derived: filtered + paginated list
@@ -398,27 +506,11 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        {!embedded && (
-          <div>
-            <h1 className="text-3xl font-bold">Holiday Management</h1>
-          </div>
-        )}
-        <div className={`flex flex-wrap gap-2 ${embedded ? 'ml-auto' : ''}`}>
-          <Button
-            variant="outline"
-            disabled={selectedIds.size === 0}
-            onClick={() => openCloneFor(Array.from(selectedIds))}
-          >
-            <Copy className="mr-2 h-4 w-4" />
-            Clone Selected ({selectedIds.size})
-          </Button>
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Holiday
-          </Button>
+      {!embedded && (
+        <div>
+          <h1 className="text-3xl font-bold">Holiday Management</h1>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card className="border-gray-200">
@@ -453,6 +545,114 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
         </Card>
       </div>
 
+      {/* ----- System holidays (V124) popup -----
+          Was an always-visible card; moved into a Dialog launched
+          from the toolbar button so the main page stays compact.
+          Same target-year picker + Copy actions; just gated behind
+          a button to reclaim vertical space. */}
+      <Dialog open={systemDialogOpen} onOpenChange={setSystemDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-blue-600" />
+              System Holidays
+              <Badge variant="outline" className="text-[11px]">
+                {availableSystemHolidays.length} available
+              </Badge>
+            </DialogTitle>
+            <DialogDescription>
+              Shared catalog from Super Admin. Pick a target year,
+              then Copy any row (or all) into your list — public
+              holidays repeat yearly so the date shifts to the year
+              you choose.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="px-6 py-3 border-b shrink-0 flex items-end justify-between gap-3 flex-wrap bg-gray-50/50">
+            <div className="space-y-1">
+              <Label className="text-[11px] text-gray-600">Target year</Label>
+              <Select value={String(targetYear)} onValueChange={(v) => setTargetYear(parseInt(v, 10))}>
+                <SelectTrigger className="w-28 h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {targetYearOptions.map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button size="sm" onClick={() => void handleCopyAll()}
+              disabled={busy || availableSystemHolidays.length === 0} className="h-9">
+              <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
+              Copy all to {targetYear}
+            </Button>
+          </div>
+
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {loadingSystem && (
+              <div className="text-center text-xs text-gray-500 py-8">Loading…</div>
+            )}
+            {!loadingSystem && systemHolidays.length === 0 && (
+              <div className="text-sm text-gray-600 px-6 py-10 text-center">
+                No system holidays are seeded yet.
+                <div className="text-xs text-gray-500 mt-1">
+                  Super Admin can add them under <strong>Platform → Settings → System Holidays</strong>.
+                  Once seeded, every tenant — including new ones — sees them here.
+                </div>
+              </div>
+            )}
+            {!loadingSystem && systemHolidays.length > 0 && availableSystemHolidays.length === 0 && (
+              <div className="text-sm text-gray-600 px-6 py-10 text-center">
+                You've already copied every system holiday into your list for {targetYear}.
+                <div className="text-xs text-gray-500 mt-1">
+                  Switch the target year above to land them in a different year.
+                </div>
+              </div>
+            )}
+            {!loadingSystem && availableSystemHolidays.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[120px]">Source date</TableHead>
+                    <TableHead className="w-[120px]">→ Land on</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[90px]">Type</TableHead>
+                    <TableHead className="w-[70px] text-center">Paid</TableHead>
+                    <TableHead className="w-[110px] text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {availableSystemHolidays.map(({ src, targetDate }) => (
+                    <TableRow key={src.id} className="hover:bg-blue-50/40">
+                      <TableCell className="font-mono text-xs text-gray-500">{src.date}</TableCell>
+                      <TableCell className="font-mono text-xs text-blue-700 font-medium">{targetDate}</TableCell>
+                      <TableCell className="font-medium text-sm">{src.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize text-[11px]">{src.type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {src.isPaid
+                          ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Yes</Badge>
+                          : <Badge variant="outline" className="text-gray-500 text-[10px]">No</Badge>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" className="h-7"
+                          onClick={() => void handleCopyOne(src)} disabled={busy}>
+                          <Copy className="h-3 w-3 mr-1" /> Copy
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+
+          <DialogFooter className="px-6 py-3 border-t shrink-0">
+            <Button onClick={() => setSystemDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-wrap items-end gap-3">
@@ -470,14 +670,14 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1 flex-1 min-w-[240px]">
+            <div className="space-y-1 w-56">
               <Label className="text-xs">Search</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Holiday name, description, or date…"
+                  placeholder="Name or date…"
                   className="pl-9 h-9"
                 />
                 {search && (
@@ -491,12 +691,12 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 )}
               </div>
             </div>
-            <div className="ml-auto flex items-center gap-3">
-              <CardTitle className="text-base">Holiday Calendar</CardTitle>
-              {/* Toggle between the data table and a full 12-month
-                  calendar view of the selected year. Defaults to table
-                  on mount. */}
-              <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
+            {/* View toggle + the three action buttons that used to live
+                at the top of the page (V124+). Moving them here keeps
+                the table's controls in one row and reclaims the
+                vertical space the old toolbar took. */}
+            <div className="ml-auto flex items-end gap-2 flex-wrap">
+              <div className="flex gap-1 bg-gray-100 rounded-md p-0.5 h-9 items-center">
                 <button
                   type="button"
                   onClick={() => setViewMode('table')}
@@ -516,6 +716,34 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                   Calendar
                 </button>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => setSystemDialogOpen(true)}
+              >
+                <Globe className="mr-1.5 h-4 w-4 text-blue-600" />
+                System
+                {availableSystemHolidays.length > 0 && (
+                  <Badge variant="outline" className="ml-1.5 text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                    {availableSystemHolidays.length}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                disabled={selectedIds.size === 0}
+                onClick={() => openCloneFor(Array.from(selectedIds))}
+              >
+                <Copy className="mr-1.5 h-4 w-4" />
+                Clone ({selectedIds.size})
+              </Button>
+              <Button size="sm" className="h-9" onClick={openAdd}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add
+              </Button>
             </div>
           </div>
         </CardHeader>

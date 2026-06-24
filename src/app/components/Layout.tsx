@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { UserProfileDialog } from './common/UserProfileDialog';
 import { LanguageSwitcher } from './common/LanguageSwitcher';
 import { AppLauncher } from './common/AppLauncher';
+import { NotificationsBell } from './common/NotificationsBell';
 import { AttendanceCheckInWidget } from './common/AttendanceCheckInWidget';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -281,6 +282,9 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                   belong to any tenant's office). */}
               {currentUser?.role !== 'super_admin' && <AttendanceCheckInWidget />}
               <AppLauncher currentView={currentView} onSelect={handleMenuClick} />
+              {/* Notification bell (V127). Hidden for super_admin —
+                  they don't subscribe to tenant announcements. */}
+              {currentUser?.role !== 'super_admin' && <NotificationsBell />}
               <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
                 {t(`role.${currentUser?.role ?? 'employee'}`).toUpperCase()}

@@ -25,8 +25,62 @@ export interface Item {
    *  false (default), the picker is used purely for autofill — the
    *  line records the FK but the on-hand balance never changes. V121. */
   deductionEnabled: boolean;
+  /** Optional cover image URL (V132). Surfaced on the POS items
+   *  grid as a product card; null / empty falls back to a placeholder. */
+  imageUrl?: string | null;
+  /** POS category — drives the filter tabs on the items grid. (V142) */
+  category?: ItemCategory;
+  /** Per-item modifier groups as a JSON string (V142). Parse with
+   *  {@link parseModifiers}. Null when the item has no modifiers. */
+  modifiers?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type ItemCategory = 'drink' | 'snack' | 'food' | 'other';
+
+/** One option inside a modifier group — e.g. "Size: L (+$1.00)". */
+export interface ModifierOption {
+  label: string;
+  /** Price delta added to the item's base unit price when the
+   *  customer picks this option. Negative values are fine (e.g.
+   *  "Half portion -$0.50"). */
+  priceAdj: number;
+}
+
+/** A set of options the customer picks from. Single-select on the
+ *  cart-side picker; {@code required} forces a pick before the line
+ *  can be added. */
+export interface ModifierGroup {
+  name: string;
+  required: boolean;
+  options: ModifierOption[];
+}
+
+export interface ItemModifiers {
+  groups: ModifierGroup[];
+}
+
+/** Parse the JSON-string modifiers column into the typed shape.
+ *  Returns null on missing / malformed input so the cart-side picker
+ *  can skip its dialog and fall back to a direct add. */
+export function parseModifiers(raw: string | null | undefined): ItemModifiers | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.groups)) return null;
+    return parsed as ItemModifiers;
+  } catch {
+    return null;
+  }
+}
+
+/** Serialise the typed shape back to a JSON string for the API.
+ *  Returns null when the modifier set is empty so the BE column
+ *  stores NULL rather than `{"groups":[]}`. */
+export function serializeModifiers(m: ItemModifiers | null): string | null {
+  if (!m || m.groups.length === 0) return null;
+  return JSON.stringify(m);
 }
 
 export interface ItemRequest {
@@ -40,6 +94,14 @@ export interface ItemRequest {
   active?: boolean;
   /** Null on update = keep existing value. V121. */
   deductionEnabled?: boolean;
+  /** Cover image URL (V132). Empty string clears; undefined leaves
+   *  the existing value untouched on update. */
+  imageUrl?: string;
+  /** POS category (V142). Undefined on update = leave as-is. */
+  category?: ItemCategory;
+  /** Modifiers JSON (V142). Empty string clears; undefined on update
+   *  leaves the existing value untouched. */
+  modifiers?: string;
 }
 
 export interface StockInRequest {
@@ -104,6 +166,9 @@ export interface UsageSettings {
   enabledForQuotation: boolean;
   enabledForVoucher: boolean;
   enabledForBill: boolean;
+  /** POS items grid gate (V131). When on, the POS page surfaces
+   *  stock items for ringing-up. */
+  enabledForPos: boolean;
   /** null when no row exists yet (returning baked-in defaults). */
   updatedAt: string | null;
 }

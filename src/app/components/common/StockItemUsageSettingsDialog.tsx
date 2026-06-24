@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, FileSignature, Receipt, ShoppingBag, Save, Info } from 'lucide-react';
+import { FileText, FileSignature, Receipt, ShoppingBag, ShoppingCart, Save, Info } from 'lucide-react';
 
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -35,6 +35,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
     enabledForQuotation: false,
     enabledForVoucher: false,
     enabledForBill: false,
+    enabledForPos: false,
     updatedAt: null,
   });
 
@@ -154,6 +155,13 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
             hint="Reserved — the catalog picker for purchase bills will respect this when it ships."
             value={form.enabledForBill}
             onChange={v => setForm(f => ({ ...f, enabledForBill: v }))}
+          />
+          <Row
+            icon={<ShoppingCart className="h-4 w-4" />}
+            label="POS"
+            hint="Show this item in the POS page's items grid for counter checkout."
+            value={form.enabledForPos}
+            onChange={v => setForm(f => ({ ...f, enabledForPos: v }))}
           />
         </div>
 

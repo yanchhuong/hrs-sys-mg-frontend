@@ -19,7 +19,7 @@ import { useI18n } from '../../../i18n/I18nContext';
 export type SuperAdminView =
   | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules'
   // Settings sub-menu
-  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'module_categories'
+  | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'system_holidays' | 'module_categories'
   | 'platform_telegram';
 
 interface Props {
@@ -51,7 +51,7 @@ type MenuNode = LeafItem | GroupItem;
  *  build the nested nav and to keep Settings expanded automatically
  *  whenever one of its children is the active view. */
 const SETTINGS_CHILDREN: SuperAdminView[] = [
-  'module_categories', 'payroll_categories', 'holidays',
+  'module_categories', 'payroll_categories', 'holidays', 'system_holidays',
   'activity', 'backups', 'policy', 'platform_telegram',
 ];
 
@@ -90,6 +90,9 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
           label: t('nav.platform.payrollcat'), description: t('nav.platform.payrollcat.desc') },
         { kind: 'leaf', id: 'holidays', icon: CalendarDays,
           label: t('nav.platform.holidays'), description: t('nav.platform.holidays.desc') },
+        { kind: 'leaf', id: 'system_holidays', icon: CalendarDays,
+          label: 'System Holidays',
+          description: 'Shared catalog every tenant sees and can copy from.' },
         { kind: 'leaf', id: 'activity', icon: ScrollText,
           label: t('nav.platform.activity'), description: t('nav.platform.activity.desc') },
         { kind: 'leaf', id: 'backups', icon: Database,
