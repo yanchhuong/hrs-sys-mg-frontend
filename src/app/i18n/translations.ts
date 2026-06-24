@@ -243,7 +243,7 @@ export const dict: Dict = {
   'settings.company.address':    { en: 'Address',                     km: 'អាសយដ្ឋាន',            zh: '地址' },
 
   // --- Login ---------------------------------------------------------------
-  'login.title':                 { en: 'HRMS Portal',                 km: 'ច្រកចូល HRMS',         zh: 'HRMS 登录门户' },
+  'login.title':                 { en: 'Smart-HRMS',                 km: 'ច្រកចូល HRMS',         zh: 'HRMS 登录门户' },
   'login.description':           { en: 'Human Resource Management System', km: 'ប្រព័ន្ធគ្រប់គ្រងធនធានមនុស្ស', zh: '人力资源管理系统' },
   'login.email':                 { en: 'Email',                       km: 'អ៊ីមែល',                zh: '邮箱' },
   'login.password':              { en: 'Password',                    km: 'ពាក្យសម្ងាត់',           zh: '密码' },

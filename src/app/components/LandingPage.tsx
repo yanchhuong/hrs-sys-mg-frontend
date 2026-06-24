@@ -12,6 +12,9 @@ import {
   Lock, FileSpreadsheet, ShieldCheck, Network, RefreshCw,
   HelpCircle, Mail, Phone, MapPin, Factory, Briefcase, Store,
   CalendarDays, FileText, Baby, Calculator, Scale, BookOpen,
+  ShoppingCart, ShoppingBag, Package, Megaphone, Send,
+  MonitorPlay, KeyRound, UserCheck, FileMinus, TrendingUp,
+  QrCode, Wallet, Smartphone,
 } from 'lucide-react';
 // Real product screenshot — uses only the demo-named Payroll Management view.
 // The other two screenshots in src/imports contain real employee names and
@@ -65,10 +68,10 @@ const T = {
                zh: '为您实际拥有的员工而打造' },
     title:   { en: 'Whether you run a factory or an office, this fits.',
                km: 'មិនថាអ្នកដំណើរការរោងចក្រ ឬការិយាល័យ វាសមនឹងអ្នកទាំងអស់។',
-               zh: '无论您经营工厂还是办公室，HRMS Portal 都适用。' },
-    desc:    { en: 'Most HR products are designed for tidy, salaried office work. Real businesses in Cambodia have shift workers on factory floors, mixed-language teams, and dozens of fingerprint terminals — HRMS Portal is built for that reality.',
-               km: 'ផលិតផលធនធានមនុស្សភាគច្រើនរចនាសម្រាប់ការងារការិយាល័យដែលមានរបៀបរៀបរយ។ អាជីវកម្មពិតប្រាកដនៅកម្ពុជាមានកម្មកររបបវេន លាយក្នុងក្រុមការងារភាសាច្រើន និងឧបករណ៍ស្នាមម្រាមដៃច្រើនរយ — HRMS Portal សាងសង់ឡើងសម្រាប់ការពិតនោះ។',
-               zh: '大多数 HR 产品都是为整洁、领薪的办公室工作而设计的。柬埔寨的真实企业拥有工厂车间的轮班工人、多语言团队和数十台指纹考勤机 — HRMS Portal 正是为这种现实而打造。' },
+               zh: '无论您经营工厂还是办公室，Smart-HRMS 都适用。' },
+    desc:    { en: 'Most HR products are designed for tidy, salaried office work. Real businesses in Cambodia have shift workers on factory floors, mixed-language teams, and dozens of fingerprint terminals — Smart-HRMS is built for that reality.',
+               km: 'ផលិតផលធនធានមនុស្សភាគច្រើនរចនាសម្រាប់ការងារការិយាល័យដែលមានរបៀបរៀបរយ។ អាជីវកម្មពិតប្រាកដនៅកម្ពុជាមានកម្មកររបបវេន លាយក្នុងក្រុមការងារភាសាច្រើន និងឧបករណ៍ស្នាមម្រាមដៃច្រើនរយ — Smart-HRMS សាងសង់ឡើងសម្រាប់ការពិតនោះ។',
+               zh: '大多数 HR 产品都是为整洁、领薪的办公室工作而设计的。柬埔寨的真实企业拥有工厂车间的轮班工人、多语言团队和数十台指纹考勤机 — Smart-HRMS 正是为这种现实而打造。' },
     factoryBadge:  { en: 'Most-deployed',           km: 'ដាក់ឱ្យដំណើរការច្រើនជាងគេ',  zh: '部署最多' },
     factoryTitle:  { en: 'Factory & Manufacturing', km: 'រោងចក្រ និងផលិតកម្ម',         zh: '工厂与制造业' },
     factoryDesc:   { en: 'Multi-shift, multi-device, multi-language workforces — handled.',
@@ -135,14 +138,46 @@ const T = {
     metric4Label: { en: 'Locations supported', km: 'ទីតាំងដែលគាំទ្រ',                    zh: '可支持地点数' },
     metric4Value: { en: 'Unlimited',           km: 'គ្មានកំណត់',                          zh: '无限制' },
   },
+  zeroInstall: {
+    eyebrow:   { en: 'Why teams pick Smart-HRMS for every office',
+                 km: 'ហេតុអ្វីក្រុមការងារជ្រើសរើស Smart-HRMS សម្រាប់គ្រប់ការិយាល័យ',
+                 zh: '为何团队为每个办公室都选 Smart-HRMS' },
+    headline:  { en: 'Flexible. Easy. Multi-office — without buying a single device.',
+                 km: 'ងាយស្រួល បត់បែន ច្រើនការិយាល័យ — ដោយឥតទិញឧបករណ៍សោះ។',
+                 zh: '灵活 · 简便 · 多办公地点 — 一台设备都不用买。' },
+    body:      { en: 'Open a new branch this morning, print a QR sheet after lunch, and have your team checking in by 3 PM. No fingerprint terminals to wire up, no app rollout, no per-site IT visit — every scan from every office lands on the same attendance table, the same payroll.',
+                 km: 'បើកសាខាថ្មីពេលព្រឹក បោះពុម្ព QR ក្រោយអាហារថ្ងៃត្រង់ ហើយក្រុមរបស់អ្នកអាច Check-In បាននៅម៉ោង 3 រសៀល។ គ្មានឧបករណ៍ស្នាមម្រាមដៃ គ្មានកម្មវិធីដំឡើង គ្មានការទៅសាខាដោយ IT — រាល់ការស្កេនពីគ្រប់ការិយាល័យចូលក្នុងតារាងវត្តមាន និងបញ្ជីប្រាក់ខែតែមួយ។',
+                 zh: '上午开新分支、午饭后打印 QR 表单、下午 3 点团队就能打卡。无需安装指纹终端、无需推送应用、无需 IT 上门 — 每个办公室的每次扫描都进入同一张考勤表与同一份工资单。' },
+    cardFinger:{ en: 'Flexible',
+                 km: 'បត់បែន',
+                 zh: '灵活' },
+    fingerDesc:{ en: 'Pick the check-in method that fits the site: QR for new branches, Telegram self-check-in for remote/field staff, or your existing fingerprint terminals if you already own them. Different methods per branch — same report.',
+                 km: 'ជ្រើសរើសវិធី Check-In តាមទីតាំង៖ QR សម្រាប់សាខាថ្មី Telegram សម្រាប់បុគ្គលិកនៅឆ្ងាយ ឬឧបករណ៍ស្នាមម្រាមដៃដែលអ្នកមានស្រាប់។ វិធីផ្សេងគ្នាក្នុងសាខាផ្សេងគ្នា — របាយការណ៍តែមួយ។',
+                 zh: '按站点选择打卡方式：新分支用 QR、外勤员工用 Telegram 自助打卡、已有指纹终端就继续用。每分支可不同方式 — 报表合一。' },
+    cardApp:   { en: 'Easy',
+                 km: 'ងាយស្រួល',
+                 zh: '简便' },
+    appDesc:   { en: 'Print, stick, scan — that\'s the entire onboarding. Employees use the phone they already have, point the camera at the QR, and they\'re clocked in. No app to install, no fingerprint to enrol, no training session needed.',
+                 km: 'បោះពុម្ព បិទ ស្កេន — នោះហើយជាការដំឡើងទាំងមូល។ បុគ្គលិកប្រើទូរស័ព្ទដែលមានស្រាប់ ចង្អុលកាមេរ៉ាទៅ QR និងពួកគេបាន Check-In។ គ្មានកម្មវិធីដំឡើង គ្មានការចុះឈ្មោះម្រាមដៃ។',
+                 zh: '打印、张贴、扫码 — 整个上手流程就这三步。员工用现有手机摄像头扫描 QR 即完成打卡。无需安装应用、无需录入指纹、无需培训。' },
+    cardDevice:{ en: 'Multi-Office',
+                 km: 'ច្រើនការិយាល័យ',
+                 zh: '多办公地点' },
+    deviceDesc:{ en: 'One dashboard for every branch you run — Phnom Penh, Siem Reap, the construction site, the field team. Headcount, attendance, payroll roll up per location and across the whole company in one click.',
+                 km: 'Dashboard តែមួយសម្រាប់គ្រប់សាខា — ភ្នំពេញ សៀមរាប ការដ្ឋានសំណង់ ឬក្រុមការងារផ្ទាល់។ ចំនួនបុគ្គលិក វត្តមាន និងប្រាក់ខែសរុបតាមទីតាំង និងទូទាំងក្រុមហ៊ុនក្នុងការចុចតែម្តង។',
+                 zh: '一个仪表盘覆盖所有分支 — 金边、暹粒、工地、外勤团队。人数、考勤、薪资按地点和整公司一键汇总。' },
+    punchline: { en: 'Here we are, Smart-HRMS — we are everything.',
+                 km: 'យើងនៅទីនេះ Smart-HRMS — យើងគឺគ្រប់យ៉ាង។',
+                 zh: '我们在这里，Smart-HRMS — 我们就是一切。' },
+  },
   modules: {
-    sectionEyebrow: { en: 'What HRMS Portal does', km: 'អ្វីដែល HRMS Portal ធ្វើ', zh: 'HRMS Portal 提供什么' },
-    sectionTitle:   { en: 'Everything you need to run HR in Cambodia',
-                      km: 'អ្វីៗដែលអ្នកត្រូវការសម្រាប់ដំណើរការធនធានមនុស្សនៅកម្ពុជា',
-                      zh: '在柬埔寨运营 HR 所需的一切' },
-    sectionDesc:    { en: 'NSSF-compliant payroll · attendance tracking · payroll & payslip management · earnings & deductions · multi-device management · employee management · department & group · contract renewal. One platform, one database, one permission model.',
-                      km: 'ប្រាក់ខែអនុលោម ប.ស.ស · តាមដានវត្តមាន · គ្រប់គ្រងប្រាក់ខែ និងបង្កាន់ដៃ · គ្រប់គ្រងប្រាក់ចំណូល និងការកាត់ · គ្រប់គ្រងឧបករណ៍ច្រើន · គ្រប់គ្រងបុគ្គលិក · នាយកដ្ឋាន និងក្រុម · ការបន្តកិច្ចសន្យា។ វេទិកាមួយ ទិន្នន័យតែមួយ គំរូសិទ្ធិតែមួយ។',
-                      zh: '符合 ប.ស.ស 的薪资 · 考勤追踪 · 薪资与工资单管理 · 收入与扣款 · 多设备管理 · 员工管理 · 部门与分组 · 合同续签。一个平台，一个数据库，一套权限模型。' },
+    sectionEyebrow: { en: 'What Smart-HRMS does', km: 'អ្វីដែល Smart-HRMS ធ្វើ', zh: 'Smart-HRMS 提供什么' },
+    sectionTitle:   { en: 'Every workflow your business runs — organised by who uses it',
+                      km: 'រាល់ដំណើរការនៅក្នុងអាជីវកម្មរបស់អ្នក — រៀបចំតាមអ្នកប្រើ',
+                      zh: '业务的每个流程 — 按使用者分类组织' },
+    sectionDesc:    { en: 'Five categories, one platform: HR Management for people · Payroll for pay-day · Accounting for sales, purchase + POS · Reports for finance + leadership · Platform for the multi-site / multi-tenant glue. One database, one permission matrix, one bilingual UI.',
+                      km: 'ប្រាំប្រភេទ វេទិកាមួយ៖ ការគ្រប់គ្រងធនធានមនុស្ស · ប្រាក់ខែ · គណនេយ្យ (លក់/ទិញ/POS) · របាយការណ៍ · វេទិកា (តភ្ជាប់សាខា និងពហុក្រុមហ៊ុន)។ ទិន្នន័យតែមួយ ម៉ាទ្រីសសិទ្ធិតែមួយ ភាសាខ្មែរ-អង់គ្លេសរួមគ្នា។',
+                      zh: '五大类，一个平台：HR 管理 · 薪资发放 · 会计（销售/采购/POS）· 报表 · 平台（多分支与多租户）。共用同一数据库、同一权限矩阵和双语界面。' },
   },
   how: {
     sectionEyebrow: { en: 'How it works', km: 'របៀបដំណើរការ', zh: '使用流程' },
@@ -157,9 +192,9 @@ const T = {
     title:   { en: 'Run it your way',
                km: 'ដំណើរការតាមរបៀបរបស់អ្នក',
                zh: '按您的方式运行' },
-    desc:    { en: 'Some sites need data to stay inside the building. Others want the convenience of cloud access. HRMS Portal supports both — and if you need both at once, Connect & Sync glues them together.',
-               km: 'ទីតាំងខ្លះត្រូវការទិន្នន័យឱ្យនៅក្នុងអាគារ។ ខ្លះទៀតចង់បានភាពងាយស្រួលនៃការចូលប្រើតាមពពក។ HRMS Portal គាំទ្រទាំងពីរ — ហើយប្រសិនបើអ្នកត្រូវការទាំងពីរក្នុងពេលតែមួយ Connect & Sync ភ្ជាប់ពួកវាជាមួយគ្នា។',
-               zh: '有些站点需要数据保留在内部，有些则希望享受云端访问的便利。HRMS Portal 同时支持两种方式 — 如需两者并用，Connect & Sync 会将它们无缝衔接。' },
+    desc:    { en: 'Some sites need data to stay inside the building. Others want the convenience of cloud access. Smart-HRMS supports both — and if you need both at once, Connect & Sync glues them together.',
+               km: 'ទីតាំងខ្លះត្រូវការទិន្នន័យឱ្យនៅក្នុងអាគារ។ ខ្លះទៀតចង់បានភាពងាយស្រួលនៃការចូលប្រើតាមពពក។ Smart-HRMS គាំទ្រទាំងពីរ — ហើយប្រសិនបើអ្នកត្រូវការទាំងពីរក្នុងពេលតែមួយ Connect & Sync ភ្ជាប់ពួកវាជាមួយគ្នា។',
+               zh: '有些站点需要数据保留在内部，有些则希望享受云端访问的便利。Smart-HRMS 同时支持两种方式 — 如需两者并用，Connect & Sync 会将它们无缝衔接。' },
     standaloneTitle: { en: 'Stand-alone',          km: 'Stand-alone',                       zh: 'Stand-alone（本地部署）' },
     standaloneSub:   { en: 'On-premise · your hardware', km: 'ក្នុងស្រុក · ឧបករណ៍របស់អ្នក', zh: '本地 · 您的硬件' },
     standaloneB1:    { en: 'Runs entirely inside your office network',
@@ -312,7 +347,7 @@ function LandingNav({
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white">
             <Building2 className="h-5 w-5" />
           </span>
-          <span className="text-base font-semibold tracking-tight">HRMS Portal</span>
+          <span className="text-base font-semibold tracking-tight">Smart-HRMS</span>
         </a>
 
         <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
@@ -506,6 +541,67 @@ function MetricsStrip({ lang }: { lang: Lang }) {
             </div>
           ))}
         </dl>
+      </Container>
+    </section>
+  );
+}
+
+/** Attendance-flexibility band — communicates that both fingerprint
+ *  terminals AND no-device QR check-in are supported (and mixable
+ *  per branch). Warm orange canvas to break visual rhythm with the
+ *  blue/slate sections above and below; three check-stamped chips
+ *  highlight that each method is a real option, not a fallback. */
+function ZeroInstallStrip({ lang }: { lang: Lang }) {
+  const cards: Array<{ icon: React.ElementType; title: { en: string; km: string; zh: string }; desc: { en: string; km: string; zh: string } }> = [
+    // Flexible → Sparkles (versatility), Easy → QrCode (the
+    // print-stick-scan action), Multi-Office → Building2 (multiple
+    // offices). Keys (cardFinger / cardApp / cardDevice) kept for
+    // i18n stability — only the labels behind them changed.
+    { icon: Sparkles,  title: T.zeroInstall.cardFinger, desc: T.zeroInstall.fingerDesc },
+    { icon: QrCode,    title: T.zeroInstall.cardApp,    desc: T.zeroInstall.appDesc },
+    { icon: Building2, title: T.zeroInstall.cardDevice, desc: T.zeroInstall.deviceDesc },
+  ];
+  return (
+    <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-amber-700 py-20 text-white sm:py-24">
+      {/* Warm radial highlight at the top — adds depth without
+          competing with the orange canvas. The faint amber glow keeps
+          the cards readable while the section still reads as one
+          confident orange block. */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,237,213,0.25),transparent_60%)]" aria-hidden />
+      <Container className="relative">
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>
+            <span className="text-orange-100">{t(T.zeroInstall.eyebrow, lang)}</span>
+          </Eyebrow>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+            {t(T.zeroInstall.headline, lang)}
+          </h2>
+          <p className="mt-4 text-base leading-relaxed text-orange-50/95">
+            {t(T.zeroInstall.body, lang)}
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-4 sm:grid-cols-3">
+          {cards.map((c, i) => (
+            <div key={i} className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-6">
+              {/* Icon chip + a small emerald check badge so each card
+                  reads "this IS supported" — the inverse of the old
+                  Zero / strike-through framing. */}
+              <div className="relative inline-flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white">
+                <c.icon className="h-6 w-6" />
+                <span className="absolute -right-1 -bottom-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400 text-emerald-900 ring-2 ring-orange-600">
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                </span>
+              </div>
+              <h3 className="mt-4 text-lg font-semibold">{t(c.title, lang)}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-orange-50/95">{t(c.desc, lang)}</p>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-12 text-center text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          {t(T.zeroInstall.punchline, lang)}
+        </p>
       </Container>
     </section>
   );
@@ -962,7 +1058,7 @@ function RealProduct({ lang }: { lang: Lang }) {
 /** Eleven feature cards covering the actual nav modules. */
 function ModulesGrid({ lang }: { lang: Lang }) {
   type Tone = 'blue' | 'emerald' | 'amber' | 'indigo' | 'rose' | 'violet' | 'cyan' | 'slate';
-  const toneClasses: Record<Tone, string> = {
+  const toneIconClasses: Record<Tone, string> = {
     blue:    'bg-blue-50 text-blue-600',
     emerald: 'bg-emerald-50 text-emerald-600',
     amber:   'bg-amber-50 text-amber-600',
@@ -972,99 +1068,259 @@ function ModulesGrid({ lang }: { lang: Lang }) {
     cyan:    'bg-cyan-50 text-cyan-600',
     slate:   'bg-slate-100 text-slate-600',
   };
-  // Cards map 1:1 to the keyword list that describes this product:
-  //   NSSF-compliant payroll, attendance tracking, payroll & payslip,
-  //   earnings & deductions, multi-device, employee, department/group,
-  //   contract renewal — plus the supporting reports & multi-site sync cards.
-  const modules: Array<{
-    icon: React.ElementType; tone: Tone;
-    title: { en: string; km: string; zh: string };
-    desc:  { en: string; km: string; zh: string };
-  }> = [
-    { icon: ShieldCheck, tone: 'emerald',
-      title: { en: 'NSSF-Compliant Payroll',
-               km: 'ប្រាក់ខែអនុលោម ប.ស.ស',
-               zh: '符合 ប.ស.ស 的薪资' },
-      desc:  { en: 'Cambodia Tax on Salary, ប.ស.ស tiers, fringe benefits at 20%, dependents, and foreign tax credit — every payslip statutory-correct out of the box.',
-               km: 'ពន្ធលើប្រាក់ខែកម្ពុជា ថ្នាក់ ប.ស.ស អត្ថប្រយោជន៍ 20% អ្នកនៅក្នុងបន្ទុក និងការដកពន្ធបរទេស — បង្កាន់ដៃនីមួយៗត្រូវតាមច្បាប់ពីដំបូង។',
-               zh: '柬埔寨薪资税、ប.ស.ស 等级、20% 附加福利、被扶养人和外国税抵免 — 每张工资单开箱即合法合规。' } },
-    { icon: Clock, tone: 'blue',
-      title: { en: 'Attendance Tracking',
-               km: 'តាមដានវត្តមាន',
-               zh: '考勤追踪' },
-      desc:  { en: 'Daily punches, weekend & holiday rules, late thresholds, lunch deductions, and flexible schedules — one source of truth for every clock-in.',
-               km: 'ម៉ោងចូលចេញ ច្បាប់ចុងសប្តាហ៍ និងថ្ងៃបុណ្យ កំណត់យឺត ការដកម៉ោងសម្រាប់អាហារ និងកាលវិភាគទន់ភ្លន់ — ប្រភពទិន្នន័យតែមួយសម្រាប់រាល់ការចូលធ្វើការ។',
-               zh: '每日打卡、周末与节假日规则、迟到阈值、午休扣减及弹性班次 — 每次打卡的唯一数据来源。' } },
-    { icon: Receipt, tone: 'indigo',
-      title: { en: 'Payroll & Payslip Management',
-               km: 'គ្រប់គ្រងប្រាក់ខែ និងបង្កាន់ដៃ',
-               zh: '薪资与工资单管理' },
-      desc:  { en: 'Batch preview before posting, multi-currency totals (KHR + USD), and PDF payslips ready for the employee inbox in Khmer or English.',
-               km: 'មើលជាមុនមុនពេលបង្ហោះ សរុបពហុរូបិយប័ណ្ណ (រៀល + ដុល្លារ) និងបង្កាន់ដៃ PDF ត្រៀមរួចសម្រាប់សារអ៊ីមែលបុគ្គលិកជាភាសាខ្មែរ ឬអង់គ្លេស។',
-               zh: '发布前批量预览、多币种合计（KHR + USD），以及随时发送至员工邮箱的柬文或英文 PDF 工资单。' } },
-    { icon: DollarSign, tone: 'violet',
-      title: { en: 'Earnings & Deductions',
-               km: 'ប្រាក់ចំណូល និងការកាត់',
-               zh: '收入与扣款' },
-      desc:  { en: 'Bonuses, allowances, salary increases, and deduction lines that roll forward into the next cycle without re-keying anything.',
-               km: 'ប្រាក់រង្វាន់ ប្រាក់បន្ថែម ការដំឡើងប្រាក់ខែ និងបន្ទាត់ការកាត់ដែលបន្តទៅវដ្តបន្ទាប់ដោយមិនចាំបាច់វាយឡើងវិញ។',
-               zh: '奖金、津贴、加薪与扣款项可结转至下一周期，无需重新录入。' } },
-    { icon: Fingerprint, tone: 'cyan',
-      title: { en: 'Multi-Device Management',
-               km: 'គ្រប់គ្រងឧបករណ៍ច្រើន',
-               zh: '多设备管理' },
-      desc:  { en: 'Many ZKTeco terminals per site — register them in the dashboard, watch real-time punches, and see device health at a glance.',
-               km: 'ឧបករណ៍ ZKTeco ច្រើនក្នុងទីតាំងនីមួយៗ — ចុះឈ្មោះក្នុង Dashboard មើលការចូលធ្វើការពេលវេលាជាក់ស្តែង និងស្ថានភាពឧបករណ៍ភ្លាមៗ។',
-               zh: '每个站点可接入多台 ZKTeco 终端 — 在仪表盘中注册、实时查看打卡，一眼掌握设备状态。' } },
-    { icon: Users, tone: 'blue',
-      title: { en: 'Employee Management',
-               km: 'គ្រប់គ្រងបុគ្គលិក',
-               zh: '员工管理' },
-      desc:  { en: 'Profiles, documents, dependents, residency, NSSF number, bank account, and bilingual Khmer + English names for Cambodian compliance.',
-               km: 'ប្រវត្តិរូប ឯកសារ អ្នកនៅក្នុងបន្ទុក ស្ថានភាពអ្នករស់នៅ លេខ ប.ស.ស គណនីធនាគារ និងឈ្មោះខ្មែរ + អង់គ្លេសសម្រាប់អនុលោមតាមច្បាប់កម្ពុជា។',
-               zh: '个人档案、文件、被扶养人、居民身份、ប.ស.ស 号码、银行账户，并支持柬英双语姓名以满足柬埔寨合规要求。' } },
-    { icon: Network, tone: 'indigo',
-      title: { en: 'Department & Group',
-               km: 'នាយកដ្ឋាន និងក្រុម',
-               zh: '部门与分组' },
-      desc:  { en: 'Organize the workforce by department, location, or custom groups. Roll up headcount, attendance, and payroll per unit in one click.',
-               km: 'រៀបចំពលករតាមនាយកដ្ឋាន ទីតាំង ឬក្រុមផ្ទាល់ខ្លួន។ សរុបចំនួនបុគ្គលិក វត្តមាន និងប្រាក់ខែតាមឯកតាក្នុងការចុចតែម្តង។',
-               zh: '按部门、地点或自定义分组组织员工。一键汇总各单元的人数、考勤与薪资。' } },
-    { icon: RefreshCw, tone: 'rose',
-      title: { en: 'Contract Renewal',
-               km: 'ការបន្តកិច្ចសន្យា',
-               zh: '合同续签' },
-      desc:  { en: 'Track every contract\'s expiry date, get reminders before they expire, and renew with a one-click workflow that leaves a full audit trail.',
-               km: 'តាមដានកាលផុតកំណត់កិច្ចសន្យានីមួយៗ ទទួលការរំលឹកមុនពេលផុតកំណត់ និងបន្តដោយការចុចតែម្តង ដោយទុកប្រវត្តិត្រួតពិនិត្យពេញលេញ។',
-               zh: '跟踪每份合同到期日，到期前自动提醒，一键完成续签并保留完整审计记录。' } },
-    { icon: TimerIcon, tone: 'amber',
-      title: { en: 'Overtime & Leave',
-               km: 'ម៉ោងបន្ថែម និងការឈប់សម្រាក',
-               zh: '加班与请假' },
-      desc:  { en: 'Request → approve → pay overtime at the correct 2× / 3× multiplier for weekends and holidays. Leave balances roll automatically.',
-               km: 'ស្នើ → អនុម័ត → បើកម៉ោងបន្ថែមតាមអត្រា 2× / 3× សម្រាប់ចុងសប្តាហ៍ និងថ្ងៃបុណ្យ។ សមតុល្យឈប់សម្រាករំកិលដោយស្វ័យប្រវត្តិ។',
-               zh: '申请 → 审批 → 按周末 2× 与节假日 3× 倍率发放加班费。请假余额自动滚转。' } },
-    { icon: BarChart3, tone: 'blue',
-      title: { en: 'Reports & Analytics',
-               km: 'របាយការណ៍ និងវិភាគ',
-               zh: '报表与分析' },
-      desc:  { en: 'Headcount, payroll cost, attendance trends, and contract expiry — all exportable to Excel for finance and senior management.',
-               km: 'ចំនួនបុគ្គលិក ចំណាយប្រាក់ខែ និន្នាការវត្តមាន និងការផុតកំណត់កិច្ចសន្យា — នាំចេញទៅ Excel សម្រាប់ហិរញ្ញវត្ថុ និងការគ្រប់គ្រងជាន់ខ្ពស់។',
-               zh: '员工人数、薪资成本、考勤趋势与合同到期 — 全部可导出至 Excel，供财务与高层管理使用。' } },
-    { icon: BookOpen, tone: 'violet',
-      title: { en: 'Sales & Purchase — All-in-One Accounting',
-               km: 'លក់ និងទិញ — គណនេយ្យពេញលេញតែមួយ',
-               zh: '销售与采购 — 一体化会计' },
-      desc:  { en: 'Invoices, Bills, Receipts, Credit & Debit Notes, Payments, Sale & Purchase Ledgers, and a live Profit & Loss — your accountant’s workspace lives next to HR, no second system to reconcile.',
-               km: 'វិក្កយបត្រ វិក្កយបត្រទិញ បង្កាន់ដៃ កំណត់ឥណទាន/ឥណពន្ធ ការទូទាត់ បញ្ជីលក់ និងទិញ និង​ ប្រាក់ចំណេញ-ខាត​ផ្ទាល់ — កន្លែងធ្វើការគណនេយ្យក្បែរ HR ដោយឥតប្រព័ន្ធទីពីរ។',
-               zh: '发票、账单、收据、信用与借记凭证、收付款、销售与采购台账，以及实时损益 — 会计的工作区紧贴 HR，无需对账第二套系统。' } },
-    { icon: Cloud, tone: 'emerald',
-      title: { en: 'Stand-alone + Online Sync',
-               km: 'Stand-alone + Online តភ្ជាប់',
-               zh: 'Stand-alone + Online 同步' },
-      desc:  { en: 'Run each branch Stand-alone on-prem and an Online cloud instance side-by-side. Connect & Sync replicates everything — survive network outages without losing a single punch.',
-               km: 'ដំណើរការសាខានីមួយៗបែប Stand-alone ក្នុងស្រុក និងបែប Online លើពពកទន្ទឹមគ្នា។ Connect & Sync ចម្លងគ្រប់ទាំងអស់ — មិនបាត់ទិន្នន័យពេលអ៊ីនធឺណែតដាច់។',
-               zh: '各分支机构以 Stand-alone 本地方式运行，同时与 Online 云端实例并行。Connect & Sync 自动复制全部数据 — 网络中断也不会丢失任何打卡。' } },
+  const toneCategoryClasses: Record<Tone, string> = {
+    blue:    'border-blue-200 bg-blue-50/40',
+    emerald: 'border-emerald-200 bg-emerald-50/40',
+    amber:   'border-amber-200 bg-amber-50/40',
+    indigo:  'border-indigo-200 bg-indigo-50/40',
+    rose:    'border-rose-200 bg-rose-50/40',
+    violet:  'border-violet-200 bg-violet-50/40',
+    cyan:    'border-cyan-200 bg-cyan-50/40',
+    slate:   'border-slate-200 bg-slate-50',
+  };
+  const toneAccentText: Record<Tone, string> = {
+    blue: 'text-blue-700', emerald: 'text-emerald-700', amber: 'text-amber-700',
+    indigo: 'text-indigo-700', rose: 'text-rose-700', violet: 'text-violet-700',
+    cyan: 'text-cyan-700', slate: 'text-slate-700',
+  };
+
+  type TriLang = { en: string; km: string; zh: string };
+  interface Module { icon: React.ElementType; title: TriLang; desc: TriLang }
+  interface Category {
+    key: string;
+    icon: React.ElementType;
+    tone: Tone;
+    title: TriLang;
+    desc:  TriLang;
+    modules: Module[];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Five buckets — every left-menu app the product ships lands here.  */
+  /*  Naming mirrors the in-app category labels in Super Admin →         */
+  /*  Module Categories so what marketing promises matches what          */
+  /*  Permission Matrix renders.                                         */
+  /* ------------------------------------------------------------------ */
+  const categories: Category[] = [
+    /* ----- HR Management --------------------------------------------- */
+    {
+      key: 'hr',
+      icon: Users,
+      tone: 'blue',
+      title: { en: 'HR Management', km: 'ការគ្រប់គ្រងធនធានមនុស្ស', zh: '人力资源管理' },
+      desc:  { en: 'People, time, and policy — one source of truth for every face on the org chart.',
+               km: 'បុគ្គលិក ពេលវេលា និងគោលនយោបាយ — ប្រភពទិន្នន័យតែមួយសម្រាប់រូបភាពនីមួយៗនៅលើគ្រោងស្ថាប័ន។',
+               zh: '员工、考勤、政策 — 组织架构中每个角色的唯一数据来源。' },
+      modules: [
+        { icon: Users,
+          title: { en: 'Employee Management', km: 'គ្រប់គ្រងបុគ្គលិក', zh: '员工管理' },
+          desc:  { en: 'Profiles, documents, dependents, residency, NSSF number, bank account, bilingual Khmer + English names.',
+                   km: 'ប្រវត្តិរូប ឯកសារ អ្នកនៅក្នុងបន្ទុក ស្ថានភាពអ្នករស់នៅ លេខ ប.ស.ស គណនីធនាគារ និងឈ្មោះខ្មែរ-អង់គ្លេស។',
+                   zh: '个人档案、文件、被扶养人、居民身份、ប.ស.ស 号、银行账户与柬英双语姓名。' } },
+        { icon: Network,
+          title: { en: 'Department & Group', km: 'នាយកដ្ឋាន និងក្រុម', zh: '部门与分组' },
+          desc:  { en: 'Organise by department, location, or custom groups. Roll up headcount + attendance + payroll per unit.',
+                   km: 'រៀបចំតាមនាយកដ្ឋាន ទីតាំង ឬក្រុមផ្ទាល់ខ្លួន។ សរុបចំនួនបុគ្គលិក វត្តមាន និងប្រាក់ខែតាមឯកតា។',
+                   zh: '按部门、地点或自定义分组组织。可按单元汇总人数、考勤与薪资。' } },
+        { icon: Clock,
+          title: { en: 'Attendance Tracking', km: 'តាមដានវត្តមាន', zh: '考勤追踪' },
+          desc:  { en: 'Daily punches, weekend & holiday rules, late thresholds, lunch deductions, flexible schedules — one source of truth for every clock-in.',
+                   km: 'ម៉ោងចូលចេញ ច្បាប់ចុងសប្តាហ៍ និងថ្ងៃបុណ្យ កំណត់យឺត ការដកម៉ោងសម្រាប់អាហារ និងកាលវិភាគទន់ភ្លន់។',
+                   zh: '每日打卡、周末/节假日规则、迟到阈值、午休扣减及弹性班次。' } },
+        { icon: Fingerprint,
+          title: { en: 'Multi-Device & QR Check-In', km: 'ឧបករណ៍ច្រើន និង QR Check-In', zh: '多设备与扫码打卡' },
+          desc:  { en: 'ZKTeco fingerprint, dynamic daily QR (encrypted), and Telegram self-check-in — all feeding one attendance table.',
+                   km: 'ស្នាមម្រាមដៃ ZKTeco, QR ប្រចាំថ្ងៃ (បានកូដនីយកម្ម), និងការ Check-In តាម Telegram — បញ្ចូលក្នុងតារាងវត្តមានតែមួយ។',
+                   zh: 'ZKTeco 指纹、加密的动态每日 QR 码以及 Telegram 自助打卡 — 全部写入同一张考勤表。' } },
+        { icon: TimerIcon,
+          title: { en: 'Overtime & Leave', km: 'ម៉ោងបន្ថែម និងការឈប់សម្រាក', zh: '加班与请假' },
+          desc:  { en: 'Request → approve → pay overtime at 2× / 3× for weekends & holidays. Leave balances roll automatically; half-day leave supported.',
+                   km: 'ស្នើ → អនុម័ត → បើកម៉ោងបន្ថែម 2× / 3× សម្រាប់ចុងសប្តាហ៍ និងថ្ងៃបុណ្យ។ សមតុល្យឈប់សម្រាករំកិលស្វ័យប្រវត្តិ។',
+                   zh: '申请 → 审批 → 按周末 2×、节假日 3× 倍率发放加班费；请假余额自动滚转，支持半日请假。' } },
+        { icon: RefreshCw,
+          title: { en: 'Contract Renewal', km: 'ការបន្តកិច្ចសន្យា', zh: '合同续签' },
+          desc:  { en: 'Expiry tracking + advance reminders + one-click renewal with a full audit trail. Never miss a probation conversion again.',
+                   km: 'តាមដានកាលផុតកំណត់ + រំលឹកមុនពេលផុត + ការបន្តដោយចុចតែម្តង។ មិនខកខានការប្តូរសភាពបញ្ចប់សាកល្បងទៀតទេ។',
+                   zh: '到期跟踪 + 提前提醒 + 一键续签并保留完整审计记录。再也不会错过试用转正。' } },
+        { icon: Megaphone,
+          title: { en: 'Announcements', km: 'សេចក្តីប្រកាស', zh: '公告' },
+          desc:  { en: 'Broadcast to all employees, specific teams, or customers, with optional Telegram push and "Seen by" tracking.',
+                   km: 'ប្រកាសដល់បុគ្គលិកទាំងអស់ ក្រុមជាក់លាក់ ឬអតិថិជន ជាមួយការផ្ញើ Telegram និងតាមដាន "មើលដោយ"។',
+                   zh: '面向全员、特定团队或客户广播，可选 Telegram 推送，并跟踪"已读"。' } },
+        { icon: CalendarDays,
+          title: { en: 'Holidays Catalog', km: 'បញ្ជីថ្ងៃបុណ្យ', zh: '节假日目录' },
+          desc:  { en: 'Shared Cambodia public-holiday catalog maintained by the platform; tenants clone the year with one click — dates auto-shift.',
+                   km: 'បញ្ជីថ្ងៃបុណ្យជាតិកម្ពុជារួម ដែលរក្សាដោយវេទិកា; អតិថិជនចម្លងឆ្នាំដោយចុចតែម្តង — កាលបរិច្ឆេទរំកិលដោយស្វ័យប្រវត្តិ។',
+                   zh: '由平台维护的柬埔寨公共假日共享目录；租户一键克隆当年 — 日期自动滚转。' } },
+      ],
+    },
+
+    /* ----- Payroll --------------------------------------------------- */
+    {
+      key: 'payroll',
+      icon: DollarSign,
+      tone: 'violet',
+      title: { en: 'Payroll', km: 'ប្រាក់ខែ', zh: '薪资' },
+      desc:  { en: 'Pay-day, statutory, and finance-ready — every payslip Cambodia-compliant the first time.',
+               km: 'ថ្ងៃបើកប្រាក់ខែ ច្បាប់ និងហិរញ្ញវត្ថុ — បង្កាន់ដៃនីមួយៗត្រូវតាមច្បាប់កម្ពុជាពីដំបូង។',
+               zh: '发薪日、合规与财务就绪 — 每张工资单首次即符合柬埔寨法规。' },
+      modules: [
+        { icon: ShieldCheck,
+          title: { en: 'NSSF-Compliant Tax-on-Salary', km: 'ពន្ធលើប្រាក់ខែ អនុលោម ប.ស.ស', zh: '符合 ប.ស.ស 的薪资税' },
+          desc:  { en: 'Cambodia ToS engine, ប.ស.ស tiers, fringe benefits at 20%, dependents, and foreign tax credit — statutory-correct out of the box.',
+                   km: 'ម៉ាស៊ីនពន្ធលើប្រាក់ខែកម្ពុជា ថ្នាក់ ប.ស.ស អត្ថប្រយោជន៍ 20% អ្នកនៅក្នុងបន្ទុក និងការដកពន្ធបរទេស។',
+                   zh: '柬埔寨薪资税引擎、ប.ស.ស 等级、20% 附加福利、被扶养人和外国税抵免 — 开箱即合规。' } },
+        { icon: Receipt,
+          title: { en: 'Payroll & Payslip Management', km: 'គ្រប់គ្រងប្រាក់ខែ និងបង្កាន់ដៃ', zh: '薪资与工资单管理' },
+          desc:  { en: 'Batch preview before posting, multi-currency totals (KHR + USD), and PDF payslips ready for the employee inbox in Khmer or English.',
+                   km: 'មើលជាមុនមុនពេលបង្ហោះ សរុបពហុរូបិយប័ណ្ណ (រៀល + ដុល្លារ) និងបង្កាន់ដៃ PDF ភាសាខ្មែរ ឬអង់គ្លេស។',
+                   zh: '发布前批量预览、多币种合计（KHR + USD），柬文或英文 PDF 工资单。' } },
+        { icon: TrendingUp,
+          title: { en: 'Earnings, Increases & Deductions', km: 'ប្រាក់ចំណូល ការដំឡើង និងការកាត់', zh: '收入、加薪与扣款' },
+          desc:  { en: 'Bonuses, allowances, salary increases, advances, and recurring deductions — all roll forward into the next cycle without re-keying.',
+                   km: 'ប្រាក់រង្វាន់ ប្រាក់បន្ថែម ការដំឡើងប្រាក់ខែ ប្រាក់បង់មុន និងការកាត់រាល់ខែ — បន្តដោយមិនវាយឡើងវិញ។',
+                   zh: '奖金、津贴、加薪、预支与定期扣款 — 均可结转至下一周期，无需重新录入。' } },
+        { icon: Calculator,
+          title: { en: 'Benefit Calculator', km: 'ម៉ាស៊ីនគណនាអត្ថប្រយោជន៍', zh: '福利计算器' },
+          desc:  { en: 'Severance / Indemnity, ប.ស.ស contributions, FdC simulators — answer "how much will it cost?" before the conversation, not after.',
+                   km: 'ប្រាក់សំណង/ឧបត្ថម្ភ វិភាគទាន ប.ស.ស និងម៉ាស៊ីនគណនា FdC — ឆ្លើយ "ថ្លៃប៉ុន្មាន?" មុនការសម្រេច។',
+                   zh: '遣散/补偿、ប.ស.ស 缴费、FdC 模拟器 — 在对话开始前就回答"会花多少钱"。' } },
+      ],
+    },
+
+    /* ----- Accounting (Sale + Purchase + POS + Stock) ---------------- */
+    {
+      key: 'accounting',
+      icon: BookOpen,
+      tone: 'emerald',
+      title: { en: 'Accounting', km: 'គណនេយ្យ', zh: '会计' },
+      desc:  { en: 'Sales, purchases, stock, and counter checkout — one ledger, one set of customers, one continuous Profit & Loss.',
+               km: 'លក់ ទិញ ស្តុក និងការទូទាត់នៅបញ្ជរ — បញ្ជីតែមួយ អតិថិជនរួម និងប្រាក់ចំណេញ-ខាតបន្ត។',
+               zh: '销售、采购、库存与门店收银 — 一套台账、共享客户与持续损益。' },
+      modules: [
+        { icon: UserCheck,
+          title: { en: 'Customers & Vendors', km: 'អតិថិជន និងអ្នកលក់', zh: '客户与供应商' },
+          desc:  { en: 'Individual + business parties with TIN, representative, multi-site address, and bilingual names for the printed invoice.',
+                   km: 'បុគ្គល + អាជីវកម្ម ជាមួយ TIN អ្នកតំណាង អាសយដ្ឋានច្រើនទីតាំង និងឈ្មោះខ្មែរ-អង់គ្លេស។',
+                   zh: '个人 + 企业双类型；含 TIN、代表人、多地址与发票打印用的双语名称。' } },
+        { icon: FileText,
+          title: { en: 'Quotation', km: 'សម្រង់តម្លៃ', zh: '报价单' },
+          desc:  { en: 'Pre-sale quotes with expiry date, line items, and one-click convert-to-Invoice. Optional Telegram delivery to the customer.',
+                   km: 'សម្រង់តម្លៃជាមួយកាលបរិច្ឆេទផុតកំណត់ បន្ទាត់ទំនិញ និងការប្តូរទៅវិក្កយបត្រដោយចុចតែម្តង។',
+                   zh: '预销售报价单 — 含有效期、明细行和一键转开发票，可选向客户推送 Telegram。' } },
+        { icon: Receipt,
+          title: { en: 'Invoices (Commercial · Tax · CN/DN)', km: 'វិក្កយបត្រ (ពាណិជ្ជ · អាករ · CN/DN)', zh: '发票（商业·税务·CN/DN）' },
+          desc:  { en: 'Issue, void, and adjust invoices with Credit/Debit Notes. Auto-numbering, AR tracking, partially-paid/paid/overdue states.',
+                   km: 'បោះផ្សាយ បោះបង់ និងកែតម្រូវវិក្កយបត្រដោយ Credit/Debit Note។ លេខស្វ័យប្រវត្តិ ការតាមដាន AR ស្ថានភាពទូទាត់ផ្នែក/ពេញ/ហួសកាលកំណត់។',
+                   zh: '开具、作废并通过信用/借记凭证调整发票。自动编号、应收跟踪、部分付款/已付/逾期状态。' } },
+        { icon: ShoppingCart,
+          title: { en: 'POS (Point of Sale)', km: 'POS (ការទូទាត់នៅបញ្ជរ)', zh: 'POS（门店收银）' },
+          desc:  { en: 'Counter cart + queue number, draft / hold, modifiers (Size · Sugar level), customer-display mirror screen, KHQR scan-to-pay, thermal receipt.',
+                   km: 'រទេះទំនិញ + លេខវង់ ការសន្សំ កែប្រែ (ទំហំ · កម្រិតស្ករ) អេក្រង់សម្រាប់អតិថិជន KHQR ស្កេនបង់ បង្កាន់ដៃ Thermal។',
+                   zh: '门店购物车 + 排号、暂存、修饰项（尺寸·糖度）、客显镜像屏、KHQR 扫码付款与热敏小票。' } },
+        { icon: ShoppingBag,
+          title: { en: 'Bills & Receipts (Purchase)', km: 'វិក្កយបត្រទិញ និងបង្កាន់ដៃ', zh: '账单与收据（采购）' },
+          desc:  { en: 'Vendor bills with CN/DN, single-amount WHT receipts, and AP tracking — the symmetric purchase-side of the sale ledger.',
+                   km: 'វិក្កយបត្រអ្នកលក់ជាមួយ CN/DN បង្កាន់ដៃពន្ធ WHT ទម្រង់តែមួយ និងការតាមដាន AP។',
+                   zh: '含 CN/DN 的供应商账单、单笔预扣税收据，以及与销售台账对称的应付跟踪。' } },
+        { icon: Package,
+          title: { en: 'Items & Stock', km: 'ទំនិញ និងស្តុក', zh: '商品与库存' },
+          desc:  { en: 'Per-item picture, SKU, category, modifier groups, on-hand qty, cost basis, and per-doc deduction toggle so back-orders never slip through.',
+                   km: 'រូបភាពទំនិញ SKU ប្រភេទ ក្រុមកែប្រែ បរិមាណក្នុងស្តុក និងការកាត់ស្តុកតាមឯកសារ។',
+                   zh: '商品图片、SKU、分类、修饰项组、库存数量、成本及按单据扣减开关，杜绝缺货漏单。' } },
+        { icon: Wallet,
+          title: { en: 'Payments + KHQR + PayWay', km: 'ការទូទាត់ + KHQR + PayWay', zh: '收付款 + KHQR + PayWay' },
+          desc:  { en: 'Record cash + bank + card payments; show KHRQR on the customer screen for scan-to-pay; PayWay (ABA) real-time gateway integration.',
+                   km: 'កត់ត្រាសាច់ប្រាក់ + ធនាគារ + កាត; បង្ហាញ KHQR លើអេក្រង់អតិថិជន; ភ្ជាប់ PayWay (ABA) ពេលវេលាជាក់ស្តែង។',
+                   zh: '记录现金/银行/卡支付；客显展示 KHRQR 扫码；与 PayWay（ABA）实时网关对接。' } },
+        { icon: FileMinus,
+          title: { en: 'General Vouchers', km: 'ប័ណ្ណផ្តល់ទូទៅ', zh: '通用凭单' },
+          desc:  { en: 'Free-of-charge giveaways: charity, donation, sponsorship, promo. Printed with the right per-purpose title and customer block.',
+                   km: 'ប័ណ្ណផ្តល់ឥតគិតថ្លៃ៖ សប្បុរសធម៌ អំណោយ ឧបត្ថម្ភ ប្រូម៉ូសិន។ បោះពុម្ពតាមចំណងជើងសម្រាប់គោលបំណង។',
+                   zh: '免费赠送：慈善、捐赠、赞助、推广等，按用途自动套用对应抬头与客户区块。' } },
+      ],
+    },
+
+    /* ----- Reports & Analytics --------------------------------------- */
+    {
+      key: 'reports',
+      icon: BarChart3,
+      tone: 'indigo',
+      title: { en: 'Reports & Analytics', km: 'របាយការណ៍ និងវិភាគ', zh: '报表与分析' },
+      desc:  { en: 'The same data finance and senior management need — already filtered, exported to Excel, and Cambodia-formatted.',
+               km: 'ទិន្នន័យដែលហិរញ្ញវត្ថុ និងការគ្រប់គ្រងជាន់ខ្ពស់ត្រូវការ — បានច្រោះ បាននាំចេញ Excel និងតម្រូវតាមកម្ពុជា។',
+               zh: '财务与高层所需的数据 — 已筛选、可导出 Excel，并按柬埔寨格式呈现。' },
+      modules: [
+        { icon: Clock,
+          title: { en: 'Attendance Report', km: 'របាយការណ៍វត្តមាន', zh: '考勤报表' },
+          desc:  { en: 'Per-employee hours, late minutes, leave used, OT recommended, and exception days — exportable per department + period.',
+                   km: 'ម៉ោងធ្វើការ ម៉ោងយឺត ការឈប់សម្រាក OT និងលើកលែង — នាំចេញតាមនាយកដ្ឋាន និងរយៈពេល។',
+                   zh: '按员工的工时、迟到分钟、请假、推荐加班与异常日 — 可按部门和期间导出。' } },
+        { icon: DollarSign,
+          title: { en: 'Payroll Report', km: 'របាយការណ៍ប្រាក់ខែ', zh: '薪资报表' },
+          desc:  { en: 'Monthly batches with full earnings + deductions breakdown, sign-off trail, and bank-transfer file export.',
+                   km: 'រាល់ខែ ជាមួយការបែងចែកប្រាក់ចំណូល និងការកាត់ ប្រវត្តិការអនុម័ត និងឯកសារផ្ទេរធនាគារ។',
+                   zh: '每月批次：完整收入/扣款明细、审批轨迹与银行转账文件导出。' } },
+        { icon: Scale,
+          title: { en: 'Compliance Report', km: 'របាយការណ៍អនុលោម', zh: '合规报表' },
+          desc:  { en: 'NSSF, tax, labour-law summary in the exact rows the inspector asks for. No spreadsheet gymnastics on audit day.',
+                   km: 'ប.ស.ស ពន្ធ និងច្បាប់ការងារ ក្នុងជួរត្រឹមត្រូវដែលអ្នកត្រួតពិនិត្យសួរ។',
+                   zh: 'ប.ស.ស、税务、劳动法摘要 — 检查员要求的字段一行不漏，审计日无需 Excel 苦活。' } },
+        { icon: BookOpen,
+          title: { en: 'Sale & Purchase Ledger', km: 'បញ្ជីលក់ និងទិញ', zh: '销售与采购台账' },
+          desc:  { en: 'Per-period ledger of every invoice, bill, CN, DN, and payment — opening balance + movements + closing balance per customer / vendor.',
+                   km: 'បញ្ជីប្រចាំរយៈពេលនៃវិក្កយបត្រ ប័ណ្ណបង់ CN DN និងការទូទាត់ — សមតុល្យដើម+ការផ្លាស់ប្តូរ+សមតុល្យចុង។',
+                   zh: '按期间汇总发票/账单/CN/DN/收付款 — 每个客户/供应商的期初+变动+期末余额。' } },
+        { icon: LineChart,
+          title: { en: 'Profit & Loss', km: 'ប្រាក់ចំណេញ-ខាត', zh: '损益表' },
+          desc:  { en: 'Live tenant-wide income (sale-side) minus expenses (purchase-side) with currency-aware totals — pulled straight from the ledger, no period close needed.',
+                   km: 'ប្រាក់ចំណូល (លក់) ដក ការចំណាយ (ទិញ) ផ្ទាល់ ដោយចាប់ផ្តើមពីបញ្ជី — មិនចាំបាច់បិទរយៈពេល។',
+                   zh: '租户范围实时损益（销售收入 − 采购费用）— 按币种合计，直接取自台账，无需期末关账。' } },
+      ],
+    },
+
+    /* ----- Platform / Multi-site ------------------------------------- */
+    {
+      key: 'platform',
+      icon: Cloud,
+      tone: 'slate',
+      title: { en: 'Platform & Integrations', km: 'វេទិកា និងការតភ្ជាប់', zh: '平台与集成' },
+      desc:  { en: 'The plumbing that makes one Smart-HRMS serve many branches, many tenants, and the customers who shop with them.',
+               km: 'ហេដ្ឋារចនាសម្ព័ន្ធដែលធ្វើឱ្យ Smart-HRMS មួយបម្រើដល់សាខាច្រើន អតិថិជនច្រើន។',
+               zh: '让一个 Smart-HRMS 服务多分支、多租户及其客户的底层基础设施。' },
+      modules: [
+        { icon: Cloud,
+          title: { en: 'Stand-alone + Online Sync', km: 'Stand-alone + Online តភ្ជាប់', zh: 'Stand-alone + Online 同步' },
+          desc:  { en: 'Run each branch Stand-alone on-prem and an Online cloud instance side-by-side. Connect & Sync survives network outages without losing a single punch.',
+                   km: 'ដំណើរការសាខានីមួយៗបែប Stand-alone និងបែប Online លើពពកទន្ទឹមគ្នា — មិនបាត់ទិន្នន័យពេលអ៊ីនធឺណែតដាច់។',
+                   zh: '各分支以 Stand-alone 本地运行，同时与 Online 云端并行；网络中断也不会丢失打卡。' } },
+        { icon: Send,
+          title: { en: 'Telegram Bots (Customer + HR)', km: 'Telegram Bots (អតិថិជន + HR)', zh: 'Telegram 机器人（客户 + HR）' },
+          desc:  { en: 'One bot per tenant per side: customers receive invoices + receipts, employees self-check-in + get announcements + payslip pings.',
+                   km: 'Bot មួយក្នុងម្នាក់ៗតាមផ្នែក៖ អតិថិជនទទួលវិក្កយបត្រ+បង្កាន់ដៃ បុគ្គលិកChẹck-In+ទទួលប្រកាស+សារប្រាក់ខែ។',
+                   zh: '每个租户、每个用途各一个 Bot：客户收发票/收据，员工自助打卡、接收公告与薪资提醒。' } },
+        { icon: MonitorPlay,
+          title: { en: 'POS Customer Display', km: 'អេក្រង់សម្រាប់អតិថិជន POS', zh: 'POS 客显屏' },
+          desc:  { en: 'Second-screen mirror of the cart, live total, KHR equivalent, scan-to-pay overlay during KHQR checkout, and an ads carousel between sales.',
+                   km: 'អេក្រង់ទីពីរបង្ហាញរទេះ ការសរុបផ្ទាល់ KHR ស្កេនបង់ KHQR និងការបង្ហាញពាណិជ្ជកម្មពេលគ្មានការលក់។',
+                   zh: '第二屏镜像购物车、实时总额、KHR 换算、KHQR 扫码支付覆盖层与空闲时的广告轮播。' } },
+        { icon: KeyRound,
+          title: { en: 'Permission Matrix', km: 'ម៉ាទ្រីសសិទ្ធិ', zh: '权限矩阵' },
+          desc:  { en: 'Role × module × action grid — admin, manager, employee, custom roles. Same matrix gates the menu, the API, and the reports.',
+                   km: 'ម៉ាទ្រីស តួនាទី × ម៉ូឌុល × សកម្មភាព — Admin, Manager, Employee, តួនាទីផ្ទាល់ខ្លួន។',
+                   zh: '角色 × 模块 × 动作矩阵 — Admin、Manager、Employee 及自定义角色，统一控制菜单、API 与报表。' } },
+        { icon: Languages,
+          title: { en: 'Multi-Currency · Bilingual UI', km: 'ច្រើនរូបិយប័ណ្ណ · ដុល្លារ-ខ្មែរ', zh: '多币种 · 双语界面' },
+          desc:  { en: 'USD + KHR side-by-side with operator-set exchange rate snapshots. UI in Khmer + English + Chinese; receipts honour the tenant choice.',
+                   km: 'USD + KHR ស្របគ្នា ជាមួយអត្រាប្តូរសាច់ប្រាក់ដែលប្តូរបានដោយប្រតិបត្តិករ។ UI ខ្មែរ + អង់គ្លេស + ចិន។',
+                   zh: 'USD 与 KHR 并列，操作员可设置汇率快照。界面支持柬/英/中三语；小票按租户选择呈现。' } },
+        { icon: QrCode,
+          title: { en: 'PayWay (ABA) Real-Time Gateway', km: 'PayWay (ABA) ការទូទាត់ពេលវេលាជាក់ស្តែង', zh: 'PayWay（ABA）实时支付网关' },
+          desc:  { en: 'Per-tenant credentials (encrypted at rest), sandbox / live switch, webhook-token routing — apply to POS and Invoice alike.',
+                   km: 'ព័ត៌មានសម្ងាត់ក្នុងតែម្នាក់ៗ (កូដនីយកម្ម) sandbox / live ភ្ជាប់ webhook — ប្រើបានទាំង POS និងវិក្កយបត្រ។',
+                   zh: '每租户加密存储的凭据、Sandbox/Live 切换、Webhook 令牌路由 — POS 与发票同步可用。' } },
+      ],
+    },
   ];
 
   return (
@@ -1079,17 +1335,44 @@ function ModulesGrid({ lang }: { lang: Lang }) {
             {t(T.modules.sectionDesc, lang)}
           </p>
         </div>
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {modules.map((m, i) => (
-            <Card key={i} className="group border-slate-200/70 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-              <CardContent className="p-6">
-                <span className={`inline-flex h-11 w-11 items-center justify-center rounded-xl ${toneClasses[m.tone]}`}>
-                  <m.icon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">{t(m.title, lang)}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{t(m.desc, lang)}</p>
-              </CardContent>
-            </Card>
+
+        {/* Category sections — each renders as a tinted banner header
+            (category icon + title + one-line pitch) followed by a
+            responsive grid of the modules inside it. Tone colours map
+            from the category down to its module-card icon chips so
+            the visual grouping is consistent. */}
+        <div className="mt-14 space-y-12">
+          {categories.map(cat => (
+            <div key={cat.key}>
+              <div className={`rounded-2xl border ${toneCategoryClasses[cat.tone]} px-5 py-4 sm:px-6 sm:py-5`}>
+                <div className="flex items-start gap-4">
+                  <span className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${toneIconClasses[cat.tone]}`}>
+                    <cat.icon className="h-6 w-6" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`text-xl font-bold ${toneAccentText[cat.tone]}`}>{t(cat.title, lang)}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600">{t(cat.desc, lang)}</p>
+                  </div>
+                  <span className="hidden sm:inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200">
+                    {cat.modules.length} {cat.modules.length === 1 ? 'app' : 'apps'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {cat.modules.map((m, i) => (
+                  <Card key={i} className="group border-slate-200/70 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+                    <CardContent className="p-6">
+                      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses[cat.tone]}`}>
+                        <m.icon className="h-5 w-5" />
+                      </span>
+                      <h4 className="mt-4 text-base font-semibold text-slate-900">{t(m.title, lang)}</h4>
+                      <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{t(m.desc, lang)}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </Container>
@@ -1855,7 +2138,7 @@ function LandingFooter({ lang }: { lang: Lang }) {
               <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white">
                 <Building2 className="h-5 w-5" />
               </span>
-              <span className="text-base font-semibold tracking-tight text-slate-900">HRMS Portal</span>
+              <span className="text-base font-semibold tracking-tight text-slate-900">Smart-HRMS</span>
             </div>
             <p className="mt-3 max-w-xs text-sm text-slate-600">{t(T.footer.tagline, lang)}</p>
           </div>
@@ -1930,7 +2213,7 @@ function LandingFooter({ lang }: { lang: Lang }) {
         </div>
 
         <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
-          <p>© {new Date().getFullYear()} HRMS Portal. {t(T.footer.rights, lang)}</p>
+          <p>© {new Date().getFullYear()} Smart-HRMS. {t(T.footer.rights, lang)}</p>
           <div className="flex items-center gap-4">
             <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> SOC2-ready</span>
             <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" /> Excel exports</span>
@@ -1961,6 +2244,7 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
       <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <Hero lang={lang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <MetricsStrip lang={lang} />
+      <ZeroInstallStrip lang={lang} />
       <Industries lang={lang} />
       <ModulesGrid lang={lang} />
       <RealProduct lang={lang} />

@@ -77,7 +77,7 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
               <Building2 className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl">HRMS Portal</CardTitle>
+          <CardTitle className="text-2xl">Smart-HRMS</CardTitle>
           <CardDescription>Human Resource Management System</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
