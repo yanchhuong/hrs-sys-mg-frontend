@@ -108,6 +108,13 @@ interface ModuleDef {
    *  that organize children but aren't real permission gates
    *  themselves. */
   header?: boolean;
+  /** When set, the row is informational — it represents a sidebar
+   *  item whose visibility is gated by ANOTHER module's permission
+   *  (e.g. Sale Ledger / Purchase Ledger / Profit & Loss inherit
+   *  from invoice/bill). Renders with a "Inherits from X" hint
+   *  instead of checkbox columns, so the matrix is a complete map
+   *  of the sidebar without introducing redundant permission rows. */
+  inheritsFromLabel?: string;
 }
 // Matrix order mirrors the sidebar (nav.ts NAV_GROUPS + NAV_LEAVES)
 // so admins reading rows top-to-bottom see the same shape they see
@@ -136,6 +143,13 @@ const MODULES: ModuleDef[] = [
   { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
   { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
   { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
+  // The next three sidebar items live under Reports but reuse the
+  // Invoice / Bill module gates (see nav.ts:130-140) — surface them
+  // here so the matrix matches the sidebar 1:1, marked as inherited
+  // so admins know which row actually controls visibility.
+  { key: 'sale-ledger',       label: 'Sale Ledger',       description: 'Customer-side invoice ledger',                                parent: 'reports', inheritsFromLabel: 'Invoice' },
+  { key: 'purchase-ledger',   label: 'Purchase Ledger',   description: 'Vendor-side bill ledger',                                     parent: 'reports', inheritsFromLabel: 'Bill' },
+  { key: 'profit-loss',       label: 'Profit & Loss',     description: 'Sale income minus Purchase expense',                          parent: 'reports', inheritsFromLabel: 'Invoice + Bill' },
 
   { key: 'sales',             label: 'Sale',              description: '',                                                            header: true },
   { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'sales' },
@@ -156,6 +170,17 @@ const MODULES: ModuleDef[] = [
   { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },
   { key: 'telegram',          label: 'Telegram Bot',      description: 'Register a Telegram bot to deliver invoices to customers',   parent: 'settings-group' },
 ];
+
+/** Map an inherited row's key → the module key whose checkbox state
+ *  it mirrors in the matrix. Profit & Loss visibility tracks Invoice
+ *  (matches the gate in nav.ts); the inheritsFromLabel string
+ *  ('Invoice + Bill') reminds the admin that Bill also matters for the
+ *  expense column, even though the visibility row is Invoice. */
+const INHERIT_PARENT_KEY: Record<string, string> = {
+  'sale-ledger':     'invoice',
+  'purchase-ledger': 'bill',
+  'profit-loss':     'invoice',
+};
 
 /**
  * Backend modules the matrix doesn't surface but {@code @perm.allow} still
@@ -397,8 +422,16 @@ export function UserManagement() {
   const visibleModules = useMemo(() => {
     const installed = (key: string) => isModuleAvailable(key) && isModuleEnabled(key);
     // First pass: keep all headers (we resolve them in pass two) +
-    // installed leaves.
-    const kept = MODULES.filter(m => m.header || installed(m.key));
+    // installed leaves. Inherit-only rows (e.g. Sale Ledger inherits
+    // from invoice) follow the parent module's installed state — they
+    // don't appear as separate entries in the tenant catalog, so the
+    // raw `installed(m.key)` lookup would always evict them.
+    const kept = MODULES.filter(m =>
+      m.header
+      || (m.inheritsFromLabel
+          ? installed(INHERIT_PARENT_KEY[m.key] ?? m.key)
+          : installed(m.key))
+    );
     // Second pass: drop a header if the next non-header before another
     // header is missing — i.e. no children survived the install filter.
     const result: ModuleDef[] = [];
@@ -514,6 +547,7 @@ export function UserManagement() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
     email: '',
+    username: '',
     password: '',
     role: 'employee' as User['role'],
     employeeId: '',
@@ -526,6 +560,7 @@ export function UserManagement() {
       setEditingUser(user);
       setFormData({
         email: user.email,
+        username: user.username ?? '',
         password: '',
         role: user.role,
         employeeId: user.employeeId,
@@ -536,6 +571,7 @@ export function UserManagement() {
       setEditingUser(null);
       setFormData({
         email: '',
+        username: '',
         password: '',
         role: 'employee',
         employeeId: '',
@@ -608,6 +644,13 @@ export function UserManagement() {
         if (formData.password) {
           patch.password = formData.password;
         }
+        // V146 — only patch username when the form value diverges from
+        // the saved one. Empty string IS a meaningful value: it clears
+        // the column server-side.
+        const currentUsername = editingUser.username ?? '';
+        if (formData.username.trim().toLowerCase() !== currentUsername) {
+          patch.username = formData.username.trim().toLowerCase();
+        }
         await usersApi.update(editingUser.id, patch);
         toast.success(
           formData.password
@@ -621,6 +664,9 @@ export function UserManagement() {
           employeeId: formData.employeeId || undefined,
           departmentId: formData.departmentId || undefined,
           initialPassword: formData.password || undefined,
+          // V146 — optional. Lowercased before send to match the
+          // server's normalize step.
+          username: formData.username.trim().toLowerCase() || undefined,
         });
         toast.success('User created successfully');
       }
@@ -741,11 +787,14 @@ export function UserManagement() {
       await Promise.all(targets.map(role => {
         const grid: rolesApi.RolePermission[] = [];
         // Skip visual-only group headers (time-tracking / payroll-mgmt
-        // / settings-group / sales / expenses). They're rendered as
-        // section labels in the matrix UI; sending them as if they
-        // were real module keys trips the backend regex validator.
+        // / settings-group / sales / expenses) AND inherited rows
+        // (sale-ledger / purchase-ledger / profit-loss). The headers
+        // are section labels; the inherited rows display the parent
+        // module's checkboxes read-only. Neither has a real permission
+        // row on the backend — sending them trips the regex validator
+        // with "module: must match …".
         for (const mod of MODULES) {
-          if (mod.header) continue;
+          if (mod.header || mod.inheritsFromLabel) continue;
           for (const action of ACTIONS) {
             grid.push({
               module: mod.key as rolesApi.PermissionModule,
@@ -1018,6 +1067,33 @@ export function UserManagement() {
                           />
                         </div>
                         <div className="space-y-2">
+                          <Label htmlFor="username">Username</Label>
+                          <Input
+                            id="username"
+                            type="text"
+                            autoComplete="off"
+                            placeholder="optional · login alternative"
+                            value={formData.username}
+                            // Lowercase + strip whitespace as the user types so
+                            // the field always reflects what gets sent. Allowed
+                            // glyphs match the DB CHECK ([a-z0-9._-]); other
+                            // characters are filtered out client-side so an
+                            // unintentional space or capital doesn't bounce as
+                            // a validation error on save.
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''),
+                            })}
+                            maxLength={64}
+                          />
+                          <p className="text-[11px] text-gray-400">
+                            Lowercase letters, digits, '.', '_', '-'. Leave blank for email-only login.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
                           <Label htmlFor="password">Password {!editingUser && '*'}</Label>
                           <Input
                             id="password"
@@ -1027,6 +1103,7 @@ export function UserManagement() {
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                           />
                         </div>
+                        <div /> {/* spacer to keep Password on a 2-column row */}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -1256,7 +1333,10 @@ export function UserManagement() {
               // dividers. Walk the install-filtered list so the
               // denominator matches what the Permission Matrix
               // actually shows.
-              const permModules = visibleModules.filter(m => !m.header);
+              // Skip header rows AND inherit-only rows — they aren't
+              // real permission gates, so including them in the
+              // denominator would understate role coverage.
+              const permModules = visibleModules.filter(m => !m.header && !m.inheritsFromLabel);
               const grants = permModules.filter(m =>
                 ACTIONS.some(a => permissions[m.key]?.[role.key]?.[a])
               ).length;
@@ -1406,6 +1486,78 @@ export function UserManagement() {
                                 {mod.label}
                               </p>
                             </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      // Inherited rows — render with the SAME Menu Access +
+                      // Data Access columns as a regular module so the row
+                      // carries equal visual weight, but pull each
+                      // checkbox's state from the parent module's
+                      // permissions and disable interaction (the parent
+                      // row is where the admin makes the edit). The label
+                      // cell also carries an "Inherits from X" badge so
+                      // the relationship is unambiguous.
+                      if (mod.inheritsFromLabel) {
+                        const parentKey = INHERIT_PARENT_KEY[mod.key] ?? mod.key;
+                        return (
+                          <TableRow key={mod.key} className="bg-blue-50/30">
+                            <TableCell>
+                              <div style={{ paddingLeft: 20 }}>
+                                <p className="font-medium text-sm flex items-center gap-2 flex-wrap">
+                                  <span className="text-gray-300">└</span>
+                                  {mod.label}
+                                  <span className="text-[10px] text-blue-700 bg-white border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap font-normal">
+                                    Inherits from <strong>{mod.inheritsFromLabel}</strong>
+                                  </span>
+                                </p>
+                                <p className="text-xs text-gray-400">{mod.description}</p>
+                              </div>
+                            </TableCell>
+                            {roles.filter(r => r.key !== 'admin').map(role => {
+                              const parentState = permissions[parentKey]?.[role.key];
+                              const hasAnyMenuAccess = MENU_ACTIONS.some(a => parentState?.[a]);
+                              return (
+                                <TableCell key={role.key} className="border-l">
+                                  <div
+                                    className="flex items-center justify-center gap-4 opacity-60"
+                                    title={`Read-only — driven by ${mod.inheritsFromLabel}`}
+                                  >
+                                    {MENU_ACTIONS.map(action => (
+                                      <div key={action} className="w-6 flex justify-center">
+                                        <Checkbox
+                                          checked={!!parentState?.[action]}
+                                          disabled
+                                          aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]} (inherited)`}
+                                        />
+                                      </div>
+                                    ))}
+                                    {hasAnyMenuAccess ? (
+                                      SCOPE_ACTIONS.map((action, idx) => (
+                                        <div
+                                          key={action}
+                                          className={`w-6 flex justify-center ${idx === 0 ? 'border-l pl-2 ml-1' : ''}`}
+                                        >
+                                          <Checkbox
+                                            checked={!!parentState?.[action]}
+                                            disabled
+                                            aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]} (inherited)`}
+                                          />
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <>
+                                        <div className="w-6 border-l ml-1" />
+                                        <div className="w-6" />
+                                        <div className="w-6" />
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="flex justify-center mt-2">
+                                    <span className="text-[10px] text-gray-400 italic">inherited</span>
+                                  </div>
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                         );
                       }

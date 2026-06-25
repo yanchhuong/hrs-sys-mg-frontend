@@ -73,11 +73,16 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
    *  catalog says the module is available + tenant-enabled. The same
    *  module key drives both gates — they're orthogonal axes (role-
    *  scoped vs tenant-scoped) but answer the same question from
-   *  different sides. */
+   *  different sides.
+   *
+   *  AND requireAlso[]: extra modules that must ALSO clear both gates.
+   *  Use this when a sub-setting only makes sense alongside a parent
+   *  business module (Attendance Settings + Attendance, etc.). */
   const isLeafVisible = (l: typeof NAV_LEAVES[number]) =>
     !l.hideFromSidebar
     && canView(l.module)
-    && isModuleAvailable(l.module);
+    && isModuleAvailable(l.module)
+    && (l.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m));
 
   const visibleTree = useMemo<MenuNode[]>(() => {
     // Each leaf maps to a permission `module` matching the role-permissions
@@ -287,7 +292,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               {currentUser?.role !== 'super_admin' && <NotificationsBell />}
               <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
-                {t(`role.${currentUser?.role ?? 'employee'}`).toUpperCase()}
+                {prettyRoleLabel(currentUser?.role, t)}
               </Badge>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -339,4 +344,19 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
       <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
+}
+
+/** Resolve the role badge label. Built-in keys (admin/manager/employee/
+ *  super_admin) translate via i18n; custom-role keys (e.g. 'custom-gm')
+ *  have no translation entry, so the i18n lookup returns the raw key —
+ *  we strip the `custom-` prefix and title-case the slug. Prevents the
+ *  badge from reading 'ROLE.CUSTOM-GM' for tenant-defined roles. */
+function prettyRoleLabel(roleKey: string | undefined, t: (k: string) => string): string {
+  const key = roleKey ?? 'employee';
+  const translated = t(`role.${key}`);
+  // i18n returns the raw key when no entry exists — that's our cue
+  // to fall back to a humanised version of the slug.
+  if (translated && translated !== `role.${key}`) return translated.toUpperCase();
+  const slug = key.startsWith('custom-') ? key.slice('custom-'.length) : key;
+  return slug.replace(/[-_]+/g, ' ').toUpperCase();
 }

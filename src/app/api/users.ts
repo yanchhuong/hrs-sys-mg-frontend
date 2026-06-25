@@ -5,6 +5,9 @@ export type UserRole = 'admin' | 'manager' | 'employee';
 export interface User {
   id: string;
   email: string;
+  /** V146 — optional secondary login identifier. Null when the user
+   *  signs in by email only. */
+  username?: string | null;
   role: UserRole;
   employeeId?: string | null;
   departmentId?: string | null;
@@ -21,6 +24,9 @@ export interface CreateUserRequest {
   role: UserRole;
   employeeId?: string;
   departmentId?: string;
+  /** V146 — optional, 3..64 chars from [a-z0-9._-]. Lowercased on
+   *  the server before save. */
+  username?: string;
 }
 
 export interface UpdateUserRequest {
@@ -32,6 +38,11 @@ export interface UpdateUserRequest {
    *  Server re-hashes via BCrypt. For a random temporary password,
    *  use {@link resetPassword} instead. */
   password?: string;
+  /** V146 — PATCH semantics:
+   *   undefined → leave alone
+   *   ""        → clear (back to email-only login)
+   *   value     → set (per-tenant uniqueness enforced server-side) */
+  username?: string;
 }
 
 export interface ListParams {

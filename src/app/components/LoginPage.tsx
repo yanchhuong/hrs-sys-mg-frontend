@@ -83,11 +83,18 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
         <CardContent className="space-y-4">
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email or username</Label>
               <Input
                 id="email"
-                type="email"
-                placeholder="admin@company.com"
+                // V146 — accept username too. Drop type="email" so the
+                // browser doesn't reject a username with its built-in
+                // email-format validator; the server routes on '@'.
+                type="text"
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="username"
+                placeholder="admin@company.com  or  username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

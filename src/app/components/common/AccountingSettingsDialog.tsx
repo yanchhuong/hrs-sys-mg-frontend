@@ -344,7 +344,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   const menu: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
     { key: 'display',   label: 'Display',     hint: 'What shows on the form & PDF', icon: <Eye className="h-4 w-4" /> },
     { key: 'numbering', label: 'Numbering',   hint: 'Document number prefixes',     icon: <Hash className="h-4 w-4" /> },
-    { key: 'tax',       label: 'Tax types',   hint: 'Patterns in the Tax dropdown', icon: <ReceiptIcon className="h-4 w-4" /> },
+    // Tax types section — hidden on the POS scope because POS sales
+    // only ever produce two receipt kinds (Commercial / No Tax and
+    // Tax Invoice / VAT 10%), so there's nothing to configure here.
+    // Sale / Bill / Receipt scopes keep it because they accept a
+    // broader catalog (Exclusive VAT, WHT brackets, …).
+    ...(scope !== 'pos' ? [
+      { key: 'tax' as Section, label: 'Tax types', hint: 'Patterns in the Tax dropdown', icon: <ReceiptIcon className="h-4 w-4" /> },
+    ] : []),
     ...(scope === 'sale' ? [
       { key: 'reminders' as Section, label: 'Reminders', hint: 'Telegram pings: before due, after due, paid', icon: <BellRing className="h-4 w-4" /> },
       { key: 'bank' as Section, label: 'Bank Account', hint: 'Payment info + KHRQR printed on the invoice', icon: <Landmark className="h-4 w-4" /> },

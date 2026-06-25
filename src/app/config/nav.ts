@@ -80,6 +80,13 @@ export interface NavLeaf {
    *  menu (e.g. Offices + QR Display launched from the Attendance
    *  page's gear icon). */
   hideFromSidebar?: boolean;
+  /** Optional additional permission modules — leaf is visible ONLY
+   *  when the role can view ALL of these (AND-semantics) on top of
+   *  the primary {@link #module}. Use for sub-settings whose existence
+   *  is meaningful only if the parent module is also granted: e.g.
+   *  Attendance Settings (settings + attendance), Employee Settings
+   *  (settings + employees). */
+  requireAlso?: string[];
 }
 
 export interface NavGroup {
@@ -156,8 +163,12 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
-  { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group' },
-  { id: 'employee-settings',  labelKey: 'nav.setting.empset',        icon: Briefcase,       module: 'settings',        component: EmployeeSettings,        group: 'settings-group' },
+  // Attendance / Employee Settings only make sense when the role
+  // actually has the corresponding business module — there's no
+  // attendance to configure if you can't see Attendance. Gated on
+  // BOTH settings + the parent module via requireAlso (AND-semantics).
+  { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group', requireAlso: ['attendance'] },
+  { id: 'employee-settings',  labelKey: 'nav.setting.empset',        icon: Briefcase,       module: 'settings',        component: EmployeeSettings,        group: 'settings-group', requireAlso: ['employees'] },
   { id: 'user-management',    labelKey: 'nav.setting.usermgmt',      icon: Users,           module: 'user-management', component: UserManagement,          group: 'settings-group' },
   { id: 'payroll-categories', labelKey: 'nav.setting.payrollcat',    icon: DollarSign,      module: 'settings',        component: PayrollCategorySettings, group: 'settings-group' },
 ];
