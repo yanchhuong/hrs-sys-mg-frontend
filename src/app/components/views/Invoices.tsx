@@ -42,6 +42,7 @@ import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { printPosReceipt } from '../../utils/posReceipt';
+import { PaymentReceiptCard } from '../common/PaymentReceiptCard';
 import * as posApi from '../../api/pos';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
@@ -1785,6 +1786,9 @@ function InvoiceDetailDialog({
     documentKind: invoicesApi.InvoiceKind;
   };
   const [payments, setPayments] = useState<LedgerPayment[]>([]);
+  /** Pending payment to show the customer receipt card for. Set on
+   *  the row's "Receipt" button; cleared when the dialog closes. */
+  const [receiptForPayment, setReceiptForPayment] = useState<LedgerPayment | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
@@ -2426,17 +2430,32 @@ function InvoiceDetailDialog({
                           {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {canEdit && (
+                          <div className="inline-flex items-center gap-0.5">
+                            {/* Customer-receipt preview. Opens the card-
+                                style template the operator can print
+                                or share. Hidden in print so the live
+                                receipt itself doesn't carry the
+                                action button. */}
                             <Button
                               size="sm" variant="ghost"
-                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"
-                              onClick={() => doAction('Payment removed',
-                                () => paymentsApi.remove(p.id))}
-                              title="Delete payment"
+                              className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50 print:hidden"
+                              onClick={() => setReceiptForPayment(p)}
+                              title="View / print receipt"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Receipt className="h-3 w-3" />
                             </Button>
-                          )}
+                            {canEdit && (
+                              <Button
+                                size="sm" variant="ghost"
+                                className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"
+                                onClick={() => doAction('Payment removed',
+                                  () => paymentsApi.remove(p.id))}
+                                title="Delete payment"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       );
@@ -2504,6 +2523,16 @@ function InvoiceDetailDialog({
             customer={customer}
             company={companyInfo}
             onClose={() => setMailDialogOpen(false)}
+          />
+        )}
+
+        {receiptForPayment && invoice && (
+          <PaymentReceiptDialog
+            payment={receiptForPayment}
+            invoice={invoice}
+            customer={customer}
+            company={companyInfo}
+            onClose={() => setReceiptForPayment(null)}
           />
         )}
       </DialogContent>
@@ -2972,6 +3001,116 @@ const tdStyle: React.CSSProperties = {
  * yet), Subject from the invoice number, and Body from a short summary
  * the seller can edit before sending.
  */
+/* -------------------------------------------------------------------------- */
+/* Customer payment receipt — card preview + print                            */
+/* -------------------------------------------------------------------------- */
+
+/** Card-style "thanks for paying" receipt the cashier hands back to a
+ *  customer after they pay against an invoice. The card itself lives
+ *  in {@link PaymentReceiptCard}; this dialog wires it to a Print
+ *  window and supplies the values from the invoice + payment + tenant
+ *  Settings → Company row. */
+function PaymentReceiptDialog({
+  payment, invoice, customer, company, onClose,
+}: {
+  payment: paymentsApi.Payment & { documentNo: string };
+  invoice: invoicesApi.Invoice;
+  customer?: customersApi.Customer;
+  company: settingsApi.CompanyInfo | null;
+  onClose: () => void;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // Friendly date formatter — "08 Feb 2025" style matches the
+  // mockup. Falls back to the raw string when the date can't parse.
+  const fmtDate = (raw: string | null | undefined) => {
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const money = (v: number, c: paymentsApi.PaymentCurrency = 'USD') =>
+    c === 'KHR'
+      ? `៛ ${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `$${v.toFixed(2)}`;
+
+  // Items strip — read from the invoice's lines. Each row carries the
+  // line total in the row's currency (the invoice is mono-currency).
+  const items = (invoice.items ?? []).map(l => ({
+    name: l.name,
+    note: l.description ?? null,
+    quantityHint: l.quantity > 0 && l.unit
+      ? `${l.quantity} x ${l.unit}`
+      : (l.quantity > 0 ? `Qty ${l.quantity}` : null),
+    amount: money(l.lineTotal ?? 0),
+  }));
+
+  const print = () => {
+    const node = cardRef.current;
+    if (!node) return;
+    const w = window.open('', '_blank', 'width=420,height=720');
+    if (!w) {
+      toast.error('Pop-up blocked — allow it to print receipts.');
+      return;
+    }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Receipt ${payment.documentNo}</title>
+      <style>
+        @page { size: 80mm auto; margin: 4mm; }
+        body { margin: 0; padding: 0; font-family: 'Inter', system-ui, sans-serif; }
+      </style></head><body>${node.outerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+    setTimeout(() => { try { w.close(); } catch { /* user may have closed */ } }, 600);
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md p-0 gap-0">
+        <DialogHeader className="px-5 py-3 border-b">
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-4 w-4 text-blue-600" />
+            Customer receipt
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Card-style payment slip. Print to hand to the customer or screenshot to share.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="bg-gray-50 px-4 py-4 flex justify-center">
+          <PaymentReceiptCard
+            ref={cardRef}
+            logoUrl={company?.logoUrl ?? null}
+            companyName={company?.name ?? 'Your Company'}
+            addressLine1={company?.address ?? null}
+            addressLine2={company?.phone ?? null}
+            totalDue={money(invoice.total ?? 0)}
+            dueOn={invoice.dueDate ? `Due on ${fmtDate(invoice.dueDate)}` : null}
+            customerName={customer?.name ?? 'Walk-in'}
+            receiptNo={payment.documentNo}
+            dateText={fmtDate(payment.paymentDate)}
+            items={items}
+            subtotal={money(invoice.subtotal ?? 0)}
+            totalDueFooter={money(invoice.total ?? 0)}
+            paidAmount={money(payment.amount, payment.currency)}
+            stampDate={fmtDate(payment.paymentDate)}
+            showPaidStamp
+          />
+        </div>
+
+        <DialogFooter className="px-5 py-3 border-t gap-2">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={print}>
+            <Printer className="h-3.5 w-3.5 mr-1.5" />
+            Print
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MailInvoiceDialog({
   invoice, customer, company, onClose,
 }: {

@@ -17,6 +17,7 @@ import { NAV_BY_ID } from './config/nav';
 import { QrScanPage } from './components/views/QrScanPage';
 import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
+import { PublicShopPage } from './components/views/PublicShopPage';
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -35,7 +36,18 @@ const isPosDisplayPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname === POS_DISPLAY_PATH;
 
+/** True when the URL is the anonymous /shop/{code} public-menu page.
+ *  Bypasses auth + layout so a customer can scan a QR and land on the
+ *  menu instantly without any HRMS chrome. */
+const isPublicShopPath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/shop/');
+
 function NotAuthorizedView() {
+  // Pull the active role from AuthContext so we can name it on the
+  // empty-state. Without this, the admin who's tuning permissions has
+  // to guess which row of the matrix needs the missing checkbox.
+  const { currentUser } = useAuth();
   return (
     <Card className="max-w-md mx-auto mt-12">
       <CardContent className="py-12 flex flex-col items-center text-center gap-3">
@@ -45,6 +57,11 @@ function NotAuthorizedView() {
           Your role does not grant access to this module. Pick another menu item, or
           ask an administrator to update the Permissions matrix.
         </p>
+        {currentUser?.role && (
+          <p className="text-xs text-gray-400">
+            Active role: <span className="font-mono">{currentUser.role}</span>
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -101,7 +118,14 @@ function AppContent() {
   // friendly "Not Authorized" card instead of attempting an API call that
   // would 403.
   const entry = NAV_BY_ID[currentView];
-  const allowed = entry ? canView(entry.module) : false;
+  // Mirror Layout's isLeafVisible AND-semantics — a leaf with
+  // requireAlso must clear every additional module too. Without this,
+  // a user whose sidebar correctly hides Attendance Settings could
+  // still land on it via a stale currentView from a previous session.
+  const allowed = entry
+    ? canView(entry.module)
+      && (entry.requireAlso ?? []).every(m => canView(m))
+    : false;
   const ViewComponent = allowed ? entry!.component : NotAuthorizedView;
 
   // Some leaves back the same component with different initial state
@@ -147,6 +171,16 @@ export default function App() {
     return (
       <>
         <PosCustomerDisplay />
+        <Toaster />
+      </>
+    );
+  }
+  // Public-shop menu landing — same opt-out as /scan: anonymous, no
+  // sidebar, no /me. The 5-char code in the URL IS the only auth.
+  if (isPublicShopPath()) {
+    return (
+      <>
+        <PublicShopPage />
         <Toaster />
       </>
     );

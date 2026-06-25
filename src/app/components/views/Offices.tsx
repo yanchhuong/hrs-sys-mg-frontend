@@ -19,6 +19,7 @@ import {
 import { Plus, Pencil, Trash2, MapPin, Loader2, QrCode } from 'lucide-react';
 import * as officesApi from '../../api/offices';
 import { QrDisplayDialog } from '../common/QrDisplayDialog';
+import { MapPicker } from '../common/MapPicker';
 
 interface FormState {
   id?: string;
@@ -270,7 +271,7 @@ export function Offices({ embedded = false }: Props = {}) {
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{form.id ? 'Edit office' : 'Add office'}</DialogTitle>
             <DialogDescription className="sr-only">
@@ -289,6 +290,20 @@ export function Offices({ embedded = false }: Props = {}) {
                 maxLength={79}
               />
             </div>
+
+            {/* Map picker — click / drag / search to set coordinates.
+                Stays in sync with the lat/lng text inputs below so an
+                admin who already knows the exact numbers can still type
+                them in. */}
+            <MapPicker
+              lat={parseFloat(form.latitude) || null}
+              lng={parseFloat(form.longitude) || null}
+              onChange={(la, lo) => setForm(prev => ({
+                ...prev,
+                latitude:  la.toFixed(7),
+                longitude: lo.toFixed(7),
+              }))}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

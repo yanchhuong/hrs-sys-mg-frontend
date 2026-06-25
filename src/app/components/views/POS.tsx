@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
-  Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay,
+  Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -19,6 +19,7 @@ import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/accountingSettings';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
+import { ShareShopDialog } from '../common/ShareShopDialog';
 import { printPosReceipt } from '../../utils/posReceipt';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
@@ -77,6 +78,7 @@ export function POS() {
     () => settingsApi.defaultsFor('pos'),
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   // KHQR bank-account cards (V133 settings dialog → Bank Account
   // section). Loaded once on mount + re-read when the settings dialog
   // closes so a newly-uploaded QR shows up on the next checkout.
@@ -513,8 +515,13 @@ export function POS() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-white">
+    // h-full sizes POS to the Layout main's content area (which already
+    // has a bounded height from the parent flex column). No 100vh math
+    // and no negative margin — those triggered main's overflow-y-auto.
+    // The inner flex-1 panels with min-h-0 carry the two scrollable
+    // regions (items grid + cart rows).
+    <div className="flex flex-col h-full bg-white">
+      <header className="flex items-center justify-between px-4 py-3 border-b bg-white shrink-0">
         <div className="flex items-center gap-2">
           <ShoppingCart className="h-5 w-5 text-emerald-600" />
           <h1 className="text-lg font-semibold">POS</h1>
@@ -544,6 +551,13 @@ export function POS() {
             <MonitorPlay className="h-4 w-4 mr-1.5" />
             Display
           </Button>
+          {/* Share menu — public /shop/{code} link a customer can scan
+              or visit to browse the menu read-only. Mints the code on
+              first open; rotate is a click in the dialog. */}
+          <Button variant="outline" size="sm" onClick={() => setShareOpen(true)} title="Share public menu link">
+            <Share2 className="h-4 w-4 mr-1.5" />
+            Share
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setDrawerOpen(true)}>
             <Receipt className="h-4 w-4 mr-1.5" />
             Open Orders ({openOrders.length})
@@ -565,10 +579,10 @@ export function POS() {
         </div>
       </header>
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 flex-col lg:flex-row">
         {/* ---- Items grid ---- */}
-        <section className="flex-1 flex flex-col border-r min-w-0">
-          <div className="p-3 border-b bg-white space-y-2">
+        <section className="flex-1 flex flex-col border-r min-w-0 min-h-0">
+          <div className="p-3 border-b bg-white space-y-2 shrink-0">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
               <Input
@@ -619,9 +633,13 @@ export function POS() {
           </div>
         </section>
 
-        {/* ---- Cart panel ---- */}
-        <aside className="w-[380px] flex flex-col bg-gray-50">
-          <div className="p-3 border-b bg-white">
+        {/* ---- Cart panel ----
+            On narrow screens (<lg) the cart drops below the items grid and
+            spans full width; on lg+ it sits as a 380px-wide column on the
+            right. min-h-0 lets the cart-rows list (flex-1 overflow-auto)
+            actually scroll inside the column. */}
+        <aside className="w-full lg:w-[380px] flex flex-col bg-gray-50 min-h-0 border-t lg:border-t-0">
+          <div className="p-3 border-b bg-white shrink-0">
             <Label className="text-xs text-gray-500">Customer</Label>
             <Select value={customerId ?? '__walkin'} onValueChange={v => setCustomerId(v === '__walkin' ? null : v)}>
               <SelectTrigger className="h-8 mt-1">
@@ -636,7 +654,7 @@ export function POS() {
             </Select>
           </div>
 
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {cart.length === 0 ? (
               <div className="text-center text-sm text-gray-400 mt-10 px-4">
                 Tap an item to add it to the cart.
@@ -657,7 +675,7 @@ export function POS() {
             )}
           </div>
 
-          <div className="border-t bg-white p-3 space-y-2 text-sm">
+          <div className="border-t bg-white p-3 space-y-2 text-sm shrink-0">
             <div className="flex justify-between"><span className="text-gray-600">Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
 
             {/* Discount + Tax rows respect the POS Settings "Display"
@@ -777,6 +795,8 @@ export function POS() {
         scope="pos"
         onSaved={s => setPosSettings(s)}
       />
+
+      <ShareShopDialog open={shareOpen} onOpenChange={setShareOpen} />
     </div>
   );
 }
