@@ -63,9 +63,32 @@ export interface Announcement {
    *  announcement — drives the "Seen by N" badge. Null only if the
    *  caller went through a path that skipped the rollup. */
   readCount: number | null;
+  /* ---- V147: rich-template plate fields. -------------------- */
+  /** When true, the row renders with the bulletin plate UI and the
+   *  Telegram path delivered the cached PNG instead of plain text. */
+  richTemplate: boolean;
+  titleKm: string | null;
+  bodyKm: string | null;
+  signature: string | null;
+  stamp: string | null;
+  /** Raw JSON string — the FE parses to an array of FactRow. */
+  factsJson: string | null;
+  bulletinNo: string | null;
+  /** Opaque storage path of the cached PNG plate. Use {@link plateImageUrl}
+   *  to compose the full served URL when rendering / debugging. */
+  imagePath: string | null;
   createdAt: string;
   updatedAt: string;
   createdById: string | null;
+}
+
+/** One row of the plate's facts strip. Three optional fields; the
+ *  renderer treats blanks as empty cells but the row count is fixed
+ *  at 3 visually. */
+export interface FactRow {
+  label: string;
+  valueEn: string;
+  valueKm: string;
 }
 
 /** "Seen by" panel row (V127). Resolved server-side so the FE
@@ -96,6 +119,20 @@ export interface AnnouncementRequest {
   holidayId?: string;
   /** Category — defaults to 'OTHERS' server-side when omitted. */
   type?: AnnouncementType;
+  /* ---- V147: rich-template plate fields. -------------------- */
+  /** Opt-in. When true, the bilingual + structured fields below are
+   *  honoured and Telegram gets the cached PNG; false keeps the
+   *  legacy simple format. */
+  richTemplate?: boolean;
+  titleKm?: string;
+  bodyKm?: string;
+  signature?: string;
+  stamp?: string;
+  /** Up to 3 entries. Empty arrays are ignored server-side. */
+  facts?: FactRow[];
+  /** {@code data:image/png;base64,...} URL of the plate PNG rendered
+   *  in the admin's browser via html2canvas at submit time. */
+  imageDataUrl?: string;
 }
 
 export type LogStatus = 'SENT' | 'FAILED' | 'NOT_LINKED';

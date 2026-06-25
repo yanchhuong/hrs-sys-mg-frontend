@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Megaphone, Send, RefreshCw, Plus, Loader2, AlertCircle,
   CheckCircle2, XCircle, MinusCircle, Search, Calendar, FileEdit, Hourglass, Info,
-  PartyPopper, Newspaper, CalendarHeart, Inbox, ListChecks, Eye, UserCircle2,
+  PartyPopper, Newspaper, CalendarHeart, Inbox, ListChecks, Eye, UserCircle2, Sparkles,
 } from 'lucide-react';
+import { AnnouncementPlate } from '../common/AnnouncementPlate';
+import { SearchablePicker } from '../common/SearchablePicker';
 
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
@@ -17,17 +19,23 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../ui/alert-dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/announcements';
 import * as employeesApi from '../../api/employees';
 import * as customersApi from '../../api/customers';
 import * as holidaysApi from '../../api/holidays';
+import * as settingsApi from '../../api/settings';
 import * as systemHolidaysApi from '../../api/systemHolidays';
 import * as telegramApi from '../../api/telegram';
 import * as hrTelegramApi from '../../api/hrTelegramBots';
@@ -40,9 +48,15 @@ import * as hrTelegramApi from '../../api/hrTelegramBots';
  * didn't (and why).
  */
 export function Announcements() {
-  const { canCreate, canView } = useAuth();
+  const { canCreate, canView, isModuleAvailable } = useAuth();
   const canCreateAnnouncement = canCreate('announcements');
   const canViewAnnouncement   = canView('announcements');
+  // Audience options are only meaningful when both the tenant catalog
+  // includes the corresponding module AND the role can view it. A
+  // tenant on a stripped-down install (no Employees module, or no
+  // Customers / Sale module) shouldn't see those audience entries.
+  const employeesAvailable = isModuleAvailable('employees') && canView('employees');
+  const customersAvailable = isModuleAvailable('customer')  && canView('customer');
 
   const [rows, setRows]     = useState<api.Announcement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,8 +83,55 @@ export function Announcements() {
    *  server-side. Useful for "this event runs all month — don't
    *  hide it after a day" cases. */
   const [expiresAtLocal, setExpiresAtLocal] = useState('');
+  /** On/off gates for the two optional date inputs. Off (default)
+   *  hides the input entirely; flipping on reveals the picker. The
+   *  state lets a half-typed value survive a toggle-off→on without
+   *  re-entry, but we still clear the value when the toggle settles
+   *  to off at submit time so a stale draft doesn't pollute the
+   *  payload. */
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [expiresEnabled, setExpiresEnabled]   = useState(false);
   const [holidayId, setHolidayId] = useState<string>('');
   const [holidays, setHolidays]   = useState<holidaysApi.Holiday[]>([]);
+  /* V147 — delivery-format tab. Default 'simple' keeps the old layout
+   *  unchanged for back-compat; switching to 'rich' surfaces the
+   *  bilingual + facts + sig + stamp fields and the live plate
+   *  preview. {@link richTemplate} is derived for the submit payload
+   *  + dialog width so the rest of the form stays oblivious to which
+   *  tab is active. */
+  const [activeTab, setActiveTab] = useState<'simple' | 'rich'>('simple');
+  const richTemplate = activeTab === 'rich';
+  const [titleKm, setTitleKm]   = useState('');
+  const [bodyKm, setBodyKm]     = useState('');
+  const [signature, setSignature] = useState('');
+  const [stamp, setStamp]       = useState('');
+  /** Fixed-3 facts array; the plate's strip is visually a 3-column
+   *  grid so a 4th would crowd the row. Empty cells stay in state so
+   *  the user can fill any of the three. */
+  const [facts, setFacts] = useState<api.FactRow[]>([
+    { label: '', valueEn: '', valueKm: '' },
+    { label: '', valueEn: '', valueKm: '' },
+    { label: '', valueEn: '', valueKm: '' },
+  ]);
+  /** Ref points at the live-preview plate so html2canvas can capture
+   *  it at submit time (Slice 4 will use this). */
+  const plateRef = useRef<HTMLDivElement | null>(null);
+  /** Company display name — read from settings/company once and reused
+   *  as the plate brand. Falls back to a neutral label when the tenant
+   *  hasn't filled in Settings → Company. Loaded lazily the first time
+   *  the create dialog opens so we don't waste a request on a viewer
+   *  who never composes an announcement. */
+  const [companyName, setCompanyName] = useState<string>('');
+
+  /** Patch one row of the facts strip — immutable update so React
+   *  picks up the change and the preview re-renders. */
+  const updateFact = (idx: number, patch: Partial<api.FactRow>) => {
+    setFacts(prev => prev.map((f, i) => i === idx ? { ...f, ...patch } : f));
+  };
+  /** Confirmation gate for the broadcast modes. Set by Publish Now /
+   *  Schedule; cleared on Confirm or Cancel. Draft skips the gate
+   *  because it doesn't notify anyone. */
+  const [pendingPublishMode, setPendingPublishMode] = useState<api.PublishMode | null>(null);
   /** V126 — category dropdown. Defaults to OTHERS for the everyday
    *  "miscellaneous notice" use case. */
   const [type, setType] = useState<api.AnnouncementType>('OTHERS');
@@ -144,15 +205,50 @@ export function Announcements() {
     })();
   }, [createOpen, audienceType]);
 
+  // Load the company name once on mount — used by both the rich-
+  // template live preview AND the detail dialog when an existing
+  // rich-template row is opened. The endpoint has no perm gate so
+  // every authenticated viewer can read it; failure falls through
+  // to the "Internal Bulletin" plate fallback.
+  useEffect(() => {
+    if (!canViewAnnouncement) return;
+    let cancelled = false;
+    settingsApi.getCompanyInfo()
+      .then(info => { if (!cancelled) setCompanyName(info.name ?? ''); })
+      .catch(() => { /* fallback handled at render time */ });
+    return () => { cancelled = true; };
+  }, [canViewAnnouncement]);
+
   const openCreate = () => {
     setTitle('');
     setBody('');
-    setAudienceType('ALL_EMPLOYEES');
+    // Default to whichever audience the tenant actually has — falls
+    // through to Customers when Employees isn't available, then to
+    // the Employees default for the common case. If neither is
+    // available the create button is hidden upstream (see the
+    // canCreateAnnouncement gate on the page header).
+    setAudienceType(employeesAvailable ? 'ALL_EMPLOYEES'
+                   : customersAvailable ? 'ALL_CUSTOMERS'
+                   : 'ALL_EMPLOYEES');
     setRecipientIds([]);
     setSendTelegram(true);
+    // V147 — rich-template fields reset on every open so a stale
+    // value from a previous compose doesn't bleed into the next one.
+    setActiveTab('simple');
+    setTitleKm('');
+    setBodyKm('');
+    setSignature('');
+    setStamp('');
+    setFacts([
+      { label: '', valueEn: '', valueKm: '' },
+      { label: '', valueEn: '', valueKm: '' },
+      { label: '', valueEn: '', valueKm: '' },
+    ]);
     setPickerSearch('');
     setPublishAtLocal('');
     setExpiresAtLocal('');
+    setScheduleEnabled(false);
+    setExpiresEnabled(false);
     setHolidayId('');
     setType('OTHERS');
     setCreateOpen(true);
@@ -223,6 +319,31 @@ export function Announcements() {
     }
     setCreating(true);
     try {
+      // V147 — when the rich-template toggle is on, capture the live
+      // preview to a PNG via html2canvas so the bot can sendPhoto it.
+      // Slice 4 wires the actual capture; we ship the field shape now
+      // so the server-side accept path is exercised even before the
+      // capture is hooked up. The string stays undefined when the
+      // ref is empty (rare race) or the toggle is off.
+      let imageDataUrl: string | undefined;
+      if (richTemplate && plateRef.current) {
+        try {
+          const { default: html2canvas } = await import('html2canvas');
+          const canvas = await html2canvas(plateRef.current, {
+            scale: 2,           // retina-ish; the bot resizes on send anyway
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+          });
+          imageDataUrl = canvas.toDataURL('image/png');
+        } catch (capErr) {
+          // Non-fatal — the row still saves, just without the cached
+          // PNG. The bot path falls back to plain-text delivery and
+          // the in-app detail dialog renders the plate from fields.
+          console.warn('[announcement] plate capture failed', capErr);
+        }
+      }
+
       await api.create({
         title: t,
         body: b,
@@ -234,6 +355,22 @@ export function Announcements() {
         expiresAt: expiresAtIso,
         holidayId: holidayId || undefined,
         type,
+        // V147 — only send the rich fields when the toggle is on, so
+        // the server's simple-row code path stays bit-identical for
+        // legacy compositions.
+        richTemplate,
+        ...(richTemplate ? {
+          titleKm:   titleKm.trim()   || undefined,
+          bodyKm:    bodyKm.trim()    || undefined,
+          signature: signature.trim() || undefined,
+          stamp:     stamp.trim()     || undefined,
+          // Drop completely-empty rows before sending; the server
+          // also caps at 3, but pruning here keeps the payload tidy.
+          facts: facts
+            .filter(f => f.label || f.valueEn || f.valueKm)
+            .map(f => ({ label: f.label, valueEn: f.valueEn, valueKm: f.valueKm })),
+          imageDataUrl,
+        } : {}),
       });
       const msg = mode === 'draft'
         ? 'Saved as draft'
@@ -250,24 +387,23 @@ export function Announcements() {
     }
   };
 
-  /** When the operator picks a Holiday, seed the title as
-   *  "<friendly date> · <holiday name>" so the in-app list reads
-   *  cleanly without HR having to type. Schedule date is NOT
-   *  touched — the operator decides whether to send now / schedule
-   *  for later via the footer buttons. Also flips type to HOLIDAY
-   *  so the badge + dialog stay self-consistent. */
+  /** When the operator picks a Holiday from the search dropdown,
+   *  overwrite the title with "<friendly date> · <holiday name>" so
+   *  the in-app list reads cleanly without HR having to type. The
+   *  picker is now embedded in the Title row (V147 redesign), so a
+   *  selection is an explicit "use this holiday as my title" action
+   *  — we replace the typed value rather than respecting it. Type
+   *  stays HOLIDAY (this code path only runs from the holiday-picker
+   *  which is only mounted under Type=HOLIDAY). */
   const onPickHoliday = (id: string) => {
     setHolidayId(id);
     if (!id) return;
     const h = holidays.find(x => x.id === id);
     if (!h) return;
-    // Friendly date: "Apr 14, 2026" — month-name + day + year gives
-    // a useful at-a-glance read on the announcement list.
     const friendlyDate = new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', {
       year: 'numeric', month: 'short', day: 'numeric',
     });
-    if (!title.trim()) setTitle(`${friendlyDate} · ${h.name}`);
-    setType('HOLIDAY');
+    setTitle(`${friendlyDate} · ${h.name}`);
   };
 
   const openDetail = async (a: api.Announcement) => {
@@ -469,7 +605,14 @@ export function Announcements() {
         {/* Capped at 90vh with an internal scroll region so the form
             doesn't bleed off short laptops or split monitors. The
             header + footer stay pinned; only the middle scrolls. */}
-        <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <DialogContent
+          className={`max-h-[90vh] flex flex-col p-0 gap-0 ${
+            // V147 — widen when the rich template's live preview is
+            // mounted so the editor + plate sit side-by-side on lg+
+            // without crowding either column.
+            richTemplate ? 'sm:max-w-5xl' : 'sm:max-w-xl'
+          }`}
+        >
           <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Megaphone className="h-4 w-4 text-blue-600" />
@@ -497,20 +640,38 @@ export function Announcements() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Title</Label>
-              <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Holiday Notice" />
+          {/* V147 — two delivery formats live behind tabs. Both share
+              the same Title / Message / Type / Audience / Schedule /
+              Telegram inputs, so a compose started on one tab carries
+              over to the other; only the extras + preview at the
+              bottom toggle. */}
+          <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'simple' | 'rich')}>
+            <div className="px-6 pt-3 border-b bg-gray-50/60">
+              <TabsList className="bg-transparent p-0 h-auto gap-1">
+                <TabsTrigger
+                  value="simple"
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md px-3 py-1.5 text-sm"
+                >
+                  Simple
+                </TabsTrigger>
+                <TabsTrigger
+                  value="rich"
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md px-3 py-1.5 text-sm flex items-center gap-1.5"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                  Rich Bulletin
+                </TabsTrigger>
+              </TabsList>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Message</Label>
-              <Textarea rows={4} value={body} onChange={e => setBody(e.target.value)}
-                placeholder="Office closed tomorrow." />
-            </div>
+          </Tabs>
 
-            {/* Type (V126) + Audience side-by-side. Both are simple
-                dropdowns — quick to scan, doesn't take the vertical
-                space the previous 2x2 card grid did. */}
+          <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">
+            {/* Type + Broadcast-to are the first decision the admin
+                makes — they shape every downstream field (holiday
+                picker appears on Type=Holiday, recipient checklist
+                appears on Broadcast=SPECIFIC_*). Lifted to the top so
+                the rest of the form reflects an already-made choice
+                rather than the operator scrolling back up to change it. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Type</Label>
@@ -525,18 +686,118 @@ export function Announcements() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Audience</Label>
+                <Label className="text-xs">Broadcast to:</Label>
                 <Select value={audienceType} onValueChange={(v) => setAudienceType(v as api.AudienceType)}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL_EMPLOYEES">All Employees</SelectItem>
-                    <SelectItem value="ALL_CUSTOMERS">All Customers</SelectItem>
-                    <SelectItem value="SPECIFIC_EMPLOYEES">Pick Employees…</SelectItem>
-                    <SelectItem value="SPECIFIC_CUSTOMERS">Pick Customers…</SelectItem>
+                    {/* Audience entries gated on module availability —
+                        keeps a stock-only or customer-only tenant from
+                        seeing "All Employees" they can't address. */}
+                    {employeesAvailable && (
+                      <SelectItem value="ALL_EMPLOYEES">All Employees</SelectItem>
+                    )}
+                    {customersAvailable && (
+                      <SelectItem value="ALL_CUSTOMERS">All Customers</SelectItem>
+                    )}
+                    {employeesAvailable && (
+                      <SelectItem value="SPECIFIC_EMPLOYEES">Pick Employees…</SelectItem>
+                    )}
+                    {customersAvailable && (
+                      <SelectItem value="SPECIFIC_CUSTOMERS">Pick Customers…</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            {/* Title + Message. On the Rich Bulletin tab the inputs
+                go bilingual — a side-by-side KH | EN pair under a
+                single "Title (KH/EN)" label so the admin types both
+                languages together instead of jumping between sections.
+                When Type=HOLIDAY, a searchable holiday picker sits
+                next to the title input — same UX as the Invoice
+                Customer picker. Pick = overwrite title with the
+                holiday name; otherwise the typed value stands. */}
+            {richTemplate ? (
+              <>
+                {/* Title — single input. Title KM column was merged
+                    away; admins type in one box and the plate uses
+                    that one string. Message stays bilingual since
+                    body copy benefits from a dedicated Khmer pane
+                    where the plate's KH-line block of the plate's
+                    lede actually renders side-by-side. */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Title</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={title}
+                      onChange={e => { setTitle(e.target.value); setHolidayId(''); }}
+                      placeholder={type === 'HOLIDAY' ? 'Type a title or pick a holiday →' : 'Holiday Notice'}
+                    />
+                    {type === 'HOLIDAY' && holidays.length > 0 && (
+                      <HolidayQuickPicker
+                        holidays={holidays}
+                        value={holidayId}
+                        onPick={onPickHoliday}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Message</Label>
+                  {/* Side-by-side bilingual lede so the plate's
+                      two-column body layout (KM | EN) is mirrored in
+                      the editor — admin sees the same column shape
+                      they're filling. */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Textarea
+                      rows={4}
+                      value={bodyKm}
+                      onChange={e => setBodyKm(e.target.value)}
+                      placeholder="សារខ្មែរ…"
+                      className="km-input"
+                    />
+                    <Textarea
+                      rows={4}
+                      value={body}
+                      onChange={e => setBody(e.target.value)}
+                      placeholder="English message"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Title</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={title}
+                      onChange={e => { setTitle(e.target.value); setHolidayId(''); }}
+                      placeholder={type === 'HOLIDAY' ? 'Type a title or pick a holiday →' : 'Holiday Notice'}
+                    />
+                    {type === 'HOLIDAY' && holidays.length > 0 && (
+                      <HolidayQuickPicker
+                        holidays={holidays}
+                        value={holidayId}
+                        onPick={onPickHoliday}
+                      />
+                    )}
+                  </div>
+                  {type === 'HOLIDAY' && holidays.length === 0 && (
+                    <div className="text-[11px] text-gray-500 border rounded-md px-3 py-2 bg-gray-50">
+                      No upcoming public holidays found. Add them in <strong>Settings → Holidays</strong>{' '}
+                      with type <span className="font-mono">public</span> and they'll appear in the picker.
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Message</Label>
+                  <Textarea rows={4} value={body} onChange={e => setBody(e.target.value)}
+                    placeholder="Office closed tomorrow." />
+                </div>
+              </>
+            )}
 
             {/* Compact recipients summary + open-picker trigger.
                 Full checklist lives in a nested dialog so the parent
@@ -575,94 +836,239 @@ export function Announcements() {
                 when the Schedule button is clicked; Expiry overrides
                 the default "1 day after publish" hide window for both
                 "Publish now" and "Schedule" paths. */}
+            {/* Schedule + Expires now live behind on/off toggles so
+                the form stays compact when the admin just wants
+                "publish now / auto-expire". Switching off clears the
+                stored value so a stale draft doesn't get sent. The
+                datetime picker only mounts when the toggle is on. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-gray-500" />
-                  Schedule for (optional)
-                </Label>
-                <Input type="datetime-local" value={publishAtLocal}
-                  onChange={e => setPublishAtLocal(e.target.value)} className="h-9 text-sm" />
-                <div className="text-[11px] text-gray-500">
-                  Required only for the <strong>Schedule</strong> button.
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-gray-500" />
+                    Schedule for
+                  </Label>
+                  <Switch
+                    checked={scheduleEnabled}
+                    onCheckedChange={(on) => {
+                      setScheduleEnabled(on);
+                      if (!on) setPublishAtLocal('');
+                    }}
+                  />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1.5">
-                  <Hourglass className="h-3.5 w-3.5 text-gray-500" />
-                  Expires on (optional)
-                </Label>
-                <Input type="datetime-local" value={expiresAtLocal}
-                  onChange={e => setExpiresAtLocal(e.target.value)} className="h-9 text-sm" />
-                <div className="text-[11px] text-gray-500">
-                  Blank = auto-expire 1 day after publish.
-                </div>
-              </div>
-            </div>
-
-            {/* Optional Holiday link — only meaningful when the
-                announcement IS about a holiday, so hide for the
-                News/Events/Others types. Sourced from Settings →
-                Holidays (type='public', future dates only). Picking
-                one fills publish_at to the holiday's date at 09:00
-                local and seeds a "Holiday Notice: …" title. */}
-            {type === 'HOLIDAY' && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Linked Holiday (optional)</Label>
-                {holidays.length > 0 ? (
-                  <select
-                    value={holidayId}
-                    onChange={e => onPickHoliday(e.target.value)}
-                    className="h-9 w-full border rounded-md px-2 text-sm bg-white"
-                  >
-                    <option value="">— none —</option>
-                    {holidays.map(h => (
-                      <option key={h.id} value={h.id}>{h.date} · {h.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-[11px] text-gray-500 border rounded-md px-3 py-2 bg-gray-50">
-                    No upcoming public holidays found for {new Date().getFullYear()}.
-                    Add them in <strong>Settings → Holidays</strong> with type
-                    <span className="font-mono"> public </span>and they'll
-                    appear here.
-                  </div>
+                {scheduleEnabled && (
+                  <>
+                    <Input type="datetime-local" value={publishAtLocal}
+                      onChange={e => setPublishAtLocal(e.target.value)} className="h-9 text-sm" />
+                    <div className="text-[11px] text-gray-500">
+                      Required only for the <strong>Schedule</strong> button.
+                    </div>
+                  </>
                 )}
               </div>
-            )}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs flex items-center gap-1.5">
+                    <Hourglass className="h-3.5 w-3.5 text-gray-500" />
+                    Expires on
+                  </Label>
+                  <Switch
+                    checked={expiresEnabled}
+                    onCheckedChange={(on) => {
+                      setExpiresEnabled(on);
+                      if (!on) setExpiresAtLocal('');
+                    }}
+                  />
+                </div>
+                {expiresEnabled && (
+                  <>
+                    <Input type="datetime-local" value={expiresAtLocal}
+                      onChange={e => setExpiresAtLocal(e.target.value)} className="h-9 text-sm" />
+                    <div className="text-[11px] text-gray-500">
+                      Blank = auto-expire 1 day after publish.
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
-            <div className="flex items-center justify-between border rounded-md px-3 py-2">
-              <div className="flex-1">
-                <Label className="text-sm flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> Send via Telegram</Label>
-                <div className="text-[11px] text-gray-500 mt-0.5">
-                  Pushes to every recipient whose Telegram chat is linked. Status updates appear on this list.
+            {/* Linked Holiday — merged into the Title row above. The
+                Type=HOLIDAY path embeds a searchable picker next to
+                the Title input (V148 redesign), so this standalone
+                block is no longer needed. holidayId state still
+                drives the picker + the create payload. */}
+
+            {/* V147 — rich-template extras. Shown only when the
+                "Rich Bulletin" tab at the top of the dialog is
+                active. The wrapping div carries the panel styling
+                (subtle background, border) so the section reads as
+                a contiguous block under the basic fields. */}
+            {richTemplate && (
+              <div className="border rounded-md bg-gradient-to-br from-blue-50/30 to-purple-50/20">
+                <div className="px-3 py-2 border-b">
+                  <div className="text-[11px] text-gray-500">
+                    Bilingual title + body, 3 facts, signature &amp; stamp. Telegram receives the rendered plate as an image.
+                  </div>
+                </div>
+                <div className="p-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Editor column — Title (KH/EN) and Message (KH/EN)
+                      now live at the top of the form (above this
+                      section) so the admin only types each one once.
+                      Kicker was dropped — the type code in the
+                      header strip already serves the same "what
+                      kind of notice is this" cue. */}
+                  <div className="space-y-3">
+                    {/* Facts strip — 3 fixed COLUMNS, each a vertical
+                        stack of (label / EN value / KM value). The
+                        editor layout mirrors how the plate renders
+                        the strip on the right, so an admin sees
+                        column 1's inputs sit directly under the
+                        column-1 cell of the preview. Positional
+                        placeholders (First / Middle / Last) reinforce
+                        the column mapping. */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Facts (up to 3)</Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {facts.map((f, idx) => {
+                          const pos = idx === 0 ? 'First' : idx === 1 ? 'Middle' : 'Last';
+                          return (
+                            <div key={idx} className="space-y-1.5 rounded-md border bg-white/70 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-mono">
+                                {pos}
+                              </div>
+                              <Input
+                                className="h-8 text-xs"
+                                value={f.label}
+                                onChange={e => updateFact(idx, { label: e.target.value })}
+                                placeholder="Label"
+                                maxLength={64}
+                              />
+                              <Input
+                                className="h-8 text-xs"
+                                value={f.valueEn}
+                                onChange={e => updateFact(idx, { valueEn: e.target.value })}
+                                placeholder="English"
+                                maxLength={128}
+                              />
+                              <Input
+                                className="h-8 text-xs km-input"
+                                value={f.valueKm}
+                                onChange={e => updateFact(idx, { valueKm: e.target.value })}
+                                placeholder="ខ្មែរ"
+                                maxLength={128}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Signature</Label>
+                        <Input
+                          value={signature} onChange={e => setSignature(e.target.value)}
+                          placeholder="HR Department · Issued by …"
+                          maxLength={200}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Stamp</Label>
+                        <Input
+                          value={stamp} onChange={e => setStamp(e.target.value)}
+                          placeholder={defaultStampForType(type)}
+                          maxLength={48}
+                        />
+                        <p className="text-[10px] text-gray-400">
+                          Blank → defaults to <span className="font-mono">{defaultStampForType(type)}</span> for this type.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preview column. The plate ref is what Slice 4's
+                      html2canvas reads at submit — keep it mounted
+                      whenever the rich toggle is on so the capture
+                      always sees the latest rendering. */}
+                  <div className="lg:sticky lg:top-2 self-start">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1 font-mono">
+                      Live preview
+                    </div>
+                    <AnnouncementPlate
+                      ref={plateRef}
+                      type={type}
+                      bulletinNo={'YYYY·NN'}
+                      // Preview the date the row will publish at —
+                      // the scheduled time when the Schedule toggle is on,
+                      // otherwise today (matches the 'Publish Now' path).
+                      publishDate={scheduleEnabled && publishAtLocal ? new Date(publishAtLocal) : new Date()}
+                      companyName={companyName}
+                      titleEn={title || 'English Title'}
+                      titleKm={titleKm}
+                      bodyEn={body || 'English body preview…'}
+                      bodyKm={bodyKm}
+                      facts={facts}
+                      signature={signature}
+                      stamp={stamp.trim() || defaultStampForType(type)}
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1.5">
+                      This preview is what Telegram receives as an image.
+                    </p>
+                  </div>
                 </div>
               </div>
-              <Switch checked={sendTelegram} onCheckedChange={setSendTelegram} />
-            </div>
+            )}
           </div>
 
-          {/* One button per publish mode. The choice IS the action —
-              no upfront radio/card selection needed. Schedule is
-              disabled until a date is filled in to prevent the
-              "click Schedule with nothing chosen" mistake. */}
-          <DialogFooter className="px-6 py-3 border-t shrink-0 gap-2 sm:gap-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
-              Cancel
-            </Button>
-            <Button variant="outline" onClick={() => void submit('draft')} disabled={creating}>
-              <FileEdit className="h-3.5 w-3.5 mr-1.5" />
-              Save Draft
-            </Button>
-            <Button variant="outline" onClick={() => void submit('schedule')}
-              disabled={creating || !publishAtLocal}>
-              <Calendar className="h-3.5 w-3.5 mr-1.5" />
-              Schedule
-            </Button>
-            <Button onClick={() => void submit('now')} disabled={creating}>
-              {creating ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
-              Publish Now
-            </Button>
+          {/* Footer combines two concerns: the Telegram fan-out
+              switch on the left and the publish-mode buttons on the
+              right. Putting the Telegram switch alongside the
+              actions makes the cause-and-effect obvious — flipping
+              it changes what Publish Now / Schedule will actually
+              do, no separate row to scan. */}
+          <DialogFooter className="px-6 py-3 border-t shrink-0 sm:justify-between gap-3">
+            {/* Switch + Telegram brand mark only — no label text.
+                Hover/long-press surfaces the full intent via the
+                title tooltip, and the aria-label keeps screen readers
+                informed. Inline SVG (not the lucide Send paper plane)
+                so the glyph reads unambiguously as Telegram, not a
+                generic "send" action. */}
+            <label
+              className="flex items-center gap-2 cursor-pointer select-none"
+              title="Send via Telegram — push to every recipient whose chat is linked."
+            >
+              <Switch
+                checked={sendTelegram}
+                onCheckedChange={setSendTelegram}
+                aria-label="Send via Telegram"
+              />
+              <svg viewBox="0 0 240 240" className="h-5 w-5" aria-hidden="true">
+                <circle cx="120" cy="120" r="120" fill="#229ED9" />
+                <path
+                  d="M180 70L155 175c-2 9-7 11-14 7l-39-29-19 18c-2 2-4 4-8 4l3-42 76-69c3-3-1-5-5-3l-94 59-40-13c-9-3-9-9 2-13l158-61c7-3 14 2 11 17z"
+                  fill="#fff"
+                />
+              </svg>
+            </label>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+                Cancel
+              </Button>
+              <Button variant="outline" onClick={() => void submit('draft')} disabled={creating}>
+                <FileEdit className="h-3.5 w-3.5 mr-1.5" />
+                Draft
+              </Button>
+              <Button variant="outline" onClick={() => setPendingPublishMode('schedule')}
+                disabled={creating || !publishAtLocal}>
+                <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                Schedule
+              </Button>
+              <Button onClick={() => setPendingPublishMode('now')} disabled={creating}>
+                {creating ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
+                Publish
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -775,7 +1181,33 @@ export function Announcements() {
           </DialogHeader>
           {detail && (
             <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">
-              <div className="bg-gray-50 rounded-md p-3 text-sm whitespace-pre-wrap">{detail.body}</div>
+              {/* V147 — when rich-template is on, the detail body
+                  renders as the bulletin plate using the same
+                  component the create-form previewed with. Falls
+                  back to the legacy plain-text card otherwise so
+                  older simple rows look unchanged. */}
+              {detail.richTemplate ? (
+                <div className="flex justify-center">
+                  <AnnouncementPlate
+                    type={detail.type}
+                    bulletinNo={detail.bulletinNo}
+                    // Prefer the row's actual publishAt (scheduled or
+                    // immediate publish stamp) and fall back to
+                    // createdAt for legacy rows that never set it.
+                    publishDate={detail.publishAt ?? detail.createdAt}
+                    companyName={companyName}
+                    titleEn={detail.title}
+                    titleKm={detail.titleKm}
+                    bodyEn={detail.body}
+                    bodyKm={detail.bodyKm}
+                    facts={parseFactsJson(detail.factsJson)}
+                    signature={detail.signature}
+                    stamp={detail.stamp}
+                  />
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-md p-3 text-sm whitespace-pre-wrap">{detail.body}</div>
+              )}
 
               {/* "Seen by" — distinct from Telegram delivery: counts
                   in-app reads (anyone who clicked the notification
@@ -888,8 +1320,134 @@ export function Announcements() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Publish / Schedule confirmation. Broadcasts are non-reversible
+          (Telegram pushes hit recipients' phones instantly, in-app
+          notifications are persisted), so we gate both modes behind an
+          explicit confirm. Draft skips this — nothing leaves the server. */}
+      <AlertDialog
+        open={pendingPublishMode !== null}
+        onOpenChange={(o) => !o && setPendingPublishMode(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingPublishMode === 'now' ? 'Publish this announcement?' : 'Schedule this announcement?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  {pendingPublishMode === 'now'
+                    ? 'The announcement will go out to recipients immediately.'
+                    : 'The announcement will be queued and published at the time you picked.'}
+                  {sendTelegram && ' A Telegram push will be sent to every recipient whose chat is linked.'}
+                </p>
+                <ul className="text-xs text-gray-600 space-y-1 pt-1">
+                  <li><span className="font-medium text-gray-800">Title:</span> {title.trim() || <span className="italic text-gray-400">(empty)</span>}</li>
+                  <li><span className="font-medium text-gray-800">Audience:</span> {audienceLabel(audienceType, recipientIds.length)}</li>
+                  {pendingPublishMode === 'schedule' && publishAtLocal && (
+                    <li><span className="font-medium text-gray-800">Scheduled for:</span> {new Date(publishAtLocal).toLocaleString()}</li>
+                  )}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={creating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const mode = pendingPublishMode;
+                setPendingPublishMode(null);
+                if (mode) void submit(mode);
+              }}
+              disabled={creating}
+            >
+              {creating && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              {pendingPublishMode === 'now' ? 'Publish' : 'Schedule'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+/** Parse the server's factsJson string into the FactRow array the
+ *  plate component consumes. Returns an empty array on any parse
+ *  error so a stored-malformed-blob can't crash the detail dialog. */
+/** Compact search-dropdown for the Type=HOLIDAY title row. Wraps
+ *  SearchablePicker — same UX as the Invoice page's Customer picker
+ *  — and adapts the holidays list to PickerOption shape. The trigger
+ *  is intentionally narrow (icon + caret) so it sits next to the
+ *  Title input without dominating the row. */
+function HolidayQuickPicker({
+  holidays, value, onPick,
+}: {
+  holidays: holidaysApi.Holiday[];
+  value: string;
+  onPick: (id: string) => void;
+}) {
+  // Pre-build the option list — labels show the holiday name, the
+  // secondary line carries the date so an admin can pick the right
+  // "Khmer New Year" out of multiple years.
+  const options = holidays.map(h => ({
+    value: h.id,
+    label: h.name,
+    secondary: h.date,
+    searchKey: `${h.name} ${h.date}`,
+  }));
+  return (
+    <div className="w-44 shrink-0">
+      <SearchablePicker
+        value={value}
+        onChange={onPick}
+        placeholder="Pick holiday"
+        searchPlaceholder="Search holidays…"
+        emptyLabel="— none —"
+        options={options}
+      />
+    </div>
+  );
+}
+
+function parseFactsJson(raw: string | null | undefined): api.FactRow[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.slice(0, 3).map(r => ({
+      label:   String(r?.label ?? ''),
+      valueEn: String(r?.valueEn ?? ''),
+      valueKm: String(r?.valueKm ?? ''),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Type-derived stamp default. Mirrors the server-side fallback in
+ *  AnnouncementService.defaultStampFor — used by the form's hint
+ *  text + the live-preview when the admin leaves the stamp blank. */
+function defaultStampForType(t: api.AnnouncementType): string {
+  switch (t) {
+    case 'HOLIDAY': return 'Official';
+    case 'EVENTS':  return 'Confirmed';
+    case 'NEWS':    return 'Published';
+    default:        return 'Notice';
+  }
+}
+
+/** Short summary of who'll receive the announcement, shown on the
+ *  confirmation step. Kept local to this file because nowhere else
+ *  surfaces the same wording. */
+function audienceLabel(type: api.AudienceType, count: number): string {
+  switch (type) {
+    case 'ALL_EMPLOYEES':       return 'All employees';
+    case 'ALL_CUSTOMERS':       return 'All customers';
+    case 'SPECIFIC_EMPLOYEES':  return `${count} selected employee${count === 1 ? '' : 's'}`;
+    case 'SPECIFIC_CUSTOMERS':  return `${count} selected customer${count === 1 ? '' : 's'}`;
+    default:                    return String(type);
+  }
 }
 
 /* ----- helpers ----- */
