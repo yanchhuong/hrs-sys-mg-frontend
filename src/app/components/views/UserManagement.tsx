@@ -805,6 +805,11 @@ export function UserManagement() {
         }
         return rolesApi.replacePermissions(role.key, grid);
       }));
+      // Reload after a successful save so the matrix reflects what
+      // the server actually persisted — defends against any silent
+      // server-side drop (e.g. a future validation tightening) by
+      // surfacing the divergence on the very next render.
+      await loadRolesAndPermissions();
       toast.success(`Saved permissions for ${targets.length} role${targets.length === 1 ? '' : 's'}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save permissions');

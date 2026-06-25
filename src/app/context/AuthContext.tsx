@@ -259,9 +259,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const apiUser = await authApi.me();
         if (cancelled) return;
         const user = fromApi(apiUser);
-        setCurrentUser(user);
         // Run permission and module-flag fetches in parallel so the
-        // initial paint isn't blocked twice on the network.
+        // initial paint isn't blocked twice on the network. Set
+        // currentUser LAST so AppContent renders with the grants
+        // already in place — without this ordering the rehydration
+        // flashes an empty-permission "Access denied" between the
+        // setCurrentUser and the Promise.all resolution.
         const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags(user.role)]);
         if (!cancelled) {
           setGrants(g);
@@ -269,6 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAvailableModules(m.available);
           setTenantFeatures(m.features);
           setTenantCategories(m.categories);
+          setCurrentUser(user);
         }
       } catch {
         authApi.logout();
@@ -463,13 +467,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const apiUser = await authApi.login({ email, password });
       const user = fromApi(apiUser);
-      setCurrentUser(user);
+      // Load grants + module flags BEFORE marking the user as logged
+      // in. Setting currentUser flips AppContent away from LoginPage
+      // immediately, and AppContent reads canView()/isModuleAvailable
+      // on its first render — with stale empty Sets that produces a
+      // visible "Access denied" flash before the fetch resolves. By
+      // gating the setCurrentUser on the Promise.all we present a
+      // single batched state transition: anonymous → fully-loaded.
       const [g, m] = await Promise.all([loadGrants(user.role), loadModuleFlags(user.role)]);
       setGrants(g);
       setDisabledModules(m.disabled);
       setAvailableModules(m.available);
       setTenantFeatures(m.features);
       setTenantCategories(m.categories);
+      setCurrentUser(user);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
