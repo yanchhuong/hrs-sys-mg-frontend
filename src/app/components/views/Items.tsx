@@ -22,7 +22,8 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings } from 'lucide-react';
+import * as warehousesApi from '../../api/warehouses';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -48,6 +49,8 @@ interface FormState {
   /** Per-item modifier groups (V142). Empty array = no modifiers,
    *  serialised to NULL on save. */
   modifierGroups: itemsApi.ModifierGroup[];
+  /** Optional warehouse FK (V149). Empty string = unassigned. */
+  warehouseId: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -63,6 +66,7 @@ const EMPTY_FORM: FormState = {
   imageUrl: '',
   category: 'other',
   modifierGroups: [],
+  warehouseId: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -116,6 +120,15 @@ export function Items() {
   const [rows, setRows] = useState<itemsApi.Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  // V149 — warehouse feature. The gate comes from the same per-tenant
+  // usage settings row the picker toggles live on, so flipping it in
+  // the settings dialog updates the gate here on the parent's onSaved
+  // callback (no second fetch).
+  const [warehouseFeatureOn, setWarehouseFeatureOn] = useState(false);
+  const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+  // Filter applied to the list query when the feature is on. Empty
+  // string = "All" (no warehouse filter).
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('');
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -134,6 +147,7 @@ export function Items() {
     try {
       const res = await itemsApi.list({
         q: search.trim() || undefined,
+        warehouseId: warehouseFilter || undefined,
         size: 200,
       });
       setRows(res.content ?? []);
@@ -144,7 +158,31 @@ export function Items() {
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  /** Fetch the warehouse gate + warehouses list on mount and after a
+   *  settings save. Soft-fails on 403 (e.g. an Items-only user without
+   *  stock.view on warehouses) so the table itself stays usable. */
+  const loadWarehouseContext = async () => {
+    try {
+      const usage = await itemsApi.getUsageSettings();
+      setWarehouseFeatureOn(usage.enabledForWarehouse);
+      if (usage.enabledForWarehouse) {
+        try {
+          setWarehouses(await warehousesApi.list());
+        } catch {
+          setWarehouses([]);
+        }
+      } else {
+        // Clear the filter so a stale state from a previously-on
+        // tenant doesn't poison the next list call.
+        setWarehouseFilter('');
+      }
+    } catch {
+      // Defaults already cover the no-row case; ignore.
+    }
+  };
+
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [warehouseFilter]);
+  useEffect(() => { void loadWarehouseContext(); }, []);
 
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,6 +191,16 @@ export function Items() {
 
   const filtered = useMemo(() => rows, [rows]);
   const pagination = usePagination(filtered, 25);
+
+  /** id → display label, so the table cell renders the warehouse name
+   *  (and short code, if set) without a per-row lookup pass. */
+  const warehouseLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of warehouses) {
+      m.set(w.id, w.code ? `${w.code} — ${w.name}` : w.name);
+    }
+    return m;
+  }, [warehouses]);
 
   const openAdd = () => {
     setEditing(null);
@@ -174,6 +222,7 @@ export function Items() {
       imageUrl: it.imageUrl ?? '',
       category: it.category ?? 'other',
       modifierGroups: itemsApi.parseModifiers(it.modifiers)?.groups ?? [],
+      warehouseId: it.warehouseId ?? '',
     });
     setDialogOpen(true);
   };
@@ -207,6 +256,10 @@ export function Items() {
         // Serialise the typed groups back to a JSON string. Empty
         // groups → '' so the server NULLs the column.
         modifiers: itemsApi.serializeModifiers({ groups: form.modifierGroups }) ?? '',
+        // null = unassigned (server clears the FK); a UUID sets it.
+        // Always include the field so a "Choose…" → "(none)" edit
+        // round-trips correctly.
+        warehouseId: form.warehouseId || null,
       };
       if (editing) await itemsApi.update(editing.id, payload);
       else         await itemsApi.create(payload);
@@ -318,6 +371,19 @@ export function Items() {
       <StockItemUsageSettingsDialog
         open={usageSettingsOpen}
         onOpenChange={setUsageSettingsOpen}
+        onSaved={next => {
+          // Mirror the saved warehouse flag immediately so flipping
+          // it in the dialog updates the filter + column + picker
+          // on the parent page without a refresh. Refetch the
+          // warehouses list too because the operator may have just
+          // created some.
+          setWarehouseFeatureOn(next.enabledForWarehouse);
+          if (next.enabledForWarehouse) {
+            warehousesApi.list().then(setWarehouses).catch(() => {/* soft */});
+          } else {
+            setWarehouseFilter('');
+          }
+        }}
       />
 
       <Card>
@@ -327,6 +393,27 @@ export function Items() {
             Catalog
           </CardTitle>
           <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
+            {/* Warehouse filter — shown only when the feature gate is
+                on. "All" = empty value, picks one warehouse otherwise.
+                Re-runs the list call via the warehouseFilter useEffect. */}
+            {warehouseFeatureOn && (
+              <div className="flex items-center gap-1.5">
+                <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
+                <select
+                  value={warehouseFilter}
+                  onChange={e => setWarehouseFilter(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by warehouse"
+                >
+                  <option value="">All warehouses</option>
+                  {warehouses.filter(w => w.enabled).map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.code} — ${w.name}` : w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="relative">
               <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
@@ -351,12 +438,15 @@ export function Items() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">SKU</TableHead>
-                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[120px]">Code</TableHead>
+                    <TableHead>Item Name</TableHead>
                     <TableHead className="w-[80px] text-center">Unit</TableHead>
-                    <TableHead className="text-right w-[120px]">Unit Price</TableHead>
-                    <TableHead className="text-right w-[120px]">Unit Cost</TableHead>
-                    <TableHead className="text-right w-[110px]">Stock</TableHead>
+                    <TableHead className="text-right w-[120px]">Cost</TableHead>
+                    <TableHead className="text-right w-[120px]">Price</TableHead>
+                    <TableHead className="text-right w-[110px]">Current Stock</TableHead>
+                    {warehouseFeatureOn && (
+                      <TableHead className="w-[160px]">Warehouse</TableHead>
+                    )}
                     <TableHead className="text-center w-[110px]">Deduction</TableHead>
                     <TableHead className="text-center w-[90px]">Status</TableHead>
                     <TableHead className="text-right w-[140px]">Actions</TableHead>
@@ -379,15 +469,22 @@ export function Items() {
                         <TableCell className="text-center text-xs text-gray-600">
                           {it.unit || <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-600">
                           {Number(it.unitCost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${lowStock ? 'text-red-600 font-medium' : ''}`}>
                           {Number(it.stockQty).toLocaleString('en-US', { maximumFractionDigits: 2 })}
                         </TableCell>
+                        {warehouseFeatureOn && (
+                          <TableCell className="text-sm text-gray-700">
+                            {it.warehouseId
+                              ? warehouseLabelById.get(it.warehouseId) ?? <span className="text-gray-300">—</span>
+                              : <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        )}
                         <TableCell className="text-center">
                           {/* V121 — when on, the invoice save flow
                               decrements stock and refuses to save
@@ -555,6 +652,33 @@ export function Items() {
                 />
               </div>
             </div>
+
+            {/* V149 — warehouse picker. Surfaces only when the
+                feature gate is on, so tenants that don't use
+                warehouses never see the extra row. "(none)" = empty
+                string, server clears the FK. */}
+            {warehouseFeatureOn && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                  <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
+                  Warehouse
+                </Label>
+                <select
+                  value={form.warehouseId}
+                  onChange={e => setForm({ ...form, warehouseId: e.target.value })}
+                  disabled={saving}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">(none)</option>
+                  {warehouses.filter(w => w.enabled || w.id === form.warehouseId).map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.code ? `${w.code} — ${w.name}` : w.name}
+                      {!w.enabled ? ' (disabled)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* V121 — per-item stock deduction toggle. When on, the
                 InvoiceService decrements on-hand on save AND refuses

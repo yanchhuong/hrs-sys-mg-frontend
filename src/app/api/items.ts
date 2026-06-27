@@ -33,6 +33,9 @@ export interface Item {
   /** Per-item modifier groups as a JSON string (V142). Parse with
    *  {@link parseModifiers}. Null when the item has no modifiers. */
   modifiers?: string | null;
+  /** Optional warehouse FK (V149). Surfaces only when the tenant has
+   *  the warehouse feature on; otherwise stays null. */
+  warehouseId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -102,6 +105,10 @@ export interface ItemRequest {
   /** Modifiers JSON (V142). Empty string clears; undefined on update
    *  leaves the existing value untouched. */
   modifiers?: string;
+  /** Warehouse FK (V149). Null clears the assignment; undefined on
+   *  update is treated as null (the form always re-sends the picked
+   *  value so a no-op patch keeps it intact). */
+  warehouseId?: string | null;
 }
 
 export interface StockInRequest {
@@ -113,6 +120,10 @@ export interface StockInRequest {
 
 export interface ListParams {
   q?: string;
+  /** Optional warehouse filter (V149). Passed only when the tenant
+   *  has the warehouse feature on AND the user picked a value from
+   *  the dropdown. */
+  warehouseId?: string;
   page?: number;
   size?: number;
 }
@@ -128,6 +139,7 @@ export interface PagedResponse<T> {
 export async function list(params: ListParams = {}): Promise<PagedResponse<Item>> {
   const q: Record<string, string | number> = {};
   if (params.q) q.q = params.q;
+  if (params.warehouseId) q.warehouseId = params.warehouseId;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   return apiJson('/api/v1/stock-items', { query: q });
@@ -169,6 +181,10 @@ export interface UsageSettings {
   /** POS items grid gate (V131). When on, the POS page surfaces
    *  stock items for ringing-up. */
   enabledForPos: boolean;
+  /** Warehouse feature gate (V149). When on, items can be assigned
+   *  to a warehouse and the Items page surfaces a Warehouse column +
+   *  filter. */
+  enabledForWarehouse: boolean;
   /** null when no row exists yet (returning baked-in defaults). */
   updatedAt: string | null;
 }
