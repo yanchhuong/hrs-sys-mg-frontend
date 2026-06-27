@@ -95,7 +95,7 @@ export function EmployeeSettings() {
       {/* Global KPI cards — mirror the User Management page layout: cards
           first, tab filter below. Each card is a tenant-wide summary of
           the entity managed in the matching tab. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <Card className="border-gray-200">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">

@@ -484,7 +484,11 @@ export function Exception() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        {/* p-0 keeps the table flush against the card edges so the gap
+            between the view-mode pill row and the table header stays
+            tight — matches the Increase / Deduction / Movement /
+            Adjustment pages. */}
+        <CardContent className="p-0">
           {mode === 'employee' ? (
             <Table>
               <TableHeader>
@@ -652,25 +656,29 @@ export function Exception() {
               </TableBody>
             </Table>
           )}
-          {mode === 'employee' ? (
-            <Pagination
-              currentPage={exceptionEmpsPagination.currentPage}
-              totalPages={exceptionEmpsPagination.totalPages}
-              onPageChange={exceptionEmpsPagination.goToPage}
-              startIndex={exceptionEmpsPagination.startIndex}
-              endIndex={exceptionEmpsPagination.endIndex}
-              totalItems={exceptionEmpsPagination.totalItems}
-            />
-          ) : (
-            <Pagination
-              currentPage={dayExceptionsPagination.currentPage}
-              totalPages={dayExceptionsPagination.totalPages}
-              onPageChange={dayExceptionsPagination.goToPage}
-              startIndex={dayExceptionsPagination.startIndex}
-              endIndex={dayExceptionsPagination.endIndex}
-              totalItems={dayExceptionsPagination.totalItems}
-            />
-          )}
+          {/* Pagination gets its own padded chrome since CardContent
+              is p-0. Matches Increase / Deduction / Movement layout. */}
+          <div className="px-4 py-3 border-t">
+            {mode === 'employee' ? (
+              <Pagination
+                currentPage={exceptionEmpsPagination.currentPage}
+                totalPages={exceptionEmpsPagination.totalPages}
+                onPageChange={exceptionEmpsPagination.goToPage}
+                startIndex={exceptionEmpsPagination.startIndex}
+                endIndex={exceptionEmpsPagination.endIndex}
+                totalItems={exceptionEmpsPagination.totalItems}
+              />
+            ) : (
+              <Pagination
+                currentPage={dayExceptionsPagination.currentPage}
+                totalPages={dayExceptionsPagination.totalPages}
+                onPageChange={dayExceptionsPagination.goToPage}
+                startIndex={dayExceptionsPagination.startIndex}
+                endIndex={dayExceptionsPagination.endIndex}
+                totalItems={dayExceptionsPagination.totalItems}
+              />
+            )}
+          </div>
         </CardContent>
       </Card>
 

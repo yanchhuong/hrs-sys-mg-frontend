@@ -1763,7 +1763,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       {viewMode === 'daily' ? (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
             {[
               { label: 'Present', value: summary.present, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', filter: 'present' as FilterTab },
               { label: 'Absent', value: summary.absent, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', filter: 'absent' as FilterTab },
@@ -1872,27 +1872,6 @@ export function Attendance({ onNavigate }: Props = {}) {
 
               {/* Filter tabs + Hours filter + view-mode toggle */}
               <div className="flex flex-wrap items-center gap-2 mt-3">
-                <div className="flex flex-wrap gap-1 flex-1">
-                  {filterTabs.map(tab => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveFilter(tab.key)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                        activeFilter === tab.key
-                          ? 'bg-gray-900 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      {tab.icon}
-                      {tab.label}
-                      <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
-                        activeFilter === tab.key ? 'bg-white/20' : 'bg-gray-200'
-                      }`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
                 {/* Hours fulfilment filter — independent of the chips
                     above. Slices to rows that did vs. didn't reach 8h
                     of scanned work, leaving everything else untouched. */}

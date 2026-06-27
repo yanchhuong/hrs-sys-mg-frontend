@@ -912,7 +912,7 @@ export function Overtime() {
           Employee-only since admins / managers see the same numbers via
           the by-employee view + Reports. */}
       {isEmployee && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
           <Card className="border-gray-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
@@ -953,37 +953,39 @@ export function Overtime() {
       )}
 
       <Card>
-        <CardHeader className="pb-3 space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>{viewMode === 'by-request' ? 'OT Request History' : 'OT Totals by Employee'}</CardTitle>
+        <CardHeader className="pb-3">
+          {/* Tabs + search share a single row, mirroring AllLeave.
+              The by-employee tab swaps the search for the rate hint
+              since that view doesn't filter by keyword. */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
               <TabsList>
                 <TabsTrigger value="by-request">By Request</TabsTrigger>
                 <TabsTrigger value="by-employee">By Employee</TabsTrigger>
               </TabsList>
             </Tabs>
+            {viewMode === 'by-request' && (
+              <div className="relative w-40 sm:w-56 ml-auto">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="h-8 pl-8 pr-8 text-sm"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    title="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {viewMode === 'by-request' && (
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, ID, department or reason…"
-                className="h-8 pl-8 pr-8 text-sm"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  title="Clear search"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          )}
           {viewMode === 'by-employee' && (
             <p className="text-xs text-gray-500 mt-2">
               Totals from approved OT only. Rates: workday ×1, weekend ×1.5, holiday ×2. Hourly rate = base salary ÷ 160.

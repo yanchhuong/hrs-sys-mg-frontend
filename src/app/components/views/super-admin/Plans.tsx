@@ -154,7 +154,7 @@ export function Plans() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <StatCard label="Plans" value={String(plans.length)} Icon={Layers} tone="text-blue-700" />
         <StatCard label="Tenants on a plan" value={String(totalTenants)} Icon={Users} tone="text-emerald-700" />
         <StatCard

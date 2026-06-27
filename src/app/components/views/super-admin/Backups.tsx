@@ -401,7 +401,7 @@ export function Backups() {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <StatCard label="Total backups"   value={stats.total}          Icon={Database}   tone="gray" />
         <StatCard label="Total stored"    value={formatBytes(stats.totalBytes)} Icon={HardDrive} tone="blue" />
         <StatCard label="In progress"     value={stats.inProgress}     Icon={RefreshCw}  tone="amber" spin={stats.inProgress > 0} />

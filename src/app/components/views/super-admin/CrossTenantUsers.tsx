@@ -333,7 +333,7 @@ export function CrossTenantUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         {([
           { key: 'all',      label: 'Total Users', value: counts.all,      cls: 'text-gray-900',   Icon: UsersRound },
           { key: 'admin',    label: 'Admins',      value: counts.admin,    cls: 'text-red-700',    Icon: Shield },

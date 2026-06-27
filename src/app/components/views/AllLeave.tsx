@@ -617,12 +617,16 @@ export function AllLeave() {
               </TabsList>
             </Tabs>
             <div className="flex items-center gap-2 ml-auto">
-              <div className="relative w-72">
+              {/* Search shrinks on phones / narrow cards and grows up
+                  to ~15rem on sm+. Stays on the same row as the status
+                  tabs (parent is flex with flex-wrap, so on really
+                  cramped widths the search just wraps to the next line). */}
+              <div className="relative w-40 sm:w-56">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, ID, department or reason…"
+                  placeholder="Search…"
                   className="h-8 pl-8 pr-8 text-sm"
                 />
                 {search && (

@@ -51,6 +51,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from '../ui/command';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
   Save, AlertTriangle, ChevronsUpDown, Check, Info,
@@ -974,7 +975,7 @@ export function UserManagement() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <Card className="border-gray-200">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
@@ -1415,13 +1416,26 @@ export function UserManagement() {
             <CardHeader>
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <CardTitle>Permission Matrix</CardTitle>
-                  <CardDescription>
-                    Configure what each role can do per module.
-                    <br />
-                    <span className="font-medium text-gray-700">Menu Access</span> — V=View, C=Create, U=Update, D=Delete.
-                    {' '}<span className="font-medium text-gray-700">Data Access</span> — O=Owner (own records), M=Member (direct reports), A=All (tenant-wide).
-                  </CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    Permission Matrix
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            tabIndex={-1}
+                            className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                            aria-label="About Administrator role"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                          <strong>Administrator</strong> is the company owner role and always has
+                          full access to every module — not configurable here.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </CardTitle>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={handleResetPermissions}>
@@ -1435,12 +1449,6 @@ export function UserManagement() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-900">
-                <Shield className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                <p>
-                  <strong>Administrator</strong> is the company owner role and always has full access to every module — not configurable here.
-                </p>
-              </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>

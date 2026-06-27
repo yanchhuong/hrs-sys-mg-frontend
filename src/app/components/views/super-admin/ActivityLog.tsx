@@ -233,7 +233,7 @@ export function ActivityLog() {
   return (
     <div className="space-y-6">
       {/* Top-level stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <StatCard label="Sync errors" value={counts.syncErrors} icon={AlertCircle} tone="red" />
         <StatCard label="Warnings" value={counts.warning} icon={AlertTriangle} tone="amber" />
         <StatCard label="Unacknowledged" value={counts.unack} icon={Bell} tone="blue" />

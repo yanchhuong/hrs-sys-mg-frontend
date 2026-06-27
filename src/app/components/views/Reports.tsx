@@ -214,14 +214,8 @@ export function Reports({ initialView }: ReportsProps = {}) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold">{t('page.reports.title')}</h1>
-        </div>
-        <Badge variant="secondary" className="text-sm">
-          <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
-          Admin / Manager
-        </Badge>
+      <div>
+        <h1 className="text-3xl font-bold">{t('page.reports.title')}</h1>
       </div>
 
       {/* Each tab corresponds to a sub-module under the 'reports'
@@ -680,7 +674,7 @@ function AttendanceReport({
           table renders, so the numbers stay in lockstep. Surfaced
           directly under the page title so HR sees the headline numbers
           before drilling in with filters. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <KpiCard
           label="Perfect Attendance"
           subtitle="No late · No absent"
@@ -945,7 +939,7 @@ function PayrollReport({
     <>
       {/* Summary Stats — surfaced before the filter bar so the headline
           numbers land first, matching the Attendance and Compliance tabs. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <StatCard label="Records" value={stats.count} icon={FileText} tone="blue" />
         <StatCard label="Total Earnings" value={`$${formatMoney(stats.earn)}`} icon={TrendingUp} tone="green" />
         <StatCard label="Total Deductions" value={`$${formatMoney(stats.ded)}`} icon={DollarSign} tone="red" />
@@ -1430,7 +1424,7 @@ function AttendanceEmployeeDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
             <div className="p-3 bg-gray-50 rounded-md">
               <p className="text-xs text-gray-500">Total Days</p>
               <p className="text-lg font-semibold">{myRecords.length}</p>
@@ -1855,7 +1849,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
     <>
       {/* Aggregate stats — surfaced before the filter bar so the
           headline numbers land first, matching the other report tabs. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         <StatCard label="Overall Compliance" value={`${totals.overallPct}%`} icon={TrendingUp} tone={totals.overallPct >= 90 ? 'green' : totals.overallPct >= 60 ? 'orange' : 'red'} />
         <StatCard label="Complete Days" value={totals.complete} icon={FileText} tone="green" />
         <StatCard label="Single-Scan Days" value={totals.single} icon={AlertCircle} tone="orange" />
