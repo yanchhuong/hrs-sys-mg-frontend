@@ -7,6 +7,9 @@ export interface StockMovement {
   itemName?: string | null;
   itemSku?: string | null;
   warehouseId?: string | null;
+  /** Hydrated by the server so the FE list renders the name without
+   *  per-row lookups (V151). */
+  warehouseName?: string | null;
   /** IN / OUT / TRANSFER / ADJUSTMENT */
   type: 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT';
   /** Signed quantity. OUT lines are negative. */
@@ -19,6 +22,8 @@ export interface StockMovement {
   note?: string | null;
   createdAt: string;
   createdById?: string | null;
+  /** Hydrated user display label (name → email fallback). V151. */
+  createdByName?: string | null;
 }
 
 export interface ListParams {

@@ -78,6 +78,7 @@ export const dict: Dict = {
   'nav.stock':                { en: 'Stock',                km: 'ស្តុក',              zh: '库存' },
   'nav.items':                { en: 'Items',                km: 'មុខទំនិញ',           zh: '物料' },
   'nav.stock.movement':       { en: 'Movement',             km: 'ការផ្លាស់ប្តូរ',     zh: '出入库' },
+  'nav.stock.warehouse':      { en: 'Warehouse',            km: 'ឃ្លាំង',              zh: '仓库' },
   'nav.stock.adjustment':     { en: 'Adjustment',           km: 'ការកែតម្រូវ',         zh: '调整' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },

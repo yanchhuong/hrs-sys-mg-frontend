@@ -36,6 +36,10 @@ export interface Item {
   /** Optional warehouse FK (V149). Surfaces only when the tenant has
    *  the warehouse feature on; otherwise stays null. */
   warehouseId?: string | null;
+  /** Free-text Stock category (V151), separate from the POS taxonomy. */
+  itemCategory?: string | null;
+  /** Reorder threshold (V151). Drives the derived Status badge. */
+  minStock?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -109,6 +113,10 @@ export interface ItemRequest {
    *  update is treated as null (the form always re-sends the picked
    *  value so a no-op patch keeps it intact). */
   warehouseId?: string | null;
+  /** Free-text Stock category (V151). Null on update keeps existing. */
+  itemCategory?: string;
+  /** Reorder threshold (V151). */
+  minStock?: number;
 }
 
 export interface StockInRequest {

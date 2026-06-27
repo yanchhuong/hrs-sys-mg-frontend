@@ -51,6 +51,10 @@ interface FormState {
   modifierGroups: itemsApi.ModifierGroup[];
   /** Optional warehouse FK (V149). Empty string = unassigned. */
   warehouseId: string;
+  /** Free-text Stock category (V151). */
+  itemCategory: string;
+  /** Reorder threshold (V151). */
+  minStock: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -67,6 +71,8 @@ const EMPTY_FORM: FormState = {
   category: 'other',
   modifierGroups: [],
   warehouseId: '',
+  itemCategory: '',
+  minStock: '0',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -223,6 +229,8 @@ export function Items() {
       category: it.category ?? 'other',
       modifierGroups: itemsApi.parseModifiers(it.modifiers)?.groups ?? [],
       warehouseId: it.warehouseId ?? '',
+      itemCategory: it.itemCategory ?? '',
+      minStock: String(it.minStock ?? 0),
     });
     setDialogOpen(true);
   };
@@ -260,6 +268,8 @@ export function Items() {
         // Always include the field so a "Choose…" → "(none)" edit
         // round-trips correctly.
         warehouseId: form.warehouseId || null,
+        itemCategory: form.itemCategory.trim(),
+        minStock: Number(form.minStock) || 0,
       };
       if (editing) await itemsApi.update(editing.id, payload);
       else         await itemsApi.create(payload);
@@ -440,21 +450,33 @@ export function Items() {
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
                     <TableHead>Item Name</TableHead>
+                    <TableHead className="w-[140px]">Category</TableHead>
                     <TableHead className="w-[80px] text-center">Unit</TableHead>
-                    <TableHead className="text-right w-[120px]">Cost</TableHead>
-                    <TableHead className="text-right w-[120px]">Price</TableHead>
+                    <TableHead className="text-right w-[110px]">Cost Price</TableHead>
+                    <TableHead className="text-right w-[110px]">Selling Price</TableHead>
                     <TableHead className="text-right w-[110px]">Current Stock</TableHead>
+                    <TableHead className="text-right w-[90px]">Min Stock</TableHead>
+                    <TableHead className="text-center w-[90px]">Status</TableHead>
                     {warehouseFeatureOn && (
                       <TableHead className="w-[160px]">Warehouse</TableHead>
                     )}
                     <TableHead className="text-center w-[110px]">Deduction</TableHead>
-                    <TableHead className="text-center w-[90px]">Status</TableHead>
+                    <TableHead className="text-center w-[80px]">Active</TableHead>
                     <TableHead className="text-right w-[140px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pagination.paginatedItems.map(it => {
-                    const lowStock = Number(it.stockQty) <= 0;
+                    const onHand = Number(it.stockQty ?? 0);
+                    const minStock = Number(it.minStock ?? 0);
+                    // Derived Status — Out / Low / Normal. "Low" only
+                    // triggers when min_stock is set (> 0); without a
+                    // threshold every row reads as Normal.
+                    const status = onHand <= 0
+                      ? { label: 'Out',    cls: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      : (minStock > 0 && onHand < minStock)
+                        ? { label: 'Low',    cls: 'bg-amber-100 text-amber-700 border-amber-200' }
+                        : { label: 'Normal', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
                     return (
                       <TableRow key={it.id}>
                         <TableCell className="font-mono text-xs text-gray-600">
@@ -466,6 +488,9 @@ export function Items() {
                             <div className="text-[11px] text-gray-500 truncate max-w-md">{it.description}</div>
                           )}
                         </TableCell>
+                        <TableCell className="text-xs text-gray-700">
+                          {it.itemCategory || <span className="text-gray-300">—</span>}
+                        </TableCell>
                         <TableCell className="text-center text-xs text-gray-600">
                           {it.unit || <span className="text-gray-300">—</span>}
                         </TableCell>
@@ -475,8 +500,14 @@ export function Items() {
                         <TableCell className="text-right tabular-nums">
                           {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell className={`text-right tabular-nums ${lowStock ? 'text-red-600 font-medium' : ''}`}>
-                          {Number(it.stockQty).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        <TableCell className={`text-right tabular-nums ${onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
+                          {onHand.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-gray-500">
+                          {minStock > 0 ? minStock.toLocaleString('en-US', { maximumFractionDigits: 2 }) : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className={status.cls}>{status.label}</Badge>
                         </TableCell>
                         {warehouseFeatureOn && (
                           <TableCell className="text-sm text-gray-700">
@@ -497,7 +528,7 @@ export function Items() {
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant={it.active ? 'default' : 'outline'}>
-                            {it.active ? 'Active' : 'Inactive'}
+                            {it.active ? 'Yes' : 'No'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
@@ -590,7 +621,16 @@ export function Items() {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Category</Label>
+                <Input
+                  value={form.itemCategory}
+                  onChange={e => setForm({ ...form, itemCategory: e.target.value })}
+                  placeholder="e.g. Electronics, Beverages"
+                  maxLength={64}
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600">Unit</Label>
                 <Input
@@ -600,25 +640,28 @@ export function Items() {
                   maxLength={32}
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Unit Price</Label>
-                <Input
-                  type="number" step="0.01" min="0"
-                  value={form.unitPrice}
-                  onChange={e => setForm({ ...form, unitPrice: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Unit Cost</Label>
+                <Label className="text-xs text-gray-600">Cost Price</Label>
                 <Input
                   type="number" step="0.01" min="0"
                   value={form.unitCost}
                   onChange={e => setForm({ ...form, unitCost: e.target.value })}
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Selling Price</Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  value={form.unitPrice}
+                  onChange={e => setForm({ ...form, unitPrice: e.target.value })}
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
                   Stock On Hand
@@ -642,6 +685,31 @@ export function Items() {
                   type="number" step="0.01"
                   value={form.stockQty}
                   onChange={e => setForm({ ...form, stockQty: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                  Min Stock
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                          aria-label="About Min Stock"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                        Reorder threshold. When current stock falls below this, the row badges as <strong>Low</strong>.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  value={form.minStock}
+                  onChange={e => setForm({ ...form, minStock: e.target.value })}
                 />
               </div>
               <div className="flex items-center justify-between border rounded-md px-3 py-2 h-10">

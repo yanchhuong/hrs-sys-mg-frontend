@@ -22,7 +22,7 @@ import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
-  Package, Boxes, Megaphone, History, ClipboardEdit,
+  Package, Boxes, Megaphone, History, ClipboardEdit, Warehouse as WarehouseIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -52,6 +52,7 @@ import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
 import { StockAdjustments } from '../components/views/StockAdjustments';
+import { Warehouses } from '../components/views/Warehouses';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
@@ -164,6 +165,7 @@ export const NAV_LEAVES: NavLeaf[] = [
 
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
   { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'stock_movement',     component: StockMovements,           group: 'stock-group' },
+  { id: 'warehouses',        labelKey: 'nav.stock.warehouse',        icon: WarehouseIcon,   module: 'stock',              component: Warehouses,               group: 'stock-group' },
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'stock_adjustment',   component: StockAdjustments,         group: 'stock-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },

@@ -128,8 +128,10 @@ export function StockMovements() {
                     <TableHead className="w-[120px]">Reference</TableHead>
                     <TableHead className="w-[90px] text-center">Type</TableHead>
                     <TableHead>Item</TableHead>
-                    <TableHead className="text-right w-[110px]">Quantity</TableHead>
-                    <TableHead className="text-right w-[110px]">Balance</TableHead>
+                    <TableHead className="w-[140px]">Warehouse</TableHead>
+                    <TableHead className="text-right w-[100px]">Quantity</TableHead>
+                    <TableHead className="text-right w-[100px]">Balance</TableHead>
+                    <TableHead className="w-[140px]">User</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -154,12 +156,18 @@ export function StockMovements() {
                             <div className="text-[11px] text-gray-500 font-mono">{m.itemSku}</div>
                           )}
                         </TableCell>
+                        <TableCell className="text-xs text-gray-700">
+                          {m.warehouseName || <span className="text-gray-300">—</span>}
+                        </TableCell>
                         <TableCell className={`text-right tabular-nums ${isOut ? 'text-rose-700' : 'text-emerald-700'} font-medium`}>
                           {signed > 0 ? '+' : ''}
                           {signed.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {Number(m.balanceAfter ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-700 truncate max-w-[140px]">
+                          {m.createdByName || <span className="text-gray-300">—</span>}
                         </TableCell>
                       </TableRow>
                     );

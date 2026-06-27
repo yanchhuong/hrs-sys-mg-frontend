@@ -215,6 +215,7 @@ export function StockAdjustments() {
                     <TableHead className="text-right w-[110px]">Difference</TableHead>
                     <TableHead className="w-[140px]">Reason</TableHead>
                     <TableHead className="text-center w-[90px]">Status</TableHead>
+                    <TableHead className="w-[140px]">Created By</TableHead>
                     {canRemove && <TableHead className="text-right w-[80px]">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -249,6 +250,9 @@ export function StockAdjustments() {
                           <Badge variant={a.status === 'approved' ? 'default' : 'outline'}>
                             {a.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-700 truncate max-w-[140px]">
+                          {a.createdByName || <span className="text-gray-300">—</span>}
                         </TableCell>
                         {canRemove && (
                           <TableCell className="text-right">

@@ -8,7 +8,10 @@ export interface Warehouse {
   id: string;
   name: string;
   code?: string | null;
+  /** UI label: "Location". Free-text address (V149). */
   address?: string | null;
+  /** Free-text manager name (V151). */
+  manager?: string | null;
   enabled: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -18,6 +21,7 @@ export interface WarehouseRequest {
   name: string;
   code?: string;
   address?: string;
+  manager?: string;
   enabled?: boolean;
 }
 
