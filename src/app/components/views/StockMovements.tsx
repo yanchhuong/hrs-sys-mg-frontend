@@ -1,0 +1,183 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '../ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { usePagination } from '../../hooks/usePagination';
+import { Pagination } from '../common/Pagination';
+import * as movementsApi from '../../api/stockMovements';
+import { History, RefreshCw, Info } from 'lucide-react';
+import { toast } from 'sonner';
+import { useI18n } from '../../i18n/I18nContext';
+
+const TYPE_FILTERS: { value: '' | movementsApi.StockMovement['type']; label: string }[] = [
+  { value: '',           label: 'All' },
+  { value: 'IN',         label: 'IN' },
+  { value: 'OUT',        label: 'OUT' },
+  { value: 'ADJUSTMENT', label: 'Adjustment' },
+  { value: 'TRANSFER',   label: 'Transfer' },
+];
+
+/**
+ * Stock → Movement. Read-only history of every quantity change.
+ * Rows land here as a side-effect of Invoice / Bill / Adjustment
+ * saves — never typed by hand, so the audit story stays intact.
+ */
+export function StockMovements() {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<movementsApi.StockMovement[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<'' | movementsApi.StockMovement['type']>('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await movementsApi.list({
+        type: typeFilter || undefined,
+        size: 200,
+      });
+      setRows(res.content ?? []);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load movements');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [typeFilter]);
+
+  const pagination = usePagination(useMemo(() => rows, [rows]), 25);
+
+  const typeBadge = (tpe: movementsApi.StockMovement['type']) => {
+    switch (tpe) {
+      case 'IN':         return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">IN</Badge>;
+      case 'OUT':        return <Badge className="bg-rose-100 text-rose-700 border-rose-200">OUT</Badge>;
+      case 'ADJUSTMENT': return <Badge className="bg-amber-100 text-amber-700 border-amber-200">ADJ</Badge>;
+      case 'TRANSFER':   return <Badge className="bg-blue-100 text-blue-700 border-blue-200">XFER</Badge>;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            {t('nav.stock.movement') || 'Stock Movement'}
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="What is Stock Movement?"
+                  >
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Append-only history of every IN / OUT / ADJUSTMENT / TRANSFER.
+                  Rows are written automatically by Invoice / Bill / Adjustment
+                  saves — this page is read-only.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </h1>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4 text-blue-600" />
+            History
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-label="Filter by type"
+            >
+              {TYPE_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading && rows.length === 0 ? (
+            <div className="text-center py-10 text-sm text-gray-400">Loading movements…</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-12 text-sm text-gray-400">
+              No movements yet. Save an Invoice or an Adjustment to record one.
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[140px]">Date</TableHead>
+                    <TableHead className="w-[120px]">Reference</TableHead>
+                    <TableHead className="w-[90px] text-center">Type</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead className="text-right w-[110px]">Quantity</TableHead>
+                    <TableHead className="text-right w-[110px]">Balance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagination.paginatedItems.map(m => {
+                    const signed = Number(m.quantity ?? 0);
+                    const isOut = signed < 0;
+                    return (
+                      <TableRow key={m.id}>
+                        <TableCell className="text-xs text-gray-600 tabular-nums">
+                          {new Date(m.createdAt).toLocaleString('en-US', {
+                            year: '2-digit', month: 'short', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {m.referenceNo || <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">{typeBadge(m.type)}</TableCell>
+                        <TableCell>
+                          <div className="font-medium text-sm">{m.itemName || '—'}</div>
+                          {m.itemSku && (
+                            <div className="text-[11px] text-gray-500 font-mono">{m.itemSku}</div>
+                          )}
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums ${isOut ? 'text-rose-700' : 'text-emerald-700'} font-medium`}>
+                          {signed > 0 ? '+' : ''}
+                          {signed.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(m.balanceAfter ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

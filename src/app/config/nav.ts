@@ -22,7 +22,7 @@ import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
-  Package, Boxes, Megaphone,
+  Package, Boxes, Megaphone, History, ClipboardEdit,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -50,6 +50,8 @@ import { Vouchers } from '../components/views/Vouchers';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
+import { StockMovements } from '../components/views/StockMovements';
+import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
@@ -161,6 +163,8 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'receipt',            component: Receipts,                 group: 'purchases' },
 
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
+  { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'stock_movement',     component: StockMovements,           group: 'stock-group' },
+  { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'stock_adjustment',   component: StockAdjustments,         group: 'stock-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   // Attendance / Employee Settings only make sense when the role

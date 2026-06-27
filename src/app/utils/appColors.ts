@@ -27,6 +27,8 @@ export const APP_TILE_COLOR: Record<string, string> = {
   'bills':              'bg-orange-100 text-orange-700',
   'receipts':           'bg-teal-100 text-teal-700',
   'items':              'bg-indigo-100 text-indigo-700',
+  'stock-movement':     'bg-blue-100 text-blue-700',
+  'stock-adjustment':   'bg-amber-100 text-amber-700',
   // -- Reports ----------------------------------------------------------
   'attendance-report':  'bg-cyan-100 text-cyan-700',
   'payroll-report':     'bg-indigo-100 text-indigo-700',
