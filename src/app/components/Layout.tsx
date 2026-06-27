@@ -24,8 +24,11 @@ import {
   ChevronDown,
   ChevronRight,
   UserCog,
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Badge } from './ui/badge';
 import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
 import { appIconColor } from '../utils/appColors';
@@ -67,6 +70,18 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  /** Foldable sidebar — when true, the desktop sidebar shrinks to an
+   *  icon-only rail. Persisted to localStorage so the operator's
+   *  preference survives a refresh / tab close. Off by default on
+   *  first visit so new users see the labelled menu. */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('hrms:sidebarCollapsed') === '1';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('hrms:sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
 
   /** Combined visibility check: leaf passes when the role can view
    *  its permission module (role_permissions) AND the Super Admin
@@ -188,55 +203,124 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar - Full Height */}
+      {/* Sidebar — full height. On desktop (lg+) it can fold to an
+          icon-only rail; on mobile it slides in/out off-canvas. */}
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-30 w-64 bg-white border-r transform transition-transform duration-200 ease-in-out overflow-y-auto flex flex-col
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          fixed lg:static inset-y-0 left-0 z-30 bg-white border-r transform transition-all duration-200 ease-in-out overflow-y-auto flex flex-col
+          ${sidebarCollapsed ? 'lg:w-16' : 'w-64'}
+          ${sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-        <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
-          <div className="p-2 bg-blue-600 rounded-lg">
+        <div className={`flex items-center gap-2 h-16 border-b shrink-0 ${sidebarCollapsed ? 'lg:justify-center px-2' : 'px-4'}`}>
+          <div className="p-2 bg-blue-600 rounded-lg shrink-0">
             <LayoutDashboard className="h-5 w-5 text-white" />
           </div>
-          <span className="font-semibold text-lg">{t('brand.hrms')}</span>
+          {!sidebarCollapsed && (
+            <>
+              <span className="font-semibold text-lg truncate">{t('brand.hrms')}</span>
+              {/* Fold toggle sits next to the brand on desktop. Tucked
+                  to the right via ml-auto so it stays anchored at the
+                  edge even on different brand-string lengths. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden lg:flex h-8 w-8 ml-auto shrink-0"
+                onClick={() => setSidebarCollapsed(true)}
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </>
+          )}
         </div>
-        <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+        <nav className={`p-2 space-y-1 flex-1 overflow-y-auto ${sidebarCollapsed ? 'lg:p-2' : 'lg:p-4'}`}>
+          <TooltipProvider delayDuration={120}>
+          {/* When collapsed, surface the Expand toggle as the first
+              icon in the rail so the user can always restore the
+              sidebar without hunting. Hidden in expanded mode where
+              the brand-row carries the Collapse button. */}
+          {sidebarCollapsed && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-center px-0"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand sidebar"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Expand sidebar</TooltipContent>
+            </Tooltip>
+          )}
           {visibleTree.map((item) => {
             const Icon = item.icon;
             if (!item.children) {
               const iconColor = appIconColor(item.id);
-              return (
+              const btn = (
                 <Button
                   key={item.id}
                   variant={currentView === item.id ? 'secondary' : 'ghost'}
-                  className="w-full justify-start"
+                  className={sidebarCollapsed ? 'w-full justify-center px-0' : 'w-full justify-start'}
                   onClick={() => handleMenuClick(item.id)}
+                  aria-label={item.label}
                 >
-                  <Icon className={`mr-2 h-4 w-4 ${iconColor}`} />
-                  {item.label}
-                  {AUTO_NAV_IDS.has(item.id) && <AutoTag />}
+                  <Icon className={`h-4 w-4 ${iconColor} ${sidebarCollapsed ? '' : 'mr-2'}`} />
+                  {!sidebarCollapsed && item.label}
+                  {!sidebarCollapsed && AUTO_NAV_IDS.has(item.id) && <AutoTag />}
                 </Button>
               );
+              return sidebarCollapsed ? (
+                <Tooltip key={item.id}>
+                  <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              ) : btn;
             }
             const isOpen = openGroup === item.id;
             const hasActiveChild = item.children.some(c => c.id === currentView);
+            // When collapsed, clicking a group opens the sidebar and
+            // expands that group in one action — saves a chained click.
+            const groupClick = () => {
+              if (sidebarCollapsed) {
+                setSidebarCollapsed(false);
+                setOpenGroup(item.id);
+              } else {
+                toggleExpanded(item.id);
+              }
+            };
+            const groupBtn = (
+              <Button
+                variant={isOpen || hasActiveChild ? 'secondary' : 'ghost'}
+                className={sidebarCollapsed ? 'w-full justify-center px-0' : 'w-full justify-start'}
+                onClick={groupClick}
+                aria-label={item.label}
+              >
+                <Icon className={`h-4 w-4 ${sidebarCollapsed ? '' : 'mr-2'}`} />
+                {!sidebarCollapsed && (
+                  <>
+                    {item.label}
+                    {isOpen ? (
+                      <ChevronDown className="ml-auto h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="ml-auto h-4 w-4" />
+                    )}
+                  </>
+                )}
+              </Button>
+            );
             return (
               <div key={item.id}>
-                <Button
-                  variant={isOpen || hasActiveChild ? 'secondary' : 'ghost'}
-                  className="w-full justify-start"
-                  onClick={() => toggleExpanded(item.id)}
-                >
-                  <Icon className="mr-2 h-4 w-4" />
-                  {item.label}
-                  {isOpen ? (
-                    <ChevronDown className="ml-auto h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="ml-auto h-4 w-4" />
-                  )}
-                </Button>
-                {isOpen && (
+                {sidebarCollapsed ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>{groupBtn}</TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
+                ) : groupBtn}
+                {!sidebarCollapsed && isOpen && (
                   <div className="ml-4 mt-1 space-y-1">
                     {item.children.map((sub) => {
                       const SubIcon = sub.icon;
@@ -260,6 +344,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               </div>
             );
           })}
+          </TooltipProvider>
         </nav>
       </aside>
 
