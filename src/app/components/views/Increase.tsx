@@ -40,7 +40,9 @@ import * as contractsApi from '../../api/contracts';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
-import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X } from 'lucide-react';
+import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X, Settings } from 'lucide-react';
+import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
+import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -154,6 +156,10 @@ export function Increase() {
   const [contractEndByEmpId, setContractEndByEmpId] = useState<Record<string, string>>({});
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // V154 — per-tenant per-page category card hide-list. Drives the
+  // gear-icon dialog AND filters the visible card strip below.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hiddenCategoryCodes, setHiddenCategoryCodes] = useState<Set<string>>(new Set());
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
@@ -516,6 +522,15 @@ export function Increase() {
     increasePagination.resetPage();
   }, [dateFilter, typeFilter, searchQuery]);
 
+  // V154 — load the per-tenant hide-list for this page. Soft-fail
+  // (a 403 from a role without `increase.view` just leaves every
+  // card visible, which is the same as default).
+  useEffect(() => {
+    cardVisibilityApi.getHiddenCodes('increase')
+      .then(codes => setHiddenCategoryCodes(new Set(codes)))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -569,12 +584,22 @@ export function Increase() {
               </Button>
             )}
           </div>
-          <DateRangeFilter onFilterChange={handleDateFilterChange} />
+          {canAdd && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Page settings"
+              aria-label="Page settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              Add Increase
+              Add
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -850,7 +875,7 @@ export function Increase() {
           Categories settings. Layout mirrors the Attendance page's
           summary strip — compact p-4 body, icon-left + big number right,
           label below. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         {earningCategories.length === 0 && (
           <Card className="col-span-full">
             <CardContent className="py-6 text-center text-sm text-gray-500">
@@ -860,7 +885,9 @@ export function Increase() {
             </CardContent>
           </Card>
         )}
-        {earningCategories.map((cat) => {
+        {earningCategories
+          .filter((cat) => !hiddenCategoryCodes.has(cat.code))
+          .map((cat) => {
           const rows  = filteredIncreases.filter((i) => i.type === cat.code);
           const count = rows.length;
           // Flat-amount rows contribute to the dollar total; percentage /
@@ -887,26 +914,30 @@ export function Increase() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Salary Increase History</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Effective Date</TableHead>
+                <TableHead className="w-[120px]">Type</TableHead>
+                <TableHead className="w-[90px]">Unit</TableHead>
+                <TableHead className="w-[110px] text-right">Amount</TableHead>
+                <TableHead className="w-[130px]">Effective</TableHead>
                 <TableHead>Reason</TableHead>
-                <TableHead>Approved By</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Modifier</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className="w-[140px]">Approved By</TableHead>
+                <TableHead className="w-[160px]">Author</TableHead>
+                <TableHead className="w-[160px]">Modifier</TableHead>
+                <TableHead className="w-[80px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
+              {filteredIncreases.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-8">
+                    No salary increases recorded.
+                  </TableCell>
+                </TableRow>
+              )}
               {increasePagination.paginatedItems.map((increase) => {
                 const employee = employees.find(
                   (e) => e.id === increase.employeeId || (e as { apiId?: string }).apiId === increase.employeeId,
@@ -915,7 +946,11 @@ export function Increase() {
                   (e) => e.id === increase.approvedBy || (e as { apiId?: string }).apiId === increase.approvedBy,
                 );
                 return (
-                  <TableRow key={increase.id}>
+                  <TableRow
+                    key={increase.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => setDetailsTarget(increase)}
+                  >
                     <TableCell>
                       <EmployeeCell employee={employee} />
                     </TableCell>
@@ -924,15 +959,15 @@ export function Increase() {
                         {getTypeLabel(increase.type)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-700">
+                    <TableCell className="text-gray-700 text-xs">
                       {UNIT_LABEL[increase.unit ?? (increase.isPercentage ? 'percentage' : 'amount')]}
                     </TableCell>
-                    <TableCell className="font-semibold text-green-600">
+                    <TableCell className="font-semibold text-green-600 text-right">
                       +{formatIncreaseAmount(increase)}
                     </TableCell>
-                    <TableCell>{formatDate(increase.effectiveDate)}</TableCell>
-                    <TableCell className="max-w-xs truncate">{increase.reason}</TableCell>
-                    <TableCell>{approver?.name}</TableCell>
+                    <TableCell className="text-xs text-gray-600">{formatDate(increase.effectiveDate)}</TableCell>
+                    <TableCell className="max-w-xs truncate text-xs text-gray-700">{increase.reason}</TableCell>
+                    <TableCell className="text-xs text-gray-700">{approver?.name}</TableCell>
                     <TableCell>
                       <AuditCell
                         name={(increase as any).createdByName}
@@ -945,10 +980,14 @@ export function Increase() {
                         at={(increase as any).updatedAt}
                       />
                     </TableCell>
-                    <TableCell>
-                      <Button variant="outline" size="sm" onClick={() => setDetailsTarget(increase)}>
-                        <Eye className="mr-1.5 h-3.5 w-3.5" />
-                        View Details
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        onClick={(e) => { e.stopPropagation(); setDetailsTarget(increase); }}
+                      >
+                        View
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -957,20 +996,18 @@ export function Increase() {
             </TableBody>
           </Table>
 
-          {filteredIncreases.length === 0 && (
-            <div className="text-center py-12">
-              <TrendingUp className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">No salary increases recorded</p>
-            </div>
-          )}
-          <Pagination
-            currentPage={increasePagination.currentPage}
-            totalPages={increasePagination.totalPages}
-            onPageChange={increasePagination.goToPage}
-            startIndex={increasePagination.startIndex}
-            endIndex={increasePagination.endIndex}
-            totalItems={increasePagination.totalItems}
-          />
+          {/* Card body is p-0 so the table goes edge-to-edge; the
+              pagination still needs a little chrome around it. */}
+          <div className="px-4 py-3 border-t">
+            <Pagination
+              currentPage={increasePagination.currentPage}
+              totalPages={increasePagination.totalPages}
+              onPageChange={increasePagination.goToPage}
+              startIndex={increasePagination.startIndex}
+              endIndex={increasePagination.endIndex}
+              totalItems={increasePagination.totalItems}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -1040,6 +1077,15 @@ export function Increase() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* V154 — per-page category card visibility, gear-icon launched. */}
+      <CategoryCardVisibilityDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        scope="increase"
+        categories={earningCategories.map((c) => ({ code: c.code, label: c.label }))}
+        onSaved={(codes) => setHiddenCategoryCodes(new Set(codes))}
+      />
     </div>
   );
 }

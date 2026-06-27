@@ -36,7 +36,9 @@ import { Employee } from '../../types/hrms';
 import * as deductionsApi from '../../api/deductions';
 import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
-import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search } from 'lucide-react';
+import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search, Settings, Eye, User as UserIcon } from 'lucide-react';
+import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
+import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { Checkbox } from '../ui/checkbox';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -125,8 +127,16 @@ export function Deduction() {
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // V154 — per-page category card hide-list. Drives the gear-icon
+  // dialog and filters the visible card strip below.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hiddenCategoryCodes, setHiddenCategoryCodes] = useState<Set<string>>(new Set());
   const [editTarget, setEditTarget] = useState<SalaryDeduction | null>(null);
   const [editForm, setEditForm] = useState<SalaryDeduction | null>(null);
+  /** Read-only details target — opens the View Details dialog. Matches
+   *  the Increase page's pattern: the row carries one View Details
+   *  button and Edit / Stop live in the dialog footer. */
+  const [detailsTarget, setDetailsTarget] = useState<SalaryDeduction | null>(null);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
@@ -436,6 +446,14 @@ export function Deduction() {
     setSelectedIds(new Set());
   }, [dateFilter, typeFilter, statusFilter, searchQuery]);
 
+  // V154 — load per-tenant hide-list. Soft-fail leaves all cards
+  // visible (the default-shown contract).
+  useEffect(() => {
+    cardVisibilityApi.getHiddenCodes('deduction')
+      .then(codes => setHiddenCategoryCodes(new Set(codes)))
+      .catch(() => {});
+  }, []);
+
   const visibleIds = deductionsPagination.paginatedItems.map(d => d.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some(id => selectedIds.has(id)) && !allVisibleSelected;
@@ -546,12 +564,22 @@ export function Deduction() {
               </Button>
             )}
           </div>
-          <DateRangeFilter onFilterChange={handleDateFilterChange} />
+          {canAdd && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Page settings"
+              aria-label="Page settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              Add Deduction
+              Add
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -790,7 +818,7 @@ export function Deduction() {
       {/* One summary card per enabled Deduction category from Payroll
           Categories settings. Counts only currently-active rows.
           Layout matches the Attendance summary strip. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
         {deductionCategories.length === 0 && (
           <Card className="col-span-full">
             <CardContent className="py-6 text-center text-sm text-gray-500">
@@ -800,7 +828,9 @@ export function Deduction() {
             </CardContent>
           </Card>
         )}
-        {deductionCategories.map((cat) => {
+        {deductionCategories
+          .filter((cat) => !hiddenCategoryCodes.has(cat.code))
+          .map((cat) => {
           const rows  = filteredDeductions.filter((d) => d.type === cat.code && d.status === 'active');
           const count = rows.length;
           // Only flat-amount rows can be summed in dollars. Percentage
@@ -825,38 +855,41 @@ export function Deduction() {
         })}
       </div>
 
+      {/* Bulk-action toolbar floats above the Card when rows are
+          selected. Lives outside the Card now that the CardHeader is
+          gone — keeps the table tight without losing the capability. */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-end">
+          <div className="flex items-center gap-2 rounded-md border bg-blue-50 px-3 py-1.5">
+            <CheckSquare className="h-4 w-4 text-blue-600" />
+            <span className="text-sm font-medium text-blue-900">
+              {selectedIds.size} selected
+            </span>
+            <select
+              value={bulkStatus}
+              onChange={(e) => setBulkStatus(e.target.value as SalaryDeduction['status'])}
+              className="h-8 px-2 border rounded-md text-sm bg-white"
+            >
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <Button size="sm" onClick={handleBulkUpdateStatus}>
+              Update {selectedIds.size} row{selectedIds.size > 1 ? 's' : ''}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle>All Deductions</CardTitle>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 rounded-md border bg-blue-50 px-3 py-1.5">
-              <CheckSquare className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-900">
-                {selectedIds.size} selected
-              </span>
-              <select
-                value={bulkStatus}
-                onChange={(e) => setBulkStatus(e.target.value as SalaryDeduction['status'])}
-                className="h-8 px-2 border rounded-md text-sm bg-white"
-              >
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-              <Button size="sm" onClick={handleBulkUpdateStatus}>
-                Update {selectedIds.size} row{selectedIds.size > 1 ? 's' : ''}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedIds(new Set())}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -869,25 +902,39 @@ export function Deduction() {
                 </TableHead>
                 <TableHead>Employee</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Start Date</TableHead>
-                <TableHead>End Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Modifier</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className="w-[120px]">Type</TableHead>
+                <TableHead className="w-[110px] text-right">Amount</TableHead>
+                <TableHead className="w-[110px]">Start</TableHead>
+                <TableHead className="w-[110px]">End</TableHead>
+                <TableHead className="w-[110px]">Status</TableHead>
+                <TableHead className="w-[160px]">Author</TableHead>
+                <TableHead className="w-[160px]">Modifier</TableHead>
+                <TableHead className="w-[80px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
+              {filteredDeductions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-8">
+                    No deductions recorded.
+                  </TableCell>
+                </TableRow>
+              )}
               {deductionsPagination.paginatedItems.map((deduction) => {
                 const employee = employees.find(
                   (e) => e.id === deduction.employeeId || e.apiId === deduction.employeeId,
                 );
                 const isSelected = selectedIds.has(deduction.id);
                 return (
-                  <TableRow key={deduction.id} data-state={isSelected ? 'selected' : undefined}>
-                    <TableCell>
+                  <TableRow
+                    key={deduction.id}
+                    data-state={isSelected ? 'selected' : undefined}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => setDetailsTarget(deduction)}
+                  >
+                    {/* Checkbox cell needs stopPropagation so a tick
+                        toggles selection without firing the row click. */}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(v) => toggleRowSelection(deduction.id, v === true)}
@@ -897,17 +944,17 @@ export function Deduction() {
                     <TableCell>
                       <EmployeeCell employee={employee} />
                     </TableCell>
-                    <TableCell>{deduction.name}</TableCell>
+                    <TableCell className="text-sm">{deduction.name}</TableCell>
                     <TableCell>
                       <Badge className={getTypeColor(deduction.type)}>
                         {getTypeLabel(deduction.type)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-semibold text-red-600">
+                    <TableCell className="font-semibold text-red-600 text-right">
                       {deduction.isPercentage ? `${deduction.amount}%` : `$${formatMoney(deduction.amount)}`}
                     </TableCell>
-                    <TableCell>{formatDate(deduction.startDate)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-xs text-gray-600">{formatDate(deduction.startDate)}</TableCell>
+                    <TableCell className="text-xs text-gray-600">
                       {deduction.endDate ? formatDate(deduction.endDate) : 'Ongoing'}
                     </TableCell>
                     <TableCell>
@@ -927,44 +974,22 @@ export function Deduction() {
                         at={(deduction as any).updatedAt}
                       />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {canEdit && <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => { setEditTarget(deduction); setEditForm({ ...deduction }); }}
-                        >
-                          <Pencil className="h-3.5 w-3.5 mr-1" />
-                          Edit
-                        </Button>}
-                        {canRemove && <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={deduction.status !== 'active'}
-                          onClick={async () => {
-                            if (USE_MOCKS) {
-                              setDeductions(prev => prev.map(d => d.id === deduction.id ? { ...d, status: 'cancelled' } : d));
-                              toast.success(`Stopped "${deduction.name}"`);
-                              return;
-                            }
-                            try {
-                              await deductionsApi.setStatus(deduction.id, 'cancelled');
-                              toast.success(`Stopped "${deduction.name}"`);
-                              await loadDeductions();
-                            } catch (err) {
-                              toast.error(err instanceof Error ? err.message : 'Failed to stop deduction');
-                            }
-                          }}
-                        >
-                          Stop
-                        </Button>}
-                      </div>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        onClick={(e) => { e.stopPropagation(); setDetailsTarget(deduction); }}
+                      >
+                        View
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
+          <div className="px-4 py-3 border-t">
           <Pagination
             currentPage={deductionsPagination.currentPage}
             totalPages={deductionsPagination.totalPages}
@@ -973,8 +998,122 @@ export function Deduction() {
             endIndex={deductionsPagination.endIndex}
             totalItems={deductionsPagination.totalItems}
           />
+          </div>
         </CardContent>
       </Card>
+
+      {/* View Details — mirrors the Increase page's read-only dialog.
+          Edit / Stop live in the footer so the row stays clean. */}
+      <Dialog open={!!detailsTarget} onOpenChange={(o) => !o && setDetailsTarget(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Minus className="h-5 w-5" />
+              Deduction Details
+            </DialogTitle>
+            <DialogDescription>
+              All fields recorded for this deduction. Use Edit to change,
+              Stop to cancel it.
+            </DialogDescription>
+          </DialogHeader>
+          {detailsTarget && (() => {
+            const employee = employees.find(
+              (e) => e.id === detailsTarget.employeeId || e.apiId === detailsTarget.employeeId,
+            );
+            return (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                <DetailRow label="Employee" full>
+                  <div className="flex items-center gap-2">
+                    <UserIcon className="h-3.5 w-3.5 text-gray-400" />
+                    <span className="text-sm font-medium">{employee?.name ?? '—'}</span>
+                    {employee?.empNo && <span className="text-xs text-gray-500">· {employee.empNo}</span>}
+                  </div>
+                </DetailRow>
+                <DetailRow label="Name">{detailsTarget.name}</DetailRow>
+                <DetailRow label="Type">
+                  <Badge className={getTypeColor(detailsTarget.type)}>
+                    {getTypeLabel(detailsTarget.type)}
+                  </Badge>
+                </DetailRow>
+                <DetailRow label="Amount">
+                  <span className="font-semibold text-red-600">
+                    {detailsTarget.isPercentage
+                      ? `${detailsTarget.amount}%`
+                      : `$${formatMoney(detailsTarget.amount)}`}
+                  </span>
+                </DetailRow>
+                <DetailRow label="Status">
+                  <Badge variant={detailsTarget.status === 'active' ? 'default' : 'secondary'}>
+                    {detailsTarget.status}
+                  </Badge>
+                </DetailRow>
+                <DetailRow label="Start Date">{formatDate(detailsTarget.startDate)}</DetailRow>
+                <DetailRow label="End Date">
+                  {detailsTarget.endDate ? formatDate(detailsTarget.endDate) : 'Ongoing'}
+                </DetailRow>
+                <DetailRow label="Recurring">
+                  {detailsTarget.isRecurring ? 'Yes' : 'No'}
+                </DetailRow>
+                <DetailRow label="Author">
+                  <AuditCell
+                    name={(detailsTarget as any).createdByName}
+                    at={(detailsTarget as any).createdAt}
+                  />
+                </DetailRow>
+                <DetailRow label="Modifier">
+                  <AuditCell
+                    name={(detailsTarget as any).updatedByName}
+                    at={(detailsTarget as any).updatedAt}
+                  />
+                </DetailRow>
+                <div className="col-span-2 text-[11px] text-gray-400">
+                  Record ID: <code>{detailsTarget.id}</code>
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            {canEdit && detailsTarget && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditTarget(detailsTarget);
+                  setEditForm({ ...detailsTarget });
+                  setDetailsTarget(null);
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+              </Button>
+            )}
+            {canRemove && detailsTarget && (
+              <Button
+                variant="outline"
+                disabled={detailsTarget.status !== 'active'}
+                onClick={async () => {
+                  const target = detailsTarget;
+                  if (USE_MOCKS) {
+                    setDeductions(prev => prev.map(d => d.id === target.id ? { ...d, status: 'cancelled' } : d));
+                    toast.success(`Stopped "${target.name}"`);
+                    setDetailsTarget(null);
+                    return;
+                  }
+                  try {
+                    await deductionsApi.setStatus(target.id, 'cancelled');
+                    toast.success(`Stopped "${target.name}"`);
+                    setDetailsTarget(null);
+                    await loadDeductions();
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : 'Failed to stop deduction');
+                  }
+                }}
+              >
+                Stop
+              </Button>
+            )}
+            <Button onClick={() => setDetailsTarget(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit deduction */}
       <Dialog
@@ -1159,6 +1298,27 @@ export function Deduction() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* V154 — per-page category card visibility. */}
+      <CategoryCardVisibilityDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        scope="deduction"
+        categories={deductionCategories.map((c) => ({ code: c.code, label: c.label }))}
+        onSaved={(codes) => setHiddenCategoryCodes(new Set(codes))}
+      />
+    </div>
+  );
+}
+
+/** Two-column label/value pair used by the View Details dialog.
+ *  Mirrors the helper in {@code Increase.tsx} so the two pages render
+ *  details identically. */
+function DetailRow({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <div className={`space-y-1 ${full ? 'col-span-2' : ''}`}>
+      <Label className="text-[11px] uppercase tracking-wide text-gray-500">{label}</Label>
+      <div className="text-sm">{children}</div>
     </div>
   );
 }

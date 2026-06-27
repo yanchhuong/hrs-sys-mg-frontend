@@ -1524,24 +1524,28 @@ export function Payroll() {
       earnRow['seniority_indemnity'] = 0;
       earningsByEmployee[emp.id] = earnRow;
 
-      // Start the deduction bucket from any pre-existing manual rows the
-      // admin captured under Settings → Deductions, then layer the
-      // computed Tax-on-Salary and NSSF on top. We only set the
-      // formula-driven rows when the bucket doesn't already have a
-      // non-zero value, so manual overrides win.
-      const dedBucket: Record<string, number> = { ...(deductionsByApiId.get(apiId) ?? {}) };
+      // 1st Salary is a mid-month half-payment with no deductions —
+      // the form already locks the deduction toggles for this batch
+      // type, but the formula-driven Tax / NSSF and the manual
+      // deduction-roster rows would still leak through without this
+      // guard. Force an empty bucket so the generated payslip carries
+      // zero deductions, exactly matching what HR ticked (nothing).
+      const dedBucket: Record<string, number> = isFirstSalaryBatch
+        ? {}
+        : { ...(deductionsByApiId.get(apiId) ?? {}) };
       const grossUsd = Object.values(earnRow).reduce(
         (s, n) => s + (Number.isFinite(Number(n)) ? Number(n) : 0),
         0,
       );
-      if (taxCode && !(dedBucket[taxCode] > 0)) {
+      if (!isFirstSalaryBatch && taxCode && !(dedBucket[taxCode] > 0)) {
         dedBucket[taxCode] = computeTosUsd(grossUsd, dependentsFor(emp));
       }
       // NSSF — 2% of min(gross_khr, 1,200,000 KHR cap), converted back
       // to USD. Same "don't stomp manual" guard as Tax so an HR-entered
       // override (e.g. catch-up for a missed month) survives the
-      // automatic fill.
-      if (nssfDeductionCode && !(dedBucket[nssfDeductionCode] > 0)) {
+      // automatic fill. Skipped on the 1st Salary batch (mid-month
+      // advance — no statutory deductions until the 2nd cycle settles).
+      if (!isFirstSalaryBatch && nssfDeductionCode && !(dedBucket[nssfDeductionCode] > 0)) {
         dedBucket[nssfDeductionCode] = computeNssfUsd(grossUsd);
       }
       // 2nd Salary clawback: deduct the half already paid mid-month so
@@ -2368,11 +2372,8 @@ export function Payroll() {
           : batches.reduce((sum, b) => sum + b.deductions, 0);
         return (
         <Card>
-          <CardHeader>
-            <CardTitle>Payroll Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
               <div className="p-4 bg-gray-50 rounded-lg">
                 <p className="text-2xl font-bold">${formatMoney(totalPayroll)}</p>
                 <p className="text-xs text-gray-500 mt-1">Total Payroll</p>
@@ -2396,7 +2397,7 @@ export function Payroll() {
       })()}
 
       {isSelfPayslipView && currentEmployee && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
           {/* Base Salary + OT Rate come from the employee profile (the
               configured terms), not payroll history. The "configured"
               subtitle keeps a reader from mistaking the cards for
@@ -2487,12 +2488,32 @@ export function Payroll() {
                 <CardTitle className="flex items-center gap-2">
                   <Package className="h-5 w-5" />
                   Payroll Batches
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={-1}
+                          className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                          aria-label="About payroll batches"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                        Approved runs are locked — corrections are made in the next run.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </CardTitle>
-                <p className="text-xs text-gray-500 mt-1">
-                  {statusCounts.pending > 0
-                    ? <>Segregation of duties: Manager uploads, Admin approves. <strong>{statusCounts.pending}</strong> batch{statusCounts.pending === 1 ? '' : 'es'} awaiting approval.</>
-                    : 'Approved runs are locked — corrections are made in the next run.'}
-                </p>
+                {/* Keep the actionable pending hint visible — the
+                    static "locked runs" copy moved into the Info
+                    tooltip beside the title above. */}
+                {statusCounts.pending > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Segregation of duties: Manager uploads, Admin approves.{' '}
+                    <strong>{statusCounts.pending}</strong> batch{statusCounts.pending === 1 ? '' : 'es'} awaiting approval.
+                  </p>
+                )}
               </div>
               <Tabs value={batchStatusTab} onValueChange={(v) => setBatchStatusTab(v as typeof batchStatusTab)}>
                 <TabsList>
@@ -2757,7 +2778,7 @@ export function Payroll() {
                   onClick={() => setSelectedBatch(null)}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Batches
+                  Back
                 </Button>
                 <div>
                   <CardTitle>Payroll Details: {selectedBatch.subject}</CardTitle>
