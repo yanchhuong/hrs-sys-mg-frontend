@@ -195,32 +195,40 @@ export function StockAdjustments() {
             Adjustments
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {loading && rows.length === 0 ? (
-            <div className="text-center py-10 text-sm text-gray-400">Loading…</div>
-          ) : rows.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-400">
-              No adjustments yet.{canAdd && <> Click <strong>Add Adjustment</strong> to record one.</>}
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[140px]">Date</TableHead>
-                    <TableHead className="w-[120px]">Reference</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right w-[110px]">System</TableHead>
-                    <TableHead className="text-right w-[110px]">Actual</TableHead>
-                    <TableHead className="text-right w-[110px]">Difference</TableHead>
-                    <TableHead className="w-[140px]">Reason</TableHead>
-                    <TableHead className="text-center w-[90px]">Status</TableHead>
-                    <TableHead className="w-[140px]">Created By</TableHead>
-                    {canRemove && <TableHead className="text-right w-[80px]">Actions</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pagination.paginatedItems.map(a => {
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[140px]">Date</TableHead>
+                <TableHead className="w-[120px]">Reference</TableHead>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right w-[110px]">System</TableHead>
+                <TableHead className="text-right w-[110px]">Actual</TableHead>
+                <TableHead className="text-right w-[110px]">Difference</TableHead>
+                <TableHead className="w-[140px]">Reason</TableHead>
+                <TableHead className="text-center w-[90px]">Status</TableHead>
+                <TableHead className="w-[140px]">Created By</TableHead>
+                {canRemove && <TableHead className="text-right w-[80px]">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* Header always mounted (Announcement pattern). Empty
+                  + loading collapse into a single colSpan'd row. */}
+              {loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
+                    Loading…
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
+                    No adjustments yet.{canAdd && <> Click <strong>Add Adjustment</strong> to record one.</>}
+                  </TableCell>
+                </TableRow>
+              )}
+              {pagination.paginatedItems.map(a => {
                     const d = Number(a.difference ?? 0);
                     return (
                       <TableRow key={a.id}>
@@ -266,8 +274,10 @@ export function StockAdjustments() {
                       </TableRow>
                     );
                   })}
-                </TableBody>
-              </Table>
+            </TableBody>
+          </Table>
+          {rows.length > 0 && (
+            <div className="px-4 py-3 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
@@ -276,7 +286,7 @@ export function StockAdjustments() {
                 endIndex={pagination.endIndex}
                 totalItems={pagination.totalItems}
               />
-            </>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -2,11 +2,12 @@ import { useState } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import { MapPin, Fingerprint } from 'lucide-react';
+import { MapPin, Fingerprint, UserCog } from 'lucide-react';
 import { Offices } from '../views/Offices';
 import { DevicesCard } from './DevicesCard';
+import { OfficeAssignmentsPanel } from './OfficeAssignmentsPanel';
 
-type Section = 'offices' | 'devices';
+type Section = 'offices' | 'devices' | 'assignments';
 
 interface Props {
   open: boolean;
@@ -14,12 +15,11 @@ interface Props {
 }
 
 /**
- * Office + on-prem device admin, behind one popup. Offices was a tab
- * by itself; Device Management used to live as Settings → Device
- * Management. Both touch the on-site attendance hardware path
- * (geofence + terminal config), so they belong in the same gear
- * surface instead of forcing the admin to bounce between Settings and
- * the Attendance gear.
+ * Office + on-prem device admin + per-employee office assignment,
+ * behind one popup. Offices and Devices touch the on-site attendance
+ * hardware path (geofence + terminal config); Assignments (V152)
+ * decides who can scan where — they belong in the same gear surface
+ * so the admin doesn't bounce around.
  *
  * <p>Layout mirrors {@link AccountingSettingsDialog}: a 200px aside
  * with section buttons + a scrollable right pane. No global Save —
@@ -29,8 +29,9 @@ export function OfficesDialog({ open, onOpenChange }: Props) {
   const [section, setSection] = useState<Section>('offices');
 
   const menu: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
-    { key: 'offices', label: 'Offices', hint: 'Locations + QR geofence', icon: <MapPin className="h-4 w-4" /> },
-    { key: 'devices', label: 'Devices', hint: 'Fingerprint / face terminals', icon: <Fingerprint className="h-4 w-4" /> },
+    { key: 'offices',     label: 'Offices',     hint: 'Locations + QR geofence',     icon: <MapPin className="h-4 w-4" /> },
+    { key: 'devices',     label: 'Devices',     hint: 'Fingerprint / face terminals', icon: <Fingerprint className="h-4 w-4" /> },
+    { key: 'assignments', label: 'Assignments', hint: 'Pin employees to offices',     icon: <UserCog className="h-4 w-4" /> },
   ];
 
   return (
@@ -39,7 +40,8 @@ export function OfficesDialog({ open, onOpenChange }: Props) {
         <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
           <DialogTitle>Manage Office</DialogTitle>
           <DialogDescription className="sr-only">
-            Locations, geofences, and on-prem attendance terminals.
+            Locations, geofences, on-prem attendance terminals, and per-employee
+            office assignments.
           </DialogDescription>
         </DialogHeader>
 
@@ -67,8 +69,9 @@ export function OfficesDialog({ open, onOpenChange }: Props) {
           </aside>
 
           <div className="overflow-y-auto p-6">
-            {section === 'offices' && <Offices embedded />}
-            {section === 'devices' && <DevicesCard />}
+            {section === 'offices'     && <Offices embedded />}
+            {section === 'devices'     && <DevicesCard />}
+            {section === 'assignments' && <OfficeAssignmentsPanel open={open && section === 'assignments'} />}
           </div>
         </div>
       </DialogContent>

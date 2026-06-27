@@ -47,7 +47,7 @@ const CATEGORIES: CategoryDef[] = [
   {
     key: 'accounting', labelKey: 'apps.category.account',
     installedBadge: 'bg-emerald-100 text-emerald-700',
-    ids: ['customers', 'quotations', 'invoices', 'pos', 'vouchers', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'warehouses', 'stock-adjustment'],
+    ids: ['customers', 'quotations', 'invoices', 'pos', 'vouchers', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'stock-adjustment'],
   },
   {
     key: 'hr', labelKey: 'apps.category.hr',

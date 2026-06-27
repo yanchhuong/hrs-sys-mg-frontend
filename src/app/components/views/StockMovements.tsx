@@ -112,30 +112,39 @@ export function StockMovements() {
             </select>
           </div>
         </CardHeader>
-        <CardContent>
-          {loading && rows.length === 0 ? (
-            <div className="text-center py-10 text-sm text-gray-400">Loading movements…</div>
-          ) : rows.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-400">
-              No movements yet. Save an Invoice or an Adjustment to record one.
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[140px]">Date</TableHead>
-                    <TableHead className="w-[120px]">Reference</TableHead>
-                    <TableHead className="w-[90px] text-center">Type</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="w-[140px]">Warehouse</TableHead>
-                    <TableHead className="text-right w-[100px]">Quantity</TableHead>
-                    <TableHead className="text-right w-[100px]">Balance</TableHead>
-                    <TableHead className="w-[140px]">User</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pagination.paginatedItems.map(m => {
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[140px]">Date</TableHead>
+                <TableHead className="w-[120px]">Reference</TableHead>
+                <TableHead className="w-[90px] text-center">Type</TableHead>
+                <TableHead>Item</TableHead>
+                <TableHead className="w-[140px]">Warehouse</TableHead>
+                <TableHead className="text-right w-[100px]">Quantity</TableHead>
+                <TableHead className="text-right w-[100px]">Balance</TableHead>
+                <TableHead className="w-[140px]">User</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* Header stays mounted so column meaning is clear even
+                  on the loading / empty paths. Match the Announcement
+                  pattern. */}
+              {loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-8">
+                    Loading movements…
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && rows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-8">
+                    No movements yet. Save an Invoice or an Adjustment to record one.
+                  </TableCell>
+                </TableRow>
+              )}
+              {pagination.paginatedItems.map(m => {
                     const signed = Number(m.quantity ?? 0);
                     const isOut = signed < 0;
                     return (
@@ -172,8 +181,11 @@ export function StockMovements() {
                       </TableRow>
                     );
                   })}
-                </TableBody>
-              </Table>
+            </TableBody>
+          </Table>
+          {/* p-0 Card body — pagination gets its own chrome row. */}
+          {rows.length > 0 && (
+            <div className="px-4 py-3 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
@@ -182,7 +194,7 @@ export function StockMovements() {
                 endIndex={pagination.endIndex}
                 totalItems={pagination.totalItems}
               />
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
