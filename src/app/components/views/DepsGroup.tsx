@@ -675,7 +675,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                             parent → child relationship is obvious at a glance. */}
                         {item._depth > 0 && (
                           <span
-                            className="text-gray-300 select-none font-mono text-xs"
+                            className="text-gray-300 select-none tabular-nums text-xs"
                             style={{ paddingLeft: `${(item._depth - 1) * 18}px` }}
                             aria-hidden="true"
                           >

@@ -278,11 +278,15 @@ export function Attendance({ onNavigate }: Props = {}) {
     absentDeadlineTime: string;
     trackMissingCheckout: boolean;
     weekendDays: string[];
+    /** V169 — half workdays (Cambodian banks / factories often treat
+     *  Saturday this way). Present but with reduced expected hours. */
+    halfDayDays: string[];
   }>({
     autoMarkAbsent: true,
     absentDeadlineTime: '10:00',
     trackMissingCheckout: true,
     weekendDays: ['Sat', 'Sun'],
+    halfDayDays: [],
   });
   /**
    * Set of public-holiday dates (YYYY-MM-DD) for the displayed period.
@@ -354,15 +358,22 @@ export function Attendance({ onNavigate }: Props = {}) {
    * Reads weekend days from the tenant's General settings; holidays
    * come from {@link holidayDates} (loaded by loadHolidays()).
    */
-  type DayKind = 'work' | 'weekend' | 'holiday';
+  type DayKind = 'work' | 'half' | 'weekend' | 'holiday';
   const WEEKEND_CODE: Record<number, string> = {
     0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
   };
   const dayKindOf = (dateStr: string): DayKind => {
+    // Precedence: Holiday > Weekend > Half > Work. A national holiday
+    // overrides any per-week configuration; weekends and half-days
+    // are mutually exclusive by construction (the settings toggle
+    // strips one when the other is set), so their order here is
+    // stable and predictable.
     if (holidayDates.has(dateStr)) return 'holiday';
     try {
       const dow = parseISO(dateStr).getDay();
-      if (generalSettings.weekendDays.includes(WEEKEND_CODE[dow])) return 'weekend';
+      const code = WEEKEND_CODE[dow];
+      if (generalSettings.weekendDays.includes(code)) return 'weekend';
+      if (generalSettings.halfDayDays.includes(code)) return 'half';
     } catch { /* fall through */ }
     return 'work';
   };
@@ -551,6 +562,7 @@ export function Attendance({ onNavigate }: Props = {}) {
             absentDeadlineTime: remote.absentDeadlineTime,
             trackMissingCheckout: remote.trackMissingCheckout,
             weekendDays: remote.weekendDays || [],
+            halfDayDays: remote.halfDayDays || [],
           });
         } catch (err) {
           console.warn('Could not load general attendance settings', err);
@@ -2202,7 +2214,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                                 {kind === 'holiday' ? 'Holiday' : kind === 'weekend' ? 'Weekend' : 'Workday'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-mono text-sm">{ev.time}</TableCell>
+                            <TableCell className="tabular-nums text-sm">{ev.time}</TableCell>
                             <TableCell>
                               <span className="flex items-center gap-1.5 text-sm">
                                 {ev.direction === 'in'
@@ -2452,20 +2464,28 @@ export function Attendance({ onNavigate }: Props = {}) {
                         }
                         calendarDays.forEach(day => {
                           const dateStr = format(day, 'yyyy-MM-dd');
-                          const dayOfWeek = getDay(day);
-                          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                          // Consult the tenant's Weekend Configuration
+                          // (V169) rather than hard-coding Sat/Sun — Half
+                          // days get their own tint so the operator can
+                          // scan a factory / bank schedule at a glance.
+                          const kind = dayKindOf(dateStr);
                           const status = selectedEmpData.records[dateStr];
                           const config = status ? STATUS_CONFIG[status] : null;
-
+                          const dayTint =
+                            kind === 'weekend' ? 'text-gray-300 bg-gray-50'
+                            : kind === 'holiday' ? 'text-rose-400 bg-rose-50'
+                            : kind === 'half'    ? 'text-amber-500 bg-amber-50/60'
+                            : null;
                           cells.push(
                             <div
                               key={dateStr}
                               className={`text-center py-1 rounded text-xs ${
-                                isWeekend ? 'text-gray-300 bg-gray-50' :
-                                config ? `${config.bgColor} ${config.textColor} font-medium` :
-                                'text-gray-400'
+                                dayTint ?? (
+                                  config ? `${config.bgColor} ${config.textColor} font-medium`
+                                    : 'text-gray-400'
+                                )
                               }`}
-                              title={`${format(day, 'MMM d')}${status ? ` - ${STATUS_CONFIG[status]?.label}` : ''}`}
+                              title={`${format(day, 'MMM d')}${kind === 'half' ? ' · Half day' : ''}${status ? ` - ${STATUS_CONFIG[status]?.label}` : ''}`}
                             >
                               {format(day, 'd')}
                             </div>
@@ -2701,13 +2721,13 @@ export function Attendance({ onNavigate }: Props = {}) {
               <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
                 <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
                   <span className="font-medium text-gray-500 uppercase tracking-wide">Punches</span>
-                  <span className="font-mono">
+                  <span className="tabular-nums">
                     <span className="text-green-700">{editMorningIn || '—:—'}</span>
                     <span className="text-gray-400"> / </span>
                     <span className="text-orange-700">{editMorningOut || '—:—'}</span>
                   </span>
                   <span className="text-gray-300">·</span>
-                  <span className="font-mono">
+                  <span className="tabular-nums">
                     <span className="text-green-700">{editNoonIn || '—:—'}</span>
                     <span className="text-gray-400"> / </span>
                     <span className="text-orange-700">{editNoonOut || '—:—'}</span>

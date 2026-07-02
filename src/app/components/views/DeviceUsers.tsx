@@ -227,7 +227,7 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
                 </TableRow>
               ) : filtered.map(row => (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium font-mono text-sm">{row.deviceUserId}</TableCell>
+                  <TableCell className="font-medium tabular-nums text-sm">{row.deviceUserId}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant="secondary">{row.occurrenceCount}</Badge>
                   </TableCell>
@@ -280,7 +280,7 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
             <DialogTitle>Bind device user</DialogTitle>
             <DialogDescription>
               Pick an existing employee. Their <code className="bg-gray-100 px-1 rounded">empNo</code> will
-              be renamed to <strong className="font-mono">{bindDialog?.deviceUserId}</strong> so future
+              be renamed to <strong className="tabular-nums">{bindDialog?.deviceUserId}</strong> so future
               punches from the device resolve to them.
             </DialogDescription>
           </DialogHeader>
@@ -319,7 +319,7 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
             <AlertDialogDescription>
               {confirmRemove && (
                 <>
-                  This permanently removes <span className="font-mono font-semibold">{confirmRemove.deviceUserId}</span> from
+                  This permanently removes <span className="tabular-nums font-semibold">{confirmRemove.deviceUserId}</span> from
                   the tracking list. If the device is still pushing this id, it will reappear on the next sync.
                 </>
               )}

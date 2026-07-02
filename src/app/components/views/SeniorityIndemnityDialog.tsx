@@ -359,7 +359,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
                   </span>
                 )}
               </div>
-              <p className="font-mono text-[11px] bg-gray-100 rounded px-2 py-1 whitespace-pre-wrap">
+              <p className="tabular-nums text-[11px] bg-gray-100 rounded px-2 py-1 whitespace-pre-wrap">
 {`avg_monthly = sum(total_earnings) ÷ count_of_non_zero_months
 daily_wage  = avg_monthly ÷ working_days
 indemnity   = daily_wage × days_to_pay
@@ -521,7 +521,7 @@ to $500/mo, not $167.`}
                               </TableCell>
                               <TableCell>
                                 <div className="font-medium">{row.name}</div>
-                                <div className="font-mono text-xs text-gray-500">{row.empNo}</div>
+                                <div className="tabular-nums text-xs text-gray-500">{row.empNo}</div>
                               </TableCell>
                               {monthKeys.map(ym => (
                                 <TableCell key={ym} className="text-right tabular-nums text-sm">

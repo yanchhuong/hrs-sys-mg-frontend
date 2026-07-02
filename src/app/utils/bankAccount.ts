@@ -26,6 +26,11 @@ export interface BankAccount {
    *  value; {@link loadBankAccounts} defaults missing values to
    *  false so a stored card doesn't suddenly start printing. */
   showOnInvoice?: boolean;
+  /** {@code manual} — operator uploads a fixed KHRQR image (default,
+   *  legacy behaviour). {@code auto} — POS asks PayWay to mint a
+   *  dynamic KHRQR per transaction with the cart total baked in.
+   *  Optional for legacy rows; missing value treated as {@code manual}. */
+  mode?: 'manual' | 'auto';
 }
 
 /** Hard cap on the number of bank cards that can render on the
@@ -42,6 +47,7 @@ export const EMPTY_BANK_ACCOUNT: BankAccount = {
   notes: '',
   qrDataUrl: '',
   showOnInvoice: false,
+  mode: 'manual',
 };
 
 const TENANT_KEY = 'hrms:tenantSlug';

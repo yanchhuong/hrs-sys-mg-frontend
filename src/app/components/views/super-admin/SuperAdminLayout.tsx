@@ -10,14 +10,14 @@ import {
 import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
   ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
-  ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot,
+  ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot, ClipboardList,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
 import { LanguageSwitcher } from '../../common/LanguageSwitcher';
 import { useI18n } from '../../../i18n/I18nContext';
 
 export type SuperAdminView =
-  | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules'
+  | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules' | 'surveys'
   // Settings sub-menu
   | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'system_holidays' | 'module_categories'
   | 'platform_telegram';
@@ -79,6 +79,11 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
       label: t('nav.platform.sync'), description: t('nav.platform.sync.desc') },
     { kind: 'leaf', id: 'tenant_modules', icon: SlidersHorizontal,
       label: t('nav.platform.tenantmodules'), description: t('nav.platform.tenantmodules.desc') },
+    // V170 — inbound landing-form inquiries. Top-level leaf so it's a
+    // first-class part of the sales workflow, not buried under Settings.
+    { kind: 'leaf', id: 'surveys', icon: ClipboardList,
+      label: 'Requirement Surveys',
+      description: 'Inbound customer inquiries from the landing form.' },
     {
       kind: 'group', id: 'settings', icon: Settings,
       label: t('nav.platform.settings'),
@@ -95,8 +100,12 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
           description: 'Shared catalog every tenant sees and can copy from.' },
         { kind: 'leaf', id: 'activity', icon: ScrollText,
           label: t('nav.platform.activity'), description: t('nav.platform.activity.desc') },
-        { kind: 'leaf', id: 'backups', icon: Database,
-          label: t('nav.platform.backups'), description: t('nav.platform.backups.desc') },
+        // Backups leaf hidden — the DBA takes snapshots outside the app
+        // (nightly pg_dump + retention on the host), and surfacing a
+        // half-wired "restore" button in the UI implied a self-service
+        // capability we don't actually offer. Keep the view mounted in
+        // SuperAdminApp routing so a saved deep-link doesn't 404; just
+        // stop advertising it in the sidebar.
         { kind: 'leaf', id: 'policy', icon: SlidersHorizontal,
           label: t('nav.platform.policy'), description: t('nav.platform.policy.desc') },
         { kind: 'leaf', id: 'platform_telegram', icon: Bot,
@@ -157,19 +166,14 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
                   key={node.id}
                   onClick={() => handleNav(node.id)}
                   className={`
-                    w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors
+                    w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-colors
                     ${active
                       ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30'
                       : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
                   `}
                 >
-                  <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">{node.label}</p>
-                    <p className={`text-[11px] truncate ${active ? 'text-amber-300/70' : 'text-slate-500'}`}>
-                      {node.description}
-                    </p>
-                  </div>
+                  <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <span className="text-sm flex-1 min-w-0 truncate">{node.label}</span>
                 </button>
               );
             }
@@ -182,23 +186,18 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
                 <button
                   onClick={() => setSettingsOpen(o => !o)}
                   className={`
-                    w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors
+                    w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-colors
                     ${groupActive
                       ? 'text-amber-200 border border-amber-500/30 bg-amber-500/5'
                       : 'text-slate-200 hover:bg-slate-800 border border-transparent'}
                   `}
                   aria-expanded={expanded}
                 >
-                  <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${groupActive ? 'text-amber-400' : 'text-slate-400'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">{node.label}</p>
-                    <p className={`text-[11px] truncate ${groupActive ? 'text-amber-300/70' : 'text-slate-500'}`}>
-                      {node.description}
-                    </p>
-                  </div>
+                  <Icon className={`h-4 w-4 shrink-0 ${groupActive ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <span className="text-sm flex-1 min-w-0 truncate">{node.label}</span>
                   {expanded
-                    ? <ChevronDown className="h-4 w-4 mt-0.5 text-slate-400" />
-                    : <ChevronRight className="h-4 w-4 mt-0.5 text-slate-400" />}
+                    ? <ChevronDown className="h-4 w-4 text-slate-400" />
+                    : <ChevronRight className="h-4 w-4 text-slate-400" />}
                 </button>
                 {expanded && (
                   <div className="mt-1 ml-3 pl-3 border-l border-slate-700 space-y-1">
@@ -249,7 +248,6 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
               </Button>
               <div>
                 <h1 className="text-sm font-semibold capitalize">{activeMeta.label}</h1>
-                <p className="text-xs text-gray-500">{activeMeta.description}</p>
               </div>
             </div>
 

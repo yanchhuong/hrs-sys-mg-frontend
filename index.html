@@ -12,9 +12,67 @@
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Battambang:wght@300;400;700&family=Moul&family=Noto+Sans+Khmer:wght@400;500;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Battambang:wght@300;400;700&family=Moul&family=Noto+Sans+Khmer:wght@400;500;700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
       />
-      <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+      <style>
+        html, body { height: 100%; margin: 0; }
+        #root { height: 100%; }
+        /* Landing-page style refresh: Hanken Grotesk for display /
+           marketing headings, Inter for body copy. Scoped to the
+           opt-in .landing-typography wrapper so the in-app UI
+           (which uses its own tokens) isn't affected. */
+        .landing-typography { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+        .landing-typography h1,
+        .landing-typography h2,
+        .landing-typography h3,
+        .landing-typography h4 {
+          font-family: 'Hanken Grotesk', 'Inter', system-ui, sans-serif;
+          letter-spacing: -0.01em;
+        }
+        /* Khmer override — I18nContext toggles html.lang-km when the
+           active language is Khmer. Body copy switches to Battambang
+           at weight 300 (Light) for an airier read; headings switch
+           to Moul, the traditional Khmer display face, at its native
+           weight. Latin characters that appear inside a Khmer string
+           fall through to Hanken Grotesk / Inter so the mixed lines
+           still render cleanly. */
+        html.lang-km .landing-typography,
+        html.lang-km .landing-typography p,
+        html.lang-km .landing-typography li,
+        html.lang-km .landing-typography span,
+        html.lang-km .landing-typography a,
+        html.lang-km .landing-typography button {
+          font-family: 'Battambang', 'Inter', system-ui, sans-serif;
+          font-weight: 300;
+        }
+        html.lang-km .landing-typography h1,
+        html.lang-km .landing-typography h2,
+        html.lang-km .landing-typography h3,
+        html.lang-km .landing-typography h4 {
+          font-family: 'Moul', 'Battambang', 'Hanken Grotesk', 'Inter', system-ui, sans-serif;
+          font-weight: 400;
+          letter-spacing: 0;
+        }
+        /* Battambang x-height sits noticeably lower than Latin fonts —
+           +20% overshot the parity target and made every panel feel
+           cramped, so we hold the global root bump at +10%. The
+           sidebar keeps its own additional emphasis below (bold +
+           small size boost) since that surface needs the most
+           legibility help. */
+        html.lang-km { font-size: 110%; }
+        /* Sidebar labels get an additional emphasis when the app is
+           in Khmer — bolder weight + a small size boost — because
+           Battambang's default weight can wash out at the sidebar's
+           compact type sizes. Scoped to the <aside> so main content
+           keeps its normal rhythm. */
+        html.lang-km aside,
+        html.lang-km aside a,
+        html.lang-km aside span,
+        html.lang-km aside button {
+          font-weight: 600;
+          font-size: 1.05em;
+        }
+      </style>
     </head>
 
     <body>

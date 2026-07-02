@@ -21,7 +21,12 @@ import {
 // must not be surfaced on the marketing page.
 import imgPayroll from '../../imports/image-3.png';
 
-type Lang = 'en' | 'km' | 'zh';
+export type Lang = 'en' | 'km' | 'zh';
+
+/** Path of the anonymous Requirement Survey form (V170). App.tsx routes
+ *  to it via a pathname sniff BEFORE the auth providers mount, so a
+ *  plain {@code <a href>} is enough — no router wiring needed. */
+const REQUIREMENT_SURVEY_PATH = '/requirement-survey';
 
 interface LandingPageProps {
   onSignInClick: () => void;
@@ -43,6 +48,7 @@ const T = {
     tryDemo:    { en: 'Try Demo',     km: 'ចូលប្រើសាកល្បង',  zh: '试用 Demo' },
   },
   hero: {
+    contactUs:  { en: 'Contact Us',   km: 'ទាក់ទងមកយើង',   zh: '联系我们' },
     eyebrow:  { en: 'For factories, companies, and teams of every size',
                 km: 'សម្រាប់រោងចក្រ ក្រុមហ៊ុន និងក្រុមការងារគ្រប់ទំហំ',
                 zh: '适用于各种规模的工厂、企业和团队' },
@@ -353,7 +359,10 @@ function LandingNav({
         <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
           <a href="#modules"     className="hover:text-slate-900">{t(T.nav.modules, lang)}</a>
           <a href="#how"         className="hover:text-slate-900">{t(T.nav.howItWorks, lang)}</a>
-          <a href="#rules"       className="hover:text-slate-900">{t(T.nav.rules, lang)}</a>
+          {/* Labour-law deep-dive moved to /cambodia. Full-page link
+              (not a #hash anchor) — the sections don't exist on this
+              page anymore. */}
+          <a href="/cambodia"    className="hover:text-slate-900">{t(T.nav.rules, lang)}</a>
           <a href="#faq"         className="hover:text-slate-900">{t(T.nav.faq, lang)}</a>
         </nav>
 
@@ -379,6 +388,12 @@ function LandingNav({
               {t(T.nav.tryDemo, lang)}
             </Button>
           )}
+          {/* Contact Us — opens the Requirement Survey landing page.
+              Plain <a>, not an in-app router link, because /requirement-survey
+              is caught by App.tsx's pathname sniff before any providers mount. */}
+          <Button variant="ghost" size="sm" asChild className="hidden md:inline-flex">
+            <a href={REQUIREMENT_SURVEY_PATH}>{t(T.hero.contactUs, lang)}</a>
+          </Button>
           <Button variant="ghost" size="sm" onClick={onSignIn} className="hidden sm:inline-flex">
             {t(T.nav.signIn, lang)}
           </Button>
@@ -431,6 +446,19 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
                 {t(T.nav.tryDemo, lang)}
               </Button>
             )}
+            {/* Route straight to the Requirement Survey form — the
+                sales team can pick it up from the Super Admin side. */}
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="h-12 px-6 text-base border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            >
+              <a href={REQUIREMENT_SURVEY_PATH}>
+                <Mail className="mr-2 h-4 w-4" />
+                {t(T.hero.contactUs, lang)}
+              </a>
+            </Button>
             <Button size="lg" variant="outline" asChild className="h-12 px-6 text-base">
               <a href="#how">{t(T.hero.ctaSecondary, lang)}</a>
             </Button>
@@ -875,6 +903,22 @@ function RetailScene({ className = '' }: { className?: string }) {
   );
 }
 
+/** Curated Unsplash photos for the Industries section. Each URL uses
+ *  Unsplash's on-the-fly resize/crop params so we serve exactly the
+ *  ratio we need — no wasted bytes. These are royalty-free under the
+ *  Unsplash License (no attribution required); swap freely if you
+ *  want different framing. */
+const INDUSTRY_IMAGES = {
+  // Garment / manufacturing floor — matches Cambodia's biggest workforce.
+  factory: 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?w=1600&h=1000&auto=format&fit=crop&q=80',
+  // Modern collaborative office / co-working feel.
+  office:  'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=900&h=600&auto=format&fit=crop&q=80',
+  // Storefront / retail counter — small business register.
+  retail:  'https://images.unsplash.com/photo-1604719312566-8912e9227c6a?w=900&h=600&auto=format&fit=crop&q=80',
+  // World-map / global-branch perspective for the multi-site card.
+  multi:   'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=900&h=600&auto=format&fit=crop&q=80',
+} as const;
+
 /** Industries section — Factory is the lead, the other three are smaller cards. */
 function Industries({ lang }: { lang: Lang }) {
   return (
@@ -899,7 +943,19 @@ function Industries({ lang }: { lang: Lang }) {
                 {t(T.industries.factoryBadge, lang)}
               </Badge>
             </div>
-            <FactoryScene className="w-full" />
+            {/* Real photo instead of the SVG FactoryScene — 16:10 aspect
+                so the workforce photograph reads as the "hero" of the
+                card. Gradient overlay on the bottom keeps the badge
+                readable even if the top of the photo is blown out. */}
+            <div className="relative aspect-[16/10] w-full overflow-hidden">
+              <img
+                src={INDUSTRY_IMAGES.factory}
+                alt={t(T.industries.factoryTitle, lang)}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/20 via-transparent to-transparent" />
+            </div>
             <CardContent className="p-7">
               <h3 className="text-2xl font-bold tracking-tight text-slate-900">
                 {t(T.industries.factoryTitle, lang)}
@@ -918,11 +974,12 @@ function Industries({ lang }: { lang: Lang }) {
             </CardContent>
           </Card>
 
-          {/* Three secondary industry cards stacked on lg (each spans 2 of 5 → 2+3=5, but we want stacked
-              right column — use col-span-2 with vertical grid).  */}
+          {/* Three secondary industry cards stacked on lg. Illustrations
+              swapped from SVG scenes to real Unsplash photos so the
+              page reads warmer / more human. */}
           <div className="grid gap-6 lg:col-span-2">
             <IndustryMiniCard
-              illustration={<OfficeScene className="h-full w-full" />}
+              illustration={<IndustryPhoto src={INDUSTRY_IMAGES.office} alt={t(T.industries.officeTitle, lang)} />}
               title={t(T.industries.officeTitle, lang)}
               desc={t(T.industries.officeDesc, lang)}
               bullets={[t(T.industries.officeB1, lang), t(T.industries.officeB2, lang)]}
@@ -930,7 +987,7 @@ function Industries({ lang }: { lang: Lang }) {
               tone="indigo"
             />
             <IndustryMiniCard
-              illustration={<MultiSiteScene className="h-full w-full" />}
+              illustration={<IndustryPhoto src={INDUSTRY_IMAGES.multi} alt={t(T.industries.multiTitle, lang)} />}
               title={t(T.industries.multiTitle, lang)}
               desc={t(T.industries.multiDesc, lang)}
               bullets={[t(T.industries.multiB1, lang), t(T.industries.multiB2, lang)]}
@@ -938,7 +995,7 @@ function Industries({ lang }: { lang: Lang }) {
               tone="emerald"
             />
             <IndustryMiniCard
-              illustration={<RetailScene className="h-full w-full" />}
+              illustration={<IndustryPhoto src={INDUSTRY_IMAGES.retail} alt={t(T.industries.smbTitle, lang)} />}
               title={t(T.industries.smbTitle, lang)}
               desc={t(T.industries.smbDesc, lang)}
               bullets={[t(T.industries.smbB1, lang), t(T.industries.smbB2, lang)]}
@@ -949,6 +1006,16 @@ function Industries({ lang }: { lang: Lang }) {
         </div>
       </Container>
     </section>
+  );
+}
+
+/** Uniform <img> wrapper for the mini industry cards — fills its
+ *  parent column with an object-cover crop so the photo carries the
+ *  whole left rail of the card, no letterboxing. Lazy-loaded so the
+ *  above-the-fold hero stays fast. */
+function IndustryPhoto({ src, alt }: { src: string; alt: string }) {
+  return (
+    <img src={src} alt={alt} loading="lazy" className="h-full w-full object-cover" />
   );
 }
 
@@ -1516,7 +1583,7 @@ function Deployment({ lang }: { lang: Lang }) {
 }
 
 /** Cambodia-compliance highlight section. */
-function CambodiaSection({ lang }: { lang: Lang }) {
+export function CambodiaSection({ lang }: { lang: Lang }) {
   const bullets: Array<{ en: string; km: string; zh: string }> = [
     { en: 'Progressive Tax on Salary brackets with auto-calc and exemptions',
       km: 'ពន្ធលើប្រាក់ខែតាមថ្នាក់ ដោយគណនាដោយស្វ័យប្រវត្តិ និងករណីលើកលែង',
@@ -1574,7 +1641,7 @@ function CambodiaSection({ lang }: { lang: Lang }) {
  * legal advice — HR should verify against the latest Prakas before
  * acting on edge cases.
  */
-function WorkingRule({ lang }: { lang: Lang }) {
+export function WorkingRule({ lang }: { lang: Lang }) {
   type ML = { en: string; km: string; zh: string };
   const rules: Array<{ icon: React.ElementType; tone: 'blue' | 'amber' | 'emerald' | 'rose'; title: ML; bullets: ML[] }> = [
     {
@@ -1710,7 +1777,7 @@ function WorkingRule({ lang }: { lang: Lang }) {
  * read at runtime (2018 Prakas + Labour Law Art. 73). Worked examples
  * use round-number inputs so HR can sanity-check the dialog.
  */
-function BenefitFormulas({ lang }: { lang: Lang }) {
+export function BenefitFormulas({ lang }: { lang: Lang }) {
   type ML = { en: string; km: string; zh: string };
   const cards: Array<{
     icon: React.ElementType;
@@ -1826,7 +1893,7 @@ function BenefitFormulas({ lang }: { lang: Lang }) {
                       <p className="mt-2 text-sm leading-relaxed text-slate-600">{t(c.eligibility, lang)}</p>
                     </div>
                   </div>
-                  <pre className="mt-6 whitespace-pre-wrap rounded-lg bg-slate-900 px-4 py-3 text-[12px] font-mono leading-relaxed text-slate-100">
+                  <pre className="mt-6 whitespace-pre-wrap rounded-lg bg-slate-900 px-4 py-3 text-[12px] tabular-nums leading-relaxed text-slate-100">
 {c.formula}
                   </pre>
                   <div className="mt-5">
@@ -1834,7 +1901,7 @@ function BenefitFormulas({ lang }: { lang: Lang }) {
                       {lang === 'km' ? 'ឧទាហរណ៍' : lang === 'zh' ? '示例' : 'Worked example'}
                     </div>
                     <p className="mt-1 text-sm text-slate-700">{t(c.example.input, lang)}</p>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-md bg-white border border-slate-200 px-3 py-2 text-[12px] font-mono text-slate-700">
+                    <pre className="mt-2 whitespace-pre-wrap rounded-md bg-white border border-slate-200 px-3 py-2 text-[12px] tabular-nums text-slate-700">
 {c.example.steps.join('\n')}
                     </pre>
                     <div className={`mt-3 rounded-md ${tn.resultBg} px-3 py-2 text-sm font-medium ${tn.resultText}`}>
@@ -1859,7 +1926,7 @@ function BenefitFormulas({ lang }: { lang: Lang }) {
  * tone + icon used inside the app so the visual signal carries over
  * post-login.
  */
-function BenefitCalculatorsShowcase({ lang }: { lang: Lang }) {
+export function BenefitCalculatorsShowcase({ lang }: { lang: Lang }) {
   type ML = { en: string; km: string; zh: string };
   type Tone = 'emerald' | 'indigo' | 'amber' | 'blue' | 'rose';
 
@@ -2121,6 +2188,19 @@ function CtaBanner({ lang, onSignIn }: { lang: Lang; onSignIn: () => void }) {
             {t(T.hero.ctaPrimary, lang)}
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
+          {/* Secondary path — send a Requirement Survey instead of
+              signing straight in. Same form the hero already links to. */}
+          <Button
+            size="lg"
+            variant="outline"
+            asChild
+            className="h-12 px-6 text-base border-white/40 bg-transparent text-white hover:bg-white/10"
+          >
+            <a href={REQUIREMENT_SURVEY_PATH}>
+              <Mail className="mr-2 h-4 w-4" />
+              {t(T.hero.contactUs, lang)}
+            </a>
+          </Button>
         </div>
       </Container>
     </section>
@@ -2171,6 +2251,16 @@ function LandingFooter({ lang }: { lang: Lang }) {
               {t(T.footer.contact, lang)}
             </h4>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              {/* Structured intake form — the sales team prefers this
+                  over a Telegram DM for anything project-scoped, so
+                  it sits at the top of the Contact block. */}
+              <li className="flex items-center gap-2">
+                <FileText className="h-3.5 w-3.5" />
+                <a href={REQUIREMENT_SURVEY_PATH}
+                   className="hover:text-blue-600 hover:underline font-medium">
+                  {t(T.hero.contactUs, lang)}
+                </a>
+              </li>
               <li className="flex items-center gap-2">
                 <Mail className="h-3.5 w-3.5" />
                 <a href="https://t.me/Maxwells_CX" target="_blank" rel="noopener noreferrer"
@@ -2240,20 +2330,31 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
   // session-dedup here.
   useEffect(() => { trackLandingView(); }, []);
   return (
-    <div className="min-h-screen bg-white text-slate-900 antialiased">
+    <div className="landing-typography min-h-screen bg-white text-slate-900 antialiased">
       <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <Hero lang={lang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <MetricsStrip lang={lang} />
-      <ZeroInstallStrip lang={lang} />
+      {/* ZeroInstallStrip (orange gradient "Whether you run a factory
+          or an office…" block) removed — the pitch it made overlapped
+          with the Industries section right below it, and the orange
+          canvas broke the rest of the page's Clarity-blue rhythm. The
+          component definition stays in this file in case we want it
+          back or slotted into another surface. */}
       <Industries lang={lang} />
       <ModulesGrid lang={lang} />
-      <RealProduct lang={lang} />
+      {/* RealProduct (Payroll Preview screenshot section) removed —
+          the screenshot showed placeholder $0.00 rows which hurt
+          credibility, and the ModulesGrid above already conveys
+          the "we have Payroll" pitch. Component stays defined for
+          reuse if a cleaner screenshot lands later. */}
       <HowItWorks lang={lang} />
       <Deployment lang={lang} />
-      <CambodiaSection lang={lang} />
-      <WorkingRule lang={lang} />
-      <BenefitFormulas lang={lang} />
-      <BenefitCalculatorsShowcase lang={lang} />
+      {/* Cambodia-specific labour-law sections (WorkingRule, TOS/NSSF
+          formulas, live calculators) moved to the standalone
+          {@code /cambodia} page — the marketing landing stays a
+          tighter enterprise pitch. The section components are still
+          defined in this file (exported) so the /cambodia route can
+          reuse them verbatim. */}
       <Testimonials lang={lang} />
       <Faq lang={lang} />
       <CtaBanner lang={lang} onSignIn={onSignInClick} />

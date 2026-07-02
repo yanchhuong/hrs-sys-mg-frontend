@@ -94,7 +94,7 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
         Wage base = <strong>average net salary</strong> across the
         6 months of payroll (skipping <em>1st Salary</em> advances).
       </p>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1">
         amount = (avg_net ÷ working_days) × days
       </p>
       <p>
@@ -120,7 +120,7 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
         the total wages the employee earned over the contract's
         lifetime.
       </p>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1">
         severance = total_wages × 5%
       </p>
       <p>
@@ -152,7 +152,7 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
         Used by tenants that pay twice a month. The amount is a
         <strong> formula</strong>, not a fixed number HR enters:
       </p>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1">
         first_salary = (Basic Salary + Position Allowance + Evaluation Allowance) ÷ 2
       </p>
       <p>
@@ -186,7 +186,7 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
           <tr><td className="opacity-80">Over 12,500,000</td><td className="text-right">20%</td></tr>
         </tbody>
       </table>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
 {`taxableKhr = (gross × khrPerUsd) − dependents × 150,000
 taxKhr     = (taxableKhr × ratePercent ÷ 100) − excessAmount
 taxUsd     = taxKhr ÷ khrPerUsd`}
@@ -211,7 +211,7 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
         Hourly wage is derived from the employee's Basic + Position +
         Evaluation Allowance and the configured working days:
       </p>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
 {`hourly_wage = (basic + position + evaluation) ÷ (working_days × 8)
 ot_pay      = hourly_wage × hours × rate_multiplier`}
       </p>
@@ -246,7 +246,7 @@ ot_pay      = hourly_wage × hours × rate_multiplier`}
         <strong> 2%</strong> of that during the first 5 years of the
         pension scheme.
       </p>
-      <p className="font-mono text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
+      <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
 {`contributoryKhr = min(gross × khrPerUsd, 1,200,000)
 nssfKhr         = contributoryKhr × 0.02
 nssfUsd         = nssfKhr ÷ khrPerUsd`}

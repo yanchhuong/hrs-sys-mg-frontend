@@ -516,7 +516,7 @@ export function Backups() {
                             />
                           </div>
                           <p className="text-[11px] text-gray-600 flex items-center gap-1.5">
-                            <span className="font-mono tabular-nums">{b.progressPercent ?? 0}%</span>
+                            <span className="tabular-nums tabular-nums">{b.progressPercent ?? 0}%</span>
                             {b.phase && <span className="text-gray-500 truncate" title={b.phase}>· {b.phase}</span>}
                             {b.estimatedCompletionAt && (
                               <span className="text-gray-500 ml-auto whitespace-nowrap">
@@ -784,7 +784,7 @@ export function Backups() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="restore-confirm">
-                    Type <strong className="font-mono">{company?.name}</strong> to confirm
+                    Type <strong className="tabular-nums">{company?.name}</strong> to confirm
                   </Label>
                   <Input
                     id="restore-confirm"

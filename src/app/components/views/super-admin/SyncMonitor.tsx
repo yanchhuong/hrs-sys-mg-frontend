@@ -325,7 +325,7 @@ export function SyncMonitor() {
                   <TableRow key={inst.id}>
                     <TableCell>
                       <p className="font-medium text-sm">{inst.siteName}</p>
-                      <p className="text-xs font-mono text-gray-500" title="Last source IP that authenticated with this key">
+                      <p className="text-xs tabular-nums text-gray-500" title="Last source IP that authenticated with this key">
                         {inst.lastIpAddress ?? <span className="text-gray-300">—</span>}
                       </p>
                     </TableCell>
@@ -337,7 +337,7 @@ export function SyncMonitor() {
                     </TableCell>
                     <TableCell className="text-xs">
                       {inst.allowedIps && inst.allowedIps.trim()
-                        ? <span className="font-mono text-gray-700" title={inst.allowedIps}>
+                        ? <span className="tabular-nums text-gray-700" title={inst.allowedIps}>
                             {truncateIps(inst.allowedIps)}
                           </span>
                         : <span className="text-gray-400">Any IP</span>}
@@ -439,7 +439,7 @@ export function SyncMonitor() {
                 onChange={(e) => setNewInstall({ ...newInstall, allowedIps: e.target.value })}
                 placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
                 rows={2}
-                className="w-full px-3 py-2 border rounded-md text-sm font-mono"
+                className="w-full px-3 py-2 border rounded-md text-sm tabular-nums"
               />
               <p className="text-xs text-gray-500">
                 Comma-separated source IPs / CIDR ranges. Leave empty to allow any IP. Localhost is always permitted.
@@ -511,7 +511,7 @@ export function SyncMonitor() {
                       <Copy className="h-3 w-3 mr-1" /> Copy
                     </Button>
                   </div>
-                  <div className="font-mono text-xs bg-gray-900 text-gray-100 px-3 py-2.5 rounded-md break-all select-all">
+                  <div className="tabular-nums text-xs bg-gray-900 text-gray-100 px-3 py-2.5 rounded-md break-all select-all">
                     {key}
                   </div>
                 </div>
@@ -549,7 +549,7 @@ export function SyncMonitor() {
                         <Copy className="h-3 w-3 mr-1" /> Copy
                       </Button>
                     </div>
-                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+                    <pre className="tabular-nums text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
 {jsonConfig}
                     </pre>
                   </div>
@@ -561,7 +561,7 @@ export function SyncMonitor() {
                         <Copy className="h-3 w-3 mr-1" /> Copy
                       </Button>
                     </div>
-                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+                    <pre className="tabular-nums text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
 {curlPing}
                     </pre>
                   </div>
@@ -573,7 +573,7 @@ export function SyncMonitor() {
                         <Copy className="h-3 w-3 mr-1" /> Copy
                       </Button>
                     </div>
-                    <pre className="font-mono text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
+                    <pre className="tabular-nums text-[11px] bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-md overflow-x-auto whitespace-pre">
 {curlScans}
                     </pre>
                   </div>
@@ -604,7 +604,7 @@ export function SyncMonitor() {
               onChange={(e) => setIpsDraft(e.target.value)}
               placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
               rows={3}
-              className="w-full px-3 py-2 border rounded-md text-sm font-mono"
+              className="w-full px-3 py-2 border rounded-md text-sm tabular-nums"
             />
             {!ipsDraft.trim() && (
               <p className="text-xs text-amber-700">No restriction — the API key will be accepted from any IP.</p>

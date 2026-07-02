@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
-  ShoppingCart, Plus, Minus, X, CheckCircle2,
+  ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
+  Navigation, ExternalLink, Info, Truck, Hand, QrCode, Banknote,
 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -10,6 +11,38 @@ import {
 } from '../ui/dialog';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
+import { parseModifiers, type ItemModifiers } from '../../api/items';
+
+/** Customer's pick inside one modifier group. The cashier sees these
+ *  baked into the line's notes field so they can fulfil the order
+ *  without a side channel. */
+interface SelectedModifier {
+  group: string;
+  label: string;
+  priceAdj: number;
+}
+
+/** Render a stable key for a set of modifier picks so two cart rows
+ *  for the same item with different picks don't collapse into one.
+ *  Sorted to make the key order-independent. */
+function modifierKey(mods: SelectedModifier[]): string {
+  if (mods.length === 0) return '';
+  return mods
+    .map(m => `${m.group}=${m.label}`)
+    .sort()
+    .join('|');
+}
+
+/** Serialise the modifier picks + customer note into the single
+ *  `notes` field the BE accepts. The cashier sees this on the cart
+ *  row when they open the ticket: "Size: Large, Sugar: 50% | extra ice". */
+function composeLineNotes(mods: SelectedModifier[], note: string): string | undefined {
+  const modText = mods.map(m => `${m.group}: ${m.label}`).join(', ');
+  const noteText = note.trim();
+  if (!modText && !noteText) return undefined;
+  if (modText && noteText) return `${modText} | ${noteText}`;
+  return modText || noteText;
+}
 
 /**
  * Anonymous /shop/{code} landing page (V145).
@@ -38,11 +71,26 @@ const CATEGORY_LABEL: Record<Category, string> = {
   other: 'Other',
 };
 
-/** Per-item line in the local cart state. Keyed by stockItemId in the
- *  parent's Map so re-tapping an item just increments the count. */
+/** Per-item line in the local cart state. The map key is a composite
+ *  of {@code item.id} + modifier signature so the same item with two
+ *  different modifier sets keeps two separate rows. */
 interface CartLine {
+  /** Composite key the cart Map is indexed by — also the React key
+   *  on each rendered row. Stable for a given (item, modifier set). */
+  key: string;
   item: shopApi.PublicShopItem;
   qty: number;
+  /** Customer picks inside each modifier group on the item. Empty
+   *  array for items without modifiers. */
+  modifiers: SelectedModifier[];
+  /** Per-line note ("ice cubes please") — separate from the
+   *  whole-order note at the bottom of the checkout sheet. */
+  notes: string;
+}
+
+/** Per-line unit price = base + sum of selected modifier price deltas. */
+function lineUnitPrice(line: CartLine): number {
+  return Number(line.item.unitPrice) + line.modifiers.reduce((s, m) => s + Number(m.priceAdj || 0), 0);
 }
 
 export function PublicShopPage() {
@@ -73,6 +121,65 @@ export function PublicShopPage() {
   const [custName, setCustName] = useState('');
   const [custPhone, setCustPhone] = useState('');
   const [custNote, setCustNote] = useState('');
+  /** Google Maps-style URL for pickup / delivery — either captured
+   *  via the browser's geolocation API ("Use my location") or pasted
+   *  by the customer (any maps.google.com / maps.app.goo.gl share
+   *  link works). Appended to the order's notes on submit so the
+   *  cashier can click straight through to Google Maps from the
+   *  ticket. */
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [geoBusy, setGeoBusy] = useState(false);
+  /** Fulfilment mode. {@code pickup} keeps the contact fields
+   *  optional; {@code delivery} marks Name + Phone + Location as
+   *  required AND surfaces the payment-method picker. */
+  const [orderMode, setOrderMode] = useState<'pickup' | 'delivery'>('pickup');
+  /** Customer's payment preference for delivery orders. Cash means
+   *  "Cash on hand" — they pay the delivery person on arrival.
+   *  KHRQR means they'll scan a QR sent by the merchant. Recorded
+   *  in the order's notes so the cashier knows which channel to
+   *  arrange. Pickup orders keep "Payment happens in person" and
+   *  skip this picker. */
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'khrqr'>('cash');
+  /** Active PayWay session for the KHRQR flow. Null while no
+   *  session is open. Polled at 2s intervals; flipping to
+   *  status='paid' marks the order as pre-paid before submit. */
+  const [paywaySession, setPaywaySession] = useState<shopApi.PublicPayWaySession | null>(null);
+  const [paywayBusy, setPaywayBusy] = useState(false);
+  const [paywayError, setPaywayError] = useState<string | null>(null);
+  /** One-attempt guard so a failed mint doesn't retry-storm the
+   *  gateway on every state flip. Reset when (cart total, method,
+   *  mode) changes. Pattern mirrors the POS checkout dialog. */
+  const paywayAttemptKeyRef = useRef<string | null>(null);
+
+  /** One-tap geolocation → composed Google Maps URL. Soft-fails on
+   *  permission denied / unsupported / timeout so the customer can
+   *  fall back to pasting a link manually. */
+  const useMyLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast.error('Geolocation is not available on this device.');
+      return;
+    }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        // Maps URLs API — opens a pin at the supplied coordinates on
+        // both desktop google.com/maps AND the Maps mobile app.
+        setPickupLocation(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
+        setGeoBusy(false);
+        toast.success('Location captured');
+      },
+      err => {
+        setGeoBusy(false);
+        const msg = err.code === err.PERMISSION_DENIED
+          ? 'Location permission denied — paste a Google Maps link instead.'
+          : 'Could not get your location — paste a Google Maps link instead.';
+        toast.error(msg);
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
+    );
+  };
 
   useEffect(() => {
     if (!code) {
@@ -128,45 +235,173 @@ export function PublicShopPage() {
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
   const cartCount = useMemo(() => cartLines.reduce((s, l) => s + l.qty, 0), [cartLines]);
   const cartTotal = useMemo(
-    () => cartLines.reduce((s, l) => s + l.qty * Number(l.item.unitPrice), 0),
+    () => cartLines.reduce((s, l) => s + l.qty * lineUnitPrice(l), 0),
     [cartLines],
   );
 
+  /** Mint a PayWay KHRQR session whenever the customer has Delivery
+   *  + KHRQR active AND there's a positive cart total. One attempt
+   *  per (cart-total, mode, method) tuple — a 4xx surfaces an error
+   *  and stops; toggling the picker resets the guard so a retry is
+   *  one tap away. Declared after {@code cartTotal} so the deps array
+   *  doesn't trip JS's temporal-dead-zone check. */
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    if (orderMode !== 'delivery' || paymentMethod !== 'khrqr') return;
+    if (cartTotal <= 0) return;
+    const key = `${cartTotal.toFixed(2)}|${orderMode}|${paymentMethod}`;
+    if (paywayAttemptKeyRef.current === key) return;
+    paywayAttemptKeyRef.current = key;
+    setPaywayError(null);
+    setPaywayBusy(true);
+    (async () => {
+      try {
+        const s = await shopApi.mintShopPayWayPurchase(code, cartTotal, 'USD');
+        setPaywaySession(s);
+      } catch (e) {
+        setPaywayError(e instanceof Error ? e.message : 'PayWay session failed');
+      } finally {
+        setPaywayBusy(false);
+      }
+    })();
+  }, [checkoutOpen, orderMode, paymentMethod, cartTotal, code]);
+
+  /** Poll the gateway every 2s while a pending session is on screen.
+   *  When the customer's bank push lands, the session flips to 'paid'
+   *  and the Submit button picks up the {@code tranId} to bake into
+   *  the order's notes. */
+  useEffect(() => {
+    if (!paywaySession || paywaySession.status !== 'pending') return;
+    let stopped = false;
+    const t = setInterval(async () => {
+      try {
+        const next = await shopApi.getShopPayWayStatus(code, paywaySession.tranId);
+        if (stopped) return;
+        if (next.status !== paywaySession.status) setPaywaySession(next);
+        if (next.status === 'paid') clearInterval(t);
+      } catch { /* swallow — try again next tick */ }
+    }, 2000);
+    return () => { stopped = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paywaySession?.tranId, paywaySession?.status, code]);
+
+  /** Reset PayWay state whenever the dialog closes or the customer
+   *  switches away from Delivery+KHRQR. Clears the attempt-key ref
+   *  so reopening with the same picks retries cleanly. */
+  useEffect(() => {
+    if (checkoutOpen && orderMode === 'delivery' && paymentMethod === 'khrqr') return;
+    setPaywaySession(null);
+    setPaywayError(null);
+    paywayAttemptKeyRef.current = null;
+  }, [checkoutOpen, orderMode, paymentMethod]);
+
+  /** Modifier picker target — set when the customer taps an item that
+   *  carries a modifierGroups JSON. Null while no picker is open. */
+  const [modifierTarget, setModifierTarget] = useState<shopApi.PublicShopItem | null>(null);
+
   // Cart mutators — keep them out of the JSX so the buttons stay
-  // terse. `addOne` is the tap-to-add path on the card itself; the
-  // sheet's +/- buttons reuse `setQty`.
+  // terse. `addOne` is the tap-to-add path on the card itself;
+  // items with modifiers go through the picker first.
   const addOne = (item: shopApi.PublicShopItem) => {
+    const mods = parseModifiers(item.modifiers);
+    if (mods && mods.groups.length > 0) {
+      setModifierTarget(item);
+      return;
+    }
+    addLine(item, [], '');
+  };
+
+  /** Land a finalised line on the cart with the picked modifiers +
+   *  empty note. If a matching (item, modifier-set) row already
+   *  exists we increment its qty; otherwise we open a new row. */
+  const addLine = (item: shopApi.PublicShopItem, modifiers: SelectedModifier[], notes: string) => {
+    const key = `${item.id}|${modifierKey(modifiers)}`;
     setCart(prev => {
       const next = new Map(prev);
-      const cur = next.get(item.id);
-      next.set(item.id, { item, qty: (cur?.qty ?? 0) + 1 });
+      const cur = next.get(key);
+      if (cur) {
+        next.set(key, { ...cur, qty: Math.min(99, cur.qty + 1) });
+      } else {
+        next.set(key, { key, item, qty: 1, modifiers, notes });
+      }
       return next;
     });
   };
-  const setQty = (id: string, qty: number) => {
+
+  const setQty = (key: string, qty: number) => {
     setCart(prev => {
       const next = new Map(prev);
-      const cur = next.get(id);
+      const cur = next.get(key);
       if (!cur) return prev;
-      if (qty <= 0) next.delete(id);
-      else next.set(id, { ...cur, qty: Math.min(99, qty) });
+      if (qty <= 0) next.delete(key);
+      else next.set(key, { ...cur, qty: Math.min(99, qty) });
       return next;
     });
   };
-  const removeLine = (id: string) => setQty(id, 0);
+  const setLineNote = (key: string, notes: string) => {
+    setCart(prev => {
+      const next = new Map(prev);
+      const cur = next.get(key);
+      if (!cur) return prev;
+      next.set(key, { ...cur, notes });
+      return next;
+    });
+  };
+  const removeLine = (key: string) => setQty(key, 0);
   const clearCart = () => setCart(new Map());
 
   const submit = async () => {
     if (cart.size === 0) return;
+    // Delivery requires Name / Phone / Location. Bounce the submit
+    // with a toast pointing at the first missing field instead of
+    // letting an under-populated order land on the cashier's queue.
+    if (orderMode === 'delivery') {
+      if (!custName.trim()) { toast.error('Please enter your name for delivery.'); return; }
+      if (!custPhone.trim()) { toast.error('Please enter a phone number — the driver needs to reach you.'); return; }
+      if (!pickupLocation.trim().startsWith('http')) {
+        toast.error('Please share or paste your delivery location.'); return;
+      }
+    }
     setSubmitting(true);
     try {
+      // Compose the order-level notes from fulfilment mode + (when
+      // delivery) payment method + kitchen note + pickup-location URL.
+      // The cashier sees all of this on the ticket — payment tells
+      // them whether to send a KHRQR or expect cash; the URL opens
+      // the customer's pinned spot in Google Maps.
+      const noteParts: string[] = [];
+      noteParts.push(`Mode: ${orderMode === 'delivery' ? 'Delivery' : 'Pickup'}`);
+      if (orderMode === 'delivery') {
+        // Bake the PayWay tranId + status into the payment line so
+        // the cashier can verify the scan from their PayWay sessions
+        // list. "(paid · ...)" means the push already landed; "(pending · ...)"
+        // means the QR was minted but the customer's bank push hasn't
+        // arrived yet — the cashier should confirm before fulfilling.
+        if (paymentMethod === 'khrqr' && paywaySession) {
+          const tag = paywaySession.status === 'paid' ? 'paid' : 'pending';
+          noteParts.push(`Payment: KHRQR (${tag} · ${paywaySession.tranId})`);
+        } else {
+          noteParts.push(`Payment: ${paymentMethod === 'khrqr' ? 'KHRQR' : 'Cash on hand'}`);
+        }
+      }
+      if (custNote.trim()) noteParts.push(custNote.trim());
+      if (pickupLocation.trim().startsWith('http')) {
+        noteParts.push(`Location: ${pickupLocation.trim()}`);
+      }
+      const composedOrderNote = noteParts.length ? noteParts.join('\n') : undefined;
+
       const result = await shopApi.submitPublicOrder(code, {
         customerName: custName.trim() || undefined,
         contactPhone: custPhone.trim() || undefined,
-        notes: custNote.trim() || undefined,
+        notes: composedOrderNote,
         items: cartLines.map(l => ({
           stockItemId: l.item.id,
           quantity: l.qty,
+          // Modifier picks + per-line note both land in `notes` so
+          // the cashier sees "Size: Large, Sugar: 50% | extra ice"
+          // when fulfilling the ticket — same convention POS uses
+          // internally for per-line modifier notes.
+          notes: composeLineNotes(l.modifiers, l.notes),
         })),
       });
       setConfirmed(result);
@@ -175,6 +410,7 @@ export function PublicShopPage() {
       setCustName('');
       setCustPhone('');
       setCustNote('');
+      setPickupLocation('');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Order failed');
     } finally {
@@ -198,7 +434,7 @@ export function PublicShopPage() {
         <p className="text-sm text-gray-500 mt-1">
           {error ?? 'This shop link is no longer active.'}
         </p>
-        <p className="text-xs text-gray-400 mt-3 font-mono">/shop/{code}</p>
+        <p className="text-xs text-gray-400 mt-3 tabular-nums">/shop/{code}</p>
       </FullPageState>
     );
   }
@@ -212,7 +448,7 @@ export function PublicShopPage() {
         <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-3" />
         <p className="text-xl font-semibold">Order received</p>
         <p className="text-sm text-gray-500 mt-1">Show this to the counter:</p>
-        <p className="mt-4 text-4xl font-mono font-bold tracking-widest text-slate-900">
+        <p className="mt-4 text-4xl tabular-nums font-bold tracking-widest text-slate-900">
           {confirmed.queueNo}
         </p>
         <p className="mt-2 text-sm text-gray-600">
@@ -252,7 +488,7 @@ export function PublicShopPage() {
                   {data.country}
                 </span>
               )}
-              <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-white/15 px-1.5 py-0.5 rounded">
+              <span className="inline-flex items-center gap-1 tabular-nums text-[11px] bg-white/15 px-1.5 py-0.5 rounded">
                 {data.code}
               </span>
             </div>
@@ -307,7 +543,9 @@ export function PublicShopPage() {
               <PublicShopCard
                 key={it.id}
                 item={it}
-                qtyInCart={cart.get(it.id)?.qty ?? 0}
+                qtyInCart={cartLines
+                  .filter(l => l.item.id === it.id)
+                  .reduce((s, l) => s + l.qty, 0)}
                 onAdd={() => addOne(it)}
               />
             ))}
@@ -352,10 +590,20 @@ export function PublicShopPage() {
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
         <DialogContent className="sm:max-w-md p-0 gap-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="px-5 py-4 border-b shrink-0">
-            <DialogTitle>Your order</DialogTitle>
-            <DialogDescription className="text-xs">
-              Submit to the counter — the cashier will prepare and
-              confirm. Payment happens in person.
+            <DialogTitle className="flex items-center gap-1.5">
+              Your order
+              {/* Tooltip-only blurb — keeps the dialog header compact
+                  while still surfacing the "what happens next" copy
+                  on hover / long-press. */}
+              <span
+                className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                title="Submit to the counter — the cashier will prepare and confirm. Payment happens in person."
+              >
+                <Info className="h-4 w-4" />
+              </span>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Submit to the counter — the cashier will prepare and confirm. Payment happens in person.
             </DialogDescription>
           </DialogHeader>
 
@@ -367,69 +615,198 @@ export function PublicShopPage() {
               </p>
             ) : (
               <ul className="divide-y border rounded-md bg-white">
-                {cartLines.map(line => (
-                  <li key={line.item.id} className="flex items-center gap-3 p-2.5">
-                    <div className="h-12 w-12 rounded bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
-                      {line.item.imageUrl ? (
-                        <img src={line.item.imageUrl} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <Package className="h-5 w-5 text-gray-400" />
-                      )}
+                {cartLines.map(line => {
+                  const unit = lineUnitPrice(line);
+                  return (
+                  <li key={line.key} className="p-2.5 space-y-1.5">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
+                        {line.item.imageUrl ? (
+                          <img src={line.item.imageUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <Package className="h-5 w-5 text-gray-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{line.item.name}</p>
+                        <p className="text-xs text-gray-500">
+                          ${unit.toFixed(2)} {line.item.unit && `/ ${line.item.unit}`}
+                        </p>
+                        {/* Modifier summary, shown as small grey chips
+                            so the customer can sanity-check their
+                            picks before submitting. */}
+                        {line.modifiers.length > 0 && (
+                          <p className="text-[11px] text-gray-500 italic mt-0.5">
+                            {line.modifiers.map(m => `${m.group}: ${m.label}`).join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setQty(line.key, line.qty - 1)}
+                          className="h-7 w-7 rounded border flex items-center justify-center hover:bg-gray-50"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-6 text-center text-sm font-medium">{line.qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setQty(line.key, line.qty + 1)}
+                          className="h-7 w-7 rounded border flex items-center justify-center hover:bg-gray-50"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          className="h-7 w-7 rounded text-gray-400 hover:text-red-600 flex items-center justify-center"
+                          title="Remove"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{line.item.name}</p>
-                      <p className="text-xs text-gray-500">
-                        ${Number(line.item.unitPrice).toFixed(2)} {line.item.unit && `/ ${line.item.unit}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setQty(line.item.id, line.qty - 1)}
-                        className="h-7 w-7 rounded border flex items-center justify-center hover:bg-gray-50"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="w-6 text-center text-sm font-medium">{line.qty}</span>
-                      <button
-                        type="button"
-                        onClick={() => setQty(line.item.id, line.qty + 1)}
-                        className="h-7 w-7 rounded border flex items-center justify-center hover:bg-gray-50"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeLine(line.item.id)}
-                        className="h-7 w-7 rounded text-gray-400 hover:text-red-600 flex items-center justify-center"
-                        title="Remove"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                    {/* Per-line note — distinct from the whole-order
+                        note at the bottom. Keeps "no straw" tied to
+                        the Ice Latte instead of bleeding onto every
+                        line. Optional, capped at 200 chars. */}
+                    <div className="flex items-start gap-1.5 pl-15">
+                      <StickyNote className="h-3 w-3 text-gray-400 mt-1.5 shrink-0" />
+                      <Input
+                        value={line.notes}
+                        onChange={e => setLineNote(line.key, e.target.value)}
+                        placeholder="Note for this item (optional)"
+                        maxLength={200}
+                        className="h-7 text-xs"
+                      />
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
 
-            {/* Optional contact info */}
+            {/* Fulfilment-mode toggle. Pickup keeps the contact block
+                optional (legacy); Delivery requires Name + Phone +
+                Location and surfaces a payment-method picker. */}
+            <div className="pt-2 space-y-2">
+              <div className="grid grid-cols-2 gap-1.5 rounded-md border bg-gray-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setOrderMode('pickup')}
+                  className={`flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-medium transition ${
+                    orderMode === 'pickup'
+                      ? 'bg-white shadow-sm text-blue-700'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Hand className="h-4 w-4" />
+                  Pickup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderMode('delivery')}
+                  className={`flex items-center justify-center gap-2 rounded px-3 py-2 text-sm font-medium transition ${
+                    orderMode === 'delivery'
+                      ? 'bg-white shadow-sm text-blue-700'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Truck className="h-4 w-4" />
+                  Delivery
+                </button>
+              </div>
+            </div>
+
+            {/* Contact block. Labels + required asterisks toggle with
+                the fulfilment mode — Pickup keeps everything optional;
+                Delivery marks Name / Phone / Location required so the
+                operator has what they need to fulfil the order. */}
             <div className="space-y-2 pt-2">
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Contact (optional)
+                {orderMode === 'pickup'
+                  ? 'Contact (optional)'
+                  : 'Delivery details (required)'}
               </p>
               <Input
                 value={custName}
                 onChange={e => setCustName(e.target.value)}
-                placeholder="Your name"
+                placeholder={orderMode === 'delivery' ? 'Your name *' : 'Your name'}
                 maxLength={120}
+                aria-required={orderMode === 'delivery'}
+                className={orderMode === 'delivery' && !custName.trim() ? 'border-red-300' : ''}
               />
               <Input
                 value={custPhone}
                 onChange={e => setCustPhone(e.target.value)}
-                placeholder="Phone"
+                placeholder={orderMode === 'delivery' ? 'Phone *' : 'Phone'}
                 inputMode="tel"
                 maxLength={32}
+                aria-required={orderMode === 'delivery'}
+                className={orderMode === 'delivery' && !custPhone.trim() ? 'border-red-300' : ''}
               />
+
+              {/* Pickup / delivery location. One tap "Use my location"
+                  fills via GPS; the input below is also live so the
+                  customer can paste any maps.google.com / maps.app.goo.gl
+                  share link. The link is appended to the order's notes
+                  on submit so the cashier can click it from the ticket.
+                  Required when orderMode === 'delivery'. */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={useMyLocation}
+                    disabled={geoBusy}
+                    className="h-9 shrink-0"
+                  >
+                    {geoBusy
+                      ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      : <Navigation className="h-3.5 w-3.5 mr-1.5" />}
+                    Use my location
+                  </Button>
+                  <Input
+                    value={pickupLocation}
+                    onChange={e => setPickupLocation(e.target.value)}
+                    placeholder={orderMode === 'delivery'
+                      ? 'Or paste a Google Maps link *'
+                      : 'Or paste a Google Maps link'}
+                    inputMode="url"
+                    maxLength={400}
+                    aria-required={orderMode === 'delivery'}
+                    className={`flex-1 ${
+                      orderMode === 'delivery' && !pickupLocation.trim().startsWith('http')
+                        ? 'border-red-300' : ''
+                    }`}
+                  />
+                </div>
+                {pickupLocation.trim().startsWith('http') && (
+                  <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <span className="flex-1 truncate" title={pickupLocation}>{pickupLocation}</span>
+                    <a
+                      href={pickupLocation}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 underline hover:text-emerald-900"
+                    >
+                      Open <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setPickupLocation('')}
+                      className="text-gray-400 hover:text-red-600"
+                      title="Remove location"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <Input
                 value={custNote}
                 onChange={e => setCustNote(e.target.value)}
@@ -437,6 +814,103 @@ export function PublicShopPage() {
                 maxLength={240}
               />
             </div>
+
+            {/* Payment method — surfaces only for Delivery. Pickup
+                orders are paid at the counter, so the picker would
+                just add noise. The choice is recorded on the order's
+                notes so the cashier knows whether to send a KHRQR or
+                expect cash on delivery. */}
+            {orderMode === 'delivery' && (
+              <div className="space-y-2 pt-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Payment method
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('khrqr')}
+                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition ${
+                      paymentMethod === 'khrqr'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <QrCode className="h-4 w-4" />
+                    KHRQR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('cash')}
+                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition ${
+                      paymentMethod === 'cash'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Cash on hand
+                  </button>
+                </div>
+
+                {/* KHRQR — render the dynamic PayWay QR. Mirrors the
+                    POS scan-to-pay flow: busy spinner while minting,
+                    error banner on credential / gateway failure,
+                    QR image when the session is live, green "Paid"
+                    pill once PayWay's push confirms the customer's
+                    payment. */}
+                {paymentMethod === 'khrqr' && (
+                  <div className="rounded-md border bg-white p-3">
+                    {paywayBusy && !paywaySession && (
+                      <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-6">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Minting your KHRQR…
+                      </div>
+                    )}
+
+                    {paywayError && !paywaySession && (
+                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800 leading-relaxed">
+                        {paywayError}
+                        <div className="mt-1 text-red-700/80">
+                          Switch to <strong>Cash on hand</strong> or try again — the merchant may not have PayWay configured.
+                        </div>
+                      </div>
+                    )}
+
+                    {paywaySession?.qrDataUrl && (
+                      <div className="flex flex-col items-center">
+                        <div className="text-xs text-gray-500 mb-2">
+                          Scan with your bank app to pay <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
+                        </div>
+                        <div className="relative">
+                          <img
+                            src={paywaySession.qrDataUrl}
+                            alt="PayWay KHRQR"
+                            className="w-44 h-44 object-contain bg-gray-50 rounded-md border"
+                          />
+                          {paywaySession.status === 'paid' && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-emerald-50/95 rounded-md border-2 border-emerald-500">
+                              <div className="flex flex-col items-center text-emerald-700">
+                                <CheckCircle2 className="h-10 w-10" />
+                                <span className="text-sm font-semibold mt-1">Paid</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-400 tabular-nums">
+                          Ref: {paywaySession.tranId}
+                        </div>
+                        {paywaySession.status === 'pending' && (
+                          <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 ring-1 ring-amber-200">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Waiting for payment…
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2 sm:gap-2">
@@ -462,6 +936,19 @@ export function PublicShopPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modifier picker — opens when the customer taps an item that
+          carries a modifierGroups JSON. Required groups force a pick
+          before "Add to order" is enabled. Cancel returns to browse
+          without mutating the cart. */}
+      <ModifierPickerDialog
+        item={modifierTarget}
+        onCancel={() => setModifierTarget(null)}
+        onConfirm={(mods) => {
+          if (modifierTarget) addLine(modifierTarget, mods, '');
+          setModifierTarget(null);
+        }}
+      />
     </div>
   );
 }
@@ -527,5 +1014,113 @@ function PublicShopCard({
         </div>
       )}
     </button>
+  );
+}
+
+/* ====================================================================
+ *  Modifier picker dialog (customer-facing mirror of the POS picker)
+ *
+ *  Opens when the customer taps an item with a non-empty modifierGroups
+ *  JSON. Each group is single-select; groups marked {@code required:true}
+ *  block the Add button until a pick lands. The live total updates as
+ *  picks change so the customer sees the impact of "Size: Large +$1.00"
+ *  before committing.
+ * =================================================================== */
+function ModifierPickerDialog({
+  item, onCancel, onConfirm,
+}: {
+  item: shopApi.PublicShopItem | null;
+  onCancel: () => void;
+  onConfirm: (modifiers: SelectedModifier[]) => void;
+}) {
+  // Track picks as group-name → option-label. Resets every time the
+  // dialog reopens for a fresh item (keyed by item?.id below).
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  useEffect(() => { setPicks({}); }, [item?.id]);
+
+  const parsed: ItemModifiers | null = useMemo(
+    () => (item ? parseModifiers(item.modifiers) : null),
+    [item],
+  );
+
+  if (!item || !parsed || parsed.groups.length === 0) return null;
+
+  // Resolve current picks into the SelectedModifier[] shape we hand
+  // back to the parent. Skips groups with no pick so undecided
+  // optional groups don't pollute the line label.
+  const resolved: SelectedModifier[] = parsed.groups
+    .map(g => {
+      const label = picks[g.name];
+      if (!label) return null;
+      const opt = g.options.find(o => o.label === label);
+      return opt ? { group: g.name, label: opt.label, priceAdj: opt.priceAdj } : null;
+    })
+    .filter((m): m is SelectedModifier => m !== null);
+
+  const missingRequired = parsed.groups.some(g => g.required && !picks[g.name]);
+  const previewPrice =
+    Number(item.unitPrice) + resolved.reduce((s, m) => s + Number(m.priceAdj || 0), 0);
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onCancel(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{item.name}</DialogTitle>
+          <DialogDescription className="text-xs">
+            Pick your options. Items marked <span className="text-red-600">*</span> are required.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+          {parsed.groups.map(g => (
+            <div key={g.name} className="space-y-1.5">
+              <div className="text-sm font-medium">
+                {g.name}
+                {g.required && <span className="text-red-600 ml-1">*</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {g.options.map(o => {
+                  const active = picks[g.name] === o.label;
+                  return (
+                    <button
+                      key={o.label}
+                      type="button"
+                      onClick={() => setPicks(prev => ({ ...prev, [g.name]: o.label }))}
+                      className={`text-left px-3 py-2 rounded-md border text-sm transition ${
+                        active
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="font-medium">{o.label}</div>
+                      {Number(o.priceAdj) !== 0 && (
+                        <div className="text-[11px] text-gray-500 tabular-nums">
+                          {o.priceAdj > 0 ? '+' : '−'}${Math.abs(Number(o.priceAdj)).toFixed(2)}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <DialogFooter className="border-t pt-3 gap-2">
+          <div className="flex-1 text-left">
+            <p className="text-[11px] text-gray-500 uppercase tracking-wide">Line total</p>
+            <p className="text-base font-bold text-emerald-700">${previewPrice.toFixed(2)}</p>
+          </div>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button
+            onClick={() => onConfirm(resolved)}
+            disabled={missingRequired}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            Add to order
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

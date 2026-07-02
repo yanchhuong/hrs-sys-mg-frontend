@@ -106,7 +106,7 @@ export function QrDisplayDialog({ open, onOpenChange, officeId }: Props) {
               <p className="text-[11px] text-gray-400 text-center">
                 Valid for {token.tokenDate} · within {token.radiusMeters}m of this office
               </p>
-              <p className="text-[10px] font-mono text-gray-300 break-all max-w-xs text-center">
+              <p className="text-[10px] tabular-nums text-gray-300 break-all max-w-xs text-center">
                 {token.scanUrl}
               </p>
             </>

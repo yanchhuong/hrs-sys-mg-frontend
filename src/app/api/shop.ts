@@ -27,6 +27,11 @@ export interface PublicShopItem {
   imageUrl: string;
   category: 'drink' | 'snack' | 'food' | 'other' | string;
   inStock: boolean;
+  /** Modifier groups JSON string (Size / Sugar Level / etc.). Same
+   *  shape as the cashier-side Items.modifiers — parsed via
+   *  itemsApi.parseModifiers. Null when the item has no modifiers
+   *  and the customer can add it directly. */
+  modifiers?: string | null;
 }
 
 export interface PublicShopPayload {
@@ -86,4 +91,45 @@ export async function submitPublicOrder(
     method: 'POST',
     json: body,
   });
+}
+
+/* ============================================================== */
+/*                 Public KHRQR (PayWay) flow                     */
+/* ============================================================== */
+
+export type PublicPayWaySessionStatus = 'pending' | 'paid' | 'cancelled' | 'failed';
+
+export interface PublicPayWaySession {
+  tranId: string;
+  checkoutEndpoint: string | null;
+  /** Base64 PNG data URL — render directly in an <img> tag. */
+  qrDataUrl: string | null;
+  checkoutUrl: string | null;
+  status: PublicPayWaySessionStatus;
+}
+
+/** Mint a PayWay session for an anonymous shop customer. Amount is
+ *  the cart total in {@code currency} ('USD' or 'KHR'). The customer
+ *  scans {@code qrDataUrl} in their bank app to pay. */
+export async function mintShopPayWayPurchase(
+  code: string,
+  amount: number,
+  currency: 'USD' | 'KHR' = 'USD',
+): Promise<PublicPayWaySession> {
+  return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/payway-purchase`, {
+    method: 'POST',
+    json: { amount, currency },
+  });
+}
+
+/** Status poll. Returns the latest session state — flips to 'paid'
+ *  once PayWay's push handler reconciles the customer's bank push
+ *  against the merchant's tranId. */
+export async function getShopPayWayStatus(
+  code: string,
+  tranId: string,
+): Promise<PublicPayWaySession> {
+  return apiJson(
+    `/api/v1/public/shop/${encodeURIComponent(code)}/payway-status/${encodeURIComponent(tranId)}`,
+  );
 }

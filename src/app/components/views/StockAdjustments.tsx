@@ -237,11 +237,11 @@ export function StockAdjustments() {
                             year: '2-digit', month: 'short', day: '2-digit',
                           })}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{a.adjustmentNo}</TableCell>
+                        <TableCell className="tabular-nums text-xs">{a.adjustmentNo}</TableCell>
                         <TableCell>
                           <div className="font-medium text-sm">{a.itemName || '—'}</div>
                           {a.itemSku && (
-                            <div className="text-[11px] text-gray-500 font-mono">{a.itemSku}</div>
+                            <div className="text-[11px] text-gray-500 tabular-nums">{a.itemSku}</div>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-600">
@@ -328,9 +328,9 @@ export function StockAdjustments() {
               />
               {systemQty != null && Number.isFinite(actualParsed) && (
                 <p className="text-[11px] text-gray-500">
-                  System: <span className="font-mono">{systemQty.toLocaleString('en-US')}</span>
+                  System: <span className="tabular-nums">{systemQty.toLocaleString('en-US')}</span>
                   {' → '}
-                  Actual: <span className="font-mono">{actualParsed.toLocaleString('en-US')}</span>
+                  Actual: <span className="tabular-nums">{actualParsed.toLocaleString('en-US')}</span>
                   {diff != null && (
                     <span className={`ml-1 font-medium ${diff < 0 ? 'text-rose-700' : diff > 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
                       ({diff > 0 ? '+' : ''}{diff.toLocaleString('en-US')})

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -366,14 +366,18 @@ export function ModuleCategories() {
 
   // Single module row + recursive children. Indented per depth so the
   // tree is readable without dedicated tree-line glyphs.
-  const ModuleRow = ({
-    node, depth, categoryKey, parentKey,
-  }: {
-    node: platformApi.ModuleNode;
-    depth: number;
-    categoryKey: string;
-    parentKey: string | null;
-  }) => {
+  //
+  // Implemented as a render FUNCTION (not a nested component) so React
+  // doesn't see a new component identity on every parent render — that
+  // would unmount + remount the row's DOM mid-drag and silently cancel
+  // the HTML5 drag operation, which is exactly the symptom we used to
+  // see ("you can pick the row up but the drop never lands").
+  const renderModuleRow = (
+    node: platformApi.ModuleNode,
+    depth: number,
+    categoryKey: string,
+    parentKey: string | null,
+  ): React.ReactNode => {
     const groupKey = `${categoryKey}::${parentKey ?? ''}`;
     const isDragging = dragModule?.key === node.key;
     // Only highlight the drop slot when the active drag belongs to the
@@ -381,7 +385,7 @@ export function ModuleCategories() {
     const canAcceptDrop = !!dragModule && dragModule.groupKey === groupKey && dragModule.key !== node.key;
     const isDropTarget = canAcceptDrop && dragOverKey === node.key;
     return (
-    <>
+    <React.Fragment key={node.key}>
       <div
         draggable
         onDragStart={(e) => {
@@ -475,16 +479,10 @@ export function ModuleCategories() {
           </Button>
         </div>
       </div>
-      {node.children?.map(child => (
-        <ModuleRow
-          key={child.key}
-          node={child}
-          depth={depth + 1}
-          categoryKey={categoryKey}
-          parentKey={node.key}
-        />
-      ))}
-    </>
+      {node.children?.map(child =>
+        renderModuleRow(child, depth + 1, categoryKey, node.key)
+      )}
+    </React.Fragment>
     );
   };
 
@@ -648,15 +646,9 @@ export function ModuleCategories() {
                     <p className="text-xs text-gray-500">No modules yet — click <em>Add Module</em>.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {cat.modules.map(node => (
-                        <ModuleRow
-                          key={node.key}
-                          node={node}
-                          depth={0}
-                          categoryKey={cat.key}
-                          parentKey={null}
-                        />
-                      ))}
+                      {cat.modules.map(node =>
+                        renderModuleRow(node, 0, cat.key, null)
+                      )}
                     </div>
                   )}
                 </CardContent>

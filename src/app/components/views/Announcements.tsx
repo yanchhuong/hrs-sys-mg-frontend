@@ -31,6 +31,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n/I18nContext';
 import * as api from '../../api/announcements';
 import * as employeesApi from '../../api/employees';
 import * as customersApi from '../../api/customers';
@@ -49,6 +50,7 @@ import * as hrTelegramApi from '../../api/hrTelegramBots';
  */
 export function Announcements() {
   const { canCreate, canView, isModuleAvailable } = useAuth();
+  const { t } = useI18n();
   const canCreateAnnouncement = canCreate('announcements');
   const canViewAnnouncement   = canView('announcements');
   // Audience options are only meaningful when both the tenant catalog
@@ -487,7 +489,7 @@ export function Announcements() {
   if (!canViewAnnouncement) {
     return (
       <div className="space-y-4">
-        <h1 className="text-3xl font-bold">Announcements</h1>
+        <h1 className="text-3xl font-bold">{t('nav.announcements')}</h1>
         <Card><CardContent className="p-6 text-sm text-gray-500">
           You don't have permission to view announcements.
         </CardContent></Card>
@@ -504,7 +506,7 @@ export function Announcements() {
           </div>
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
-              Announcements
+              {t('nav.announcements')}
               {/* Subtitle moved into a tooltip so the header stays
                   compact for return visits — same pattern used on
                   System Holidays, Customer/HR Telegram dialogs, etc. */}
@@ -787,7 +789,7 @@ export function Announcements() {
                   {type === 'HOLIDAY' && holidays.length === 0 && (
                     <div className="text-[11px] text-gray-500 border rounded-md px-3 py-2 bg-gray-50">
                       No upcoming public holidays found. Add them in <strong>Settings → Holidays</strong>{' '}
-                      with type <span className="font-mono">public</span> and they'll appear in the picker.
+                      with type <span className="tabular-nums">public</span> and they'll appear in the picker.
                     </div>
                   )}
                 </div>
@@ -933,7 +935,7 @@ export function Announcements() {
                           const pos = idx === 0 ? 'First' : idx === 1 ? 'Middle' : 'Last';
                           return (
                             <div key={idx} className="space-y-1.5 rounded-md border bg-white/70 p-2">
-                              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-mono">
+                              <div className="text-[10px] uppercase tracking-wider text-gray-400 tabular-nums">
                                 {pos}
                               </div>
                               <Input
@@ -980,7 +982,7 @@ export function Announcements() {
                           maxLength={48}
                         />
                         <p className="text-[10px] text-gray-400">
-                          Blank → defaults to <span className="font-mono">{defaultStampForType(type)}</span> for this type.
+                          Blank → defaults to <span className="tabular-nums">{defaultStampForType(type)}</span> for this type.
                         </p>
                       </div>
                     </div>
@@ -991,7 +993,7 @@ export function Announcements() {
                       whenever the rich toggle is on so the capture
                       always sees the latest rendering. */}
                   <div className="lg:sticky lg:top-2 self-start">
-                    <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1 font-mono">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1 tabular-nums">
                       Live preview
                     </div>
                     <AnnouncementPlate

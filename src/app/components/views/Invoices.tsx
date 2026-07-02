@@ -44,14 +44,18 @@ import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { printPosReceipt } from '../../utils/posReceipt';
 import { PaymentReceiptCard } from '../common/PaymentReceiptCard';
 import * as posApi from '../../api/pos';
+import * as paywayApi from '../../api/payway';
+import * as currencyApi from '../../api/currencySettings';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark,
-  Package,
+  Package, CheckCircle2, Upload,
 } from 'lucide-react';
+import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 
 /* -------------------------------------------------------------------------- */
@@ -122,22 +126,6 @@ const fmtMoney = (n: number, currency: string): string => {
     : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
-
-/** Current-month bounds as ISO yyyy-MM-dd strings. Used to seed the
- *  toolbar date filter so HR lands on the current month's activity by
- *  default. Inlined (no date-fns) — one tiny helper keeps the import
- *  list lean and the math is locale-neutral. */
-function currentMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const last = new Date(y, m + 1, 0);   // day 0 of next month = last day of current
-  return {
-    from: `${y}-${pad(m + 1)}-01`,
-    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
-  };
-}
 
 /** Taxation matrix — datakey → display label + percentage. Mirrors
  *  the cross-system reference; backend service uses the same rates. */
@@ -210,6 +198,7 @@ function CustomerInfoCard({ customer }: { customer: customersApi.Customer | unde
 export function Invoices() {
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd = canCreate('invoice');
   const canEdit = canUpdate('invoice');
   const canRemove = canDelete('invoice');
@@ -222,11 +211,11 @@ export function Invoices() {
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
   //
-  // Defaults to the current calendar month so HR lands on the most
-  // recent activity rather than a multi-year scroll. Clear button on
-  // the toolbar empties both inputs to show everything.
-  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
-  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
+  // Defaults to empty so the landing view shows every invoice; users
+  // pick a range to narrow. Pagination keeps the list scroll bounded
+  // even with several years of data.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
 
   // Per-side Accountant settings (V92) — Sale row is independent
@@ -236,9 +225,16 @@ export function Invoices() {
   const [settings, setSettings] = useState<accountingSettingsApi.AccountingSettings>(
     accountingSettingsApi.defaultsFor('sale'));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
+  /** Latched when the create form completes a successful Save & Close
+   *  on a primary document — drives a one-shot image-based Telegram
+   *  send in the detail dialog that opens immediately after. Cleared
+   *  by the detail dialog once it fires the send (or on detail close
+   *  if it never got the chance). */
+  const [autoSendTelegram, setAutoSendTelegram] = useState(false);
   const [formKind, setFormKind] = useState<invoicesApi.InvoiceKind>('commercial');
   /** When set, the form dialog runs in edit-mode against this invoice
    *  instead of opening blank for a fresh create. */
@@ -350,7 +346,7 @@ export function Invoices() {
     return [...out, ...orphans];
   }, [rows, search, dateFrom, dateTo, customerById]);
 
-  const pagination = usePagination(groupedRows, 25);
+  const pagination = usePagination(groupedRows, 10);
 
   // Reset pagination to page 1 whenever a filter changes so HR
   // doesn't sit on page 5 of an empty result set after narrowing the
@@ -532,6 +528,16 @@ export function Invoices() {
             <Settings className="h-4 w-4" />
           </Button>
           {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload invoices from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              Bulk Upload
+            </Button>
+          )}
+          {canAdd && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button>
@@ -616,8 +622,15 @@ export function Invoices() {
             </p>
           ) : (
             <>
+              {/* Scrollable table container — keeps both vertical
+                  overflow (long lists) and horizontal overflow (wide
+                  column set) bounded to the table area instead of
+                  letting the page itself scroll. The sticky TableHeader
+                  + TableFooter pin the column labels and the totals
+                  band while the body scrolls beneath them. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead className="w-[160px]">Invoice No.</TableHead>
                     <TableHead className="w-[130px]">Type</TableHead>
@@ -657,7 +670,7 @@ export function Invoices() {
                     ].filter(Boolean).join(' ');
                     return (
                     <TableRow key={inv.id} className={rowClass}>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="tabular-nums text-sm">
                         {isAdjustment && (
                           <span className="text-gray-400 mr-1.5" title="Adjusts the parent invoice above">↳</span>
                         )}
@@ -680,7 +693,7 @@ export function Invoices() {
                       <TableCell className="text-sm">
                         {customerById.get(inv.customerId)?.name ?? <span className="text-gray-400">(unknown)</span>}
                       </TableCell>
-                      <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{formatDate(inv.issueDate)}</TableCell>
                       {/* CN amount represents money we owe customer →
                           render signed negative in red so the column
                           and footer sum match the ledger direction. */}
@@ -831,15 +844,16 @@ export function Invoices() {
                   </TableFooter>
                 )}
               </Table>
-              {pagination.totalPages > 1 && (
-                <div className="mt-4">
+              </div>
+              {groupedRows.length > 0 && (
+                <div className="px-1 py-0 border-t">
                   <Pagination
                     currentPage={pagination.currentPage}
                     totalPages={pagination.totalPages}
                     onPageChange={pagination.goToPage}
-                    startIndex={(pagination.currentPage - 1) * 25}
-                    endIndex={Math.min(pagination.currentPage * 25, groupedRows.length)}
-                    totalItems={groupedRows.length}
+                    startIndex={pagination.startIndex}
+                    endIndex={pagination.endIndex}
+                    totalItems={pagination.totalItems}
                   />
                 </div>
               )}
@@ -858,7 +872,23 @@ export function Invoices() {
         editing={formEditing}
         parentPrefill={formParentPrefill}
         settings={settings}
-        onCreated={async () => { setFormOpen(false); setFormEditing(null); setFormParentPrefill(null); await load(); }}
+        onCreated={async (created) => {
+          setFormOpen(false);
+          setFormEditing(null);
+          setFormParentPrefill(null);
+          await load();
+          // Chain to the image-based Telegram send when the form
+          // returns a freshly-issued (status=progress) primary
+          // document. Opens the detail dialog with autoSendTelegram=true
+          // — the dialog mounts the print template, captures it as
+          // PNG, and fires sendTelegram. Adjustments (CN/DN) and
+          // anything still in draft skip this chain.
+          if (created && created.status === 'progress'
+              && (created.kind === 'commercial' || created.kind === 'tax')) {
+            setAutoSendTelegram(true);
+            setDetailId(created.id);
+          }
+        }}
       />
 
       {/* Sale-side Accountant settings popup. Independent from the
@@ -870,6 +900,17 @@ export function Invoices() {
         onSaved={setSettings}
       />
 
+      {/* Bulk upload from Excel — parses on the FE and POSTs each
+          invoice through the standard create endpoint with the
+          concurrency cap used by the Employee importer. */}
+      <BulkUploadInvoicesDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        customers={customers}
+        existingInvoiceNos={rows.map(r => r.invoiceNo)}
+        onImported={() => { void load(); }}
+      />
+
       {/* Detail dialog */}
       {detailId && (
         <InvoiceDetailDialog
@@ -877,7 +918,9 @@ export function Invoices() {
           customers={customers}
           canEdit={canEdit}
           settings={settings}
-          onClose={() => setDetailId(null)}
+          autoSendTelegram={autoSendTelegram}
+          onAutoSendConsumed={() => setAutoSendTelegram(false)}
+          onClose={() => { setDetailId(null); setAutoSendTelegram(false); }}
           onChanged={() => { void load(); }}
           onEdit={openEdit}
         />
@@ -954,7 +997,12 @@ function InvoiceFormDialog({
    *  Accountant Settings popup; falls back to "all on" if the
    *  parent didn't pass it. */
   settings: accountingSettingsApi.AccountingSettings;
-  onCreated: () => Promise<void> | void;
+  /** Fired after Save & Close. The {@code created} arg carries the
+   *  just-persisted invoice so the parent can chain a follow-up
+   *  (open detail, fire the image-based Telegram). Undefined when
+   *  the source path doesn't have a row to forward (e.g. "Save & add
+   *  new" which keeps the dialog open). */
+  onCreated: (created?: invoicesApi.Invoice) => Promise<void> | void;
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
   const isEdit = !!editing;
@@ -970,6 +1018,17 @@ function InvoiceFormDialog({
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
+  // Tenant currency settings (V166). Drives the Currency dropdown
+  // options + the default currency / exchange rate for fresh
+  // invoices. Refetched every time the dialog OPENS — the tenant
+  // currency pair can change via Settings > Currency while this form
+  // was still mounted, and we want the fresh values on the next open.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
   // Catalog cache for the per-line stock-item picker (V118 Phase-2).
   // Loaded lazily the first time the user opens the picker so the dialog's
@@ -1053,8 +1112,10 @@ function InvoiceFormDialog({
       setInvoiceNo('');
       setIssueDate(new Date().toISOString().slice(0, 10));
       setDueDate('');
-      setCurrency(seedParent?.currency ?? 'USD');
-      setExchangeRate(seedParent ? String(seedParent.exchangeRate) : '4100');
+      setCurrency(seedParent?.currency ?? currencySettings?.primaryCurrency ?? 'USD');
+      setExchangeRate(seedParent
+        ? String(seedParent.exchangeRate)
+        : String(currencySettings?.secondaryRate ?? 4100));
       setItems([{ ...blankItem }]);
       setTaxType((seedParent?.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount('0');
@@ -1071,6 +1132,17 @@ function InvoiceFormDialog({
       return () => { cancelled = true; };
     }
   }, [open, kind, editing, parentPrefill, invoices]);
+
+  // Follow-up sync: when the tenant currency settings arrive AFTER
+  // the reset effect above ran (network race on first open), pin the
+  // form's currency + exchange rate to the tenant defaults. Skip in
+  // edit mode (row's own currency wins) and CN/DN parent-prefill
+  // (parent's currency wins).
+  useEffect(() => {
+    if (!open || editing || parentPrefill || !currencySettings) return;
+    setCurrency(currencySettings.primaryCurrency);
+    setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
+  }, [open, editing, parentPrefill, currencySettings]);
 
   const rootInvoiceOptions = useMemo(() =>
     invoices.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
@@ -1197,16 +1269,32 @@ function InvoiceFormDialog({
    *  "Save & close" so the two share the exact same skip-draft path.
    *  Returns the created row (with status flipped to progress when
    *  the issue step succeeds) so the caller can decide what to do
-   *  with the dialog afterwards. */
+   *  with the dialog afterwards.
+   *
+   *  <p>Both legs pass {@code notifyTelegram=false} — when the tenant
+   *  has the auto-issue setting on, the BE creates the row directly
+   *  in {@code progress} and would otherwise text-only-Telegram the
+   *  customer. We suppress that here so the parent can follow up
+   *  with the image-based sendPhoto (matching the Send → Telegram
+   *  button). The double-issue guard checks the returned status —
+   *  the BE may have already issued, in which case calling issue()
+   *  a second time would 409 with "Only draft can be issued".</p> */
   const createAndIssue = async () => {
-    const created = await invoicesApi.create(buildPayload());
-    try {
-      await invoicesApi.issue(created.id);
+    const created = await invoicesApi.create(buildPayload(), false);
+    if (created.status === 'progress') {
+      // BE auto-issued at create time (tenant has auto-issue on).
+      // Nothing else to do — return the already-issued row.
       toast.success(`${KIND_LABEL[kind]} ${created.invoiceNo} issued`);
+      return created;
+    }
+    try {
+      const issued = await invoicesApi.issue(created.id, false);
+      toast.success(`${KIND_LABEL[kind]} ${issued.invoiceNo} issued`);
+      return issued;
     } catch (e) {
       toast.warning(`${created.invoiceNo} created as draft (issue failed: ${e instanceof Error ? e.message : 'unknown'})`);
+      return created;
     }
-    return created;
   };
 
   /** Save the current entry as a *progress* invoice and keep the
@@ -1235,13 +1323,16 @@ function InvoiceFormDialog({
 
   /** Save the current entry as a *progress* invoice and close the
    *  dialog. Same skip-draft path as Save & add new; only the
-   *  follow-up differs. */
+   *  follow-up differs. Forwards the just-created invoice to the
+   *  parent so it can decide whether to chain the auto-send-Telegram
+   *  flow (open the detail dialog briefly to capture the print
+   *  template into a PNG and sendPhoto). */
   const submitAndClose = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
-      await createAndIssue();
-      await onCreated();
+      const created = await createAndIssue();
+      await onCreated(created);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
     } finally {
@@ -1347,7 +1438,7 @@ function InvoiceFormDialog({
               <Input
                 value={invoiceNo}
                 onChange={e => setInvoiceNo(e.target.value)}
-                className="font-mono"
+                className="tabular-nums"
                 placeholder="Auto-generated"
               />
             </div>
@@ -1362,19 +1453,39 @@ function InvoiceFormDialog({
               <Label className="text-xs">Due date</Label>
               <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <Input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase().slice(0, 8))} placeholder="USD" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Exchange rate (KHR per 1 {currency || 'USD'})</Label>
-              <Input
-                type="number" min={0} step="0.0001"
-                value={exchangeRate}
-                onChange={e => setExchangeRate(e.target.value)}
-                placeholder="4100"
-              />
-            </div>
+            {/* Gated on `currencySettings` being loaded to avoid a
+                brief USD/KHR flash from the enabledCurrencies fallback
+                while the fetch is in flight. */}
+            {currencySettings && currencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Exchange-rate field renders only when the tenant has
+                a secondary currency AND it differs from the form's
+                selected currency. Same-currency conversion has no
+                meaning, so hide the field to keep the form focused. */}
+            {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
+                </Label>
+                <Input
+                  type="number" min={0} step="0.0001"
+                  value={exchangeRate}
+                  onChange={e => setExchangeRate(e.target.value)}
+                  placeholder={String(currencySettings?.secondaryRate ?? 4100)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Line items editor — Item / Specification / UOM / Qty /
@@ -1717,13 +1828,24 @@ function InvoiceFormDialog({
                 </div>
                 )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
-                  <span>Total USD</span>
+                  <span>Total {currency}</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
                 </div>
-                <div className="flex justify-end gap-6 text-gray-700">
-                  <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                </div>
+                {/* Secondary-currency total — same visibility rule as
+                    the exchange-rate input: hidden when the tenant has
+                    no secondary configured, or when the invoice's
+                    currency IS the secondary (nothing to convert into). */}
+                {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+                  <div className="flex justify-end gap-6 text-gray-700">
+                    <span>
+                      Total {currencySettings.secondaryCurrency}
+                      {' '}<span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span>
+                    </span>
+                    <span className="tabular-nums w-32 text-right">
+                      {currencySettings.secondaryCurrency} {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1758,6 +1880,7 @@ function InvoiceFormDialog({
 /* -------------------------------------------------------------------------- */
 function InvoiceDetailDialog({
   invoiceId, customers, canEdit, settings, onClose, onChanged, onEdit,
+  autoSendTelegram, onAutoSendConsumed,
 }: {
   invoiceId: string;
   customers: customersApi.Customer[];
@@ -1771,9 +1894,28 @@ function InvoiceDetailDialog({
   /** Called when the user clicks Edit. The parent should close this
    *  dialog and open the form dialog in edit-mode with the invoice. */
   onEdit: (inv: invoicesApi.Invoice) => void;
+  /** When true, the dialog fires a one-shot image-based Telegram
+   *  send right after the invoice + company info finish loading.
+   *  Used by the Save & Close path so the customer receives the
+   *  rendered invoice (sendPhoto) instead of the BE's text-only
+   *  fallback. */
+  autoSendTelegram?: boolean;
+  /** Callback to flip {@code autoSendTelegram} off in the parent so
+   *  the send never fires twice (e.g. on a re-render). */
+  onAutoSendConsumed?: () => void;
 }) {
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
+  const { formatDate } = useDateFormat();
+  // Tenant-wide currency settings — drives the secondary-total row's
+  // visibility + label on the totals block below. The invoice itself
+  // stores only its own currency + exchange rate; the secondary code
+  // (KHR / KRW / …) comes from the current tenant setting so the
+  // detail view uses the same vocabulary the form does.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
   // Company info drives the print header (logo, Khmer + English name,
   // VAT TIN boxes, address, phone). Loaded once when the dialog opens —
   // soft-fail so the print still renders without it.
@@ -1786,6 +1928,14 @@ function InvoiceDetailDialog({
     documentKind: invoicesApi.InvoiceKind;
   };
   const [payments, setPayments] = useState<LedgerPayment[]>([]);
+  /** Pagination over the line items + the unified payments ledger
+   *  inside the detail dialog. Same Cash-Advance-style usePagination
+   *  hook the list pages use, so the UX feels identical when an
+   *  invoice carries a long line list or has been adjusted many
+   *  times via CN/DN. Resets to page 1 whenever the source array
+   *  reference flips (after a payment add / void). */
+  const itemsPagination = usePagination(invoice?.items ?? [], 10);
+  const paymentsPagination = usePagination(payments, 10);
   /** Pending payment to show the customer receipt card for. Set on
    *  the row's "Receipt" button; cleared when the dialog closes. */
   const [receiptForPayment, setReceiptForPayment] = useState<LedgerPayment | null>(null);
@@ -1793,6 +1943,11 @@ function InvoiceDetailDialog({
   const [busy, setBusy] = useState(false);
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [mailDialogOpen, setMailDialogOpen] = useState(false);
+  /** Auto-minted PayWay session for this invoice — populated on load
+   *  when the backend has one saved. Used to attach the checkout URL
+   *  to outgoing Mail / Telegram invoice sends so the customer
+   *  receives a payable link alongside the invoice itself. */
+  const [paymentLink, setPaymentLink] = useState<paywayApi.PurchaseSession | null>(null);
   // Dedicated flag for the Telegram send so the dropdown trigger
   // can show a spinner + block double-clicks without also locking
   // out the Edit / Void / Record-payment actions that share `busy`.
@@ -1944,6 +2099,17 @@ function InvoiceDetailDialog({
       } else {
         setParentInvoice(null);
       }
+      // Look up an existing PayWay paylink for this invoice. The
+      // server auto-mints on issue when ABA PayWay is configured,
+      // so most issued invoices come back with a ready URL. Soft-
+      // fail — a missing endpoint or 4xx just means "no link yet"
+      // and the operator can still mint manually via the button.
+      try {
+        const link = await paywayApi.findInvoicePaymentLink(inv.id);
+        setPaymentLink(link);
+      } catch {
+        setPaymentLink(null);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load invoice');
     } finally {
@@ -1955,6 +2121,43 @@ function InvoiceDetailDialog({
   useEffect(() => {
     settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
   }, []);
+
+  /** Auto-send-Telegram one-shot — used by the Save & Close create
+   *  path. Waits for the invoice + company info to load (the print
+   *  template needs both to render fully), gives the DOM one paint
+   *  cycle, then captures the print template as a PNG and fires
+   *  sendTelegram. The {@code autoSentRef} guard makes sure a parent
+   *  re-render or a {@code load()} refresh never fires the send
+   *  twice. */
+  const autoSentRef = React.useRef(false);
+  useEffect(() => {
+    if (!autoSendTelegram) return;
+    if (autoSentRef.current) return;
+    if (!invoice || !companyInfo) return;            // wait for both
+    if (invoice.status !== 'progress') return;       // skip drafts / voids
+    autoSentRef.current = true;
+    const handle = setTimeout(async () => {
+      try {
+        const imageDataUrl = await capturePrintImage();
+        const res = await invoicesApi.sendTelegram(invoice.id, imageDataUrl ?? undefined);
+        if (res.status === 'sent') {
+          toast.success(`Invoice ${invoice.invoiceNo} sent via Telegram`);
+        } else if (res.status === 'not_linked') {
+          toast.info('Customer has not connected Telegram yet — share the link from Customers.');
+        } else if (res.status === 'disabled') {
+          // Telegram not configured — stay quiet on auto-send so the
+          // operator isn't spammed every time they save.
+        } else {
+          toast.error(`Telegram send failed: ${res.message ?? 'unknown error'}`);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Telegram send failed');
+      } finally {
+        onAutoSendConsumed?.();
+      }
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [autoSendTelegram, invoice, companyInfo, onAutoSendConsumed]);
 
   const doAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -1995,7 +2198,7 @@ function InvoiceDetailDialog({
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="font-mono">{invoice?.invoiceNo ?? 'Invoice details'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{invoice?.invoiceNo ?? 'Invoice details'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !invoice ? (
                   <span className="text-xs text-gray-500">Loading invoice…</span>
@@ -2018,7 +2221,7 @@ function InvoiceDetailDialog({
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[invoice.status]}`}>
                       {invoice.status}
                     </Badge>
-                    <span className="text-xs text-gray-500">{invoice.issueDate}</span>
+                    <span className="text-xs text-gray-500">{formatDate(invoice.issueDate)}</span>
                   </>
                 )}
               </DialogDescription>
@@ -2086,8 +2289,27 @@ function InvoiceDetailDialog({
                 )}
                 {canEdit && invoice.status === 'draft' && (
                   <Button size="sm" disabled={busy}
-                    onClick={() => doAction('Invoice issued',
-                      () => invoicesApi.issue(invoice.id).then(setInvoice))}
+                    onClick={() => doAction('Invoice issued', async () => {
+                      // Issue with notify=false so the BE skips its
+                      // text-only fallback; we follow up below with
+                      // an image-based sendPhoto so the customer
+                      // receives the rendered invoice instead of a
+                      // plain text summary.
+                      const issued = await invoicesApi.issue(invoice.id, false);
+                      setInvoice(issued);
+                      // Give the dialog one paint cycle to swap in
+                      // the new status + re-render the print template
+                      // before capturePrintImage walks the DOM.
+                      await new Promise(r => setTimeout(r, 120));
+                      try {
+                        const imageDataUrl = await capturePrintImage();
+                        await invoicesApi.sendTelegram(invoice.id, imageDataUrl ?? undefined);
+                      } catch {
+                        // Soft-fail — the issue itself succeeded; a
+                        // delivery hiccup is logged on the BE and the
+                        // operator can retry from Send → Telegram.
+                      }
+                    })}
                   >
                     <Send className="h-3.5 w-3.5 mr-1" /> Issue
                   </Button>
@@ -2137,7 +2359,7 @@ function InvoiceDetailDialog({
               {invoice.parentInvoiceId && (
                 <>
                   <div className="text-gray-500">Adjusts invoice</div>
-                  <div className="font-mono text-sm">
+                  <div className="tabular-nums text-sm">
                     {parentInvoice
                       ? parentInvoice.invoiceNo
                       : <span className="text-gray-400 text-xs italic">loading…</span>}
@@ -2181,7 +2403,7 @@ function InvoiceDetailDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invoice.items.map(it => (
+                  {itemsPagination.paginatedItems.map(it => (
                     <TableRow key={it.id}>
                       <TableCell className="text-sm">{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
@@ -2193,6 +2415,18 @@ function InvoiceDetailDialog({
                   ))}
                 </TableBody>
               </Table>
+              {invoice.items.length > 0 && (
+                <div className="px-1 py-0 border-t">
+                  <Pagination
+                    currentPage={itemsPagination.currentPage}
+                    totalPages={itemsPagination.totalPages}
+                    onPageChange={itemsPagination.goToPage}
+                    startIndex={itemsPagination.startIndex}
+                    endIndex={itemsPagination.endIndex}
+                    totalItems={itemsPagination.totalItems}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Notes / Terms 2-col + summary. Gated by the same tenant
@@ -2279,8 +2513,14 @@ function InvoiceDetailDialog({
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
                     )}
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, 'USD')}</span></div>
-                    <div className="flex justify-end gap-6 text-gray-700"><span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, 'KHR')}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {invoice.currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, invoice.currency)}</span></div>
+                    {/* Secondary-currency total — visible only when
+                        the tenant has a secondary configured AND
+                        the invoice's own currency isn't that
+                        secondary (nothing meaningful to convert into). */}
+                    {currencySettings?.secondaryCurrency && invoice.currency !== currencySettings.secondaryCurrency && (
+                      <div className="flex justify-end gap-6 text-gray-700"><span>Total {currencySettings.secondaryCurrency} <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, currencySettings.secondaryCurrency)}</span></div>
+                    )}
                     {sumDn > 0 && (
                       <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">{fmtMoney(sumDn, invoice.currency)}</span></div>
                     )}
@@ -2331,13 +2571,13 @@ function InvoiceDetailDialog({
                       const sign = a.kind === 'credit_note' ? '−' : '+';
                       return (
                         <TableRow key={a.id} className={isVoid ? 'text-gray-400' : ''}>
-                          <TableCell className={`font-mono text-sm ${isVoid ? 'line-through' : ''}`}>{a.invoiceNo}</TableCell>
+                          <TableCell className={`tabular-nums text-sm ${isVoid ? 'line-through' : ''}`}>{a.invoiceNo}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={KIND_BADGE_CLASS[a.kind]}>
                               {KIND_LABEL[a.kind]}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm text-gray-600">{a.issueDate}</TableCell>
+                          <TableCell className="text-sm text-gray-600">{formatDate(a.issueDate)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[a.status]}`}>
                               {a.status}
@@ -2367,9 +2607,19 @@ function InvoiceDetailDialog({
                     Drafts and voids stay locked since there's nothing
                     to settle against. */}
                 {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && arUsd > 0.005 && (
-                  <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
-                    <Plus className="h-3 w-3 mr-1" /> Record payment
-                  </Button>
+                  <div className="flex items-center gap-2 print:hidden">
+                    {/* The old "Payment Link" button opened an on-screen
+                        dialog with the QR + URL — but the ops team wants
+                        the link delivered TO THE CUSTOMER via Telegram or
+                        email as part of the invoice send, not viewed on
+                        the merchant's own screen. The link is still
+                        auto-minted on issue in the backend and stitched
+                        into outgoing Telegram / mail bodies (see the
+                        send handlers), so no manual step is needed. */}
+                    <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)}>
+                      <Plus className="h-3 w-3 mr-1" /> Record payment
+                    </Button>
+                  </div>
                 )}
               </div>
               {payments.length === 0 ? (
@@ -2389,7 +2639,7 @@ function InvoiceDetailDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payments.map(p => {
+                    {paymentsPagination.paginatedItems.map(p => {
                       // Label + sign depend on the document the payment
                       // was recorded against, not on the dialog's
                       // current view — so a unified payments table on
@@ -2409,14 +2659,16 @@ function InvoiceDetailDialog({
                         : 'border-emerald-300 text-emerald-700 bg-emerald-50';
                       return (
                       <TableRow key={p.id}>
-                        <TableCell className="text-sm">{p.paymentDate}</TableCell>
-                        <TableCell className="text-xs font-mono text-gray-600">{p.documentNo}</TableCell>
+                        <TableCell className="text-sm">{formatDate(p.paymentDate)}</TableCell>
+                        <TableCell className="text-xs tabular-nums text-gray-600">{p.documentNo}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={chipClass}>
                             {typeLabel}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm capitalize">{p.method}</TableCell>
+                        <TableCell className="text-sm capitalize">
+                          {p.method === 'khqr' ? 'KHQR' : p.method}
+                        </TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
                         {/* Currency badge + single Amount cell — the row
                          *  carries its own captured currency, and the
@@ -2424,7 +2676,7 @@ function InvoiceDetailDialog({
                          *  0dp via fmtMoney). Sign / color match the
                          *  outflow logic above. */}
                         <TableCell>
-                          <Badge variant="outline" className="font-mono text-[10px]">{p.currency}</Badge>
+                          <Badge variant="outline" className="tabular-nums text-[10px]">{p.currency}</Badge>
                         </TableCell>
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
                           {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
@@ -2462,6 +2714,18 @@ function InvoiceDetailDialog({
                     })}
                   </TableBody>
                 </Table>
+              )}
+              {payments.length > 0 && (
+                <div className="px-1 py-0 border-t">
+                  <Pagination
+                    currentPage={paymentsPagination.currentPage}
+                    totalPages={paymentsPagination.totalPages}
+                    onPageChange={paymentsPagination.goToPage}
+                    startIndex={paymentsPagination.startIndex}
+                    endIndex={paymentsPagination.endIndex}
+                    totalItems={paymentsPagination.totalItems}
+                  />
+                </div>
               )}
             </div>
 
@@ -2501,7 +2765,7 @@ function InvoiceDetailDialog({
                 @page { margin: 0; size: A4; }
               }
             `}</style>
-            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} />
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} />
           </>
         )}
 
@@ -2517,11 +2781,16 @@ function InvoiceDetailDialog({
           />
         )}
 
+        {/* PaymentLinkDialog removed — the auto-minted link is now
+            delivered via Telegram / mail invoice sends instead of
+            through a merchant-side popup. */}
+
         {mailDialogOpen && invoice && (
           <MailInvoiceDialog
             invoice={invoice}
             customer={customer}
             company={companyInfo}
+            paymentLinkUrl={paymentLink?.checkoutUrl ?? null}
             onClose={() => setMailDialogOpen(false)}
           />
         )}
@@ -2629,9 +2898,22 @@ function VatTinBoxes({ tin }: { tin: string }) {
             alignItems: 'center',
             justifyContent: 'center',
             flex: '0 0 auto',
-            width: '14px',
-            height: '16px',
+            width: '16px',
+            height: '18px',
             fontSize: '11px',
+            // lineHeight:1 makes the glyph height equal the font size so
+            // the flex-center actually sits the character on the cell's
+            // visual midline. Without this, the inherited line-height
+            // (~1.4) pads above/below the glyph and the character drops
+            // toward the bottom border.
+            lineHeight: 1,
+            // Tabular numerals + Arial keep each digit + the letter on
+            // the same advance width so the cells line up uniformly
+            // under html2canvas (different fonts can fall back to
+            // proportional metrics and break the grid).
+            fontFamily: 'Arial, sans-serif',
+            fontVariantNumeric: 'tabular-nums',
+            textAlign: 'center',
             border: c === '-' ? 'none' : '1px solid #000',
             boxSizing: 'border-box',
           }}
@@ -2654,7 +2936,7 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
 }
 
 function PrintTaxInvoice({
-  invoice, customer, company, paid,
+  invoice, customer, company, paid, currencySettings,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -2663,12 +2945,29 @@ function PrintTaxInvoice({
    *  output. Driven by the parent's chain-aware AR == 0 check so
    *  the stamp on screen and on paper share the same trigger. */
   paid?: boolean;
+  /** Tenant currency settings — decides whether the secondary
+   *  Grand Total row prints and what code / symbol it uses. */
+  currencySettings?: currencyApi.CurrencySettings | null;
 }) {
-  // FX rate is captured per-invoice; KHR line uses the snapshot rather
-  // than today's rate so reprinting later still matches the original.
-  const grandKhr = Math.round(invoice.total * (invoice.exchangeRate || 0));
-  const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtKhr = (n: number) => `៛ ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  // Primary currency comes from the invoice itself (per-doc snapshot);
+  // secondary comes from tenant settings so it can be USD/KHR/KRW.
+  const primaryCode = invoice.currency || 'USD';
+  const secondaryCode = currencySettings?.secondaryCurrency ?? null;
+  const showSecondary = !!secondaryCode && secondaryCode !== primaryCode;
+  const grandSecondary = showSecondary
+    ? Math.round(invoice.total * (invoice.exchangeRate || 0))
+    : 0;
+  const primarySym = currencyApi.currencySymbol(primaryCode);
+  const secondarySym = secondaryCode ? currencyApi.currencySymbol(secondaryCode) : '';
+  // KHR-family codes print without decimals; other currencies keep 2dp.
+  const fmtPrimary = (n: number) =>
+    primaryCode === 'KHR' || primaryCode === 'KRW'
+      ? `${primarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${primarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtSecondary = (n: number) =>
+    secondaryCode === 'KHR' || secondaryCode === 'KRW'
+      ? `${secondarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${secondarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // VAT line shows only when the invoice actually has tax — the totals
   // block stays tight on zero-VAT exports / receipts.
   const showVat = invoice.taxAmount > 0;
@@ -2821,8 +3120,21 @@ function PrintTaxInvoice({
         )}
       </div>
 
-      {/* Items table — bilingual headers, totals folded into the same table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+      {/* Items table — bilingual headers, totals folded into the same
+       *  table. Cells carry only borderTop+borderLeft; the table tag
+       *  closes the perimeter with borderBottom+borderRight. That
+       *  guarantees a single 1px line on every edge under both native
+       *  rendering and html2canvas (the Telegram photo capture),
+       *  whereas relying on borderCollapse:collapse leaves doubled
+       *  perimeter lines under html2canvas. */}
+      <table style={{
+        width: '100%',
+        borderCollapse: 'collapse',
+        borderSpacing: 0,
+        borderBottom: '1px solid #000',
+        borderRight: '1px solid #000',
+        fontSize: '11px',
+      }}>
         <thead>
           <tr>
             <th style={thStyle} ><BiLabel kh="ល.រ." en="N°" /></th>
@@ -2842,32 +3154,34 @@ function PrintTaxInvoice({
                 {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
               </td>
               <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(it.unitPrice)}</td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(0)}</td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(it.lineTotal)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
             </tr>
           ))}
           {/* Totals folded into the same table — looks like the WABOOKS PDF */}
           <tr>
-            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>សរុប (ដុល្លារ) / Sub Total (USD)</td>
-            <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(invoice.subtotal)}</td>
+            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+            <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(invoice.subtotal)}</td>
           </tr>
           {showVat && (
             <tr>
               <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>
-                អាករលើតម្លៃបន្ថែម {vatPct}% (ដុល្លារ) / VAT {vatPct}% (USD)
+                អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
               </td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtUsd(invoice.taxAmount)}</td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(invoice.taxAmount)}</td>
             </tr>
           )}
           <tr>
-            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (ដុល្លារ) / Grand Total (USD)</td>
-            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtUsd(invoice.total)}</td>
+            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(invoice.total)}</td>
           </tr>
-          <tr>
-            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (រៀល) / Grand Total (KHR)</td>
-            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtKhr(grandKhr)}</td>
-          </tr>
+          {showSecondary && (
+            <tr>
+              <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+              <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -2974,17 +3288,27 @@ function PrintTaxInvoice({
   return createPortal(tree, document.body) as unknown as React.ReactElement;
 }
 
+// Borders use a "top + left only" pattern so adjacent cells never
+// double up under html2canvas (which doesn't fully honour
+// border-collapse: collapse). The table closes the perimeter with
+// borderBottom + borderRight in its inline style; the cells fill the
+// inside lines. boxSizing: border-box keeps padding from bumping the
+// 1px border outside the cell width.
 const thStyle: React.CSSProperties = {
-  border: '1px solid #000',
+  borderTop: '1px solid #000',
+  borderLeft: '1px solid #000',
   padding: '4px 6px',
   textAlign: 'center',
   verticalAlign: 'middle',
   fontWeight: 600,
+  boxSizing: 'border-box',
 };
 const tdStyle: React.CSSProperties = {
-  border: '1px solid #000',
+  borderTop: '1px solid #000',
+  borderLeft: '1px solid #000',
   padding: '4px 6px',
-  verticalAlign: 'top',
+  verticalAlign: 'middle',
+  boxSizing: 'border-box',
 };
 
 /* -------------------------------------------------------------------------- */
@@ -3112,23 +3436,33 @@ function PaymentReceiptDialog({
 }
 
 function MailInvoiceDialog({
-  invoice, customer, company, onClose,
+  invoice, customer, company, paymentLinkUrl, onClose,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
   company: settingsApi.CompanyInfo | null;
+  /** PayWay hosted-checkout URL for this invoice (if any). Auto-
+   *  bundled into the mail body so the customer can pay in one tap
+   *  without waiting for a separate share step. Only http(s) URLs
+   *  are useful in an email — deep-link schemes are filtered out
+   *  earlier in the pipeline. */
+  paymentLinkUrl?: string | null;
   onClose: () => void;
 }) {
   const fmtUsd = (n: number) =>
     `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const defaultSubject =
     `Invoice ${invoice.invoiceNo}${company?.name ? ` from ${company.name}` : ''}`;
+  const payLine = paymentLinkUrl
+    ? [`Pay online: ${paymentLinkUrl}`, '']
+    : [];
   const defaultBody = [
     `Dear ${customer?.representative || customer?.name || 'Customer'},`,
     '',
     `Please find your invoice ${invoice.invoiceNo} dated ${invoice.issueDate}.`,
     `Amount due: ${fmtUsd(invoice.total)}${invoice.dueDate ? ` — due by ${invoice.dueDate}` : ''}.`,
     '',
+    ...payLine,
     'A printed copy is attached. Let us know if you have any questions.',
     '',
     `Regards,${company?.name ? `\n${company.name}` : ''}`,
@@ -3245,14 +3579,29 @@ function RecordPaymentDialog({
     invoice.kind === 'credit_note' ? 'debit' : 'credit'
   );
   const [amount, setAmount] = useState(outstanding.toFixed(2));
+  // Tenant currency settings drive which payment-currency buttons
+  // render — a single-currency tenant sees no picker at all. Payment
+  // options intersect the tenant's enabled currencies with what the
+  // backend accepts (USD | KHR only for now — KRW payments would
+  // require a backend regex/enum update).
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
+  const payCurrencyOptions = currencySettings
+    ? currencyApi.enabledCurrencies(currencySettings).filter(c => c === 'USD' || c === 'KHR')
+    : [];
   const [currency, setCurrency] = useState<paymentsApi.PaymentCurrency>(
-    // Default to the invoice's own currency so the operator usually
-    // just needs to confirm. KHR is one click away when the cashier
-    // received riel against a USD invoice.
+    // Default to the invoice's own currency when it's payment-
+    // supported; otherwise fall back to USD so the payload validates.
     invoice.currency === 'KHR' ? 'KHR' : 'USD',
   );
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [method, setMethod] = useState<paymentsApi.PaymentMethod>('cash');
+  // Default to Bank transfer — most invoice payments land via PayWay
+  // or a customer wire, so 'bank' matches the operator's typical
+  // Record Payment intent. The picker still exposes Cash for
+  // over-the-counter cases.
+  const [method, setMethod] = useState<paymentsApi.PaymentMethod>('bank');
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -3340,29 +3689,28 @@ function RecordPaymentDialog({
                 onChange={e => setAmount(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrency('KHR')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'KHR'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >KHR</button>
-                <button
-                  type="button"
-                  onClick={() => setCurrency('USD')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'USD'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >USD</button>
+            {/* Payment currency buttons — one per enabled currency in
+                tenant Settings. Hidden entirely when the tenant has
+                only one enabled currency (no choice to make). */}
+            {payCurrencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <div className={`grid gap-1 ${payCurrencyOptions.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                  {payCurrencyOptions.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCurrency(c as paymentsApi.PaymentCurrency)}
+                      className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                        currency === c
+                          ? 'bg-blue-50 border-blue-300 text-blue-700'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                      }`}
+                    >{c}</button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -3374,9 +3722,14 @@ function RecordPaymentDialog({
               <Select value={method} onValueChange={v => setMethod(v as paymentsApi.PaymentMethod)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  {/* KHQR sits at the top — it's what the PayWay push
+                      auto-stamps and the operator's typical
+                      Record-Payment path when the customer scanned
+                      the invoice's QR code. */}
+                  <SelectItem value="khqr">KHQR</SelectItem>
+                  <SelectItem value="bank">Transfer</SelectItem>
                   <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="bank">Bank transfer</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="card">Credit/Debit</SelectItem>
                   <SelectItem value="cheque">Cheque</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>

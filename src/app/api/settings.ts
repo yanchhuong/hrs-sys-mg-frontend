@@ -150,6 +150,10 @@ export interface GeneralAttendanceSettings {
   notifyEmployee: boolean;
   /** 3-letter day codes: Mon, Tue, Wed, Thu, Fri, Sat, Sun. */
   weekendDays: string[];
+  /** V169 — half workdays (Cambodian banks / factories often treat
+   *  Saturday this way). A day appears in AT MOST one of the two
+   *  lists; the settings UI toggle enforces mutual exclusion. */
+  halfDayDays: string[];
 }
 
 export async function getGeneralAttendanceSettings(): Promise<GeneralAttendanceSettings> {

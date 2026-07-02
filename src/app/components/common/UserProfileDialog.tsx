@@ -408,7 +408,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                     — currentUser.employeeId is the FK to employees,
                     which is internal plumbing nobody wants to see in
                     a profile card. */}
-                <div className="h-9 flex items-center px-3 border rounded-md bg-gray-50 text-sm font-mono text-gray-700">
+                <div className="h-9 flex items-center px-3 border rounded-md bg-gray-50 text-sm tabular-nums text-gray-700">
                   {currentEmployee?.empNo || currentEmployee?.id || '—'}
                 </div>
               </FieldBox>

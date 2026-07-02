@@ -19,7 +19,8 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
-import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings, Upload } from 'lucide-react';
+import { BulkUploadCustomersDialog } from '../common/BulkUploadCustomersDialog';
 import { CustomerTelegramBotSettingsDialog } from '../common/CustomerTelegramBotSettingsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -85,6 +86,7 @@ export function Customers() {
   // Settings → Telegram tab so admins find the config next to the
   // customer rows that use it.
   const [botSettingsOpen, setBotSettingsOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   const [rows, setRows] = useState<customersApi.Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -246,12 +248,31 @@ export function Customers() {
             </Button>
           )}
           {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload customers from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
+            </Button>
+          )}
+          {canAdd && (
             <Button onClick={() => openAdd('individual')}>
               <Plus className="h-4 w-4 mr-1.5" /> Add Customer
             </Button>
           )}
         </div>
       </div>
+
+      {/* Bulk upload from Excel — mirrors the pattern used for
+          Invoice / Bill / Item imports. Feeds the parser the current
+          roster so Name / TIN dupes surface at parse time. */}
+      <BulkUploadCustomersDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        existingCustomers={rows}
+        onImported={() => { void load(); }}
+      />
 
       <Card>
         <CardHeader className="pb-3">
@@ -722,7 +743,7 @@ function TelegramCell({
             <span className="font-medium text-emerald-700">{display}</span>
           </div>
           {handle && (
-            <span className="font-mono text-[10px] text-gray-500">{handle}</span>
+            <span className="tabular-nums text-[10px] text-gray-500">{handle}</span>
           )}
         </div>
         {canUnlink && (
@@ -749,7 +770,7 @@ function TelegramCell({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {linked?.telegramUsername
-                  ? <>The chat <span className="font-mono">@{linked.telegramUsername}</span> will no longer receive invoices from this customer.</>
+                  ? <>The chat <span className="tabular-nums">@{linked.telegramUsername}</span> will no longer receive invoices from this customer.</>
                   : <>This chat will no longer receive invoices from this customer.</>}
                 {' '}You can re-share a fresh link later — the customer will need to click <strong>Start</strong> on Telegram again to reconnect.
               </AlertDialogDescription>
@@ -833,7 +854,7 @@ function TelegramCell({
           {linkUrl && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Input value={linkUrl} readOnly className="font-mono text-xs" />
+                <Input value={linkUrl} readOnly className="tabular-nums text-xs" />
                 <Button variant="outline" size="sm" onClick={copyLink}>
                   {copied
                     ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>

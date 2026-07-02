@@ -18,7 +18,8 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as vendorsApi from '../../api/vendors';
-import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Upload } from 'lucide-react';
+import { BulkUploadVendorsDialog } from '../common/BulkUploadVendorsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -66,6 +67,7 @@ export function Vendors() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<vendorsApi.VendorRequest>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<vendorsApi.Vendor | null>(null);
 
   const load = async () => {
@@ -176,12 +178,31 @@ export function Vendors() {
             Refresh
           </Button>
           {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload vendors from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
+            </Button>
+          )}
+          {canAdd && (
             <Button onClick={() => openAdd('individual')}>
               <Plus className="h-4 w-4 mr-1.5" /> Add Vendor
             </Button>
           )}
         </div>
       </div>
+
+      {/* Bulk upload from Excel — mirrors the Customer / Item /
+          Invoice / Bill imports. Feeds the parser the current roster
+          so Name / TIN dupes surface at parse time. */}
+      <BulkUploadVendorsDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        existingVendors={rows}
+        onImported={() => { void load(); }}
+      />
 
       <Card>
         <CardHeader className="pb-3">

@@ -218,7 +218,7 @@ export function Offices({ embedded = false }: Props = {}) {
                 {rows.map(o => (
                   <TableRow key={o.id}>
                     <TableCell className="font-medium">{o.name}</TableCell>
-                    <TableCell className="font-mono text-xs text-gray-600">
+                    <TableCell className="tabular-nums text-xs text-gray-600">
                       {o.latitude.toFixed(5)}, {o.longitude.toFixed(5)}
                     </TableCell>
                     <TableCell className="text-center text-sm">{o.radiusMeters}m</TableCell>

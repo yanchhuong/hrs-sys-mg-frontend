@@ -14,6 +14,7 @@ import { SystemHolidays } from './SystemHolidays';
 import { TenantModules } from './TenantModules';
 import { ModuleCategories } from './ModuleCategories';
 import { PlatformTelegram } from './PlatformTelegram';
+import { RequirementSurveys } from './RequirementSurveys';
 
 export function SuperAdminApp() {
   const [view, setView] = useState<SuperAdminView>('dashboard');
@@ -34,6 +35,7 @@ export function SuperAdminApp() {
       case 'holidays':           return <PlatformHolidays />;
       case 'system_holidays':    return <SystemHolidays />;
       case 'platform_telegram':  return <PlatformTelegram />;
+      case 'surveys':            return <RequirementSurveys />;
     }
   };
 

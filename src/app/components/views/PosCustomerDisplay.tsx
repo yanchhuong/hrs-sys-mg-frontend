@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ShoppingCart, CheckCircle2, Package } from 'lucide-react';
 import {
   POS_DISPLAY_CHANNEL,
+  POS_DISPLAY_PATH,
   emptyState,
   fmtDisplayMoney,
   resolveVideoEmbed,
@@ -9,6 +10,19 @@ import {
   type DisplayState,
   type DisplayMessage,
 } from '../../utils/posCustomerDisplay';
+import * as posDisplayApi from '../../api/posDisplay';
+
+/** Read the pairing code off the URL when the customer Display is
+ *  running on a separate device — path looks like
+ *  {@code /pos-display/K7T3M}. Empty string means we're in the
+ *  same-browser popup mode and should subscribe to BroadcastChannel. */
+function readDisplayCode(): string {
+  if (typeof window === 'undefined') return '';
+  const rest = window.location.pathname.replace(POS_DISPLAY_PATH, '');
+  // Strip leading '/' and any trailing slash; tolerate query strings.
+  const cleaned = rest.replace(/^\/+/, '').split(/[?#]/)[0].replace(/\/+$/, '');
+  return cleaned;
+}
 
 /**
  * Customer-facing POS display (the "mirror" screen).
@@ -28,8 +42,30 @@ import {
 export function PosCustomerDisplay() {
   const [state, setState] = useState<DisplayState>(() => emptyState('Welcome', null));
   const channelRef = useRef<BroadcastChannel | null>(null);
+  /** Code present → we're a paired tablet on a different device,
+   *  subscribe via SSE. Empty → we're the same-browser popup,
+   *  subscribe via BroadcastChannel (the original behaviour). The
+   *  rendered tree below this hook is identical either way. */
+  const pairedCode = readDisplayCode();
 
   useEffect(() => {
+    if (pairedCode) {
+      // Remote-pairing path. EventSource auto-reconnects on transient
+      // network drops; we just close it on unmount. The server's
+      // subscribe() replays the cached lastState immediately so a
+      // late-joining tablet sees the current cart without waiting
+      // for the next cashier action.
+      const es = posDisplayApi.subscribe(pairedCode, (raw) => {
+        if (raw && typeof raw === 'object' && (raw as DisplayMessage).kind === 'state') {
+          setState((raw as DisplayMessage & { kind: 'state' }).state);
+        }
+      });
+      return () => es.close();
+    }
+    // Same-browser popup path. Identical contract: a {kind:'state'}
+    // message carries the snapshot; "request-state" prompts the
+    // currently-mounted POS to publish its latest snapshot so we
+    // don't render an empty "Welcome" splash on a fresh-popup race.
     const ch = new BroadcastChannel(POS_DISPLAY_CHANNEL);
     channelRef.current = ch;
     ch.onmessage = (ev: MessageEvent<DisplayMessage>) => {
@@ -37,7 +73,7 @@ export function PosCustomerDisplay() {
     };
     ch.postMessage({ kind: 'request-state' } satisfies DisplayMessage);
     return () => { ch.close(); channelRef.current = null; };
-  }, []);
+  }, [pairedCode]);
 
   if (state.paid) return <PaidSplash state={state} />;
 
@@ -176,7 +212,7 @@ function Header({
       {queueNo && (
         <div className="text-right">
           <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 font-semibold">Order</div>
-          <div className="text-4xl font-mono font-bold text-emerald-700 leading-none mt-1">{queueNo}</div>
+          <div className="text-4xl tabular-nums font-bold text-emerald-700 leading-none mt-1">{queueNo}</div>
         </div>
       )}
     </header>
@@ -332,7 +368,7 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
                   <div className="text-sm text-slate-600 mt-0.5 truncate">{b.accountName}</div>
                 )}
                 {b.accountNumber && (
-                  <div className="text-sm font-mono text-slate-700 mt-0.5">{b.accountNumber}</div>
+                  <div className="text-sm tabular-nums text-slate-700 mt-0.5">{b.accountNumber}</div>
                 )}
               </div>
             ))}

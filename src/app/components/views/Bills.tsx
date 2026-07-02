@@ -34,12 +34,17 @@ import * as billPaymentsApi from '../../api/billPayments';
 import { formatMoneyForCurrency } from '../../utils/format';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import * as vendorsApi from '../../api/vendors';
+import * as itemsApi from '../../api/items';
+import * as currencyApi from '../../api/currencySettings';
+import { StockItemPicker } from '../common/StockItemPicker';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload,
 } from 'lucide-react';
+import { BulkUploadBillsDialog } from '../common/BulkUploadBillsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 
 /* -------------------------------------------------------------------------- */
@@ -119,19 +124,6 @@ const fmtMoney = (n: number, currency: string): string => {
   return n < 0 ? `− ${body}` : body;
 };
 
-/** Current-month ISO bounds for the toolbar date filter default. */
-function currentMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const last = new Date(y, m + 1, 0);
-  return {
-    from: `${y}-${pad(m + 1)}-01`,
-    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
-  };
-}
-
 /** Taxation matrix — datakey → display label + percentage. Mirrors
  *  the cross-system reference; backend service uses the same rates. */
 const TAX_TYPES: ReadonlyArray<{ key: billsApi.BillTaxType; label: string; rate: number }> = [
@@ -203,6 +195,7 @@ function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
 export function Bills() {
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd = canCreate('bill');
   const canEdit = canUpdate('bill');
   const canRemove = canDelete('bill');
@@ -215,11 +208,11 @@ export function Bills() {
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
   //
-  // Defaults to the current calendar month so HR lands on recent
-  // activity rather than a multi-year scroll. The toolbar Clear
-  // button empties both inputs to show everything.
-  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
-  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
+  // Defaults to empty so the landing view shows every bill; users
+  // pick a range to narrow. Pagination keeps the list scroll bounded
+  // even with several years of data.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
 
   // Per-side Accountant settings (V92) — Purchase row is independent
@@ -228,6 +221,7 @@ export function Bills() {
   const [settings, setSettings] = useState<accountingSettingsApi.AccountingSettings>(
     accountingSettingsApi.defaultsFor('purchase'));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -511,6 +505,16 @@ export function Bills() {
             <Settings className="h-4 w-4" />
           </Button>
           {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload bills from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              Bulk Upload
+            </Button>
+          )}
+          {canAdd && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button>
@@ -595,8 +599,12 @@ export function Bills() {
             </p>
           ) : (
             <>
+              {/* Scrollable container — vertical + horizontal overflow
+                  stays inside the table area so the page never
+                  side-scrolls and the column labels stay pinned. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead className="w-[160px]">Bill No.</TableHead>
                     <TableHead className="w-[130px]">Type</TableHead>
@@ -627,7 +635,7 @@ export function Bills() {
                     const isAdjustment = !!inv.parentBillId;
                     return (
                     <TableRow key={inv.id} className={isAdjustment ? 'bg-slate-50/50' : ''}>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="tabular-nums text-sm">
                         {isAdjustment && (
                           <span className="text-gray-400 mr-1.5" title="Adjusts the parent bill above">↳</span>
                         )}
@@ -641,7 +649,7 @@ export function Bills() {
                       <TableCell className="text-sm">
                         {vendorById.get(inv.vendorId)?.name ?? <span className="text-gray-400">(unknown)</span>}
                       </TableCell>
-                      <TableCell className="text-sm text-gray-600">{inv.issueDate}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{formatDate(inv.issueDate)}</TableCell>
                       {/* CN amount represents money we owe customer →
                           render signed negative in red so the column
                           and footer sum match the ledger direction. */}
@@ -795,15 +803,16 @@ export function Bills() {
                   </TableFooter>
                 )}
               </Table>
-              {pagination.totalPages > 1 && (
-                <div className="mt-4">
+              </div>
+              {groupedRows.length > 0 && (
+                <div className="px-1 py-0 border-t">
                   <Pagination
                     currentPage={pagination.currentPage}
                     totalPages={pagination.totalPages}
                     onPageChange={pagination.goToPage}
-                    startIndex={(pagination.currentPage - 1) * 25}
-                    endIndex={Math.min(pagination.currentPage * 25, groupedRows.length)}
-                    totalItems={groupedRows.length}
+                    startIndex={pagination.startIndex}
+                    endIndex={pagination.endIndex}
+                    totalItems={pagination.totalItems}
                   />
                 </div>
               )}
@@ -832,6 +841,18 @@ export function Bills() {
         onOpenChange={setSettingsOpen}
         scope="purchase"
         onSaved={setSettings}
+      />
+
+      {/* Bulk upload from Excel — mirrors the Invoice bulk flow.
+          Auto-creates missing vendors on submit (Business when TIN
+          present, Individual otherwise) and reloads the list on any
+          successful import. */}
+      <BulkUploadBillsDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        vendors={vendors}
+        existingBillNos={rows.map(r => r.billNo)}
+        onImported={() => { void load(); }}
       />
 
       {/* Detail dialog */}
@@ -879,9 +900,13 @@ interface FormItem {
   unit?: string;
   quantity: string;
   unitPrice: string;
+  /** Linked stock_items.id when the line was picked from the catalog —
+   *  null for hand-typed names. Used by the server to decrement the
+   *  Stock IN/OUT ledger only when a real item is referenced. */
+  stockItemId?: string | null;
 }
 
-const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0' };
+const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0', stockItemId: null };
 
 function BillFormDialog({
   open, onOpenChange, kind, vendors, bills, editing, parentPrefill, settings, onCreated,
@@ -919,7 +944,43 @@ function BillFormDialog({
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
+  // Tenant currency settings (V166). Drives the dropdown options +
+  // the default currency / exchange rate for fresh bills.
+  //
+  // Refetched every time the dialog OPENS — the tenant currency pair
+  // can change via Bill Settings > Currency while this form was still
+  // mounted, and we want the fresh values on the next open rather
+  // than waiting for a page reload.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
+  // Stock-catalog picker (parity with Invoices / Quotations). Loaded
+  // lazily the first time the user opens the picker. Gated by the
+  // per-tenant Items → Settings dialog toggle (enabledForBill); when
+  // off, lines stay free-text only.
+  const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [pickerEnabled, setPickerEnabled] = useState(false);
+  useEffect(() => {
+    itemsApi.getUsageSettings()
+      .then(s => setPickerEnabled(s.enabledForBill))
+      .catch(() => setPickerEnabled(false));
+  }, []);
+  const ensureCatalog = async () => {
+    if (catalogLoaded) return;
+    try {
+      const res = await itemsApi.list({ size: 200 });
+      setStockCatalog(res.content ?? []);
+    } catch {
+      // Silent fail — free-text still works.
+    } finally {
+      setCatalogLoaded(true);
+    }
+  };
   const [taxType, setTaxType] = useState<billsApi.BillTaxType | ''>('');
   const [taxAmount, setTaxAmount] = useState('0');
   const [discountType, setDiscountType] = useState<billsApi.DiscountType>('amount');
@@ -950,6 +1011,7 @@ function BillFormDialog({
             unit: it.unit ?? '',
             quantity: String(it.quantity),
             unitPrice: String(it.unitPrice),
+            stockItemId: it.stockItemId ?? null,
           })));
       setTaxType((editing.taxType ?? '') as billsApi.BillTaxType | '');
       setTaxAmount(String(editing.taxAmount));
@@ -967,8 +1029,10 @@ function BillFormDialog({
       setInvoiceNo('');
       setIssueDate(new Date().toISOString().slice(0, 10));
       setDueDate('');
-      setCurrency(seedParent?.currency ?? 'USD');
-      setExchangeRate(seedParent ? String(seedParent.exchangeRate) : '4100');
+      setCurrency(seedParent?.currency ?? currencySettings?.primaryCurrency ?? 'USD');
+      setExchangeRate(seedParent
+        ? String(seedParent.exchangeRate)
+        : String(currencySettings?.secondaryRate ?? 4100));
       setItems([{ ...blankItem }]);
       setTaxType((seedParent?.taxType ?? '') as billsApi.BillTaxType | '');
       setTaxAmount('0');
@@ -985,6 +1049,17 @@ function BillFormDialog({
       return () => { cancelled = true; };
     }
   }, [open, kind, editing, parentPrefill, bills]);
+
+  // Follow-up sync: when the tenant currency settings arrive AFTER
+  // the reset effect above ran (network race on first open), pin the
+  // form's currency + exchange rate to the tenant defaults. Skip in
+  // edit mode (the row's own currency wins) and when a parent
+  // adjustment is being created (parent's currency wins).
+  useEffect(() => {
+    if (!open || editing || parentPrefill || !currencySettings) return;
+    setCurrency(currencySettings.primaryCurrency);
+    setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
+  }, [open, editing, parentPrefill, currencySettings]);
 
   const rootBillOptions = useMemo(() =>
     bills.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
@@ -1041,6 +1116,7 @@ function BillFormDialog({
       unit: it.unit?.trim() || undefined,
       quantity: Number(it.quantity) || 0,
       unitPrice: Number(it.unitPrice) || 0,
+      stockItemId: it.stockItemId || undefined,
     })),
   });
 
@@ -1203,7 +1279,7 @@ function BillFormDialog({
               <Input
                 value={billNo}
                 onChange={e => setInvoiceNo(e.target.value)}
-                className="font-mono"
+                className="tabular-nums"
                 placeholder="Auto-generated"
               />
             </div>
@@ -1218,19 +1294,43 @@ function BillFormDialog({
               <Label className="text-xs">Due date</Label>
               <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <Input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase().slice(0, 8))} placeholder="USD" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Exchange rate (KHR per 1 {currency || 'USD'})</Label>
-              <Input
-                type="number" min={0} step="0.0001"
-                value={exchangeRate}
-                onChange={e => setExchangeRate(e.target.value)}
-                placeholder="4100"
-              />
-            </div>
+            {/* Currency picker only appears when the tenant has more
+                than one enabled currency — a single-currency tenant has
+                nothing to choose, so the field is hidden and `currency`
+                stays pinned to the primary. Gated on `currencySettings`
+                being loaded to avoid a brief USD/KHR flash from the
+                enabledCurrencies fallback while the fetch is in flight. */}
+            {currencySettings && currencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Exchange-rate field renders only when the tenant has
+                a secondary currency AND it differs from the form's
+                selected currency. Same-currency conversion (KHR bill
+                with secondary=KHR) has no meaning, so hide the field
+                entirely to keep the form focused. */}
+            {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
+                </Label>
+                <Input
+                  type="number" min={0} step="0.0001"
+                  value={exchangeRate}
+                  onChange={e => setExchangeRate(e.target.value)}
+                  placeholder={String(currencySettings?.secondaryRate ?? 4100)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Line items editor — Item / Specification / UOM / Qty /
@@ -1258,12 +1358,36 @@ function BillFormDialog({
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
               return (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <Input
-                    className="col-span-3 h-8 text-sm"
-                    value={it.name}
-                    onChange={e => updateItem(idx, { name: e.target.value })}
-                    placeholder="Item or service name"
-                  />
+                  <div className="col-span-3 flex items-center gap-1">
+                    {/* Stock-catalog picker — gated by the per-tenant
+                        Items → Settings toggle (enabledForBill). Free-
+                        text Item input always works. */}
+                    {pickerEnabled && (
+                      <StockItemPicker
+                        catalog={stockCatalog}
+                        loaded={catalogLoaded}
+                        onOpen={ensureCatalog}
+                        selectedId={it.stockItemId ?? ''}
+                        onPick={si => updateItem(idx, {
+                          stockItemId: si.id,
+                          name: si.name,
+                          unit: si.unit ?? it.unit ?? '',
+                          unitPrice: String(si.unitPrice ?? 0),
+                        })}
+                      />
+                    )}
+                    <Input
+                      className="h-8 text-sm flex-1"
+                      value={it.name}
+                      onChange={e => updateItem(idx, {
+                        name: e.target.value,
+                        // Hand-editing the name unlinks it from the
+                        // catalog row — keeps stock decrement consistent.
+                        stockItemId: null,
+                      })}
+                      placeholder="Item or service name"
+                    />
+                  </div>
                   <Input
                     className="col-span-3 h-8 text-sm"
                     value={it.description ?? ''}
@@ -1450,13 +1574,25 @@ function BillFormDialog({
                 </div>
                 )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1">
-                  <span>Total USD</span>
+                  <span>Total {currency}</span>
                   <span className="tabular-nums w-32 text-right">{fmtMoney(total, currency)}</span>
                 </div>
-                <div className="flex justify-end gap-6 text-gray-700">
-                  <span>Total KHR <span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span></span>
-                  <span className="tabular-nums w-32 text-right">KHR {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                </div>
+                {/* Secondary-currency total — same visibility rule as
+                    the exchange-rate input above: hidden when the
+                    tenant has no secondary configured, or when the
+                    bill's currency IS the secondary (nothing to
+                    convert into). */}
+                {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+                  <div className="flex justify-end gap-6 text-gray-700">
+                    <span>
+                      Total {currencySettings.secondaryCurrency}
+                      {' '}<span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span>
+                    </span>
+                    <span className="tabular-nums w-32 text-right">
+                      {currencySettings.secondaryCurrency} {totalKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1507,8 +1643,17 @@ function BillDetailDialog({
    *  dialog and open the form dialog in edit-mode with the invoice. */
   onEdit: (inv: billsApi.Bill) => void;
 }) {
+  const { formatDate } = useDateFormat();
   const [invoice, setInvoice] = useState<billsApi.Bill | null>(null);
   const [parentInvoice, setParentInvoice] = useState<billsApi.Bill | null>(null);
+  // Tenant-wide currency settings — drives the secondary-total row's
+  // visibility + label. The bill stores only its own currency +
+  // exchange rate; the secondary code (KHR / KRW / …) comes from
+  // the current tenant setting.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
   // Payments augmented with the source document they were recorded
   // against — so the unified table on a root invoice can show
   // payments + DN receipts + CN refunds in one chronological view.
@@ -1623,7 +1768,7 @@ function BillDetailDialog({
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="font-mono">{invoice?.billNo ?? 'Bill details'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{invoice?.billNo ?? 'Bill details'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !invoice ? (
                   <span className="text-xs text-gray-500">Loading bill…</span>
@@ -1635,7 +1780,7 @@ function BillDetailDialog({
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[invoice.status]}`}>
                       {STATUS_LABEL[invoice.status] ?? invoice.status}
                     </Badge>
-                    <span className="text-xs text-gray-500">{invoice.issueDate}</span>
+                    <span className="text-xs text-gray-500">{formatDate(invoice.issueDate)}</span>
                   </>
                 )}
               </DialogDescription>
@@ -1710,7 +1855,7 @@ function BillDetailDialog({
               {invoice.parentBillId && (
                 <>
                   <div className="text-gray-500">Adjusts bill</div>
-                  <div className="font-mono text-sm">
+                  <div className="tabular-nums text-sm">
                     {parentInvoice
                       ? parentInvoice.billNo
                       : <span className="text-gray-400 text-xs italic">loading…</span>}
@@ -1850,8 +1995,10 @@ function BillDetailDialog({
                       <span className="tabular-nums w-32 text-right">− {fmtMoney(invoice.discountAmount, invoice.currency)}</span>
                     </div>
                     )}
-                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total USD</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, 'USD')}</span></div>
-                    <div className="flex justify-end gap-6 text-gray-700"><span>Total KHR <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, 'KHR')}</span></div>
+                    <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {invoice.currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(totalUsd, invoice.currency)}</span></div>
+                    {currencySettings?.secondaryCurrency && invoice.currency !== currencySettings.secondaryCurrency && (
+                      <div className="flex justify-end gap-6 text-gray-700"><span>Total {currencySettings.secondaryCurrency} <span className="text-[10px] text-gray-400">@ {invoice.exchangeRate}</span></span><span className="tabular-nums w-32 text-right">{fmtMoney(totalKhr, currencySettings.secondaryCurrency)}</span></div>
+                    )}
                     {sumDn > 0 && (
                       <div className="flex justify-end gap-6 text-amber-700"><span>Debit notes</span><span className="tabular-nums w-32 text-right">{fmtMoney(sumDn, invoice.currency)}</span></div>
                     )}
@@ -1916,13 +2063,13 @@ function BillDetailDialog({
                       const sign = a.kind === 'credit_note' ? '−' : '+';
                       return (
                         <TableRow key={a.id} className={isVoid ? 'text-gray-400' : ''}>
-                          <TableCell className={`font-mono text-sm ${isVoid ? 'line-through' : ''}`}>{a.billNo}</TableCell>
+                          <TableCell className={`tabular-nums text-sm ${isVoid ? 'line-through' : ''}`}>{a.billNo}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={KIND_BADGE_CLASS[a.kind]}>
                               {KIND_LABEL[a.kind]}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm text-gray-600">{a.issueDate}</TableCell>
+                          <TableCell className="text-sm text-gray-600">{formatDate(a.issueDate)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[a.status]}`}>
                               {STATUS_LABEL[a.status] ?? a.status}
@@ -1997,21 +2144,23 @@ function BillDetailDialog({
                         : 'border-emerald-300 text-emerald-700 bg-emerald-50';
                       return (
                       <TableRow key={p.id}>
-                        <TableCell className="text-sm">{p.paymentDate}</TableCell>
-                        <TableCell className="text-xs font-mono text-gray-600">{p.documentNo}</TableCell>
+                        <TableCell className="text-sm">{formatDate(p.paymentDate)}</TableCell>
+                        <TableCell className="text-xs tabular-nums text-gray-600">{p.documentNo}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={chipClass}>
                             {typeLabel}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm capitalize">{p.method}</TableCell>
+                        <TableCell className="text-sm capitalize">
+                          {p.method === 'khqr' ? 'KHQR' : p.method}
+                        </TableCell>
                         <TableCell className="text-sm text-gray-600">{p.referenceNo ?? '—'}</TableCell>
                         {/* Currency badge + single Amount cell. Row keeps
                          *  the captured currency; Amount renders in that
                          *  currency. Sign / color match the outflow logic
                          *  above (red = we paid vendor). */}
                         <TableCell>
-                          <Badge variant="outline" className="font-mono text-[10px]">{p.currency}</Badge>
+                          <Badge variant="outline" className="tabular-nums text-[10px]">{p.currency}</Badge>
                         </TableCell>
                         <TableCell className={`text-right text-sm tabular-nums ${isOutflow ? 'text-red-700' : ''}`}>
                           {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
@@ -2096,11 +2245,24 @@ function RecordBillPaymentDialog({
     invoice.kind === 'credit_note' ? 'credit' : 'debit'
   );
   const [amount, setAmount] = useState(outstanding.toFixed(2));
+  // Tenant currency settings drive which payment-currency buttons
+  // render — a single-currency tenant sees no picker at all. Payment
+  // options intersect tenant-enabled with what the backend accepts
+  // (USD | KHR only for now).
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
+  const payCurrencyOptions = currencySettings
+    ? currencyApi.enabledCurrencies(currencySettings).filter(c => c === 'USD' || c === 'KHR')
+    : [];
   const [currency, setCurrency] = useState<billPaymentsApi.PaymentCurrency>(
     invoice.currency === 'KHR' ? 'KHR' : 'USD',
   );
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [method, setMethod] = useState<billPaymentsApi.PaymentMethod>('cash');
+  // Default to Bank transfer — vendor payments typically go by wire
+  // rather than cash, matching the Invoice-side default.
+  const [method, setMethod] = useState<billPaymentsApi.PaymentMethod>('bank');
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -2186,29 +2348,29 @@ function RecordBillPaymentDialog({
                 onChange={e => setAmount(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrency('KHR')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'KHR'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >KHR</button>
-                <button
-                  type="button"
-                  onClick={() => setCurrency('USD')}
-                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                    currency === 'USD'
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                  }`}
-                >USD</button>
+            {/* Payment currency buttons — one per enabled currency in
+                tenant Settings (intersected with USD/KHR backend
+                support). Hidden entirely when the tenant has one
+                enabled currency (no choice to make). */}
+            {payCurrencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <div className={`grid gap-1 ${payCurrencyOptions.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                  {payCurrencyOptions.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCurrency(c as billPaymentsApi.PaymentCurrency)}
+                      className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                        currency === c
+                          ? 'bg-blue-50 border-blue-300 text-blue-700'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                      }`}
+                    >{c}</button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -2220,8 +2382,9 @@ function RecordBillPaymentDialog({
               <Select value={method} onValueChange={v => setMethod(v as billPaymentsApi.PaymentMethod)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="khqr">KHQR</SelectItem>
                   <SelectItem value="bank">Bank transfer</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
                   <SelectItem value="card">Card</SelectItem>
                   <SelectItem value="cheque">Cheque</SelectItem>
                   <SelectItem value="other">Other</SelectItem>

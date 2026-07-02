@@ -3,6 +3,7 @@ import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
+  ClipboardList, ArrowRight, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -18,8 +19,11 @@ import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/accountingSettings';
+import * as posDisplayApi from '../../api/posDisplay';
+import * as paywayApi from '../../api/payway';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { ShareShopDialog } from '../common/ShareShopDialog';
+import { PairDisplayDialog } from '../common/PairDisplayDialog';
 import { printPosReceipt } from '../../utils/posReceipt';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
@@ -51,6 +55,11 @@ export function POS() {
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
+  /** V165 — paid orders still moving through the kitchen pipeline
+   *  (requested → accepted → in_progress → ready → done). Refreshed
+   *  after each checkout and on a 15 s tick while the page is open. */
+  const [activeOrders, setActiveOrders] = useState<PosOrder[]>([]);
+  const [activeDrawerOpen, setActiveDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   // V142 — category filter tabs. 'all' is the default; selecting a
@@ -105,6 +114,13 @@ export function POS() {
   // Stash the latest snapshot so the request-state handler can
   // re-broadcast it without needing every dependency in scope.
   const latestSnapshotRef = useRef<DisplayState | null>(null);
+  /** Pairing code for a Display running on a SEPARATE device.
+   *  Null = no remote Display paired; snapshot updates only fire
+   *  over BroadcastChannel (same-browser popup). When set, the
+   *  same snapshot also POSTs to /api/v1/pos/display/{code}/state
+   *  so the paired tablet sees the cart in real time over SSE. */
+  const [pairedDisplayCode, setPairedDisplayCode] = useState<string | null>(null);
+  const [pairDisplayOpen, setPairDisplayOpen] = useState(false);
   // Latch the "paid" snapshot through the receipt dialog so the
   // customer screen keeps the thank-you splash visible until the
   // cashier starts a New Sale. Cleared on cart reset.
@@ -130,10 +146,11 @@ export function POS() {
           setLoading(false);
           return;
         }
-        const [itemList, custList, open, pos] = await Promise.all([
+        const [itemList, custList, open, active, pos] = await Promise.all([
           itemsApi.list({ size: 200 }),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
+          posApi.listActiveFulfillment(),
           settingsApi.get('pos'),
         ]);
         // Only show active items in the grid; deductionEnabled is
@@ -141,6 +158,7 @@ export function POS() {
         setItems(itemList.content.filter(i => i.active));
         setCustomers(custList.content);
         setOpenOrders(open);
+        setActiveOrders(active);
         setPosSettings(pos);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Failed to load POS');
@@ -251,13 +269,22 @@ export function POS() {
     };
     latestSnapshotRef.current = snapshot;
     displayChannelRef.current?.postMessage({ kind: 'state', state: snapshot } satisfies DisplayMessage);
+    // Cross-device push: if a tablet is paired, mirror the same
+    // snapshot to the server so its SSE stream fans it out. Wrapped
+    // in {kind:'state', state} so the Display side's handler can be
+    // shape-identical to the BroadcastChannel path. Fire-and-forget;
+    // a transient network error here shouldn't break the cashier's UI.
+    if (pairedDisplayCode) {
+      void posDisplayApi.publish(pairedDisplayCode, { kind: 'state', state: snapshot } satisfies DisplayMessage)
+        .catch(() => { /* swallow — Display reconnect handles gaps */ });
+    }
   }, [
     cart, customerId, customers, currentOrder, items,
     subtotal, discountAmount, taxAmount, total, invoiceKind,
     posSettings.posShopName, posSettings.posLogoUrl, posSettings.posExchangeRate,
     posSettings.posSlideEnabled, posSettings.posSlideMedia,
     checkoutOpen, checkoutMethod, banks,
-    paidSnapshot,
+    paidSnapshot, pairedDisplayCode,
   ]);
 
   // Clear the paid-splash timer on POS-page unmount so a navigation
@@ -443,6 +470,10 @@ export function POS() {
     try {
       const checked = await posApi.checkout(order.id, { invoiceKind, paymentMethod: method, paymentReceived: received });
       setOpenOrders(prev => prev.filter(o => o.id !== checked.id));
+      // V165 — the just-paid order enters the kitchen pipeline at
+      // 'requested'. Prepend it so the Active Orders drawer reflects
+      // the new ticket without waiting for the polling tick.
+      setActiveOrders(prev => [checked, ...prev.filter(o => o.id !== checked.id)]);
       setReceipt(checked);
       setCheckoutOpen(false);
       // Latch the paid splash on the customer display. The splash
@@ -468,6 +499,36 @@ export function POS() {
       setSaving(false);
     }
   };
+
+  /** V165 — bump a paid order to a new kitchen state. Optimistic
+   *  update + reconcile from server response so the UI doesn't lag
+   *  the click. A 'done' move drops the row from the active list. */
+  const advanceFulfillment = async (id: string, next: posApi.PosFulfillmentStatus) => {
+    setActiveOrders(prev => prev.map(o => o.id === id ? { ...o, fulfillmentStatus: next } : o));
+    try {
+      const updated = await posApi.setFulfillmentStatus(id, next);
+      setActiveOrders(prev => {
+        const without = prev.filter(o => o.id !== updated.id);
+        return updated.fulfillmentStatus === 'done' ? without : [updated, ...without];
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Status update failed');
+      // Reconcile by refetching — the optimistic write may be stale.
+      posApi.listActiveFulfillment().then(setActiveOrders).catch(() => { /* ignore */ });
+    }
+  };
+
+  // Light polling so a second cashier / kitchen tablet sees fresh
+  // status without manual refresh. 15 s strikes a balance between
+  // responsiveness and noise; tick pauses while the drawer is closed
+  // to keep idle-page traffic to zero.
+  useEffect(() => {
+    if (!activeDrawerOpen) return;
+    const t = setInterval(() => {
+      posApi.listActiveFulfillment().then(setActiveOrders).catch(() => { /* swallow */ });
+    }, 15_000);
+    return () => clearInterval(t);
+  }, [activeDrawerOpen]);
 
   const resumeOrder = async (o: PosOrder) => {
     setCurrentOrder(o);
@@ -538,7 +599,7 @@ export function POS() {
             <SettingsIcon className="h-4 w-4" />
           </button>
           {currentOrder && (
-            <span className="ml-2 text-sm font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="ml-2 text-sm tabular-nums px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
               {currentOrder.queueNo}
             </span>
           )}
@@ -551,6 +612,19 @@ export function POS() {
             <MonitorPlay className="h-4 w-4 mr-1.5" />
             Display
           </Button>
+          {/* Cross-device pairing — mints a 5-char code + QR the
+              second tablet can scan to subscribe to this POS's live
+              cart over SSE. Distinct from the popup-Display above
+              because that one works only same-browser. */}
+          <Button
+            variant={pairedDisplayCode ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPairDisplayOpen(true)}
+            title={pairedDisplayCode ? `Paired ${pairedDisplayCode}` : 'Open the camera app on the second tablet and scan this QR. It opens the customer-facing Display tuned to this POS — the cart updates live as you ring up items.'}
+          >
+            <QrCode className="h-4 w-4 mr-1.5" />
+            {pairedDisplayCode ? `Paired ${pairedDisplayCode}` : 'Pair'}
+          </Button>
           {/* Share menu — public /shop/{code} link a customer can scan
               or visit to browse the menu read-only. Mints the code on
               first open; rotate is a click in the dialog. */}
@@ -558,9 +632,27 @@ export function POS() {
             <Share2 className="h-4 w-4 mr-1.5" />
             Share
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setDrawerOpen(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDrawerOpen(true)}
+            title="Click a row to resume the cart."
+          >
             <Receipt className="h-4 w-4 mr-1.5" />
             Open Orders ({openOrders.length})
+          </Button>
+          {/* V165 — paid orders moving through the kitchen pipeline.
+              Hidden when no active rows so the toolbar doesn't carry
+              dead buttons on slow days. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setActiveDrawerOpen(true)}
+            title="Paid orders moving through the kitchen — tap an order to advance its status."
+            className={activeOrders.length > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}
+          >
+            <ClipboardList className="h-4 w-4 mr-1.5" />
+            Active Orders ({activeOrders.length})
           </Button>
           <Button
             variant="outline" size="sm"
@@ -769,6 +861,12 @@ export function POS() {
         orders={openOrders}
         onResume={resumeOrder}
       />
+      <PosActiveOrdersDrawer
+        open={activeDrawerOpen}
+        onOpenChange={setActiveDrawerOpen}
+        orders={activeOrders}
+        onAdvance={advanceFulfillment}
+      />
       <PosReceiptDialog
         order={receipt}
         settings={posSettings}
@@ -797,6 +895,14 @@ export function POS() {
       />
 
       <ShareShopDialog open={shareOpen} onOpenChange={setShareOpen} />
+
+      <PairDisplayDialog
+        open={pairDisplayOpen}
+        onOpenChange={setPairDisplayOpen}
+        currentCode={pairedDisplayCode}
+        onPaired={setPairedDisplayCode}
+        onUnpaired={() => setPairedDisplayCode(null)}
+      />
     </div>
   );
 }
@@ -1031,6 +1137,14 @@ interface CheckoutProps {
 function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, banks, method, onMethodChange, onSubmit }: CheckoutProps) {
   const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
+  /** Active PayWay session for the KHRQR flow (V164). Null while no
+   *  session is open. Polled at 2s intervals; flipping to status='paid'
+   *  auto-fires onSubmit. The polling effect is also responsible for
+   *  cancelling the session if the cashier closes the dialog before
+   *  the customer scans. */
+  const [paywaySession, setPaywaySession] = useState<paywayApi.PurchaseSession | null>(null);
+  const [paywayBusy, setPaywayBusy] = useState(false);
+  const [paywayError, setPaywayError] = useState<string | null>(null);
 
   // Re-sync the "received" default to the order total whenever the
   // dialog re-opens — non-cash methods always equal the total, and a
@@ -1039,6 +1153,77 @@ function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, ban
   useEffect(() => {
     if (open) setReceived(total);
   }, [open, total]);
+
+  /** Tracks the last (open, method, total) tuple we attempted so a
+   *  failed mint doesn't enter a retry storm. The previous version
+   *  guarded with paywayBusy + paywaySession in the deps array, which
+   *  re-fired the effect on every state flip the catch performed —
+   *  burning through CPU + hammering the gateway with 400s. */
+  const paywayAttemptKeyRef = useRef<string | null>(null);
+
+  /** Mint a PayWay purchase session whenever the operator picks
+   *  KHQR (or the dialog opens with KHQR pre-selected). One attempt
+   *  per (open, method, total) tuple — a 4xx surfaces the error and
+   *  stops; the operator must change a field (or reopen the dialog)
+   *  to retry. */
+  useEffect(() => {
+    if (!open || method !== 'khqr') return;
+    const key = `${open}:${method}:${total}`;
+    if (paywayAttemptKeyRef.current === key) return;
+    paywayAttemptKeyRef.current = key;
+    setPaywayError(null);
+    setPaywayBusy(true);
+    (async () => {
+      try {
+        const s = await paywayApi.createPosPurchase({
+          amount: total,
+          currency: 'USD',
+        });
+        setPaywaySession(s);
+      } catch (e) {
+        setPaywayError(e instanceof Error ? e.message : 'PayWay session failed');
+      } finally {
+        setPaywayBusy(false);
+      }
+    })();
+  }, [open, method, total]);
+
+  /** Poll the gateway every 2s while a pending session is on screen.
+   *  Auto-fires Confirm Payment when the push handler flips status
+   *  to {@code paid} so the cashier doesn't have to click. */
+  useEffect(() => {
+    if (!paywaySession || paywaySession.status !== 'pending') return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      try {
+        const next = await paywayApi.getStatus(paywaySession.tranId);
+        if (stopped) return;
+        if (next.status !== paywaySession.status) setPaywaySession(next);
+        if (next.status === 'paid') {
+          clearInterval(timer);
+          onSubmit('khqr', total);
+        }
+      } catch { /* swallow — try again next tick */ }
+    }, 2000);
+    return () => { stopped = true; clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paywaySession?.tranId, paywaySession?.status]);
+
+  /** Reset PayWay state whenever the dialog closes OR the method
+   *  switches away from KHQR. Cancels the pending session so a
+   *  partial scan doesn't dangle on the gateway side. Also wipes
+   *  the attempt-key ref so reopening with KHQR retries cleanly
+   *  instead of being blocked by the previous attempt. */
+  useEffect(() => {
+    if (open && method === 'khqr') return;
+    if (paywaySession && paywaySession.status === 'pending') {
+      void paywayApi.cancelSession(paywaySession.tranId).catch(() => { /* best-effort */ });
+    }
+    setPaywaySession(null);
+    setPaywayError(null);
+    paywayAttemptKeyRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, method]);
 
   const change = Math.max(0, received - total);
   const short  = received < total;
@@ -1102,21 +1287,66 @@ function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, ban
               <div className="text-xs text-gray-600 text-center">
                 Show the customer this code to scan and pay <b>${total.toFixed(2)}</b>.
               </div>
-              {qrCards.length === 0 ? (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                  No KHRQR uploaded yet. Open <b>POS Settings → Bank Account</b> and add a QR before using this method.
+
+              {/* Layer 1 — PayWay session in flight or succeeded.
+                  Mint + poll handled above; we just render whatever
+                  state we got back. */}
+              {paywayBusy && (
+                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 py-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating QR…
                 </div>
-              ) : (
-                <div className={`grid gap-3 ${qrCards.length > 1 ? 'grid-cols-2' : 'grid-cols-1 justify-items-center'}`}>
-                  {qrCards.map(b => (
-                    <div key={b.id} className="rounded border bg-gray-50 p-2 text-center">
-                      <img src={b.qrDataUrl} alt={b.bankName || 'KHRQR'} className="mx-auto h-44 w-44 object-contain bg-white" />
-                      <div className="mt-1 text-xs font-medium text-gray-800 truncate">{b.bankName || 'KHRQR'}</div>
-                      {b.accountName && <div className="text-[10px] text-gray-500 truncate">{b.accountName}</div>}
-                      {b.accountNumber && <div className="text-[10px] font-mono text-gray-600 truncate">{b.accountNumber}</div>}
+              )}
+
+              {paywaySession?.qrDataUrl && (
+                <div className="flex flex-col items-center gap-2">
+                  <img
+                    src={paywaySession.qrDataUrl}
+                    alt="PayWay KHRQR"
+                    className="h-56 w-56 object-contain bg-white border rounded"
+                  />
+                  <div className="text-[11px] text-gray-500 font-mono">{paywaySession.tranId}</div>
+                  {paywaySession.status === 'pending' && (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Waiting for customer payment…
                     </div>
-                  ))}
+                  )}
+                  {paywaySession.status === 'paid' && (
+                    <div className="text-xs font-medium text-emerald-700">
+                      ✓ Payment received — finalising…
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {/* Layer 2 — gateway error or no session: fall back to
+                  the static bank-QR cards uploaded in POS Settings so
+                  the cashier isn't blocked. */}
+              {!paywayBusy && (!paywaySession?.qrDataUrl) && (
+                <>
+                  {paywayError && (
+                    <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                      PayWay error: {paywayError}. Showing saved KHRQR fallback.
+                    </div>
+                  )}
+                  {qrCards.length === 0 ? (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                      No KHRQR uploaded yet. Open <b>POS Settings → Bank Account</b> and add a QR before using this method.
+                    </div>
+                  ) : (
+                    <div className={`grid gap-3 ${qrCards.length > 1 ? 'grid-cols-2' : 'grid-cols-1 justify-items-center'}`}>
+                      {qrCards.map(b => (
+                        <div key={b.id} className="rounded border bg-gray-50 p-2 text-center">
+                          <img src={b.qrDataUrl} alt={b.bankName || 'KHRQR'} className="mx-auto h-44 w-44 object-contain bg-white" />
+                          <div className="mt-1 text-xs font-medium text-gray-800 truncate">{b.bankName || 'KHRQR'}</div>
+                          {b.accountName && <div className="text-[10px] text-gray-500 truncate">{b.accountName}</div>}
+                          {b.accountNumber && <div className="text-[10px] tabular-nums text-gray-600 truncate">{b.accountNumber}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1194,13 +1424,115 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume }: DrawerPro
                 >
                   <ArrowLeft className="h-4 w-4 text-gray-400" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-mono text-sm">{o.queueNo}</div>
+                    <div className="tabular-nums text-sm">{o.queueNo}</div>
                     <div className="text-xs text-gray-500 truncate">{o.customerName ?? 'Walk-in'} · {o.items.length} item(s)</div>
                   </div>
                   <div className="text-sm font-semibold">${o.total.toFixed(2)}</div>
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ====================================================================
+ *  Active-orders drawer (paid → fulfillment pipeline)  V165
+ *
+ *  Lists every paid order still moving through the kitchen flow:
+ *    requested → accepted → in_progress → ready → done
+ *  Done rows drop off the list. Each card shows the queue no, customer,
+ *  total and the current status as a coloured pill, plus an Advance
+ *  button (forward) and a small Back link (corrects fat-finger jumps).
+ * =================================================================== */
+
+interface ActiveDrawerProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  orders: PosOrder[];
+  onAdvance: (id: string, next: posApi.PosFulfillmentStatus) => void;
+}
+
+/** Pill colour per status. Greys for the early "waiting" states,
+ *  greens once cooking is underway / done — readable at a glance from
+ *  across a counter. */
+const FULFILLMENT_PILL: Record<posApi.PosFulfillmentStatus, string> = {
+  requested:   'bg-amber-100 text-amber-800 ring-1 ring-amber-200',
+  accepted:    'bg-blue-100 text-blue-800 ring-1 ring-blue-200',
+  in_progress: 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-200',
+  ready:       'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+  done:        'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+};
+
+function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance }: ActiveDrawerProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4" /> Active Orders
+          </DialogTitle>
+          <DialogDescription>
+            Paid orders moving through the kitchen — tap an order to advance its status.
+          </DialogDescription>
+        </DialogHeader>
+        {orders.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-6">No active orders.</p>
+        ) : (
+          <ul className="divide-y border rounded-md max-h-[480px] overflow-auto">
+            {orders.map(o => {
+              const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
+              const next = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
+              const prev = idx > 0 ? posApi.POS_FULFILLMENT_CHAIN[idx - 1] : null;
+              return (
+                <li key={o.id} className="px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="tabular-nums text-sm font-semibold">{o.queueNo}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${FULFILLMENT_PILL[o.fulfillmentStatus]}`}>
+                          {posApi.POS_FULFILLMENT_LABELS[o.fulfillmentStatus]}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 truncate mt-0.5">
+                        {o.customerName ?? 'Walk-in'} · {o.items.length} item(s)
+                      </div>
+                    </div>
+                    <div className="text-sm font-semibold tabular-nums shrink-0">${o.total.toFixed(2)}</div>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-2">
+                    {prev && (
+                      <button
+                        type="button"
+                        onClick={() => onAdvance(o.id, prev)}
+                        className="text-[11px] text-gray-500 hover:text-gray-800 inline-flex items-center gap-1"
+                        title={`Back to ${posApi.POS_FULFILLMENT_LABELS[prev]}`}
+                      >
+                        <RotateCcw className="h-3 w-3" /> Back
+                      </button>
+                    )}
+                    <div className="flex-1" />
+                    {next ? (
+                      <Button
+                        size="sm"
+                        onClick={() => onAdvance(o.id, next)}
+                        className={next === 'done'
+                          ? 'h-7 bg-gray-700 hover:bg-gray-800 text-xs'
+                          : 'h-7 bg-emerald-600 hover:bg-emerald-700 text-xs'}
+                      >
+                        {posApi.POS_FULFILLMENT_LABELS[next]}
+                        <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                      </Button>
+                    ) : (
+                      <span className="text-[11px] text-gray-400">Completed</span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </DialogContent>
@@ -1259,7 +1591,7 @@ function PosReceiptDialog({ order, settings, items, onClose }: ReceiptDialogProp
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-center">Payment received</DialogTitle>
           <DialogDescription className="sr-only">Receipt summary for the completed POS sale.</DialogDescription>
@@ -1283,11 +1615,12 @@ function PosReceiptDialog({ order, settings, items, onClose }: ReceiptDialogProp
   );
 }
 
-/** Receipt body styled to match the supplied sample — asterisk header,
- *  shop name, dotted dividers, item rows with optional SKU prefix,
- *  totals block, CASH + CHANGE, optional PAID stamp, "THANK YOU!"
- *  footer. Identical shape used for both the in-dialog preview and
- *  the print window (innerHTML copy). */
+/** Receipt body styled to match the sample design — centered "Receipt"
+ *  header + logo + shop name, big red total, customer block, item
+ *  table with "Item / Amount" header, totals with bold Total Due,
+ *  date + tilted PAID stamp, friendly "Thank you!" footer. Identical
+ *  shape used for both the in-dialog preview and the print window
+ *  (innerHTML copy). */
 function PosReceiptBody({
   order, settings, items, shopName, datePart, timePart,
 }: {
@@ -1298,110 +1631,146 @@ function PosReceiptBody({
   datePart: string;
   timePart: string;
 }) {
-  const star = '*'.repeat(36);
-  const dot  = '- '.repeat(18).trim();
   const methodLabel = (order.paymentMethod ?? 'cash').toUpperCase();
   const received = order.paymentReceived ?? order.total;
   const change   = order.paymentChange ?? 0;
-
-  // V138 — cashier line + optional logo. Mirrors the printable
-  // version from utils/posReceipt.ts so preview and paper match.
+  const logoUrl  = (settings.posLogoUrl ?? '').trim() || null;
+  const customerName = order.customerName || 'Walk-in';
+  const receiptNo = `PO-${String(order.queueSeq).padStart(3, '0')}`;
   const cashierParts = [order.createdByName, order.createdByPhone].filter(Boolean).join(' · ');
-  const logoUrl = (settings.posLogoUrl ?? '').trim() || null;
 
   return (
-    <div id="pos-receipt" className="font-mono text-[11px] leading-snug bg-white px-3 py-2 border rounded-md">
+    <div id="pos-receipt" className="tabular-nums text-sm leading-relaxed bg-white px-6 py-5 border rounded-md w-full">
+      {/* Header — small "Receipt" label + logo + shop name */}
+      <div className="text-center text-base font-semibold text-gray-800">Receipt</div>
       {logoUrl && (
-        <div className="text-center mb-1">
-          <img src={logoUrl} alt="" className="inline-block max-h-[60px] max-w-full object-contain" />
+        <div className="text-center mt-2 mb-1">
+          <img src={logoUrl} alt="" className="inline-block max-h-[72px] max-w-full object-contain" />
         </div>
       )}
-      <div className="text-center break-all">{star}</div>
-      <div className="text-center font-bold text-base tracking-widest my-1">RECEIPT</div>
-      <div className="text-center break-all">{star}</div>
-
-      <div className="font-bold mt-3">{shopName}</div>
+      <div className="text-center text-lg font-bold mt-1">{shopName}</div>
       {cashierParts && (
-        <div className="text-[10px] text-gray-600 mt-0.5">Cashier: {cashierParts}</div>
+        <div className="text-center text-xs text-gray-500 mt-1">Cashier: {cashierParts}</div>
       )}
 
-      <div className="break-all text-gray-500 my-1">{dot}</div>
-      <div className="flex justify-between">
-        <span>DATE :- {datePart}</span>
-        <span>{timePart}</span>
+      <div className="border-t my-4" />
+
+      {/* Big red total — anchors the slip; matches the sample's
+          "amount due" headline. */}
+      <div className="text-red-600 text-4xl font-bold tabular-nums">${order.total.toFixed(2)}</div>
+      <div className="text-xs text-gray-600 mt-1">Date {datePart} · {timePart}</div>
+
+      {/* Customer block — labels left, values right. */}
+      <div className="space-y-1.5 text-sm mt-4">
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-500">Customer</span>
+          <span className="font-medium truncate">{customerName}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-500">Receipt No.</span>
+          <span className="font-medium">{receiptNo}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-500">Date</span>
+          <span className="font-medium">{datePart}</span>
+        </div>
       </div>
-      <div className="break-all text-gray-500 my-1">{dot}</div>
+
+      <div className="border-t my-4" />
+
+      {/* Item table — bold "Item / Amount" header with its own
+          divider, then rows with the description sub-line in
+          smaller grey text below. */}
+      <div className="flex justify-between font-semibold text-sm">
+        <span>Item</span>
+        <span>Amount</span>
+      </div>
+      <div className="border-t border-gray-800 mt-1 mb-2" />
 
       {order.items.map((i, idx) => {
         const sku = lineSku(i, items);
-        const label = settings.posShowSku && sku
-          ? `${sku}   ${i.name}`
-          : i.name;
+        const label = settings.posShowSku && sku ? `${sku}  ${i.name}` : i.name;
         return (
-          <div key={i.id ?? idx} className="mt-0.5">
-            <div className="flex justify-between gap-2">
-              <span className="truncate pr-2 flex-1">
-                {i.quantity > 1 ? `${i.quantity} × ` : ''}{label}
-              </span>
-              <span className="shrink-0">${i.lineTotal.toFixed(2)}</span>
+          <div key={i.id ?? idx} className="mb-2.5">
+            <div className="flex justify-between gap-2 text-sm">
+              <span className="truncate pr-2 flex-1">{label}</span>
+              <span className="shrink-0 tabular-nums">${i.lineTotal.toFixed(2)}</span>
             </div>
-            {/* V134 — per-line modifier note. Indented italic so it
-                reads as a sub-line under the item. */}
-            {i.notes && (
-              <div className="pl-3 italic text-[10px] text-gray-700 break-words">
-                · {i.notes}
-              </div>
-            )}
+            <div className="flex justify-between gap-2 text-xs text-gray-500">
+              <span className="truncate pr-2 flex-1 italic">{i.notes || ''}</span>
+              <span className="shrink-0">
+                {i.quantity}{i.quantity > 1 ? ` × items` : ` × item`}
+              </span>
+            </div>
           </div>
         );
       })}
 
-      <div className="border-t border-black border-dashed my-2"></div>
+      <div className="border-t my-4" />
 
+      {/* Totals block. Subtotal only when it differs from total (no
+          tax / no discount), then a bold "Total Due" line and the
+          Paid Amount underneath. */}
       {(order.subtotal !== order.total) && (
-        <div className="flex justify-between"><span>SUBTOTAL</span><span>${order.subtotal.toFixed(2)}</span></div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Subtotal</span>
+          <span className="tabular-nums">${order.subtotal.toFixed(2)}</span>
+        </div>
       )}
       {order.discountValue > 0 && (
-        <div className="flex justify-between"><span>DISCOUNT</span><span>-${order.discountValue.toFixed(2)}</span></div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Discount</span>
+          <span className="tabular-nums">−${order.discountValue.toFixed(2)}</span>
+        </div>
       )}
       {order.taxAmount > 0 && (
-        <div className="flex justify-between"><span>TAX{order.invoiceKind === 'tax' ? ' (VAT 10%)' : ''}</span><span>${order.taxAmount.toFixed(2)}</span></div>
-      )}
-      <div className="flex justify-between font-bold">
-        <span>TOTAL</span><span>${order.total.toFixed(2)}</span>
-      </div>
-      {/* V141 — KHR equivalent on a single line with the rate inside
-          the label parens. Only shown for USD orders with a positive
-          snapshot rate (the POS happy path). */}
-      {order.currency === 'USD' && (order.exchangeRate ?? 0) > 0 && (
-        <div className="flex justify-between font-bold">
-          <span>TOTAL KHR (@ {(order.exchangeRate ?? 0).toLocaleString('en-US')})</span>
-          <span>៛ {(order.total * (order.exchangeRate ?? 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Tax{order.invoiceKind === 'tax' ? ' (VAT 10%)' : ''}</span>
+          <span className="tabular-nums">${order.taxAmount.toFixed(2)}</span>
         </div>
       )}
-      <div className="flex justify-between"><span>{methodLabel}</span><span>${received.toFixed(2)}</span></div>
+      <div className="flex justify-between font-bold text-lg mt-1.5">
+        <span>Total Due</span>
+        <span className="tabular-nums">${order.total.toFixed(2)}</span>
+      </div>
+      <div className="flex justify-between text-sm mt-1">
+        <span className="text-gray-600">Paid Amount</span>
+        <span className="tabular-nums">${received.toFixed(2)}</span>
+      </div>
       {change > 0 && (
-        <div className="flex justify-between"><span>CHANGE</span><span>${change.toFixed(2)}</span></div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Change</span>
+          <span className="tabular-nums">${change.toFixed(2)}</span>
+        </div>
       )}
+      {order.currency === 'USD' && (order.exchangeRate ?? 0) > 0 && (
+        <div className="flex justify-between text-sm mt-1">
+          <span className="text-gray-600">Total KHR (@ {(order.exchangeRate ?? 0).toLocaleString('en-US')})</span>
+          <span className="tabular-nums">៛ {(order.total * (order.exchangeRate ?? 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+        </div>
+      )}
+      <div className="flex justify-between text-xs text-gray-500 mt-1.5">
+        <span>Method</span>
+        <span>{methodLabel}</span>
+      </div>
 
-      {settings.posShowPaidStamp && (
-        <div className="text-center mt-3">
-          <span className="inline-block border-2 border-double border-black px-3 py-0.5 font-bold tracking-widest">
+      {/* Date on left, tilted PAID stamp on right — matches the
+          sample's red stamp in the bottom-right corner. */}
+      <div className="flex items-center justify-between mt-6 min-h-[48px]">
+        <span className="text-red-600 text-sm font-medium">{datePart}</span>
+        {settings.posShowPaidStamp && (
+          <span className="inline-block border-2 border-red-500 px-4 py-1 font-bold tracking-widest text-red-600 -rotate-6 text-base">
             PAID
           </span>
+        )}
+      </div>
+
+      <div className="text-center text-gray-700 text-sm mt-4">Thank you!</div>
+      {settings.posShowQueueNo && (
+        <div className="text-center text-gray-400 text-xs mt-1">
+          #{String(order.queueSeq).padStart(3, '0')}
         </div>
       )}
-
-      <div className="text-center font-semibold mt-3">THANK YOU!</div>
-      <div className="text-center text-gray-500 text-[10px] mt-1">
-        {/* Show only the zero-padded sequence — matches the printable
-            receipt produced by utils/posReceipt.ts. Gated on the
-            posShowQueueNo setting (V137); the kind label stays
-            either way so the slip still labels the receipt type. */}
-        {settings.posShowQueueNo && <>#{String(order.queueSeq).padStart(3, '0')}</>}
-        {settings.posShowQueueNo && order.invoiceKind && ' · '}
-        {order.invoiceKind ? (order.invoiceKind === 'tax' ? 'Tax' : 'Commercial') : ''}
-      </div>
     </div>
   );
 }

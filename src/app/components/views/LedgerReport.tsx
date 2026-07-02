@@ -11,14 +11,19 @@ import { toast } from 'sonner';
 import { BookOpen, Printer, Calendar, Eye, ArrowLeft, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as ledgerApi from '../../api/ledgerReports';
+import * as currencyApi from '../../api/currencySettings';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { useI18n } from '../../i18n/I18nContext';
 
 /** Render an amount with the currency in front (matches the Bills /
  *  Invoices list pages). USD collapses to "$" with 2dp, KHR uses ISO
  *  prefix with no decimals, other currencies fall back to 2dp. */
 const fmtMoney = (n: number, currency: string): string => {
   const num = formatMoneyForCurrency(Math.abs(n ?? 0), currency);
-  return currency === 'USD' ? `$${num}` : `${currency} ${num}`;
+  if (currency === 'USD') return `$${num}`;
+  if (currency === 'KHR') return `៛ ${num}`;
+  return `${currency} ${num}`;
 };
 const formatMoney = fmtMoney;
 /** Same as {@link fmtMoney} but preserves a minus sign — used for CN
@@ -71,10 +76,23 @@ function SettledTooltip({ kind }: { kind: 'sale' | 'purchase' }) {
  * render so the user can see the carry-forward state.</p>
  */
 export function LedgerReport({ kind }: LedgerReportProps) {
+  const { formatDate } = useDateFormat();
+  const { t } = useI18n();
   const [from, setFrom] = useState<string>(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [to, setTo]     = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
   const [report, setReport] = useState<ledgerApi.LedgerReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  // Tenant currency setting — decides which of the USD / KHR split
+  // columns actually render. A USD-only tenant hides the KHR column,
+  // and vice versa; USD+KHR (default) shows both.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
+  const enabled = currencyApi.enabledCurrencies(currencySettings);
+  const showUsd = enabled.includes('USD');
+  const showKhr = enabled.includes('KHR');
+  const splitCols = (showUsd ? 1 : 0) + (showKhr ? 1 : 0);
   // Drives the two-level navigation: null = summary list (one row
   // per party), partyId = detail page for that customer / vendor.
   // Lives in component state instead of the URL because the Ledger
@@ -87,7 +105,10 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
   const labels = useMemo(() => kind === 'sale'
     ? {
-        title: 'Sale Ledger',
+        // Title reads from the i18n catalogue so the page heading
+        // follows the sidebar's active language — a Khmer sidebar
+        // shouldn't land the operator on an "English-only" page.
+        title: t('nav.reports.sale_ledger'),
         party: 'Customer',
         // "Received" reads the way the user thinks about it on the sale
         // side — money the company collected, even though accountants
@@ -102,7 +123,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         balanceMeaning: 'Accounts Receivable (customer owes us)',
       }
     : {
-        title: 'Purchase Ledger',
+        title: t('nav.reports.purchase_ledger'),
         party: 'Vendor',
         amountHeader: 'Total',
         settledHeader: 'Paid',
@@ -115,7 +136,10 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         balanceLabel: 'AP',
         balanceMeaning: 'Accounts Payable (we owe vendor)',
       },
-    [kind]);
+    // `t` is stable across renders but including it silences the
+    // exhaustive-deps lint and future-proofs against a language flip
+    // while the ledger page is open.
+    [kind, t]);
 
   const load = async () => {
     setLoading(true);
@@ -218,28 +242,32 @@ export function LedgerReport({ kind }: LedgerReportProps) {
       {report && (
         <Card className="print:shadow-none print:border-0">
           <CardContent className="py-4">
-            <div className="grid grid-cols-5 gap-6 text-sm">
+            <div className={`grid gap-6 text-sm ${['grid-cols-3', 'grid-cols-4', 'grid-cols-5'][splitCols]}`}>
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">Total</div>
-                <div className="text-lg font-mono mt-0.5">{formatMoney(report.grandTotalAmount, 'USD')}</div>
+                <div className="text-lg tabular-nums mt-0.5">{formatMoney(report.grandTotalAmount, 'USD')}</div>
               </div>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
-                  {labels.settledHeader} (USD)
-                  <SettledTooltip kind={kind} />
+              {showUsd && (
+                <div>
+                  <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
+                    {labels.settledHeader} (USD)
+                    <SettledTooltip kind={kind} />
+                  </div>
+                  <div className="text-lg tabular-nums mt-0.5">{moneyOrDash(grandReceivedByCurrency.usd, 'USD')}</div>
                 </div>
-                <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.usd, 'USD')}</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
-                  {labels.settledHeader} (KHR)
-                  <SettledTooltip kind={kind} />
+              )}
+              {showKhr && (
+                <div>
+                  <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
+                    {labels.settledHeader} (KHR)
+                    <SettledTooltip kind={kind} />
+                  </div>
+                  <div className="text-lg tabular-nums mt-0.5">{moneyOrDash(grandReceivedByCurrency.khr, 'KHR')}</div>
                 </div>
-                <div className="text-lg font-mono mt-0.5">{moneyOrDash(grandReceivedByCurrency.khr, 'KHR')}</div>
-              </div>
+              )}
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.refundHeader}</div>
-                <div className={`text-lg font-mono mt-0.5 ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                <div className={`text-lg tabular-nums mt-0.5 ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                   {report.grandTotalRefund === 0
                     ? formatMoney(0, 'USD')
                     : `${labels.refundSign}${formatMoney(report.grandTotalRefund, 'USD')}`}
@@ -249,7 +277,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 <div className="text-gray-500 text-xs uppercase tracking-wide">
                   Closing Balance ({labels.balanceLabel})
                 </div>
-                <div className={`text-lg font-mono mt-0.5 ${grandClass(report.grandTotalBalance)}`}>
+                <div className={`text-lg tabular-nums mt-0.5 ${grandClass(report.grandTotalBalance)}`}>
                   {formatMoney(report.grandTotalBalance, 'USD')}
                 </div>
               </div>
@@ -282,9 +310,15 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   <TableHead className="text-right w-28">Opening</TableHead>
                   <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
                   {/* Received/Paid splits per-currency so payments
-                      taken in USD vs KHR stay on their own rail. */}
-                  <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
-                  <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+                      taken in USD vs KHR stay on their own rail — the
+                      rail is only shown when its currency is enabled
+                      in the tenant Currency setting. */}
+                  {showUsd && (
+                    <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+                  )}
+                  {showKhr && (
+                    <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+                  )}
                   <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
                   <TableHead className="text-right w-32">Closing ({labels.balanceLabel})</TableHead>
                   <TableHead className="w-28 print:hidden"></TableHead>
@@ -308,18 +342,22 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
+                    <TableCell className="text-right tabular-nums text-sm">
                       {formatMoney(g.openingBalance, g.currency)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{formatMoney(g.totalAmount, g.currency)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{moneyOrDash(split.usd, 'USD')}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{moneyOrDash(split.khr, 'KHR')}</TableCell>
-                    <TableCell className={`text-right font-mono text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    <TableCell className="text-right tabular-nums text-sm">{formatMoney(g.totalAmount, g.currency)}</TableCell>
+                    {showUsd && (
+                      <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.usd, 'USD')}</TableCell>
+                    )}
+                    {showKhr && (
+                      <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.khr, 'KHR')}</TableCell>
+                    )}
+                    <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                       {g.totalRefund === 0
                         ? formatMoney(0, g.currency)
                         : `${labels.refundSign}${formatMoney(g.totalRefund, g.currency)}`}
                     </TableCell>
-                    <TableCell className={`text-right font-mono text-sm font-medium ${grandClass(g.closingBalance)}`}>
+                    <TableCell className={`text-right tabular-nums text-sm font-medium ${grandClass(g.closingBalance)}`}>
                       {formatMoney(g.closingBalance, g.currency)}
                     </TableCell>
                     <TableCell className="text-right print:hidden">
@@ -369,8 +407,8 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 )}
               </CardTitle>
               <div className="text-xs text-gray-500 flex gap-4">
-                <span>Opening: <span className="font-mono">{formatMoney(g.openingBalance, g.currency)}</span></span>
-                <span>Closing: <span className={`font-mono font-medium ${grandClass(g.closingBalance)}`}>
+                <span>Opening: <span className="tabular-nums">{formatMoney(g.openingBalance, g.currency)}</span></span>
+                <span>Closing: <span className={`tabular-nums font-medium ${grandClass(g.closingBalance)}`}>
                   {formatMoney(g.closingBalance, g.currency)}
                 </span></span>
               </div>
@@ -387,9 +425,14 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
                   {/* Received/Paid split per currency — matches the
                       summary list so the operator sees the same shape
-                      after drilling into a single party. */}
-                  <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
-                  <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+                      after drilling into a single party. Rails are
+                      gated on the tenant Currency setting. */}
+                  {showUsd && (
+                    <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+                  )}
+                  {showKhr && (
+                    <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+                  )}
                   <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
                   <TableHead className="text-right w-32">Balance</TableHead>
                 </TableRow>
@@ -397,15 +440,15 @@ export function LedgerReport({ kind }: LedgerReportProps) {
               <TableBody>
                 {g.openingBalance !== 0 && (
                   <TableRow className="bg-gray-50/60">
-                    <TableCell className="text-xs text-gray-500" colSpan={8}>Opening balance</TableCell>
-                    <TableCell className="text-right font-mono text-xs">
+                    <TableCell className="text-xs text-gray-500" colSpan={6 + splitCols}>Opening balance</TableCell>
+                    <TableCell className="text-right tabular-nums text-xs">
                       {formatMoney(g.openingBalance, g.currency)}
                     </TableCell>
                   </TableRow>
                 )}
                 {g.entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-gray-400 py-6 text-sm">
+                    <TableCell colSpan={7 + splitCols} className="text-center text-gray-400 py-6 text-sm">
                       No activity in this period.
                     </TableCell>
                   </TableRow>
@@ -417,26 +460,30 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   const isChild = e.balance === null;
                   return (
                   <TableRow key={e.id} className={isChild ? 'bg-gray-50/40' : ''}>
-                    <TableCell className={`text-sm ${isChild ? 'pl-8 text-gray-500' : ''}`}>{e.date}</TableCell>
-                    <TableCell className={`font-mono text-xs ${isChild ? 'text-gray-500' : ''}`}>
+                    <TableCell className={`text-sm ${isChild ? 'pl-8 text-gray-500' : ''}`}>{formatDate(e.date)}</TableCell>
+                    <TableCell className={`tabular-nums text-xs ${isChild ? 'text-gray-500' : ''}`}>
                       {isChild && <span className="text-gray-400 mr-1">└</span>}
                       {e.docNo}
                     </TableCell>
                     <TableCell className={`text-sm ${isChild ? 'text-gray-500' : ''}`}>{e.docType}</TableCell>
                     <TableCell className="text-xs text-gray-500">{e.reference}</TableCell>
-                    <TableCell className={`text-right font-mono text-sm ${e.amount < 0 ? 'text-rose-600' : ''}`}>
+                    <TableCell className={`text-right tabular-nums text-sm ${e.amount < 0 ? 'text-rose-600' : ''}`}>
                       {e.amount === 0 ? '—' : signedMoney(e.amount, e.currency)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {moneyOrDash(e.receivedUsd ?? 0, 'USD')}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {moneyOrDash(e.receivedKhr ?? 0, 'KHR')}
-                    </TableCell>
-                    <TableCell className={`text-right font-mono text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    {showUsd && (
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {moneyOrDash(e.receivedUsd ?? 0, 'USD')}
+                      </TableCell>
+                    )}
+                    {showKhr && (
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {moneyOrDash(e.receivedKhr ?? 0, 'KHR')}
+                      </TableCell>
+                    )}
+                    <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                       {e.refund === 0 ? '—' : `${labels.refundSign}${formatMoney(e.refund, e.currency)}`}
                     </TableCell>
-                    <TableCell className={`text-right font-mono text-sm ${e.balance == null ? 'text-gray-300' : grandClass(e.balance)}`}>
+                    <TableCell className={`text-right tabular-nums text-sm ${e.balance == null ? 'text-gray-300' : grandClass(e.balance)}`}>
                       {e.balance == null ? '—' : formatMoney(e.balance, e.currency)}
                     </TableCell>
                   </TableRow>
@@ -451,15 +498,19 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   return (
                 <TableRow className="bg-gray-50 font-medium">
                   <TableCell colSpan={4}>Subtotal</TableCell>
-                  <TableCell className="text-right font-mono">{formatMoney(g.totalAmount, g.currency)}</TableCell>
-                  <TableCell className="text-right font-mono">{moneyOrDash(sumUsd, 'USD')}</TableCell>
-                  <TableCell className="text-right font-mono">{moneyOrDash(sumKhr, 'KHR')}</TableCell>
-                  <TableCell className={`text-right font-mono ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  <TableCell className="text-right tabular-nums">{formatMoney(g.totalAmount, g.currency)}</TableCell>
+                  {showUsd && (
+                    <TableCell className="text-right tabular-nums">{moneyOrDash(sumUsd, 'USD')}</TableCell>
+                  )}
+                  {showKhr && (
+                    <TableCell className="text-right tabular-nums">{moneyOrDash(sumKhr, 'KHR')}</TableCell>
+                  )}
+                  <TableCell className={`text-right tabular-nums ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
                     {g.totalRefund === 0
                       ? formatMoney(0, g.currency)
                       : `${labels.refundSign}${formatMoney(g.totalRefund, g.currency)}`}
                   </TableCell>
-                  <TableCell className={`text-right font-mono ${grandClass(g.closingBalance)}`}>
+                  <TableCell className={`text-right tabular-nums ${grandClass(g.closingBalance)}`}>
                     {formatMoney(g.closingBalance, g.currency)}
                   </TableCell>
                 </TableRow>

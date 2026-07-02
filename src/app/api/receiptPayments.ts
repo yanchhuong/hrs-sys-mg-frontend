@@ -1,6 +1,6 @@
 import { apiJson, apiVoid } from './client';
 
-export type PaymentMethod = 'cash' | 'bank' | 'card' | 'cheque' | 'other';
+export type PaymentMethod = 'cash' | 'cash_advance' | 'bank' | 'card' | 'cheque' | 'khqr' | 'other';
 export type PaymentDirection = 'credit' | 'debit';
 export type PaymentCurrency = 'USD' | 'KHR';
 
@@ -13,6 +13,9 @@ export interface ReceiptPayment {
   method: PaymentMethod;
   direction: PaymentDirection;
   referenceNo?: string | null;
+  /** Set when {@link method} is {@code cash_advance} — backlink to
+   *  the advance funding this payment (V160). */
+  cashAdvanceId?: string | null;
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -26,6 +29,8 @@ export interface ReceiptPaymentRequest {
   method?: PaymentMethod;
   direction?: PaymentDirection;
   referenceNo?: string;
+  /** Required by the backend when {@link method} is {@code cash_advance}. */
+  cashAdvanceId?: string;
   notes?: string;
 }
 

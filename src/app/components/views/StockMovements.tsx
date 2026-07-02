@@ -155,14 +155,14 @@ export function StockMovements() {
                             hour: '2-digit', minute: '2-digit',
                           })}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="tabular-nums text-xs">
                           {m.referenceNo || <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-center">{typeBadge(m.type)}</TableCell>
                         <TableCell>
                           <div className="font-medium text-sm">{m.itemName || '—'}</div>
                           {m.itemSku && (
-                            <div className="text-[11px] text-gray-500 font-mono">{m.itemSku}</div>
+                            <div className="text-[11px] text-gray-500 tabular-nums">{m.itemSku}</div>
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-gray-700">

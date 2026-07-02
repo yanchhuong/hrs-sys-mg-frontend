@@ -127,6 +127,7 @@ interface ModuleDef {
 const MODULES: ModuleDef[] = [
   { key: 'dashboard',         label: 'Dashboard',         description: 'Home overview and widgets' },
   { key: 'employees',         label: 'Employees',         description: 'Employee master data' },
+  { key: 'announcements',     label: 'Announcements',     description: 'Company-wide bulletins published to Telegram + dashboard' },
 
   { key: 'time-tracking',     label: 'Time Tracking',     description: '',                                                            header: true },
   { key: 'attendance',        label: 'Attendance',        description: 'Daily and monthly attendance',                                parent: 'time-tracking' },
@@ -158,13 +159,33 @@ const MODULES: ModuleDef[] = [
   { key: 'invoice',           label: 'Invoice',           description: 'Commercial / Tax invoices + Credit / Debit notes',            parent: 'sales' },
   { key: 'pos',               label: 'POS',               description: 'Counter checkout — orders, queue, draft, checkout',           parent: 'sales' },
   { key: 'voucher',           label: 'General Voucher',   description: 'Free-of-charge giveaways (charity, donation, sponsorship)',   parent: 'sales' },
-  { key: 'payment',           label: 'Payment',           description: 'Receipts recorded against an invoice',                        parent: 'sales' },
-  { key: 'stock',             label: 'Stock',             description: 'Sellable products / services catalog',                        parent: 'sales' },
+  // Payment intentionally NOT a matrix row — it has no sidebar leaf
+  // (the Pay button lives inside Invoice). The backend's
+  // {@code @perm.allow('payment', ...)} gate is still real; admin /
+  // manager role seeds carry payment grants and custom roles
+  // inherit them via RoleService.copyFromBaseRole, so the matrix
+  // doesn't need to expose a separate toggle.
 
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
   { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
   { key: 'bill',              label: 'Bill',              description: 'Vendor bills + Credit / Debit notes (Accounts Payable)',     parent: 'expenses' },
   { key: 'receipt',           label: 'Receipt',           description: 'Single-amount tax receipts (WHT) tied to a vendor',           parent: 'expenses' },
+
+  // Stock is its own sidebar group (V150) with three leaves —
+  // Items is the catalog (module key 'stock' for legacy reasons),
+  // Movement is the append-only audit history, Adjustment is the
+  // manual correction surface.
+  { key: 'stock-group',       label: 'Stock',             description: '',                                                            header: true },
+  { key: 'stock',             label: 'Items',             description: 'Sellable products / services catalog',                        parent: 'stock-group' },
+  { key: 'movement',          label: 'Movement',          description: 'Append-only history of every IN / OUT / Adjustment',          parent: 'stock-group' },
+  { key: 'adjustment',        label: 'Adjustment',        description: 'Manual stock corrections (damaged / lost / counting error)',  parent: 'stock-group' },
+
+  // Cash Flow group (V155 / V156). One leaf for now — Transactions
+  // is the unified ledger; Cash Advance + Internal Transfer ship in
+  // later phases per the ERP design doc.
+  { key: 'cashflow-group',    label: 'Cash Flow',         description: '',                                                            header: true },
+  { key: 'transaction',       label: 'Transactions',      description: 'Unified ledger of every cash movement (in + out)',            parent: 'cashflow-group' },
+  { key: 'cashadvance',       label: 'Cash Advance',      description: 'Employee advances + expense receipts + settlement',            parent: 'cashflow-group' },
 
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
@@ -897,9 +918,14 @@ export function UserManagement() {
         const fullGrid: rolesApi.RolePermission[] = [];
         // Visible modules from the matrix — skip visual-only group
         // headers (time-tracking / payroll-mgmt / settings-group /
-        // sales / expenses). They're labels, not real module keys.
+        // sales / expenses) AND inherited display rows (sale-ledger /
+        // purchase-ledger / profit-loss). The headers are section
+        // labels and the inherited rows mirror their parent module's
+        // checkboxes — neither has a real permission row on the
+        // backend, so sending them trips the regex validator with
+        // "module: must match …".
         for (const mod of MODULES) {
-          if (mod.header) continue;
+          if (mod.header || mod.inheritsFromLabel) continue;
           for (const action of ACTIONS) {
             fullGrid.push({
               module: mod.key as rolesApi.PermissionModule,

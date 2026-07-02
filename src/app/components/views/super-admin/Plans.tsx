@@ -219,7 +219,7 @@ export function Plans() {
                 const inUse = p.tenantsOnPlan ?? 0;
                 return (
                   <TableRow key={p.planTier}>
-                    <TableCell className="font-medium font-mono text-sm">{p.planTier}</TableCell>
+                    <TableCell className="font-medium tabular-nums text-sm">{p.planTier}</TableCell>
                     <TableCell className="text-right font-semibold">
                       {fmtUsd(p.monthlyPriceCents)}
                     </TableCell>
@@ -294,7 +294,7 @@ export function Plans() {
                 onChange={e => setForm({ ...form, planTier: slugify(e.target.value) })}
                 placeholder="e.g. business"
                 disabled={!!editingTier}
-                className="font-mono text-sm"
+                className="tabular-nums text-sm"
               />
               <p className="text-[11px] text-gray-500">Lowercase a–z, 0–9, dashes. 2–32 chars.</p>
             </div>

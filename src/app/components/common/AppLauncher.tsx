@@ -4,7 +4,8 @@ import { Button } from '../ui/button';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { NAV_LEAVES } from '../../config/nav';
-import { Plus, Minus, Loader2 } from 'lucide-react';
+import { Plus, Minus, Loader2, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { APP_TILE_COLOR } from '../../utils/appColors';
 
@@ -36,7 +37,7 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
 // platform-managed labels resolve. Default seed there: 'hr',
 // 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
 // admin additions).
-type CategoryKey = 'accounting' | 'hr' | 'admin' | 'report';
+type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -48,6 +49,11 @@ const CATEGORIES: CategoryDef[] = [
     key: 'accounting', labelKey: 'apps.category.account',
     installedBadge: 'bg-emerald-100 text-emerald-700',
     ids: ['customers', 'quotations', 'invoices', 'pos', 'vouchers', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'stock-adjustment'],
+  },
+  {
+    key: 'cashflow', labelKey: 'apps.category.cashflow',
+    installedBadge: 'bg-teal-100 text-teal-700',
+    ids: ['transactions', 'cash-advances'],
   },
   {
     key: 'hr', labelKey: 'apps.category.hr',
@@ -168,9 +174,26 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[460px] p-0">
-        <div className="px-4 py-2.5 border-b">
+        <div className="px-4 py-2.5 border-b flex items-center gap-1.5">
           <span className="text-sm font-semibold">{t('header.apps')}</span>
-          <p className="text-[11px] text-gray-500 mt-0.5">{t('apps.hint')}</p>
+          {/* The "Click + to install / − to uninstall" hint used to
+              be a paragraph here. Moved to a hover tooltip so the
+              header stays one line and the panel feels less noisy. */}
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                  aria-label={t('apps.hint')}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                {t('apps.hint')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-3 space-y-4">
           {tree.map(cat => (

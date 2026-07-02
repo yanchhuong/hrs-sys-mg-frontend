@@ -124,7 +124,7 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
               <canvas ref={canvasRef} className="rounded" />
               <div className="text-center">
                 <div className="text-xs uppercase text-gray-500 tracking-wide">Shop code</div>
-                <div className="text-2xl font-mono font-bold tracking-widest text-slate-900">
+                <div className="text-2xl tabular-nums font-bold tracking-widest text-slate-900">
                   {info.code}
                 </div>
               </div>
@@ -134,7 +134,7 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
             <div className="space-y-1.5">
               <label className="text-xs text-gray-600">Public link</label>
               <div className="flex gap-1.5">
-                <Input value={composedUrl} readOnly className="font-mono text-xs" />
+                <Input value={composedUrl} readOnly className="tabular-nums text-xs" />
                 <Button type="button" variant="outline" size="sm" onClick={copy} title="Copy">
                   <Copy className="h-3.5 w-3.5" />
                 </Button>

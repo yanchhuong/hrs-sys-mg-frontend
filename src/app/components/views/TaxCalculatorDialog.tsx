@@ -453,7 +453,7 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
                   Settings → Tax Brackets first.
                 </p>
               )}
-              <p className="font-mono text-[11px] bg-gray-100 rounded px-2 py-1 mt-2 whitespace-pre-wrap">
+              <p className="tabular-nums text-[11px] bg-gray-100 rounded px-2 py-1 mt-2 whitespace-pre-wrap">
 {`taxableKhr = (gross × khrPerUsd) − dependents × 150,000
 taxKhr     = (taxableKhr × ratePercent ÷ 100) − excessAmount
 taxUsd     = taxKhr ÷ khrPerUsd`}

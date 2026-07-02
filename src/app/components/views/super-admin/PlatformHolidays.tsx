@@ -178,7 +178,7 @@ export function PlatformHolidays() {
               )}
               {!loadingRows && rows.map(r => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-mono text-xs">{r.date}</TableCell>
+                  <TableCell className="tabular-nums text-xs">{r.date}</TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>

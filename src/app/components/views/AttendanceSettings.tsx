@@ -195,6 +195,10 @@ export function AttendanceSettings() {
     notifyManager: true,
     notifyEmployee: true,
     weekendDays: ['Saturday', 'Sunday'] as string[],
+    /** V169 — Cambodian banks / factories often treat Saturday as a
+     *  half workday. Mutual exclusion with weekendDays is enforced
+     *  by the 3-state toggle below. */
+    halfDayDays: [] as string[],
   });
 
   // Backend stores 3-letter codes ("Sat"); the chip UI expects long names
@@ -218,6 +222,7 @@ export function AttendanceSettings() {
         notifyManager: remote.notifyManager,
         notifyEmployee: remote.notifyEmployee,
         weekendDays: (remote.weekendDays || []).map(d => SHORT_TO_LONG[d] ?? d),
+        halfDayDays: (remote.halfDayDays || []).map(d => SHORT_TO_LONG[d] ?? d),
       });
     } catch (err) {
       console.warn('Could not load General attendance settings', err);
@@ -266,6 +271,7 @@ export function AttendanceSettings() {
           notifyEmployee: generalSettings.notifyEmployee,
           // Convert long day names back to the 3-letter codes the backend stores.
           weekendDays: generalSettings.weekendDays.map(d => LONG_TO_SHORT[d] ?? d),
+          halfDayDays: generalSettings.halfDayDays.map(d => LONG_TO_SHORT[d] ?? d),
         }),
       ]);
       toast.success('Attendance settings saved successfully');
@@ -490,7 +496,7 @@ export function AttendanceSettings() {
                 <CardContent className="space-y-4">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <p className="text-xs font-medium text-blue-800 uppercase tracking-wide mb-2">How It Works</p>
-                    <div className="font-mono text-xs space-y-1.5 text-blue-900">
+                    <div className="tabular-nums text-xs space-y-1.5 text-blue-900">
                       <p>if check-out {'>'} {otSettings.workdayRule.otStartAfter}</p>
                       <p className="pl-4">→ OT = (check-out - {otSettings.workdayRule.otStartAfter}) × {otSettings.workdayRule.rate}</p>
                       <p className="pl-4 text-blue-600">round to nearest {otSettings.workdayRule.roundingMinutes}min</p>
@@ -574,7 +580,7 @@ export function AttendanceSettings() {
                 <CardContent className="space-y-4">
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                     <p className="text-xs font-medium text-orange-800 uppercase tracking-wide mb-2">How It Works</p>
-                    <div className="font-mono text-xs space-y-1.5 text-orange-900">
+                    <div className="tabular-nums text-xs space-y-1.5 text-orange-900">
                       <p>if working on Saturday/Sunday</p>
                       <p className="pl-4">→ All hours = OT × {otSettings.weekendRule.rate}</p>
                       <p className="pl-4 text-orange-600">min work: {otSettings.weekendRule.minimumWorkMinutes}min required</p>
@@ -669,7 +675,7 @@ export function AttendanceSettings() {
                 <CardContent className="space-y-4">
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                     <p className="text-xs font-medium text-red-800 uppercase tracking-wide mb-2">How It Works</p>
-                    <div className="font-mono text-xs space-y-1.5 text-red-900">
+                    <div className="tabular-nums text-xs space-y-1.5 text-red-900">
                       <p>if date = Holiday (from calendar)</p>
                       <p className="pl-4">→ All work hours = OT × {otSettings.holidayRule.rate}</p>
                       {otSettings.holidayRule.specialBonusEnabled && <p className="pl-4 text-red-600">+ ${otSettings.holidayRule.specialBonusAmount} bonus</p>}
@@ -852,7 +858,7 @@ export function AttendanceSettings() {
                       <>
                         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                           <p className="text-xs font-medium text-indigo-800 uppercase tracking-wide mb-2">How It Works</p>
-                          <div className="font-mono text-xs space-y-1.5 text-indigo-900">
+                          <div className="tabular-nums text-xs space-y-1.5 text-indigo-900">
                             <p>if OT interval overlaps [{otSettings.nightRule.startTime}, {otSettings.nightRule.endTime})</p>
                             <p className="pl-4">{composeRuleLine} <span className="text-indigo-600">({composeNarrative})</span></p>
                             <p className="pl-4 text-indigo-600">otherwise effective_rate = dayTypeRate</p>
@@ -1088,19 +1094,19 @@ export function AttendanceSettings() {
                   <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /><p className="font-medium text-sm text-blue-800">Workday</p></div>
                   <div className="text-2xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>
                   <div className="text-xs text-blue-600 space-y-1"><p>After {otSettings.workdayRule.otStartAfter}</p><p>Min {otSettings.workdayRule.minimumOTMinutes}min / Max {otSettings.workdayRule.maxOTHours}h</p></div>
-                  <div className="font-mono text-xs text-blue-900 bg-white rounded p-2">18:30 out → 1.5h × {otSettings.workdayRule.rate} = {(1.5 * otSettings.workdayRule.rate).toFixed(2)}h</div>
+                  <div className="tabular-nums text-xs text-blue-900 bg-white rounded p-2">18:30 out → 1.5h × {otSettings.workdayRule.rate} = {(1.5 * otSettings.workdayRule.rate).toFixed(2)}h</div>
                 </div>
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-orange-600" /><p className="font-medium text-sm text-orange-800">Weekend</p></div>
                   <div className="text-2xl font-bold text-orange-700">{otSettings.weekendRule.rate}x</div>
                   <div className="text-xs text-orange-600 space-y-1"><p>{otSettings.weekendRule.countAllHoursAsOT ? 'All hours = OT' : 'After standard hours'}</p><p>Min {otSettings.weekendRule.minimumWorkMinutes}min required</p></div>
-                  <div className="font-mono text-xs text-orange-900 bg-white rounded p-2">6h work → 6h × {otSettings.weekendRule.rate} = {(6 * otSettings.weekendRule.rate).toFixed(1)}h</div>
+                  <div className="tabular-nums text-xs text-orange-900 bg-white rounded p-2">6h work → 6h × {otSettings.weekendRule.rate} = {(6 * otSettings.weekendRule.rate).toFixed(1)}h</div>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><PartyPopper className="h-4 w-4 text-red-600" /><p className="font-medium text-sm text-red-800">Holiday</p></div>
                   <div className="text-2xl font-bold text-red-700">{otSettings.holidayRule.rate}x</div>
                   <div className="text-xs text-red-600 space-y-1"><p>Highest priority rule</p><p>{otSettings.holidayRule.specialBonusEnabled ? `+ $${otSettings.holidayRule.specialBonusAmount} bonus` : 'No special bonus'}</p></div>
-                  <div className="font-mono text-xs text-red-900 bg-white rounded p-2">5h work → 5h × {otSettings.holidayRule.rate} = {(5 * otSettings.holidayRule.rate).toFixed(1)}h</div>
+                  <div className="tabular-nums text-xs text-red-900 bg-white rounded p-2">5h work → 5h × {otSettings.holidayRule.rate} = {(5 * otSettings.holidayRule.rate).toFixed(1)}h</div>
                 </div>
                 {/* Night Work — when in window, the night rate replaces
                     the day-type rate (rather than max-ing on top of it).
@@ -1129,7 +1135,7 @@ export function AttendanceSettings() {
                           : 'Replaces day-type rate · cross-date OK'}
                     </p>
                   </div>
-                  <div className={`font-mono text-xs bg-white rounded p-2 ${otSettings.nightRule.enabled ? 'text-indigo-900' : 'text-gray-500'}`}>
+                  <div className={`tabular-nums text-xs bg-white rounded p-2 ${otSettings.nightRule.enabled ? 'text-indigo-900' : 'text-gray-500'}`}>
                     {(() => {
                       const w = otSettings.workdayRule.rate, n = otSettings.nightRule.rate;
                       const eff = otSettings.nightRule.compose === 'max' ? Math.max(w, n)
@@ -1232,29 +1238,62 @@ export function AttendanceSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Weekend Configuration</CardTitle>
+                <p className="text-xs text-gray-500 mt-1">
+                  Click a day to cycle through <strong className="text-green-700">Work</strong> → <strong className="text-amber-700">Half</strong> → <strong className="text-red-700">Weekend</strong>.
+                  Half workdays are common at Cambodian banks and factories (typically Saturday) — the employee is present but with reduced expected hours.
+                </p>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-7 gap-2">
                   {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
                     const isWeekend = generalSettings.weekendDays.includes(day);
+                    const isHalf    = generalSettings.halfDayDays.includes(day);
+                    // 3-state cycle: work → half → weekend → work. A day
+                    // can never be BOTH half and weekend, so the click
+                    // handler always strips the day from the "wrong"
+                    // list as part of its move.
+                    const state: 'work' | 'half' | 'weekend' =
+                      isWeekend ? 'weekend' : isHalf ? 'half' : 'work';
+                    const cycle = () => {
+                      const stripWeekend = generalSettings.weekendDays.filter(d => d !== day);
+                      const stripHalf    = generalSettings.halfDayDays.filter(d => d !== day);
+                      if (state === 'work') {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: stripWeekend,
+                          halfDayDays: [...stripHalf, day],
+                        });
+                      } else if (state === 'half') {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: [...stripWeekend, day],
+                          halfDayDays: stripHalf,
+                        });
+                      } else {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: stripWeekend,
+                          halfDayDays: stripHalf,
+                        });
+                      }
+                    };
+                    const cls =
+                      state === 'weekend' ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                      : state === 'half'    ? 'bg-amber-100 text-amber-700 border-2 border-amber-300'
+                      : 'bg-green-50 text-green-700 border-2 border-green-200';
+                    const badge =
+                      state === 'weekend' ? 'Weekend'
+                      : state === 'half'    ? 'Half'
+                      : 'Work';
                     return (
                       <button
                         key={day}
-                        onClick={() => {
-                          setGeneralSettings({
-                            ...generalSettings,
-                            weekendDays: isWeekend
-                              ? generalSettings.weekendDays.filter(d => d !== day)
-                              : [...generalSettings.weekendDays, day],
-                          });
-                        }}
-                        className={`py-3 rounded-lg text-xs font-medium transition-colors ${
-                          isWeekend
-                            ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                            : 'bg-green-50 text-green-700 border-2 border-green-200'
-                        }`}
+                        onClick={cycle}
+                        title={`${day} — ${badge}. Click to change.`}
+                        className={`flex flex-col items-center py-2.5 rounded-lg text-xs font-medium transition-colors ${cls}`}
                       >
-                        {day.slice(0, 3)}
+                        <span>{day.slice(0, 3)}</span>
+                        <span className="text-[10px] opacity-80 mt-0.5">{badge}</span>
                       </button>
                     );
                   })}
@@ -1262,6 +1301,9 @@ export function AttendanceSettings() {
                 <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
                   <span className="flex items-center gap-1">
                     <div className="h-2.5 w-2.5 rounded bg-green-400" /> Work day
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <div className="h-2.5 w-2.5 rounded bg-amber-400" /> Half day
                   </span>
                   <span className="flex items-center gap-1">
                     <div className="h-2.5 w-2.5 rounded bg-red-400" /> Weekend
@@ -1573,7 +1615,7 @@ function VerdictChip({ session }: { session: EvaluatedSession }) {
       <span className={`rounded px-1.5 py-0.5 ${style[session.verdict]}`}>
         {label[session.verdict]}
       </span>
-      <span className="text-gray-400 font-mono">
+      <span className="text-gray-400 tabular-nums">
         {session.actualIn ?? '— —'} / {session.actualOut ?? '— —'}
       </span>
     </span>

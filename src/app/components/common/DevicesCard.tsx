@@ -418,18 +418,18 @@ export function DevicesCard() {
                       })()}
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">{d.location ?? '—'}</TableCell>
-                    <TableCell className="text-center font-mono text-xs">{d.machineNo}</TableCell>
+                    <TableCell className="text-center tabular-nums text-xs">{d.machineNo}</TableCell>
                     <TableCell className="text-xs">
                       <Badge variant="outline" className="font-normal">
                         {d.commType}
                         {d.baudRate && d.commType !== 'Ethernet' ? ` · ${d.baudRate}` : ''}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{d.ip}:{d.port}</TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="tabular-nums text-xs">{d.ip}:{d.port}</TableCell>
+                    <TableCell className="tabular-nums text-xs">
                       {d.commKey == null ? <span className="text-gray-400">not set</span> : '••••'}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="tabular-nums text-xs">
                       {d.secretKey ? (
                         <div className="flex items-center gap-1">
                           <span className="text-gray-700 select-all">

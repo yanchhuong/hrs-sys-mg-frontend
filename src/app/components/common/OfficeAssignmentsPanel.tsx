@@ -224,7 +224,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
                           <div className="text-[11px] text-gray-500 truncate">{e.position}</div>
                         )}
                       </TableCell>
-                      <TableCell className="py-1.5 text-xs text-gray-600 font-mono">
+                      <TableCell className="py-1.5 text-xs text-gray-600 tabular-nums">
                         {e.empNo || <span className="text-gray-300">—</span>}
                       </TableCell>
                       <TableCell className="py-1.5">

@@ -9,19 +9,33 @@ import { format, startOfYear, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
 import { TrendingUp, Printer, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
 import * as plApi from '../../api/profitLossReport';
+import * as currencyApi from '../../api/currencySettings';
+import { useI18n } from '../../i18n/I18nContext';
 
-/** Render an amount with the currency prefix. USD collapses to "$"; other
- *  currencies use an ISO-code prefix. */
-const fmtMoney = (n: number): string => {
-  // Locale-locked to en-US so the decimal separator stays "." even when
-  // the browser runs in km-KH / fr / etc. (those default to ",").
-  const num = Math.abs(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `$${num}`;
-};
-/** Signed money — preserves a leading "− " (with trailing space) so
- *  the format reads as "− $X" everywhere, matching the convention used
- *  in the Invoice / Bill / Receipt / Ledger views. */
-const signedMoney = (n: number): string => (n < 0 ? '− ' : '') + fmtMoney(n);
+/** Render an amount with the tenant's primary currency prefix. USD
+ *  collapses to "$", KHR / KRW show the local symbol without decimals;
+ *  any other code falls back to the ISO prefix. Factory-style so we
+ *  can bake in the tenant's currency once at mount time and avoid
+ *  threading it through every usage site. */
+function makeMoneyFormatters(code: string) {
+  const sym = currencyApi.currencySymbol(code);
+  const noDp = code === 'KHR' || code === 'KRW';
+  const fmt = (n: number): string => {
+    // Locale-locked to en-US so the decimal separator stays "." even
+    // when the browser runs in km-KH / fr / etc. (those default to ",").
+    const num = Math.abs(n ?? 0).toLocaleString('en-US',
+      noDp
+        ? { maximumFractionDigits: 0 }
+        : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (sym !== code) return noDp ? `${sym} ${num}` : `${sym}${num}`;
+    return `${code} ${num}`;
+  };
+  // Signed money — preserves a leading "− " so the format reads as
+  // "− $X" everywhere, matching the convention used in the Invoice /
+  // Bill / Receipt / Ledger views.
+  const signed = (n: number): string => (n < 0 ? '− ' : '') + fmt(n);
+  return { fmt, signed };
+}
 
 /** Friendly month label — "Jun 2026" instead of the raw "2026-06"
  *  bucket key. Done in JS so the backend stays locale-neutral. */
@@ -44,12 +58,24 @@ const formatMonth = (ym: string): string => {
  * recognising only issued documents.</p>
  */
 export function ProfitLossReport() {
+  const { t } = useI18n();
   const [from, setFrom] = useState<string>(() => format(startOfYear(new Date()), 'yyyy-MM-dd'));
   const [to, setTo]     = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
   const [report, setReport] = useState<plApi.ProfitLossReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
   const [showExpense, setShowExpense] = useState(false);
+  // Tenant currency setting drives the money prefix on every cell.
+  // Backend returns numbers in a single native currency, so the P&L
+  // renders in the tenant's PRIMARY code — a KHR-primary tenant sees
+  // "៛ …" everywhere instead of "$ …".
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, []);
+  const primaryCode = currencySettings?.primaryCurrency ?? 'USD';
+  const { fmt: fmtMoney, signed: signedMoney } = useMemo(
+    () => makeMoneyFormatters(primaryCode), [primaryCode]);
 
   const load = async () => {
     setLoading(true);
@@ -87,7 +113,7 @@ export function ProfitLossReport() {
       <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-gray-500" />
-          <h1 className="text-2xl font-semibold">Profit &amp; Loss</h1>
+          <h1 className="text-2xl font-semibold">{t('nav.reports.profit_loss')}</h1>
         </div>
         <Button variant="outline" size="sm" onClick={() => window.print()}>
           <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
@@ -125,20 +151,20 @@ export function ProfitLossReport() {
             <div className="grid grid-cols-3 gap-6">
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">Total Income</div>
-                <div className="text-2xl font-mono mt-1 text-emerald-700">{fmtMoney(report.totalIncome)}</div>
+                <div className="text-2xl tabular-nums mt-1 text-emerald-700">{fmtMoney(report.totalIncome)}</div>
                 <div className="text-xs text-gray-400 mt-0.5">Invoices &amp; adjustments</div>
               </div>
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">Total Expense</div>
-                <div className="text-2xl font-mono mt-1 text-rose-700">{fmtMoney(report.totalExpense)}</div>
+                <div className="text-2xl tabular-nums mt-1 text-rose-700">{fmtMoney(report.totalExpense)}</div>
                 <div className="text-xs text-gray-400 mt-0.5">
-                  Bills <span className="font-mono">{fmtMoney(report.totalBillExpense)}</span>
-                  {' · '}Receipts <span className="font-mono">{fmtMoney(report.totalReceiptExpense)}</span>
+                  Bills <span className="tabular-nums">{fmtMoney(report.totalBillExpense)}</span>
+                  {' · '}Receipts <span className="tabular-nums">{fmtMoney(report.totalReceiptExpense)}</span>
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-xs uppercase tracking-wide">Net Profit</div>
-                <div className={`text-2xl font-mono mt-1 font-medium ${netClass(report.netProfit)}`}>
+                <div className={`text-2xl tabular-nums mt-1 font-medium ${netClass(report.netProfit)}`}>
                   {signedMoney(report.netProfit)}
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5">
@@ -200,9 +226,9 @@ export function ProfitLossReport() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm text-emerald-700">{fmtMoney(m.income)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm text-rose-700">{fmtMoney(m.expense)}</TableCell>
-                      <TableCell className={`text-right font-mono text-sm font-medium ${netClass(m.net)}`}>
+                      <TableCell className="text-right tabular-nums text-sm text-emerald-700">{fmtMoney(m.income)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-rose-700">{fmtMoney(m.expense)}</TableCell>
+                      <TableCell className={`text-right tabular-nums text-sm font-medium ${netClass(m.net)}`}>
                         {signedMoney(m.net)}
                       </TableCell>
                     </TableRow>
@@ -210,9 +236,9 @@ export function ProfitLossReport() {
                 })}
                 <TableRow className="bg-gray-50 font-medium">
                   <TableCell colSpan={2}>Total</TableCell>
-                  <TableCell className="text-right font-mono text-emerald-700">{fmtMoney(report.totalIncome)}</TableCell>
-                  <TableCell className="text-right font-mono text-rose-700">{fmtMoney(report.totalExpense)}</TableCell>
-                  <TableCell className={`text-right font-mono ${netClass(report.netProfit)}`}>
+                  <TableCell className="text-right tabular-nums text-emerald-700">{fmtMoney(report.totalIncome)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-rose-700">{fmtMoney(report.totalExpense)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${netClass(report.netProfit)}`}>
                     {signedMoney(report.netProfit)}
                   </TableCell>
                 </TableRow>
@@ -294,10 +320,10 @@ function ProfitLossLineTable({ lines, sideLabel }: {
         {lines.map(l => (
           <TableRow key={l.id} className="hover:bg-gray-50">
             <TableCell className="text-sm">{l.date}</TableCell>
-            <TableCell className="font-mono text-sm">{l.docNo}</TableCell>
+            <TableCell className="tabular-nums text-sm">{l.docNo}</TableCell>
             <TableCell className="text-sm">{l.docType}</TableCell>
             <TableCell>{l.partyName}</TableCell>
-            <TableCell className={`text-right font-mono text-sm ${l.amount < 0 ? 'text-rose-600' : ''}`}>
+            <TableCell className={`text-right tabular-nums text-sm ${l.amount < 0 ? 'text-rose-600' : ''}`}>
               {signedMoney(l.amount)}
             </TableCell>
           </TableRow>

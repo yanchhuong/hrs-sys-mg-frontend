@@ -6,14 +6,15 @@
  * detail dialog when re-printing a POS-originated invoice (V135),
  * or any future "send receipt" path. Keeping the markup in one place
  * means the on-paper layout stays in sync no matter who triggers it.
+ *
+ * Layout mirrors the in-dialog PosReceiptBody preview: Receipt header,
+ * optional logo, shop name + cashier, big red total, customer block,
+ * Item/Amount table, totals, tilted PAID stamp, "Thank you!", queue #.
  */
 import type { PosOrder } from '../api/pos';
 import type { AccountingSettings } from '../api/accountingSettings';
 import type { Item } from '../api/items';
 
-/** Escape a string for safe interpolation into HTML. Defensive — the
- *  order data comes from the API but lines might carry an operator-
- *  typed name / note with `<` in it. */
 function esc(s: string | null | undefined): string {
   if (s == null) return '';
   return String(s)
@@ -23,10 +24,6 @@ function esc(s: string | null | undefined): string {
     .replaceAll('"', '&quot;');
 }
 
-/** Resolve a per-line SKU from the items catalog. The cart snapshot
- *  doesn't carry SKU — we look it up from {@code stockItemId} when
- *  the settings ask for the prefix. Falls back to null when the
- *  link is missing. */
 function lineSku(stockItemId: string | null, items: Item[]): string | null {
   if (!stockItemId) return null;
   const it = items.find(i => i.id === stockItemId);
@@ -37,15 +34,9 @@ interface BuildArgs {
   order: PosOrder;
   settings: AccountingSettings;
   items: Item[];
-  /** Used when {@code settings.posShopName} is blank (typical for
-   *  fresh tenants). The Invoice detail can pass the tenant's name
-   *  here so the receipt still carries a real header. */
   shopNameFallback?: string;
 }
 
-/** Returns the inner HTML of the receipt — the part that lives
- *  inside the body, without the wrapping <html>/<style>. Useful when
- *  embedding the receipt into an existing on-screen container too. */
 export function buildPosReceiptInner(args: BuildArgs): string {
   const { order, settings, items, shopNameFallback } = args;
   const when = new Date(order.checkedOutAt ?? order.createdAt);
@@ -53,12 +44,6 @@ export function buildPosReceiptInner(args: BuildArgs): string {
   const timePart = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
   const shopName = (settings.posShopName ?? '').trim() || shopNameFallback || 'SHOP NAME';
 
-  const star = '*'.repeat(36);
-  const dot  = '- '.repeat(18).trim();
-
-  // V138 — optional shop logo + V138 cashier line. Both are gated on
-  // their respective data so a tenant without a logo / unlinked user
-  // still gets a clean header.
   const logo = (settings.posLogoUrl ?? '').trim()
     ? `<div class="logo-wrap"><img src="${esc(settings.posLogoUrl!)}" alt="" class="logo" /></div>`
     : '';
@@ -69,113 +54,115 @@ export function buildPosReceiptInner(args: BuildArgs): string {
     ? `<div class="cashier">Cashier: ${cashierParts.join(' · ')}</div>`
     : '';
 
+  const customerName = (order.customerName ?? '').trim();
+  const seq = String(order.queueSeq).padStart(3, '0');
+  const receiptNo = `#${seq}`;
+
+  const customerBlock = `
+    <div class="kv"><span class="kv-k">Customer</span><span class="kv-v">${esc(customerName || '—')}</span></div>
+    <div class="kv"><span class="kv-k">Receipt No</span><span class="kv-v">${receiptNo}</span></div>
+    <div class="kv"><span class="kv-k">Date</span><span class="kv-v">${esc(datePart)} · ${esc(timePart)}</span></div>
+  `;
+
   const lines = order.items.map(i => {
     const sku = lineSku(i.stockItemId, items);
-    const labelCore = settings.posShowSku && sku ? `${esc(sku)}   ${esc(i.name)}` : esc(i.name);
-    const qtyPrefix = i.quantity > 1 ? `${i.quantity} × ` : '';
-    const note = i.notes
-      ? `<div class="line-note">· ${esc(i.notes)}</div>`
+    const label = settings.posShowSku && sku ? `${esc(sku)}  ${esc(i.name)}` : esc(i.name);
+    const qtySub = i.quantity > 1
+      ? `<div class="line-sub">${i.quantity} × $${(i.lineTotal / i.quantity).toFixed(2)}</div>`
       : '';
+    const note = i.notes ? `<div class="line-note">· ${esc(i.notes)}</div>` : '';
     return `<div class="line">
-        <div class="flex">
-          <span class="line-name">${qtyPrefix}${labelCore}</span>
+        <div class="line-row">
+          <span class="line-name">${label}</span>
           <span class="line-amt">$${i.lineTotal.toFixed(2)}</span>
         </div>
+        ${qtySub}
         ${note}
       </div>`;
   }).join('');
 
   const subtotalRow = order.subtotal !== order.total
-    ? `<div class="flex"><span>SUBTOTAL</span><span>$${order.subtotal.toFixed(2)}</span></div>`
+    ? `<div class="kv"><span class="kv-k">Subtotal</span><span class="kv-v">$${order.subtotal.toFixed(2)}</span></div>`
     : '';
   const discountRow = order.discountValue > 0
-    ? `<div class="flex"><span>DISCOUNT</span><span>-$${order.discountValue.toFixed(2)}</span></div>`
+    ? `<div class="kv"><span class="kv-k">Discount</span><span class="kv-v">-$${order.discountValue.toFixed(2)}</span></div>`
     : '';
-  const taxLabel = order.invoiceKind === 'tax' ? 'TAX (VAT 10%)' : 'TAX';
+  const taxLabel = order.invoiceKind === 'tax' ? 'Tax (VAT 10%)' : 'Tax';
   const taxRow = order.taxAmount > 0
-    ? `<div class="flex"><span>${taxLabel}</span><span>$${order.taxAmount.toFixed(2)}</span></div>`
+    ? `<div class="kv"><span class="kv-k">${taxLabel}</span><span class="kv-v">$${order.taxAmount.toFixed(2)}</span></div>`
     : '';
 
   const methodLabel = (order.paymentMethod ?? 'cash').toUpperCase();
   const received = order.paymentReceived ?? order.total;
   const change   = order.paymentChange ?? 0;
   const changeRow = change > 0
-    ? `<div class="flex"><span>CHANGE</span><span>$${change.toFixed(2)}</span></div>`
+    ? `<div class="kv"><span class="kv-k">Change</span><span class="kv-v">$${change.toFixed(2)}</span></div>`
     : '';
 
-  // V141 — KHR equivalent + exchange rate. Only printed for USD
-  // orders where the snapshot rate is positive (which is the common
-  // path — POS hardcodes USD on the cart side, the rate comes from
-  // POS Settings → Receipt). A KHR-priced order wouldn't need the
-  // conversion line, so we skip it there.
   const rate = order.exchangeRate ?? 0;
   const khrTotal = order.currency === 'USD' && rate > 0 ? order.total * rate : 0;
-  // Single combined line: "Total KHR (@ 4,100)    ៛ 410,000". The
-  // rate sits inside the label parens — keeps the receipt compact
-  // (fits one 80mm thermal line) and matches what the customer
-  // display shows.
-  const khrRows = khrTotal > 0
-    ? `<div class="flex khr-total"><span>TOTAL KHR (@ ${rate.toLocaleString('en-US')})</span><span>៛ ${khrTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></div>`
+  const khrRow = khrTotal > 0
+    ? `<div class="kv"><span class="kv-k">Total KHR (@ ${rate.toLocaleString('en-US')})</span><span class="kv-v">៛ ${khrTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></div>`
     : '';
 
   const paidStamp = settings.posShowPaidStamp
-    ? `<div class="paid-wrap"><span class="paid-stamp">PAID</span></div>`
+    ? `<span class="paid-stamp">PAID</span>`
     : '';
 
-  // Receipt prints only the zero-padded sequence (e.g. "001") — the
-  // full stored queueNo also carries the prefix + date, but those are
-  // implicit context the customer doesn't need on the slip. Gated on
-  // the posShowQueueNo setting (V137) so a tenant who wants a cleaner
-  // slip can hide it.
-  const seq = String(order.queueSeq).padStart(3, '0');
-  const showQueue = settings.posShowQueueNo;
-  const kindFooter = showQueue
-    ? (order.invoiceKind
-        ? `#${seq} · ${order.invoiceKind === 'tax' ? 'Tax' : 'Commercial'}`
-        : `#${seq}`)
-    : (order.invoiceKind === 'tax' ? 'Tax' : 'Commercial');
+  const stampRow = `
+    <div class="stamp-row">
+      <span class="stamp-date">${esc(datePart)}</span>
+      ${paidStamp}
+    </div>
+  `;
+
+  const queueFooter = settings.posShowQueueNo
+    ? `<div class="queue">#${seq}</div>`
+    : '';
 
   return `
-    ${logo}
-    <div class="text-center break-all">${star}</div>
-    <div class="title">RECEIPT</div>
-    <div class="text-center break-all">${star}</div>
+    <div class="receipt">
+      <div class="title">Receipt</div>
+      ${logo}
+      <div class="shop">${esc(shopName)}</div>
+      ${cashier}
 
-    <div class="shop">${esc(shopName)}</div>
-    ${cashier}
+      <div class="rule"></div>
 
-    <div class="break-all dim my">${dot}</div>
-    <div class="flex">
-      <span>DATE :- ${esc(datePart)}</span>
-      <span>${esc(timePart)}</span>
+      <div class="big-total">$${order.total.toFixed(2)}</div>
+      <div class="big-total-sub">Date ${esc(datePart)} · ${esc(timePart)}</div>
+
+      <div class="customer">
+        ${customerBlock}
+      </div>
+
+      <div class="rule"></div>
+
+      <div class="th"><span>Item</span><span>Amount</span></div>
+      <div class="th-rule"></div>
+      ${lines}
+
+      <div class="rule"></div>
+
+      ${subtotalRow}
+      ${discountRow}
+      ${taxRow}
+      <div class="kv total"><span class="kv-k">Total Due</span><span class="kv-v">$${order.total.toFixed(2)}</span></div>
+      <div class="kv"><span class="kv-k">Paid Amount</span><span class="kv-v">$${received.toFixed(2)}</span></div>
+      ${changeRow}
+      ${khrRow}
+      <div class="kv"><span class="kv-k">Method</span><span class="kv-v">${esc(methodLabel)}</span></div>
+
+      ${stampRow}
+
+      <div class="thanks">Thank you!</div>
+      ${queueFooter}
     </div>
-    <div class="break-all dim my">${dot}</div>
-
-    ${lines}
-
-    <div class="rule"></div>
-
-    ${subtotalRow}
-    ${discountRow}
-    ${taxRow}
-    <div class="flex total"><span>TOTAL</span><span>$${order.total.toFixed(2)}</span></div>
-    ${khrRows}
-    <div class="flex"><span>${esc(methodLabel)}</span><span>$${received.toFixed(2)}</span></div>
-    ${changeRow}
-
-    ${paidStamp}
-
-    <div class="thanks">THANK YOU!</div>
-    <div class="footer">${kindFooter}</div>
   `;
 }
 
-/** Full document including <style> + @page rule for the chosen paper
- *  size. Used by {@link printPosReceipt} as the pop-up body. */
 function buildPosReceiptDoc(args: BuildArgs): string {
   const paper = args.settings.posPaperSize;
-  // @page: thermal_80 is continuous-roll, sized 80mm × auto. A4/A5/A6
-  // use the matching desktop sheet with normal margins.
   const pageCss = paper === 'thermal_80'
     ? '@page { size: 80mm auto; margin: 4mm; }'
     : `@page { size: ${paper.toUpperCase()}; margin: 10mm; }`;
@@ -184,35 +171,76 @@ function buildPosReceiptDoc(args: BuildArgs): string {
   return `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt</title>
     <style>
       ${pageCss}
-      body { font: 11px/1.45 'Courier New', monospace; color: #111; margin: 0; padding: 4mm; }
-      .text-center { text-align: center; }
-      .break-all { word-break: break-all; }
-      .my { margin: 4px 0; }
-      .dim { color: #555; }
-      .flex { display: flex; justify-content: space-between; gap: 8px; }
-      .flex > span:first-child { text-align: left; }
-      .flex > span:last-child  { text-align: right; }
-      .title { text-align: center; font-weight: 700; font-size: 14px; letter-spacing: 0.15em; margin: 4px 0; }
-      .logo-wrap { text-align: center; margin-bottom: 4px; }
-      .logo { max-height: 60px; max-width: 100%; object-fit: contain; }
-      .shop { font-weight: 700; margin-top: 8px; }
-      .cashier { font-size: 10px; color: #555; margin-top: 2px; }
-      .line { margin-top: 1px; }
-      .line-name { padding-right: 8px; flex: 1; }
-      .line-note { padding-left: 12px; font-style: italic; font-size: 10px; color: #333; }
-      .rule { border-top: 1px dashed #000; margin: 6px 0; }
-      .total { font-weight: 700; }
-      .khr-total { font-weight: 700; }
-      .paid-wrap { text-align: center; margin-top: 8px; }
-      .paid-stamp { display: inline-block; border: 2px double #000; padding: 2px 10px; font-weight: 700; letter-spacing: 0.2em; }
-      .thanks { text-align: center; font-weight: 600; margin-top: 8px; }
-      .footer { text-align: center; color: #555; font-size: 10px; margin-top: 2px; }
+      * { box-sizing: border-box; }
+      body {
+        font: 12px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        color: #111;
+        margin: 0;
+        padding: 4mm;
+        font-variant-numeric: tabular-nums;
+      }
+      .receipt { max-width: 300px; margin: 0 auto; }
+
+      .title { text-align: center; font-size: 13px; font-weight: 600; color: #1f2937; }
+      .logo-wrap { text-align: center; margin: 6px 0 4px; }
+      .logo { max-height: 56px; max-width: 100%; object-fit: contain; }
+      .shop { text-align: center; font-weight: 700; margin-top: 4px; }
+      .cashier { text-align: center; font-size: 10px; color: #6b7280; margin-top: 2px; }
+
+      .rule { border-top: 1px solid #e5e7eb; margin: 10px 0; }
+
+      .big-total {
+        color: #dc2626;
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+      }
+      .big-total-sub { font-size: 11px; color: #4b5563; margin-top: 2px; margin-bottom: 8px; }
+
+      .customer .kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 2px 0; }
+      .customer .kv-k { color: #6b7280; }
+      .customer .kv-v { color: #111827; text-align: right; }
+
+      .th { display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; color: #111827; }
+      .th-rule { border-top: 1px solid #111827; margin: 2px 0 6px; }
+
+      .line { margin: 4px 0; }
+      .line-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+      .line-name { flex: 1; padding-right: 8px; color: #111827; }
+      .line-amt { color: #111827; font-variant-numeric: tabular-nums; }
+      .line-sub { font-size: 10px; color: #6b7280; margin-top: 1px; }
+      .line-note { font-size: 10px; color: #6b7280; font-style: italic; margin-top: 1px; padding-left: 4px; }
+
+      .kv { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+      .kv-k { color: #4b5563; }
+      .kv-v { color: #111827; text-align: right; font-variant-numeric: tabular-nums; }
+      .total .kv-k, .total .kv-v { font-weight: 700; font-size: 13px; color: #111827; }
+
+      .stamp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 14px;
+        min-height: 36px;
+      }
+      .stamp-date { color: #dc2626; font-size: 11px; font-weight: 500; }
+      .paid-stamp {
+        display: inline-block;
+        border: 2px solid #ef4444;
+        color: #dc2626;
+        padding: 2px 12px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        transform: rotate(-6deg);
+        font-size: 14px;
+      }
+
+      .thanks { text-align: center; color: #374151; font-size: 12px; margin-top: 12px; }
+      .queue { text-align: center; color: #9ca3af; font-size: 10px; margin-top: 4px; }
     </style></head><body>${inner}</body></html>`;
 }
 
-/** Open a print window with the receipt rendered for the supplied
- *  paper size + show options. Returns true when the window opened,
- *  false when blocked (caller can show a toast). */
 export function printPosReceipt(args: BuildArgs): boolean {
   const w = window.open('', '_blank', 'width=380,height=720');
   if (!w) return false;

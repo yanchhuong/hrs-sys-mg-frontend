@@ -1,0 +1,234 @@
+/**
+ * Item (catalog) bulk-upload parser + template writer.
+ *
+ * Simpler shape than the Invoice / Bill importers — each row is one
+ * standalone item with no header/continuation grouping. The parser
+ * validates required fields (name), normalises numeric prices,
+ * whitelists the POS category enum, and flags SKU collisions against
+ * the tenant's existing catalog + against other rows in the file.
+ */
+import * as XLSX from 'xlsx';
+import type { Item, ItemCategory, ItemRequest } from '../api/items';
+
+export interface ParsedItemRow {
+  /** 1-indexed Excel row this record came from. */
+  rowNumber: number;
+  data: ItemRequest & { name: string };
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ParsedItemData {
+  items: ParsedItemRow[];
+  errors: string[];             // file-level
+  totalItems: number;
+  validItems: number;
+}
+
+/** Column order on Row 1 of the workbook. `Code` = SKU, `Category` =
+ *  the free-text Stock category (V151), `POS Category` = the fixed
+ *  drink/snack/food/other enum (V142). Split into two columns so an
+ *  operator can populate either or both without confusion. */
+const HEADERS = [
+  'Code',           // A — SKU
+  'Item Name',      // B — required
+  'Description',    // C
+  'Category',       // D — free-text Stock category
+  'POS Category',   // E — drink | snack | food | other
+  'Unit',           // F — pcs, kg, hour, cup, …
+  'Cost Price',     // G
+  'Selling Price',  // H
+  'Current Stock',  // I — initial on-hand qty
+  'Min Stock',      // J — reorder threshold
+  'Active',         // K — Yes / No, defaults Yes
+  'Deduct on Sale', // L — Yes / No, defaults No (matches server default)
+] as const;
+
+const ALLOWED_POS_CATEGORIES: ReadonlySet<string> =
+  new Set<ItemCategory>(['drink', 'snack', 'food', 'other']);
+
+/* -------------------------------------------------------------------------
+ * Value helpers
+ * ------------------------------------------------------------------------- */
+
+function readString(v: unknown): string {
+  if (v == null) return '';
+  return String(v).trim();
+}
+
+function readNumber(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'number' ? v : Number(String(v).replace(/,/g, '').trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Loose Yes/No parser — accepts Yes/No, Y/N, True/False, 1/0.
+ *  Returns undefined for anything else so the caller can fall back
+ *  to the server default. */
+function readBool(v: unknown): boolean | undefined {
+  const s = readString(v).toLowerCase();
+  if (!s) return undefined;
+  if (['yes', 'y', 'true', 't', '1'].includes(s)) return true;
+  if (['no', 'n', 'false', 'f', '0'].includes(s)) return false;
+  return undefined;
+}
+
+/* -------------------------------------------------------------------------
+ * Parse + validate
+ * ------------------------------------------------------------------------- */
+
+export function parseItemsExcel(
+  file: File,
+  existingItems: Item[] = [],
+): Promise<ParsedItemData> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const workbook = XLSX.read(e.target?.result, { type: 'binary' });
+        // Prefer an "Items" sheet if named that way; otherwise sheet[0].
+        const sheetName = workbook.SheetNames.find(n => n.toLowerCase() === 'items')
+          ?? workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) {
+          resolve({ items: [], errors: ['No sheet found in workbook.'], totalItems: 0, validItems: 0 });
+          return;
+        }
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
+        resolve(buildItems(rows, existingItems));
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsBinaryString(file);
+  });
+}
+
+function buildItems(rows: Record<string, unknown>[], existing: Item[]): ParsedItemData {
+  const out: ParsedItemRow[] = [];
+  // Case-insensitive SKU lookup for tenant-wide + within-file dupes.
+  // The DB enforces uniqueness on non-blank SKUs, so we surface the
+  // collision client-side before the operator hits Import.
+  const existingSkus = new Set(
+    existing.map(i => (i.sku ?? '').toLowerCase().trim()).filter(Boolean),
+  );
+
+  // First pass: parse each row into a record. Second pass runs the
+  // cross-row uniqueness check so we can catch dupes that share a
+  // SKU even when both are otherwise valid.
+  rows.forEach((row, idx) => {
+    const excelRow = idx + 2;
+    const isBlank = HEADERS.every(h => readString(row[h]) === '');
+    if (isBlank) return;
+    out.push(parseRow(row, excelRow));
+  });
+
+  // Track SKUs already-seen inside the file for within-file dupes.
+  const seenSku = new Map<string, number>(); // sku → first-seen row number
+  for (const rec of out) {
+    const sku = (rec.data.sku ?? '').toLowerCase().trim();
+    if (!sku) continue;
+    if (existingSkus.has(sku)) {
+      rec.errors.push(`Code "${rec.data.sku}" already exists in the catalog.`);
+    }
+    if (seenSku.has(sku)) {
+      rec.errors.push(`Code "${rec.data.sku}" is used by row ${seenSku.get(sku)} in this file.`);
+    } else {
+      seenSku.set(sku, rec.rowNumber);
+    }
+  }
+
+  const validItems = out.filter(r => r.errors.length === 0).length;
+  return { items: out, errors: [], totalItems: out.length, validItems };
+}
+
+function parseRow(row: Record<string, unknown>, excelRow: number): ParsedItemRow {
+  const name = readString(row['Item Name']);
+  const sku  = readString(row['Code']);
+  const posCategoryRaw = readString(row['POS Category']).toLowerCase();
+  const itemCategory  = readString(row['Category']);
+  const unit = readString(row['Unit']);
+  const cost = readNumber(row['Cost Price']);
+  const price = readNumber(row['Selling Price']);
+  const stock = readNumber(row['Current Stock']);
+  const minStock = readNumber(row['Min Stock']);
+  const active = readBool(row['Active']);
+  const deduct = readBool(row['Deduct on Sale']);
+  const description = readString(row['Description']);
+
+  const rec: ParsedItemRow = {
+    rowNumber: excelRow,
+    data: {
+      sku: sku || undefined,
+      name,
+      description: description || undefined,
+      unit: unit || undefined,
+      unitCost: cost ?? undefined,
+      unitPrice: price ?? undefined,
+      stockQty: stock ?? undefined,
+      minStock: minStock ?? undefined,
+      active: active ?? undefined,
+      deductionEnabled: deduct ?? undefined,
+      itemCategory: itemCategory || undefined,
+      category: (posCategoryRaw as ItemCategory) || undefined,
+    },
+    errors: [],
+    warnings: [],
+  };
+
+  if (!name) rec.errors.push('Item Name is required.');
+  if (posCategoryRaw && !ALLOWED_POS_CATEGORIES.has(posCategoryRaw)) {
+    rec.errors.push(`POS Category "${row['POS Category']}" is not one of drink / snack / food / other.`);
+  }
+  if (cost != null && cost < 0)   rec.errors.push('Cost Price cannot be negative.');
+  if (price != null && price < 0) rec.errors.push('Selling Price cannot be negative.');
+  return rec;
+}
+
+/* -------------------------------------------------------------------------
+ * Template writer
+ * ------------------------------------------------------------------------- */
+
+export function downloadItemTemplate(): void {
+  const wb = XLSX.utils.book_new();
+
+  const sample: (string | number)[][] = [
+    ['PR-001', 'Cappuccino',        'Classic Italian espresso with steamed milk', 'Coffee',    'drink', 'cup', 0.80, 1.50, 20, 5,  'Yes', 'No'],
+    ['PR-002', 'Americano',         'Espresso topped with hot water',              'Coffee',    'drink', 'cup', 0.60, 1.50, 30, 5,  'Yes', 'No'],
+    ['PR-003', 'Macha Latte',       'Matcha green tea whisked with steamed milk',  'Tea',       'drink', 'cup', 1.10, 1.50, 15, 5,  'Yes', 'No'],
+    ['SNK-01', 'Chocolate Croissant', 'Buttery pastry with chocolate filling',     'Bakery',    'snack', 'pcs', 0.90, 2.00, 10, 3,  'Yes', 'Yes'],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Items');
+
+  const guide: (string | number)[][] = [
+    ['Field',           'Rule'],
+    ['Code',            'Optional SKU — must be unique per tenant when set. Leave blank to let the operator hand out codes manually later.'],
+    ['Item Name',       'Required. Free text.'],
+    ['Description',     'Optional. Free text; shown under the name on the catalog table.'],
+    ['Category',        'Optional free-text Stock category (V151) — e.g. "Coffee", "Bakery", "Beverages/Hot".'],
+    ['POS Category',    'Optional. One of drink / snack / food / other. Drives the POS filter tabs.'],
+    ['Unit',            'Optional. Free text — pcs, kg, hour, cup, …'],
+    ['Cost Price',      'Optional. Non-negative decimal.'],
+    ['Selling Price',   'Optional. Non-negative decimal.'],
+    ['Current Stock',   'Optional. Initial on-hand quantity. Negatives allowed if the tenant tracks back-orders.'],
+    ['Min Stock',       'Optional. Reorder threshold — drives the Low / Out status badge.'],
+    ['Active',          'Optional. Yes / No (accepts Y/N, True/False, 1/0). Defaults Yes on the server.'],
+    ['Deduct on Sale',  'Optional. When Yes, issuing an invoice line with this item decrements stock. Defaults No.'],
+  ];
+  const gws = XLSX.utils.aoa_to_sheet(guide);
+  gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
+  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+
+  XLSX.writeFile(wb, 'Items-Template.xlsx');
+}
+
+/** Adapt to the ItemRequest the create endpoint expects. Blank
+ *  optional fields fall through as undefined so the server keeps
+ *  its own defaults. */
+export function toItemRequest(rec: ParsedItemRow): ItemRequest {
+  return { ...rec.data };
+}

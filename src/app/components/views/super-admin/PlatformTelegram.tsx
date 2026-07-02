@@ -257,7 +257,7 @@ export function PlatformTelegram() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell className="tabular-nums text-sm">
                       <a
                         href={`https://t.me/${b.botUsername}`}
                         target="_blank"
@@ -273,7 +273,7 @@ export function PlatformTelegram() {
                         ? <span className="text-gray-400">— (shared)</span>
                         : <span className="text-gray-700">{b.tenantName ?? '(unknown)'}</span>}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-gray-500">
+                    <TableCell className="tabular-nums text-xs text-gray-500">
                       {b.tokenTail || '—'}
                     </TableCell>
                     <TableCell>
@@ -342,7 +342,7 @@ export function PlatformTelegram() {
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value)}
                   placeholder="HRMS_Platform_Bot"
-                  className="font-mono"
+                  className="tabular-nums"
                   disabled={saving}
                 />
                 <div className="text-[10px] text-gray-500">
@@ -362,7 +362,7 @@ export function PlatformTelegram() {
                   value={botToken}
                   onChange={e => setBotToken(e.target.value)}
                   placeholder={platformBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
-                  className="font-mono"
+                  className="tabular-nums"
                   disabled={saving}
                   autoComplete="off"
                 />

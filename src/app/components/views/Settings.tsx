@@ -30,9 +30,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   Settings as SettingsIcon, ShieldCheck, Save, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
-  RefreshCw, Eye, EyeOff, Upload, KeyRound,
+  RefreshCw, Eye, EyeOff, Upload, KeyRound, Coins, Loader2, Info,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
+import * as currencyApi from '../../api/currencySettings';
 import * as paywayApi from '../../api/payway';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -68,11 +70,19 @@ export function Settings() {
         <h1 className="text-3xl font-bold">{t('page.settings.title')}</h1>
       </div>
 
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs defaultValue="company" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="general">
+          <TabsTrigger value="company">
             <SettingsIcon className="mr-2 h-4 w-4" />
             Company
+          </TabsTrigger>
+          <TabsTrigger value="currency">
+            <Coins className="mr-2 h-4 w-4" />
+            Currency
+          </TabsTrigger>
+          <TabsTrigger value="payway">
+            <KeyRound className="mr-2 h-4 w-4" />
+            PayWay (ABA) Integration
           </TabsTrigger>
           <TabsTrigger value="policy">
             <ShieldCheck className="mr-2 h-4 w-4" />
@@ -192,39 +202,21 @@ export function Settings() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Example Calculations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Employee checks out at 19:00</span>
-                    <span className="text-sm text-green-600 font-semibold">+2h OT</span>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Standard: {activeRule.standardCheckOut} → Actual: 19:00 = 2 hours overtime
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Employee checks in at 08:20</span>
-                    <span className="text-sm text-yellow-600 font-semibold">Late</span>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    20 minutes after {activeRule.standardCheckIn} (Threshold:{' '}
-                    {activeRule.lateThresholdMinutes}m)
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
-        <TabsContent value="general" className="space-y-6">
+        <TabsContent value="company" className="space-y-6">
           <CompanyInformationCard />
-          {isAdmin && <CloudConnectionCard />}
+          {/* Cloud Connection — hidden temporarily. Re-enable by
+              uncommenting the line below when the sync surface is
+              ready to ship. */}
+          {/* {isAdmin && <CloudConnectionCard />} */}
+        </TabsContent>
+
+        <TabsContent value="currency" className="space-y-6">
+          {isAdmin && <CurrencySettingsCard />}
+        </TabsContent>
+
+        <TabsContent value="payway" className="space-y-6">
           {isAdmin && <PayWayIntegrationCard />}
         </TabsContent>
       </Tabs>
@@ -464,7 +456,23 @@ function CompanyInformationCard() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ci-date-format">Date Format</Label>
+            <Label htmlFor="ci-date-format" className="inline-flex items-center gap-1.5">
+              Date Format
+              {/* Help copy moved into a tooltip so the field stays a
+                  compact single row. */}
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                      <Info className="h-3.5 w-3.5" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                    Applies to every visible date across Attendance, Overtime, Leave, Payroll, Reports, etc. Date inputs and exports keep ISO (yyyy-MM-dd).
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </Label>
             <Select
               value={info.dateFormat ?? 'MMM dd, yyyy'}
               onValueChange={(v) => patch({ dateFormat: v })}
@@ -477,21 +485,32 @@ function CompanyInformationCard() {
                 {DATE_FORMAT_PRESETS.map(p => (
                   <SelectItem key={p.pattern} value={p.pattern}>
                     <span className="font-medium">{p.label}</span>
-                    <span className="ml-2 text-xs text-gray-500 font-mono">{p.pattern}</span>
+                    <span className="ml-2 text-xs text-gray-500 tabular-nums">{p.pattern}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
-              Applies to every visible date across Attendance, Overtime, Leave, Payroll, Reports, etc. Date inputs and exports keep ISO (yyyy-MM-dd).
-            </p>
           </div>
 
           {/* V71 — Pay Day of Month drives the 5% Severance maturity gate.
               MatureDate = 3rd Pay Day at-or-after the FDC contract's
               startDate so severance ships with the 3rd salary cycle. */}
           <div className="space-y-2">
-            <Label htmlFor="ci-pay-day">Pay Day (day of month)</Label>
+            <Label htmlFor="ci-pay-day" className="inline-flex items-center gap-1.5">
+              Pay Day (day of month)
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                      <Info className="h-3.5 w-3.5" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                    Day-of-month payroll is paid (1–31). Drives the 5% Severance maturity gate — the 1st installment matures with the <strong>3rd Pay Day</strong> at-or-after the FDC contract's start date.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </Label>
             <Input
               id="ci-pay-day"
               type="number"
@@ -504,9 +523,6 @@ function CompanyInformationCard() {
               }}
               disabled={loading}
             />
-            <p className="text-xs text-gray-500">
-              Day-of-month payroll is paid (1–31). Drives the 5% Severance maturity gate — the 1st installment matures with the <strong>3rd Pay Day</strong> at-or-after the FDC contract's start date.
-            </p>
           </div>
 
           <div className="space-y-2 md:col-span-2">
@@ -967,7 +983,7 @@ function CloudConnectionCard() {
                         <td className="py-0.5">{t.table}</td>
                         <td className="text-right">{t.localCount}</td>
                         <td className="text-right">{t.cloudCount}</td>
-                        <td className={`text-right font-mono ${t.drift !== 0 ? 'text-amber-700' : ''}`}>
+                        <td className={`text-right tabular-nums ${t.drift !== 0 ? 'text-amber-700' : ''}`}>
                           {t.drift > 0 ? `+${t.drift}` : t.drift}
                         </td>
                       </tr>
@@ -1195,7 +1211,7 @@ function SyncOutboxStatusPanel({ onSyncSuccess }: { onSyncSuccess?: () => void |
             <p className="font-medium text-gray-800">Sync outbox</p>
             <p className="text-xs text-gray-600 mt-0.5">
               {status.configured
-                ? <>Cloud: <span className="font-mono">{status.cloudUrl}</span> · key ****{status.apiKeyLastFour}</>
+                ? <>Cloud: <span className="tabular-nums">{status.cloudUrl}</span> · key ****{status.apiKeyLastFour}</>
                 : <span className="text-amber-700">Not configured — set CLOUD_SYNC_URL + CLOUD_SYNC_API_KEY env vars and restart the backend.</span>}
             </p>
             <p className="text-xs mt-1">
@@ -1260,6 +1276,177 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 }
 
 /* ====================================================================
+ *  Currency settings card (V166). Drives the currency dropdown on
+ *  every Invoice / POS / Quotation / Voucher form. Shows a status
+ *  chip reflecting the active pair so the admin can confirm the
+ *  setup at a glance without opening the dialog.
+ * =================================================================== */
+
+function CurrencySettingsCard() {
+  const [data, setData] = useState<currencyApi.CurrencySettings | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [primary, setPrimary] = useState<currencyApi.AllowedCurrency>('USD');
+  /** Empty string in the picker = "None" (single-currency tenant). */
+  const [secondary, setSecondary] = useState<'' | currencyApi.AllowedCurrency>('KHR');
+  const [rate, setRate] = useState<string>('4100');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    currencyApi.get()
+      .then(s => {
+        if (cancelled) return;
+        setData(s);
+        setPrimary(s.primaryCurrency);
+        setSecondary(s.secondaryCurrency ?? '');
+        setRate(s.secondaryRate != null ? String(s.secondaryRate) : '');
+      })
+      .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load currency settings'))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Auto-clear secondary if it collides with the new primary so the
+  // UI never visually shows USD/USD before the server rejects it.
+  useEffect(() => {
+    if (secondary && secondary === primary) {
+      setSecondary('');
+      setRate('');
+    }
+  }, [primary, secondary]);
+
+  const pair = data
+    ? data.secondaryCurrency
+      ? `${data.primaryCurrency} + ${data.secondaryCurrency}`
+      : `${data.primaryCurrency} only`
+    : 'USD + KHR';
+
+  const secondaryOptions = currencyApi.ALLOWED_CURRENCIES.filter(c => c !== primary);
+
+  const submit = async () => {
+    if (saving) return;
+    const sec = secondary === '' ? null : secondary;
+    const parsedRate = rate.trim() === '' ? null : Number(rate);
+    if (sec && (parsedRate === null || !Number.isFinite(parsedRate) || parsedRate <= 0)) {
+      toast.error('Enter a positive conversion rate, or remove the secondary currency.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const next = await currencyApi.save({
+        primaryCurrency: primary,
+        secondaryCurrency: sec,
+        secondaryRate: sec ? parsedRate : null,
+      });
+      setData(next);
+      toast.success('Currency settings saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save currency settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="inline-flex items-center gap-2">
+              <Coins className="h-4 w-4 text-amber-600" />
+              Currency
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Pick the currencies this tenant transacts in. Drives every Invoice / POS / Quotation /
+              Voucher form and totals on receipts. It is Max two currencies.
+            </CardDescription>
+          </div>
+          <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">
+            {pair}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Primary currency</Label>
+                <Select value={primary} onValueChange={v => setPrimary(v as currencyApi.AllowedCurrency)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyApi.ALLOWED_CURRENCIES.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Secondary (optional)</Label>
+                <Select
+                  value={secondary === '' ? '__none' : secondary}
+                  onValueChange={v => {
+                    const next = v === '__none' ? '' : v as currencyApi.AllowedCurrency;
+                    setSecondary(next);
+                    // Picking "None" makes the rate meaningless — clear
+                    // it inline so the guard on Save can't misfire
+                    // against a stale value.
+                    if (!next) setRate('');
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">None — single currency</SelectItem>
+                    {secondaryOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {secondary && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">
+                  Conversion rate ({primary} → {secondary})
+                </Label>
+                <Input
+                  type="number"
+                  step="any"
+                  value={rate}
+                  onChange={e => setRate(e.target.value)}
+                  placeholder={primary === 'USD' && secondary === 'KHR' ? '4100' : 'e.g. 1300'}
+                  disabled={saving}
+                />
+                <p className="text-[11px] text-gray-500">
+                  1 {primary} = <span className="tabular-nums font-medium">{rate || '—'}</span> {secondary}.
+                  Used for the second total line on POS receipts and the Grand Total ({secondary}) row on invoices.
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug">
+              Changing the pair affects new documents only — existing Invoice / POS / Quotation /
+              Voucher rows keep the currency and exchange rate they were saved with.
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={submit} disabled={saving || loading}>
+                {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+                Save
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ====================================================================
  *  PayWay (ABA) integration card (V144). Single Configure button
  *  opens the per-tenant credentials dialog; a small status chip
  *  reflects whether the integration is enabled + which environment.
@@ -1310,9 +1497,9 @@ function PayWayIntegrationCard() {
           <div className="text-xs text-gray-500 space-y-0.5">
             {data?.configured ? (
               <>
-                <div>Merchant: <span className="font-mono text-gray-700">{data.merchantId}</span></div>
+                <div>Merchant: <span className="tabular-nums text-gray-700">{data.merchantId}</span></div>
                 {data.apiKeyPreview && (
-                  <div>API key: <span className="font-mono text-gray-700">{data.apiKeyPreview}</span></div>
+                  <div>API key: <span className="tabular-nums text-gray-700">{data.apiKeyPreview}</span></div>
                 )}
               </>
             ) : (

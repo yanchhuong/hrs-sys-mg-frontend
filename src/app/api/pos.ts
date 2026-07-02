@@ -13,6 +13,31 @@ import { apiJson } from './client';
 export type PosOrderStatus = 'open' | 'checked_out' | 'voided';
 export type PosPaymentMethod = 'cash' | 'card' | 'khqr' | 'bank';
 
+/** V165 — kitchen-side fulfillment lifecycle. Independent of the
+ *  payment-side {@link PosOrderStatus}. Starts at 'requested' the
+ *  moment payment is captured; staff advance from there. */
+export type PosFulfillmentStatus =
+  | 'requested'
+  | 'accepted'
+  | 'in_progress'
+  | 'ready'
+  | 'done';
+
+/** Ordered chain — UIs use this to render the workflow and resolve
+ *  forward / backward neighbours. */
+export const POS_FULFILLMENT_CHAIN: PosFulfillmentStatus[] = [
+  'requested', 'accepted', 'in_progress', 'ready', 'done',
+];
+
+/** Human label per status — keeps every list / pill / button in sync. */
+export const POS_FULFILLMENT_LABELS: Record<PosFulfillmentStatus, string> = {
+  requested:    'Requested',
+  accepted:     'Accepted',
+  in_progress:  'In Progress',
+  ready:        'Ready for Pickup',
+  done:         'Done',
+};
+
 export interface PosOrderItem {
   /** Server-issued; null on a freshly added line until the next save. */
   id: string | null;
@@ -47,6 +72,9 @@ export interface PosOrder {
    *  employee link or no contact number. */
   createdByPhone: string | null;
   status: PosOrderStatus;
+  /** V165 — kitchen fulfillment state. Always present; pre-V165 rows
+   *  were backfilled to 'done'. */
+  fulfillmentStatus: PosFulfillmentStatus;
   currency: string;
   exchangeRate: number;
   subtotal: number;
@@ -154,4 +182,16 @@ export async function checkout(id: string, req: PosCheckoutRequest): Promise<Pos
 
 export async function voidOrder(id: string, reason?: string): Promise<PosOrder> {
   return apiJson(`${BASE}/${id}/void`, { method: 'POST', json: { reason } });
+}
+
+/** V165 — paid orders still moving through the kitchen pipeline. */
+export async function listActiveFulfillment(): Promise<PosOrder[]> {
+  return apiJson(`${BASE}/fulfillment/active`);
+}
+
+/** V165 — set the kitchen fulfillment state. Server allows both
+ *  forward and backward moves so an operator can correct a fat-finger
+ *  advance. */
+export async function setFulfillmentStatus(id: string, status: PosFulfillmentStatus): Promise<PosOrder> {
+  return apiJson(`${BASE}/${id}/fulfillment-status`, { method: 'PATCH', json: { status } });
 }

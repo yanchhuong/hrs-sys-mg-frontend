@@ -389,7 +389,7 @@ export function TelegramSettings() {
                     href={`https://t.me/${activeUsername}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-mono text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                    className="tabular-nums text-blue-700 hover:underline inline-flex items-center gap-0.5"
                   >
                     @{activeUsername} <ExternalLink className="h-3 w-3" />
                   </a>
@@ -451,7 +451,7 @@ export function TelegramSettings() {
                 value={botUsername}
                 onChange={e => setBotUsername(e.target.value)}
                 placeholder="YourCompany_Invoice_Bot"
-                className="font-mono"
+                className="tabular-nums"
                 disabled={!canEdit || saving}
               />
               <div className="text-[10px] text-gray-500">
@@ -471,7 +471,7 @@ export function TelegramSettings() {
                 value={botToken}
                 onChange={e => setBotToken(e.target.value)}
                 placeholder={bot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
-                className="font-mono"
+                className="tabular-nums"
                 disabled={!canEdit || saving}
                 autoComplete="off"
               />
@@ -561,7 +561,7 @@ export function TelegramSettings() {
                 Link for <span className="font-medium text-gray-900">{lastLink.customerName}</span> — expires {new Date(lastLink.expiresAt).toLocaleString()}
               </div>
               <div className="flex items-center gap-2">
-                <Input value={lastLink.url} readOnly className="font-mono text-xs" />
+                <Input value={lastLink.url} readOnly className="tabular-nums text-xs" />
                 <Button variant="outline" size="sm" onClick={copyLink}>
                   {copied
                     ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>
@@ -622,7 +622,7 @@ export function TelegramSettings() {
                       <TableCell className="text-sm">
                         <div className="flex items-center gap-2">
                           {l.telegramUsername
-                            ? <span className="font-mono text-blue-700">@{l.telegramUsername}</span>
+                            ? <span className="tabular-nums text-blue-700">@{l.telegramUsername}</span>
                             : <span className="text-gray-500">{l.displayName ?? '—'}</span>}
                           {l.botSource === 'platform' && (
                             <Badge variant="outline"
@@ -633,7 +633,7 @@ export function TelegramSettings() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-gray-500">{l.chatId}</TableCell>
+                      <TableCell className="tabular-nums text-xs text-gray-500">{l.chatId}</TableCell>
                       <TableCell className="text-sm text-gray-600">{new Date(l.linkedAt).toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         {canRemove && (

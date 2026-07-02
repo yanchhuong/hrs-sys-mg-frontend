@@ -12,6 +12,7 @@ import * as usersApi from '../../api/users';
 import * as overtimeApi from '../../api/overtime';
 import * as deductionsApi from '../../api/deductions';
 import * as settingsApi from '../../api/settings';
+import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import * as increasesApi from '../../api/increases';
 import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
@@ -276,12 +277,18 @@ export function Payroll() {
   const [sentMail, setSentMail] = useState<Set<string>>(new Set());
   const [sentSms, setSentSms] = useState<Set<string>>(new Set());
   const [sentBank, setSentBank] = useState<Set<string>>(new Set());
+  /** Per-batch PayWay beneficiary lookup (V168). Keyed by
+   *  employee UUID so the per-row "Payout Ready" chip can resolve
+   *  in O(1) inside the table render. Refreshed when the selected
+   *  batch flips so a fresh batch carries its own lookup. */
+  const [beneficiaryByEmpId, setBeneficiaryByEmpId] = useState<Map<string, beneficiaryApi.PayWayBeneficiary>>(new Map());
   useEffect(() => {
     if (!selectedBatch) {
       setSelectedRowIds(new Set());
       setSentMail(new Set());
       setSentSms(new Set());
       setSentBank(new Set());
+      setBeneficiaryByEmpId(new Map());
     }
   }, [selectedBatch]);
 
@@ -981,6 +988,39 @@ export function Payroll() {
 
     return true;
   });
+
+  /** Batch-load PayWay beneficiaries (V168) every time the selected
+   *  batch flips or its items load. One round-trip per batch view;
+   *  the Map is keyed by employeeId so the table render does O(1)
+   *  lookups for the Payout Ready chip. Declared AFTER
+   *  {@code payrollRecords} so the deps array doesn't trip JS's
+   *  temporal-dead-zone check. */
+  useEffect(() => {
+    const rows = USE_MOCKS ? payrollRecords : batchItems;
+    if (!selectedBatch || rows.length === 0) {
+      setBeneficiaryByEmpId(new Map());
+      return;
+    }
+    const empIds = Array.from(new Set(rows.map(r => r.employeeId).filter(Boolean) as string[]));
+    if (empIds.length === 0) {
+      setBeneficiaryByEmpId(new Map());
+      return;
+    }
+    let cancelled = false;
+    beneficiaryApi.getBatch(empIds)
+      .then(list => {
+        if (cancelled) return;
+        const m = new Map<string, beneficiaryApi.PayWayBeneficiary>();
+        list.forEach(b => m.set(b.employeeId, b));
+        setBeneficiaryByEmpId(m);
+      })
+      .catch(() => {
+        // Non-fatal — chip just falls back to "No" for every row.
+        if (!cancelled) setBeneficiaryByEmpId(new Map());
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatch, batchItems]);
 
   const handleDownloadPayslip = (payrollId: string) => {
     toast.success('Payslip downloaded successfully');
@@ -2561,7 +2601,12 @@ export function Payroll() {
               <TableBody>
                 {visibleBatches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
+                    {/* 9 columns: Status, Period, Subject, Employees,
+                        Net Salary, Audit, Author, Modifier, Actions.
+                        Previously colSpan=7 left two trailing empty
+                        cells that rendered as a stripe on the right
+                        edge of the empty-state row. */}
+                    <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
                       No batches in this status.
                     </TableCell>
                   </TableRow>
@@ -3053,6 +3098,7 @@ export function Payroll() {
                           </TableHead>
                         )}
                         <TableHead>Employee</TableHead>
+                        <TableHead className="text-center w-[110px]">Payout Ready</TableHead>
                         <TableHead>Position / Department</TableHead>
                         <TableHead>Payroll Account</TableHead>
                         <TableHead>Currency</TableHead>
@@ -3068,13 +3114,13 @@ export function Payroll() {
                     <TableBody>
                       {batchItemsLoading ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 12 : 8} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 13 : 9} className="text-center py-8 text-gray-400">
                             Loading payroll items…
                           </TableCell>
                         </TableRow>
                       ) : detailRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 12 : 8} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 13 : 9} className="text-center py-8 text-gray-400">
                             No items in this batch
                           </TableCell>
                         </TableRow>
@@ -3099,6 +3145,31 @@ export function Payroll() {
                           <span className="font-medium text-sm">{employee?.name ?? '—'}</span>
                           <span className="text-[11px] text-gray-500">{employee?.id ?? '—'}</span>
                         </div>
+                      </TableCell>
+                      {/* Payout Ready (V168) — Yes when the employee has an
+                          active PayWay Beneficiary; No otherwise. Drives
+                          the operator's go/no-go decision before approving
+                          the disbursement step on this batch. */}
+                      <TableCell className="text-center">
+                        {(() => {
+                          const ben = record.employeeId ? beneficiaryByEmpId.get(record.employeeId) : null;
+                          const ready = ben?.status === 'active';
+                          return ready ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+                              title={`PayWay beneficiary ${ben?.beneficiaryId ?? ''} — active`}
+                            >
+                              Yes
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-600 ring-1 ring-gray-200"
+                              title={ben ? `Beneficiary status: ${ben.status}` : 'No PayWay beneficiary registered'}
+                            >
+                              No
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       {/* Combined Position + Department. */}
                       <TableCell>

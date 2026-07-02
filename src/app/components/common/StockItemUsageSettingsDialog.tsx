@@ -345,7 +345,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                                 <div className="text-sm font-medium flex items-center gap-2">
                                   {w.name}
                                   {w.code && (
-                                    <Badge variant="outline" className="font-mono text-[10px]">{w.code}</Badge>
+                                    <Badge variant="outline" className="tabular-nums text-[10px]">{w.code}</Badge>
                                   )}
                                   {!w.enabled && (
                                     <Badge variant="outline" className="text-gray-500">Disabled</Badge>
@@ -418,7 +418,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                   onChange={e => setWhForm({ ...whForm, code: e.target.value })}
                   placeholder="WH-01"
                   maxLength={32}
-                  className="font-mono"
+                  className="tabular-nums"
                 />
               </div>
             </div>

@@ -1466,8 +1466,8 @@ function AttendanceEmployeeDialog({
                   <TableRow key={r.id}>
                     <TableCell className="text-xs">{format(new Date(r.date), 'MMM dd')}</TableCell>
                     <TableCell className="text-xs capitalize">{r.status.replace(/_/g, ' ')}</TableCell>
-                    <TableCell className="text-xs font-mono">{r.morningIn ?? r.checkIn ?? '-'}</TableCell>
-                    <TableCell className="text-xs font-mono">{r.noonOut ?? r.checkOut ?? '-'}</TableCell>
+                    <TableCell className="text-xs tabular-nums">{r.morningIn ?? r.checkIn ?? '-'}</TableCell>
+                    <TableCell className="text-xs tabular-nums">{r.noonOut ?? r.checkOut ?? '-'}</TableCell>
                     <TableCell className="text-xs text-right">{r.workHours?.toFixed(1) ?? '-'}</TableCell>
                     <TableCell className="text-xs text-right">{r.otHours?.toFixed(1) ?? '-'}</TableCell>
                   </TableRow>

@@ -151,7 +151,7 @@ export function QrDisplay() {
               )}
             </div>
             {today && (
-              <p className="text-[10px] font-mono text-gray-300 break-all max-w-md text-center">
+              <p className="text-[10px] tabular-nums text-gray-300 break-all max-w-md text-center">
                 {today.scanUrl}
               </p>
             )}

@@ -193,7 +193,7 @@ export function AnnualLeaveSetup({ open, onOpenChange, defaultYear, employees, o
                   <ul className="text-xs text-gray-700 space-y-1">
                     {preview.map(([days, count]) => (
                       <li key={days} className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-mono">{days} days</Badge>
+                        <Badge variant="outline" className="tabular-nums">{days} days</Badge>
                         <span>→ {count} employee{count !== 1 ? 's' : ''}</span>
                       </li>
                     ))}

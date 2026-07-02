@@ -18,9 +18,18 @@ export interface Role {
 }
 
 export type PermissionModule =
-  | 'dashboard' | 'employees' | 'attendance' | 'all-leave' | 'exception' | 'overtime'
-  | 'deduction' | 'increase' | 'payroll' | 'reports' | 'contracts'
-  | 'settings' | 'user-management';
+  | 'dashboard' | 'employees' | 'announcements'
+  | 'attendance' | 'all-leave' | 'exception' | 'overtime'
+  | 'deduction' | 'increase' | 'payroll' | 'benefit-calculator'
+  | 'reports' | 'attendance-report' | 'payroll-report' | 'compliance'
+  | 'contracts' | 'settings' | 'user-management' | 'telegram' | 'office'
+  // Sale + Purchase
+  | 'customer' | 'quotation' | 'invoice' | 'pos' | 'voucher' | 'payment'
+  | 'vendor' | 'bill' | 'receipt' | 'expenses' | 'sales'
+  // Stock (V150)
+  | 'stock' | 'movement' | 'adjustment'
+  // Cash Flow (V156 / V158)
+  | 'transaction' | 'cashadvance';
 
 /**
  * Permission actions split into two axes:

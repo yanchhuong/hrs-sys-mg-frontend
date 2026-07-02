@@ -189,7 +189,7 @@ export function PayWaySettingsDialog({ open, onOpenChange, onSaved }: Props) {
               API Key
               {data?.configured && data.apiKeyPreview && (
                 <span className="text-[11px] text-gray-500">
-                  Stored: <code className="font-mono">{data.apiKeyPreview}</code>
+                  Stored: <code className="tabular-nums">{data.apiKeyPreview}</code>
                 </span>
               )}
             </Label>
@@ -224,7 +224,7 @@ export function PayWaySettingsDialog({ open, onOpenChange, onSaved }: Props) {
                 <Input
                   value={data.pushUrl}
                   readOnly
-                  className="font-mono text-[11px] h-8 bg-gray-50"
+                  className="tabular-nums text-[11px] h-8 bg-gray-50"
                 />
                 <Button type="button" variant="outline" size="sm" className="h-8" onClick={copyPushUrl}>
                   <Copy className="h-3.5 w-3.5" />

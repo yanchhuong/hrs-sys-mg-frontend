@@ -22,7 +22,7 @@ import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
-  Package, Boxes, Megaphone, History, ClipboardEdit,
+  Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -51,6 +51,8 @@ import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
+import { Transactions } from '../components/views/Transactions';
+import { CashAdvances } from '../components/views/CashAdvances';
 import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
@@ -105,6 +107,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
   { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
   { id: 'stock-group',    labelKey: 'nav.stock',         icon: Boxes },
+  { id: 'cashflow-group', labelKey: 'nav.cashflow',      icon: Wallet },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -163,8 +166,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'receipt',            component: Receipts,                 group: 'purchases' },
 
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
-  { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'stock_movement',     component: StockMovements,           group: 'stock-group' },
-  { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'stock_adjustment',   component: StockAdjustments,         group: 'stock-group' },
+  { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'movement',           component: StockMovements,           group: 'stock-group' },
+  { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
+  { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
+  { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.

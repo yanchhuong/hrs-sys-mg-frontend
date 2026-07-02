@@ -25,8 +25,11 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
 import * as receiptPaymentsApi from '../../api/receiptPayments';
+import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as vendorsApi from '../../api/vendors';
+import * as currencyApi from '../../api/currencySettings';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatMoneyForCurrency } from '../../utils/format';
 
@@ -44,19 +47,6 @@ const fmtMoney = (n: number, currency: string): string => {
     : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
-
-/** Current-month ISO bounds for the toolbar date filter default. */
-function currentMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const last = new Date(y, m + 1, 0);
-  return {
-    from: `${y}-${pad(m + 1)}-01`,
-    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
-  };
-}
 
 /** V98 simplified the status set to Progress / Paid (+ Void). Legacy
  *  draft / issued values still appear in any unmigrated test data;
@@ -82,6 +72,7 @@ const STATUS_LABEL: Record<receiptsApi.ReceiptStatus, string> = {
 export function Receipts() {
   const { t } = useI18n();
   const { canView, canCreate, canUpdate } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd  = canCreate('receipt');
   const canEdit = canUpdate('receipt');
 
@@ -89,17 +80,17 @@ export function Receipts() {
   const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  // Date-range filter — applied client-side. Defaults to the current
-  // calendar month so HR lands on recent receipts rather than a
-  // multi-year scroll. Clear button on the toolbar empties both inputs.
-  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
-  const [dateTo, setDateTo] = useState(() => currentMonthBounds().to);
+  // Date-range filter — applied client-side. Defaults to empty so the
+  // landing view shows every receipt; users pick a range to narrow.
+  // Pagination bounds the scroll.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<receiptsApi.Receipt | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Per-currency Received totals for the visible page. Signed the same
+  // Per-currency Paid totals for the visible page. Signed the same
   // as sumForReceipt (credit positive, debit negative — debit is the
   // typical "we paid the supplier" case; render flips the sign).
   const [paidByCurrency, setPaidByCurrency] = useState<Record<string, Partial<Record<receiptPaymentsApi.PaymentCurrency, number>>>>({});
@@ -217,8 +208,9 @@ export function Receipts() {
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No receipts yet.</p>
           ) : (
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead className="w-44">Receipt No</TableHead>
                   <TableHead>Vendor</TableHead>
@@ -226,8 +218,8 @@ export function Receipts() {
                   <TableHead className="w-28">Date</TableHead>
                   <TableHead className="text-right w-32">Amount</TableHead>
                   <TableHead className="text-right w-32">Tax</TableHead>
-                  <TableHead className="text-right w-28">Received (USD)</TableHead>
-                  <TableHead className="text-right w-28">Received (KHR)</TableHead>
+                  <TableHead className="text-right w-28">Paid (USD)</TableHead>
+                  <TableHead className="text-right w-28">Paid (KHR)</TableHead>
                   <TableHead className="w-24">Status</TableHead>
                   <TableHead className="w-40 text-right"></TableHead>
                 </TableRow>
@@ -237,15 +229,15 @@ export function Receipts() {
                   const v = vendorById.get(r.vendorId);
                   return (
                     <TableRow key={r.id} className="hover:bg-gray-50">
-                      <TableCell className="font-mono text-sm">{r.receiptNo}</TableCell>
+                      <TableCell className="tabular-nums text-sm">{r.receiptNo}</TableCell>
                       <TableCell>{v?.name ?? <span className="text-gray-400">(unknown)</span>}</TableCell>
                       <TableCell className="capitalize text-sm">
                         {(receiptsApi.SUPPLIER_TYPES.find(s => s.key === r.supplierType)?.label) ?? r.supplierType}
                       </TableCell>
-                      <TableCell className="text-sm">{r.issueDate}</TableCell>
+                      <TableCell className="text-sm">{formatDate(r.issueDate)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.amount, r.currency)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.taxAmount, r.currency)}</TableCell>
-                      {/* Per-currency Received columns. Signed the same as
+                      {/* Per-currency Paid columns. Signed the same as
                        *  sumForReceipt — negative when we paid the
                        *  supplier (typical), positive on refunds. Each
                        *  column renders only its own currency; the other
@@ -255,12 +247,17 @@ export function Receipts() {
                       {(() => {
                         const totals = paidByCurrency[r.id];
                         const loaded = !!totals;
-                        const usd = loaded
+                        // Backend uses sale-side sign (credit positive).
+                        // Receipts are purchases, so we negate here: a
+                        // debit payment (money out to the vendor) renders
+                        // as a positive Paid amount, a refund (credit)
+                        // renders negative.
+                        const usd = -(loaded
                           ? (totals.USD ?? 0)
-                          : (r.currency === 'USD' ? r.paidAmount : 0);
-                        const khr = loaded
+                          : (r.currency === 'USD' ? r.paidAmount : 0));
+                        const khr = -(loaded
                           ? (totals.KHR ?? 0)
-                          : (r.currency === 'KHR' ? r.paidAmount : 0);
+                          : (r.currency === 'KHR' ? r.paidAmount : 0));
                         const render = (val: number, cur: 'USD' | 'KHR') => {
                           if (!val) return <span className="text-gray-300">—</span>;
                           return val < 0
@@ -296,16 +293,19 @@ export function Receipts() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
-          {pagination.totalPages > 1 && (
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.goToPage}
-              startIndex={pagination.startIndex}
-              endIndex={pagination.endIndex}
-              totalItems={pagination.totalItems}
-            />
+          {filtered.length > 0 && (
+            <div className="px-1 py-0 border-t">
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
@@ -315,6 +315,11 @@ export function Receipts() {
         onOpenChange={(o) => { setFormOpen(o); if (!o) setEditing(null); }}
         editing={editing}
         vendors={vendors}
+        // Optimistic append so the freshly-created vendor is
+        // available to subsequent picks without reloading the
+        // whole receipts page. Background load() on save still
+        // reconciles in case the server enriched the row.
+        onVendorCreated={(v) => setVendors(prev => [...prev, v])}
         onSaved={async () => { setFormOpen(false); setEditing(null); await load(); }}
       />
 
@@ -346,12 +351,16 @@ export function Receipts() {
 /* -------------------------------------------------------------------- */
 
 function ReceiptFormDialog({
-  open, onOpenChange, editing, vendors, onSaved,
+  open, onOpenChange, editing, vendors, onVendorCreated, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   editing: receiptsApi.Receipt | null;
   vendors: vendorsApi.Vendor[];
+  /** Called after the picker's inline "+ Create" flow mints a new
+   *  vendor — parent appends it to the master list so it stays
+   *  pickable in subsequent dialog opens. */
+  onVendorCreated?: (v: vendorsApi.Vendor) => void;
   onSaved: () => Promise<void> | void;
 }) {
   const isEdit = !!editing;
@@ -362,6 +371,18 @@ function ReceiptFormDialog({
   const [supplierType, setSupplierType] = useState<receiptsApi.SupplierType>('taxable_person');
   const [taxId, setTaxId] = useState('');
   const [currency, setCurrency] = useState('USD');
+  // Tenant currency settings (V166). Drives the picker options + the
+  // default currency / exchange rate for fresh receipts, plus the
+  // visibility of the exchange-rate field (hidden when the receipt's
+  // currency matches the secondary — no meaningful conversion).
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  // Refetch each time the dialog OPENS so a Settings > Currency
+  // change lands here on the next open without needing a page reload.
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [exchangeRate, setExchangeRate] = useState('4100');
   const [amount, setAmount] = useState('0');
   const [taxType, setTaxType] = useState<receiptsApi.ReceiptTaxType | ''>('');
@@ -390,13 +411,23 @@ function ReceiptFormDialog({
       setIssueDate(new Date().toISOString().slice(0, 10));
       setSupplierType('taxable_person');
       setTaxId('');
-      setCurrency('USD');
-      setExchangeRate('4100');
+      setCurrency(currencySettings?.primaryCurrency ?? 'USD');
+      setExchangeRate(String(currencySettings?.secondaryRate ?? 4100));
       setAmount('0');
       setTaxType('');
       setNotes('');
     }
   }, [open, editing]);
+
+  // Follow-up sync: when the tenant currency settings arrive AFTER
+  // the reset effect above ran (network race on first open), pin the
+  // form's currency + exchange rate to the tenant defaults. Skip in
+  // edit mode (row's own currency wins).
+  useEffect(() => {
+    if (!open || editing || !currencySettings) return;
+    setCurrency(currencySettings.primaryCurrency);
+    setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
+  }, [open, editing, currencySettings]);
 
   // Pre-fill Tax ID from vendor TIN on first pick (or vendor change),
   // but only when the user hasn't typed something custom in.
@@ -507,7 +538,7 @@ function ReceiptFormDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Receipt No</Label>
               <Input value={receiptNo} onChange={e => setReceiptNo(e.target.value)}
-                     className="font-mono" />
+                     className="tabular-nums" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Date *</Label>
@@ -526,6 +557,23 @@ function ReceiptFormDialog({
                 label: v.name,
                 searchKey: `${v.name} ${v.phone ?? ''} ${v.tin ?? ''}`,
               }))}
+              // Inline-create: typing a name not in the list shows
+              // a "Create '{name}'" item. Defaults the new vendor to
+              // type=individual since that's the lighter form
+              // (business needs TIN + representative which the
+              // operator should fill in via the Vendors page later).
+              createLabel={(q) => `+ Create vendor "${q}"`}
+              onCreate={async (label) => {
+                try {
+                  const v = await vendorsApi.create({ type: 'individual', name: label });
+                  onVendorCreated?.(v);
+                  toast.success(`Vendor "${v.name}" created`);
+                  return { value: v.id, label: v.name, searchKey: v.name };
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Create vendor failed');
+                  throw e;
+                }
+              }}
             />
           </div>
 
@@ -549,22 +597,34 @@ function ReceiptFormDialog({
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <div className="flex gap-3 items-center h-9">
-                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input type="radio" checked={currency === 'KHR'} onChange={() => setCurrency('KHR')} /> KHR
-                </label>
-                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input type="radio" checked={currency === 'USD'} onChange={() => setCurrency('USD')} /> USD
-                </label>
+            {/* Gated on `currencySettings` being loaded to avoid a
+                brief USD/KHR flash from the enabledCurrencies fallback
+                while the fetch is in flight. */}
+            {currencySettings && currencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Exchange rate (KHR / 1 USD)</Label>
-              <Input type="number" value={exchangeRate}
-                     onChange={e => setExchangeRate(e.target.value)} />
-            </div>
+            )}
+            {/* Exchange-rate field renders only when the tenant has
+                a secondary currency AND it differs from the receipt's
+                selected currency. */}
+            {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
+                </Label>
+                <Input type="number" value={exchangeRate}
+                       onChange={e => setExchangeRate(e.target.value)} />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>
               <Input type="number" min={0} step="0.01" value={amount}
@@ -656,6 +716,7 @@ function ReceiptDetailDialog({
   onChanged: () => void;
   onEdit: (r: receiptsApi.Receipt) => void;
 }) {
+  const { formatDate } = useDateFormat();
   const [receipt, setReceipt] = useState<receiptsApi.Receipt | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -687,7 +748,7 @@ function ReceiptDetailDialog({
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="font-mono">{receipt?.receiptNo ?? 'Receipt'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{receipt?.receiptNo ?? 'Receipt'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !receipt ? (
                   <span className="text-xs text-gray-500">Loading…</span>
@@ -699,7 +760,7 @@ function ReceiptDetailDialog({
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[receipt.status]}`}>
                       {STATUS_LABEL[receipt.status] ?? receipt.status}
                     </Badge>
-                    <span className="text-xs text-gray-500">{receipt.issueDate}</span>
+                    <span className="text-xs text-gray-500">{formatDate(receipt.issueDate)}</span>
                   </>
                 )}
               </DialogDescription>
@@ -742,7 +803,7 @@ function ReceiptDetailDialog({
                 {(receiptsApi.SUPPLIER_TYPES.find(s => s.key === receipt.supplierType)?.label) ?? receipt.supplierType}
               </div>
               <div className="text-gray-500">Tax ID</div>
-              <div className="font-mono">{receipt.taxId || <span className="text-gray-400">—</span>}</div>
+              <div className="tabular-nums">{receipt.taxId || <span className="text-gray-400">—</span>}</div>
               <div className="text-gray-500">Currency</div>
               <div>{receipt.currency}</div>
               <div className="text-gray-500">Amount</div>
@@ -796,6 +857,7 @@ function ReceiptPaymentsPanel({
   receiptCurrency: string;
   readOnly: boolean;
 }) {
+  const { formatDate } = useDateFormat();
   const [rows, setRows] = useState<receiptPaymentsApi.ReceiptPayment[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -808,8 +870,12 @@ function ReceiptPaymentsPanel({
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [receiptId]);
 
-  // Signed sum mirrors the backend math: credit = +amount, debit = -amount.
-  const paid = rows.reduce((s, r) => s + (r.direction === 'debit' ? -r.amount : r.amount), 0);
+  // Purchase-side convention: a debit payment (we paid the vendor)
+  // counts as a positive contribution toward fulfilling the receipt,
+  // a credit payment (vendor refund) reduces it. This inverts the
+  // backend's sale-side sign (credit-positive) so the Remain math
+  // works the way an operator expects: receiptAmount − sumPaid.
+  const paid = rows.reduce((s, r) => s + (r.direction === 'debit' ? r.amount : -r.amount), 0);
   const remain = receiptAmount - paid;
 
   const handleDelete = async (id: string) => {
@@ -844,15 +910,15 @@ function ReceiptPaymentsPanel({
       <div className="grid grid-cols-3 gap-3 text-xs">
         <div className="bg-slate-50 rounded p-2">
           <div className="text-gray-500">Receipt amount</div>
-          <div className="font-mono">{fmtMoney(receiptAmount, receiptCurrency)}</div>
+          <div className="tabular-nums">{fmtMoney(receiptAmount, receiptCurrency)}</div>
         </div>
         <div className="bg-slate-50 rounded p-2">
           <div className="text-gray-500">Paid</div>
-          <div className="font-mono">{fmtMoney(paid, receiptCurrency)}</div>
+          <div className="tabular-nums">{fmtMoney(paid, receiptCurrency)}</div>
         </div>
         <div className="bg-slate-50 rounded p-2">
           <div className="text-gray-500">Remain</div>
-          <div className={`font-mono ${remain > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+          <div className={`tabular-nums ${remain > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
             {fmtMoney(remain, receiptCurrency)}
           </div>
         </div>
@@ -878,8 +944,13 @@ function ReceiptPaymentsPanel({
           <TableBody>
             {rows.map(r => (
               <TableRow key={r.id}>
-                <TableCell className="text-xs">{r.paymentDate}</TableCell>
-                <TableCell className="text-xs capitalize">{r.method}</TableCell>
+                <TableCell className="text-xs">{formatDate(r.paymentDate)}</TableCell>
+                <TableCell className="text-xs capitalize">
+                  {/* "khqr" is an initialism, not a word — keep it
+                      uppercase instead of the {@code capitalize}
+                      transform turning it into "Khqr". */}
+                  {r.method === 'khqr' ? 'KHQR' : r.method?.replace(/_/g, ' ')}
+                </TableCell>
                 <TableCell className="text-xs text-gray-500">{r.referenceNo || '—'}</TableCell>
                 <TableCell className="text-xs">
                   <Badge variant="outline" className={r.direction === 'debit'
@@ -892,9 +963,9 @@ function ReceiptPaymentsPanel({
                  *  follow the existing direction rule (debit = rose, credit
                  *  = emerald). */}
                 <TableCell>
-                  <Badge variant="outline" className="font-mono text-[10px]">{r.currency}</Badge>
+                  <Badge variant="outline" className="tabular-nums text-[10px]">{r.currency}</Badge>
                 </TableCell>
-                <TableCell className={`text-right font-mono text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                <TableCell className={`text-right tabular-nums text-xs ${r.direction === 'debit' ? 'text-rose-600' : 'text-emerald-700'}`}>
                   {`${r.direction === 'debit' ? '−' : ''}${fmtMoney(r.amount, r.currency)}`}
                 </TableCell>
                 {!readOnly && (
@@ -936,13 +1007,28 @@ function RecordReceiptPaymentDialog({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState(String(defaultAmount.toFixed(2)));
   // Distinct from the parent's `currency` prop (which describes the
-  // receipt's display currency) — this is the rail the cashier actually
-  // received in. Defaults to whatever the receipt shows, KHR is one
-  // click away when riel arrived against a USD receipt.
+  // receipt's display currency) — this is the rail the cashier
+  // actually paid in. Receipts are vendor purchases so direction
+  // defaults to debit; KHR is one click away when riel went out
+  // against a USD receipt.
   const [payCurrency, setPayCurrency] = useState<receiptPaymentsApi.PaymentCurrency>(
     currency === 'KHR' ? 'KHR' : 'USD',
   );
-  const [method, setMethod] = useState<receiptPaymentsApi.PaymentMethod>('cash');
+  // Tenant currency settings drive which payment-currency buttons
+  // render — a single-currency tenant sees no picker at all. Payment
+  // options intersect tenant-enabled with what the backend accepts
+  // (USD | KHR only for now).
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const payCurrencyOptions = currencySettings
+    ? currencyApi.enabledCurrencies(currencySettings).filter(c => c === 'USD' || c === 'KHR')
+    : [];
+  // Default to Bank transfer — matches the Invoice- and Bill-side
+  // Record Payment defaults; cash is still one click away.
+  const [method, setMethod] = useState<receiptPaymentsApi.PaymentMethod>('bank');
   // Receipts are typically money out (we paid the supplier and now
   // record the WHT receipt against it), so debit is the natural
   // default — saves HR from changing it on every save.
@@ -950,16 +1036,37 @@ function RecordReceiptPaymentDialog({
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Open Cash Advances available to fund this payment — surfaced
+   *  in a second dropdown that only appears when method is
+   *  'cash_advance' (V160). Loaded lazily the first time the dialog
+   *  opens so the receipt page paint isn't blocked. */
+  const [openAdvances, setOpenAdvances] = useState<cashAdvancesApi.CashAdvance[]>([]);
+  const [cashAdvanceId, setCashAdvanceId] = useState('');
 
   useEffect(() => {
     if (!open) return;
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setAmount(String(Math.max(0, defaultAmount).toFixed(2)));
     setPayCurrency(currency === 'KHR' ? 'KHR' : 'USD');
-    setMethod('cash');
+    setMethod('bank');
     setDirection('debit');
     setReferenceNo('');
     setNotes('');
+    setCashAdvanceId('');
+    // Pull disbursed + partially-settled advances so the picker has
+    // something to show the moment the operator switches Method to
+    // Cash Advance. Fetch both states in parallel (no /open shortcut
+    // endpoint yet); silent on failure — the dropdown just stays
+    // empty and the operator sees the helper text.
+    void (async () => {
+      try {
+        const [a, b] = await Promise.all([
+          cashAdvancesApi.list({ status: 'disbursed', size: 200 }),
+          cashAdvancesApi.list({ status: 'partially_settled', size: 200 }),
+        ]);
+        setOpenAdvances([...(a.content ?? []), ...(b.content ?? [])]);
+      } catch { /* silent — picker shows empty state */ }
+    })();
   }, [open, defaultAmount, currency]);
 
   const submit = async () => {
@@ -970,6 +1077,11 @@ function RecordReceiptPaymentDialog({
     }
     setSaving(true);
     try {
+      if (method === 'cash_advance' && !cashAdvanceId) {
+        toast.error('Pick which cash advance funds this payment');
+        setSaving(false);
+        return;
+      }
       await receiptPaymentsApi.create({
         receiptId,
         paymentDate,
@@ -978,6 +1090,7 @@ function RecordReceiptPaymentDialog({
         method,
         direction,
         referenceNo: referenceNo.trim() || undefined,
+        cashAdvanceId: method === 'cash_advance' ? cashAdvanceId : undefined,
         notes: notes.trim() || undefined,
       });
       toast.success('Payment recorded');
@@ -1016,37 +1129,35 @@ function RecordReceiptPaymentDialog({
               />
             </div>
           </div>
+          {payCurrencyOptions.length > 1 && (
           <div className="space-y-1.5">
             <Label className="text-xs">Currency</Label>
-            <div className="grid grid-cols-2 gap-2 max-w-[200px]">
-              <button
-                type="button"
-                onClick={() => setPayCurrency('KHR')}
-                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                  payCurrency === 'KHR'
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                }`}
-              >KHR</button>
-              <button
-                type="button"
-                onClick={() => setPayCurrency('USD')}
-                className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
-                  payCurrency === 'USD'
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-600'
-                }`}
-              >USD</button>
+            <div className={`grid gap-2 max-w-[200px] ${payCurrencyOptions.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {payCurrencyOptions.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setPayCurrency(c as receiptPaymentsApi.PaymentCurrency)}
+                  className={`px-2 py-2 rounded-md border text-xs font-medium transition-colors ${
+                    payCurrency === c
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-600'
+                  }`}
+                >{c}</button>
+              ))}
             </div>
           </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Method</Label>
               <Select value={method} onValueChange={v => setMethod(v as receiptPaymentsApi.PaymentMethod)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="khqr">KHQR</SelectItem>
                   <SelectItem value="bank">Bank</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cash_advance">Cash Advance</SelectItem>
                   <SelectItem value="card">Card</SelectItem>
                   <SelectItem value="cheque">Cheque</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
@@ -1064,6 +1175,30 @@ function RecordReceiptPaymentDialog({
               </Select>
             </div>
           </div>
+
+          {/* Cash Advance funding picker — only when Method=Cash
+              Advance. Each option shows the advance no, the
+              employee's name, and what's left to spend so the
+              operator can pick the right one without guessing. */}
+          {method === 'cash_advance' && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">From cash advance</Label>
+              <Select value={cashAdvanceId} onValueChange={setCashAdvanceId}>
+                <SelectTrigger><SelectValue placeholder="Pick an open advance" /></SelectTrigger>
+                <SelectContent>
+                  {openAdvances.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-gray-500">
+                      No open advances. Disburse one from the Cash Advance page first.
+                    </div>
+                  ) : openAdvances.map(a => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.advanceNo} · {a.employeeName ?? '—'} · {a.currency} {Number(a.balance).toLocaleString('en-US')} left
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Reference No</Label>
             <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)}

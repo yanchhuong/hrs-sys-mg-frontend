@@ -105,7 +105,7 @@ export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }:
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
-                  <span className="font-mono truncate">{c.sku || '—'}</span>
+                  <span className="tabular-nums truncate">{c.sku || '—'}</span>
                   <span>{Number(c.stockQty ?? 0).toLocaleString('en-US')} {c.unit || ''}</span>
                 </div>
               </button>

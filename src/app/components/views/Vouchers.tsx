@@ -44,9 +44,11 @@ import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as usersApi from '../../api/users';
 import * as settingsApi from '../../api/settings';
+import * as currencyApi from '../../api/currencySettings';
 import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /** USD collapses to "$"; KHR uses the riel symbol ៛. Mirrors the
  *  formatting helper in Invoices / Quotations so the column widths
@@ -60,18 +62,6 @@ const fmtMoney = (n: number, currency: string): string => {
     : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
-
-function currentMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const last = new Date(y, m + 1, 0);
-  return {
-    from: `${y}-${pad(m + 1)}-01`,
-    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
-  };
-}
 
 const STATUS_BADGE_CLASS: Record<vouchersApi.VoucherStatus, string> = {
   progress: 'border-blue-300 text-blue-700 bg-blue-50',
@@ -136,6 +126,7 @@ const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
  */
 export function Vouchers() {
   const { canView, canCreate, canUpdate, canDelete, currentUser } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd    = canCreate('voucher');
   const canEdit   = canUpdate('voucher');
   const canRemove = canDelete('voucher');
@@ -147,8 +138,10 @@ export function Vouchers() {
   const [statusFilter, setStatusFilter] = useState<vouchersApi.VoucherStatus | 'all'>('all');
   const [purposeFilter, setPurposeFilter] = useState<vouchersApi.VoucherPurpose | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
-  const [dateTo, setDateTo]     = useState(() => currentMonthBounds().to);
+  // Empty defaults so the landing view shows every voucher; users
+  // pick a range to narrow. Pagination bounds the scroll.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<vouchersApi.Voucher | null>(null);
@@ -356,8 +349,9 @@ export function Vouchers() {
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No vouchers yet.</p>
           ) : (
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead className="w-[160px]">Voucher No.</TableHead>
                   <TableHead className="w-[180px]">Purpose</TableHead>
@@ -373,10 +367,10 @@ export function Vouchers() {
                   const c = customerById.get(v.customerId);
                   return (
                     <TableRow key={v.id} className="hover:bg-gray-50">
-                      <TableCell className="font-mono text-sm">{v.voucherNo}</TableCell>
+                      <TableCell className="tabular-nums text-sm">{v.voucherNo}</TableCell>
                       <TableCell className="text-sm">{vouchersApi.PURPOSE_LABELS[v.purpose]}</TableCell>
                       <TableCell>{c?.name ?? <span className="text-gray-400">(unknown)</span>}</TableCell>
-                      <TableCell className="text-sm">{v.issueDate}</TableCell>
+                      <TableCell className="text-sm">{formatDate(v.issueDate)}</TableCell>
                       <TableCell className="text-right tabular-nums text-gray-500">
                         {/* Subtotal = fair value being given away. The
                             actual total is always 0; we surface the
@@ -432,16 +426,19 @@ export function Vouchers() {
                 </TableFooter>
               )}
             </Table>
+            </div>
           )}
-          {pagination.totalPages > 1 && (
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.goToPage}
-              startIndex={pagination.startIndex}
-              endIndex={pagination.endIndex}
-              totalItems={pagination.totalItems}
-            />
+          {filtered.length > 0 && (
+            <div className="px-1 py-0 border-t">
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
@@ -558,6 +555,16 @@ function VoucherFormDialog({
   // Per-tenant gate from the Items → Settings dialog (V120). Hidden
   // when the tenant hasn't opted in for Voucher.
   const [pickerEnabled, setPickerEnabled] = useState(false);
+  // Tenant currency settings (V166). Drives the dropdown options +
+  // the default new-document currency / exchange rate. Refetched on
+  // every dialog open so a Settings > Currency change is picked up
+  // without a page reload.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   useEffect(() => {
     itemsApi.getUsageSettings()
       .then(s => setPickerEnabled(s.enabledForVoucher))
@@ -605,8 +612,8 @@ function VoucherFormDialog({
         .catch(() => setVoucherNo(''));
       setCustomerId('');
       setIssueDate(new Date().toISOString().slice(0, 10));
-      setCurrency('USD');
-      setExchangeRate('4100');
+      setCurrency(currencySettings?.primaryCurrency ?? 'USD');
+      setExchangeRate(String(currencySettings?.secondaryRate ?? 4100));
       setPurpose(initialPurpose);
       setApproverId('');
       setTaxType('');
@@ -615,6 +622,16 @@ function VoucherFormDialog({
       setLines([newLine()]);
     }
   }, [open, editing, initialPurpose]);
+
+  // Follow-up sync: when the tenant currency settings arrive AFTER
+  // the reset effect above ran (network race on first open), pin the
+  // form's currency + exchange rate to the tenant defaults. Skip in
+  // edit mode (the row's own currency wins).
+  useEffect(() => {
+    if (!open || editing || !currencySettings) return;
+    setCurrency(currencySettings.primaryCurrency);
+    setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
+  }, [open, editing, currencySettings]);
 
   /** Subtotal / tax / discount(=subtotal, 100%) / total(=0). The
    *  display mirrors Invoice's totals block so the operator sees
@@ -741,7 +758,7 @@ function VoucherFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Voucher No.</Label>
-              <Input value={voucherNo} onChange={e => setVoucherNo(e.target.value)} className="font-mono" />
+              <Input value={voucherNo} onChange={e => setVoucherNo(e.target.value)} className="tabular-nums" />
             </div>
           </div>
 
@@ -761,20 +778,33 @@ function VoucherFormDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="KHR">KHR</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Exchange rate</Label>
-              <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
-            </div>
+            {/* Gated on `currencySettings` being loaded to avoid a
+                brief USD/KHR flash from the enabledCurrencies fallback
+                while the fetch is in flight. */}
+            {currencySettings && currencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Exchange-rate field renders only when the tenant has
+                a secondary currency AND it differs from the form's
+                selected currency. */}
+            {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
+                </Label>
+                <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
+              </div>
+            )}
           </div>
 
           {/* Approver — kept on its own row so the Tax/Discount cells
@@ -1044,6 +1074,20 @@ function VoucherFormDialog({
                 <div className="flex justify-end gap-6"><span className="text-gray-600">Discount (100%)</span><span className="tabular-nums w-32 text-right">− {fmtMoney(totals.disc, currency)}</span></div>
               )}
               <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(totals.total, currency)}</span></div>
+              {/* Secondary-currency total — rendered only when the
+                  tenant has a secondary currency AND the voucher's
+                  currency isn't already that secondary. */}
+              {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+                <div className="flex justify-end gap-6 text-gray-700">
+                  <span>
+                    Total {currencySettings.secondaryCurrency}
+                    {' '}<span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span>
+                  </span>
+                  <span className="tabular-nums w-32 text-right">
+                    {currencySettings.secondaryCurrency} {(totals.total * (Number(exchangeRate) || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1076,8 +1120,10 @@ function VoucherDetailDialog({
   onChanged: () => void;
   onEdit: (v: vouchersApi.Voucher) => void;
 }) {
+  const { formatDate } = useDateFormat();
   const [voucher, setVoucher] = useState<vouchersApi.Voucher | null>(null);
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
@@ -1115,6 +1161,7 @@ function VoucherDetailDialog({
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [voucherId]);
   useEffect(() => {
     settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, []);
 
   const runTransition = async (
@@ -1179,12 +1226,12 @@ function VoucherDetailDialog({
           }
         `}</style>
         {voucher && (
-          <PrintVoucher voucher={voucher} customer={customer} company={companyInfo} />
+          <PrintVoucher voucher={voucher} customer={customer} company={companyInfo} currencySettings={currencySettings} />
         )}
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="font-mono">{voucher?.voucherNo ?? 'Voucher details'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{voucher?.voucherNo ?? 'Voucher details'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !voucher ? (
                   <span className="text-xs text-gray-500">Loading voucher…</span>
@@ -1196,7 +1243,7 @@ function VoucherDetailDialog({
                     <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">
                       {vouchersApi.PURPOSE_LABELS[voucher.purpose]}
                     </Badge>
-                    <span className="text-xs text-gray-500">{voucher.issueDate}</span>
+                    <span className="text-xs text-gray-500">{formatDate(voucher.issueDate)}</span>
                   </>
                 )}
               </DialogDescription>
@@ -1530,17 +1577,31 @@ function VVatTinBoxes({ tin }: { tin: string }) {
 }
 
 function PrintVoucher({
-  voucher, customer, company,
+  voucher, customer, company, currencySettings,
 }: {
   voucher: vouchersApi.Voucher;
   customer?: customersApi.Customer;
   company: settingsApi.CompanyInfo | null;
+  currencySettings?: currencyApi.CurrencySettings | null;
 }) {
-  // Grand Total (KHR) = total × rate (voucher total is always 0, so
-  // this also lands on 0 — matches Invoice / Quotation labelling).
-  const grandKhr = Math.round(voucher.total * (voucher.exchangeRate || 0));
-  const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtKhr = (n: number) => `៛ ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const primaryCode = voucher.currency || 'USD';
+  const secondaryCode = currencySettings?.secondaryCurrency ?? null;
+  const showSecondary = !!secondaryCode && secondaryCode !== primaryCode;
+  // Grand Total (secondary) = total × rate (voucher total is always 0,
+  // so this also lands on 0 — matches Invoice / Quotation labelling).
+  const grandSecondary = showSecondary
+    ? Math.round(voucher.total * (voucher.exchangeRate || 0))
+    : 0;
+  const primarySym = currencyApi.currencySymbol(primaryCode);
+  const secondarySym = secondaryCode ? currencyApi.currencySymbol(secondaryCode) : '';
+  const fmtPrimary = (n: number) =>
+    primaryCode === 'KHR' || primaryCode === 'KRW'
+      ? `${primarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${primarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtSecondary = (n: number) =>
+    secondaryCode === 'KHR' || secondaryCode === 'KRW'
+      ? `${secondarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${secondarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const showVat = voucher.taxAmount > 0;
   const vatPct = voucher.subtotal > 0 ? Math.round((voucher.taxAmount / voucher.subtotal) * 100) : 0;
   const fmtDate = (iso?: string | null) => {
@@ -1666,39 +1727,41 @@ function PrintVoucher({
                 {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
               </td>
               <td style={{ ...vTdStyle, textAlign: 'center' }}>{it.quantity}</td>
-              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtUsd(it.unitPrice)}</td>
+              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
               {/* Per-line Discount column stays 0 — the 100% discount
                   is shown once at the totals block so each line still
                   prints its fair value in the Amount column. Mirrors
                   Invoice's column ordering. */}
-              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtUsd(0)}</td>
-              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtUsd(it.lineTotal)}</td>
+              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
+              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
             </tr>
           ))}
           <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>សរុប (ដុល្លារ) / Sub Total (USD)</td>
-            <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtUsd(voucher.subtotal)}</td>
+            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+            <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(voucher.subtotal)}</td>
           </tr>
           {showVat && (
             <tr>
               <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>
-                អាករលើតម្លៃបន្ថែម {vatPct}% (ដុល្លារ) / VAT {vatPct}% (USD)
+                អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
               </td>
-              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtUsd(voucher.taxAmount)}</td>
+              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(voucher.taxAmount)}</td>
             </tr>
           )}
           <tr>
             <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>បញ្ចុះតម្លៃ 100% / Discount 100%</td>
-            <td style={{ ...vTdStyle, textAlign: 'right' }}>− {fmtUsd(voucher.subtotal)}</td>
+            <td style={{ ...vTdStyle, textAlign: 'right' }}>− {fmtPrimary(voucher.subtotal)}</td>
           </tr>
           <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (ដុល្លារ) / Grand Total (USD)</td>
-            <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtUsd(voucher.total)}</td>
+            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+            <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(voucher.total)}</td>
           </tr>
-          <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (រៀល) / Grand Total (KHR)</td>
-            <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtKhr(grandKhr)}</td>
-          </tr>
+          {showSecondary && (
+            <tr>
+              <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+              <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 

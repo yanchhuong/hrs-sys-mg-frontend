@@ -757,9 +757,9 @@ function ImpactRow({ label, used, oldCap, newCap, format }: {
   return (
     <div className="flex items-center gap-3 text-xs">
       <span className="w-28 text-gray-600">{label}</span>
-      <span className="font-mono">{format(used)}</span>
+      <span className="tabular-nums">{format(used)}</span>
       <span className="text-gray-400">/</span>
-      <span className={`font-mono ${willExceed ? 'text-red-700 font-semibold' : changed ? 'text-green-700' : 'text-gray-600'}`}>
+      <span className={`tabular-nums ${willExceed ? 'text-red-700 font-semibold' : changed ? 'text-green-700' : 'text-gray-600'}`}>
         {format(newCap)}
       </span>
       {willExceed && (

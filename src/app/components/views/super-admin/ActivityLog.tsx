@@ -240,27 +240,6 @@ export function ActivityLog() {
         <StatCard label="Total events" value={counts.all} icon={CheckCircle} tone="gray" />
       </div>
 
-      {/* Sync error callout */}
-      {counts.syncErrors > 0 && (
-        <div className="flex items-start gap-3 p-4 rounded-md bg-red-50 border border-red-200">
-          <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-red-900">
-              {counts.syncErrors} sync API error{counts.syncErrors !== 1 ? 's' : ''} across all tenants
-            </p>
-            <p className="text-sm text-red-800">
-              Review and retry — local installs with failing sync accumulate unsent records in their outbox.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => { setSeverityTab('error'); setCategory('sync'); }}
-          >
-            View only sync errors
-          </Button>
-        </div>
-      )}
-
       {/* Table card */}
       <Card>
         <CardHeader className="pb-3 space-y-3">
@@ -398,7 +377,7 @@ export function ActivityLog() {
                     <TableCell className="text-xs text-gray-600 truncate max-w-[160px]" title={ev.actor}>
                       {ev.actor}
                     </TableCell>
-                    <TableCell className="text-xs font-mono text-gray-600">
+                    <TableCell className="text-xs tabular-nums text-gray-600">
                       {ev.ipAddress ?? <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-right">
@@ -465,7 +444,7 @@ export function ActivityLog() {
                 <dt className="text-gray-500">Category</dt>
                 <dd className="col-span-2 capitalize">{detail.category}</dd>
                 <dt className="text-gray-500">Actor</dt>
-                <dd className="col-span-2 font-mono text-xs">{detail.actor}</dd>
+                <dd className="col-span-2 tabular-nums text-xs">{detail.actor}</dd>
                 <dt className="text-gray-500">Target</dt>
                 <dd className="col-span-2">{detail.target}</dd>
                 {detail.tenantName && (
@@ -477,12 +456,12 @@ export function ActivityLog() {
                 {detail.installId && (
                   <>
                     <dt className="text-gray-500">Install</dt>
-                    <dd className="col-span-2 font-mono text-xs">{detail.installId}</dd>
+                    <dd className="col-span-2 tabular-nums text-xs">{detail.installId}</dd>
                   </>
                 )}
               </dl>
               {detail.message && (
-                <div className="rounded-md bg-gray-50 border p-3 text-xs font-mono whitespace-pre-wrap">
+                <div className="rounded-md bg-gray-50 border p-3 text-xs tabular-nums whitespace-pre-wrap">
                   {detail.message}
                 </div>
               )}

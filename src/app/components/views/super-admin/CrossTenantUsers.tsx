@@ -429,7 +429,7 @@ export function CrossTenantUsers() {
                         <span>{u.email}</span>
                         {sameEmailCount > 1 && (
                           <span
-                            className="font-mono text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded"
+                            className="tabular-nums text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded"
                             title={`User ID: ${u.id}`}
                           >
                             #{idHint}
@@ -588,7 +588,7 @@ export function CrossTenantUsers() {
                         ? <Badge className="bg-green-100 text-green-800">Active</Badge>
                         : <Badge className="bg-gray-100 text-gray-700">Suspended</Badge>}
                       <span
-                        className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
+                        className="tabular-nums text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
                         title={`User ID: ${u.id}`}
                       >
                         #{u.id.slice(0, 8)}
@@ -698,7 +698,7 @@ export function CrossTenantUsers() {
                     value={addCompanySlug}
                     onChange={e => setAddCompanySlug(slugify(e.target.value))}
                     placeholder="acme"
-                    className="mt-1 h-9 font-mono text-sm"
+                    className="mt-1 h-9 tabular-nums text-sm"
                   />
                   <p className="text-[11px] text-gray-500 mt-1">
                     URL-safe identifier. Lowercase a–z, 0–9, and dashes. Auto-filled from the name.

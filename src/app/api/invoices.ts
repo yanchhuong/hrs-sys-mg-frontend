@@ -163,8 +163,12 @@ export async function nextNumber(kind: InvoiceKind): Promise<{ kind: InvoiceKind
   return apiJson(`/api/v1/invoices/next-number`, { query: { kind } });
 }
 
-export async function create(req: InvoiceRequest): Promise<Invoice> {
-  return apiJson('/api/v1/invoices', { method: 'POST', json: req });
+/** Create an invoice. {@code notifyTelegram=false} suppresses the
+ *  backend's auto-issue text-only Telegram so the caller can follow
+ *  up with an image-based sendPhoto. Defaults to true (legacy). */
+export async function create(req: InvoiceRequest, notifyTelegram = true): Promise<Invoice> {
+  const q = notifyTelegram ? '' : '?notify=false';
+  return apiJson(`/api/v1/invoices${q}`, { method: 'POST', json: req });
 }
 
 /** Edit a draft or progress invoice. Server rejects updates on paid /
@@ -174,9 +178,13 @@ export async function update(id: string, req: InvoiceRequest): Promise<Invoice> 
   return apiJson(`/api/v1/invoices/${id}`, { method: 'PUT', json: req });
 }
 
-/** Move a draft invoice to status=issued. */
-export async function issue(id: string): Promise<Invoice> {
-  return apiJson(`/api/v1/invoices/${id}/issue`, { method: 'POST' });
+/** Move a draft invoice to status=issued. {@code notifyTelegram=false}
+ *  suppresses the backend's text-only Telegram fallback so the caller
+ *  can follow up with an image-based sendPhoto via {@link sendTelegram}.
+ *  Defaults to true (legacy behaviour). */
+export async function issue(id: string, notifyTelegram = true): Promise<Invoice> {
+  const q = notifyTelegram ? '' : '?notify=false';
+  return apiJson(`/api/v1/invoices/${id}/issue${q}`, { method: 'POST' });
 }
 
 /** Mark an invoice as void (legal-document soft delete). */

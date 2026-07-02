@@ -163,9 +163,9 @@ export function HrTelegramBotSettingsDialog({ open, onOpenChange }: Props) {
               {bot && (
                 <div className="flex items-center justify-between bg-slate-50 border rounded-md px-3 py-2">
                   <div className="text-sm">
-                    <div className="font-mono">@{bot.botUsername}</div>
+                    <div className="tabular-nums">@{bot.botUsername}</div>
                     <div className="text-[11px] text-gray-500 mt-0.5">
-                      Token: <span className="font-mono">{bot.tokenMask}</span>
+                      Token: <span className="tabular-nums">{bot.tokenMask}</span>
                     </div>
                   </div>
                   <Badge variant="outline" className={bot.enabled

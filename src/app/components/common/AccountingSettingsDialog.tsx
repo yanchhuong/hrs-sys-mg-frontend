@@ -6,10 +6,11 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
+import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
   loadBankAccounts, saveBankAccounts, newBankAccountId,
@@ -50,6 +51,20 @@ interface Props {
  *  paragraphs that used to sit under each section heading — they
  *  pushed the toggles below the fold on a 14" screen for very little
  *  payoff. */
+/** Small stylized text badge naming the ABA PayWay payment integration.
+ *  Uses the brand's recognised colour pairing (red wordmark + teal wordmark
+ *  on a dark navy chip) so operators can identify the tab at a glance.
+ *  If you have the official logo asset from ABA's merchant brand pack,
+ *  drop it under /public and swap this component for an <img> reference. */
+function PayWayBadge() {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#0f2a52] text-[10px] font-extrabold tracking-tight leading-none select-none">
+      <span className="text-[#e60012]">ABA</span>
+      <span className="text-[#14b8b8] ml-0.5">PAYWAY</span>
+    </span>
+  );
+}
+
 function HelpHint({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider delayDuration={120}>
@@ -173,7 +188,7 @@ function timeAgo(iso: string | null): string {
  * flag, then PUTs the lot on Save. Cancel discards in-flight
  * changes — never persists until Save is clicked.</p>
  */
-type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides';
+type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides' | 'currency';
 
 export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }: Props) {
   const [draft, setDraft] = useState<settingsApi.AccountingSettings>(() => settingsApi.defaultsFor(scope));
@@ -187,6 +202,100 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // shows every one. Lives in localStorage (per tenant + scope);
   // graduates to the backend settings row when the UX is confirmed.
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  /** Tab inside the Bank Account section — Manual (uploaded KHRQR PNG)
+   *  vs ABA PayWay (dynamic KHRQR minted per transaction). Filters the
+   *  card grid + drives the default mode for newly-added cards. */
+  const [bankTab, setBankTab] = useState<'manual' | 'auto'>('manual');
+
+  /* ----- Currency section (V166) ------------------------------------ */
+  // Tenant-wide currency setting — independent from the scoped
+  // AccountingSettings row, so it carries its own loaded state, draft,
+  // and Save button. Mounted only when section === 'currency'.
+  const [currencyPrimary, setCurrencyPrimary] = useState<currencyApi.AllowedCurrency>('USD');
+  const [currencySecondary, setCurrencySecondary] = useState<'' | currencyApi.AllowedCurrency>('KHR');
+  const [currencyRate, setCurrencyRate] = useState<string>('4100');
+  const [currencyLoading, setCurrencyLoading] = useState(false);
+  const [currencySaving, setCurrencySaving] = useState(false);
+  const [currencyFetchingRate, setCurrencyFetchingRate] = useState(false);
+  // Lazy-load the row the first time the operator opens this section
+  // so the dialog mount path stays light for tenants who never visit
+  // the Currency tab.
+  const [currencyLoaded, setCurrencyLoaded] = useState(false);
+  useEffect(() => {
+    if (section !== 'currency' || currencyLoaded) return;
+    setCurrencyLoading(true);
+    currencyApi.get()
+      .then(s => {
+        setCurrencyPrimary(s.primaryCurrency);
+        setCurrencySecondary(s.secondaryCurrency ?? '');
+        setCurrencyRate(s.secondaryRate != null ? String(s.secondaryRate) : '');
+        setCurrencyLoaded(true);
+      })
+      .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load currency settings'))
+      .finally(() => setCurrencyLoading(false));
+  }, [section, currencyLoaded]);
+  // Auto-clear secondary if it collides with the new primary so the
+  // UI never visually shows USD/USD before the server rejects it.
+  useEffect(() => {
+    if (currencySecondary && currencySecondary === currencyPrimary) {
+      setCurrencySecondary('');
+      setCurrencyRate('');
+    }
+  }, [currencyPrimary, currencySecondary]);
+  /** Pull the live FX rate from the public open.er-api.com
+   *  aggregator (proxied through our BE so we can swap providers
+   *  later without an FE deploy). The endpoint returns
+   *  "quote per 1 base" already — same orientation as our
+   *  primary→secondary setting — so the value drops straight into
+   *  the input with no inversion needed.
+   *
+   *  <p>Covers every pair the aggregator carries: USD+KHR (which
+   *  PayWay's own rate API didn't), USD+KRW, KHR+KRW, USD+JPY, etc.
+   *  On any provider error we surface the BE's message verbatim and
+   *  the operator falls back to manual entry.</p> */
+  const fetchLiveRate = async () => {
+    if (currencyFetchingRate) return;
+    if (!currencySecondary) {
+      toast.error('Pick a secondary currency first.');
+      return;
+    }
+    setCurrencyFetchingRate(true);
+    try {
+      const live = await currencyApi.getLiveRate(currencyPrimary, currencySecondary);
+      const rate = live.rate;
+      // Two-decimal precision for big quotes (KHR ~ 4000) and 6
+      // decimals for sub-unit rates (e.g. KHR → USD ~ 0.000244).
+      setCurrencyRate(rate >= 100 ? rate.toFixed(2) : rate.toFixed(6));
+      toast.success(`Live rate applied (${live.source}).`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to fetch live rate');
+    } finally {
+      setCurrencyFetchingRate(false);
+    }
+  };
+
+  const saveCurrencySettings = async () => {
+    if (currencySaving) return;
+    const sec = currencySecondary === '' ? null : currencySecondary;
+    const parsedRate = currencyRate.trim() === '' ? null : Number(currencyRate);
+    if (sec && (parsedRate === null || !Number.isFinite(parsedRate) || parsedRate <= 0)) {
+      toast.error('Enter a positive conversion rate, or remove the secondary currency.');
+      return;
+    }
+    setCurrencySaving(true);
+    try {
+      await currencyApi.save({
+        primaryCurrency: currencyPrimary,
+        secondaryCurrency: sec,
+        secondaryRate: sec ? parsedRate : null,
+      });
+      toast.success('Currency settings saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save currency settings');
+    } finally {
+      setCurrencySaving(false);
+    }
+  };
 
   const isReceipt = scope === 'receipt';
   // Quotation / Voucher are single-document scopes too — they only
@@ -257,7 +366,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     setBanks(prev => prev.map(b => (b.id === id ? { ...b, ...patch } : b)));
   };
   const addBank = () => {
-    setBanks(prev => [...prev, { ...EMPTY_BANK_ACCOUNT, id: newBankAccountId() }]);
+    // Seed the new card's mode from whichever Bank Account tab the
+    // operator is on — manual cards live in the Manual tab, auto in
+    // the ABA PayWay tab. Without this, "Add" from the ABA tab would
+    // create a card in the wrong list.
+    setBanks(prev => [...prev, { ...EMPTY_BANK_ACCOUNT, id: newBankAccountId(), mode: bankTab }]);
   };
   const removeBank = (id: string) => {
     setBanks(prev => prev.filter(b => b.id !== id));
@@ -332,7 +445,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
         onChange={e => setDraft({ ...draft, [field]: e.target.value.toUpperCase() })}
         disabled={loading || saving}
         maxLength={16}
-        className="font-mono text-sm h-8"
+        className="tabular-nums text-sm h-8"
         placeholder={settingsApi.defaultsFor(scope)[field]}
       />
     </div>
@@ -365,6 +478,15 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       { key: 'receipt' as Section, label: 'Receipt', hint: 'Print layout: PAID stamp, SKU, paper size', icon: <Printer className="h-4 w-4" /> },
       { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
       { key: 'slides' as Section, label: 'Display Ads', hint: 'Carousel shown on the customer screen when idle', icon: <MonitorPlay className="h-4 w-4" /> },
+    ] : []),
+    // Currency picker (V166). Tenant-wide setting — appears on every
+    // transactional scope (sale, pos, quotation, voucher, purchase,
+    // receipt) so the operator can flip the active pair (USD+KHR /
+    // USD+KRW / single) from whichever module they're working in.
+    // All six open the same backing row; the section reads/writes
+    // via currencyApi.
+    ...(scope === 'sale' || scope === 'pos' || scope === 'quotation' || scope === 'voucher' || scope === 'purchase' || scope === 'receipt' ? [
+      { key: 'currency' as Section, label: 'Currency', hint: 'Active currency pair + conversion rate', icon: <Coins className="h-4 w-4" /> },
     ] : []),
   ];
 
@@ -667,7 +789,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       setDraft({ ...draft, posExchangeRate: Number.isFinite(n) && n > 0 ? n : draft.posExchangeRate });
                     }}
                     disabled={loading || saving}
-                    className="font-mono text-sm h-8"
+                    className="tabular-nums text-sm h-8"
                   />
                   <p className="text-[11px] text-gray-500">
                     Example: <code>4100</code> means $1.00 prints as ៛ 4,100.
@@ -784,7 +906,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       </select>
                     </div>
                     <div className="col-span-2 -mt-1 text-[11px] text-gray-500">
-                      Next number example: <code className="font-mono text-gray-700">{previewNo}</code>
+                      Next number example: <code className="tabular-nums text-gray-700">{previewNo}</code>
                     </div>
                   </div>
                 )}
@@ -796,9 +918,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
               // "Show on invoice" cap — the printed footer only has
               // room for two QR cards side by side. We disable the
               // checkbox on the rest once the cap is reached so the
-              // operator can't silently overflow the layout.
+              // operator can't silently overflow the layout. The cap
+              // is GLOBAL across both tabs.
               const shownCount = banks.filter(b => b.showOnInvoice).length;
               const atCap = shownCount >= MAX_BANK_ACCOUNTS_ON_INVOICE;
+              // Per-tab counts for the tab labels.
+              const manualCount = banks.filter(b => (b.mode ?? 'manual') === 'manual').length;
+              const autoCount   = banks.filter(b => b.mode === 'auto').length;
+              const visibleBanks = banks.filter(b => (b.mode ?? 'manual') === bankTab);
               return (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
@@ -816,30 +943,82 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       ({shownCount}/{MAX_BANK_ACCOUNTS_ON_INVOICE} selected)
                     </span>
                   </h3>
-                  <Button size="sm" onClick={addBank} disabled={loading || saving} className="shrink-0">
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Bank Account
-                  </Button>
+                  {/* Add button only on the Manual tab — the ABA PayWay
+                      tab needs no card at all (credentials live in
+                      Settings → PayWay), so the button would just
+                      misdirect the operator. */}
+                  {bankTab === 'manual' && (
+                    <Button size="sm" onClick={addBank} disabled={loading || saving} className="shrink-0">
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add Manual Bank
+                    </Button>
+                  )}
                 </div>
 
-                {banks.length === 0 && (
-                  <div className="border-2 border-dashed rounded-md py-10 text-center text-sm text-gray-500">
-                    No bank accounts yet — click <strong>Add Bank Account</strong> to start.
+                {/* Section-level tabs: Manual cards (uploaded PNG QR)
+                    vs ABA PayWay (POS asks PayWay to mint a per-sale
+                    KHRQR with the cart amount baked in). The tab is
+                    the mode — cards saved in one tab don't show in the
+                    other, and `Add` seeds the new card's mode from
+                    whichever tab is active. */}
+                <div className="inline-flex rounded-md border bg-gray-50 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setBankTab('manual')}
+                    className={`px-3 py-1.5 rounded font-medium transition ${
+                      bankTab === 'manual'
+                        ? 'bg-white shadow-sm text-gray-900'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Manual <span className="text-[10px] opacity-70 ml-1">({manualCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBankTab('auto')}
+                    className={`px-2.5 py-1 rounded font-medium transition inline-flex items-center gap-1.5 ${
+                      bankTab === 'auto'
+                        ? 'bg-white shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    aria-label="ABA PayWay"
+                  >
+                    <PayWayBadge />
+                    <span className="text-[10px] opacity-70">({autoCount})</span>
+                  </button>
+                </div>
+
+                {bankTab === 'auto' && (
+                  <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug">
+                    ABA PayWay mints a fresh KHRQR per transaction with the cart amount baked in — no image upload needed.
+                    Set your Merchant ID + API key once in <strong>Settings → PayWay</strong>; the card below is just for the
+                    account name / number that appears next to the QR on the checkout screen.
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  {banks.map(b => {
+                {/* Empty-state CTA only on the Manual tab. On the ABA
+                    PayWay tab the explanatory banner above is the
+                    operator's full instruction — no further action
+                    happens here. */}
+                {bankTab === 'manual' && visibleBanks.length === 0 && (
+                  <div className="border-2 border-dashed rounded-md py-10 text-center text-sm text-gray-500">
+                    No manual bank accounts yet — click <strong>Add Manual Bank</strong> to start.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  {visibleBanks.map(b => {
                     const checked = !!b.showOnInvoice;
+                    const mode = b.mode ?? 'manual';
                     // Disable the toggle on the rows that *aren't*
                     // already checked once we hit the cap. Already-
                     // checked rows stay enabled so the user can
                     // un-check to free up a slot.
                     const disableShowOnInvoice = !checked && atCap;
                     return (
-                    <div key={b.id} className={`border rounded-lg p-3 bg-white space-y-2 relative ${
+                    <div key={b.id} className={`border rounded-lg p-2 bg-white space-y-1.5 relative ${
                       checked ? 'ring-2 ring-blue-200 border-blue-300' : ''
                     }`}>
-                      <label className={`flex items-center gap-2 text-xs ${
+                      <label className={`flex items-center gap-2 text-[11px] ${
                         disableShowOnInvoice ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer'
                       }`}>
                         <input
@@ -854,10 +1033,19 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           <span className="text-[10px] text-gray-400">(limit {MAX_BANK_ACCOUNTS_ON_INVOICE} reached)</span>
                         )}
                       </label>
-                      {/* Image area — square (1:1), held to the card's
-                       *  full width so the QR is always centered and
-                       *  doesn't drift if Acc Name wraps onto two lines. */}
-                      {b.qrDataUrl ? (
+
+                      {/* Image area — only when mode='manual'. In
+                       *  'auto' mode we show a "PayWay will mint a
+                       *  dynamic QR per sale" hint instead so the
+                       *  operator knows nothing needs uploading. */}
+                      {mode === 'auto' ? (
+                        <div className="flex flex-col items-center justify-center gap-1 w-full aspect-square border-2 border-dashed border-blue-200 rounded-md text-blue-700 bg-blue-50/40 text-center px-2">
+                          <span className="text-[11px] font-medium">Auto KHRQR</span>
+                          <span className="text-[9px] text-blue-600/80 leading-tight">
+                            PayWay mints the QR per transaction with the cart amount baked in.
+                          </span>
+                        </div>
+                      ) : b.qrDataUrl ? (
                         <div className="relative">
                           <img
                             src={b.qrDataUrl}
@@ -940,7 +1128,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           disabled={loading || saving}
                           inputMode="numeric"
                           maxLength={9}
-                          className="text-sm font-mono"
+                          className="text-sm tabular-nums"
                         />
                         <Input
                           value={b.bankName}
@@ -1002,7 +1190,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                             ? draft.taxTypesEnabled.filter(k => k !== t.key)
                             : [...draft.taxTypesEnabled, t.key],
                         })}
-                        className={`px-2.5 py-0.5 rounded-full border font-mono text-xs transition-colors ${
+                        className={`px-2.5 py-0.5 rounded-full border tabular-nums text-xs transition-colors ${
                           on
                             ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
                             : 'bg-white text-gray-400 border-gray-200 line-through hover:bg-gray-50'
@@ -1014,6 +1202,113 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {section === 'currency' && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+                  Currency
+                  <HelpHint>
+                    Tenant-wide setting. Drives the Currency dropdown on every Invoice / POS / Quotation / Voucher form
+                    plus totals on receipts. It is Max two currencies.
+                  </HelpHint>
+                </h3>
+
+                {currencyLoading ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-gray-600">Primary currency</Label>
+                        <select
+                          value={currencyPrimary}
+                          onChange={e => setCurrencyPrimary(e.target.value as currencyApi.AllowedCurrency)}
+                          className="w-full h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
+                          disabled={currencySaving}
+                        >
+                          {currencyApi.ALLOWED_CURRENCIES.map(c => (
+                            <option key={c} value={c}>{currencyApi.currencyLabel(c)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-gray-600">Secondary (optional)</Label>
+                        <select
+                          value={currencySecondary === '' ? '__none' : currencySecondary}
+                          onChange={e => {
+                            const v = e.target.value === '__none'
+                              ? ''
+                              : e.target.value as currencyApi.AllowedCurrency;
+                            setCurrencySecondary(v);
+                            // Picking "None" makes the rate meaningless — clear
+                            // it inline so the underlying state matches the
+                            // (now-hidden) rate field, and the guard on Save
+                            // can't misfire against a stale value.
+                            if (!v) setCurrencyRate('');
+                          }}
+                          className="w-full h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
+                          disabled={currencySaving}
+                        >
+                          <option value="__none">None — single currency</option>
+                          {currencyApi.ALLOWED_CURRENCIES.filter(c => c !== currencyPrimary).map(c => (
+                            <option key={c} value={c}>{currencyApi.currencyLabel(c)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {currencySecondary && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-gray-600">
+                          Conversion rate ({currencyPrimary} → {currencySecondary})
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="any"
+                            value={currencyRate}
+                            onChange={e => setCurrencyRate(e.target.value)}
+                            placeholder={currencyPrimary === 'USD' && currencySecondary === 'KHR' ? '4100' : 'e.g. 1300'}
+                            disabled={currencySaving || currencyFetchingRate}
+                            className="flex-1"
+                          />
+                          {/* Live-rate fetch from PayWay's exchange-rate
+                              API. Only useful for pairs PayWay quotes
+                              (KRW, JPY, EUR, …); falls back to a clear
+                              toast for USD+KHR which isn't in the table. */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={fetchLiveRate}
+                            disabled={currencySaving || currencyFetchingRate}
+                            title="Fetch the latest rate from PayWay"
+                          >
+                            {currencyFetchingRate ? 'Fetching…' : 'Fetch live rate'}
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-gray-500">
+                          1 {currencyPrimary} = <span className="tabular-nums font-medium">{currencyRate || '—'}</span> {currencySecondary}.
+                          Used for the second total line on POS receipts and the Grand Total ({currencySecondary}) row on invoices.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug">
+                      Changing the pair affects new documents only — existing
+                      Invoice / POS / Quotation / Voucher rows keep the currency
+                      and exchange rate they were saved with.
+                    </div>
+
+                    <div>
+                      <Button onClick={saveCurrencySettings} disabled={currencySaving} size="sm">
+                        {currencySaving ? 'Saving…' : 'Save currency'}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

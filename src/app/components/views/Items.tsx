@@ -23,7 +23,8 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload } from 'lucide-react';
+import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -141,6 +142,7 @@ export function Items() {
   // Usage-settings dialog (V120) — controls which sale/purchase
   // document forms surface the StockItemPicker.
   const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<itemsApi.Item | null>(null);
@@ -371,12 +373,31 @@ export function Items() {
             </Button>
           )}
           {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload items from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
+            </Button>
+          )}
+          {canAdd && (
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4 mr-1.5" /> Add Item
             </Button>
           )}
         </div>
       </div>
+
+      {/* Bulk upload from Excel — same pattern as Invoice/Bill. Feeds
+          the parser the current catalog for client-side SKU-collision
+          detection, then reloads on any successful import. */}
+      <BulkUploadItemsDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        existingItems={rows}
+        onImported={() => { void load(); }}
+      />
 
       <StockItemUsageSettingsDialog
         open={usageSettingsOpen}
@@ -479,7 +500,7 @@ export function Items() {
                         : { label: 'Normal', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
                     return (
                       <TableRow key={it.id}>
-                        <TableCell className="font-mono text-xs text-gray-600">
+                        <TableCell className="tabular-nums text-xs text-gray-600">
                           {it.sku || <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="font-medium">
@@ -489,7 +510,22 @@ export function Items() {
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-gray-700">
-                          {it.itemCategory || <span className="text-gray-300">—</span>}
+                          {/* Prefer the free-text Stock category (V151)
+                              when set; fall back to the POS taxonomy
+                              (drink/snack/food/other) so items that only
+                              carry the POS classification aren't shown
+                              blank. POS-fallback is rendered as a subtle
+                              badge to signal it's the auto-derived
+                              label, not something the operator typed. */}
+                          {it.itemCategory ? (
+                            it.itemCategory
+                          ) : it.category ? (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200 capitalize">
+                              {it.category}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center text-xs text-gray-600">
                           {it.unit || <span className="text-gray-300">—</span>}
@@ -606,7 +642,7 @@ export function Items() {
                   onChange={e => setForm({ ...form, sku: e.target.value })}
                   placeholder="Optional"
                   maxLength={64}
-                  className="font-mono"
+                  className="tabular-nums"
                 />
               </div>
             </div>
@@ -621,25 +657,14 @@ export function Items() {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Category</Label>
-                <Input
-                  value={form.itemCategory}
-                  onChange={e => setForm({ ...form, itemCategory: e.target.value })}
-                  placeholder="e.g. Electronics, Beverages"
-                  maxLength={64}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Unit</Label>
-                <Input
-                  value={form.unit}
-                  onChange={e => setForm({ ...form, unit: e.target.value })}
-                  placeholder="pcs, kg, hour…"
-                  maxLength={32}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-600">Unit</Label>
+              <Input
+                value={form.unit}
+                onChange={e => setForm({ ...form, unit: e.target.value })}
+                placeholder="pcs, kg, hour…"
+                maxLength={32}
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -837,7 +862,7 @@ export function Items() {
             </DialogTitle>
             <DialogDescription>
               Add to <strong>{stockIn?.item.name}</strong>. Current on-hand:{' '}
-              <span className="font-mono">{Number(stockIn?.item.stockQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+              <span className="tabular-nums">{Number(stockIn?.item.stockQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
               {stockIn?.item.unit ? ` ${stockIn.item.unit}` : ''}.
             </DialogDescription>
           </DialogHeader>

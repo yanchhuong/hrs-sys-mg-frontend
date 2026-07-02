@@ -18,6 +18,8 @@ import { QrScanPage } from './components/views/QrScanPage';
 import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { PublicShopPage } from './components/views/PublicShopPage';
+import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
+import { CambodiaLearnPage } from './components/CambodiaLearnPage';
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -34,7 +36,8 @@ const isPublicScanPath = (): boolean =>
  *  navigates from here. */
 const isPosDisplayPath = (): boolean =>
   typeof window !== 'undefined'
-  && window.location.pathname === POS_DISPLAY_PATH;
+  && (window.location.pathname === POS_DISPLAY_PATH
+      || window.location.pathname.startsWith(POS_DISPLAY_PATH + '/'));
 
 /** True when the URL is the anonymous /shop/{code} public-menu page.
  *  Bypasses auth + layout so a customer can scan a QR and land on the
@@ -42,6 +45,21 @@ const isPosDisplayPath = (): boolean =>
 const isPublicShopPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/shop/');
+
+/** V170 — /requirement-survey — anonymous landing-page form. Prospects
+ *  submit before any account exists, so it runs outside the auth flow. */
+const isPublicSurveyPath = (): boolean =>
+  typeof window !== 'undefined'
+  && (window.location.pathname === '/requirement-survey'
+      || window.location.pathname.startsWith('/requirement-survey/'));
+
+/** /cambodia — standalone labour-law learning page (WorkingRule / NSSF /
+ *  TOS / Seniority Indemnity / calculators). Moved off the marketing
+ *  landing so the funnel stays tight; still reachable anonymously. */
+const isCambodiaLearnPath = (): boolean =>
+  typeof window !== 'undefined'
+  && (window.location.pathname === '/cambodia'
+      || window.location.pathname.startsWith('/cambodia/'));
 
 function NotAuthorizedView() {
   // Pull the active role from AuthContext so we can name it on the
@@ -59,7 +77,7 @@ function NotAuthorizedView() {
         </p>
         {currentUser?.role && (
           <p className="text-xs text-gray-400">
-            Active role: <span className="font-mono">{currentUser.role}</span>
+            Active role: <span className="tabular-nums">{currentUser.role}</span>
           </p>
         )}
       </CardContent>
@@ -183,6 +201,29 @@ export default function App() {
         <PublicShopPage />
         <Toaster />
       </>
+    );
+  }
+  // Landing-page Requirement Survey form (V170). Same anonymous opt-out
+  // — prospects submit before any account exists, and the page routes
+  // to /requirement-survey directly from marketing.
+  if (isPublicSurveyPath()) {
+    return (
+      <>
+        <RequirementSurveyForm
+          onBack={() => { window.location.href = '/'; }}
+        />
+        <Toaster />
+      </>
+    );
+  }
+  // /cambodia — standalone labour-law learning page. Same anonymous
+  // opt-out flavour; reuses I18nContext for the language toggle.
+  if (isCambodiaLearnPath()) {
+    return (
+      <I18nProvider>
+        <CambodiaLearnPage />
+        <Toaster />
+      </I18nProvider>
     );
   }
   return (

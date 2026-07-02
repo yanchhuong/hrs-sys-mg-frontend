@@ -42,9 +42,11 @@ import { StockItemPicker } from '../common/StockItemPicker';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/settings';
+import * as currencyApi from '../../api/currencySettings';
 import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /** Floating popover that lists every contact reachable for a
  *  quotation — the primary recipient (name/email/phone stamped on the
@@ -93,7 +95,7 @@ function RecipientsPopover({
             <div key={i} className="rounded border bg-white px-2 py-1.5">
               <div className="text-[9px] uppercase tracking-wide text-gray-400">{r.label}</div>
               {r.name && <div className="text-gray-800 text-xs">{r.name}</div>}
-              {r.email && <div className="text-blue-700 font-mono text-[11px] break-all">{r.email}</div>}
+              {r.email && <div className="text-blue-700 tabular-nums text-[11px] break-all">{r.email}</div>}
               {r.phone && <div className="text-gray-600 text-[11px]">{r.phone}</div>}
               {!r.name && !r.email && !r.phone && (
                 <div className="text-gray-400 text-[11px]">(no contact info)</div>
@@ -122,21 +124,6 @@ const fmtMoney = (n: number, currency: string): string => {
     : `${currency} ${num}`;
   return n < 0 ? `− ${body}` : body;
 };
-
-/** Current-month ISO bounds for the toolbar date filter default —
- *  same helper as Invoices.tsx so the operator lands on this month
- *  when they open Quotations. */
-function currentMonthBounds(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const last = new Date(y, m + 1, 0);
-  return {
-    from: `${y}-${pad(m + 1)}-01`,
-    to:   `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`,
-  };
-}
 
 const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
   progress: 'border-blue-300 text-blue-700 bg-blue-50',
@@ -176,6 +163,7 @@ const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
  */
 export function Quotations() {
   const { canView, canCreate, canUpdate, canDelete } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd    = canCreate('quotation');
   const canEdit   = canUpdate('quotation');
   const canRemove = canDelete('quotation');
@@ -186,8 +174,10 @@ export function Quotations() {
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<quotationsApi.QuotationStatus | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState(() => currentMonthBounds().from);
-  const [dateTo, setDateTo]     = useState(() => currentMonthBounds().to);
+  // Empty defaults so the landing view shows every quotation; users
+  // pick a range to narrow. Pagination bounds the scroll.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<quotationsApi.Quotation | null>(null);
@@ -341,8 +331,9 @@ export function Quotations() {
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No quotations yet.</p>
           ) : (
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead className="w-44">Quote No</TableHead>
                   <TableHead>Customer</TableHead>
@@ -360,7 +351,7 @@ export function Quotations() {
                   const primaryName = q.recipientName || c?.representative;
                   return (
                     <TableRow key={q.id} className="hover:bg-gray-50">
-                      <TableCell className="font-mono text-sm">{q.quotationNo}</TableCell>
+                      <TableCell className="tabular-nums text-sm">{q.quotationNo}</TableCell>
                       <TableCell>{c?.name ?? <span className="text-gray-400">(unknown)</span>}</TableCell>
                       <TableCell className="text-sm text-gray-600">
                         <div className="flex items-center gap-1.5">
@@ -368,7 +359,7 @@ export function Quotations() {
                           <RecipientsPopover quotation={q} customer={c} />
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm">{q.issueDate}</TableCell>
+                      <TableCell className="text-sm">{formatDate(q.issueDate)}</TableCell>
                       <TableCell className="text-sm">{q.expiryDate ?? '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(q.total, q.currency)}</TableCell>
                       <TableCell>
@@ -401,16 +392,19 @@ export function Quotations() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
-          {pagination.totalPages > 1 && (
-            <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.goToPage}
-              startIndex={pagination.startIndex}
-              endIndex={pagination.endIndex}
-              totalItems={pagination.totalItems}
-            />
+          {filtered.length > 0 && (
+            <div className="px-1 py-0 border-t">
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
@@ -538,6 +532,18 @@ function QuotationFormDialog({
       .then(s => setPickerEnabled(s.enabledForQuotation))
       .catch(() => setPickerEnabled(false));
   }, []);
+
+  // Tenant currency settings (V166). Drives the currency dropdown +
+  // the default new-document currency / exchange rate. Refetched
+  // every time the dialog OPENS so a currency change made via
+  // Settings > Currency lands here on the next open rather than only
+  // after a page reload.
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
+  }, [open]);
+  const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
@@ -590,8 +596,8 @@ function QuotationFormDialog({
       setRecipientName('');
       setRecipientEmail('');
       setRecipientPhone('');
-      setCurrency('USD');
-      setExchangeRate('4100');
+      setCurrency(currencySettings?.primaryCurrency ?? 'USD');
+      setExchangeRate(String(currencySettings?.secondaryRate ?? 4100));
       setTaxType('');
       setDiscountType('amount');
       setDiscountValue('0');
@@ -600,6 +606,16 @@ function QuotationFormDialog({
       setLines([newLine()]);
     }
   }, [open, editing]);
+
+  // Follow-up sync: when the tenant currency settings arrive AFTER
+  // the reset effect above ran (network race on first open), pin the
+  // form's currency + exchange rate to the tenant defaults. Skip in
+  // edit mode (row's own currency wins).
+  useEffect(() => {
+    if (!open || editing || !currencySettings) return;
+    setCurrency(currencySettings.primaryCurrency);
+    setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
+  }, [open, editing, currencySettings]);
 
   // Pre-fill recipient fields when the user picks a customer (only
   // on the first pick — don't clobber edits the operator already
@@ -722,7 +738,7 @@ function QuotationFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Quotation No.</Label>
-              <Input value={quotationNo} onChange={e => setQuotationNo(e.target.value)} className="font-mono" />
+              <Input value={quotationNo} onChange={e => setQuotationNo(e.target.value)} className="tabular-nums" />
             </div>
           </div>
 
@@ -751,20 +767,33 @@ function QuotationFormDialog({
               <Label className="text-xs">Expiry date</Label>
               <Input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="KHR">KHR</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Exchange rate</Label>
-              <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
-            </div>
+            {/* Gated on `currencySettings` being loaded to avoid a
+                brief USD/KHR flash from the enabledCurrencies fallback
+                while the fetch is in flight. */}
+            {currencySettings && currencyOptions.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map(c => (
+                      <SelectItem key={c} value={c}>{currencyApi.currencyLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Exchange-rate field renders only when the tenant has
+                a secondary currency AND it differs from the form's
+                selected currency. */}
+            {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
+                </Label>
+                <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
+              </div>
+            )}
           </div>
 
           {/* Line items */}
@@ -971,7 +1000,21 @@ function QuotationFormDialog({
               {settings.showDiscount && totals.disc > 0 && (
               <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(totals.disc, currency)}</span></div>
               )}
-              <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total</span><span className="tabular-nums w-32 text-right">{fmtMoney(totals.total, currency)}</span></div>
+              <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(totals.total, currency)}</span></div>
+              {/* Secondary-currency total — rendered only when the
+                  tenant has a secondary currency AND the quotation's
+                  currency isn't already that secondary. */}
+              {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
+                <div className="flex justify-end gap-6 text-gray-700">
+                  <span>
+                    Total {currencySettings.secondaryCurrency}
+                    {' '}<span className="text-[10px] text-gray-400">@ {Number(exchangeRate) || 0}</span>
+                  </span>
+                  <span className="tabular-nums w-32 text-right">
+                    {currencySettings.secondaryCurrency} {(totals.total * (Number(exchangeRate) || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1025,7 +1068,9 @@ function QuotationDetailDialog({
   onEdit: (q: quotationsApi.Quotation) => void;
 }) {
   const [quotation, setQuotation] = useState<quotationsApi.Quotation | null>(null);
+  const { formatDate } = useDateFormat();
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
@@ -1050,6 +1095,7 @@ function QuotationDetailDialog({
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [quotationId]);
   useEffect(() => {
     settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
+    currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, []);
 
   /** Manual "Send via Telegram" trigger. Captures the print template
@@ -1140,12 +1186,12 @@ function QuotationDetailDialog({
           }
         `}</style>
         {quotation && (
-          <PrintQuotation quotation={quotation} customer={customer} company={companyInfo} />
+          <PrintQuotation quotation={quotation} customer={customer} company={companyInfo} currencySettings={currencySettings} />
         )}
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="font-mono">{quotation?.quotationNo ?? 'Quotation details'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{quotation?.quotationNo ?? 'Quotation details'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !quotation ? (
                   <span className="text-xs text-gray-500">Loading quotation…</span>
@@ -1154,7 +1200,7 @@ function QuotationDetailDialog({
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[quotation.status]}`}>
                       {quotation.status}
                     </Badge>
-                    <span className="text-xs text-gray-500">{quotation.issueDate}</span>
+                    <span className="text-xs text-gray-500">{formatDate(quotation.issueDate)}</span>
                     {quotation.expiryDate && (
                       <span className="text-xs text-gray-500">· Expires {quotation.expiryDate}</span>
                     )}
@@ -1476,15 +1522,29 @@ function QVatTinBoxes({ tin }: { tin: string }) {
 }
 
 function PrintQuotation({
-  quotation, customer, company,
+  quotation, customer, company, currencySettings,
 }: {
   quotation: quotationsApi.Quotation;
   customer?: customersApi.Customer;
   company: settingsApi.CompanyInfo | null;
+  currencySettings?: currencyApi.CurrencySettings | null;
 }) {
-  const grandKhr = Math.round(quotation.total * (quotation.exchangeRate || 0));
-  const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtKhr = (n: number) => `៛ ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const primaryCode = quotation.currency || 'USD';
+  const secondaryCode = currencySettings?.secondaryCurrency ?? null;
+  const showSecondary = !!secondaryCode && secondaryCode !== primaryCode;
+  const grandSecondary = showSecondary
+    ? Math.round(quotation.total * (quotation.exchangeRate || 0))
+    : 0;
+  const primarySym = currencyApi.currencySymbol(primaryCode);
+  const secondarySym = secondaryCode ? currencyApi.currencySymbol(secondaryCode) : '';
+  const fmtPrimary = (n: number) =>
+    primaryCode === 'KHR' || primaryCode === 'KRW'
+      ? `${primarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${primarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtSecondary = (n: number) =>
+    secondaryCode === 'KHR' || secondaryCode === 'KRW'
+      ? `${secondarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : `${secondarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const showVat = quotation.taxAmount > 0;
   const vatPct = quotation.subtotal > 0 ? Math.round((quotation.taxAmount / quotation.subtotal) * 100) : 0;
   const fmtDate = (iso?: string | null) => {
@@ -1610,31 +1670,33 @@ function PrintQuotation({
                 {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
               </td>
               <td style={{ ...qTdStyle, textAlign: 'center' }}>{it.quantity}</td>
-              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtUsd(it.unitPrice)}</td>
-              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtUsd(0)}</td>
-              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtUsd(it.lineTotal)}</td>
+              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
+              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
+              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
             </tr>
           ))}
           <tr>
-            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>សរុប (ដុល្លារ) / Sub Total (USD)</td>
-            <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtUsd(quotation.subtotal)}</td>
+            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+            <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(quotation.subtotal)}</td>
           </tr>
           {showVat && (
             <tr>
               <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>
-                អាករលើតម្លៃបន្ថែម {vatPct}% (ដុល្លារ) / VAT {vatPct}% (USD)
+                អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
               </td>
-              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtUsd(quotation.taxAmount)}</td>
+              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(quotation.taxAmount)}</td>
             </tr>
           )}
           <tr>
-            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (ដុល្លារ) / Grand Total (USD)</td>
-            <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtUsd(quotation.total)}</td>
+            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+            <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(quotation.total)}</td>
           </tr>
-          <tr>
-            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (រៀល) / Grand Total (KHR)</td>
-            <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtKhr(grandKhr)}</td>
-          </tr>
+          {showSecondary && (
+            <tr>
+              <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+              <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 

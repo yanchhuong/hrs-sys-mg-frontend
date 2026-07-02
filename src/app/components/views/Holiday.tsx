@@ -623,8 +623,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 <TableBody>
                   {availableSystemHolidays.map(({ src, targetDate }) => (
                     <TableRow key={src.id} className="hover:bg-blue-50/40">
-                      <TableCell className="font-mono text-xs text-gray-500">{src.date}</TableCell>
-                      <TableCell className="font-mono text-xs text-blue-700 font-medium">{targetDate}</TableCell>
+                      <TableCell className="tabular-nums text-xs text-gray-500">{src.date}</TableCell>
+                      <TableCell className="tabular-nums text-xs text-blue-700 font-medium">{targetDate}</TableCell>
                       <TableCell className="font-medium text-sm">{src.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize text-[11px]">{src.type}</Badge>

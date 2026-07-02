@@ -42,7 +42,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -53,8 +53,10 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
-import { HrTelegramBotSettingsDialog } from '../common/HrTelegramBotSettingsDialog';
+import { EmployeeSettingsDialog } from '../common/EmployeeSettingsDialog';
+import { EmployeeBeneficiarySection } from '../common/EmployeeBeneficiarySection';
 import * as hrBotApi from '../../api/hrTelegramBots';
+import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
@@ -541,7 +543,14 @@ export function Employees() {
   // + per-row state lives inside EmployeeTelegramCell (one dialog
   // per row) — same pattern as the Customers page. We only keep the
   // tenant-level bot-settings dialog open state here.
-  const [hrBotDialogOpen, setHrBotDialogOpen] = useState(false);
+  /** Unified Employee Settings dialog (V168) — replaces the
+   *  standalone HR Bot + Payout Settings dialogs with a single
+   *  left-menu surface (HR Bot · PayWay · Other Banks). */
+  const [employeeSettingsOpen, setEmployeeSettingsOpen] = useState(false);
+  /** Batch beneficiary lookup keyed by employee apiId (V168). Drives
+   *  the green ring on the employee avatar in the roster table:
+   *  status='active' means the employee is payable via PayWay. */
+  const [beneficiaryByApiId, setBeneficiaryByApiId] = useState<Map<string, beneficiaryApi.PayWayBeneficiary>>(new Map());
   /** employeeApiId → linkage row. Side-fetched alongside the roster
    *  so each cell can render its state in O(1). Soft-fails to empty
    *  on 403 / pre-deploy so the table itself never breaks. */
@@ -658,6 +667,38 @@ export function Employees() {
   // module (or running pre-deploy without V117) never breaks the
   // roster. Re-runs when permission flips on (admin-grant flow).
   useEffect(() => { void loadLinkedTelegram(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [canViewHrTelegram]);
+
+  /** Batch-load PayWay beneficiaries for every employee in the
+   *  current roster (V168). Drives the green-ring "Payable" badge on
+   *  the avatar inside EmployeeCell. One round-trip on roster load;
+   *  re-fires after a Submit/Archive in the Payout tab via the
+   *  Beneficiary section's onChanged callback (handled below by
+   *  refreshing on the employees state change). */
+  useEffect(() => {
+    const apiIds = employees
+      .map(e => (e as { apiId?: string }).apiId ?? e.id)
+      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    if (apiIds.length === 0) {
+      setBeneficiaryByApiId(new Map());
+      return;
+    }
+    let cancelled = false;
+    beneficiaryApi.getBatch(apiIds)
+      .then(list => {
+        if (cancelled) return;
+        const m = new Map<string, beneficiaryApi.PayWayBeneficiary>();
+        list.forEach(b => m.set(b.employeeId, b));
+        setBeneficiaryByApiId(m);
+      })
+      .catch(() => {
+        // Non-fatal — badge falls back to non-payable (grey border)
+        // when the lookup errors. We don't toast because this fires
+        // on every roster mount and a transient blip shouldn't
+        // surface as a red toast in HR's face.
+        if (!cancelled) setBeneficiaryByApiId(new Map());
+      });
+    return () => { cancelled = true; };
+  }, [employees]);
 
   const handleCreated = (emp: Employee) => {
     if (USE_MOCKS) {
@@ -1238,13 +1279,20 @@ export function Employees() {
           {/* HR Telegram bot config gear — gated by hr_telegram.update so
               the bot-token surface stays admin-only even when other
               roster permissions are granted to a manager. */}
-          {canManageHrTelegramBot && (
+          {/* Unified Employee Settings (V168) — one button replaces
+              the old HR Bot gear + Payout Wallet icons. The dialog
+              hides the HR Bot section for users without the
+              hr_telegram perm, so the rule below stays: show the
+              button whenever the operator can manage SOMETHING
+              inside (roster perm for Payout, or hr_telegram perm
+              for the bot). */}
+          {(canManageRoster || canManageHrTelegramBot) && (
             <Button
               variant="outline"
               size="icon"
-              onClick={() => setHrBotDialogOpen(true)}
-              title="HR Telegram Bot settings"
-              aria-label="HR Telegram Bot settings"
+              onClick={() => setEmployeeSettingsOpen(true)}
+              title="Employee settings"
+              aria-label="Employee settings"
             >
               <Settings className="h-4 w-4" />
             </Button>
@@ -1299,10 +1347,11 @@ export function Employees() {
           {/* HR bot settings dialog — mounted at the page level so it
               survives the gear button toggle independently of the
               admin/manager Add-Employee surface above. */}
-          {canManageHrTelegramBot && (
-            <HrTelegramBotSettingsDialog
-              open={hrBotDialogOpen}
-              onOpenChange={setHrBotDialogOpen}
+          {(canManageRoster || canManageHrTelegramBot) && (
+            <EmployeeSettingsDialog
+              open={employeeSettingsOpen}
+              onOpenChange={setEmployeeSettingsOpen}
+              showHrBot={canManageHrTelegramBot}
             />
           )}
         </div>
@@ -1486,8 +1535,17 @@ export function Employees() {
                     {/* `subtitle` slot in EmployeeCell renders directly
                      *  under the name (right of the avatar), so the
                      *  empNo sits tucked under the name rather than
-                     *  under the profile image. */}
-                    <EmployeeCell employee={employee} subtitle={employee.id} />
+                     *  under the profile image. `payable` lights up
+                     *  the avatar with a green ring + hover tooltip
+                     *  when the employee has an active PayWay
+                     *  beneficiary (V168). */}
+                    <EmployeeCell
+                      employee={employee}
+                      subtitle={employee.id}
+                      payable={
+                        beneficiaryByApiId.get((employee as { apiId?: string }).apiId ?? employee.id)?.status === 'active'
+                      }
+                    />
                   </TableCell>
                   <TableCell className="text-sm">{employee.khmerName || '-'}</TableCell>
                   <TableCell className="capitalize">{employee.gender || '-'}</TableCell>
@@ -1747,7 +1805,7 @@ export function Employees() {
 
               {/* Tabs */}
               <Tabs defaultValue="profile" className="flex-1 flex flex-col min-h-0">
-                <TabsList className="mx-6 mt-3 shrink-0 grid grid-cols-4">
+                <TabsList className="mx-6 mt-3 shrink-0 grid grid-cols-5">
                   <TabsTrigger value="profile">
                     <User className="h-3.5 w-3.5 mr-1.5" />
                     Profile
@@ -1762,6 +1820,10 @@ export function Employees() {
                     <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
                       {getEmployeeContracts(selectedEmployee).length}
                     </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="payout">
+                    <Wallet className="h-3.5 w-3.5 mr-1.5" />
+                    Payout
                   </TabsTrigger>
                   <TabsTrigger value="documents">
                     <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
@@ -2319,7 +2381,7 @@ export function Employees() {
                             placeholder="000-123-456"
                           />
                         ) : (
-                          <p className="font-mono text-sm">{selectedEmployee.bankAccount || '—'}</p>
+                          <p className="tabular-nums text-sm">{selectedEmployee.bankAccount || '—'}</p>
                         )}
                       </FieldRow>
                     </div>
@@ -2435,6 +2497,18 @@ export function Employees() {
                         </>
                       );
                     })()}
+                  </TabsContent>
+
+                  {/* Payout Tab (V168) — PayWay Beneficiary registration.
+                      Section auto-hides when the tenant has PayWay disabled
+                      in Employee Payout Settings. */}
+                  <TabsContent value="payout" className="mt-0 px-6 pb-6">
+                    <EmployeeBeneficiarySection
+                      employeeId={(selectedEmployee as any).apiId ?? selectedEmployee.id}
+                      employeeName={selectedEmployee.name}
+                      employeePhone={selectedEmployee.contactNumber}
+                      readOnly={!isEditing && !canManageRoster}
+                    />
                   </TabsContent>
 
                   {/* Documents Tab */}
@@ -2813,7 +2887,7 @@ function EmployeeTelegramCell({
             <span className="font-medium text-emerald-700">{display}</span>
           </div>
           {handle && (
-            <span className="font-mono text-[10px] text-gray-500">{handle}</span>
+            <span className="tabular-nums text-[10px] text-gray-500">{handle}</span>
           )}
         </div>
         {canUnlink && (
@@ -2836,7 +2910,7 @@ function EmployeeTelegramCell({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {linked?.telegramUsername
-                  ? <>The chat <span className="font-mono">@{linked.telegramUsername}</span> will no longer receive HR messages for this employee.</>
+                  ? <>The chat <span className="tabular-nums">@{linked.telegramUsername}</span> will no longer receive HR messages for this employee.</>
                   : <>This chat will no longer receive HR messages for this employee.</>}
                 {' '}You can re-share a fresh link later — the employee will need to click <strong>Start</strong> on Telegram again to reconnect.
               </AlertDialogDescription>
@@ -2914,7 +2988,7 @@ function EmployeeTelegramCell({
           {linkUrl && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Input value={linkUrl} readOnly className="font-mono text-xs" />
+                <Input value={linkUrl} readOnly className="tabular-nums text-xs" />
                 <Button variant="outline" size="sm" onClick={copyLink}>
                   {copied
                     ? <><Check className="h-3.5 w-3.5 mr-1" /> Copied</>
