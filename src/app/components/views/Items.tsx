@@ -23,7 +23,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon } from 'lucide-react';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -470,6 +470,7 @@ export function Items() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
+                    <TableHead className="w-[64px]">Photo</TableHead>
                     <TableHead>Item Name</TableHead>
                     <TableHead className="w-[140px]">Category</TableHead>
                     <TableHead className="w-[80px] text-center">Unit</TableHead>
@@ -502,6 +503,20 @@ export function Items() {
                       <TableRow key={it.id}>
                         <TableCell className="tabular-nums text-xs text-gray-600">
                           {it.sku || <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {it.imageUrl ? (
+                            <img
+                              src={it.imageUrl}
+                              alt={it.name}
+                              className="h-10 w-10 rounded-md object-cover border border-gray-200"
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400">
+                              <ImageIcon className="h-4 w-4" />
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="font-medium">
                           {it.name}
