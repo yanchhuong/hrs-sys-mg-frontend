@@ -14,6 +14,13 @@ export interface ParsedItemRow {
   /** 1-indexed Excel row this record came from. */
   rowNumber: number;
   data: ItemRequest & { name: string };
+  /** When set, the row's SKU matches an existing catalog item — the
+   *  importer will UPDATE that item instead of inserting a new one.
+   *  The backend records a stock movement for any stockQty change. */
+  existingItemId?: string;
+  /** Snapshot of the existing item's current stock at parse time so
+   *  the dialog can show "10 → 25" style delta previews. */
+  existingStockQty?: number;
   errors: string[];
   warnings: string[];
 }
@@ -107,16 +114,17 @@ export function parseItemsExcel(
 
 function buildItems(rows: Record<string, unknown>[], existing: Item[]): ParsedItemData {
   const out: ParsedItemRow[] = [];
-  // Case-insensitive SKU lookup for tenant-wide + within-file dupes.
-  // The DB enforces uniqueness on non-blank SKUs, so we surface the
-  // collision client-side before the operator hits Import.
-  const existingSkus = new Set(
-    existing.map(i => (i.sku ?? '').toLowerCase().trim()).filter(Boolean),
-  );
+  // Case-insensitive SKU → Item lookup. A collision no longer blocks
+  // the row — the importer flips into UPDATE mode for that SKU and
+  // the backend records a stock movement for any delta. Within-file
+  // dupes remain hard errors because two rows targeting the same
+  // existing SKU would double-post the movement.
+  const existingBySku = new Map<string, Item>();
+  for (const it of existing) {
+    const k = (it.sku ?? '').toLowerCase().trim();
+    if (k) existingBySku.set(k, it);
+  }
 
-  // First pass: parse each row into a record. Second pass runs the
-  // cross-row uniqueness check so we can catch dupes that share a
-  // SKU even when both are otherwise valid.
   rows.forEach((row, idx) => {
     const excelRow = idx + 2;
     const isBlank = HEADERS.every(h => readString(row[h]) === '');
@@ -124,13 +132,14 @@ function buildItems(rows: Record<string, unknown>[], existing: Item[]): ParsedIt
     out.push(parseRow(row, excelRow));
   });
 
-  // Track SKUs already-seen inside the file for within-file dupes.
   const seenSku = new Map<string, number>(); // sku → first-seen row number
   for (const rec of out) {
     const sku = (rec.data.sku ?? '').toLowerCase().trim();
     if (!sku) continue;
-    if (existingSkus.has(sku)) {
-      rec.errors.push(`Code "${rec.data.sku}" already exists in the catalog.`);
+    const hit = existingBySku.get(sku);
+    if (hit) {
+      rec.existingItemId = hit.id;
+      rec.existingStockQty = hit.stockQty ?? 0;
     }
     if (seenSku.has(sku)) {
       rec.errors.push(`Code "${rec.data.sku}" is used by row ${seenSku.get(sku)} in this file.`);

@@ -76,6 +76,25 @@ export function BulkUploadItemsDialog({
   const [progress, setProgress] = useState<Map<number, RowProgress>>(new Map());
   const [finalResult, setFinalResult] = useState<{ ok: number; failed: number } | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  // The caller's `existingItems` prop is usually just the currently-
+  // visible page (server-side pagination on Items.tsx). We fetch the
+  // full catalog on dialog open so SKU-lookup is authoritative across
+  // every existing row, not just the on-screen page.
+  const [fullCatalog, setFullCatalog] = useState<itemsApi.Item[]>(existingItems);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await itemsApi.list({ size: 10000 });
+        if (!cancelled) setFullCatalog(res.content ?? []);
+      } catch {
+        // Falls through to the prop-supplied list on failure. Worst
+        // case: a duplicate SKU tries create() and fails visibly.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (!parsed) {
@@ -104,7 +123,7 @@ export function BulkUploadItemsDialog({
     setFinalResult(null);
     setProgress(new Map());
     try {
-      const result = await parseItemsExcel(f, existingItems);
+      const result = await parseItemsExcel(f, fullCatalog);
       setParsed(result);
       const errorRows = result.items.filter(r => r.errors.length > 0).length;
       if (result.errors.length > 0) {
@@ -151,6 +170,12 @@ export function BulkUploadItemsDialog({
           next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'creating' });
           return next;
         });
+        // Existing SKU → UPDATE (backend also emits an ADJUSTMENT
+        // movement for any stockQty delta). New SKU → CREATE (backend
+        // emits an opening-balance IN movement when stockQty > 0).
+        if (row.existingItemId) {
+          return itemsApi.update(row.existingItemId, toItemRequest(row));
+        }
         return itemsApi.create(toItemRequest(row));
       },
       // 5 concurrent creates — items are single-transaction rows so
@@ -199,6 +224,8 @@ export function BulkUploadItemsDialog({
     total: parsed.totalItems,
     valid: parsed.validItems,
     errorRows: parsed.items.filter(r => r.errors.length > 0).length,
+    toUpdate: parsed.items.filter(r => r.errors.length === 0 && r.existingItemId).length,
+    toInsert: parsed.items.filter(r => r.errors.length === 0 && !r.existingItemId).length,
   } : null;
 
   const doneCount = Array.from(progress.values()).filter(p => p.status === 'created' || p.status === 'failed').length;
@@ -278,6 +305,21 @@ export function BulkUploadItemsDialog({
             </div>
           )}
 
+          {parsed && summary && !finalResult && !importing && (summary.toUpdate > 0 || summary.toInsert > 0) && (
+            <div className="rounded-md border p-3 bg-blue-50 border-blue-200">
+              <div className="flex items-start gap-3">
+                <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-blue-900">
+                    {summary.toInsert} new · {summary.toUpdate} update{summary.toUpdate !== 1 ? 's' : ''}
+                  </p>
+                  <p className="text-sm text-blue-800">
+                    Existing SKUs will be updated in place. Stock changes are recorded as adjustments on the Movement page.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {parsed && summary && !finalResult && !importing && summary.errorRows > 0 && (
             <div className="rounded-md border p-3 bg-red-50 border-red-200">
               <div className="flex items-start gap-3">
@@ -387,7 +429,12 @@ export function BulkUploadItemsDialog({
                             : hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
                             : <CheckCircle className="h-4 w-4 text-green-600 inline" />}
                         </td>
-                        <td className="px-3 py-2 tabular-nums text-gray-600">{r.data.sku ?? ''}</td>
+                        <td className="px-3 py-2 tabular-nums text-gray-600 space-y-1">
+                          <div>{r.data.sku ?? ''}</div>
+                          {!hasErr && (r.existingItemId
+                            ? <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">Update</span>
+                            : <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">New</span>)}
+                        </td>
                         <td className="px-3 py-2 font-medium">{r.data.name}</td>
                         <td className="px-3 py-2 text-gray-700">{r.data.itemCategory ?? ''}</td>
                         <td className="px-3 py-2 text-gray-600 capitalize">{r.data.category ?? ''}</td>
@@ -399,7 +446,17 @@ export function BulkUploadItemsDialog({
                           {r.data.unitPrice != null ? r.data.unitPrice.toFixed(2) : ''}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {r.data.stockQty != null ? r.data.stockQty : ''}
+                          {r.existingItemId && r.data.stockQty != null && r.existingStockQty != null && r.data.stockQty !== r.existingStockQty ? (
+                            <span title={`Delta: ${(r.data.stockQty - r.existingStockQty > 0 ? '+' : '')}${(r.data.stockQty - r.existingStockQty).toFixed(2)}`}>
+                              <span className="text-gray-400">{r.existingStockQty}</span>
+                              <span className="text-gray-400 mx-0.5">→</span>
+                              <span className={r.data.stockQty > r.existingStockQty ? 'text-emerald-700 font-medium' : 'text-rose-700 font-medium'}>
+                                {r.data.stockQty}
+                              </span>
+                            </span>
+                          ) : (
+                            r.data.stockQty != null ? r.data.stockQty : ''
+                          )}
                         </td>
                         <td className="px-3 py-2 max-w-[240px]">
                           {isFailed ? (
@@ -407,7 +464,7 @@ export function BulkUploadItemsDialog({
                               {prog?.message ?? 'Failed'}
                             </span>
                           ) : isCreated ? (
-                            <span className="text-green-700 block">Imported</span>
+                            <span className="text-green-700 block">{r.existingItemId ? 'Updated' : 'Imported'}</span>
                           ) : r.errors.length > 0 ? (
                             <span className="text-red-700 block truncate" title={r.errors.join('\n')}>
                               {r.errors[0]}
@@ -462,14 +519,16 @@ export function BulkUploadItemsDialog({
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                     Importing… ({doneCount}/{selectedRows.size})
                   </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4 mr-2" />
-                    {selectedRows.size === 0
-                      ? 'No items selected'
-                      : `Import ${selectedRows.size} Item${selectedRows.size !== 1 ? 's' : ''}`}
-                  </>
-                )}
+                ) : (() => {
+                  if (selectedRows.size === 0) return <>No items selected</>;
+                  const sel = parsed?.items.filter(r => selectedRows.has(r.rowNumber)) ?? [];
+                  const nUpd = sel.filter(r => r.existingItemId).length;
+                  const nIns = sel.length - nUpd;
+                  const parts: string[] = [];
+                  if (nIns > 0) parts.push(`${nIns} new`);
+                  if (nUpd > 0) parts.push(`${nUpd} update`);
+                  return <><Upload className="h-4 w-4 mr-2" />Import ({parts.join(' + ')})</>;
+                })()}
               </Button>
             )}
           </div>
