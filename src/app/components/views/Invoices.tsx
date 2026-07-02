@@ -50,9 +50,10 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark,
-  Package, CheckCircle2, Upload,
+  Package, CheckCircle2, Upload, Download,
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
+import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -526,6 +527,38 @@ export function Invoices() {
           <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
                   title="Accountant settings">
             <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => exportListToExcel({
+              filename: 'Invoices',
+              sheetName: 'Invoices',
+              columns: [
+                { header: 'Invoice No',    value: r => r.invoiceNo,                                         width: 18 },
+                { header: 'Kind',          value: r => r.kind === 'tax' ? 'Tax'
+                                                     : r.kind === 'commercial' ? 'Commercial'
+                                                     : r.kind === 'credit_note' ? 'Credit Note'
+                                                     : r.kind === 'debit_note'  ? 'Debit Note' : r.kind,     width: 14 },
+                { header: 'Issue Date',    value: r => r.issueDate,                                          width: 12 },
+                { header: 'Due Date',      value: r => r.dueDate ?? '',                                     width: 12 },
+                { header: 'Customer',      value: r => customerById.get(r.customerId)?.name ?? '',          width: 30 },
+                { header: 'Currency',      value: r => r.currency,                                          width: 8  },
+                { header: 'Subtotal',      value: r => Number(r.subtotal ?? 0),                             width: 12 },
+                { header: 'Tax',           value: r => Number(r.taxAmount ?? 0),                            width: 10 },
+                { header: 'Discount',      value: r => Number(r.discountAmount ?? 0),                       width: 10 },
+                { header: 'Total',         value: r => Number(r.total ?? 0),                                width: 12 },
+                { header: 'Paid',          value: r => Number(r.paidAmount ?? 0),                           width: 12 },
+                { header: 'Remain',        value: r => Number((r.total ?? 0) - (r.paidAmount ?? 0)),        width: 12 },
+                { header: 'Status',        value: r => r.status,                                            width: 10 },
+                { header: 'Notes',         value: r => r.notes ?? '',                                      width: 40 },
+              ],
+              rows: groupedRows,
+            })}
+            disabled={groupedRows.length === 0}
+            title="Download the current invoice list as an Excel workbook"
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            Download Excel
           </Button>
           {canAdd && (
             <Button

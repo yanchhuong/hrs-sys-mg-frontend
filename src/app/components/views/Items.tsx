@@ -23,7 +23,8 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, Download } from 'lucide-react';
+import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -372,6 +373,35 @@ export function Items() {
               <Settings className="h-4 w-4" />
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => exportListToExcel({
+              filename: 'Items',
+              sheetName: 'Items',
+              columns: [
+                { header: 'SKU',            value: it => it.sku ?? '',                                     width: 14 },
+                { header: 'Name',           value: it => it.name,                                          width: 32 },
+                { header: 'Description',    value: it => it.description ?? '',                            width: 40 },
+                { header: 'Category',       value: it => it.itemCategory ?? it.category ?? '',            width: 16 },
+                { header: 'Unit',           value: it => it.unit ?? '',                                   width: 10 },
+                { header: 'Cost Price',     value: it => Number(it.unitCost ?? 0),                        width: 12 },
+                { header: 'Selling Price',  value: it => Number(it.unitPrice ?? 0),                       width: 12 },
+                { header: 'Current Stock',  value: it => Number(it.stockQty ?? 0),                        width: 12 },
+                { header: 'Min Stock',      value: it => Number(it.minStock ?? 0),                        width: 10 },
+                { header: 'Warehouse',      value: it => it.warehouseId
+                                                        ? (warehouseLabelById.get(it.warehouseId) ?? '')
+                                                        : '',                                             width: 18 },
+                { header: 'Deduct Stock',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
+                { header: 'Active',         value: it => it.active ? 'Yes' : 'No',                        width: 10 },
+                { header: 'Image URL',      value: it => it.imageUrl ?? '',                              width: 40 },
+              ],
+              rows: filtered,
+            })}
+            disabled={filtered.length === 0}
+            title="Download the current item list as an Excel workbook"
+          >
+            <Download className="h-4 w-4 mr-1.5" /> Download Excel
+          </Button>
           {canAdd && (
             <Button
               variant="outline"

@@ -15,8 +15,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload,
+  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, Download,
 } from 'lucide-react';
+import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
@@ -162,6 +163,36 @@ export function Receipts() {
           <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
                   title="Receipt settings">
             <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => exportListToExcel({
+              filename: 'Receipts',
+              sheetName: 'Receipts',
+              columns: [
+                { header: 'Receipt No',   value: r => r.receiptNo,                                             width: 18 },
+                { header: 'Issue Date',   value: r => r.issueDate,                                             width: 12 },
+                { header: 'Vendor',       value: r => vendorById.get(r.vendorId)?.name ?? '',                 width: 30 },
+                { header: 'Tax ID',       value: r => r.taxId ?? '',                                          width: 18 },
+                { header: 'Supplier Type',value: r => r.supplierType === 'taxable_person' ? 'Taxable Person'
+                                                    : r.supplierType === 'non_taxable'    ? 'Non-Taxable'
+                                                    : r.supplierType === 'non_resident'   ? 'Non-Resident'
+                                                    : (r.supplierType ?? ''),                                 width: 16 },
+                { header: 'Currency',     value: r => r.currency,                                             width: 8  },
+                { header: 'Exchange Rate',value: r => Number(r.exchangeRate ?? 1),                            width: 10 },
+                { header: 'Amount',       value: r => Number(r.amount ?? 0),                                  width: 12 },
+                { header: 'Tax Type',     value: r => r.taxType ?? '',                                       width: 10 },
+                { header: 'Tax Amount',   value: r => Number(r.taxAmount ?? 0),                               width: 12 },
+                { header: 'Paid',         value: r => Number(r.paidAmount ?? 0),                              width: 12 },
+                { header: 'Status',       value: r => r.status,                                              width: 10 },
+                { header: 'Notes',        value: r => r.notes ?? '',                                         width: 40 },
+              ],
+              rows: filtered,
+            })}
+            disabled={filtered.length === 0}
+            title="Download the current receipt list as an Excel workbook"
+          >
+            <Download className="h-4 w-4 mr-1.5" /> Download Excel
           </Button>
           {canAdd && (
             <Button

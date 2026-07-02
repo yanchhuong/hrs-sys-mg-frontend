@@ -2,6 +2,48 @@ import * as XLSX from 'xlsx';
 import { Employee, PayrollItem, Attendance } from '../types/hrms';
 
 // ---------------------------------------------------------------------------
+// Generic list-page exporter — used by Invoices / Bills / Receipts / Items
+// for their "Download Excel" toolbar button. Kept small on purpose; the
+// payroll + attendance exporters below own their own richer layouts.
+// ---------------------------------------------------------------------------
+
+export interface ListColumn<T> {
+  /** Header text on row 1. */
+  header: string;
+  /** How to derive the cell value from a row. Return null/undefined for
+   *  blank cells. */
+  value: (row: T) => string | number | null | undefined;
+  /** Column width in characters. Defaults to header length + 2. */
+  width?: number;
+}
+
+export interface ListExportOptions<T> {
+  /** File base name without extension. A YYYY-MM-DD stamp is appended so
+   *  operators can pile up exports without collision. */
+  filename: string;
+  /** Sheet tab name. Truncated to 31 chars (Excel's limit). */
+  sheetName: string;
+  columns: ListColumn<T>[];
+  rows: T[];
+}
+
+/** Drop the currently-loaded rows into a one-tab xlsx and trigger the
+ *  browser download. */
+export function exportListToExcel<T>(opts: ListExportOptions<T>): void {
+  const { filename, sheetName, columns, rows } = opts;
+  const header = columns.map(c => c.header);
+  const data = rows.map(r => columns.map(c => {
+    const v = c.value(r);
+    return v == null ? '' : v;
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+  ws['!cols'] = columns.map(c => ({ wch: c.width ?? Math.max(c.header.length + 2, 12) }));
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  XLSX.writeFile(wb, `${filename}-${fmt(new Date())}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 const autoSizeColumns = (rows: any[][], minWidth = 10) => {
