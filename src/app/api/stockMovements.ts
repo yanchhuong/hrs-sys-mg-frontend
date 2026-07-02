@@ -29,6 +29,13 @@ export interface StockMovement {
 export interface ListParams {
   itemId?: string;
   type?: 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT';
+  /** ISO date (YYYY-MM-DD). Rows on or after this date are included.
+   *  Interpreted as calendar boundary in UTC on the server. */
+  from?: string;
+  /** ISO date (YYYY-MM-DD). Inclusive — the server converts to an
+   *  exclusive upper bound at end-of-day so any row stamped anywhere
+   *  on this date is matched. */
+  to?: string;
   page?: number;
   size?: number;
 }
@@ -45,6 +52,8 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Stock
   const q: Record<string, string | number> = {};
   if (params.itemId) q.itemId = params.itemId;
   if (params.type) q.type = params.type;
+  if (params.from) q.from = params.from;
+  if (params.to) q.to = params.to;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   return apiJson('/api/v1/stock-movements', { query: q });

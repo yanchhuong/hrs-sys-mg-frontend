@@ -9,7 +9,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as movementsApi from '../../api/stockMovements';
-import { History, RefreshCw, Info } from 'lucide-react';
+import { History, RefreshCw, Info, X } from 'lucide-react';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -31,12 +33,16 @@ export function StockMovements() {
   const [rows, setRows] = useState<movementsApi.StockMovement[]>([]);
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'' | movementsApi.StockMovement['type']>('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
       const res = await movementsApi.list({
         type: typeFilter || undefined,
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
         size: 200,
       });
       setRows(res.content ?? []);
@@ -47,7 +53,10 @@ export function StockMovements() {
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [typeFilter]);
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [typeFilter, dateFrom, dateTo]);
+
+  const clearDates = () => { setDateFrom(''); setDateTo(''); };
+  const hasDateFilter = !!(dateFrom || dateTo);
 
   const pagination = usePagination(useMemo(() => rows, [rows]), 25);
 
@@ -99,7 +108,43 @@ export function StockMovements() {
             <History className="h-4 w-4 text-blue-600" />
             History
           </CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
+              <Input
+                id="mv-from"
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={e => setDateFrom(e.target.value)}
+                className="h-9 w-[140px]"
+                aria-label="Filter movements from date"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="mv-to" className="text-xs text-gray-500">To</Label>
+              <Input
+                id="mv-to"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={e => setDateTo(e.target.value)}
+                className="h-9 w-[140px]"
+                aria-label="Filter movements to date"
+              />
+            </div>
+            {hasDateFilter && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={clearDates}
+                title="Clear date filter"
+                aria-label="Clear date filter"
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
