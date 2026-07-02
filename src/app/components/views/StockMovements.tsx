@@ -109,30 +109,26 @@ export function StockMovements() {
             History
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
-              <Input
-                id="mv-from"
-                type="date"
-                value={dateFrom}
-                max={dateTo || undefined}
-                onChange={e => setDateFrom(e.target.value)}
-                className="h-9 w-[140px]"
-                aria-label="Filter movements from date"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="mv-to" className="text-xs text-gray-500">To</Label>
-              <Input
-                id="mv-to"
-                type="date"
-                value={dateTo}
-                min={dateFrom || undefined}
-                onChange={e => setDateTo(e.target.value)}
-                className="h-9 w-[140px]"
-                aria-label="Filter movements to date"
-              />
-            </div>
+            <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
+            <Input
+              id="mv-from"
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => setDateFrom(e.target.value)}
+              className="h-8 w-36 text-sm"
+              aria-label="Filter movements from date"
+            />
+            <Label htmlFor="mv-to" className="text-xs text-gray-500">To</Label>
+            <Input
+              id="mv-to"
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              className="h-8 w-36 text-sm"
+              aria-label="Filter movements to date"
+            />
             {hasDateFilter && (
               <Button
                 variant="ghost"
@@ -148,7 +144,7 @@ export function StockMovements() {
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-8 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               aria-label="Filter by type"
             >
               {TYPE_FILTERS.map(f => (
