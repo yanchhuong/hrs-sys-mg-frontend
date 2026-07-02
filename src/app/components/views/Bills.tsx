@@ -39,7 +39,7 @@ import * as currencyApi from '../../api/currencySettings';
 import { StockItemPicker } from '../common/StockItemPicker';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, Download,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { BulkUploadBillsDialog } from '../common/BulkUploadBillsDialog';
 import { exportListToExcel } from '../../utils/excelExport';
@@ -532,10 +532,10 @@ export function Bills() {
               rows: groupedRows,
             })}
             disabled={groupedRows.length === 0}
+            size="icon"
             title="Download the current bill list as an Excel workbook"
           >
-            <Download className="h-4 w-4 mr-1.5" />
-            Download Excel
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
           {canAdd && (
             <Button

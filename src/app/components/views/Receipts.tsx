@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, Download,
+  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
@@ -190,9 +190,10 @@ export function Receipts() {
               rows: filtered,
             })}
             disabled={filtered.length === 0}
+            size="icon"
             title="Download the current receipt list as an Excel workbook"
           >
-            <Download className="h-4 w-4 mr-1.5" /> Download Excel
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
           {canAdd && (
             <Button

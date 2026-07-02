@@ -50,7 +50,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark,
-  Package, CheckCircle2, Upload, Download,
+  Package, CheckCircle2, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { exportListToExcel } from '../../utils/excelExport';
@@ -555,10 +555,10 @@ export function Invoices() {
               rows: groupedRows,
             })}
             disabled={groupedRows.length === 0}
+            size="icon"
             title="Download the current invoice list as an Excel workbook"
           >
-            <Download className="h-4 w-4 mr-1.5" />
-            Download Excel
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
           {canAdd && (
             <Button

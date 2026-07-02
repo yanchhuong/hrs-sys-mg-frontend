@@ -23,7 +23,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -398,9 +398,10 @@ export function Items() {
               rows: filtered,
             })}
             disabled={filtered.length === 0}
+            size="icon"
             title="Download the current item list as an Excel workbook"
           >
-            <Download className="h-4 w-4 mr-1.5" /> Download Excel
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
           {canAdd && (
             <Button
