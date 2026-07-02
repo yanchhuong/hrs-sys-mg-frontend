@@ -15,12 +15,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2,
+  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
+import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
@@ -90,6 +91,7 @@ export function Receipts() {
   const [editing, setEditing] = useState<receiptsApi.Receipt | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   // Per-currency Paid totals for the visible page. Signed the same
   // as sumForReceipt (credit positive, debit negative — debit is the
   // typical "we paid the supplier" case; render flips the sign).
@@ -161,6 +163,15 @@ export function Receipts() {
                   title="Receipt settings">
             <Settings className="h-4 w-4" />
           </Button>
+          {canAdd && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkUploadOpen(true)}
+              title="Bulk upload receipts from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
+            </Button>
+          )}
           {canAdd && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1.5" /> New Receipt
@@ -341,6 +352,14 @@ export function Receipts() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         scope="receipt"
+      />
+
+      <BulkUploadReceiptsDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        vendors={vendors}
+        existingReceiptNos={rows.map(r => r.receiptNo).filter(Boolean)}
+        onImported={() => { void load(); }}
       />
     </div>
   );
