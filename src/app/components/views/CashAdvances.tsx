@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { CashAdvancePurposesDialog } from '../common/CashAdvancePurposesDialog';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const STATUS_TABS: { value: '' | cashAdvancesApi.CashAdvanceStatus; label: string }[] = [
   { value: '',                  label: 'All' },
@@ -514,6 +515,7 @@ function CashAdvanceDetailDialog({
   onChanged: () => void;
 }) {
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [advance, setAdvance] = useState<cashAdvancesApi.CashAdvance | null>(null);
   const [busy, setBusy] = useState(false);
   const [newCategory, setNewCategory] = useState('hotel');
@@ -731,8 +733,13 @@ function CashAdvanceDetailDialog({
         <DialogFooter className="gap-2 flex-wrap">
           {canCancel && (
             <Button variant="outline" size="sm" className="text-rose-700" disabled={busy}
-              onClick={() => {
-                if (!window.confirm('Cancel this draft advance? This is permanent.')) return;
+              onClick={async () => {
+                if (!(await confirm({
+                  title: 'Cancel this draft advance?',
+                  message: 'This is permanent — the advance can\'t be re-opened.',
+                  variant: 'destructive',
+                  confirmLabel: 'Cancel advance',
+                }))) return;
                 void action(() => cashAdvancesApi.cancel(advance.id), 'Cancelled');
               }}
             >
@@ -742,8 +749,12 @@ function CashAdvanceDetailDialog({
           )}
           {canDisburse && (
             <Button variant="default" size="sm" disabled={busy}
-              onClick={() => {
-                if (!window.confirm(`Disburse ${fmtMoney(Number(advance.advanceAmount), advance.currency)} to ${advance.employeeName ?? 'this employee'}? This writes an OUT row to the Transactions ledger.`)) return;
+              onClick={async () => {
+                if (!(await confirm({
+                  title: `Disburse ${fmtMoney(Number(advance.advanceAmount), advance.currency)} to ${advance.employeeName ?? 'this employee'}?`,
+                  message: 'This writes an OUT row to the Transactions ledger.',
+                  confirmLabel: 'Disburse',
+                }))) return;
                 void action(() => cashAdvancesApi.disburse(advance.id), 'Disbursed');
               }}
             >
@@ -753,11 +764,15 @@ function CashAdvanceDetailDialog({
           )}
           {canSettle && (
             <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={busy}
-              onClick={() => {
+              onClick={async () => {
                 const label = Number(advance.balance) > 0 ? `Employee returns ${fmtMoney(Number(advance.balance), advance.currency)}`
                   : Number(advance.balance) < 0 ? `Company reimburses ${fmtMoney(Math.abs(Number(advance.balance)), advance.currency)}`
                   : 'Clean settlement — no transaction';
-                if (!window.confirm(`Settle this advance? ${label}.`)) return;
+                if (!(await confirm({
+                  title: 'Settle this advance?',
+                  message: label + '.',
+                  confirmLabel: 'Settle',
+                }))) return;
                 void action(() => cashAdvancesApi.settle(advance.id), 'Settled');
               }}
             >

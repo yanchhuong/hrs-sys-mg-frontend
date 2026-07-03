@@ -61,6 +61,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 // ---------------------------------------------------------------------------
 // Role + permission model
@@ -375,6 +376,7 @@ function adaptApiUser(u: usersApi.User): User {
 export function UserManagement() {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const { isModuleAvailable, isModuleEnabled } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
@@ -700,7 +702,12 @@ export function UserManagement() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    if (!(await confirm({
+      title: 'Delete this user?',
+      message: 'They lose access to the tenant immediately. Existing records they authored are kept.',
+      variant: 'destructive',
+      confirmLabel: 'Delete',
+    }))) return;
 
     if (USE_MOCKS) {
       setUsers(users.filter(u => u.id !== userId));

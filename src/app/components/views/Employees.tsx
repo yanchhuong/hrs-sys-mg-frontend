@@ -65,6 +65,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
@@ -144,6 +145,7 @@ function EmployeeDocuments({
   onChange?: (docs: import('../../types/hrms').EmployeeDocument[]) => void;
 }) {
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [uploadType, setUploadType] = useState<documentsApi.EmployeeDocumentType>('contract');
   const [filter, setFilter] = useState<string>('all');
   // Live-mode state. In USE_MOCKS we read straight from `employee.documents`
@@ -257,7 +259,7 @@ function EmployeeDocuments({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this document?')) return;
+    if (!(await confirm({ title: 'Delete this document?', variant: 'destructive', confirmLabel: 'Delete' }))) return;
     if (USE_MOCKS) {
       onChange?.(docs.filter(d => d.id !== id));
       toast.success('Document deleted');
@@ -490,6 +492,7 @@ function adaptApiContract(c: contractsApi.Contract): Contract {
 }
 
 export function Employees() {
+  const confirm = useConfirm();
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
@@ -1682,9 +1685,17 @@ export function Employees() {
         </TabsContent>
       </Tabs>
 
-      <Sheet open={sheetOpen} onOpenChange={(open) => {
+      <Sheet open={sheetOpen} onOpenChange={async (open) => {
+        // onOpenChange is a *request* from Radix; while we're awaiting
+        // the confirm the controlled `sheetOpen` state hasn't flipped
+        // yet, so the sheet stays visible until we decide.
         if (!open && isEditing && editedEmployee && hasUnsavedChanges(selectedEmployee, editedEmployee)) {
-          if (!confirm('You have unsaved changes. Discard them?')) return;
+          if (!(await confirm({
+            title: 'Discard unsaved changes?',
+            message: 'Any edits since you started will be lost.',
+            variant: 'destructive',
+            confirmLabel: 'Discard',
+          }))) return;
         }
         setSheetOpen(open);
         if (!open) {

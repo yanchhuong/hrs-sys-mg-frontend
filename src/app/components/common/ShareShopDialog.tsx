@@ -8,6 +8,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Copy, ExternalLink, RefreshCw, Loader2, Share2 } from 'lucide-react';
 import * as shopApi from '../../api/shop';
+import { useConfirm } from '../../context/ConfirmContext';
 
 /**
  * "Share menu" popup launched from the POS header. Surfaces the
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function ShareShopDialog({ open, onOpenChange }: Props) {
+  const confirm = useConfirm();
   const [info, setInfo] = useState<shopApi.ShopLinkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -84,9 +86,12 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
 
   const rotate = async () => {
     if (rotating) return;
-    if (!window.confirm(
-      'Rotate the shop code? The current QR / link will stop working. '
-      + 'Printed posters need to be reissued.')) return;
+    if (!(await confirm({
+      title: 'Rotate the shop code?',
+      message: 'The current QR / link will stop working. Printed posters need to be reissued.',
+      variant: 'destructive',
+      confirmLabel: 'Rotate',
+    }))) return;
     setRotating(true);
     try {
       setInfo(await shopApi.rotateShopLink());

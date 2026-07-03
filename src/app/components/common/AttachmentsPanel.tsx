@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { Paperclip, Upload, Download, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as attachmentsApi from '../../api/attachments';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface Props {
   docType: attachmentsApi.AttachmentDocType;
@@ -23,6 +24,7 @@ interface Props {
  * against, the {@code docId} identifies the row.
  */
 export function AttachmentsPanel({ docType, docId, readOnly }: Props) {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<attachmentsApi.Attachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -64,7 +66,7 @@ export function AttachmentsPanel({ docType, docId, readOnly }: Props) {
   };
 
   const handleDelete = async (a: attachmentsApi.Attachment) => {
-    if (!confirm(`Delete "${a.filename}"?`)) return;
+    if (!(await confirm({ title: `Delete "${a.filename}"?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
     try {
       await attachmentsApi.remove(a.id);
       toast.success('Attachment deleted');

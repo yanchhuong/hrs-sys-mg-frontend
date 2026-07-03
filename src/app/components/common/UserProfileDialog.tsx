@@ -25,6 +25,7 @@ import * as authApi from '../../api/auth';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface Props {
   open: boolean;
@@ -38,6 +39,7 @@ const BLANK_EMPLOYEE: Partial<Employee> = {
 };
 
 export function UserProfileDialog({ open, onOpenChange }: Props) {
+  const confirm = useConfirm();
   const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee, refreshUser } = useAuth();
   const employeeRef = currentEmployee ?? BLANK_EMPLOYEE;
@@ -156,7 +158,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   };
 
   const handleAttachDelete = async (doc: documentsApi.EmployeeDocument) => {
-    if (!confirm(`Delete '${doc.name}'?`)) return;
+    if (!(await confirm({ title: `Delete '${doc.name}'?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
     try {
       await documentsApi.remove(doc.id);
       setAttachments(prev => prev.filter(d => d.id !== doc.id));

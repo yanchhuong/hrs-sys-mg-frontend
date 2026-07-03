@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import './utils/moduleDisabledToastFilter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DateFormatProvider } from './context/DateFormatContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { I18nProvider } from './i18n/I18nContext';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
@@ -230,8 +231,10 @@ export default function App() {
     <I18nProvider>
       <AuthProvider>
         <DateFormatProvider>
-          <AppContent />
-          <Toaster />
+          <ConfirmProvider>
+            <AppContent />
+            <Toaster />
+          </ConfirmProvider>
         </DateFormatProvider>
       </AuthProvider>
     </I18nProvider>

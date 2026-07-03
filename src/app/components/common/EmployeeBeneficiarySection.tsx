@@ -10,6 +10,7 @@ import {
 import { Wallet, Loader2, CheckCircle2, AlertCircle, Archive } from 'lucide-react';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import * as payoutSettingsApi from '../../api/employeePayoutSettings';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface Props {
   /** The employee being edited. Section is hidden when null
@@ -38,6 +39,7 @@ interface Props {
 export function EmployeeBeneficiarySection({
   employeeId, employeeName = '', employeePhone = '', readOnly = false,
 }: Props) {
+  const confirm = useConfirm();
   const [enabled, setEnabled] = useState(true);
   const [beneficiary, setBeneficiary] = useState<beneficiaryApi.PayWayBeneficiary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -127,7 +129,12 @@ export function EmployeeBeneficiarySection({
 
   const onArchive = async () => {
     if (!beneficiary || saving || readOnly) return;
-    if (!window.confirm('Archive this beneficiary? The employee will not be payout-ready until you resubmit.')) return;
+    if (!(await confirm({
+      title: 'Archive this beneficiary?',
+      message: 'The employee will not be payout-ready until you resubmit.',
+      variant: 'destructive',
+      confirmLabel: 'Archive',
+    }))) return;
     setSaving(true);
     try {
       await beneficiaryApi.archive(employeeId);

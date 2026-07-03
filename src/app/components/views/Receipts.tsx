@@ -33,6 +33,7 @@ import * as currencyApi from '../../api/currencySettings';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { formatMoneyForCurrency } from '../../utils/format';
 
 /** Render an amount with the currency prefix. USD collapses to "$" with
@@ -909,6 +910,7 @@ function ReceiptPaymentsPanel({
   readOnly: boolean;
 }) {
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<receiptPaymentsApi.ReceiptPayment[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -930,7 +932,7 @@ function ReceiptPaymentsPanel({
   const remain = receiptAmount - paid;
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this payment?')) return;
+    if (!(await confirm({ title: 'Delete this payment?', variant: 'destructive', confirmLabel: 'Delete' }))) return;
     try {
       await receiptPaymentsApi.remove(id);
       toast.success('Payment deleted');

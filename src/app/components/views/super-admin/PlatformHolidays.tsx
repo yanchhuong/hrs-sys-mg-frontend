@@ -4,6 +4,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 import * as platformApi from '../../../api/platform';
 import { platformHolidays, type Holiday, type HolidayRequest } from '../../../api/platformSettings';
+import { useConfirm } from '../../../context/ConfirmContext';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -27,6 +28,7 @@ import {
  * tenants.
  */
 export function PlatformHolidays() {
+  const confirm = useConfirm();
   const currentYear = new Date().getFullYear();
   const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
   const [tenantId, setTenantId] = useState<string>('');
@@ -70,7 +72,7 @@ export function PlatformHolidays() {
   }, [tenantId, year]);
 
   const handleDelete = async (row: Holiday) => {
-    if (!confirm(`Delete "${row.name}" (${row.date})?`)) return;
+    if (!(await confirm({ title: `Delete "${row.name}" (${row.date})?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
     const prev = rows;
     setRows(rs => rs.filter(r => r.id !== row.id));
     try {

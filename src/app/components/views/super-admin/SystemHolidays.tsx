@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Trash2, Globe, Info } from 'lucide-react';
 
 import * as api from '../../../api/systemHolidays';
+import { useConfirm } from '../../../context/ConfirmContext';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -28,6 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../
  * calendar without manual setup.
  */
 export function SystemHolidays() {
+  const confirm = useConfirm();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState<number>(currentYear);
   const [rows, setRows] = useState<api.SystemHoliday[]>([]);
@@ -58,7 +60,12 @@ export function SystemHolidays() {
   };
 
   const handleDelete = async (r: api.SystemHoliday) => {
-    if (!confirm(`Remove "${r.name}" (${r.date}) from the system catalog?\n\nTenants who already copied it keep their copy.`)) return;
+    if (!(await confirm({
+      title: `Remove "${r.name}" (${r.date}) from the system catalog?`,
+      message: 'Tenants who already copied it keep their copy.',
+      variant: 'destructive',
+      confirmLabel: 'Remove',
+    }))) return;
     try {
       await api.adminDelete(r.id);
       setRows(prev => prev.filter(x => x.id !== r.id));

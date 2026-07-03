@@ -12,6 +12,7 @@ import {
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as purposesApi from '../../api/cashAdvancePurposes';
+import { useConfirm } from '../../context/ConfirmContext';
 
 /**
  * Settings popup for the Cash Advance "Purpose" preset list.
@@ -32,6 +33,7 @@ export function CashAdvancePurposesDialog({
    *  parent page can refresh its picker without a manual reload. */
   onChanged?: () => void;
 }) {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<purposesApi.CashAdvancePurpose[]>([]);
   const [loading, setLoading] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -95,7 +97,12 @@ export function CashAdvancePurposesDialog({
   };
 
   const remove = async (row: purposesApi.CashAdvancePurpose) => {
-    if (!window.confirm(`Delete "${row.label}" from the purpose list? Existing advances are not affected.`)) return;
+    if (!(await confirm({
+      title: `Delete "${row.label}" from the purpose list?`,
+      message: 'Existing advances are not affected.',
+      variant: 'destructive',
+      confirmLabel: 'Delete',
+    }))) return;
     setBusy(true);
     try {
       await purposesApi.remove(row.id);

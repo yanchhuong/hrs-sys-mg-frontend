@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 import * as platformApi from '../../../api/platform';
+import { useConfirm } from '../../../context/ConfirmContext';
 import {
   platformPayrollCategories,
   type PayrollCategory,
@@ -32,6 +33,7 @@ import {
  * picked tenant before delegating.
  */
 export function PlatformPayrollCategories() {
+  const confirm = useConfirm();
   const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
   const [tenantId, setTenantId] = useState<string>('');
   const [rows, setRows] = useState<PayrollCategory[]>([]);
@@ -91,7 +93,12 @@ export function PlatformPayrollCategories() {
       toast.error('System categories cannot be deleted, only disabled.');
       return;
     }
-    if (!confirm(`Delete category "${row.label}"? This is permanent.`)) return;
+    if (!(await confirm({
+      title: `Delete category "${row.label}"?`,
+      message: 'This is permanent.',
+      variant: 'destructive',
+      confirmLabel: 'Delete',
+    }))) return;
     const prev = rows;
     setRows(rs => rs.filter(r => r.id !== row.id));
     try {
@@ -103,7 +110,12 @@ export function PlatformPayrollCategories() {
   };
 
   const handleRestoreDefaults = async () => {
-    if (!confirm('Restore default categories? User-added rows on this tenant will be removed; system rows reset to canonical labels.')) return;
+    if (!(await confirm({
+      title: 'Restore default categories?',
+      message: 'User-added rows on this tenant will be removed; system rows reset to canonical labels.',
+      variant: 'destructive',
+      confirmLabel: 'Restore',
+    }))) return;
     setLoadingRows(true);
     try {
       const fresh = await platformPayrollCategories.restoreDefaults(tenantId);

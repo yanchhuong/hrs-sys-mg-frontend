@@ -9,6 +9,7 @@ import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Copy, KeyRound, RefreshCw, Save, ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import * as payway from '../../api/payway';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface Props {
   open: boolean;
@@ -30,6 +31,7 @@ interface Props {
  * shared and the operator wants to invalidate the old one.</p>
  */
 export function PayWaySettingsDialog({ open, onOpenChange, onSaved }: Props) {
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -93,7 +95,12 @@ export function PayWaySettingsDialog({ open, onOpenChange, onSaved }: Props) {
   };
 
   const handleRotate = async () => {
-    if (!confirm('Rotate the push URL? The old URL will stop working — update the PayWay dashboard right after.')) return;
+    if (!(await confirm({
+      title: 'Rotate the push URL?',
+      message: 'The old URL will stop working — update the PayWay dashboard right after.',
+      variant: 'destructive',
+      confirmLabel: 'Rotate',
+    }))) return;
     setRotating(true);
     try {
       const next = await payway.rotatePushToken();

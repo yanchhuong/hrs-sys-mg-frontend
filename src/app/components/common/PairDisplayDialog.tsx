@@ -9,6 +9,7 @@ import { Input } from '../ui/input';
 import { Copy, Loader2, MonitorPlay, Unlink } from 'lucide-react';
 import * as posDisplayApi from '../../api/posDisplay';
 import { POS_DISPLAY_PATH } from '../../utils/posCustomerDisplay';
+import { useConfirm } from '../../context/ConfirmContext';
 
 /**
  * "Pair customer tablet" dialog. Launched from the POS header.
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function PairDisplayDialog({ open, onOpenChange, currentCode, onPaired, onUnpaired }: Props) {
+  const confirm = useConfirm();
   const [minting, setMinting] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -97,7 +99,12 @@ export function PairDisplayDialog({ open, onOpenChange, currentCode, onPaired, o
 
   const unpair = async () => {
     if (!currentCode || unpairing) return;
-    if (!window.confirm('Unpair this tablet? The paired Display will go blank until you pair again.')) return;
+    if (!(await confirm({
+      title: 'Unpair this tablet?',
+      message: 'The paired Display will go blank until you pair again.',
+      variant: 'destructive',
+      confirmLabel: 'Unpair',
+    }))) return;
     setUnpairing(true);
     try {
       await posDisplayApi.evict(currentCode);

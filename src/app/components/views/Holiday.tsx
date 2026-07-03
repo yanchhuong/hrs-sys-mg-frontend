@@ -38,6 +38,7 @@ import {
 } from 'date-fns';
 import { toast } from 'sonner';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 /** Live shape — mirrors api/settings.Holiday but adds a non-null id for table keys. */
 interface Holiday {
@@ -62,6 +63,7 @@ interface HolidayProps {
 }
 
 export function Holiday({ embedded = false }: HolidayProps = {}) {
+  const confirm = useConfirm();
   const { formatDate } = useDateFormat();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(!USE_MOCKS);
@@ -355,7 +357,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
   };
 
   const handleDelete = async (h: Holiday) => {
-    if (!window.confirm(`Delete "${h.name}" (${h.date})?`)) return;
+    if (!(await confirm({ title: `Delete "${h.name}" (${h.date})?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
     try {
       if (USE_MOCKS) {
         setHolidays(prev => prev.filter(x => x.id !== h.id));
