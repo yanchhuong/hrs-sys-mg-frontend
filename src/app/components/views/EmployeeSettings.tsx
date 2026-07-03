@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
-  Briefcase, FolderTree, DollarSign, Fingerprint, Users, Receipt,
+  Briefcase, FolderTree, DollarSign, Users, Receipt,
 } from 'lucide-react';
 import { Positions } from './Positions';
 import { DepsGroup } from './DepsGroup';
 import { SalaryRules } from './SalaryRules';
-import { DeviceUsers } from './DeviceUsers';
 import { TaxBrackets } from './TaxBrackets';
 import { useI18n } from '../../i18n/I18nContext';
 import * as positionsApi from '../../api/positions';
@@ -155,10 +154,6 @@ export function EmployeeSettings() {
             <DollarSign className="mr-2 h-4 w-4" />
             {t('page.employeeSettings.tab.salaryRules')}
           </TabsTrigger>
-          <TabsTrigger value="device-users">
-            <Fingerprint className="mr-2 h-4 w-4" />
-            {t('page.employeeSettings.tab.deviceUsers')}
-          </TabsTrigger>
           <TabsTrigger value="tax-brackets">
             <Receipt className="mr-2 h-4 w-4" />
             Tax Brackets
@@ -175,10 +170,6 @@ export function EmployeeSettings() {
 
         <TabsContent value="salary-rules" className="space-y-4">
           <SalaryRules embedded />
-        </TabsContent>
-
-        <TabsContent value="device-users" className="space-y-4">
-          <DeviceUsers embedded />
         </TabsContent>
 
         <TabsContent value="tax-brackets" className="space-y-4">
