@@ -23,6 +23,7 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
+  ClipboardCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -53,6 +54,7 @@ import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
 import { CashAdvances } from '../components/views/CashAdvances';
+import { Approvals } from '../components/views/Approvals';
 import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
@@ -170,6 +172,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
   { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
   { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
+  { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.

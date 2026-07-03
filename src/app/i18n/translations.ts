@@ -83,6 +83,7 @@ export const dict: Dict = {
   'nav.cashflow':             { en: 'Cash Flow',            km: 'លំហូរសាច់ប្រាក់',     zh: '现金流' },
   'nav.cashflow.transactions':{ en: 'Transactions',         km: 'ប្រតិបត្តិការ',          zh: '交易' },
   'nav.cashflow.advance':     { en: 'Cash Advance',         km: 'រំសាយប្រាក់',           zh: '现金预支' },
+  'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },
   'nav.setting.general':      { en: 'General Settings',     km: 'ការកំណត់ទូទៅ',      zh: '常规设置' },
