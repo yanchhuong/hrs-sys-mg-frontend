@@ -41,6 +41,13 @@ function sourceLabel(t: string): string {
   }
 }
 
+function hoursLabel(v: unknown): string {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return '';
+  const suffix = n === 1 ? 'hr' : 'hrs';
+  return `${n} ${suffix}`;
+}
+
 function money(v: unknown, ccy?: unknown): string {
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return '';
@@ -293,6 +300,29 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
       </div>
     );
   }
+  if (approval.sourceType === 'overtime') {
+    const hours = hoursLabel(s.hours);
+    const start = typeof s.startDate === 'string' ? s.startDate : '';
+    const end = typeof s.endDate === 'string' ? s.endDate : '';
+    const dateLine = start && end && start !== end ? `${start} → ${end}` : start;
+    const startHour = typeof s.startHour === 'string' ? s.startHour : '';
+    const endHour = typeof s.endHour === 'string' ? s.endHour : '';
+    const window = startHour && endHour ? `${startHour}–${endHour}` : '';
+    const tags: string[] = [];
+    if (s.weekend === true) tags.push('Weekend');
+    if (s.holiday === true) tags.push('Holiday');
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {[hours, window, ...tags].filter(Boolean).join(' · ')}
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {dateLine}
+          {typeof s.reason === 'string' && s.reason ? ` — "${s.reason}"` : ''}
+        </div>
+      </div>
+    );
+  }
   if (approval.sourceType === 'leave') {
     const category = typeof s.category === 'string' ? capitalize(s.category) : '';
     const leaveType = typeof s.leaveType === 'string' ? capitalize(s.leaveType) : '';
@@ -435,6 +465,25 @@ function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Amount:</span> <span className="font-medium tabular-nums">{money(s.amount, s.currency)}</span></div>
                 <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
                 <div><span className="text-gray-500">Purpose:</span> <span className="font-medium">{String(s.purpose ?? '—')}</span></div>
+              </div>
+            ) : current.sourceType === 'overtime' ? (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
+                <div><span className="text-gray-500">Hours:</span> <span className="font-medium tabular-nums">{hoursLabel(s.hours) || '—'}</span></div>
+                <div><span className="text-gray-500">Start date:</span> <span className="font-medium tabular-nums">{s.startDate ? String(s.startDate) : '—'}</span></div>
+                <div><span className="text-gray-500">End date:</span> <span className="font-medium tabular-nums">{s.endDate ? String(s.endDate) : '—'}</span></div>
+                <div><span className="text-gray-500">Window:</span> <span className="font-medium tabular-nums">
+                  {s.startHour && s.endHour ? `${s.startHour}–${s.endHour}` : '—'}
+                </span></div>
+                <div><span className="text-gray-500">Weekend / Holiday:</span> <span className="font-medium">
+                  {s.weekend || s.holiday
+                    ? [s.weekend ? 'Weekend' : null, s.holiday ? 'Holiday' : null].filter(Boolean).join(' + ')
+                    : '—'}
+                </span></div>
+                <div className="col-span-2">
+                  <span className="text-gray-500">Reason:</span>{' '}
+                  <span className="font-medium italic">"{String(s.reason ?? '—')}"</span>
+                </div>
               </div>
             ) : current.sourceType === 'leave' ? (
               <div className="grid grid-cols-2 gap-2 text-sm">
