@@ -49,23 +49,27 @@ export function Dashboard() {
     (async () => {
       setLoading(true);
       try {
+        // Each fetch is wrapped in its own catch so a per-endpoint 403
+        // (e.g. an employee-role user hitting the admin-only leave /
+        // departments lists) shows an empty panel instead of collapsing
+        // the whole Dashboard into a single "Access denied" toast.
+        // The dashboard's individual panels already render sensibly on
+        // empty data.
         const [empRes, attRes, otRes, contractsRes, deps, leaveRes] = await Promise.all([
-          employeesApi.list({ size: 500 }),
-          attendanceApi.list({ date: todayISO(), size: 500 }),
-          overtimeApi.list({ status: 'pending', size: 200 }),
-          contractsApi.list({ status: 'active', size: 500 }),
-          departmentsApi.list(),
-          leaveApi.list({ status: 'pending', size: 200 }),
+          employeesApi.list({ size: 500 }).catch(() => ({ content: [] as any[] } as any)),
+          attendanceApi.list({ date: todayISO(), size: 500 }).catch(() => ({ data: [] as any[] } as any)),
+          overtimeApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any)),
+          contractsApi.list({ status: 'active', size: 500 }).catch(() => ({ data: [] as any[] } as any)),
+          departmentsApi.list().catch(() => [] as departmentsApi.Department[]),
+          leaveApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any)),
         ]);
         if (cancelled) return;
-        // Stash raw API shapes — the dashboard reads them directly, matching
-        // field names used by the backend DTOs (empNo, status, etc.).
-        setEmployees(empRes.content as any);
-        setAttendance(attRes.data as any);
-        setOtRequests(otRes.data as any);
-        setContracts(contractsRes.data as any);
-        setDeptList(deps);
-        setPendingLeaves(leaveRes.data);
+        setEmployees((empRes.content ?? []) as any);
+        setAttendance((attRes.data ?? []) as any);
+        setOtRequests((otRes.data ?? []) as any);
+        setContracts((contractsRes.data ?? []) as any);
+        setDeptList(deps ?? []);
+        setPendingLeaves((leaveRes.data ?? []) as any);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to load dashboard');
       } finally {
