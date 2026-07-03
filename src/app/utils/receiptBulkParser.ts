@@ -214,8 +214,11 @@ function buildReceipts(
       }
     }
 
-    // Resolve vendor — Name first, then TIN as fallback.
-    if (!r.vendorId && r.data.vendorName && vendors.length > 0) {
+    // Resolve vendor — Name first, then TIN as fallback. Runs even
+    // when the tenant's Vendor list is empty so a fresh tenant's
+    // rows all get marked unresolved and can be auto-created at
+    // submit time.
+    if (!r.vendorId && r.data.vendorName) {
       const nameHit = byName.get(r.data.vendorName.toLowerCase().trim());
       const tinHit  = r.data.tin ? byTin.get(r.data.tin.trim()) : undefined;
       const hit = nameHit ?? tinHit;

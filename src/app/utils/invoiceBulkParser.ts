@@ -320,8 +320,11 @@ function buildInvoices(
     // warning text) rather than hard-fail: the "+ New customer"
     // badge in the preview card and the toggle banner up top carry
     // the same message, so a separate warning line would be
-    // redundant.
-    if (!inv.customerId && inv.data.customerName && customers.length > 0) {
+    // redundant. Runs even when the tenant's Customer list is empty
+    // — a fresh tenant hitting bulk-upload has no customers yet but
+    // still needs every row marked unresolved so the auto-create
+    // flow can spawn them at submit time.
+    if (!inv.customerId && inv.data.customerName) {
       const byNameHit = byName.get(inv.data.customerName.toLowerCase().trim());
       const byTinHit  = inv.data.tin ? byTin.get(inv.data.tin.trim()) : undefined;
       const hit = byNameHit ?? byTinHit;

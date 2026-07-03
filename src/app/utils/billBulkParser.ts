@@ -278,8 +278,11 @@ function buildBills(
     // vendors become fixable warnings (via unresolvedVendor
     // metadata) rather than hard errors: the importer's
     // "Auto-create missing vendors" toggle spawns them at submit
-    // time.
-    if (!b.vendorId && b.data.vendorName && vendors.length > 0) {
+    // time. This branch runs even when the tenant's Vendor list is
+    // empty — a fresh tenant hitting bulk-upload has no vendors yet
+    // but still needs every row to be marked unresolved so the
+    // auto-create flow can spawn them at submit time.
+    if (!b.vendorId && b.data.vendorName) {
       const nameHit = byName.get(b.data.vendorName.toLowerCase().trim());
       const tinHit  = b.data.tin ? byTin.get(b.data.tin.trim()) : undefined;
       const hit = nameHit ?? tinHit;
