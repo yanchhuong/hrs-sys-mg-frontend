@@ -326,7 +326,7 @@ export function Customers() {
                     <TableHead>Representative</TableHead>
                     <TableHead>Site</TableHead>
                     {canViewTelegram && (
-                      <TableHead className="w-[160px]">Telegram</TableHead>
+                      <TableHead className="w-[160px]">Link</TableHead>
                     )}
                     <TableHead className="text-right w-[88px]">Actions</TableHead>
                   </TableRow>
@@ -794,14 +794,6 @@ function TelegramCell({
   return (
     <>
       <div className="flex flex-col gap-1">
-        {/* Explicit "Not connected" line so the row's state is
-            obvious at a glance — without it every disconnected
-            row looks like every other one and the operator can't
-            tell the column is doing anything. */}
-        <div className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-300" />
-          Not connected
-        </div>
         <div className="flex items-center gap-1">
           {canShare ? (
             <Button
@@ -812,7 +804,7 @@ function TelegramCell({
               disabled={busy}
             >
               <Send className="h-3 w-3 mr-1" />
-              {busy ? 'Generating…' : 'Share link'}
+              {busy ? 'Generating…' : 'Share'}
             </Button>
           ) : (
             <span className="text-xs text-gray-400">—</span>
