@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import * as approvalsApi from '../../api/approvals';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 type StatusFilter = 'active' | 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -55,10 +56,26 @@ function money(v: unknown, ccy?: unknown): string {
 export function Approvals() {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<approvalsApi.Approval[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('active');
   const [selected, setSelected] = useState<approvalsApi.Approval | null>(null);
+
+  const quickApprove = async (r: approvalsApi.Approval) => {
+    if (!(await confirm({
+      title: `Approve this ${sourceLabel(r.sourceType).toLowerCase()}?`,
+      message: <SummaryCell approval={r} />,
+      confirmLabel: 'Approve',
+    }))) return;
+    try {
+      await approvalsApi.decide(r.chainId, { decision: 'approved' });
+      toast.success('Approved');
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Approve failed');
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -179,7 +196,29 @@ export function Approvals() {
                   <TableCell className="text-center"><StatusBadge status={r.status} viewerRole={r.viewerRole} /></TableCell>
                   <TableCell className="text-right">
                     {r.viewerRole === 'active' ? (
-                      <span className="text-xs text-amber-700 font-medium">Waiting on you</span>
+                      <div
+                        className="flex items-center gap-1 justify-end"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs text-rose-700 border-rose-200 hover:bg-rose-50"
+                          onClick={() => setSelected(r)}
+                          title="Reject requires a comment — opens the detail dialog"
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => { void quickApprove(r); }}
+                        >
+                          <Check className="h-3 w-3 mr-1" />
+                          Approve
+                        </Button>
+                      </div>
                     ) : (
                       <span className="text-xs text-gray-400">View</span>
                     )}
@@ -254,6 +293,25 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
       </div>
     );
   }
+  if (approval.sourceType === 'leave') {
+    const category = typeof s.category === 'string' ? capitalize(s.category) : '';
+    const leaveType = typeof s.leaveType === 'string' ? capitalize(s.leaveType) : '';
+    const days = typeof s.days === 'number' ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '';
+    const start = typeof s.startDate === 'string' ? s.startDate : '';
+    const end = typeof s.endDate === 'string' ? s.endDate : '';
+    const dateLine = start && end && start !== end ? `${start} → ${end}` : start;
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {[category, leaveType, days].filter(Boolean).join(' · ')}
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {dateLine}
+          {typeof s.reason === 'string' && s.reason ? ` — "${s.reason}"` : ''}
+        </div>
+      </div>
+    );
+  }
   // Generic fallback for future source types — surface any string
   // field the enricher put on the summary.
   const first = Object.entries(s).find(([, v]) => typeof v === 'string' && v);
@@ -262,6 +320,20 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
       {first ? String(first[1]) : <span className="text-gray-400">—</span>}
     </div>
   );
+}
+
+function capitalize(v: string): string {
+  return v ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+}
+
+/** Turn a summary map's camelCase key into a readable label. Fallback
+ *  used by the generic source-summary render when a source type hasn't
+ *  had a custom layout coded up yet. */
+function humanKey(k: string): string {
+  return k
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, c => c.toUpperCase())
+    .trim();
 }
 
 function ProgressBadge({ approval }: { approval: approvalsApi.Approval }) {
@@ -364,9 +436,31 @@ function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
                 <div><span className="text-gray-500">Purpose:</span> <span className="font-medium">{String(s.purpose ?? '—')}</span></div>
               </div>
+            ) : current.sourceType === 'leave' ? (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
+                <div><span className="text-gray-500">Category:</span> <span className="font-medium">{s.category ? capitalize(String(s.category)) : '—'}</span></div>
+                <div><span className="text-gray-500">Type:</span> <span className="font-medium">{s.leaveType ? capitalize(String(s.leaveType)) : '—'}</span></div>
+                <div><span className="text-gray-500">Duration:</span> <span className="font-medium">{typeof s.days === 'number' ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '—'}</span></div>
+                <div><span className="text-gray-500">Start:</span> <span className="font-medium tabular-nums">{s.startDate ? String(s.startDate) : '—'}</span></div>
+                <div><span className="text-gray-500">End:</span> <span className="font-medium tabular-nums">{s.endDate ? String(s.endDate) : '—'}</span></div>
+                <div className="col-span-2">
+                  <span className="text-gray-500">Reason:</span>{' '}
+                  <span className="font-medium italic">"{String(s.reason ?? '—')}"</span>
+                </div>
+              </div>
             ) : (
-              <div className="text-xs text-gray-500">
-                <pre className="whitespace-pre-wrap font-sans">{JSON.stringify(s, null, 2)}</pre>
+              // Generic fallback — future source types not yet given a
+              // custom layout still render, just as a plain label/value
+              // list rather than raw JSON so the operator can actually
+              // read what they're about to decide on.
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(s).map(([k, v]) => (
+                  <div key={k}>
+                    <span className="text-gray-500">{humanKey(k)}:</span>{' '}
+                    <span className="font-medium">{v == null ? '—' : String(v)}</span>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
