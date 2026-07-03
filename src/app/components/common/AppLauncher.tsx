@@ -76,6 +76,7 @@ const CATEGORIES: CategoryDef[] = [
     key: 'admin', labelKey: 'apps.category.admin',
     installedBadge: 'bg-amber-100 text-amber-700',
     ids: [
+      'approvals',
       'settings', 'attendance-settings', 'employee-settings',
       'user-management', 'payroll-categories',
     ],
