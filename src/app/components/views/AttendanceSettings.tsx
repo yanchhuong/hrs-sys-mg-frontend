@@ -22,6 +22,7 @@ import {
 import { mockAttendanceRules, defaultOTSettings, defaultAttendanceRule } from '../../data/settingsData';
 import { mockDepartments } from '../../data/mockData';
 import * as departmentsApi from '../../api/departments';
+import * as officesApi from '../../api/offices';
 import { mockHolidays } from '../../data/timeworkData';
 import { Holiday as HolidayView } from './Holiday';
 import { AttendanceRule, OTSettings } from '../../types/settings';
@@ -100,6 +101,21 @@ export function AttendanceSettings() {
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>(
     USE_MOCKS ? mockDepartments.map(d => ({ id: d.id, name: d.name, type: 'department' })) : [],
   );
+
+  // Offices — used to warn the operator when there are no office
+  // locations yet. Several attendance flows (geo-scan, Office Mode
+  // OT, etc.) reference offices; a fresh tenant with none configured
+  // gets a "!" icon next to the page title pointing them at the
+  // Offices page. null = not-yet-loaded; number = live count.
+  const [officesCount, setOfficesCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (USE_MOCKS) { setOfficesCount(1); return; } // mock mode: assume ≥1 office
+    let cancelled = false;
+    officesApi.list()
+      .then(list => { if (!cancelled) setOfficesCount(list.length); })
+      .catch(() => { if (!cancelled) setOfficesCount(null); }); // fetch failed → hide the warning
+    return () => { cancelled = true; };
+  }, []);
 
   // Holiday state
   const [holidays, setHolidays] = useState<Holiday[]>(USE_MOCKS ? mockHolidays : []);
@@ -350,7 +366,29 @@ export function AttendanceSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">{t('page.attendance_settings.title')}</h1>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            {t('page.attendance_settings.title')}
+            {officesCount === 0 && (
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex items-center text-amber-600 hover:text-amber-700 cursor-help"
+                      aria-label="No office locations configured"
+                    >
+                      <AlertTriangle className="h-5 w-5" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                    No office locations configured yet. Attendance geo-scan
+                    and Office-mode OT reference offices — add at least
+                    one on the <strong>Offices</strong> page (Employee
+                    → Offices) before those features work end-to-end.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </h1>
         </div>
         {canEditSettings && (
           <Button onClick={handleSave}>
