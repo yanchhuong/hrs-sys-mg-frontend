@@ -21,12 +21,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import {
   Plus, RefreshCw, Eye, Pencil, Trash2, Ban, FileText, ArrowRightCircle, Printer,
-  Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2,
+  Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2, Info,
 } from 'lucide-react';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
@@ -714,8 +715,31 @@ function QuotationFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit ${editing?.quotationNo}` : 'New Quotation'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            {isEdit ? `Edit ${editing?.quotationNo}` : 'New Quotation'}
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="About Quotation"
+                  >
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Pre-sale quote sent to a customer. Convert to a real Invoice once accepted.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </DialogTitle>
+          {/* DialogDescription intentionally omitted — the same copy
+              now surfaces via the info tooltip beside the title so
+              the header stays compact. Radix requires either a
+              DialogDescription or an explicit aria-describedby to
+              avoid a console warning; we pass a hidden one for the
+              a11y hint while keeping the visible chrome clean. */}
+          <DialogDescription className="sr-only">
             Pre-sale quote sent to a customer. Convert to a real Invoice once accepted.
           </DialogDescription>
         </DialogHeader>
