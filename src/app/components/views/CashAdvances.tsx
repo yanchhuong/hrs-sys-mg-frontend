@@ -22,6 +22,7 @@ import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as cashAdvancePurposesApi from '../../api/cashAdvancePurposes';
 import * as employeesApi from '../../api/employees';
 import * as currencyApi from '../../api/currencySettings';
+import * as usersApi from '../../api/users';
 import {
   ArrowLeftRight, Banknote, Check, Info, Plus, RefreshCw, Search, Settings, Trash2, X,
 } from 'lucide-react';
@@ -364,6 +365,13 @@ function CashAdvanceFormDialog({
   const [currency, setCurrency] = useState(editing?.currency ?? 'USD');
   const [remarks, setRemarks] = useState(editing?.remarks ?? '');
   const [saving, setSaving] = useState(false);
+  // Approvers — up to 3, ordered. Only used on create; the backend
+  // ignores the field on update to keep the chain stable across
+  // routine edits.
+  const [users, setUsers] = useState<usersApi.User[]>([]);
+  const [approver1, setApprover1] = useState('');
+  const [approver2, setApprover2] = useState('');
+  const [approver3, setApprover3] = useState('');
   // Tenant currency settings — hide the picker when only one currency
   // is enabled (single-currency tenant has nothing to pick). Refetched
   // on each open so a currency change made via Settings picks up.
@@ -391,6 +399,17 @@ function CashAdvanceFormDialog({
         // Silent — operator can still type employee id by hand if list 403s.
       }
     })();
+    // Users list feeds the Approver dropdowns. 403 silently → no
+    // approver picker options; the operator can still create the
+    // advance without approvers (draft → disburse flow proceeds).
+    void (async () => {
+      try {
+        const res = await usersApi.list({ size: 500 });
+        setUsers(res.content ?? []);
+      } catch {
+        setUsers([]);
+      }
+    })();
   }, [open]);
 
   const save = async () => {
@@ -400,12 +419,25 @@ function CashAdvanceFormDialog({
     }
     setSaving(true);
     try {
+      // Preserve entry order, drop blanks, dedup — backend also caps
+      // at ApprovalService.MAX_MANUAL_APPROVERS (3) but this keeps the
+      // wire payload tidy.
+      const orderedApprovers: string[] = [];
+      const seen = new Set<string>();
+      for (const raw of [approver1, approver2, approver3]) {
+        const v = raw?.trim();
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        orderedApprovers.push(v);
+      }
       const req: cashAdvancesApi.CreateRequest = {
         employeeId,
         purpose: purpose.trim(),
         advanceAmount: Number(amount) || 0,
         currency,
         remarks: remarks || undefined,
+        // Only send on create — the backend ignores it on update.
+        ...(editing ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
       };
       if (editing) await cashAdvancesApi.update(editing.id, req);
       else         await cashAdvancesApi.create(req);
@@ -491,6 +523,56 @@ function CashAdvanceFormDialog({
             <Label className="text-xs">Remarks</Label>
             <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Optional notes" rows={2} />
           </div>
+          {/* Approvers — manual-assign chain (V172). Optional: leave
+              blank and the advance skips approval, going straight to
+              the existing draft → disburse flow. Only shown on create;
+              editing an existing advance doesn't re-spawn the chain. */}
+          {!editing && (
+            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium">Approvers (optional, ordered — up to 3)</Label>
+                {(approver1 || approver2 || approver3) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-gray-500"
+                    onClick={() => { setApprover1(''); setApprover2(''); setApprover3(''); }}
+                    type="button"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Leave blank to skip approval. Otherwise the advance waits until each picked approver acts, in order.
+              </p>
+              {[
+                { label: '1st', value: approver1, set: setApprover1 },
+                { label: '2nd', value: approver2, set: setApprover2 },
+                { label: '3rd', value: approver3, set: setApprover3 },
+              ].map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
+                  <Select value={slot.value || '__none'} onValueChange={(v) => slot.set(v === '__none' ? '' : v)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="— none —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">— none —</SelectItem>
+                      {users
+                        .filter(u => u.isActive)
+                        .filter(u => u.id !== approver1 || slot.value === approver1)
+                        .filter(u => u.id !== approver2 || slot.value === approver2)
+                        .filter(u => u.id !== approver3 || slot.value === approver3)
+                        .map(u => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>

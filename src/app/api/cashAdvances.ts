@@ -71,6 +71,13 @@ export interface CreateRequest {
   advanceAmount: number;
   currency?: string;
   remarks?: string;
+  /** Ordered list of approver user IDs (up to 3). When set, the
+   *  backend spawns an approval chain via
+   *  ApprovalService.startChainWithApprovers. Empty / omitted means
+   *  the operator chose not to gate this advance — the draft →
+   *  disburse flow proceeds without approval. Only honored on
+   *  create; ignored on update. */
+  approverUserIds?: string[];
 }
 
 export interface CreateExpenseRequest {
