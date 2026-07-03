@@ -214,7 +214,27 @@ export function BulkUploadInvoicesDialog({ open, onOpenChange, onImported, custo
         const customerId = await resolveCustomerId(row);
         // notifyTelegram=false — bulk imports shouldn't spray customer
         // Telegrams retroactively. Operator can trigger sends manually.
-        return invoicesApi.create(toInvoiceRequest(row, customerId), false);
+        const created = await invoicesApi.create(toInvoiceRequest(row, customerId), false);
+        // Auto-issue primary docs (commercial / tax) so bulk-uploaded
+        // invoices land at 'progress' straight away instead of sitting
+        // in draft. CN/DN kinds stay as draft — those adjustments
+        // usually need a human review before folding into the parent's
+        // ledger. Server-side InvoiceDto.from() already derives
+        // 'overdue' at read time when a progress invoice's due date
+        // has passed, so no extra call needed for that.
+        if (created && (created.kind === 'commercial' || created.kind === 'tax')) {
+          try {
+            return await invoicesApi.issue(created.id, false);
+          } catch (issueErr) {
+            // Issue failure shouldn't roll back the create — the row
+            // is already persisted as draft. Surface the reason so
+            // the operator knows to issue it manually.
+            throw new Error(
+              `Created but issue failed: ${issueErr instanceof Error ? issueErr.message : 'unknown error'}`,
+            );
+          }
+        }
+        return created;
       },
       // 3 concurrent creates — each invoice is a multi-item transaction,
       // so a lower cap keeps the DB from thrashing under a large paste.
