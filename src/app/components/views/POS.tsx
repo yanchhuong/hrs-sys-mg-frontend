@@ -147,7 +147,10 @@ export function POS() {
           return;
         }
         const [itemList, custList, open, active, pos] = await Promise.all([
-          itemsApi.list({ size: 200 }),
+          // slim=true trims the description text field from every row;
+          // POS tiles don't render description, so this is a pure
+          // payload win with no visual impact.
+          itemsApi.list({ size: 200, slim: true }),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
           posApi.listActiveFulfillment(),

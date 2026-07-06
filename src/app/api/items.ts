@@ -134,6 +134,10 @@ export interface ListParams {
   warehouseId?: string;
   page?: number;
   size?: number;
+  /** Opt-in slim projection — server drops the description text
+   *  field for a 30-70% smaller payload. POS uses it; the Items
+   *  page keeps false so the row's description line still renders. */
+  slim?: boolean;
 }
 
 export interface PagedResponse<T> {
@@ -145,11 +149,12 @@ export interface PagedResponse<T> {
 }
 
 export async function list(params: ListParams = {}): Promise<PagedResponse<Item>> {
-  const q: Record<string, string | number> = {};
+  const q: Record<string, string | number | boolean> = {};
   if (params.q) q.q = params.q;
   if (params.warehouseId) q.warehouseId = params.warehouseId;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
+  if (params.slim) q.slim = true;
   return apiJson('/api/v1/stock-items', { query: q });
 }
 
