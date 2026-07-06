@@ -572,6 +572,7 @@ export function UserManagement() {
   const [formData, setFormData] = useState({
     email: '',
     username: '',
+    name: '',
     password: '',
     role: 'employee' as User['role'],
     employeeId: '',
@@ -585,6 +586,7 @@ export function UserManagement() {
       setFormData({
         email: user.email,
         username: user.username ?? '',
+        name: user.name ?? '',
         password: '',
         role: user.role,
         employeeId: user.employeeId,
@@ -596,6 +598,7 @@ export function UserManagement() {
       setFormData({
         email: '',
         username: '',
+        name: '',
         password: '',
         role: 'employee',
         employeeId: '',
@@ -675,6 +678,12 @@ export function UserManagement() {
         if (formData.username.trim().toLowerCase() !== currentUsername) {
           patch.username = formData.username.trim().toLowerCase();
         }
+        // V140 — same PATCH semantics for the display name. Only send
+        // when it diverges from what's saved; "" is a meaningful clear.
+        const currentName = editingUser.name ?? '';
+        if (formData.name.trim() !== currentName) {
+          patch.name = formData.name.trim();
+        }
         await usersApi.update(editingUser.id, patch);
         toast.success(
           formData.password
@@ -691,6 +700,9 @@ export function UserManagement() {
           // V146 — optional. Lowercased before send to match the
           // server's normalize step.
           username: formData.username.trim().toLowerCase() || undefined,
+          // V140 — optional display name. Falls back to Employee.name
+          // → email on the server if omitted.
+          name: formData.name.trim() || undefined,
         });
         toast.success('User created successfully');
       }
@@ -1088,8 +1100,31 @@ export function UserManagement() {
                   </DialogTrigger>
                   <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                      <DialogTitle>{editingUser ? 'Edit User' : 'Create New User'}</DialogTitle>
-                      <DialogDescription>
+                      <DialogTitle className="flex items-center gap-2">
+                        {editingUser ? 'Edit User' : 'Create New User'}
+                        <TooltipProvider delayDuration={120}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                                aria-label={editingUser ? 'About Edit User' : 'About Create User'}
+                              >
+                                <Info className="h-4 w-4" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                              {editingUser
+                                ? 'Update user information and permissions'
+                                : 'Create a new user account with access permissions'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </DialogTitle>
+                      {/* DialogDescription copy moved into the tooltip
+                          above — kept here as sr-only so screen readers
+                          announce it and Radix's a11y warning stays
+                          silent. */}
+                      <DialogDescription className="sr-only">
                         {editingUser ? 'Update user information and permissions' : 'Create a new user account with access permissions'}
                       </DialogDescription>
                     </DialogHeader>
@@ -1106,7 +1141,24 @@ export function UserManagement() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="username">Username</Label>
+                          <Label htmlFor="username" className="flex items-center gap-1.5">
+                            Username
+                            <TooltipProvider delayDuration={120}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                                    aria-label="Username rules"
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                                  Lowercase letters, digits, '.', '_', '-'. Leave blank for email-only login.
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </Label>
                           <Input
                             id="username"
                             type="text"
@@ -1125,9 +1177,6 @@ export function UserManagement() {
                             })}
                             maxLength={64}
                           />
-                          <p className="text-[11px] text-gray-400">
-                            Lowercase letters, digits, '.', '_', '-'. Leave blank for email-only login.
-                          </p>
                         </div>
                       </div>
 
@@ -1142,7 +1191,17 @@ export function UserManagement() {
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                           />
                         </div>
-                        <div /> {/* spacer to keep Password on a 2-column row */}
+                        <div className="space-y-2">
+                          <Label htmlFor="displayName">Display Name</Label>
+                          <Input
+                            id="displayName"
+                            type="text"
+                            placeholder="Auto-filled from Employee"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            maxLength={255}
+                          />
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -1170,6 +1229,13 @@ export function UserManagement() {
                                   ? picked.department
                                   : prev.departmentId,
                                 email: picked?.email || prev.email,
+                                // Auto-fill Display Name from the
+                                // employee's English name — only when
+                                // the field is still blank, so a
+                                // deliberate manual override isn't
+                                // overwritten by a subsequent picker
+                                // change.
+                                name: prev.name.trim() ? prev.name : (picked?.name ?? prev.name),
                               }));
                             }}
                           />

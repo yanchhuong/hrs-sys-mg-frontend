@@ -8,6 +8,9 @@ export interface User {
   /** V146 — optional secondary login identifier. Null when the user
    *  signs in by email only. */
   username?: string | null;
+  /** V140 — display name shown across the app. Null falls back to
+   *  the linked Employee's name → email. */
+  name?: string | null;
   role: UserRole;
   employeeId?: string | null;
   departmentId?: string | null;
@@ -27,6 +30,9 @@ export interface CreateUserRequest {
   /** V146 — optional, 3..64 chars from [a-z0-9._-]. Lowercased on
    *  the server before save. */
   username?: string;
+  /** V140 — display name. Auto-populated from the picked Employee's
+   *  name in the create dialog; the operator can override. */
+  name?: string;
 }
 
 export interface UpdateUserRequest {
@@ -43,6 +49,8 @@ export interface UpdateUserRequest {
    *   ""        → clear (back to email-only login)
    *   value     → set (per-tenant uniqueness enforced server-side) */
   username?: string;
+  /** V140 — same PATCH semantics as {@link username}. */
+  name?: string;
 }
 
 export interface ListParams {
