@@ -131,6 +131,8 @@ function fromApi(apiUser: authApi.AuthUser): User {
     // Carry the tenant id through so tenant-scoped surfaces (Encounter
     // Settings logo upload, etc.) can key on {@code currentUser.tenantId}.
     tenantId: apiUser.tenantId,
+    // V196 — clinical role of the linked employee (if any).
+    clinicalRole: apiUser.clinicalRole,
     name: apiUser.name,
     createdAt: new Date().toISOString(),
     isActive: true,

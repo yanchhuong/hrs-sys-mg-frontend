@@ -96,6 +96,7 @@ export const dict: Dict = {
   'nav.healthcare':           { en: 'Healthcare',           km: 'សុខាភិបាល',           zh: '医疗' },
   'nav.patients':             { en: 'Patients',             km: 'អ្នកជំងឺ',             zh: '患者' },
   'nav.encounters':           { en: 'Encounters',           km: 'ការទស្សនាអ្នកជំងឺ',    zh: '就诊记录' },
+  'nav.appointments':         { en: 'Appointments',         km: 'ការណាត់ជួប',          zh: '预约' },
   'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },

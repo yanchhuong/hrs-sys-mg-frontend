@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 import { EncounterFormDialog } from './EncounterFormDialog';
 import { EncounterDetailDialog } from './EncounterDetailDialog';
 import { EncounterSettingsDialog } from './EncounterSettingsDialog';
+import { usePagination } from '../../hooks/usePagination';
+import { Pagination } from '../common/Pagination';
 import * as invoicesApi from '../../api/invoices';
 import * as customersApi from '../../api/customers';
 import * as employeesApi from '../../api/employees';
@@ -126,6 +128,11 @@ export function Encounters() {
     });
   }, [rows, search, customerById, doctorById]);
 
+  // Cash-Advance-style paginator — 10 encounters per page. Bound to
+  // the search-filtered array so paging tracks the current view, not
+  // the full unfiltered dataset.
+  const pagination = usePagination(filtered, 10);
+
   const openCreate = () => {
     setFormEditing(null);
     setFormOpen(true);
@@ -172,10 +179,15 @@ export function Encounters() {
           <h1 className="text-3xl font-bold">Encounters</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {/* Settings gear — hospital-scope Encounter settings
-              (v-encounter-settings-print-header). Mirrors the Invoice
-              page's top-right gear so the action bar reads consistent
-              across billing surfaces. */}
+          {/* Toolbar order matches Sale > Invoice for cross-page
+              consistency: Refresh → ⚙ Settings → primary action.
+              Settings sits immediately to the left of the primary
+              button so the gear reads as a modifier of that flow
+              rather than a stray control on the far side. */}
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -183,13 +195,9 @@ export function Encounters() {
                   <Settings className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Encounter settings — logo + print header</TooltipContent>
+              <TooltipContent side="bottom">Encounter settings — logo, branches, and numbering</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
           {canAdd && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1.5" /> New Encounter
@@ -212,31 +220,43 @@ export function Encounters() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="py-10 text-center text-sm text-gray-500">Loading encounters…</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-500">
-              {search ? 'No encounters match your search.' : 'No encounters yet — click New Encounter to create the first one.'}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
+        <CardContent className="p-0">
+          {/* Header stays visible even on empty state so the column
+              layout communicates schema at a glance. Empty-state /
+              loading rows span every column via colSpan so the
+              body still parses as a real table. */}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[140px]">Encounter No.</TableHead>
+                <TableHead className="w-[110px]">Start date</TableHead>
+                <TableHead>Patient</TableHead>
+                <TableHead>Doctor</TableHead>
+                <TableHead className="max-w-[240px]">Diagnosis</TableHead>
+                <TableHead className="text-right w-[110px]">Total</TableHead>
+                <TableHead className="text-right w-[130px]">Received (USD)</TableHead>
+                <TableHead className="w-[110px]">Status</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead className="text-right w-[96px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead className="w-[140px]">Encounter No.</TableHead>
-                  <TableHead className="w-[110px]">Start date</TableHead>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Doctor</TableHead>
-                  <TableHead className="max-w-[240px]">Diagnosis</TableHead>
-                  <TableHead className="text-right w-[110px]">Total</TableHead>
-                  <TableHead className="text-right w-[130px]">Received (USD)</TableHead>
-                  <TableHead className="w-[110px]">Status</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead className="text-right w-[96px]">Actions</TableHead>
+                  <TableCell colSpan={10} className="py-10 text-center text-sm text-gray-500">
+                    Loading encounters…
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map(r => {
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="py-10 text-center text-sm text-gray-500">
+                    {search
+                      ? 'No encounters match your search.'
+                      : 'No encounters yet — click New Encounter to create the first one.'}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pagination.paginatedItems.map(r => {
                   const patient = customerById.get(r.customerId);
                   const doctor  = r.doctorId ? doctorById.get(r.doctorId) : null;
                   return (
@@ -313,9 +333,21 @@ export function Encounters() {
                       </TableCell>
                     </TableRow>
                   );
-                })}
-              </TableBody>
-            </Table>
+                })
+              )}
+            </TableBody>
+          </Table>
+          {filtered.length > 0 && (
+            <div className="px-1 py-0 border-t">
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
+            </div>
           )}
         </CardContent>
       </Card>

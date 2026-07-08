@@ -16,6 +16,12 @@ export interface AuthUser {
    *  logo). Backend returns it from {@code /api/v1/auth/me}. */
   tenantId: string;
   tenantSlug: string;
+  /** V196 — clinical role tag on the linked employee (if any).
+   *  Populated so Doctor-only affordances (e.g. the Diagnosis
+   *  field on an appointment) render server-consistent without a
+   *  follow-up lookup. Null when the user has no employee link,
+   *  or the employee is untagged. */
+  clinicalRole?: 'doctor' | 'cashier' | 'staff' | null;
   /** Display name resolved server-side (V140). Falls through
    *  user.name → linked employee.name → email. */
   name?: string;

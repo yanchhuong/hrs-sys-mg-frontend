@@ -22,6 +22,10 @@ export interface User {
    *  Encounter Settings logo upload (V190). Optional on the type
    *  so pre-login state and mock rows stay valid. */
   tenantId?: string;
+  /** V196 — clinical role tag on the linked employee (if any).
+   *  Drives Doctor-only affordances like the editable Diagnosis
+   *  on Appointments. Null when user has no employee link. */
+  clinicalRole?: 'doctor' | 'cashier' | 'staff' | null;
   /** Display name set via the Profile dialog (V140). When set,
    *  takes precedence over the linked employee's name across the
    *  app (sidebar avatar, POS Cashier line, etc.). */

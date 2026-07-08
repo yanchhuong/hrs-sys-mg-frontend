@@ -1,5 +1,10 @@
 import { apiJson, apiVoid, Page } from './client';
 
+/** V196 — clinical role tag surfaced on the Healthcare business
+ *  base. Drives the Doctor picker filter + the Staff Roles
+ *  settings screen. */
+export type ClinicalRole = 'doctor' | 'cashier' | 'staff';
+
 export interface Employee {
   id: string;
   empNo: string;
@@ -56,6 +61,10 @@ export interface Employee {
   evaluationAllowance?: number;
   /** V70 — Cambodian skill level: office | specialized | ns_cook | ns_labour. */
   level?: string | null;
+  /** V196 — clinical role tag for the Hospital business base.
+   *  {@code doctor} lands the employee in the Doctor picker on
+   *  Encounter + Appointment forms. Null = untagged. */
+  clinicalRole?: ClinicalRole | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;

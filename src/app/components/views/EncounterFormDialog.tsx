@@ -14,6 +14,7 @@ import * as invoicesApi from '../../api/invoices';
 import * as customersApi from '../../api/customers';
 import * as currencyApi from '../../api/currencySettings';
 import * as employeesApi from '../../api/employees';
+import * as appointmentsApi from '../../api/appointments';
 
 /**
  * Hospital-branded creation / edit form for Encounters — the medical
@@ -110,6 +111,15 @@ export function EncounterFormDialog({
   const [notes, setNotes]               = useState('');
   const [doctorId, setDoctorId]         = useState('');
 
+  // v-encounter-link-existing-appointment — cashier picks either
+  // "New Appointment" (assign a Doctor here → server auto-spawns
+  // a waiting-room row) or "Existing Appointment" (link to a
+  // previously-booked, unlinked row). Edit mode stays on
+  // 'new_appt' because the encounter already exists.
+  const [apptMode, setApptMode] = useState<'new_appt' | 'existing_appt'>('new_appt');
+  const [linkAppointmentId, setLinkAppointmentId] = useState('');
+  const [appointments, setAppointments] = useState<appointmentsApi.Appointment[]>([]);
+
   // Employees list for the Doctor picker (V189 /
   // v-encounter-doctor-employees). Sources from HR staff — the earlier
   // "any user" list looked empty for typical hospital tenants where
@@ -121,6 +131,12 @@ export function EncounterFormDialog({
     employeesApi.list({ size: 500, status: 'active' })
       .then(r => setDoctors(r.content ?? []))
       .catch(() => setDoctors([]));
+    // Appointments fetch feeds the "Existing Appointment" picker.
+    // Soft-fail on permission denial — the picker just stays empty
+    // and the user has to fall back to New Appointment.
+    appointmentsApi.list()
+      .then(setAppointments)
+      .catch(() => setAppointments([]));
   }, []);
 
   // Sectioned items — each key is a category, each value is that
@@ -180,6 +196,8 @@ export function EncounterFormDialog({
       setDiagnosis('');
       setNotes('');
       setDoctorId('');
+      setApptMode('new_appt');
+      setLinkAppointmentId('');
       setSections({
         ...emptySectionMap(),
         medicine: [blankLine()],
@@ -193,6 +211,47 @@ export function EncounterFormDialog({
       return () => { cancelled = true; };
     }
   }, [open, editing]);
+
+  // v-encounter-link-existing-appointment — when the cashier
+  // picks an existing Appointment, backfill patient / doctor /
+  // diagnosis from that appointment so the form is one-click
+  // ready. Only fires in the "Existing Appointment" branch and
+  // only during create mode.
+  useEffect(() => {
+    if (!open || editing || apptMode !== 'existing_appt' || !linkAppointmentId) return;
+    const a = appointments.find(x => x.id === linkAppointmentId);
+    if (!a) return;
+    if (a.patientId)  setCustomerId(a.patientId);
+    if (a.doctorId)   setDoctorId(a.doctorId);
+    if (a.diagnosis)  setDiagnosis(a.diagnosis);
+    // V197 — pull the doctor's Prescription + Lab lines onto the
+    // Encounter's medicine + lab sections. Unit prices land at 0
+    // — the cashier fills them at billing time. Merges into any
+    // rows the cashier already added, keeping their entries first.
+    const meds: DraftLine[] = [];
+    const labs: DraftLine[] = [];
+    for (const it of a.items ?? []) {
+      const line: DraftLine = {
+        rowId: nextRowId(),
+        name: it.name,
+        description: it.description ?? '',
+        quantity: String(it.quantity ?? 1),
+        unitPrice: '0',
+      };
+      if (it.category === 'lab') labs.push(line); else meds.push(line);
+    }
+    if (meds.length > 0 || labs.length > 0) {
+      setSections(prev => {
+        const existingMeds = prev.medicine.filter(r => r.name.trim());
+        const existingLabs = prev.lab.filter(r => r.name.trim());
+        return {
+          ...prev,
+          medicine: existingMeds.length > 0 ? [...existingMeds, ...meds] : (meds.length > 0 ? meds : prev.medicine),
+          lab:      existingLabs.length > 0 ? [...existingLabs, ...labs] : (labs.length > 0 ? labs : prev.lab),
+        };
+      });
+    }
+  }, [open, editing, apptMode, linkAppointmentId, appointments]);
 
   // Pin tenant currency defaults when settings arrive after the
   // reset effect (network race on first open). Skips edit mode
@@ -213,19 +272,54 @@ export function EncounterFormDialog({
     [customers],
   );
 
-  // Doctor options — every active employee is offered. Once a proper
-  // "position = Doctor" filter lands (or a dedicated Doctor role on
-  // employees), narrow this list; for now the tenant admin picks the
-  // right person by name / position. Resigned staff are excluded via
-  // the status filter on the fetch.
+  // Doctor options — filtered to employees whose clinicalRole is
+  // 'doctor' (V196). An empty picker signals the tenant admin
+  // hasn't tagged anyone yet — they open Appointment Settings >
+  // Staff Roles to tag doctors. Resigned staff are already
+  // excluded via the fetch's status filter.
   const doctorOptions = useMemo(
-    () => doctors.map(e => ({
-      value: e.id,
-      label: e.name,
-      secondary: e.position || e.empNo || undefined,
-      searchKey: `${e.name} ${e.position ?? ''} ${e.empNo ?? ''} ${e.email ?? ''}`,
-    })),
+    () => doctors
+      .filter(e => e.clinicalRole === 'doctor')
+      .map(e => ({
+        value: e.id,
+        label: e.name,
+        secondary: e.position || e.empNo || undefined,
+        searchKey: `${e.name} ${e.position ?? ''} ${e.empNo ?? ''} ${e.email ?? ''}`,
+      })),
     [doctors],
+  );
+
+  // "Existing Appointment" picker — only unlinked rows in a state
+  // that hasn't been completed / cancelled yet. Includes the queue
+  // no + scheduled slot in the label so the reception can match
+  // the ticket the patient hands them.
+  const doctorById = useMemo(
+    () => new Map(doctors.map(d => [d.id, d])),
+    [doctors],
+  );
+  const patientById = useMemo(
+    () => new Map(customers.map(c => [c.id, c])),
+    [customers],
+  );
+  const appointmentOptions = useMemo(
+    () => appointments
+      .filter(a => !a.encounterId && (a.status === 'waiting' || a.status === 'in_progress'))
+      .map(a => {
+        const patient = a.patientId ? patientById.get(a.patientId) : null;
+        const doctor  = a.doctorId  ? doctorById.get(a.doctorId)  : null;
+        const when = a.scheduledAt
+          ? new Date(a.scheduledAt).toLocaleString('en-US', {
+              month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit',
+            })
+          : 'Walk-in';
+        return {
+          value: a.id,
+          label: `#${a.queueNo} · ${patient?.name ?? '—'}`,
+          secondary: `${when}${doctor ? ' · Dr. ' + doctor.name : ''}`,
+          searchKey: `#${a.queueNo} ${patient?.name ?? ''} ${doctor?.name ?? ''} ${when}`,
+        };
+      }),
+    [appointments, patientById, doctorById],
   );
 
   const addLine = (section: SectionKey) => {
@@ -304,6 +398,14 @@ export function EncounterFormDialog({
       diagnosis: diagnosis.trim() || null,
       doctorId: doctorId || null,
       notes: notes.trim() || null,
+      // v-encounter-link-existing-appointment — only send the link
+      // id in the "Existing Appointment" branch. Server skips the
+      // auto-spawn side effect when this is set and attaches the
+      // new encounter to the picked appointment.
+      linkAppointmentId:
+        !isEdit && apptMode === 'existing_appt' && linkAppointmentId
+          ? linkAppointmentId
+          : null,
       items,
     };
     setSaving(true);
@@ -355,18 +457,83 @@ export function EncounterFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Doctor</Label>
-              <SearchablePicker
-                options={doctorOptions}
-                value={doctorId}
-                onChange={setDoctorId}
-                placeholder="Assign doctor"
-                searchPlaceholder="Search doctor by name or email…"
-                emptyLabel="Unassigned"
-              />
+              {/* Mode toggle as two label-style tabs — the label
+                  IS the toggle. Clicking "Doctor" switches to the
+                  Doctor picker (server auto-spawns a waiting-room
+                  row on save); clicking "Appointment" swaps to the
+                  unlinked-appointment picker (server attaches the
+                  new Encounter to the picked row, no auto-spawn).
+                  In edit mode only the static label is rendered —
+                  an existing encounter can't swap its source. */}
+              {isEdit ? (
+                <Label className="text-xs">Doctor</Label>
+              ) : (
+                // Match shadcn's Label baseline (text-xs font-medium
+                // leading-none) so both tabs read as regular field
+                // labels — only the underline distinguishes the
+                // active one. Inactive tab reads muted so the
+                // hierarchy is obvious without borrowing focus.
+                <div className="flex items-center gap-2" role="tablist" aria-label="Appointment source">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={apptMode === 'new_appt'}
+                    onClick={() => {
+                      setApptMode('new_appt');
+                      setLinkAppointmentId('');
+                    }}
+                    className={`text-xs font-medium leading-none pb-0.5 transition-colors border-b-2 ${
+                      apptMode === 'new_appt'
+                        ? 'text-foreground border-teal-600'
+                        : 'text-gray-400 hover:text-gray-600 border-transparent'
+                    }`}
+                  >
+                    Doctor
+                  </button>
+                  <span className="text-xs text-gray-300 leading-none">|</span>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={apptMode === 'existing_appt'}
+                    onClick={() => setApptMode('existing_appt')}
+                    className={`text-xs font-medium leading-none pb-0.5 transition-colors border-b-2 ${
+                      apptMode === 'existing_appt'
+                        ? 'text-foreground border-teal-600'
+                        : 'text-gray-400 hover:text-gray-600 border-transparent'
+                    }`}
+                    title={appointmentOptions.length === 0 ? 'No unlinked appointments waiting' : 'Link to an existing booked appointment'}
+                  >
+                    Appointment
+                  </button>
+                </div>
+              )}
+              {apptMode === 'existing_appt' && !isEdit ? (
+                <SearchablePicker
+                  options={appointmentOptions}
+                  value={linkAppointmentId}
+                  onChange={setLinkAppointmentId}
+                  placeholder="Pick an unlinked appointment"
+                  searchPlaceholder="Search queue no, patient, doctor…"
+                  emptyLabel="No unlinked appointments"
+                  emptyResultsLabel={
+                    appointmentOptions.length === 0
+                      ? 'No unlinked appointments waiting — switch back to New.'
+                      : 'No matches'
+                  }
+                />
+              ) : (
+                <SearchablePicker
+                  options={doctorOptions}
+                  value={doctorId}
+                  onChange={setDoctorId}
+                  placeholder="Assign doctor"
+                  searchPlaceholder="Search doctor by name or email…"
+                  emptyLabel="Unassigned"
+                />
+              )}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Invoice No.</Label>
+              <Label className="text-xs">Encounter No.</Label>
               <Input
                 value={invoiceNo}
                 onChange={e => setInvoiceNo(e.target.value)}

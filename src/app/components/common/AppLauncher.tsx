@@ -89,7 +89,7 @@ const CATEGORIES: CategoryDef[] = [
     // and uninstall as a pair.
     key: 'healthcare', labelKey: 'apps.category.healthcare',
     installedBadge: 'bg-teal-100 text-teal-700',
-    ids: ['patients', 'encounters'],
+    ids: ['patients', 'encounters', 'appointments'],
   },
 ];
 

@@ -149,6 +149,11 @@ export interface InvoiceRequest {
    *  Invoice callers omit. Server validates that the id belongs to
    *  the same tenant. */
   doctorId?: string | null;
+  /** v-encounter-link-existing-appointment — when set, the new
+   *  encounter attaches to the given (unlinked) Appointment
+   *  instead of spawning a fresh one. Cashier picks this via the
+   *  "Existing Appointment" toggle on the New Encounter form. */
+  linkAppointmentId?: string | null;
   items: InvoiceItemRequest[];
 }
 

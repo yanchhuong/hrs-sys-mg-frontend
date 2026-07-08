@@ -23,7 +23,7 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
-  ClipboardCheck, Stethoscope, HeartPulse,
+  ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -57,6 +57,7 @@ import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
+import { Appointments } from '../components/views/Appointments';
 import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
@@ -191,6 +192,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   // stays visible for POS tenants who need the retail terminology.
   { id: 'patients',          labelKey: 'nav.patients',               icon: Users,           module: 'encounter',          component: Patients,                 group: 'healthcare-group' },
   { id: 'encounters',        labelKey: 'nav.encounters',             icon: Stethoscope,     module: 'encounter',          component: Encounters,               group: 'healthcare-group' },
+  { id: 'appointments',      labelKey: 'nav.appointments',           icon: CalendarClock,   module: 'appointment',        component: Appointments,             group: 'healthcare-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
