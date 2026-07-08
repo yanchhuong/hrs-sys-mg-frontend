@@ -30,6 +30,16 @@ export interface User {
    *  takes precedence over the linked employee's name across the
    *  app (sidebar avatar, POS Cashier line, etc.). */
   name?: string;
+  /** V199 — six personal profile fields resolved server-side from
+   *  the linked Employee when present, otherwise from the User row
+   *  itself. Populated on every /auth/me hydrate; the Profile
+   *  dialog uses them to seed the form for admin-without-employee. */
+  khmerName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  placeOfBirth?: string | null;
+  contactNumber?: string | null;
+  currentAddress?: string | null;
   createdAt: string;
   lastLogin?: string;
   isActive: boolean;

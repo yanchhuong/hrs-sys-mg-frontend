@@ -134,6 +134,15 @@ function fromApi(apiUser: authApi.AuthUser): User {
     // V196 — clinical role of the linked employee (if any).
     clinicalRole: apiUser.clinicalRole,
     name: apiUser.name,
+    // V199 — personal profile fields; only the "no linked employee"
+    // path uses them for the dialog form seed, but we always carry
+    // them through so the AuthUser shape and User shape stay 1:1.
+    khmerName: apiUser.khmerName,
+    gender: apiUser.gender,
+    dateOfBirth: apiUser.dateOfBirth,
+    placeOfBirth: apiUser.placeOfBirth,
+    contactNumber: apiUser.contactNumber,
+    currentAddress: apiUser.currentAddress,
     createdAt: new Date().toISOString(),
     isActive: true,
   };

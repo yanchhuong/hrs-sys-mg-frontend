@@ -25,6 +25,16 @@ export interface AuthUser {
   /** Display name resolved server-side (V140). Falls through
    *  user.name → linked employee.name → email. */
   name?: string;
+  /** V199 — personal profile fields. Resolved server-side from
+   *  the linked Employee when present, otherwise from the User row
+   *  itself. The Profile dialog seeds its form from these so
+   *  admin-without-employee can view + persist them. */
+  khmerName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  placeOfBirth?: string | null;
+  contactNumber?: string | null;
+  currentAddress?: string | null;
 }
 
 export interface LoginResponse {
@@ -71,11 +81,23 @@ export async function changePassword(req: { currentPassword: string; newPassword
   await apiJson('/api/v1/auth/change-password', { method: 'POST', json: req });
 }
 
-/** Update the current user's display name (V140). Returns the
- *  refreshed user — caller should also refresh the cached
- *  localStorage copy + the AuthContext so the new name shows up
- *  on the avatar / receipt without a page reload. */
-export async function updateProfile(req: { name: string }): Promise<AuthUser> {
+/** V199 — the Profile dialog now sends the display name plus the
+ *  six personal fields. Backend routes them: name always lands on
+ *  the User row (V140); the six personal fields land on the User
+ *  row only when there's no linked Employee (otherwise Employee is
+ *  the source of truth and the FE writes them via
+ *  {@link import('./employees').updateMe}). */
+export interface UpdateProfileRequest {
+  name?: string;
+  khmerName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  placeOfBirth?: string | null;
+  contactNumber?: string | null;
+  currentAddress?: string | null;
+}
+
+export async function updateProfile(req: UpdateProfileRequest): Promise<AuthUser> {
   const user = await apiJson<AuthUser>('/api/v1/auth/me', { method: 'PATCH', json: req });
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(USER_KEY, JSON.stringify(user));

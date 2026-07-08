@@ -18,6 +18,8 @@ import {
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 import { ImageDropZone } from './ImageDropZone';
+import * as paywayApi from '../../api/payway';
+import { PayWaySettingsDialog } from './PayWaySettingsDialog';
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
  *  original 5-pattern VAT+WHT set; Receipt has its own 4-pattern WHT
@@ -207,6 +209,22 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
    *  vs ABA PayWay (dynamic KHRQR minted per transaction). Filters the
    *  card grid + drives the default mode for newly-added cards. */
   const [bankTab, setBankTab] = useState<'manual' | 'auto'>('manual');
+
+  /** v-pos-bankaccount-payway-signposts — tenant-level PayWay status
+   *  so the ABA PayWay tab can render a chip
+   *  (Not configured / Disabled / Ready) instead of silently
+   *  letting the operator save an unusable "auto" bank card. */
+  const [paywayStatus, setPaywayStatus] = useState<paywayApi.PayWayCredentials | null>(null);
+  const [paywayDialogOpen, setPaywayDialogOpen] = useState(false);
+  const refreshPaywayStatus = () => {
+    paywayApi.getCredentials()
+      .then(setPaywayStatus)
+      .catch(() => { /* soft-fail — chip stays hidden */ });
+  };
+  useEffect(() => {
+    if (!open) return;
+    refreshPaywayStatus();
+  }, [open]);
 
   /* ----- Currency section (V166) ------------------------------------ */
   // Tenant-wide currency setting — independent from the scoped
@@ -1045,13 +1063,37 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   </button>
                 </div>
 
-                {bankTab === 'auto' && (
-                  <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug">
-                    ABA PayWay mints a fresh KHRQR per transaction with the cart amount baked in — no image upload needed.
-                    Set your Merchant ID + API key once in <strong>Settings → PayWay</strong>; the card below is just for the
-                    account name / number that appears next to the QR on the checkout screen.
-                  </div>
-                )}
+                {bankTab === 'auto' && (() => {
+                  const configured = paywayStatus?.configured ?? false;
+                  const enabled    = paywayStatus?.enabled ?? false;
+                  const chip = !configured
+                    ? { text: 'Not configured', cls: 'bg-amber-100 text-amber-800 border-amber-300' }
+                    : !enabled
+                      ? { text: 'Configured but disabled', cls: 'bg-rose-100 text-rose-800 border-rose-300' }
+                      : { text: `Ready · ${paywayStatus?.environment ?? ''}`, cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+                  return (
+                    <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-semibold ${chip.cls}`}>
+                          {chip.text}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPaywayDialogOpen(true)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                        >
+                          Open Settings → PayWay
+                        </button>
+                      </div>
+                      <p>
+                        ABA PayWay mints a fresh KHRQR per transaction with the cart amount baked in — no image
+                        upload needed. Set Merchant ID + API key + toggle <strong>Enabled</strong> in the PayWay
+                        settings dialog; the card below is just for the account name / number that appears next
+                        to the QR on the checkout screen.
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Empty-state CTA only on the Manual tab. On the ABA
                     PayWay tab the explanatory banner above is the
@@ -1398,6 +1440,15 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
           </Button>
         </DialogFooter>
       </DialogContent>
+      {/* Nested tenant-level PayWay dialog — opened by the chip in the
+       *  ABA PayWay tab. After it closes we refresh the status chip so
+       *  the operator sees the new state without reopening this
+       *  outer dialog. */}
+      <PayWaySettingsDialog
+        open={paywayDialogOpen}
+        onOpenChange={setPaywayDialogOpen}
+        onSaved={next => setPaywayStatus(next)}
+      />
     </Dialog>
   );
 }

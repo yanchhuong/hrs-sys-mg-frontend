@@ -49,10 +49,25 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   // (set via this dialog, V140) → linked employee name → empty. The
   // resolved value is what /me returns to currentUser.name, so we
   // can read it straight off the auth context.
-  const [profile, setProfile] = useState<Partial<Employee>>(() => ({
-    ...employeeRef,
-    name: currentUser?.name ?? employeeRef.name ?? '',
-  }));
+  //
+  // V199 — when the user has no linked Employee, the six personal
+  // fields (Khmer name, gender, DoB, contact, place of birth,
+  // current address) live on the User row instead. Seed the form
+  // from currentUser in that case so admin-without-employee sees
+  // their saved values on reopen.
+  const initialProfile = (): Partial<Employee> => currentEmployee
+    ? { ...employeeRef, name: currentUser?.name ?? employeeRef.name ?? '' }
+    : {
+        name:           currentUser?.name ?? '',
+        khmerName:      currentUser?.khmerName ?? undefined,
+        gender:         (currentUser?.gender === 'male' || currentUser?.gender === 'female')
+                          ? currentUser.gender : undefined,
+        dateOfBirth:    currentUser?.dateOfBirth ?? undefined,
+        contactNumber:  currentUser?.contactNumber ?? '',
+        placeOfBirth:   currentUser?.placeOfBirth ?? undefined,
+        currentAddress: currentUser?.currentAddress ?? undefined,
+      };
+  const [profile, setProfile] = useState<Partial<Employee>>(initialProfile);
   const [accountEmail, setAccountEmail] = useState(currentUser?.email ?? '');
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -182,17 +197,14 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
 
-  // Reset form when dialog opens/reopens. Name uses the same
-  // resolution as the initial snapshot: explicit user.name (V140) →
-  // employee.name → empty. Without applying it here the second
-  // open of the dialog would show employee.name and drop any
-  // user-level override the operator saved earlier.
+  // Reset form when dialog opens/reopens. Uses the same seed logic
+  // as the initial snapshot — Employee-linked users pull from their
+  // Employee row, admin-without-employee pulls from the User row.
+  // Depends on every field that can change server-side so a fresh
+  // /auth/me hydrate after Save actually redraws the form.
   useEffect(() => {
     if (open) {
-      setProfile({
-        ...employeeRef,
-        name: currentUser?.name ?? employeeRef.name ?? '',
-      });
+      setProfile(initialProfile());
       setAccountEmail(currentUser?.email ?? '');
       setCurrentPw('');
       setNewPw('');
@@ -201,7 +213,10 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
       setShowNew(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentUser?.email, currentUser?.name, currentEmployee?.id,
+  }, [open, currentUser?.email, currentUser?.name,
+      currentUser?.khmerName, currentUser?.gender, currentUser?.dateOfBirth,
+      currentUser?.contactNumber, currentUser?.placeOfBirth, currentUser?.currentAddress,
+      currentEmployee?.id,
       currentEmployee?.khmerName, currentEmployee?.gender,
       currentEmployee?.dateOfBirth, currentEmployee?.contactNumber,
       currentEmployee?.placeOfBirth, currentEmployee?.currentAddress]);
@@ -241,14 +256,31 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
           if (idx >= 0) mockEmployees[idx] = { ...mockEmployees[idx], ...profile } as Employee;
         }
       } else {
-        await authApi.updateProfile({ name: trimmed });
+        // V199 — routing:
+        //   • Linked employee → Employee is source of truth for the
+        //     six personal fields; send them to /employees/me and
+        //     just the display name to /auth/me.
+        //   • No linked employee (bare admin) → nowhere else to store
+        //     the fields, so push everything to /auth/me. The backend
+        //     writes them to the user row directly.
         if (currentEmployee) {
+          await authApi.updateProfile({ name: trimmed });
           await employeesApi.updateMe({
             khmerName:      profile.khmerName ?? null,
             gender:         profile.gender ?? null,
             dateOfBirth:    profile.dateOfBirth ?? null,
             contactNumber:  profile.contactNumber ?? null,
             placeOfBirth:   profile.placeOfBirth ?? null,
+            currentAddress: profile.currentAddress ?? null,
+          });
+        } else {
+          await authApi.updateProfile({
+            name:           trimmed,
+            khmerName:      profile.khmerName ?? null,
+            gender:         profile.gender ?? null,
+            dateOfBirth:    profile.dateOfBirth ?? null,
+            placeOfBirth:   profile.placeOfBirth ?? null,
+            contactNumber:  profile.contactNumber ?? null,
             currentAddress: profile.currentAddress ?? null,
           });
         }
