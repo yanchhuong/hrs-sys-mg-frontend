@@ -19,8 +19,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUpDown, HardDrive, UsersRound,
-  AlertTriangle, Shield, Calendar, FileText,
+  AlertTriangle, Shield, Calendar, FileText, Info,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -410,9 +411,6 @@ export function Companies() {
                 <Building2 className="h-5 w-5" />
                 {editing ? `Edit ${editing.name}` : 'Create Company'}
               </DialogTitle>
-              <DialogDescription>
-                Super Admin provisions a new tenant. The first Admin user is created automatically and emailed an invite.
-              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -474,13 +472,26 @@ export function Companies() {
                   sidebar groups are Base-gated. V181. */}
               <div className="rounded-md border p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Business Base</div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Which industry sidebar groups this tenant sees. Pick one or
-                      more. Turning a Base OFF later hides the UI but keeps the
-                      underlying data.
-                    </p>
+                    <TooltipProvider delayDuration={120}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-gray-400 hover:text-gray-600"
+                            aria-label="Business Base help"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          Which industry sidebar groups this tenant sees. Pick one or
+                          more. Turning a Base OFF later hides the UI but keeps the
+                          underlying data.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-1">

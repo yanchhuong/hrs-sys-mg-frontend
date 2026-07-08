@@ -152,11 +152,6 @@ export function TenantModules() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">Tenant Modules</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Choose which menu modules each company can use. The toggle hides the
-          sidebar item and rejects the underlying API calls with 403. New
-          tenants start with every module enabled by default.
-        </p>
       </div>
 
       <Card>

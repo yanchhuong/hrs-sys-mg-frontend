@@ -293,52 +293,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // real backend UUID — every consumer (Profile dialog, Dashboard
   // "Welcome back, …", etc.) saw blanks for non-mock users.
   const [linkedEmployee, setLinkedEmployee] = useState<Employee | null>(null);
-  useEffect(() => {
+
+  /** v-user-profile-save-full-fields — pulled out of the effect so
+   *  refreshUser can call it too. Without this, saving the Profile
+   *  dialog updated the DB but the AuthContext still held the stale
+   *  linkedEmployee snapshot until a full page reload. */
+  const refreshLinkedEmployee = useCallback(async () => {
     if (USE_MOCKS) { setLinkedEmployee(null); return; }
     if (!currentUser?.employeeId) { setLinkedEmployee(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const me = await employeesApi.me();
-        if (cancelled) return;
-        // Adapt the api/employees shape to the FE Employee shape consumers
-        // expect (id = empNo, apiId = backend UUID, dept stored as id).
-        setLinkedEmployee({
-          id: me.empNo,
-          apiId: me.id,
-          empNo: me.empNo,
-          name: me.name,
-          khmerName: me.khmerName ?? undefined,
-          email: me.email,
-          position: me.position,
-          department: me.departmentId ?? '-',
-          joinDate: me.joinDate,
-          status: (me.status === 'active' ? 'active' : 'inactive') as Employee['status'],
-          contactNumber: me.contactNumber ?? '',
-          baseSalary: me.baseSalary,
-          managerId: me.managerId ?? undefined,
-          profileImage: me.profileImage ?? undefined,
-          gender: (me.gender === 'male' || me.gender === 'female') ? me.gender : undefined,
-          dateOfBirth: me.dateOfBirth ?? undefined,
-          placeOfBirth: me.placeOfBirth ?? undefined,
-          currentAddress: me.currentAddress ?? undefined,
-          nffNo: me.nffNo ?? undefined,
-          tid: me.tid ?? undefined,
-          contractExpireDate: me.contractExpireDate ?? undefined,
-          resignDate: me.resignDate ?? undefined,
-          attendanceYn: me.attendanceYn ?? true,
-          positionAllowance: me.positionAllowance ?? 0,
-          evaluationAllowance: me.evaluationAllowance ?? 0,
-        });
-      } catch (err) {
-        // Non-fatal — the dialog still renders with blank fields, same as
-        // before this fix. Most likely cause: user has no linked employee.
-        console.warn('Could not load /employees/me', err);
-        if (!cancelled) setLinkedEmployee(null);
-      }
-    })();
-    return () => { cancelled = true; };
+    try {
+      const me = await employeesApi.me();
+      // Adapt the api/employees shape to the FE Employee shape consumers
+      // expect (id = empNo, apiId = backend UUID, dept stored as id).
+      setLinkedEmployee({
+        id: me.empNo,
+        apiId: me.id,
+        empNo: me.empNo,
+        name: me.name,
+        khmerName: me.khmerName ?? undefined,
+        email: me.email,
+        position: me.position,
+        department: me.departmentId ?? '-',
+        joinDate: me.joinDate,
+        status: (me.status === 'active' ? 'active' : 'inactive') as Employee['status'],
+        contactNumber: me.contactNumber ?? '',
+        baseSalary: me.baseSalary,
+        managerId: me.managerId ?? undefined,
+        profileImage: me.profileImage ?? undefined,
+        gender: (me.gender === 'male' || me.gender === 'female') ? me.gender : undefined,
+        dateOfBirth: me.dateOfBirth ?? undefined,
+        placeOfBirth: me.placeOfBirth ?? undefined,
+        currentAddress: me.currentAddress ?? undefined,
+        nffNo: me.nffNo ?? undefined,
+        tid: me.tid ?? undefined,
+        contractExpireDate: me.contractExpireDate ?? undefined,
+        resignDate: me.resignDate ?? undefined,
+        attendanceYn: me.attendanceYn ?? true,
+        positionAllowance: me.positionAllowance ?? 0,
+        evaluationAllowance: me.evaluationAllowance ?? 0,
+      });
+    } catch (err) {
+      // Non-fatal — the dialog still renders with blank fields, same as
+      // before this fix. Most likely cause: user has no linked employee.
+      console.warn('Could not load /employees/me', err);
+      setLinkedEmployee(null);
+    }
   }, [currentUser?.employeeId]);
+
+  useEffect(() => {
+    void refreshLinkedEmployee();
+  }, [refreshLinkedEmployee]);
 
   const currentEmployee = USE_MOCKS
     ? (currentUser ? mockEmployees.find(emp => emp.id === currentUser.employeeId) ?? null : null)
@@ -403,14 +407,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** V140 — re-fetch /auth/me after the user updates their display
    *  name in the Profile dialog so the new label propagates to the
    *  sidebar avatar without a page reload. Silent on failure — the
-   *  cached value stays put. */
+   *  cached value stays put.
+   *
+   *  <p>v-user-profile-save-full-fields — also re-pulls
+   *  /api/v1/employees/me so the six Employee-scoped fields the
+   *  Profile dialog now writes (Khmer name, gender, DoB, contact,
+   *  birthplace, current address) refresh into context on the same
+   *  round-trip.</p> */
   const refreshUser = useCallback(async () => {
     if (USE_MOCKS) return;
     try {
       const apiUser = await authApi.me();
       setCurrentUser(fromApi(apiUser));
     } catch { /* keep cached user */ }
-  }, []);
+    await refreshLinkedEmployee();
+  }, [refreshLinkedEmployee]);
 
   /** Tenant-scope Apps-launcher flag from /me/modules. Defaults to true
    *  while loading so the icon doesn't flicker hidden→shown on first

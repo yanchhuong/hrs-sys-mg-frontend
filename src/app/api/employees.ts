@@ -109,7 +109,19 @@ export async function update(id: string, req: CreateEmployeeRequest): Promise<Em
   return apiJson<Employee>(`/api/v1/employees/${id}`, { method: 'PUT', json: req });
 }
 
-export async function updateMe(req: Partial<CreateEmployeeRequest>): Promise<Employee> {
+/** v-user-profile-save-full-fields — the six low-risk fields the
+ *  Profile dialog is allowed to edit for the signed-in user. Any
+ *  other Employee field goes through the admin endpoints. */
+export interface UpdateSelfRequest {
+  khmerName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  placeOfBirth?: string | null;
+  contactNumber?: string | null;
+  currentAddress?: string | null;
+}
+
+export async function updateMe(req: UpdateSelfRequest): Promise<Employee> {
   return apiJson<Employee>('/api/v1/employees/me', { method: 'PATCH', json: req });
 }
 

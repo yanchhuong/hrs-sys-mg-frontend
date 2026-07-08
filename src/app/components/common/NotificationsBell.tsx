@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '../ui/button';
@@ -54,7 +54,7 @@ export function NotificationsBell() {
       // immediately even before the network round-trip lands.
       setItems(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x));
       setUnread(c => Math.max(0, c - 1));
-      try { await api.markRead(n.id); } catch (e) {
+      try { await api.markRead(n.kind, n.id); } catch (e) {
         // Rare — if it fails, the next refresh will reconcile.
         toast.error(e instanceof Error ? e.message : 'Could not mark as read');
       }
@@ -115,11 +115,12 @@ export function NotificationsBell() {
             </div>
           )}
           {!loading && items.map(n => (
-            <button key={n.id} type="button" onClick={() => void onItemClick(n)}
+            <button key={`${n.kind}:${n.id}`} type="button" onClick={() => void onItemClick(n)}
               className={`w-full text-left px-4 py-3 border-b border-gray-100 flex items-start gap-2.5
                           hover:bg-gray-50 transition-colors ${n.read ? '' : 'bg-blue-50/30'}`}>
-              {/* Type-coloured leading icon — same palette as the
-                  Type badge on the Announcements list. */}
+              {/* Type-coloured leading icon — announcement palette
+                  matches the Announcements list; V198 pings pick
+                  their own doctor / calendar glyphs. */}
               <TypeIcon type={n.type} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -146,10 +147,12 @@ export function NotificationsBell() {
 function TypeIcon({ type }: { type: api.NotificationType }) {
   const cls = "h-4 w-4 mt-0.5 shrink-0";
   switch (type) {
-    case 'HOLIDAY': return <PartyPopper className={`${cls} text-rose-600`} />;
-    case 'NEWS':    return <Newspaper className={`${cls} text-blue-600`} />;
-    case 'EVENTS':  return <CalendarHeart className={`${cls} text-purple-600`} />;
+    case 'HOLIDAY':              return <PartyPopper   className={`${cls} text-rose-600`} />;
+    case 'NEWS':                 return <Newspaper     className={`${cls} text-blue-600`} />;
+    case 'EVENTS':               return <CalendarHeart className={`${cls} text-purple-600`} />;
+    case 'encounter_assigned':   return <Stethoscope   className={`${cls} text-emerald-600`} />;
+    case 'appointment_assigned': return <CalendarClock className={`${cls} text-emerald-600`} />;
     case 'OTHERS':
-    default:        return <Inbox className={`${cls} text-gray-500`} />;
+    default:                     return <Inbox         className={`${cls} text-gray-500`} />;
   }
 }

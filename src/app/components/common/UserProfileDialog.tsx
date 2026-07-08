@@ -22,6 +22,7 @@ import { Employee } from '../../types/hrms';
 import * as departmentsApi from '../../api/departments';
 import * as documentsApi from '../../api/documents';
 import * as authApi from '../../api/auth';
+import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
@@ -181,10 +182,17 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
 
-  // Reset form when dialog opens/reopens
+  // Reset form when dialog opens/reopens. Name uses the same
+  // resolution as the initial snapshot: explicit user.name (V140) →
+  // employee.name → empty. Without applying it here the second
+  // open of the dialog would show employee.name and drop any
+  // user-level override the operator saved earlier.
   useEffect(() => {
     if (open) {
-      setProfile(employeeRef);
+      setProfile({
+        ...employeeRef,
+        name: currentUser?.name ?? employeeRef.name ?? '',
+      });
       setAccountEmail(currentUser?.email ?? '');
       setCurrentPw('');
       setNewPw('');
@@ -193,7 +201,10 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
       setShowNew(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentUser?.email, currentEmployee?.id]);
+  }, [open, currentUser?.email, currentUser?.name, currentEmployee?.id,
+      currentEmployee?.khmerName, currentEmployee?.gender,
+      currentEmployee?.dateOfBirth, currentEmployee?.contactNumber,
+      currentEmployee?.placeOfBirth, currentEmployee?.currentAddress]);
 
   const initials = useMemo(
     () => (profile.name || currentUser?.email || '?').split(/\s+/).map(s => s[0]).join('').slice(0, 2).toUpperCase(),
@@ -206,9 +217,22 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
       toast.error('Name is required');
       return;
     }
-    // V140 — persist the display name via PATCH /api/v1/auth/me.
-    // In mock mode we still write to mockEmployees so the
-    // legacy demo flow keeps working.
+    // v-user-profile-save-full-fields — the dialog collects six
+    // Employee-scoped fields (Khmer name, gender, DoB, contact,
+    // birthplace, current address) alongside the display Name. Prior
+    // to this fix only Name went to the backend via PATCH
+    // /api/v1/auth/me and every other field silently discarded —
+    // save reported success but the row never changed. Now:
+    //   • Name is still routed to /auth/me so it flows through the
+    //     user.name → employee.name → email display-name fallback.
+    //   • The remaining six fields go to PATCH
+    //     /api/v1/employees/me (updateSelf) which is already
+    //     patch-semantic — nulls leave columns alone, empty strings
+    //     clear them. Only fires when the user is linked to an
+    //     employee row (super_admin has no employee).
+    //   • refreshUser() re-fetches BOTH /auth/me and /employees/me
+    //     so the dialog reopens with the persisted values without a
+    //     page reload.
     setSavingProfile(true);
     try {
       if (USE_MOCKS) {
@@ -218,6 +242,16 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
         }
       } else {
         await authApi.updateProfile({ name: trimmed });
+        if (currentEmployee) {
+          await employeesApi.updateMe({
+            khmerName:      profile.khmerName ?? null,
+            gender:         profile.gender ?? null,
+            dateOfBirth:    profile.dateOfBirth ?? null,
+            contactNumber:  profile.contactNumber ?? null,
+            placeOfBirth:   profile.placeOfBirth ?? null,
+            currentAddress: profile.currentAddress ?? null,
+          });
+        }
         await refreshUser();
       }
       toast.success('Profile updated');

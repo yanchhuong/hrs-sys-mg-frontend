@@ -16,8 +16,9 @@ import {
 } from '../../ui/alert-dialog';
 import {
   Layers, Plus, Pencil, Trash2, CheckCircle2, CircleDashed, Lock, GripVertical,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Info,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 
@@ -501,14 +502,28 @@ export function ModuleCategories() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1.5">
           <h2 className="text-xl font-semibold">Module Categories</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Plan apps and menus. Each module is either <strong className="text-emerald-700">complete</strong>
-            {' '}(real controller, shows up for tenants) or
-            {' '}<strong className="text-amber-700">draft</strong>
-            {' '}(planning placeholder, hidden from tenants). Add sub-menus to nest as deep as needed.
-          </p>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Module Categories help"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                Plan apps and menus. Each module is either{' '}
+                <strong className="text-emerald-300">complete</strong>{' '}
+                (real controller, shows up for tenants) or{' '}
+                <strong className="text-amber-300">draft</strong>{' '}
+                (planning placeholder, hidden from tenants). Add sub-menus to nest as deep as needed.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {allCats.length > 0 && (
