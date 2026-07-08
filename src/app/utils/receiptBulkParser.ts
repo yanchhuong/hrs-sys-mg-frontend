@@ -288,29 +288,29 @@ export function downloadReceiptTemplate(): void {
 
   const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
   ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Receipt');
+  XLSX.utils.book_append_sheet(wb, ws, 'Expense');
 
   const guide: (string | number)[][] = [
     ['Field',           'Rule'],
-    ['Receipt No.',     'Required. Must be unique per tenant.'],
+    ['Expense No.',     'Required. Must be unique per tenant.'],
     ['Issue Date',      'Required. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or an Excel date cell.'],
     ['Vendor',          'Vendor name — matched case-insensitively against your Vendors list. Missing vendors can be auto-created at import.'],
     ['TIN',             'Optional for individuals; required if you want the auto-created vendor to be Business type.'],
     ['Supplier Type',   'T = Taxable Person, N = Non-Taxable Person, R = Non-Resident. Optional.'],
     ['Currency',        'USD, KHR, or KRW (must match your tenant Currency setting).'],
-    ['Exchange Rate',   'Receipt-currency → base rate. Leave 1 for same-currency receipts.'],
+    ['Exchange Rate',   'Expense-currency → base rate. Leave 1 for same-currency expenses.'],
     ['Amount',          'Required. Positive number, taxes shown separately.'],
     ['Tax Type',        'Datakey: 11 = WHT Service 15%, 15 = WHT Rental (Physical) 10%, 16 = WHT Rental (Legal) 10%, 20 = WHT Non-resident 14%.'],
     ['Tax Amount',      'Withholding amount computed from Amount × rate. Leave 0 or blank for no WHT.'],
     ['Notes',           'Optional free-text note.'],
     ['', ''],
-    ['Row rule',        'One row = one receipt. No continuation rows (receipts have no line items).'],
+    ['Row rule',        'One row = one expense. No continuation rows (expenses have no line items).'],
   ];
   const gws = XLSX.utils.aoa_to_sheet(guide);
   gws['!cols'] = [{ wch: 18 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Receipts-Template.xlsx');
+  XLSX.writeFile(wb, 'Expenses-Template.xlsx');
 }
 
 /* -------------------------------------------------------------------------

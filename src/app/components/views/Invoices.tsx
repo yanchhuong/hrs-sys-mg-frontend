@@ -58,6 +58,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { consumeProfitLossNavIntent } from './ProfitLossReport';
+import { EncounterFormDialog } from './EncounterFormDialog';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -67,12 +69,19 @@ const KIND_LABEL: Record<invoicesApi.InvoiceKind, string> = {
   tax:         'Tax',
   credit_note: 'Credit Note',
   debit_note:  'Debit Note',
+  // Hospital / School lens: sale_invoices row with kind='medical' or
+  // kind='tuition' is the same document, just presented under a
+  // different sidebar entry. See [[erp-core-engine-vision]].
+  medical:     'Encounter',
+  tuition:     'Tuition',
 };
 const KIND_BADGE_CLASS: Record<invoicesApi.InvoiceKind, string> = {
   commercial:  'border-blue-300 text-blue-700 bg-blue-50',
   tax:         'border-violet-300 text-violet-700 bg-violet-50',
   credit_note: 'border-emerald-300 text-emerald-700 bg-emerald-50',
   debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
+  medical:     'border-teal-300 text-teal-700 bg-teal-50',
+  tuition:     'border-indigo-300 text-indigo-700 bg-indigo-50',
 };
 const STATUS_BADGE_CLASS: Record<invoicesApi.InvoiceStatus, string> = {
   draft:     'border-slate-300 text-slate-700 bg-slate-50',
@@ -145,6 +154,12 @@ const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
 const TAX_TYPES_FOR_KIND = (kind: invoicesApi.InvoiceKind, parentKind?: invoicesApi.InvoiceKind): typeof TAX_TYPES => {
   if (kind === 'tax') return TAX_TYPES;
   if (kind === 'commercial') return TAX_TYPES.filter(t => t.key === '2' || t.key === '3');
+  // Medical / Tuition — same tax subset as commercial (VAT 0% + Exclusive).
+  // Hospital / School bills aren't Cambodia Tax Invoices, so the full VAT
+  // matrix would be misleading. Same treatment for tuition.
+  if (kind === 'medical' || kind === 'tuition') {
+    return TAX_TYPES.filter(t => t.key === '2' || t.key === '3');
+  }
   // CN/DN: inherit from parent's allowed set
   const effective = parentKind ?? 'tax';
   return TAX_TYPES_FOR_KIND(effective);
@@ -196,7 +211,44 @@ function CustomerInfoCard({ customer }: { customer: customersApi.Customer | unde
 /* -------------------------------------------------------------------------- */
 /* Main page component                                                        */
 /* -------------------------------------------------------------------------- */
-export function Invoices() {
+/**
+ * Sale Invoices page. When mounted with {@code presentAs='encounter'}
+ * + {@code kindFilter='medical'}, becomes the Hospital's Encounter
+ * page — same code path, different labels + list narrowed to the
+ * medical-kind rows. Follows the same lens pattern as Patients →
+ * Customers. See [[erp-core-engine-vision]]: one engine, many
+ * workflows. Medical Bill IS an Invoice with kind='medical'.
+ *
+ * <p>When a {@code kindFilter} is fixed, the Kind tabs at the top
+ * of the list are hidden and the New-button becomes a single-action
+ * button (rather than the 4-way commercial/tax/CN/DN dropdown).</p>
+ */
+export function Invoices({
+  presentAs = 'invoice',
+  kindFilter: fixedKind,
+}: {
+  presentAs?: 'invoice' | 'encounter';
+  /** When set, list is filtered to this single kind and creates
+   *  default to it. Kind tabs + CN/DN dropdown items hide. */
+  kindFilter?: invoicesApi.InvoiceKind;
+} = {}) {
+  const isEncounter = presentAs === 'encounter';
+  // Terms — Hospital-branded labels for encounters. Only top-level
+  // strings are swapped; deep form labels (Kind, Tax, Discount etc.)
+  // stay unchanged since they're cross-vertical accounting concepts.
+  const T = isEncounter ? {
+    pageTitle:      'Encounters',
+    newButton:      'New Encounter',
+    bulkTooltip:    'Bulk upload encounters from an Excel workbook',
+    exportFilename: 'Encounters',
+    exportSheet:    'Encounters',
+  } : {
+    pageTitle:      null,                                            // fall through to t('nav.invoices')
+    newButton:      'New Invoice',
+    bulkTooltip:    'Bulk upload invoices from an Excel workbook',
+    exportFilename: 'Invoices',
+    exportSheet:    'Invoices',
+  };
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
@@ -206,7 +258,10 @@ export function Invoices() {
 
   const [rows, setRows] = useState<invoicesApi.Invoice[]>([]);
   const [loading, setLoading] = useState(false);
-  const [kindFilter, setKindFilter] = useState<invoicesApi.InvoiceKind | 'all'>('all');
+  // When a fixedKind is provided (Encounter lens) the state is pinned
+  // to that value + the tabs hidden. Otherwise the operator flips
+  // between commercial/tax/CN/DN via the tabs.
+  const [kindFilter, setKindFilter] = useState<invoicesApi.InvoiceKind | 'all'>(fixedKind ?? 'all');
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
@@ -276,6 +331,16 @@ export function Invoices() {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [kindFilter]);
+
+  // Cross-page nav intent from the P&L report — clicking an income
+  // row on ProfitLossReport stashes the invoice id in sessionStorage
+  // and switches the sidebar view; we pop the intent here and open
+  // the detail dialog on mount. See [[erp-core-engine-vision]] for
+  // the drilldown story.
+  useEffect(() => {
+    const pending = consumeProfitLossNavIntent('invoice');
+    if (pending) setDetailId(pending);
+  }, []);
 
   // One-shot fetch of the Sale-side Accountant settings. Failures
   // fall back to defaults — the page still functions, just without
@@ -513,7 +578,7 @@ export function Invoices() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">{t('nav.invoices')}</h1>
+          <h1 className="text-3xl font-bold">{T.pageTitle ?? t('nav.invoices')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -531,8 +596,8 @@ export function Invoices() {
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
-              filename: 'Invoices',
-              sheetName: 'Invoices',
+              filename: T.exportFilename,
+              sheetName: T.exportSheet,
               columns: [
                 { header: 'Invoice No',    value: r => r.invoiceNo,                                         width: 18 },
                 { header: 'Kind',          value: r => r.kind === 'tax' ? 'Tax'
@@ -556,7 +621,7 @@ export function Invoices() {
             })}
             disabled={groupedRows.length === 0}
             size="icon"
-            title="Download the current invoice list as an Excel workbook"
+            title={isEncounter ? 'Download the current encounter list as an Excel workbook' : 'Download the current invoice list as an Excel workbook'}
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
@@ -564,36 +629,46 @@ export function Invoices() {
             <Button
               variant="outline"
               onClick={() => setBulkUploadOpen(true)}
-              title="Bulk upload invoices from an Excel workbook"
+              title={T.bulkTooltip}
             >
               <Upload className="h-4 w-4 mr-1.5" />
               Bulk Upload
             </Button>
           )}
           {canAdd && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  New Invoice
-                  <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onClick={() => openCreate('commercial')}>
-                  <FileText className="h-4 w-4 mr-2 text-blue-600" /> Commercial Invoice
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openCreate('tax')}>
-                  <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Invoice
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openCreate('credit_note')}>
-                  <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openCreate('debit_note')}>
-                  <CornerUpRight className="h-4 w-4 mr-2 text-amber-600" /> Debit Note
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            fixedKind ? (
+              // Encounter lens — single-action button; the kind is
+              // already pinned (medical / etc), so no dropdown of
+              // sibling kinds. CN/DN are also skipped because
+              // Medical Bills have no credit/debit-note siblings.
+              <Button onClick={() => openCreate(fixedKind)}>
+                <Plus className="h-4 w-4 mr-1.5" /> {T.newButton}
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-1.5" />
+                    {T.newButton}
+                    <ChevronDown className="ml-2 h-4 w-4 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => openCreate('commercial')}>
+                    <FileText className="h-4 w-4 mr-2 text-blue-600" /> Commercial Invoice
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreate('tax')}>
+                    <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Invoice
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreate('credit_note')}>
+                    <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openCreate('debit_note')}>
+                    <CornerUpRight className="h-4 w-4 mr-2 text-amber-600" /> Debit Note
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
         </div>
       </div>
@@ -601,13 +676,18 @@ export function Invoices() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
-              <TabsList>
-                {KIND_FILTERS.map(f => (
-                  <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            {/* Kind tabs — hidden when a fixedKind is pinned (Encounter
+                lens narrows the list to a single kind, so the switcher
+                would be dead controls). */}
+            {!fixedKind && (
+              <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
+                <TabsList>
+                  {KIND_FILTERS.map(f => (
+                    <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            )}
             <div className="flex items-center gap-2">
               {/* Date range — inclusive, either end may be open. Backend
                   returns the most recent rows; the range narrows the
@@ -816,8 +896,14 @@ export function Invoices() {
                           {/* Only root invoices (commercial / tax) can
                               carry adjustments; voided rows are sealed.
                               The dropdown skips the parent-picker step
-                              in the form by setting formParentPrefill. */}
-                          {canAdd && !isAdjustment && inv.status !== 'void' && (
+                              in the form by setting formParentPrefill.
+                              Encounters / Tuition rows omit the CN/DN
+                              button — their parent-kind isn't in the
+                              rootInvoiceOptions filter, and the backend
+                              CHECK constraint restricts adjustment
+                              parents to commercial/tax anyway. */}
+                          {canAdd && !isAdjustment && inv.status !== 'void'
+                            && (inv.kind === 'commercial' || inv.kind === 'tax') && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button size="sm" variant="ghost" className="h-7 px-2" title="Add adjustment note">
@@ -895,7 +981,27 @@ export function Invoices() {
         </CardContent>
       </Card>
 
-      {/* Create / edit dialog */}
+      {/* Create / edit dialog — Encounter lens uses a purpose-built
+          medical form (Prescription / Services / Lab / Imaging
+          sections + Diagnosis) via EncounterFormDialog; every other
+          kind stays on the shared InvoiceFormDialog. */}
+      {isEncounter ? (
+        <EncounterFormDialog
+          open={formOpen}
+          onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
+          customers={customers}
+          editing={formEditing}
+          onCreated={async (created) => {
+            setFormOpen(false);
+            setFormEditing(null);
+            setFormParentPrefill(null);
+            await load();
+            // Encounters don't chain to the Telegram auto-send — the
+            // detail dialog still exposes the manual send option.
+            void created;
+          }}
+        />
+      ) : (
       <InvoiceFormDialog
         open={formOpen}
         onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
@@ -923,6 +1029,7 @@ export function Invoices() {
           }
         }}
       />
+      )}
 
       {/* Sale-side Accountant settings popup. Independent from the
           Bill page's popup — each scope has its own row + audit. */}

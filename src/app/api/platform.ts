@@ -34,7 +34,17 @@ export interface PlatformTenant {
   userCount?: number;
   attendanceCount?: number;
   payrollItemCount?: number;
+  /** Derived Business Base(s) — subset of 'pos'/'school'/'hospital'.
+   *  Populated on list + get + create + setBusinessBase responses.
+   *  Empty array = "no industry" (rare but legal). V181. */
+  businessBases?: BusinessBase[];
 }
+
+/** Business Base identifiers (V181, v-business-base-plumbing).
+ *  Multi-select — a School with a canteen picks ['school', 'pos'].
+ *  Common modules (User / Employee / Payment / Invoice / Expense
+ *  etc.) are always on; only industry sidebar groups are Base-gated. */
+export type BusinessBase = 'pos' | 'school' | 'hospital';
 
 export interface CreateTenantRequest {
   name: string;
@@ -45,6 +55,10 @@ export interface CreateTenantRequest {
   country?: string | null;
   notes?: string | null;
   initialAdmin?: { email: string; password: string; name: string } | null;
+  /** Optional. When present, the backend seeds tenant_modules so only
+   *  the chosen Bases' industry modules are enabled. Omit / empty →
+   *  legacy behaviour (every Base-scoped module stays default-on). */
+  businessBases?: BusinessBase[];
 }
 
 export interface UpdateTenantRequest {
@@ -80,6 +94,11 @@ export const tenants = {
     apiJson(`/api/v1/platform/tenants/${id}/reactivate`, { method: 'POST' }),
   changePlan: (id: string, planTier: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/plan`, { method: 'PATCH', json: { planTier } }),
+  /** Switch a tenant's Business Base atomically. Empty array is a
+   *  legitimate "no industry" state — every Base-scoped module ends
+   *  up disabled and only Common modules remain visible. V181. */
+  setBusinessBase: (id: string, bases: BusinessBase[]): Promise<PlatformTenant> =>
+    apiJson(`/api/v1/platform/tenants/${id}/business-base`, { method: 'PUT', json: { bases } }),
   remove: (id: string): Promise<void> =>
     apiVoid(`/api/v1/platform/tenants/${id}`, { method: 'DELETE' }),
 };

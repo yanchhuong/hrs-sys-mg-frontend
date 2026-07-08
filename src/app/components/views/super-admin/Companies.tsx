@@ -100,6 +100,17 @@ export function Companies() {
   const [editing, setEditing] = useState<Company | null>(null);
   const [form, setForm] = useState<Partial<Company>>({});
   const [suspendTarget, setSuspendTarget] = useState<Company | null>(null);
+  // Business Base multi-select for the create/edit dialog (V181 +
+  // v-business-base-picker). Empty array = "no industry"; on create
+  // it defaults to ['pos'] to match the legacy MVP behaviour so a
+  // Super Admin doesn't accidentally create a bare tenant. On edit
+  // it's seeded from the tenant's current Base derived from
+  // tenant_modules via a GET.
+  const [bases, setBases] = useState<platformApi.BusinessBase[]>([]);
+  // Per-tenant Business Base cache, keyed by tenant id. Populated on
+  // list load so the industry chip on each row renders without an
+  // N+1 fetch. Freshened after every create/edit/setBusinessBase.
+  const [basesByTenant, setBasesByTenant] = useState<Record<string, platformApi.BusinessBase[]>>({});
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
   const [planChangeTarget, setPlanChangeTarget] = useState<Company | null>(null);
   const [newPlan, setNewPlan] = useState<PlanTier>('starter');
@@ -125,6 +136,12 @@ export function Companies() {
         planTier: planFilter !== 'all' ? planFilter : undefined,
       });
       setCompanies(list);
+      // Cache each tenant's Business Base(s) so the industry chip on
+      // the row + the edit-dialog picker seed without an N+1 fetch.
+      // The DTO now includes businessBases directly (V181).
+      const next: Record<string, platformApi.BusinessBase[]> = {};
+      for (const t of list) next[t.id] = t.businessBases ?? [];
+      setBasesByTenant(next);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load companies';
       toast.error(msg);
@@ -165,11 +182,20 @@ export function Companies() {
   const handleOpenCreate = () => {
     setEditing(null);
     setForm({ planTier: 'starter', status: 'trial', country: 'Cambodia' });
+    // Fresh create — default to POS Base to match the legacy MVP so
+    // the tenant admin's first-login sidebar is populated. Super
+    // Admin can uncheck it in the dialog if they want a
+    // no-industry tenant.
+    setBases(['pos']);
     setDialogOpen(true);
   };
   const handleOpenEdit = (c: Company) => {
     setEditing(c);
     setForm({ ...c });
+    // Seed the picker with the tenant's current Base(s). Falls back
+    // to the cached derivation from the list load; refetches on
+    // demand if the cache doesn't have it yet.
+    setBases(basesByTenant[c.id] ?? []);
     setDialogOpen(true);
   };
   const handleSave = async () => {
@@ -228,6 +254,14 @@ export function Companies() {
           // overwrite the stored value with the form's default.
           appLauncherEnabled: form.appLauncherEnabled,
         });
+        // Business Base — separate endpoint (V181) with atomic
+        // toggle + audit entry. Only fire when the picker changed;
+        // sorted-JSON compare handles multi-base equality reliably.
+        const before = [...(basesByTenant[editing.id] ?? [])].sort().join(',');
+        const after  = [...bases].sort().join(',');
+        if (before !== after) {
+          await platformApi.tenants.setBusinessBase(editing.id, bases);
+        }
         toast.success(`Updated ${form.name}`);
       } else {
         await platformApi.tenants.create({
@@ -238,6 +272,9 @@ export function Companies() {
           contactPhone: form.contactPhone ?? null,
           country: form.country ?? null,
           notes: form.notes ?? null,
+          // Business Base — the backend seeds tenant_modules from
+          // this list. Empty array = "no industry" (rare but legal).
+          businessBases: bases,
         });
         toast.success('Company created');
       }
@@ -430,6 +467,52 @@ export function Companies() {
                   </select>
                 </div>
               </div>
+              {/* Business Base — industry preset. Multi-select: a
+                  School with a canteen picks [school, pos]. Common
+                  modules (User / Employee / Payment / Invoice /
+                  Expense) stay on regardless — only industry
+                  sidebar groups are Base-gated. V181. */}
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Business Base</div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Which industry sidebar groups this tenant sees. Pick one or
+                      more. Turning a Base OFF later hides the UI but keeps the
+                      underlying data.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  {([
+                    { key: 'pos'      as const, label: 'POS (Sale)', hint: 'Customers · Invoices · POS · Quotations · Vouchers' },
+                    { key: 'school'   as const, label: 'School',     hint: 'Students · Classes · Enrollments · Tuition Bills' },
+                    { key: 'hospital' as const, label: 'Hospital',   hint: 'Patients · Encounters · Medical Services · Medical Bills' },
+                  ]).map(t => {
+                    const on = bases.includes(t.key);
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => {
+                          setBases(prev =>
+                            prev.includes(t.key)
+                              ? prev.filter(b => b !== t.key)
+                              : [...prev, t.key]);
+                        }}
+                        className={`text-left rounded-md border px-3 py-2 transition-colors ${
+                          on
+                            ? 'border-blue-400 bg-blue-50 text-blue-900 ring-1 ring-blue-200'
+                            : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                        }`}
+                      >
+                        <div className="text-sm font-medium">{t.label}</div>
+                        <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">{t.hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="c-notes">Notes</Label>
                 <Input id="c-notes" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
@@ -493,6 +576,7 @@ export function Companies() {
             <TableHeader>
               <TableRow>
                 <TableHead>Company</TableHead>
+                <TableHead>Industry</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="min-w-[220px]">Usage</TableHead>
@@ -504,7 +588,7 @@ export function Companies() {
             <TableBody>
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
                     {loading ? 'Loading companies…' : 'No companies match these filters.'}
                   </TableCell>
                 </TableRow>
@@ -517,6 +601,30 @@ export function Companies() {
                   <TableCell>
                     <p className="font-medium text-sm">{c.name}</p>
                     <p className="text-xs text-gray-400">{c.slug} · {c.country}</p>
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      // Industry chip derived from Business Base(s) —
+                      // V181 / v-business-base-picker. Multi-base tenants
+                      // (POS + School, etc.) show the "Multi" chip; a
+                      // tenant with no Base shows "—".
+                      const b = basesByTenant[c.id] ?? [];
+                      if (b.length === 0) return <span className="text-xs text-gray-400">—</span>;
+                      if (b.length > 1) {
+                        return (
+                          <Badge variant="outline" className="text-[10px] border-purple-300 text-purple-700 bg-purple-50 capitalize" title={b.join(' + ')}>
+                            Multi
+                          </Badge>
+                        );
+                      }
+                      const one = b[0];
+                      const cls =
+                        one === 'pos'      ? 'border-blue-300 text-blue-700 bg-blue-50'   :
+                        one === 'school'   ? 'border-indigo-300 text-indigo-700 bg-indigo-50' :
+                                             'border-teal-300 text-teal-700 bg-teal-50';
+                      const label = one === 'pos' ? 'POS' : one.charAt(0).toUpperCase() + one.slice(1);
+                      return <Badge variant="outline" className={`text-[10px] capitalize ${cls}`}>{label}</Badge>;
+                    })()}
                   </TableCell>
                   <TableCell>
                     <button

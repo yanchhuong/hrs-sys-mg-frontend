@@ -7,8 +7,11 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
-import { TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Eye, TrendingUp, TrendingDown, Loader2, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import * as categoriesApi from '../../api/payrollCategories';
+import * as settingsApi from '../../api/accountingSettings';
 
 interface Props {
   open: boolean;
@@ -17,6 +20,10 @@ interface Props {
    *  page can refetch / refresh anything that depends on the enabled
    *  category set (e.g. next-generated payslip's line items). */
   onSaved?: () => void;
+  /** Optional callback fired after the Display-section settings save
+   *  so the parent page can pick up the new {@code showApproval}
+   *  value without a page reload. */
+  onSettingsSaved?: (next: settingsApi.AccountingSettings) => void;
 }
 
 /** Tab keys map 1:1 to the Salary Type tokens the backend stores
@@ -28,17 +35,32 @@ const SALARY_TABS: { key: categoriesApi.SalaryTypeToken; label: string }[] = [
   { key: 'onetime', label: 'One Time Salary' },
 ];
 
+type Section = 'display' | 'categories';
+
+const MENU: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
+  { key: 'display',    label: 'Display',
+    hint: 'What shows on the form',
+    icon: <Eye className="h-4 w-4" /> },
+  { key: 'categories', label: 'Earnings & Deductions',
+    hint: 'Which categories appear on each Salary Type',
+    icon: <TrendingUp className="h-4 w-4" /> },
+];
+
 /**
- * Lightweight on/off popup for the Payroll page's gear icon. The
- * three-tab layout (1st / 2nd / One Time Salary) lets HR enable a
- * given earning or deduction for one batch type without affecting
- * the others — e.g. Seniority on 1st Salary, off on the rest.
+ * Payroll settings — a two-section left-menu popup:
+ *
+ *  - Display        → Show Approval toggle (V175). Off by default;
+ *                     when on, the New Payroll Batch dialog exposes
+ *                     the Approvers picker.
+ *  - Categories     → Per-Salary-Type Earning / Deduction toggles
+ *                     (V113/V114). Retains the three-tab shape.
  *
  * <p>State is held as a per-category Set of enabled tokens. On Save
  * we diff against the open-time snapshot and PATCH only the rows
  * whose set actually changed, so an idle close is a no-op.</p>
  */
-export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Props) {
+export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSettingsSaved }: Props) {
+  const [section, setSection] = useState<Section>('display');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [draft, setDraft]     = useState<categoriesApi.PayrollCategory[]>([]);
@@ -46,20 +68,31 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Pro
   // Snapshot of each row's enabledSalaryTypes on open so the save
   // step only PATCHes categories whose set actually changed.
   const [original, setOriginal] = useState<Map<string, string>>(new Map());
+  // Display-tab settings — piggy-back on accounting_settings via
+  // scope='payroll' so the {@code show_approval} column can be shared.
+  const [settings, setSettings] = useState<settingsApi.AccountingSettings>(
+    settingsApi.defaultsFor('payroll'));
+  const [settingsOriginal, setSettingsOriginal] = useState<settingsApi.AccountingSettings>(
+    settingsApi.defaultsFor('payroll'));
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
-    categoriesApi.list()
-      .then(rows => {
+    setSection('display');
+    Promise.all([
+      categoriesApi.list(),
+      settingsApi.get('payroll').catch(() => settingsApi.defaultsFor('payroll')),
+    ])
+      .then(([rows, s]) => {
         if (cancelled) return;
         setDraft(rows);
-        // Compare by sorted CSV — order-independent equality check.
         const snap = new Map(rows.map(r => [r.id, [...r.enabledSalaryTypes].sort().join(',')]));
         setOriginal(snap);
+        setSettings(s);
+        setSettingsOriginal(s);
       })
-      .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load categories'))
+      .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load settings'))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open]);
@@ -79,25 +112,40 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Pro
   };
 
   // Visibility filter (V114) — a category renders only on tabs that
-  // sit in its applicableSalaryTypes set. This is what hides the
-  // "1st Salary" earning from the 2nd / One Time tabs and the "1st
-  // Salary" deduction from the 1st / One Time tabs.
+  // sit in its applicableSalaryTypes set.
   const visible = draft.filter(c => c.applicableSalaryTypes.includes(activeTab));
   const earnings   = visible.filter(c => c.kind === 'earning').sort((a, b) => a.order - b.order);
   const deductions = visible.filter(c => c.kind === 'deduction').sort((a, b) => a.order - b.order);
 
   const handleSave = async () => {
-    const changed = draft.filter(c =>
+    const changedCats = draft.filter(c =>
       original.get(c.id) !== [...c.enabledSalaryTypes].sort().join(','));
-    if (changed.length === 0) {
+    const settingsChanged =
+      settings.showApproval !== settingsOriginal.showApproval
+      || settings.approverCount !== settingsOriginal.approverCount;
+    if (changedCats.length === 0 && !settingsChanged) {
       onOpenChange(false);
       return;
     }
     setSaving(true);
     try {
-      await Promise.all(changed.map(c =>
-        categoriesApi.update(c.id, { enabledSalaryTypes: c.enabledSalaryTypes })));
-      toast.success(`Updated ${changed.length} categor${changed.length === 1 ? 'y' : 'ies'}`);
+      if (settingsChanged) {
+        const saved = await settingsApi.update('payroll', settings);
+        setSettings(saved);
+        setSettingsOriginal(saved);
+        onSettingsSaved?.(saved);
+      }
+      if (changedCats.length > 0) {
+        await Promise.all(changedCats.map(c =>
+          categoriesApi.update(c.id, { enabledSalaryTypes: c.enabledSalaryTypes })));
+      }
+      const msg =
+        settingsChanged && changedCats.length > 0
+          ? `Saved display + ${changedCats.length} categor${changedCats.length === 1 ? 'y' : 'ies'}`
+          : settingsChanged
+            ? 'Display settings saved'
+            : `Updated ${changedCats.length} categor${changedCats.length === 1 ? 'y' : 'ies'}`;
+      toast.success(msg);
       onSaved?.();
       onOpenChange(false);
     } catch (e) {
@@ -124,12 +172,6 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Pro
           </span>
         </div>
         <div className="space-y-1">
-          {/* Read-only info rows that ride above the toggleable
-           *  categories — e.g. Basic + Position Allowance on the
-           *  One Time Salary tab. These come from the employee
-           *  record directly and aren't toggleable, so they render
-           *  as a muted line + an italic "from Employee" caption
-           *  instead of a switch. */}
           {extraInfoRows?.map(r => (
             <div
               key={r.label}
@@ -177,63 +219,147 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved }: Pro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Payroll Settings</DialogTitle>
-          <DialogDescription>
-            Choose which earnings + deductions appear on each Salary Type batch.
-            Switch tabs to configure each type independently.
+      <DialogContent className="sm:max-w-3xl p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-5 pb-3">
+          <DialogTitle className="flex items-center gap-1.5">
+            Payroll Settings
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Payroll Settings description"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                Configure what shows on Payroll forms and which categories appear on each Salary Type.
+              </TooltipContent>
+            </Tooltip>
+          </DialogTitle>
+          {/* DialogDescription kept sr-only for a11y — Radix warns
+              when a DialogContent has no description. */}
+          <DialogDescription className="sr-only">
+            Configure what shows on Payroll forms and which categories appear on each Salary Type.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as categoriesApi.SalaryTypeToken)}>
-          <TabsList className="grid grid-cols-3 w-full">
-            {SALARY_TABS.map(t => (
-              <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        {/* Two-pane layout: left menu, right content. Matches the
+            Accounting Settings dialog so users trained on Quotation
+            / Voucher settings feel at home. */}
+        <div className="grid grid-cols-[220px_1fr] border-t min-h-[380px]">
+          <aside className="bg-gray-50/60 border-r p-2">
+            {MENU.map(m => {
+              const active = section === m.key;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setSection(m.key)}
+                  className={`w-full text-left rounded-md px-2.5 py-2 mb-0.5 transition-colors flex items-start gap-2 ${
+                    active ? 'bg-white shadow-sm text-blue-700' : 'text-gray-700 hover:bg-white'
+                  }`}
+                >
+                  <span className={`mt-0.5 ${active ? 'text-blue-600' : 'text-gray-500'}`}>{m.icon}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium leading-tight">{m.label}</span>
+                    <span className="block text-[11px] text-gray-500 leading-tight mt-0.5">{m.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </aside>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-6 py-2">
-            {renderColumn(
-              'Earnings',
-              <TrendingUp className="h-4 w-4 text-emerald-600" />,
-              earnings,
-              // 2nd Salary + One Time Salary both pay out the full
-              // Basic + Position Allowance from the employee record
-              // (the 1st Salary tab only carries the mid-month
-              // advance, so these don't apply there). These aren't
-              // toggleable categories — they're info rows so HR sees
-              // the tab isn't missing base pay. Listed before the
-              // dynamic categories so the reading order matches a
-              // real payslip.
-              // Three Employee-record columns: Basic Salary, Position
-              // Allowance, Evaluation Allowance. Must stay in lockstep
-              // with EMPLOYEE_FIELD_EARNINGS in Payroll.tsx so what
-              // the popup shows matches the Upload Bulk Payroll
-              // dialog's earnings list.
-              activeTab === '2nd' || activeTab === 'onetime'
-                ? [
-                    { label: 'Basic Salary',         hint: 'from Employee' },
-                    { label: 'Position Allowance',   hint: 'from Employee' },
-                    { label: 'Evaluation Allowance', hint: 'from Employee' },
-                  ]
-                : undefined,
+          <div className="overflow-y-auto p-6 space-y-4">
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
+              </div>
+            ) : section === 'display' ? (
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold mb-1">Display</h3>
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
+                  <div className="flex-1">
+                    <Label htmlFor="tog_showApproval" className="text-sm font-medium cursor-pointer">
+                      Show Approver(s)
+                    </Label>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Show the Approvers picker on the New Payroll Batch dialog so a batch can be
+                      routed for sign-off (manual-assign chain). Off by default — leave off to skip
+                      approval entirely (batch lands as auto-approved).
+                    </p>
+                  </div>
+                  <Switch
+                    id="tog_showApproval"
+                    checked={settings.showApproval}
+                    onCheckedChange={v => setSettings({ ...settings, showApproval: v })}
+                    disabled={saving}
+                  />
+                </div>
+                {/* Slot-count selector — only meaningful when the
+                    toggle is on. Inset so the pair reads as one
+                    setting. V180. */}
+                {settings.showApproval && (
+                  <div className="flex items-center justify-between gap-2 pl-6 pr-2 py-1.5">
+                    <Label className="text-xs text-gray-600">
+                      Number of approvers
+                    </Label>
+                    <Select
+                      value={String(settings.approverCount ?? 3)}
+                      onValueChange={(v) => setSettings({ ...settings, approverCount: Number(v) })}
+                      disabled={saving}
+                    >
+                      <SelectTrigger className="h-8 w-24 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                        <SelectItem value="3">3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Earning & Deduction — retains the three-tab shape from
+              // the previous popup so muscle memory carries over.
+              <div className="space-y-3">
+                <Tabs value={activeTab} onValueChange={v => setActiveTab(v as categoriesApi.SalaryTypeToken)}>
+                  <TabsList className="grid grid-cols-3 w-full">
+                    {SALARY_TABS.map(t => (
+                      <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <div className="grid grid-cols-2 gap-6 py-1">
+                  {renderColumn(
+                    'Earnings',
+                    <TrendingUp className="h-4 w-4 text-emerald-600" />,
+                    earnings,
+                    // 2nd Salary + One Time Salary carry three
+                    // Employee-record earnings that aren't toggleable
+                    // categories — render them as muted info rows so
+                    // HR sees the tab isn't missing base pay.
+                    activeTab === '2nd' || activeTab === 'onetime'
+                      ? [
+                          { label: 'Basic Salary',         hint: 'from Employee' },
+                          { label: 'Position Allowance',   hint: 'from Employee' },
+                          { label: 'Evaluation Allowance', hint: 'from Employee' },
+                        ]
+                      : undefined,
+                  )}
+                  {renderColumn(
+                    'Deductions',
+                    <TrendingDown className="h-4 w-4 text-rose-600" />,
+                    deductions,
+                  )}
+                </div>
+              </div>
             )}
-            {renderColumn(
-              'Deductions',
-              <TrendingDown className="h-4 w-4 text-rose-600" />,
-              deductions,
-            )}
           </div>
-        )}
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-3 border-t">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>

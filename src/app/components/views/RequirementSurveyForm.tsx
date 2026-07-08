@@ -112,11 +112,11 @@ const APP_GROUPS: {
   },
   {
     section: 'Purchase',
-    hint: 'Supplier bills + WHT receipts.',
+    hint: 'Supplier bills + WHT expenses.',
     apps: [
       { code: 'vendor',   label: 'Vendors',  icon: UserCheck, tone: T_PURPLE },
       { code: 'bill',     label: 'Bills',    icon: FileMinus, tone: T_ORANGE },
-      { code: 'receipt',  label: 'Receipts', icon: FileText,  tone: T_TEAL   },
+      { code: 'receipt',  label: 'Expenses', icon: FileText,  tone: T_TEAL   },
     ],
   },
   {

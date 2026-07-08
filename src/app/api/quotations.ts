@@ -2,10 +2,11 @@ import { apiJson, apiVoid } from './client';
 import type { Invoice } from './invoices';
 
 /** Quotation statuses — server-side V102 CHECK constraint:
+ *  - pending:  chain approvers assigned, waiting on their decision (V176)
  *  - progress: editable, awaiting customer response
  *  - done:     converted to invoice (read-only)
  *  - close:    manually closed without conversion (read-only) */
-export type QuotationStatus = 'progress' | 'done' | 'close';
+export type QuotationStatus = 'pending' | 'progress' | 'done' | 'close';
 
 export interface QuotationItem {
   id: string;
@@ -75,6 +76,13 @@ export interface QuotationRequest {
   notes?: string;
   terms?: string;
   items: QuotationItemRequest[];
+  /** Ordered list of approver user IDs (up to 3). When set, the
+   *  backend spawns an approval chain via
+   *  ApprovalService.startChainWithApprovers. Empty / omitted means
+   *  the operator chose not to gate this quote — the existing
+   *  progress → done / close flow proceeds without approval. Only
+   *  honored on create; ignored on update. */
+  approverUserIds?: string[];
 }
 
 export interface ListParams {

@@ -37,7 +37,7 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
 // platform-managed labels resolve. Default seed there: 'hr',
 // 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
 // admin additions).
-type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report';
+type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -81,6 +81,16 @@ const CATEGORIES: CategoryDef[] = [
       'user-management', 'payroll-categories',
     ],
   },
+  {
+    // Hospital business-base leaves (V181 seed:
+    // module_categories.healthcare). Patients + Encounters both
+    // gate on the {@code encounter} module, so toggling either
+    // tile flips the same flag — Patients and Encounters install
+    // and uninstall as a pair.
+    key: 'healthcare', labelKey: 'apps.category.healthcare',
+    installedBadge: 'bg-teal-100 text-teal-700',
+    ids: ['patients', 'encounters'],
+  },
 ];
 
 interface AppLauncherProps {
@@ -117,20 +127,35 @@ interface AppLauncherProps {
  * {@code app_launcher_enabled} flag AND the user being Admin — see
  * the bail-outs below the hook block.</p>
  */
+/** Install-state filter on the launcher panel. 'all' shows every
+ *  tile (default), 'installed' shows only tiles enabled for the
+ *  tenant, 'uninstalled' shows only tiles the admin could still
+ *  install. Categories whose items all get filtered out drop away
+ *  so the panel doesn't render empty section headers. */
+type InstallFilter = 'all' | 'installed' | 'uninstalled';
+
+const FILTERS: ReadonlyArray<{ key: InstallFilter; labelKey: string }> = [
+  { key: 'all',         labelKey: 'apps.filter.all' },
+  { key: 'installed',   labelKey: 'apps.filter.installed' },
+  { key: 'uninstalled', labelKey: 'apps.filter.uninstalled' },
+];
+
 export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherProps) {
   const { canView, isModuleAvailable, isAppLauncherEnabled, currentUser, setModuleEnabled, getModuleCategoryLabel } = useAuth();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<InstallFilter>('all');
   /** Module-key being toggled right now. Shows a spinner on the tile
    *  and locks every other tile so a slow request doesn't get
    *  dog-piled. Null = idle. */
   const [pending, setPending] = useState<string | null>(null);
 
-  /** Per-category tiles. Every leaf listed in {@link CATEGORIES} is
-   *  emitted with an {@code installed} flag derived from the same
-   *  sidebar gate (permission grant AND module-enabled). Missing
-   *  ids (stale config) drop silently. */
-  const tree = useMemo(() => {
+  /** Unfiltered tree — used to compute filter counts + drive the
+   *  launcher-button visibility gate. Every leaf gets an
+   *  {@code installed} flag derived from the same sidebar gate
+   *  (permission grant AND module-enabled). Missing ids drop
+   *  silently. */
+  const fullTree = useMemo(() => {
     return CATEGORIES.map(c => {
       const items = c.ids
         .map(id => NAV_LEAVES.find(l => l.id === id))
@@ -142,6 +167,38 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
       return { ...c, items };
     }).filter(c => c.items.length > 0);
   }, [canView, isModuleAvailable]);
+
+  /** Counts per filter — shown next to each pill so the admin sees
+   *  how many apps land in each bucket without switching tabs.
+   *  Uniques {@code by leaf.id} in case two categories share a leaf
+   *  (defensive; not the case today). */
+  const counts = useMemo(() => {
+    const seen = new Set<string>();
+    let inst = 0;
+    let all = 0;
+    for (const c of fullTree) {
+      for (const it of c.items) {
+        if (seen.has(it.leaf.id)) continue;
+        seen.add(it.leaf.id);
+        all += 1;
+        if (it.installed) inst += 1;
+      }
+    }
+    return { all, installed: inst, uninstalled: all - inst };
+  }, [fullTree]);
+
+  /** Filtered tree — drops items whose install-state doesn't match
+   *  the current pill selection; categories left empty drop too. */
+  const tree = useMemo(() => {
+    if (filter === 'all') return fullTree;
+    return fullTree
+      .map(c => ({
+        ...c,
+        items: c.items.filter(({ installed }) =>
+          filter === 'installed' ? installed : !installed),
+      }))
+      .filter(c => c.items.length > 0);
+  }, [fullTree, filter]);
 
   const handleToggle = async (moduleKey: string, currentlyInstalled: boolean) => {
     if (pending) return;
@@ -163,9 +220,14 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
 
   // Visibility gates — kept BELOW every hook call so the hook order
   // stays identical across renders (React's rules-of-hooks).
+  //
+  // The unfiltered gate uses CATEGORIES directly so switching the
+  // install filter to a value that yields zero tiles doesn't
+  // suddenly hide the launcher button mid-interaction — the panel
+  // itself shows an empty-state message in that case.
   if (!isAppLauncherEnabled()) return null;
   if (currentUser?.role !== 'admin') return null;
-  if (tree.length === 0) return null;
+  if (fullTree.length === 0) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -175,28 +237,68 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[460px] p-0">
-        <div className="px-4 py-2.5 border-b flex items-center gap-1.5">
-          <span className="text-sm font-semibold">{t('header.apps')}</span>
-          {/* The "Click + to install / − to uninstall" hint used to
-              be a paragraph here. Moved to a hover tooltip so the
-              header stays one line and the panel feels less noisy. */}
-          <TooltipProvider delayDuration={120}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
-                  aria-label={t('apps.hint')}
+        {/* Two-row header: title row, then a full-width pill-tabs
+            row so the filter has breathing room and the counts are
+            legible. Same visual language as the Attendance / Payroll
+            list tabs elsewhere in the app. */}
+        <div className="px-4 pt-3 pb-2 border-b space-y-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold">{t('header.apps')}</span>
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label={t('apps.hint')}
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  {t('apps.hint')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Install-state filter — bare inline tabs, no wrapper
+              container. Active pill signals with blue text + a
+              matching blue count chip; inactive pills are quiet
+              grey with a subtle hover. */}
+          <div className="inline-flex items-center gap-3" role="tablist" aria-label="Install filter">
+            {FILTERS.map(f => {
+              const active = filter === f.key;
+              const count = counts[f.key];
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setFilter(f.key)}
+                  className={`inline-flex items-center gap-1.5 px-1 py-1 text-xs transition-colors ${
+                    active
+                      ? 'text-blue-700 font-medium'
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
                 >
-                  <Info className="h-3.5 w-3.5" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                {t('apps.hint')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+                  <span>{t(f.labelKey)}</span>
+                  <span className={`inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full text-[10px] tabular-nums ${
+                    active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-3 space-y-4">
+          {tree.length === 0 && (
+            <div className="py-6 text-center text-xs text-gray-500">
+              {t('apps.empty_for_filter')}
+            </div>
+          )}
           {tree.map(cat => (
             <div key={cat.key}>
               <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-gray-500 font-semibold">

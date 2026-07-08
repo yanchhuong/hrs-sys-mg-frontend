@@ -31,12 +31,14 @@ import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as billsApi from '../../api/bills';
 import * as billPaymentsApi from '../../api/billPayments';
+import * as usersApi from '../../api/users';
 import { formatMoneyForCurrency } from '../../utils/format';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import * as vendorsApi from '../../api/vendors';
 import * as itemsApi from '../../api/items';
 import * as currencyApi from '../../api/currencySettings';
 import { StockItemPicker } from '../common/StockItemPicker';
+import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, FileSpreadsheet,
@@ -75,6 +77,9 @@ const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
  *  in unmigrated data; the badge map shares the Progress style so
  *  the visible status reads consistently. */
 const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
+  // Amber for pending — reads as "waiting on approvers" without
+  // leaning on red (which we reserve for void). V177.
+  pending:   'border-amber-300 text-amber-700 bg-amber-50',
   draft:     'border-blue-300 text-blue-700 bg-blue-50',
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
   partially: 'border-blue-300 text-blue-700 bg-blue-50',
@@ -87,6 +92,7 @@ const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
   void:      'border-red-300 text-red-700 bg-red-50',
 };
 const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
+  pending:   'pending',
   draft:     'progress',
   progress:  'progress',
   partially: 'progress',
@@ -263,6 +269,15 @@ export function Bills() {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [kindFilter]);
+
+  // Cross-page nav intent from the P&L report — clicking an expense
+  // Bill row on ProfitLossReport stashes the bill id in sessionStorage
+  // and switches the sidebar view; we pop the intent here and open
+  // the detail dialog on mount.
+  useEffect(() => {
+    const pending = consumeProfitLossNavIntent('bill');
+    if (pending) setDetailId(pending);
+  }, []);
 
   // One-shot fetch of the Purchase-side Accountant settings.
   // Independent from the Sale-side row on the Invoice page.
@@ -1021,6 +1036,12 @@ function BillFormDialog({
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
   const [saving, setSaving] = useState(false);
+  // Chain-approver picker state (V172, Phase 3b). Empty = skip chain,
+  // bill flows through legacy draft → issued → paid states.
+  const [users, setUsers] = useState<usersApi.User[]>([]);
+  const [approver1, setApprover1] = useState('');
+  const [approver2, setApprover2] = useState('');
+  const [approver3, setApprover3] = useState('');
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
   // invoice being edited; otherwise blank state for a fresh create,
@@ -1073,6 +1094,9 @@ function BillFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+      setApprover1('');
+      setApprover2('');
+      setApprover3('');
       // Fetch the preview after state resets — race-protected so a
       // rapid kind switch doesn't land the wrong value.
       let cancelled = false;
@@ -1082,6 +1106,22 @@ function BillFormDialog({
       return () => { cancelled = true; };
     }
   }, [open, kind, editing, parentPrefill, bills]);
+
+  // Users list feeds the Approver dropdowns. Only fetched on a NEW
+  // bill AND when the tenant flipped Show Approval on in Bill
+  // Settings (V175). 403 silently → empty picker; the operator can
+  // still create without approvers.
+  useEffect(() => {
+    if (!open || editing || !settings.showApproval) return;
+    void (async () => {
+      try {
+        const res = await usersApi.list({ size: 500 });
+        setUsers(res.data ?? []);
+      } catch {
+        setUsers([]);
+      }
+    })();
+  }, [open, editing, settings.showApproval]);
 
   // Follow-up sync: when the tenant currency settings arrive AFTER
   // the reset effect above ran (network race on first open), pin the
@@ -1124,34 +1164,47 @@ function BillFormDialog({
 
   /** Build the request payload from the current form state. Used by
    *  every save flow (create / update / save & add new). */
-  const buildPayload = (): billsApi.BillRequest => ({
-    kind,
-    parentBillId: isAdjustment ? parentBillId : undefined,
-    billNo: billNo.trim() || undefined,
-    vendorId,
-    issueDate,
-    dueDate: dueDate || undefined,
-    currency,
-    exchangeRate: Number(exchangeRate) || 1,
-    taxType: (taxType || null) as billsApi.BillTaxType | null,
-    // computedTax mirrors what the server will write — sending it
-    // keeps the printed amount in sync if someone reads the request
-    // body before the server's recompute lands.
-    taxAmount: computedTax,
-    discountType,
-    discountValue: Number(discountValue) || 0,
-    discountAmount: computedDiscount,
-    notes: notes || undefined,
-    terms: terms || undefined,
-    items: items.map(it => ({
-      name: it.name.trim(),
-      description: it.description?.trim() || undefined,
-      unit: it.unit?.trim() || undefined,
-      quantity: Number(it.quantity) || 0,
-      unitPrice: Number(it.unitPrice) || 0,
-      stockItemId: it.stockItemId || undefined,
-    })),
-  });
+  const buildPayload = (): billsApi.BillRequest => {
+    // Chain approvers — ordered, dedup, drop blanks. Only sent on
+    // create; update ignores the field server-side.
+    const orderedApprovers: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of [approver1, approver2, approver3]) {
+      const v = raw?.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      orderedApprovers.push(v);
+    }
+    return {
+      kind,
+      parentBillId: isAdjustment ? parentBillId : undefined,
+      billNo: billNo.trim() || undefined,
+      vendorId,
+      issueDate,
+      dueDate: dueDate || undefined,
+      currency,
+      exchangeRate: Number(exchangeRate) || 1,
+      taxType: (taxType || null) as billsApi.BillTaxType | null,
+      // computedTax mirrors what the server will write — sending it
+      // keeps the printed amount in sync if someone reads the request
+      // body before the server's recompute lands.
+      taxAmount: computedTax,
+      discountType,
+      discountValue: Number(discountValue) || 0,
+      discountAmount: computedDiscount,
+      notes: notes || undefined,
+      terms: terms || undefined,
+      items: items.map(it => ({
+        name: it.name.trim(),
+        description: it.description?.trim() || undefined,
+        unit: it.unit?.trim() || undefined,
+        quantity: Number(it.quantity) || 0,
+        unitPrice: Number(it.unitPrice) || 0,
+        stockItemId: it.stockItemId || undefined,
+      })),
+      ...(isEdit ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
+    };
+  };
 
   const validate = (): boolean => {
     if (!vendorId) { toast.error('Vendor is required'); return false; }
@@ -1629,6 +1682,73 @@ function BillFormDialog({
               </div>
             </div>
           </div>
+
+          {/* Chain approvers — manual-assign chain (V172, Phase 3b).
+              Only shown on create AND when Show Approval is on in
+              Bill Settings (V175). */}
+          {!isEdit && settings.showApproval && (
+            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to {settings.approverCount ?? 3})</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Approvers help"
+                      >
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Leave blank to skip approval. Otherwise the bill waits until each picked approver acts, in order.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {(approver1 || approver2 || approver3) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-gray-500"
+                    onClick={() => { setApprover1(''); setApprover2(''); setApprover3(''); }}
+                    type="button"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {[
+                { label: '1st', value: approver1, set: setApprover1 },
+                { label: '2nd', value: approver2, set: setApprover2 },
+                { label: '3rd', value: approver3, set: setApprover3 },
+              ].slice(0, settings.approverCount ?? 3).map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
+                  <div className="flex-1">
+                    <SearchablePicker
+                      value={slot.value}
+                      onChange={slot.set}
+                      placeholder="— none —"
+                      emptyLabel="— none —"
+                      searchPlaceholder="Search users by email or role…"
+                      options={users
+                        .filter(u => u.isActive)
+                        .filter(u => u.id !== approver1 || slot.value === approver1)
+                        .filter(u => u.id !== approver2 || slot.value === approver2)
+                        .filter(u => u.id !== approver3 || slot.value === approver3)
+                        .map(u => ({
+                          value: u.id,
+                          label: u.email,
+                          secondary: u.role,
+                          searchKey: `${u.email} ${u.role}`,
+                        }))}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <DialogFooter>

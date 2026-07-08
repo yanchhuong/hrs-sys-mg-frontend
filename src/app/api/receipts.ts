@@ -4,7 +4,18 @@ import { apiJson, apiVoid } from './client';
  *  with Void as the cancellation terminal. The legacy 'draft' /
  *  'issued' values still appear in unmigrated test data and the
  *  frontend collapses them to 'progress' for display. */
-export type ReceiptStatus = 'progress' | 'paid' | 'void' | 'draft' | 'issued';
+export type ReceiptStatus =
+  // Chain-gated intermediate — set on create when manual approvers
+  // are assigned; flipped to progress on approval, void on chain
+  // rejection. V177.
+  | 'pending'
+  | 'progress'
+  | 'paid'
+  | 'void'
+  // Legacy pre-V98 values; kept so old JSON still parses. The
+  // server maps these to 'progress' in the entity.
+  | 'draft'
+  | 'issued';
 export type SupplierType = 'taxable_person' | 'non_taxable' | 'non_resident';
 /** Datakeys match the upstream WHT pattern reference HTML — easier
  *  to align with any external taxonomy that ships the same code
@@ -66,6 +77,12 @@ export interface ReceiptRequest {
   taxType?: ReceiptTaxType | '';
   taxAmount?: number;
   notes?: string;
+  /** Ordered list of approver user IDs (up to 3). Drives the unified
+   *  approval inbox (V172, Phase 3b) via
+   *  {@code ApprovalService.startChainWithApprovers}. Empty / omitted
+   *  = no chain; existing progress → paid flow proceeds unchanged.
+   *  Only honored on create; update ignores it. */
+  approverUserIds?: string[];
 }
 
 export interface ListParams {

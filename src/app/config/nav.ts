@@ -23,7 +23,7 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
-  ClipboardCheck,
+  ClipboardCheck, Stethoscope, HeartPulse,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -55,6 +55,8 @@ import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
 import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
+import { Encounters } from '../components/views/Encounters';
+import { Patients } from '../components/views/Patients';
 import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
@@ -110,6 +112,11 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
   { id: 'stock-group',    labelKey: 'nav.stock',         icon: Boxes },
   { id: 'cashflow-group', labelKey: 'nav.cashflow',      icon: Wallet },
+  // Healthcare — Hospital Business Base (V181). All leaves gate on
+  // their own module keys; when a tenant hasn't enabled any of them
+  // (i.e. Business Base isn't Hospital), Layout auto-hides the whole
+  // group. Same collapsed-when-empty behaviour as Stock / Cashflow.
+  { id: 'healthcare-group', labelKey: 'nav.healthcare',    icon: HeartPulse },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -172,6 +179,18 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
   { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
   { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
+  // Hospital Business Base leaves (V181 / v-hospital-fe +
+  // v-hospital-patients-view). Each gates on its own module key —
+  // a POS-only tenant sees none of them and the healthcare-group
+  // header hides.
+  //
+  // Patients is a Hospital-branded lens over the {@code customer}
+  // module — same data as the Sale > Customers leaf, different
+  // labeling. Gated on 'encounter' (not 'customer') so it only
+  // appears when Hospital Base is on; the Sale > Customers leaf
+  // stays visible for POS tenants who need the retail terminology.
+  { id: 'patients',          labelKey: 'nav.patients',               icon: Users,           module: 'encounter',          component: Patients,                 group: 'healthcare-group' },
+  { id: 'encounters',        labelKey: 'nav.encounters',             icon: Stethoscope,     module: 'encounter',          component: Encounters,               group: 'healthcare-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —

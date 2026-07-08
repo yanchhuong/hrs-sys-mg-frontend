@@ -11,6 +11,10 @@ export interface AuthUser {
   email: string;
   role: 'super_admin' | 'admin' | 'manager' | 'employee';
   employeeId?: string;
+  /** UUID of the tenant this user belongs to (V190 — needed as the
+   *  {@code doc_id} on tenant-scoped attachments like the clinic
+   *  logo). Backend returns it from {@code /api/v1/auth/me}. */
+  tenantId: string;
   tenantSlug: string;
   /** Display name resolved server-side (V140). Falls through
    *  user.name → linked employee.name → email. */

@@ -29,7 +29,12 @@ export const dict: Dict = {
   'apps.category.hr':         { en: 'HR Management',        km: 'គ្រប់គ្រងធនធានមនុស្ស', zh: '人力资源' },
   'apps.category.admin':      { en: 'Administration',       km: 'រដ្ឋបាល',           zh: '管理' },
   'apps.category.report':     { en: 'Report',               km: 'របាយការណ៍',         zh: '报表' },
+  'apps.category.healthcare': { en: 'Healthcare',           km: 'សុខាភិបាល',         zh: '医疗' },
+  'apps.filter.all':          { en: 'All',                  km: 'ទាំងអស់',           zh: '全部' },
+  'apps.filter.installed':    { en: 'Installed',            km: 'បានដំឡើង',          zh: '已安装' },
+  'apps.filter.uninstalled':  { en: 'Not installed',        km: 'មិនបានដំឡើង',       zh: '未安装' },
   'apps.uninstalled':         { en: 'Not installed',        km: 'មិនបានដំឡើង',       zh: '未安装' },
+  'apps.empty_for_filter':    { en: 'No apps match this filter.', km: 'គ្មានកម្មវិធីត្រូវនឹងតម្រង', zh: '没有匹配的应用' },
   'apps.hint':                { en: 'Click + to install an app for your company, − to uninstall.', km: 'ចុច + ដើម្បីដំឡើង, − ដើម្បីដកចេញ', zh: '点击 + 安装应用，点击 − 卸载。' },
   'apps.click_to_install':    { en: 'Install for your company',  km: 'ដំឡើងសម្រាប់ក្រុមហ៊ុន',   zh: '为公司安装' },
   'apps.click_to_uninstall':  { en: 'Uninstall for your company', km: 'ដកចេញសម្រាប់ក្រុមហ៊ុន', zh: '为公司卸载' },
@@ -75,7 +80,10 @@ export const dict: Dict = {
   'nav.purchases':            { en: 'Purchases',            km: 'ការទិញ',             zh: '采购' },
   'nav.vendors':              { en: 'Vendors',              km: 'អ្នកលក់',             zh: '供应商' },
   'nav.bills':                { en: 'Bill',                 km: 'វិក្កយបត្រទិញ',      zh: '账单' },
-  'nav.receipts':             { en: 'Receipt',              km: 'បង្កាន់ដៃ',          zh: '收据' },
+  // "Expense" replaces the earlier "Receipt" label (2026-07-06) —
+  // the DB table, API route, and module key still say `receipt` for
+  // continuity; only the user-facing label changed.
+  'nav.receipts':             { en: 'Expense',              km: 'ចំណាយ',              zh: '费用' },
   'nav.stock':                { en: 'Stock',                km: 'ស្តុក',              zh: '库存' },
   'nav.items':                { en: 'Items',                km: 'មុខទំនិញ',           zh: '物料' },
   'nav.stock.movement':       { en: 'Movement',             km: 'ការផ្លាស់ប្តូរ',     zh: '出入库' },
@@ -83,6 +91,11 @@ export const dict: Dict = {
   'nav.cashflow':             { en: 'Cash Flow',            km: 'លំហូរសាច់ប្រាក់',     zh: '现金流' },
   'nav.cashflow.transactions':{ en: 'Transactions',         km: 'ប្រតិបត្តិការ',          zh: '交易' },
   'nav.cashflow.advance':     { en: 'Cash Advance',         km: 'រំសាយប្រាក់',           zh: '现金预支' },
+  // Hospital Business Base labels (V181 / v-hospital-fe +
+  // v-hospital-patients-view).
+  'nav.healthcare':           { en: 'Healthcare',           km: 'សុខាភិបាល',           zh: '医疗' },
+  'nav.patients':             { en: 'Patients',             km: 'អ្នកជំងឺ',             zh: '患者' },
+  'nav.encounters':           { en: 'Encounters',           km: 'ការទស្សនាអ្នកជំងឺ',    zh: '就诊记录' },
   'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },

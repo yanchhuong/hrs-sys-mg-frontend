@@ -8,7 +8,18 @@ export type BillKind = 'commercial' | 'tax' | 'credit_note' | 'debit_note';
  *  `paid` for a settled purchase Credit Note so the UI distinguishes
  *  "vendor refunded us" from a regular vendor payment. Stored status
  *  remains `paid`. */
-export type BillStatus = 'draft' | 'progress' | 'partially' | 'paid' | 'returned' | 'overdue' | 'void';
+export type BillStatus =
+  // Chain-gated intermediate — set on create when manual approvers
+  // are assigned; flipped to draft on approval, void on chain
+  // rejection. V177.
+  | 'pending'
+  | 'draft'
+  | 'progress'
+  | 'partially'
+  | 'paid'
+  | 'returned'
+  | 'overdue'
+  | 'void';
 
 export interface BillItem {
   id: string;
@@ -122,6 +133,12 @@ export interface BillRequest {
   notes?: string | null;
   terms?: string | null;
   items: BillItemRequest[];
+  /** Ordered list of approver user IDs (up to 3). Drives the unified
+   *  approval inbox (V172, Phase 3b) via
+   *  {@code ApprovalService.startChainWithApprovers}. Empty / omitted
+   *  = no chain; existing draft → issued → paid flow proceeds
+   *  unchanged. Only honored on create; update ignores it. */
+  approverUserIds?: string[];
 }
 
 export interface ListParams {

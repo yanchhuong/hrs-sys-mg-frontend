@@ -57,7 +57,27 @@ const formatMonth = (ym: string): string => {
  * matches the Ledger report and the accounting convention of
  * recognising only issued documents.</p>
  */
-export function ProfitLossReport() {
+/** The nav-intent key P&L writes before switching the sidebar view.
+ *  Invoices / Bills / Receipts read + clear this on mount to open the
+ *  matching detail dialog. Kept in sessionStorage so a browser refresh
+ *  doesn't leave a stale intent hanging. */
+const PL_NAV_INTENT_KEY = 'pl.openDetail';
+
+/** Enum-like union for which source table a P&L line came from. Drives
+ *  both the target view id and the receiving page's dialog. */
+type PlLineSource = 'invoice' | 'bill' | 'receipt';
+
+/** Classify a P&L line by which side + which detail label it carries.
+ *  Income lines are always invoices (kind = commercial / tax / CN / DN
+ *  / medical / tuition). Expense lines are bills unless the label is
+ *  "Receipt" — receipts are the only flat single-row expense. */
+function sourceForLine(l: plApi.ProfitLossLine, side: 'income' | 'expense'): PlLineSource {
+  if (side === 'income') return 'invoice';
+  if (l.docType === 'Receipt') return 'receipt';
+  return 'bill';
+}
+
+export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
   const { t } = useI18n();
   const [from, setFrom] = useState<string>(() => format(startOfYear(new Date()), 'yyyy-MM-dd'));
   const [to, setTo]     = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
@@ -267,7 +287,13 @@ export function ProfitLossReport() {
           </CardHeader>
           {showIncome && (
             <CardContent className="pt-0">
-              <ProfitLossLineTable lines={report.incomeLines} sideLabel="Customer" />
+              <ProfitLossLineTable
+                lines={report.incomeLines}
+                sideLabel="Customer"
+                side="income"
+                signedMoney={signedMoney}
+                onOpenDoc={onNavigate ? (line) => openDocDetail(line, 'income', onNavigate) : undefined}
+              />
             </CardContent>
           )}
         </Card>
@@ -289,7 +315,13 @@ export function ProfitLossReport() {
           </CardHeader>
           {showExpense && (
             <CardContent className="pt-0">
-              <ProfitLossLineTable lines={report.expenseLines} sideLabel="Vendor" />
+              <ProfitLossLineTable
+                lines={report.expenseLines}
+                sideLabel="Vendor"
+                side="expense"
+                signedMoney={signedMoney}
+                onOpenDoc={onNavigate ? (line) => openDocDetail(line, 'expense', onNavigate) : undefined}
+              />
             </CardContent>
           )}
         </Card>
@@ -298,13 +330,47 @@ export function ProfitLossReport() {
   );
 }
 
+/** Stash a "open this doc when you land" intent, then flip the sidebar
+ *  to the matching view. Invoices / Bills / Receipts read this on mount
+ *  and open the detail dialog with the captured id. sessionStorage —
+ *  not localStorage — so a refresh doesn't leave a stale intent. */
+function openDocDetail(
+  line: plApi.ProfitLossLine,
+  side: 'income' | 'expense',
+  onNavigate: (view: string) => void,
+) {
+  const source = sourceForLine(line, side);
+  try {
+    sessionStorage.setItem(
+      PL_NAV_INTENT_KEY,
+      JSON.stringify({ source, id: line.id }),
+    );
+  } catch { /* private-mode → intent silently skipped, nav still happens */ }
+  const targetView = source === 'invoice' ? 'invoices'
+                   : source === 'bill'    ? 'bills'
+                   : 'receipts';
+  onNavigate(targetView);
+}
+
 /** Detail table used by both Income and Expense sections — same shape
  *  (id, date, docNo, docType, party, amount), just different label on
- *  the party column. Extracted so the two collapsible cards don't drift. */
-function ProfitLossLineTable({ lines, sideLabel }: {
+ *  the party column. Extracted so the two collapsible cards don't drift.
+ *  When {@code onOpenDoc} is provided, every row becomes clickable and
+ *  navigates to the source document's page + auto-opens its detail
+ *  dialog. */
+function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }: {
   lines: plApi.ProfitLossLine[];
   sideLabel: string;
+  // Kept on the prop signature for potential future per-side styling
+  // (e.g. positive-only formatter). Unused inside the table for now.
+  side: 'income' | 'expense';
+  /** Threaded from the parent so the tenant-primary currency formatter
+   *  is shared with the summary cards — no double-init and the money
+   *  reads identically everywhere on the page. */
+  signedMoney: (n: number) => string;
+  onOpenDoc?: (line: plApi.ProfitLossLine) => void;
 }) {
+  void side;
   return (
     <Table>
       <TableHeader>
@@ -318,9 +384,16 @@ function ProfitLossLineTable({ lines, sideLabel }: {
       </TableHeader>
       <TableBody>
         {lines.map(l => (
-          <TableRow key={l.id} className="hover:bg-gray-50">
+          <TableRow
+            key={l.id}
+            className={`hover:bg-gray-50 ${onOpenDoc ? 'cursor-pointer print:cursor-default' : ''}`}
+            onClick={onOpenDoc ? () => onOpenDoc(l) : undefined}
+            title={onOpenDoc ? `Open ${l.docNo}` : undefined}
+          >
             <TableCell className="text-sm">{l.date}</TableCell>
-            <TableCell className="tabular-nums text-sm">{l.docNo}</TableCell>
+            <TableCell className={`tabular-nums text-sm ${onOpenDoc ? 'text-blue-700 underline-offset-2 hover:underline' : ''}`}>
+              {l.docNo}
+            </TableCell>
             <TableCell className="text-sm">{l.docType}</TableCell>
             <TableCell>{l.partyName}</TableCell>
             <TableCell className={`text-right tabular-nums text-sm ${l.amount < 0 ? 'text-rose-600' : ''}`}>
@@ -331,4 +404,22 @@ function ProfitLossLineTable({ lines, sideLabel }: {
       </TableBody>
     </Table>
   );
+}
+
+/** Read + clear the P&L nav-intent, returning the doc id if it matches
+ *  the given source page (invoice / bill / receipt). Called from
+ *  Invoices / Bills / Receipts on mount so clicking a P&L row opens
+ *  the doc's detail dialog on the target page. Returns null when
+ *  there's no intent or it targets a different source. */
+export function consumeProfitLossNavIntent(source: PlLineSource): string | null {
+  try {
+    const raw = sessionStorage.getItem(PL_NAV_INTENT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(PL_NAV_INTENT_KEY);
+    const parsed = JSON.parse(raw) as { source?: string; id?: string };
+    if (parsed.source !== source || !parsed.id) return null;
+    return parsed.id;
+  } catch {
+    return null;
+  }
 }

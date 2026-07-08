@@ -125,7 +125,19 @@ export function PlatformDashboard() {
     const overQuotaCount = usageRows.filter(r => r.usage.storage.over || r.usage.employees.over || r.usage.installs.over).length;
     const totalStorageCap = usageRows.reduce((s, r) => s + r.usage.storage.cap, 0);
     const storagePct = totalStorageCap > 0 ? Math.round((totalStorage / totalStorageCap) * 100) : 0;
-    return { active, trial, suspended, totalEmployees, mrr, totalStorage, syncIssues, never, overQuotaCount, totalStorageCap, storagePct, usageRows, legacyCompanies, legacyInstalls };
+    // Industry-mix — count tenants by Business Base (V181 /
+    // v-business-base-picker). Multi-base tenants (e.g. School + POS)
+    // count under "Multi" only, not double-counted.
+    const industryMix = { pos: 0, school: 0, hospital: 0, multi: 0, none: 0 };
+    for (const t of companies) {
+      const b = t.businessBases ?? [];
+      if (b.length === 0) industryMix.none++;
+      else if (b.length > 1) industryMix.multi++;
+      else if (b[0] === 'pos') industryMix.pos++;
+      else if (b[0] === 'school') industryMix.school++;
+      else if (b[0] === 'hospital') industryMix.hospital++;
+    }
+    return { active, trial, suspended, totalEmployees, mrr, totalStorage, syncIssues, never, overQuotaCount, totalStorageCap, storagePct, usageRows, legacyCompanies, legacyInstalls, industryMix };
   }, [companies, installs]);
 
   // Plan tier breakdown
@@ -167,6 +179,42 @@ export function PlatformDashboard() {
           icon={stats.syncIssues > 0 ? AlertTriangle : CheckCircle}
           tone={stats.syncIssues > 0 ? 'red' : 'green'}
         />
+      </div>
+
+      {/* Industry mix — one tile per Business Base + a Multi tile for
+          tenants running >1 Base. V181 / v-business-base-picker. */}
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Industry Mix</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            label="POS"
+            value={stats.industryMix.pos}
+            hint="Retail / POS tenants"
+            icon={Building2}
+            tone="blue"
+          />
+          <StatCard
+            label="School"
+            value={stats.industryMix.school}
+            hint="Education tenants"
+            icon={Building2}
+            tone="purple"
+          />
+          <StatCard
+            label="Hospital"
+            value={stats.industryMix.hospital}
+            hint="Healthcare tenants"
+            icon={Building2}
+            tone="green"
+          />
+          <StatCard
+            label="Multi-industry"
+            value={stats.industryMix.multi}
+            hint={`${stats.industryMix.none} with no Base`}
+            icon={Building2}
+            tone="purple"
+          />
+        </div>
       </div>
 
       {/* Engagement metrics — anonymous landing-page views + admin@demo.com logins.

@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
@@ -302,25 +303,27 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // render the first prefix slot (and skip the multi-kind labels)
   // exactly like Receipt does. Grouping them under one flag keeps
   // the render branches readable.
-  const isSingleKind = scope === 'receipt' || scope === 'quotation' || scope === 'voucher';
+  const isSingleKind = scope === 'receipt' || scope === 'quotation' || scope === 'voucher' || scope === 'hospital';
   const title = scope === 'sale'      ? 'Invoice Settings'
               : scope === 'purchase'  ? 'Bill Settings'
-              : scope === 'receipt'   ? 'Receipt Settings'
+              : scope === 'receipt'   ? 'Expense Settings'
               : scope === 'quotation' ? 'Quotation Settings'
               : scope === 'pos'       ? 'POS Settings'
+              : scope === 'hospital'  ? 'Encounter Settings'
               :                         'General Voucher Settings';
   const sideLabel = scope === 'sale'      ? 'Invoice'
                   : scope === 'purchase'  ? 'Bill'
-                  : scope === 'receipt'   ? 'Receipt'
+                  : scope === 'receipt'   ? 'Expense'
                   : scope === 'quotation' ? 'Quotation'
                   : scope === 'pos'       ? 'POS'
+                  : scope === 'hospital'  ? 'Encounter'
                   :                         'Voucher';
   const prefixLabels = scope === 'sale'
     ? { commercial: 'Invoice',   tax: 'Tax Invoice', creditNote: 'Credit Note', debitNote: 'Debit Note' }
     : scope === 'purchase'
     ? { commercial: 'Bill',      tax: 'Tax Bill',    creditNote: 'Credit Note', debitNote: 'Debit Note' }
     : scope === 'receipt'
-    ? { commercial: 'Receipt',   tax: '',            creditNote: '',            debitNote: '' }
+    ? { commercial: 'Expense',   tax: '',            creditNote: '',            debitNote: '' }
     : scope === 'quotation'
     ? { commercial: 'Quotation', tax: '',            creditNote: '',            debitNote: '' }
     // POS — 'commercial' = counter-receipt, 'tax' = tax receipt,
@@ -328,6 +331,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     // ("POSQ" → POSQ-042). 'debitNote' slot is unused.
     : scope === 'pos'
     ? { commercial: 'POS Receipt', tax: 'POS Tax',    creditNote: 'Queue (Q-no)', debitNote: '' }
+    // Hospital — single-kind: Invoice No (V183 / v-hospital-settings-parity
+    // + v-hospital-encounters-invoice-labels). The prefix drives the
+    // number InvoiceService.nextInvoiceNo mints for KIND_MEDICAL,
+    // replacing the legacy hardcoded 'MED'. Labelled "Invoice No" per
+    // 2026-07-07 UX — operators think of the encounter's mint as an
+    // invoice number even though the underlying kind is 'medical'.
+    : scope === 'hospital'
+    ? { commercial: 'Invoice No',  tax: '',           creditNote: '',            debitNote: '' }
     : { commercial: 'Voucher',   tax: '',            creditNote: '',            debitNote: '' };
 
   useEffect(() => {
@@ -456,13 +467,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // asked for it; we can extend to Bills / Receipts once the UX lands.
   const menu: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
     { key: 'display',   label: 'Display',     hint: 'What shows on the form & PDF', icon: <Eye className="h-4 w-4" /> },
-    { key: 'numbering', label: 'Numbering',   hint: 'Document number prefixes',     icon: <Hash className="h-4 w-4" /> },
-    // Tax types section — hidden on the POS scope because POS sales
-    // only ever produce two receipt kinds (Commercial / No Tax and
-    // Tax Invoice / VAT 10%), so there's nothing to configure here.
-    // Sale / Bill / Receipt scopes keep it because they accept a
-    // broader catalog (Exclusive VAT, WHT brackets, …).
-    ...(scope !== 'pos' ? [
+    // Numbering — Hospital reads it too (v-hospital-settings-parity):
+    // the prefix in the Medical Bill (MED-YYYY-#####) is now tenant-
+    // configurable via prefixCommercial on the hospital-scope row.
+    { key: 'numbering' as Section, label: 'Numbering', hint: 'Document number prefixes', icon: <Hash className="h-4 w-4" /> },
+    // Tax types section — hidden on POS (fixed 2-kind receipts) and
+    // Hospital (encounters don't carry a tax matrix yet). Sale / Bill
+    // / Receipt / Quotation / Voucher keep it.
+    ...(scope !== 'pos' && scope !== 'hospital' ? [
       { key: 'tax' as Section, label: 'Tax types', hint: 'Patterns in the Tax dropdown', icon: <ReceiptIcon className="h-4 w-4" /> },
     ] : []),
     ...(scope === 'sale' ? [
@@ -485,7 +497,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     // USD+KRW / single) from whichever module they're working in.
     // All six open the same backing row; the section reads/writes
     // via currencyApi.
-    ...(scope === 'sale' || scope === 'pos' || scope === 'quotation' || scope === 'voucher' || scope === 'purchase' || scope === 'receipt' ? [
+    ...(scope === 'sale' || scope === 'pos' || scope === 'quotation' || scope === 'voucher' || scope === 'purchase' || scope === 'receipt' || scope === 'hospital' ? [
       { key: 'currency' as Section, label: 'Currency', hint: 'Active currency pair + conversion rate', icon: <Coins className="h-4 w-4" /> },
     ] : []),
   ];
@@ -531,13 +543,17 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
             {section === 'display' && (
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold mb-1">Display</h3>
+                {/* Hospital keeps Show Notes (encounter has a notes
+                    field), plus Show Approver(s). Terms / Discount /
+                    Tax stay hidden — encounter form has no such
+                    inputs yet. */}
                 {toggleRow('Show Notes', 'Internal memo field on the form (not printed).',
                   draft.showNotes, v => setDraft({ ...draft, showNotes: v }))}
-                {!isReceipt && toggleRow('Show Terms & Conditions', 'Customer-facing terms printed at the bottom.',
+                {!isReceipt && scope !== 'hospital' && toggleRow('Show Terms & Conditions', 'Customer-facing terms printed at the bottom.',
                   draft.showTerms, v => setDraft({ ...draft, showTerms: v }))}
-                {!isReceipt && toggleRow('Show Discount', 'Discount input (amount or percent) + line in the totals.',
+                {!isReceipt && scope !== 'hospital' && toggleRow('Show Discount', 'Discount input (amount or percent) + line in the totals.',
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}
-                {!isReceipt && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',
+                {!isReceipt && scope !== 'hospital' && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',
                   draft.showTax, v => setDraft({ ...draft, showTax: v }))}
                 {/* Sale-only for now — Invoice is the only doc whose
                     form fires the Telegram send on save. Other
@@ -555,6 +571,48 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   'After Save & Close, automatically move the invoice from Draft to Issued (Progress). Off by default — invoices stay as Draft until you click Issue manually.',
                   draft.autoIssue,
                   v => setDraft({ ...draft, autoIssue: v }),
+                )}
+                {/* Approval picker — Quotation / Voucher / Bill /
+                    Receipt (V175). Off by default so existing tenants'
+                    forms don't grow a picker on the next deploy. When
+                    on, the create dialog shows up-to-three approver
+                    slots (manual-assign chain). POS + Sale opt out
+                    for now — checkout is time-critical and the Sale
+                    Invoice already has its own workflow. */}
+                {(scope === 'quotation' || scope === 'voucher' ||
+                  scope === 'purchase' || scope === 'receipt' ||
+                  scope === 'hospital') && (
+                  <>
+                    {toggleRow(
+                      'Show Approver(s)',
+                      'Show the Approvers picker on the create form so this document can be routed for sign-off (manual-assign chain). Off by default — leave off to skip approval entirely.',
+                      draft.showApproval,
+                      v => setDraft({ ...draft, showApproval: v }),
+                    )}
+                    {/* Slot-count selector — only meaningful when the
+                        toggle is on. Renders inset so the pair reads
+                        as one setting. V180. */}
+                    {draft.showApproval && (
+                      <div className="flex items-center justify-between gap-4 py-1.5 pl-6">
+                        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                          Number of approvers
+                          <HelpHint>How many approver slots the create form exposes. Each slot is optional at document create time; picks are always ordered.</HelpHint>
+                        </Label>
+                        <Select
+                          value={String(draft.approverCount ?? 3)}
+                          onValueChange={(v) => setDraft({ ...draft, approverCount: Number(v) })}
+                          disabled={loading || saving}
+                        >
+                          <SelectTrigger className="h-8 w-24 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="2">2</SelectItem>
+                            <SelectItem value="3">3</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

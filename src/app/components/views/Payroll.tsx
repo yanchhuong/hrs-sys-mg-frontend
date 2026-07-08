@@ -9,12 +9,12 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as categoriesApi from '../../api/payrollCategories';
 import * as usersApi from '../../api/users';
+import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as overtimeApi from '../../api/overtime';
 import * as deductionsApi from '../../api/deductions';
 import * as settingsApi from '../../api/settings';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import * as increasesApi from '../../api/increases';
-import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import type { Employee, PayrollItem } from '../../types/hrms';
@@ -187,13 +187,25 @@ function FormulaHint({ text }: { text: string }) {
 export function Payroll() {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
-  const { currentUser, currentEmployee, canUpdate } = useAuth();
+  const { currentUser, currentEmployee, canUpdate, canCreate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   // Settings popup — toggles `enabled` on each payroll-category row
   // (earnings + deductions) via PATCH. Lives behind the gear icon
   // next to "Generate Payroll".
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Payroll-scope accounting_settings row (reused via scope='payroll').
+  // Only `showApproval` (V175) is consumed today — gates the Approvers
+  // picker on the New Payroll Batch dialog. Refetched on mount +
+  // pushed back through PayrollCategoryToggleDialog.onSettingsSaved so
+  // a toggle change reaches the form without a page reload.
+  const [payrollSettings, setPayrollSettings] = useState<accountingSettingsApi.AccountingSettings>(
+    accountingSettingsApi.defaultsFor('payroll'));
+  useEffect(() => {
+    accountingSettingsApi.get('payroll').then(setPayrollSettings).catch(() => {
+      setPayrollSettings(accountingSettingsApi.defaultsFor('payroll'));
+    });
+  }, []);
   /** Which flow opened the dialog. 'upload' = old Excel roundtrip;
    *  'generate' = direct POST via handleGeneratePayroll. Drives the
    *  dialog title and hides the Excel picker + parse preview when we're
@@ -210,10 +222,10 @@ export function Payroll() {
   const currentYyyy = format(new Date(), 'yyyy');
   const [periodStart, setPeriodStart] = useState(currentMm);
   const [periodEnd, setPeriodEnd] = useState(currentYyyy);
-  // Designated approvers (UUIDs in live mode). Optional, max 3. Empty = any
-  // admin (other than uploader) may approve.
+  // Designated approvers (UUIDs in live mode). Optional. Empty = any
+  // admin (other than uploader) may approve. Limit driven by the
+  // Payroll settings' `approverCount` (V180), defaulting to 3.
   const [batchApproverIds, setBatchApproverIds] = useState<string[]>([]);
-  const APPROVER_LIMIT = 3;
   // Per-batch "include this column" toggles. Codes present in this set are
   // EXCLUDED from the template download AND the parsed data — when the user
   // unchecks a column we hide it from the spreadsheet they download AND
@@ -294,15 +306,21 @@ export function Payroll() {
 
   const role = currentUser?.role;
   const isEmployee = role === 'employee';
-  // "Self-payslip view" — both Employee and built-in Manager see only their
-  // own payroll records. Manager keeps team scope on Attendance/OT/Leave
-  // elsewhere; Payroll is treated as sensitive comp data.
-  const isSelfPayslipView = role === 'employee' || role === 'manager';
-  // Admin + custom roles see the batch-management surface. The previous
-  // {@code isAdminOrManager} included Manager — now Manager is demoted to
-  // self-only since their team-payroll wasn't authorised by the matrix.
-  const isAdminOrManager =
-    role === 'admin' || (!!role && role !== 'manager' && role !== 'employee');
+  // Batch-management surface — who sees Generate Payroll, the batch
+  // list, the Approve / Reject buttons. Gated on the actual Payroll
+  // permission grid instead of the role slug so a built-in Manager /
+  // Employee who's been granted payroll:create or payroll:update via
+  // a custom role can also run batches. Admin has full grants so it
+  // qualifies automatically; anyone else falls through to self-payslip
+  // view when neither create nor update is granted.
+  const isAdminOrManager = canCreate('payroll') || canUpdate('payroll');
+  // Self-payslip view — anyone WITHOUT batch-management perms sees
+  // only their own payroll records. Previously this was gated on the
+  // role slug (Manager / Employee); switching to the derived
+  // {@code !isAdminOrManager} check means a Manager granted full
+  // Payroll permission via a custom role also drops out of self-view
+  // and into the full batch surface.
+  const isSelfPayslipView = !isAdminOrManager;
 
   // Dynamic payroll categories — backed by /payroll-categories in live mode
   // and the localStorage helper in mock mode. The Excel template + upload
@@ -547,35 +565,16 @@ export function Payroll() {
   const loadAdminUsers = async () => {
     if (USE_MOCKS) return;
     try {
-      // Approver candidates = built-in Admin + every Custom Role whose
-      // permission grid grants Payroll access. Built-in Manager and
-      // Employee never qualify (the V4 seed denies them payroll
-      // create/update). Filtered down to active users so suspended
-      // accounts can't be picked.
+      // Approver candidates = every active user in the tenant. The
+      // ApproverPicker filters out the uploader (segregation of duties)
+      // so the operator can't nominate themselves. Backend enforces
+      // decision permissions at the endpoint level — nominating a
+      // user without Approval/Payroll perm just means they can't
+      // act, which is fine. Matches the picker shape on every other
+      // approval-chain source (Cash Advance / Quotation / Voucher /
+      // Bill / Receipt).
       const usersRes = await usersApi.list({ size: 200 });
-      const activeUsers = usersRes.data.filter(u => u.isActive);
-
-      const eligibleRoleKeys = new Set<string>(['admin']);
-      try {
-        const roles = await rolesApi.list();
-        const customKeys = roles.filter(r => !r.isBuiltin).map(r => r.key);
-        const grids = await Promise.all(
-          customKeys.map(async key => ({
-            key,
-            grid: await rolesApi.getPermissions(key).catch(() => []),
-          })),
-        );
-        for (const { key, grid } of grids) {
-          if (grid.some(p => p.module === 'payroll' && p.granted)) {
-            eligibleRoleKeys.add(key);
-          }
-        }
-      } catch {
-        // Roles endpoint failed — fall back to admin-only candidates so
-        // the picker still works (matches the previous behaviour).
-      }
-
-      setAdminUsers(activeUsers.filter(u => eligibleRoleKeys.has(u.role)));
+      setAdminUsers(usersRes.data.filter(u => u.isActive));
     } catch { /* picker just shows an empty state if this fails */ }
   };
 
@@ -1798,32 +1797,38 @@ export function Payroll() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="inline-flex items-center gap-1.5">
-                      Approvers <span className="text-xs font-normal text-gray-500">(optional, up to {APPROVER_LIMIT})</span>
-                      <TooltipProvider delayDuration={120}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
-                              <Info className="h-3.5 w-3.5" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                            Pick up to {APPROVER_LIMIT} admins who may approve or reject this batch.
-                            Leave empty to auto-approve on upload (useful when no second admin is available).
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </Label>
-                    <ApproverPicker
-                      adminUsers={adminUsers}
-                      employees={employees}
-                      uploaderUserId={currentUser?.id}
-                      value={batchApproverIds}
-                      onChange={setBatchApproverIds}
-                      max={APPROVER_LIMIT}
-                    />
-                  </div>
+                  {/* Approvers picker — gated on payrollSettings.showApproval
+                      (V175). Off by default; flip it on in Payroll
+                      Settings → Display to expose this block. When off,
+                      the batch auto-approves on upload as before. */}
+                  {payrollSettings.showApproval && (
+                    <div className="space-y-2">
+                      <Label className="inline-flex items-center gap-1.5">
+                        Approvers <span className="text-xs font-normal text-gray-500">(optional, up to {(payrollSettings.approverCount ?? 3)})</span>
+                        <TooltipProvider delayDuration={120}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                                <Info className="h-3.5 w-3.5" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                              Pick up to {(payrollSettings.approverCount ?? 3)} admins who may approve or reject this batch.
+                              Leave empty to auto-approve on upload (useful when no second admin is available).
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <ApproverPicker
+                        adminUsers={adminUsers}
+                        employees={employees}
+                        uploaderUserId={currentUser?.id}
+                        value={batchApproverIds}
+                        onChange={setBatchApproverIds}
+                        max={(payrollSettings.approverCount ?? 3)}
+                      />
+                    </div>
+                  )}
 
                   {uploadDialogMode === 'upload' && (
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
@@ -2389,6 +2394,7 @@ export function Payroll() {
       <PayrollCategoryToggleDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        onSettingsSaved={setPayrollSettings}
       />
 
       {isAdminOrManager && !selectedBatch && (() => {
@@ -3541,7 +3547,7 @@ function ApproverPicker({
   if (candidates.length === 0) {
     return (
       <p className="text-xs text-gray-400 italic px-3 py-2 border rounded-md">
-        No other active users with Payroll access available.
+        No other active users to nominate.
       </p>
     );
   }

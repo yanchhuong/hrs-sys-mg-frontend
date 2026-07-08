@@ -22,6 +22,17 @@ export interface Customer {
   site?: string | null;
   /** Business sub-type. Null for individuals. */
   businessType?: BusinessSubType | null;
+  /** V187 — patient birth date (ISO yyyy-mm-dd). Only the Patients
+   *  lens populates this; Sale > Customer leaves it null. */
+  birthDate?: string | null;
+  /** V187 — free-text insurance provider / policy. */
+  insurance?: string | null;
+  /** V188 — height in centimetres (server returns as decimal number
+   *  via JSON; e.g. 173.5). */
+  heightCm?: number | null;
+  /** V188 — weight in kilograms. Age is derived on the FE from
+   *  {@link #birthDate}, so no separate field. */
+  weightKg?: number | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -39,6 +50,14 @@ export interface CustomerRequest {
   site?: string;
   /** Required when type='business'. */
   businessType?: BusinessSubType;
+  /** V187 — patient DOB, ISO yyyy-mm-dd. */
+  birthDate?: string | null;
+  /** V187 — free-text insurance info. */
+  insurance?: string | null;
+  /** V188 — height in cm. */
+  heightCm?: number | null;
+  /** V188 — weight in kg. */
+  weightKg?: number | null;
 }
 
 export interface ListParams {

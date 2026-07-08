@@ -8,6 +8,10 @@ import { apiJson, apiVoid } from './client';
  *  - void:     cancelled (read-only, audit retained)
  *  - issued:   legacy V104 state — treat as read-only equivalent of done. */
 export type VoucherStatus =
+  // Chain-gated intermediate — set on create when manual approvers
+  // are assigned; flipped to progress on approval, rejected on
+  // chain rejection. V176.
+  | 'pending'
   | 'progress'
   | 'done'
   | 'approved'
@@ -112,6 +116,14 @@ export interface VoucherRequest {
   notes?: string;
   terms?: string;
   items: VoucherItemRequest[];
+  /** Ordered list of chain-approver user IDs (up to 3). Distinct from
+   *  the legacy per-voucher {@link approverId} — this drives the
+   *  unified approval inbox (V172, Phase 3b) via
+   *  {@code ApprovalService.startChainWithApprovers}. Empty / omitted
+   *  means the operator chose not to route the voucher through the
+   *  chain; the existing progress → done flow proceeds unchanged.
+   *  Only honored on create; ignored on update. */
+  approverUserIds?: string[];
 }
 
 export interface ListParams {

@@ -1,6 +1,12 @@
 import { apiJson, apiVoid } from './client';
 
-export type InvoiceKind = 'commercial' | 'tax' | 'credit_note' | 'debit_note';
+export type InvoiceKind = 'commercial' | 'tax' | 'credit_note' | 'debit_note' | 'medical' | 'tuition';
+
+/** Per-line bucket the Encounter form sorts into (V185 /
+ *  v-encounter-form-medical-sections). Non-encounter invoices leave
+ *  the field at 'other' — the flat table on Sale > Invoice ignores
+ *  it. */
+export type InvoiceItemCategory = 'medicine' | 'service' | 'lab' | 'imaging' | 'other';
 /** Stored statuses are draft/progress/partially/paid/void. `overdue`
  *  is derived server-side — a progress row whose due_date has elapsed
  *  and isn't fully paid is reported as overdue at read time.
@@ -21,6 +27,9 @@ export interface InvoiceItem {
   unitPrice: number;
   lineTotal: number;
   sortOrder: number;
+  /** Encounter form section (Prescription / Services / Lab / Imaging).
+   *  Defaults to 'other' for non-encounter invoices. */
+  category: InvoiceItemCategory;
 }
 
 /** Slim row used in the parent invoice's Ledger panel. */
@@ -78,6 +87,11 @@ export interface Invoice {
   notes?: string | null;
   /** Customer-facing terms & conditions text printed on the invoice. */
   terms?: string | null;
+  /** Free-text diagnosis on the Encounter lens (kind='medical'). Null
+   *  on non-encounter invoices. */
+  diagnosis?: string | null;
+  /** V186 — treating doctor (user id). Null on non-encounter invoices. */
+  doctorId?: string | null;
   items: InvoiceItem[];
   /** Child Credit / Debit Notes attached to this invoice. Populated
    *  on the single-invoice GET; empty on the list payload. */
@@ -100,6 +114,9 @@ export interface InvoiceItemRequest {
   unit?: string | null;
   quantity: number;
   unitPrice: number;
+  /** Encounter form section (V185). Server defaults to 'other' when
+   *  omitted, so Sale > Invoice callers don't need to send anything. */
+  category?: InvoiceItemCategory;
 }
 
 export interface InvoiceRequest {
@@ -125,6 +142,13 @@ export interface InvoiceRequest {
   discountAmount?: number;
   notes?: string | null;
   terms?: string | null;
+  /** Free-text diagnosis field on the Encounter lens (V185). Null /
+   *  omitted on Sale > Invoice callers. */
+  diagnosis?: string | null;
+  /** V186 — treating doctor (user id). Encounter lens only; Sale >
+   *  Invoice callers omit. Server validates that the id belongs to
+   *  the same tenant. */
+  doctorId?: string | null;
   items: InvoiceItemRequest[];
 }
 

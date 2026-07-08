@@ -16,6 +16,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { SearchablePicker } from '../common/SearchablePicker';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as cashAdvancesApi from '../../api/cashAdvances';
@@ -405,7 +406,7 @@ function CashAdvanceFormDialog({
     void (async () => {
       try {
         const res = await usersApi.list({ size: 500 });
-        setUsers(res.content ?? []);
+        setUsers(res.data ?? []);
       } catch {
         setUsers([]);
       }
@@ -454,22 +455,47 @@ function CashAdvanceFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit Cash Advance' : 'New Cash Advance'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="flex items-center gap-1.5">
+            {editing ? 'Edit Cash Advance' : 'New Cash Advance'}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Cash Advance description"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                Draft a cash advance for an employee. Money doesn't move until you Disburse.
+              </TooltipContent>
+            </Tooltip>
+          </DialogTitle>
+          {/* DialogDescription kept sr-only for a11y — Radix warns when
+              a DialogContent has no description. */}
+          <DialogDescription className="sr-only">
             Draft a cash advance for an employee. Money doesn't move until you Disburse.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
             <Label className="text-xs">Employee</Label>
-            <Select value={employeeId} onValueChange={setEmployeeId}>
-              <SelectTrigger><SelectValue placeholder="Pick an employee" /></SelectTrigger>
-              <SelectContent>
-                {employees.map(e => (
-                  <SelectItem key={e.id} value={e.id}>{e.name} ({e.empNo})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchablePicker
+              value={employeeId}
+              onChange={setEmployeeId}
+              placeholder="Pick an employee"
+              searchPlaceholder="Search by name or employee no…"
+              allowClear={false}
+              options={employees.map(e => ({
+                value: e.id,
+                label: e.name,
+                secondary: e.empNo,
+                // Name AND emp no both feed the fuzzy match so the
+                // operator can search either way.
+                searchKey: `${e.name} ${e.empNo}`,
+              }))}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Purpose</Label>
@@ -530,7 +556,23 @@ function CashAdvanceFormDialog({
           {!editing && (
             <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium">Approvers (optional, ordered — up to 3)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to 3)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Approvers help"
+                      >
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Leave blank to skip approval. Otherwise the advance waits until each picked approver acts, in order.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 {(approver1 || approver2 || approver3) && (
                   <Button
                     variant="ghost"
@@ -543,9 +585,6 @@ function CashAdvanceFormDialog({
                   </Button>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500">
-                Leave blank to skip approval. Otherwise the advance waits until each picked approver acts, in order.
-              </p>
               {[
                 { label: '1st', value: approver1, set: setApprover1 },
                 { label: '2nd', value: approver2, set: setApprover2 },
@@ -553,22 +592,27 @@ function CashAdvanceFormDialog({
               ].map((slot, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
-                  <Select value={slot.value || '__none'} onValueChange={(v) => slot.set(v === '__none' ? '' : v)}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="— none —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">— none —</SelectItem>
-                      {users
+                  <div className="flex-1">
+                    <SearchablePicker
+                      value={slot.value}
+                      onChange={slot.set}
+                      placeholder="— none —"
+                      emptyLabel="— none —"
+                      searchPlaceholder="Search users by email or role…"
+                      options={users
                         .filter(u => u.isActive)
+                        // Exclude users already picked in other slots.
                         .filter(u => u.id !== approver1 || slot.value === approver1)
                         .filter(u => u.id !== approver2 || slot.value === approver2)
                         .filter(u => u.id !== approver3 || slot.value === approver3)
-                        .map(u => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                        .map(u => ({
+                          value: u.id,
+                          label: u.email,
+                          secondary: u.role,
+                          searchKey: `${u.email} ${u.role}`,
+                        }))}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

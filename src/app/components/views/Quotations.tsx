@@ -44,6 +44,7 @@ import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/settings';
 import * as currencyApi from '../../api/currencySettings';
+import * as usersApi from '../../api/users';
 import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
@@ -127,6 +128,9 @@ const fmtMoney = (n: number, currency: string): string => {
 };
 
 const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
+  // Amber for pending — reads as "waiting" without leaning on red
+  // (which would imply rejection). V176.
+  pending:  'border-amber-300 text-amber-700 bg-amber-50',
   progress: 'border-blue-300 text-blue-700 bg-blue-50',
   done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
   close:    'border-slate-300 text-slate-700 bg-slate-50',
@@ -134,6 +138,9 @@ const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
 
 const STATUS_FILTERS: ReadonlyArray<{ value: quotationsApi.QuotationStatus | 'all'; label: string }> = [
   { value: 'all',      label: 'All' },
+  // Pending sits first after All so operators spot chain-gated
+  // quotes without hunting. V176.
+  { value: 'pending',  label: 'Pending' },
   { value: 'progress', label: 'Progress' },
   { value: 'done',     label: 'Done' },
   { value: 'close',    label: 'Close' },
@@ -516,6 +523,13 @@ function QuotationFormDialog({
   const [terms, setTerms] = useState('');
   const [lines, setLines] = useState<FormLine[]>([newLine()]);
   const [saving, setSaving] = useState(false);
+  // Approver picker state (V172, Phase 3b) — manual-assign chain,
+  // mirrors CashAdvances. Empty = skip approval, quotation flows
+  // through the existing progress → done / close states unchanged.
+  const [users, setUsers] = useState<usersApi.User[]>([]);
+  const [approver1, setApprover1] = useState('');
+  const [approver2, setApprover2] = useState('');
+  const [approver3, setApprover3] = useState('');
   // Recent-items typeahead — same pattern as Invoices. Tracks which
   // row's Item input is focused so the dropdown only renders for it.
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
@@ -605,8 +619,27 @@ function QuotationFormDialog({
       setNotes('');
       setTerms('');
       setLines([newLine()]);
+      setApprover1('');
+      setApprover2('');
+      setApprover3('');
     }
   }, [open, editing]);
+
+  // Users list feeds the Approver dropdowns. Only fetched when the
+  // dialog is opened for a NEW quotation AND the tenant has flipped
+  // Show Approval on in Settings (V175). 403 silently → empty picker;
+  // the operator can still create without approvers.
+  useEffect(() => {
+    if (!open || editing || !settings.showApproval) return;
+    void (async () => {
+      try {
+        const res = await usersApi.list({ size: 200 });
+        setUsers(res.data);
+      } catch {
+        setUsers([]);
+      }
+    })();
+  }, [open, editing, settings.showApproval]);
 
   // Follow-up sync: when the tenant currency settings arrive AFTER
   // the reset effect above ran (network race on first open), pin the
@@ -659,32 +692,45 @@ function QuotationFormDialog({
     return true;
   };
 
-  const buildPayload = (): quotationsApi.QuotationRequest => ({
-    quotationNo: quotationNo.trim() || undefined,
-    customerId,
-    issueDate,
-    expiryDate: expiryDate.trim() || null,
-    recipientName: recipientName.trim() || undefined,
-    recipientEmail: recipientEmail.trim() || undefined,
-    recipientPhone: recipientPhone.trim() || undefined,
-    currency: currency.trim().toUpperCase(),
-    exchangeRate: Number(exchangeRate) || 0,
-    taxType: taxType || undefined,
-    discountType,
-    discountValue: Number(discountValue) || 0,
-    notes: notes.trim() || undefined,
-    terms: terms.trim() || undefined,
-    items: lines
-      .filter(l => l.name.trim())
-      .map(l => ({
-        stockItemId: l.stockItemId ?? null,
-        name: l.name.trim(),
-        description: l.description.trim() || null,
-        unit: l.unit.trim() || null,
-        quantity: Number(l.quantity) || 0,
-        unitPrice: Number(l.unitPrice) || 0,
-      })),
-  });
+  const buildPayload = (): quotationsApi.QuotationRequest => {
+    // Approvers — ordered, dedup, drop blanks. Only sent on create;
+    // update ignores the field server-side.
+    const orderedApprovers: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of [approver1, approver2, approver3]) {
+      const v = raw?.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      orderedApprovers.push(v);
+    }
+    return {
+      quotationNo: quotationNo.trim() || undefined,
+      customerId,
+      issueDate,
+      expiryDate: expiryDate.trim() || null,
+      recipientName: recipientName.trim() || undefined,
+      recipientEmail: recipientEmail.trim() || undefined,
+      recipientPhone: recipientPhone.trim() || undefined,
+      currency: currency.trim().toUpperCase(),
+      exchangeRate: Number(exchangeRate) || 0,
+      taxType: taxType || undefined,
+      discountType,
+      discountValue: Number(discountValue) || 0,
+      notes: notes.trim() || undefined,
+      terms: terms.trim() || undefined,
+      items: lines
+        .filter(l => l.name.trim())
+        .map(l => ({
+          stockItemId: l.stockItemId ?? null,
+          name: l.name.trim(),
+          description: l.description.trim() || null,
+          unit: l.unit.trim() || null,
+          quantity: Number(l.quantity) || 0,
+          unitPrice: Number(l.unitPrice) || 0,
+        })),
+      ...(isEdit ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
+    };
+  };
 
   const submit = async () => {
     if (!validate()) return;
@@ -1061,6 +1107,73 @@ function QuotationFormDialog({
             </div>
             )}
           </div>
+          )}
+
+          {/* Approvers — manual-assign chain (V172, Phase 3b). Optional:
+              leave blank and the quotation skips approval, flowing
+              through the existing progress → done / close states.
+              Only shown on create AND when the operator has flipped
+              "Show Approval" on in the Quotation settings dialog
+              (V175). Off-by-default keeps existing tenants' forms
+              unchanged on the next deploy. */}
+          {!isEdit && settings.showApproval && (
+            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to {settings.approverCount ?? 3})</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Approvers help"
+                      >
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Leave blank to skip approval. Otherwise the quotation waits until each picked approver acts, in order.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {(approver1 || approver2 || approver3) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-gray-500"
+                    onClick={() => { setApprover1(''); setApprover2(''); setApprover3(''); }}
+                    type="button"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {[
+                { label: '1st', value: approver1, set: setApprover1 },
+                { label: '2nd', value: approver2, set: setApprover2 },
+                { label: '3rd', value: approver3, set: setApprover3 },
+              ].slice(0, settings.approverCount ?? 3).map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
+                  <Select value={slot.value || '__none'} onValueChange={(v) => slot.set(v === '__none' ? '' : v)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="— none —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">— none —</SelectItem>
+                      {users
+                        .filter(u => u.isActive)
+                        .filter(u => u.id !== approver1 || slot.value === approver1)
+                        .filter(u => u.id !== approver2 || slot.value === approver2)
+                        .filter(u => u.id !== approver3 || slot.value === approver3)
+                        .map(u => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

@@ -26,10 +26,15 @@ import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
+import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import * as receiptPaymentsApi from '../../api/receiptPayments';
 import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as vendorsApi from '../../api/vendors';
 import * as currencyApi from '../../api/currencySettings';
+import * as accountingSettingsApi from '../../api/accountingSettings';
+import * as usersApi from '../../api/users';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -56,6 +61,8 @@ const fmtMoney = (n: number, currency: string): string => {
  *  the badge map collapses them to the Progress style so the UI
  *  reads consistently. */
 const STATUS_BADGE_CLASS: Record<receiptsApi.ReceiptStatus, string> = {
+  // Amber for pending — signals "waiting on chain approvers". V177.
+  pending:  'bg-amber-50 text-amber-700 border-amber-200',
   progress: 'bg-blue-50 text-blue-700 border-blue-200',
   paid:     'bg-emerald-50 text-emerald-700 border-emerald-200',
   void:     'bg-red-50 text-red-700 border-red-200',
@@ -65,6 +72,7 @@ const STATUS_BADGE_CLASS: Record<receiptsApi.ReceiptStatus, string> = {
 /** Friendly label — collapses legacy draft / issued to "Progress" so
  *  the visible status matches the two-state mental model. */
 const STATUS_LABEL: Record<receiptsApi.ReceiptStatus, string> = {
+  pending:  'pending',
   progress: 'progress',
   paid:     'paid',
   void:     'void',
@@ -94,6 +102,18 @@ export function Receipts() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  // Receipt-scope Accountant settings — gates the Approvers picker
+  // on the New-Receipt dialog via `settings.showApproval` (V175).
+  // Refetched on mount; the settings dialog also pushes the fresh
+  // row back through onSaved so a toggle change lands here without
+  // a page reload.
+  const [settings, setSettings] = useState<accountingSettingsApi.AccountingSettings>(
+    accountingSettingsApi.defaultsFor('receipt'));
+  useEffect(() => {
+    accountingSettingsApi.get('receipt').then(setSettings).catch(() => {
+      setSettings(accountingSettingsApi.defaultsFor('receipt'));
+    });
+  }, []);
   // Per-currency Paid totals for the visible page. Signed the same
   // as sumForReceipt (credit positive, debit negative — debit is the
   // typical "we paid the supplier" case; render flips the sign).
@@ -114,12 +134,21 @@ export function Receipts() {
         .then(setPaidByCurrency)
         .catch(() => setPaidByCurrency({}));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load receipts');
+      toast.error(e instanceof Error ? e.message : 'Failed to load expenses');
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Cross-page nav intent from the P&L report — clicking an expense
+  // Receipt row on ProfitLossReport stashes the receipt id in
+  // sessionStorage and switches the sidebar view; we pop the intent
+  // here and open the detail dialog on mount.
+  useEffect(() => {
+    const pending = consumeProfitLossNavIntent('receipt');
+    if (pending) setDetailId(pending);
+  }, []);
 
   const vendorById = useMemo(() => {
     const m = new Map<string, vendorsApi.Vendor>();
@@ -162,16 +191,16 @@ export function Receipts() {
             Refresh
           </Button>
           <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
-                  title="Receipt settings">
+                  title="Expense settings">
             <Settings className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
-              filename: 'Receipts',
-              sheetName: 'Receipts',
+              filename: 'Expenses',
+              sheetName: 'Expenses',
               columns: [
-                { header: 'Receipt No',   value: r => r.receiptNo,                                             width: 18 },
+                { header: 'Expense No',   value: r => r.receiptNo,                                             width: 18 },
                 { header: 'Issue Date',   value: r => r.issueDate,                                             width: 12 },
                 { header: 'Vendor',       value: r => vendorById.get(r.vendorId)?.name ?? '',                 width: 30 },
                 { header: 'Tax ID',       value: r => r.taxId ?? '',                                          width: 18 },
@@ -192,7 +221,7 @@ export function Receipts() {
             })}
             disabled={filtered.length === 0}
             size="icon"
-            title="Download the current receipt list as an Excel workbook"
+            title="Download the current expense list as an Excel workbook"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
@@ -200,14 +229,14 @@ export function Receipts() {
             <Button
               variant="outline"
               onClick={() => setBulkUploadOpen(true)}
-              title="Bulk upload receipts from an Excel workbook"
+              title="Bulk upload expenses from an Excel workbook"
             >
               <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
             </Button>
           )}
           {canAdd && (
             <Button onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1.5" /> New Receipt
+              <Plus className="h-4 w-4 mr-1.5" /> New Expense
             </Button>
           )}
         </div>
@@ -217,7 +246,7 @@ export function Receipts() {
         <CardHeader className="pb-2">
           <div className="flex items-center gap-3 flex-wrap">
             <Input
-              placeholder="Search by receipt no, vendor, tax id…"
+              placeholder="Search by expense no, vendor, tax id…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="max-w-xs"
@@ -256,7 +285,7 @@ export function Receipts() {
             <Table>
               <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
-                  <TableHead className="w-44">Receipt No</TableHead>
+                  <TableHead className="w-44">Expense No</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>Type of Supplier</TableHead>
                   <TableHead className="w-28">Date</TableHead>
@@ -359,6 +388,7 @@ export function Receipts() {
         onOpenChange={(o) => { setFormOpen(o); if (!o) setEditing(null); }}
         editing={editing}
         vendors={vendors}
+        settings={settings}
         // Optimistic append so the freshly-created vendor is
         // available to subsequent picks without reloading the
         // whole receipts page. Background load() on save still
@@ -385,6 +415,7 @@ export function Receipts() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         scope="receipt"
+        onSaved={setSettings}
       />
 
       <BulkUploadReceiptsDialog
@@ -403,12 +434,14 @@ export function Receipts() {
 /* -------------------------------------------------------------------- */
 
 function ReceiptFormDialog({
-  open, onOpenChange, editing, vendors, onVendorCreated, onSaved,
+  open, onOpenChange, editing, vendors, settings, onVendorCreated, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   editing: receiptsApi.Receipt | null;
   vendors: vendorsApi.Vendor[];
+  /** Receipt-scope settings — gates the Approvers picker on create. */
+  settings: accountingSettingsApi.AccountingSettings;
   /** Called after the picker's inline "+ Create" flow mints a new
    *  vendor — parent appends it to the master list so it stays
    *  pickable in subsequent dialog opens. */
@@ -440,6 +473,11 @@ function ReceiptFormDialog({
   const [taxType, setTaxType] = useState<receiptsApi.ReceiptTaxType | ''>('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // Chain-approver picker state (V172, Phase 3b).
+  const [users, setUsers] = useState<usersApi.User[]>([]);
+  const [approver1, setApprover1] = useState('');
+  const [approver2, setApprover2] = useState('');
+  const [approver3, setApprover3] = useState('');
 
   // Reset / seed when dialog opens
   useEffect(() => {
@@ -468,8 +506,26 @@ function ReceiptFormDialog({
       setAmount('0');
       setTaxType('');
       setNotes('');
+      setApprover1('');
+      setApprover2('');
+      setApprover3('');
     }
   }, [open, editing]);
+
+  // Users list feeds the Approver dropdowns — only fetched for new
+  // receipts AND when Show Approval is on (V175). 403 silently →
+  // empty picker; operator can still save without approvers.
+  useEffect(() => {
+    if (!open || editing || !settings.showApproval) return;
+    void (async () => {
+      try {
+        const res = await usersApi.list({ size: 500 });
+        setUsers(res.data ?? []);
+      } catch {
+        setUsers([]);
+      }
+    })();
+  }, [open, editing, settings.showApproval]);
 
   // Follow-up sync: when the tenant currency settings arrive AFTER
   // the reset effect above ran (network race on first open), pin the
@@ -502,19 +558,32 @@ function ReceiptFormDialog({
     return true;
   };
 
-  const buildPayload = (): receiptsApi.ReceiptRequest => ({
-    receiptNo: receiptNo.trim() || undefined,
-    vendorId,
-    issueDate,
-    supplierType,
-    taxId: taxId.trim() || undefined,
-    currency: currency.trim().toUpperCase(),
-    exchangeRate: Number(exchangeRate) || 0,
-    amount: amountNum,
-    taxType: taxType || '',
-    taxAmount: computedTax,
-    notes: notes.trim() || undefined,
-  });
+  const buildPayload = (): receiptsApi.ReceiptRequest => {
+    // Chain approvers — ordered, dedup, drop blanks. Only sent on
+    // create; update ignores the field server-side.
+    const orderedApprovers: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of [approver1, approver2, approver3]) {
+      const v = raw?.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      orderedApprovers.push(v);
+    }
+    return {
+      receiptNo: receiptNo.trim() || undefined,
+      vendorId,
+      issueDate,
+      supplierType,
+      taxId: taxId.trim() || undefined,
+      currency: currency.trim().toUpperCase(),
+      exchangeRate: Number(exchangeRate) || 0,
+      amount: amountNum,
+      taxType: taxType || '',
+      taxAmount: computedTax,
+      notes: notes.trim() || undefined,
+      ...(isEdit ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
+    };
+  };
 
   const submit = async () => {
     if (!validate()) return;
@@ -526,11 +595,11 @@ function ReceiptFormDialog({
       } else {
         const created = await receiptsApi.create(buildPayload());
         setSavedReceiptId(created.id);
-        toast.success(`Receipt ${created.receiptNo} created`);
+        toast.success(`Expense ${created.receiptNo} created`);
       }
       await onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save receipt');
+      toast.error(e instanceof Error ? e.message : 'Failed to save expense');
     } finally {
       setSaving(false);
     }
@@ -545,7 +614,7 @@ function ReceiptFormDialog({
     setSaving(true);
     try {
       const created = await receiptsApi.create(buildPayload());
-      toast.success(`Receipt ${created.receiptNo} created`);
+      toast.success(`Expense ${created.receiptNo} created`);
       // Reset the bits that change per row; keep vendor + currency
       // + dates so chaining stays fast.
       setSavedReceiptId(null);
@@ -554,7 +623,7 @@ function ReceiptFormDialog({
       setTaxType('');
       setNotes('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create receipt');
+      toast.error(e instanceof Error ? e.message : 'Failed to create expense');
     } finally {
       setSaving(false);
     }
@@ -568,10 +637,10 @@ function ReceiptFormDialog({
     setSaving(true);
     try {
       const created = await receiptsApi.create(buildPayload());
-      toast.success(`Receipt ${created.receiptNo} created`);
+      toast.success(`Expense ${created.receiptNo} created`);
       await onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create receipt');
+      toast.error(e instanceof Error ? e.message : 'Failed to create expense');
     } finally {
       setSaving(false);
     }
@@ -582,13 +651,13 @@ function ReceiptFormDialog({
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit ${editing?.receiptNo}` : 'New Receipt'}</DialogTitle>
-          <DialogDescription className="sr-only">Receipt form</DialogDescription>
+          <DialogDescription className="sr-only">Expense form</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Receipt No</Label>
+              <Label className="text-xs">Expense No</Label>
               <Input value={receiptNo} onChange={e => setReceiptNo(e.target.value)}
                      className="tabular-nums" />
             </div>
@@ -720,6 +789,73 @@ function ReceiptFormDialog({
                       placeholder="Internal memo" />
           </div>
 
+          {/* Chain approvers — manual-assign chain (V172, Phase 3b).
+              Only shown on create AND when Show Approval is on in
+              Expense Settings (V175). */}
+          {!isEdit && settings.showApproval && (
+            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to {settings.approverCount ?? 3})</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Approvers help"
+                      >
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Leave blank to skip approval. Otherwise the expense waits until each picked approver acts, in order.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {(approver1 || approver2 || approver3) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-gray-500"
+                    onClick={() => { setApprover1(''); setApprover2(''); setApprover3(''); }}
+                    type="button"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {[
+                { label: '1st', value: approver1, set: setApprover1 },
+                { label: '2nd', value: approver2, set: setApprover2 },
+                { label: '3rd', value: approver3, set: setApprover3 },
+              ].slice(0, settings.approverCount ?? 3).map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
+                  <div className="flex-1">
+                    <SearchablePicker
+                      value={slot.value}
+                      onChange={slot.set}
+                      placeholder="— none —"
+                      emptyLabel="— none —"
+                      searchPlaceholder="Search users by email or role…"
+                      options={users
+                        .filter(u => u.isActive)
+                        .filter(u => u.id !== approver1 || slot.value === approver1)
+                        .filter(u => u.id !== approver2 || slot.value === approver2)
+                        .filter(u => u.id !== approver3 || slot.value === approver3)
+                        .map(u => ({
+                          value: u.id,
+                          label: u.email,
+                          secondary: u.role,
+                          searchKey: `${u.email} ${u.role}`,
+                        }))}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Attachments — once the receipt has been saved (or in
               edit mode), the panel lights up. Pre-save creates show
               a hint and disable upload. */}
@@ -776,7 +912,7 @@ function ReceiptDetailDialog({
   const load = async () => {
     setLoading(true);
     try { setReceipt(await receiptsApi.get(receiptId)); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to load receipt'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to load expense'); }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [receiptId]);
@@ -800,14 +936,14 @@ function ReceiptDetailDialog({
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle className="tabular-nums">{receipt?.receiptNo ?? 'Receipt'}</DialogTitle>
+              <DialogTitle className="tabular-nums">{receipt?.receiptNo ?? 'Expense'}</DialogTitle>
               <DialogDescription className="flex items-center gap-2 mt-1">
                 {loading || !receipt ? (
                   <span className="text-xs text-gray-500">Loading…</span>
                 ) : (
                   <>
                     <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                      <FileText className="h-3 w-3 mr-1" /> Receipt
+                      <FileText className="h-3 w-3 mr-1" /> Expense
                     </Badge>
                     <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[receipt.status]}`}>
                       {STATUS_LABEL[receipt.status] ?? receipt.status}
@@ -831,7 +967,7 @@ function ReceiptDetailDialog({
                 {canEdit && receipt.status !== 'void' && (
                   <Button size="sm" variant="outline" disabled={busy}
                           className="text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => doAction('Receipt voided',
+                          onClick={() => doAction('Expense voided',
                             () => receiptsApi.voidReceipt(receipt.id))}>
                     <Ban className="h-3.5 w-3.5 mr-1" /> Void
                   </Button>
@@ -962,7 +1098,7 @@ function ReceiptPaymentsPanel({
           left. Helps spot half-paid receipts without doing arithmetic. */}
       <div className="grid grid-cols-3 gap-3 text-xs">
         <div className="bg-slate-50 rounded p-2">
-          <div className="text-gray-500">Receipt amount</div>
+          <div className="text-gray-500">Expense amount</div>
           <div className="tabular-nums">{fmtMoney(receiptAmount, receiptCurrency)}</div>
         </div>
         <div className="bg-slate-50 rounded p-2">

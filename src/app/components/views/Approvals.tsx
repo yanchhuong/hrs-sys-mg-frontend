@@ -16,6 +16,12 @@ import { Pagination } from '../common/Pagination';
 import { CheckCircle2, XCircle, Info, RefreshCw, ClipboardCheck, Clock, X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import * as approvalsApi from '../../api/approvals';
+import * as quotationsApi from '../../api/quotations';
+import * as vouchersApi from '../../api/vouchers';
+import * as billsApi from '../../api/bills';
+import * as receiptsApi from '../../api/receipts';
+import * as customersApi from '../../api/customers';
+import * as vendorsApi from '../../api/vendors';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -37,6 +43,18 @@ function sourceLabel(t: string): string {
     case 'leave':        return 'Leave';
     case 'overtime':     return 'Overtime';
     case 'exception':    return 'Attendance Exception';
+    // Sale + Purchase chain gates (V172 Phase 3b + V176).
+    case 'quotation':    return 'Quotation';
+    case 'voucher':      return 'General Voucher';
+    case 'bill':         return 'Bill';
+    case 'receipt':      return 'Expense';
+    // Payroll batch — the legacy per-batch approver flow now also
+    // spawns a chain in the unified inbox. V172 Phase 3b.
+    case 'payroll_batch': return 'Payroll Batch';
+    // Hospital encounter (V182 / v-hospital-api). Chain-gated visits
+    // that need physician / admin sign-off before the Medical Bill
+    // can be generated.
+    case 'encounter':    return 'Encounter';
     default:             return t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 }
@@ -342,6 +360,100 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
       </div>
     );
   }
+  // Quotation / Voucher / Bill / Receipt — sale-purchase chain gates
+  // (V176). Same shape as Cash Advance: doc-no + amount up top, party
+  // name (customer or vendor) + a distinguishing tag on the second line.
+  if (approval.sourceType === 'quotation') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.quotationNo === 'string' ? s.quotationNo : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.customerName === 'string' ? s.customerName : ''}
+          {typeof s.expiryDate === 'string' && s.expiryDate ? ` — expires ${s.expiryDate}` : ''}
+        </div>
+      </div>
+    );
+  }
+  if (approval.sourceType === 'voucher') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.voucherNo === 'string' ? s.voucherNo : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.customerName === 'string' ? s.customerName : ''}
+          {typeof s.purpose === 'string' && s.purpose ? ` — ${capitalize(s.purpose.replace(/_/g, ' '))}` : ''}
+        </div>
+      </div>
+    );
+  }
+  if (approval.sourceType === 'bill') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.billNo === 'string' ? s.billNo : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.vendorName === 'string' ? s.vendorName : ''}
+          {typeof s.dueDate === 'string' && s.dueDate ? ` — due ${s.dueDate}` : ''}
+        </div>
+      </div>
+    );
+  }
+  if (approval.sourceType === 'receipt') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.receiptNo === 'string' ? s.receiptNo : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.vendorName === 'string' ? s.vendorName : ''}
+          {typeof s.issueDate === 'string' && s.issueDate ? ` — ${s.issueDate}` : ''}
+        </div>
+      </div>
+    );
+  }
+  if (approval.sourceType === 'payroll_batch') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.subject === 'string' ? s.subject : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.monthYear === 'string' ? s.monthYear : ''}
+          {typeof s.totalEmployees === 'number' ? ` — ${s.totalEmployees} employee${s.totalEmployees !== 1 ? 's' : ''}` : ''}
+          {typeof s.type === 'string' && s.type ? ` · ${capitalize(String(s.type).replace(/_/g, ' '))}` : ''}
+        </div>
+      </div>
+    );
+  }
+  if (approval.sourceType === 'encounter') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {typeof s.encounterNo === 'string' ? s.encounterNo : ''}
+          {' · '}
+          <span className="tabular-nums">{money(s.amount, s.currency)}</span>
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.patientName === 'string' ? s.patientName : ''}
+          {typeof s.reason === 'string' && s.reason ? ` — ${s.reason}` : ''}
+        </div>
+      </div>
+    );
+  }
   // Generic fallback for future source types — surface any string
   // field the enricher put on the summary.
   const first = Object.entries(s).find(([, v]) => typeof v === 'string' && v);
@@ -498,6 +610,69 @@ function ApprovalDetailDialog({
                   <span className="font-medium italic">"{String(s.reason ?? '—')}"</span>
                 </div>
               </div>
+            ) : current.sourceType === 'quotation' ? (
+              // V176 — chain-gated pre-sale quote. Rich preview
+              // mirrors the QuotationDetailDialog visual: doc-no
+              // header, status chip + issue date, party meta grid,
+              // items table, subtotal + total block.
+              <QuotationPreview quotationId={current.sourceId} formatDate={formatDate} />
+            ) : current.sourceType === 'voucher' ? (
+              // V176 — chain-gated Voucher. Same rich-preview style
+              // as Quotation (items table + totals). Voucher's total
+              // is always zero by design, so we show a "Face value"
+              // line under the items instead.
+              <VoucherPreview voucherId={current.sourceId} formatDate={formatDate} />
+            ) : current.sourceType === 'bill' ? (
+              // V177 — chain-gated Bill. Rich preview mirrors the
+              // Quotation layout: header + party meta + items table +
+              // subtotal/tax/discount/total block.
+              <BillPreview billId={current.sourceId} formatDate={formatDate} />
+            ) : current.sourceType === 'receipt' ? (
+              // V177 — chain-gated Receipt. Single-line doc, so no
+              // items table — a taller meta grid + a total tile.
+              <ReceiptPreview receiptId={current.sourceId} formatDate={formatDate} />
+            ) : current.sourceType === 'payroll_batch' ? (
+              // Payroll batch — subject is the primary label; the
+              // month + type + employee count identify the run
+              // uniquely. Net-salary total is the amount to sign off.
+              // No item-by-item table here — payslips live behind the
+              // Payroll page's per-batch detail dialog.
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="col-span-2">
+                  <span className="text-gray-500">Subject:</span>{' '}
+                  <span className="font-medium">{String(s.subject ?? '—')}</span>
+                </div>
+                <div><span className="text-gray-500">Month:</span> <span className="font-medium">{String(s.monthYear ?? '—')}</span></div>
+                <div><span className="text-gray-500">Type:</span> <span className="font-medium">{s.type ? capitalize(String(s.type).replace(/_/g, ' ')) : '—'}</span></div>
+                <div><span className="text-gray-500">Employees:</span> <span className="font-medium tabular-nums">{typeof s.totalEmployees === 'number' ? s.totalEmployees : '—'}</span></div>
+                <div><span className="text-gray-500">Net total:</span> <span className="font-medium tabular-nums">{money(s.amount, s.currency)}</span></div>
+                <div><span className="text-gray-500">Batch date:</span> <span className="font-medium tabular-nums">{s.batchDate ? String(s.batchDate) : '—'}</span></div>
+                <div><span className="text-gray-500">Status:</span> <span className="font-medium">{s.status ? capitalize(String(s.status)) : '—'}</span></div>
+              </div>
+            ) : current.sourceType === 'encounter' ? (
+              // V182 / v-hospital-api — Encounter. Chain-gated visits
+              // need physician / admin sign-off before billing. Rich
+              // fields don't need a bespoke preview yet — the
+              // summarize() output is compact enough to read at a
+              // glance. Approver clicks "Approve" to release the
+              // encounter into progress (billable) or "Reject" to
+              // close it out.
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Encounter No.:</span> <span className="font-medium">{String(s.encounterNo ?? '—')}</span></div>
+                <div><span className="text-gray-500">Amount:</span> <span className="font-medium tabular-nums">{money(s.amount, s.currency)}</span></div>
+                <div><span className="text-gray-500">Patient:</span> <span className="font-medium">{String(s.patientName ?? '—')}</span></div>
+                <div><span className="text-gray-500">Status:</span> <span className="font-medium">{s.status ? capitalize(String(s.status)) : '—'}</span></div>
+                <div className="col-span-2">
+                  <span className="text-gray-500">Encounter date:</span>{' '}
+                  <span className="font-medium tabular-nums">{s.encounterDate ? String(s.encounterDate) : '—'}</span>
+                </div>
+                {s.reason ? (
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Reason:</span>{' '}
+                    <span className="font-medium italic">"{String(s.reason)}"</span>
+                  </div>
+                ) : null}
+              </div>
             ) : (
               // Generic fallback — future source types not yet given a
               // custom layout still render, just as a plain label/value
@@ -584,5 +759,452 @@ function ApprovalDetailDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ---------------------------------------------------------------------
+ * Rich source previews (V176)
+ *
+ * The Approval inbox for Quotation / Voucher chains renders the full
+ * document layout — header, party meta, items table, totals — so the
+ * approver has the same visual context as the source page's own
+ * detail dialog without having to navigate away. Read-only: no
+ * Print / Send / Edit / Convert / Close actions — those belong on
+ * the source doc's page.
+ * --------------------------------------------------------------------- */
+
+interface PreviewProps { formatDate: (d: Date | string | number | null | undefined) => string; }
+
+/** Format a subtotal-line-total number using the same helper as {@link money}. */
+function fmt(v: number, ccy: string): string {
+  return `${ccy} ${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Status chip — matches the amber/pending pattern used in the list
+ *  page for chain-gated docs. Falls back to slate for anything else. */
+function StatusPill({ status }: { status: string }) {
+  const color =
+    status === 'pending'  ? 'border-amber-300 text-amber-700 bg-amber-50'   :
+    status === 'progress' ? 'border-blue-300 text-blue-700 bg-blue-50'      :
+    status === 'done' || status === 'approved' || status === 'issued'
+                          ? 'border-emerald-300 text-emerald-700 bg-emerald-50' :
+    status === 'rejected' ? 'border-red-300 text-red-700 bg-red-50'          :
+    status === 'close' || status === 'void'
+                          ? 'border-slate-300 text-slate-700 bg-slate-50'    :
+                            'border-slate-300 text-slate-700 bg-slate-50';
+  return <Badge variant="outline" className={`capitalize text-[10px] ${color}`}>{status}</Badge>;
+}
+
+function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotationId: string }) {
+  const [quote, setQuote] = useState<quotationsApi.Quotation | null>(null);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = await quotationsApi.get(quotationId);
+        if (cancelled) return;
+        setQuote(q);
+        // Customer lookup — best-effort. 403 or missing row → fall
+        // back to the id string; the caller's chain summary has the
+        // name too so the header line still reads sensibly.
+        try {
+          const c = await customersApi.get(q.customerId);
+          if (!cancelled) setCustomerName(c.name);
+        } catch { /* leave blank */ }
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load quotation');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [quotationId]);
+  if (loading && !quote) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (!quote) return <div className="text-sm text-gray-500 py-6 text-center">Quotation not found.</div>;
+  const subtotal = quote.subtotal ?? 0;
+  const total    = quote.total ?? 0;
+  const ccy      = quote.currency;
+  return (
+    <div className="space-y-4">
+      {/* Header — doc no + status chip + issue date. Actions live on
+          the Quotation page; here it's view-only. */}
+      <div className="flex items-baseline gap-3">
+        <h3 className="text-lg font-semibold tracking-tight">{quote.quotationNo}</h3>
+        <StatusPill status={quote.status} />
+        <span className="text-xs text-gray-500">{formatDate(quote.issueDate)}</span>
+      </div>
+
+      {/* Party meta — 2-col label/value list. */}
+      <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
+        <span className="text-gray-500">Customer</span>
+        <span className="font-medium">{customerName || '—'}</span>
+        {(quote.recipientName || quote.recipientEmail || quote.recipientPhone) && (
+          <>
+            <span className="text-gray-500">Recipient</span>
+            <span className="font-medium">
+              {quote.recipientName || '—'}
+              {quote.recipientEmail ? <span className="text-xs text-gray-500"> · {quote.recipientEmail}</span> : null}
+            </span>
+          </>
+        )}
+        <span className="text-gray-500">Currency</span>
+        <span className="font-medium">{ccy}</span>
+        {quote.expiryDate && (
+          <>
+            <span className="text-gray-500">Expires</span>
+            <span className="font-medium tabular-nums">{formatDate(quote.expiryDate)}</span>
+          </>
+        )}
+      </div>
+
+      {/* Items */}
+      <div className="border rounded-md overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead>Specification</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
+              <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-28 text-right">Unit price</TableHead>
+              <TableHead className="w-28 text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {quote.items.map(it => (
+              <TableRow key={it.id}>
+                <TableCell className="font-medium">{it.name}</TableCell>
+                <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Totals — right-aligned block */}
+      <div className="flex justify-end">
+        <div className="w-64 space-y-1 rounded-md bg-slate-50 px-4 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Subtotal</span>
+            <span className="tabular-nums">{fmt(subtotal, ccy)}</span>
+          </div>
+          {quote.taxAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Tax</span>
+              <span className="tabular-nums">{fmt(quote.taxAmount, ccy)}</span>
+            </div>
+          )}
+          {quote.discountAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Discount</span>
+              <span className="tabular-nums">− {fmt(quote.discountAmount, ccy)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Total {ccy}</span>
+            <span className="tabular-nums">{fmt(total, ccy)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: string }) {
+  const [voucher, setVoucher] = useState<vouchersApi.Voucher | null>(null);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const v = await vouchersApi.get(voucherId);
+        if (cancelled) return;
+        setVoucher(v);
+        try {
+          const c = await customersApi.get(v.customerId);
+          if (!cancelled) setCustomerName(c.name);
+        } catch { /* leave blank */ }
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load voucher');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [voucherId]);
+  if (loading && !voucher) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (!voucher) return <div className="text-sm text-gray-500 py-6 text-center">Voucher not found.</div>;
+  const ccy = voucher.currency;
+  // Voucher forces a 100% discount so `total` is always 0. Sum the
+  // items so the approver sees the actual face value.
+  const faceValue = voucher.items.reduce(
+    (acc, it) => acc + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
+    0,
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex items-baseline gap-3">
+        <h3 className="text-lg font-semibold tracking-tight">{voucher.voucherNo}</h3>
+        <StatusPill status={voucher.status} />
+        <span className="text-xs text-gray-500">{formatDate(voucher.issueDate)}</span>
+      </div>
+
+      <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
+        <span className="text-gray-500">Customer</span>
+        <span className="font-medium">{customerName || '—'}</span>
+        <span className="text-gray-500">Purpose</span>
+        <span className="font-medium">{capitalize(voucher.purpose.replace(/_/g, ' '))}</span>
+        <span className="text-gray-500">Currency</span>
+        <span className="font-medium">{ccy}</span>
+      </div>
+
+      <div className="border rounded-md overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead>Specification</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
+              <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-28 text-right">Unit price</TableHead>
+              <TableHead className="w-28 text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {voucher.items.map(it => (
+              <TableRow key={it.id}>
+                <TableCell className="font-medium">{it.name}</TableCell>
+                <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Face value + Total. Voucher's total is always zero — the
+          face value is what the approver actually needs to see. */}
+      <div className="flex justify-end">
+        <div className="w-64 space-y-1 rounded-md bg-slate-50 px-4 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Face value</span>
+            <span className="tabular-nums">{fmt(faceValue, ccy)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Discount (100%)</span>
+            <span className="tabular-nums">− {fmt(faceValue, ccy)}</span>
+          </div>
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Total {ccy}</span>
+            <span className="tabular-nums">{fmt(0, ccy)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) {
+  const [bill, setBill] = useState<billsApi.Bill | null>(null);
+  const [vendorName, setVendorName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const b = await billsApi.get(billId);
+        if (cancelled) return;
+        setBill(b);
+        // Bill's FE type field is legacy-named `customerId` but the
+        // runtime JSON is `vendorId` (see BillDto.java). Cast to
+        // reach the actual field.
+        const vendorId = (b as unknown as { vendorId: string }).vendorId;
+        if (vendorId) {
+          try {
+            const v = await vendorsApi.get(vendorId);
+            if (!cancelled) setVendorName(v.name);
+          } catch { /* leave blank */ }
+        }
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load bill');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [billId]);
+  if (loading && !bill) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (!bill) return <div className="text-sm text-gray-500 py-6 text-center">Bill not found.</div>;
+  const ccy = bill.currency;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <h3 className="text-lg font-semibold tracking-tight">{bill.billNo}</h3>
+        <Badge variant="outline" className="capitalize text-[10px] border-slate-300 text-slate-700 bg-slate-50">
+          {bill.kind.replace(/_/g, ' ')}
+        </Badge>
+        <StatusPill status={bill.status} />
+        <span className="text-xs text-gray-500">{formatDate(bill.issueDate)}</span>
+      </div>
+
+      <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
+        <span className="text-gray-500">Vendor</span>
+        <span className="font-medium">{vendorName || '—'}</span>
+        <span className="text-gray-500">Currency</span>
+        <span className="font-medium">{ccy}</span>
+        {bill.dueDate && (
+          <>
+            <span className="text-gray-500">Due date</span>
+            <span className="font-medium tabular-nums">{formatDate(bill.dueDate)}</span>
+          </>
+        )}
+      </div>
+
+      <div className="border rounded-md overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead>Specification</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
+              <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-28 text-right">Unit price</TableHead>
+              <TableHead className="w-28 text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {bill.items.map(it => (
+              <TableRow key={it.id}>
+                <TableCell className="font-medium">{it.name}</TableCell>
+                <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex justify-end">
+        <div className="w-64 space-y-1 rounded-md bg-slate-50 px-4 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Subtotal</span>
+            <span className="tabular-nums">{fmt(bill.subtotal, ccy)}</span>
+          </div>
+          {bill.taxAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Tax</span>
+              <span className="tabular-nums">{fmt(bill.taxAmount, ccy)}</span>
+            </div>
+          )}
+          {bill.discountAmount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Discount</span>
+              <span className="tabular-nums">− {fmt(bill.discountAmount, ccy)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Total {ccy}</span>
+            <span className="tabular-nums">{fmt(bill.total, ccy)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiptPreview({ receiptId, formatDate }: PreviewProps & { receiptId: string }) {
+  const [receipt, setReceipt] = useState<receiptsApi.Receipt | null>(null);
+  const [vendorName, setVendorName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await receiptsApi.get(receiptId);
+        if (cancelled) return;
+        setReceipt(r);
+        try {
+          const v = await vendorsApi.get(r.vendorId);
+          if (!cancelled) setVendorName(v.name);
+        } catch { /* leave blank */ }
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load expense');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [receiptId]);
+  if (loading && !receipt) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (!receipt) return <div className="text-sm text-gray-500 py-6 text-center">Expense not found.</div>;
+  const ccy = receipt.currency;
+  // Receipt is a single-amount doc — no items to list, so the totals
+  // block goes wider to compensate visually.
+  const netAmount = (receipt.amount ?? 0) - (receipt.taxAmount ?? 0);
+  return (
+    <div className="space-y-4">
+      <div className="flex items-baseline gap-3">
+        <h3 className="text-lg font-semibold tracking-tight">{receipt.receiptNo}</h3>
+        <StatusPill status={receipt.status} />
+        <span className="text-xs text-gray-500">{formatDate(receipt.issueDate)}</span>
+      </div>
+
+      <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
+        <span className="text-gray-500">Vendor</span>
+        <span className="font-medium">{vendorName || '—'}</span>
+        <span className="text-gray-500">Supplier</span>
+        <span className="font-medium">{capitalize(receipt.supplierType.replace(/_/g, ' '))}</span>
+        {receipt.taxId && (
+          <>
+            <span className="text-gray-500">Tax ID</span>
+            <span className="font-medium">{receipt.taxId}</span>
+          </>
+        )}
+        <span className="text-gray-500">Currency</span>
+        <span className="font-medium">{ccy}</span>
+        {receipt.notes && (
+          <>
+            <span className="text-gray-500">Notes</span>
+            <span className="font-medium italic text-gray-700">"{receipt.notes}"</span>
+          </>
+        )}
+      </div>
+
+      <div className="flex justify-end">
+        <div className="w-72 space-y-1 rounded-md bg-slate-50 px-4 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Gross amount</span>
+            <span className="tabular-nums">{fmt(receipt.amount ?? 0, ccy)}</span>
+          </div>
+          {receipt.taxAmount ? (
+            <div className="flex justify-between">
+              <span className="text-gray-500">WHT ({receipt.taxType || '—'})</span>
+              <span className="tabular-nums">− {fmt(receipt.taxAmount, ccy)}</span>
+            </div>
+          ) : null}
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Net {ccy}</span>
+            <span className="tabular-nums">{fmt(netAmount, ccy)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

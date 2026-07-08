@@ -17,6 +17,11 @@ export interface User {
   role: UserRole;
   employeeId: string;
   departmentId?: string;
+  /** UUID of the tenant this user belongs to. Populated from
+   *  {@code /auth/me}; needed by tenant-scoped surfaces like the
+   *  Encounter Settings logo upload (V190). Optional on the type
+   *  so pre-login state and mock rows stay valid. */
+  tenantId?: string;
   /** Display name set via the Profile dialog (V140). When set,
    *  takes precedence over the linked employee's name across the
    *  app (sidebar avatar, POS Cashier line, etc.). */

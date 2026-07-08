@@ -128,6 +128,9 @@ function fromApi(apiUser: authApi.AuthUser): User {
     password: '',
     role: apiUser.role as UserRole,
     employeeId: apiUser.employeeId ?? '',
+    // Carry the tenant id through so tenant-scoped surfaces (Encounter
+    // Settings logo upload, etc.) can key on {@code currentUser.tenantId}.
+    tenantId: apiUser.tenantId,
     name: apiUser.name,
     createdAt: new Date().toISOString(),
     isActive: true,

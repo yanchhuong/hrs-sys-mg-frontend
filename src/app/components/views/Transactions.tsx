@@ -22,7 +22,7 @@ const REF_TYPE_OPTIONS: { value: '' | NonNullable<txApi.ListParams['refType']>; 
   { value: '',         label: 'All sources' },
   { value: 'invoice',  label: 'Invoice payments' },
   { value: 'bill',     label: 'Bill payments' },
-  { value: 'receipt',  label: 'Receipt payments' },
+  { value: 'receipt',  label: 'Expense payments' },
 ];
 
 const DIRECTION_OPTIONS: { value: '' | NonNullable<txApi.ListParams['direction']>; label: string }[] = [
@@ -197,7 +197,7 @@ export function Transactions() {
   const sourceBadge = (refType: string | null) => {
     if (refType === 'invoice')           return <Badge className="bg-sky-100 text-sky-700 border-sky-200">Invoice</Badge>;
     if (refType === 'bill')              return <Badge className="bg-violet-100 text-violet-700 border-violet-200">Bill</Badge>;
-    if (refType === 'receipt')           return <Badge className="bg-amber-100 text-amber-700 border-amber-200">Receipt</Badge>;
+    if (refType === 'receipt')           return <Badge className="bg-amber-100 text-amber-700 border-amber-200">Expense</Badge>;
     if (refType === 'cash_advance')      return <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">Advance</Badge>;
     if (refType === 'internal_transfer') return <Badge className="bg-slate-100 text-slate-700 border-slate-200">Transfer</Badge>;
     return <Badge variant="outline">—</Badge>;

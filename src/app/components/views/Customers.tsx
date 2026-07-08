@@ -19,7 +19,9 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
-import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings, Upload } from 'lucide-react';
+import * as invoicesApi from '../../api/invoices';
+import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings, Upload, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { BulkUploadCustomersDialog } from '../common/BulkUploadCustomersDialog';
 import { CustomerTelegramBotSettingsDialog } from '../common/CustomerTelegramBotSettingsDialog';
 import { toast } from 'sonner';
@@ -46,7 +48,29 @@ const emptyForm: customersApi.CustomerRequest = {
   // default — older V79 rows backfilled to taxable in V109. The
   // operator can pick another sub-type before saving.
   businessType: undefined,
+  birthDate: null,
+  insurance: '',
+  heightCm: null,
+  weightKg: null,
 };
+
+/** Compute integer years between a birth date (YYYY-MM-DD) and today.
+ *  Returns null when the date is missing / unparseable — the caller
+ *  renders "—" in that case. Handles the "birthday not yet this year"
+ *  edge so someone born in December this year doesn't show as 1yo in
+ *  January. */
+function ageInYears(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const parts = birthDate.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+  const [y, m, d] = parts;
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  const monthDiff = today.getMonth() + 1 - m;
+  const dayDiff = today.getDate() - d;
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
+  return age >= 0 && age < 200 ? age : null;
+}
 
 /** Display labels for the Business sub-type dropdown. */
 const BUSINESS_TYPE_OPTIONS: ReadonlyArray<{ value: customersApi.BusinessSubType; label: string; hint: string }> = [
@@ -64,13 +88,56 @@ const BUSINESS_TYPE_OPTIONS: ReadonlyArray<{ value: customersApi.BusinessSubType
  * representative); the form mirrors that with conditional inputs and
  * the same client-side validation, so the user sees the message before
  * the round-trip.
+ *
+ * <p>When mounted with {@code presentAs="patient"}, top-level labels
+ * swap to Hospital terminology (Patients page under Healthcare group).
+ * The underlying data lives in the same {@code customers} table —
+ * Patient/Student/Customer are all Customer rows per
+ * [[erp-core-engine-vision]]. Deep-in-form labels (Individual vs
+ * Business, TIN, representative) stay unchanged since those are
+ * cross-vertical accounting concepts.</p>
  */
-export function Customers() {
+export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' | 'patient' } = {}) {
+  const isPatient = presentAs === 'patient';
+  // Terms — only top-level, user-visible strings. Deep form labels
+  // (TIN, representative, business type, address) stay as-is.
+  const T = isPatient ? {
+    pageTitle:     'Patients',
+    addButton:     'Add Patient',
+    newDialog:     'New patient',
+    bulkTooltip:   'Bulk upload patients from an Excel workbook',
+    editTooltip:   'Edit patient',
+    deleteTooltip: 'Delete patient',
+    toastCreated:  'Patient created',
+    toastUpdated:  'Patient updated',
+    toastSaveFail: 'Failed to save patient',
+    toastLoadFail: 'Failed to load patients',
+  } : {
+    pageTitle:     null,          // fall through to t('nav.customers')
+    addButton:     'Add Customer',
+    newDialog:     'New customer',
+    bulkTooltip:   'Bulk upload customers from an Excel workbook',
+    editTooltip:   'Edit customer',
+    deleteTooltip: 'Delete customer',
+    toastCreated:  'Customer created',
+    toastUpdated:  'Customer updated',
+    toastSaveFail: 'Failed to save customer',
+    toastLoadFail: 'Failed to load customers',
+  };
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete, canView } = useAuth();
-  const canAdd = canCreate('customer');
-  const canEdit = canUpdate('customer');
-  const canRemove = canDelete('customer');
+  // Gate CRUD on the entity that OWNS the current lens, not on the
+  // shared 'customer' entity. Patients is a Hospital-branded lens
+  // over the same rows, but the tenant may have the Customer module
+  // uninstalled while Hospital is on — in that case the Patients
+  // page must still show its Add / Edit / Delete actions. Sidebar
+  // visibility for Patients is already gated on 'encounter' in
+  // {@link config/nav.ts}, so keying actions off the same entity
+  // keeps the two layers consistent.
+  const permEntity = isPatient ? 'encounter' : 'customer';
+  const canAdd = canCreate(permEntity);
+  const canEdit = canUpdate(permEntity);
+  const canRemove = canDelete(permEntity);
   // Telegram column visibility + permissions. Hidden entirely when
   // the tenant lacks telegram.view so non-telegram users see the
   // original table shape.
@@ -96,6 +163,10 @@ export function Customers() {
   // cell can look up its own status in O(1). Loaded alongside the
   // customer list when the tenant has telegram.view.
   const [linkedById, setLinkedById] = useState<Map<string, telegramApi.TelegramCustomer>>(new Map());
+  // Encounter-count per patient — only populated in the Patients lens.
+  // Sale > Customer keeps this empty and never renders the column, so
+  // there's no wasted round-trip.
+  const [visitCountById, setVisitCountById] = useState<Map<string, number>>(new Map());
 
   // Edit-dialog state. `editing` null = closed.
   const [editing, setEditing] = useState<customersApi.Customer | null>(null);
@@ -117,7 +188,7 @@ export function Customers() {
       });
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load customers');
+      toast.error(e instanceof Error ? e.message : T.toastLoadFail);
     } finally {
       setLoading(false);
     }
@@ -132,6 +203,22 @@ export function Customers() {
         setLinkedById(m);
       } catch {
         setLinkedById(new Map());
+      }
+    }
+    // Visit-count side-fetch — Patients lens only. Counts medical
+    // invoices per customer so the "Visit" column can render the
+    // number of encounters. Soft-fail: a 403 (encounter module off)
+    // or empty response just leaves the column blank.
+    if (isPatient) {
+      try {
+        const res = await invoicesApi.list({ kind: 'medical', size: 500 });
+        const counts = new Map<string, number>();
+        for (const inv of res.content ?? []) {
+          counts.set(inv.customerId, (counts.get(inv.customerId) ?? 0) + 1);
+        }
+        setVisitCountById(counts);
+      } catch {
+        setVisitCountById(new Map());
       }
     }
   };
@@ -156,7 +243,16 @@ export function Customers() {
 
   const openAdd = (defaultType: customersApi.CustomerType = 'individual') => {
     setEditing(null);
-    setForm({ ...emptyForm, type: defaultType });
+    // Patients lens forces every new row to
+    // {type: 'business', businessType: 'non_taxable'} so the shared
+    // customers table gets a consistent shape and the TIN-required
+    // validation (taxable business) never fires. Sale > Customer
+    // keeps the caller-supplied defaultType.
+    if (isPatient) {
+      setForm({ ...emptyForm, type: 'business', businessType: 'non_taxable' });
+    } else {
+      setForm({ ...emptyForm, type: defaultType });
+    }
     setDialogOpen(true);
   };
   const openEdit = (c: customersApi.Customer) => {
@@ -172,16 +268,34 @@ export function Customers() {
       representative: c.representative ?? '',
       site: c.site ?? '',
       businessType: c.businessType ?? undefined,
+      birthDate: c.birthDate ?? null,
+      insurance: c.insurance ?? '',
+      heightCm: c.heightCm ?? null,
+      weightKg: c.weightKg ?? null,
     });
     setDialogOpen(true);
   };
 
   const submit = async () => {
     if (!form.name.trim()) {
-      toast.error(form.type === 'business' ? 'Company name is required' : 'Name is required');
+      toast.error(form.type === 'business' && !isPatient ? 'Company name is required' : 'Name is required');
       return;
     }
-    if (form.type === 'business') {
+    // Patients: the Business Type / Representative inputs are hidden
+    // (see the form JSX), but the backend still enforces "business
+    // customer requires representative". Seed the field with the
+    // patient's own name so the row saves without an extra prompt —
+    // the value is just a placeholder; the Representative table
+    // column reads it back if we ever surface it.
+    const outboundForm = isPatient
+      ? {
+          ...form,
+          type: 'business' as const,
+          businessType: 'non_taxable' as const,
+          representative: form.representative?.trim() || form.name.trim(),
+        }
+      : form;
+    if (!isPatient && form.type === 'business') {
       if (!form.businessType) {
         toast.error('Pick a business sub-type (Taxable / Non-taxable / Oversee).');
         return;
@@ -197,16 +311,16 @@ export function Customers() {
     setSaving(true);
     try {
       if (editing) {
-        await customersApi.update(editing.id, form);
-        toast.success('Customer updated');
+        await customersApi.update(editing.id, outboundForm);
+        toast.success(T.toastUpdated);
       } else {
-        await customersApi.create(form);
-        toast.success('Customer created');
+        await customersApi.create(outboundForm);
+        toast.success(T.toastCreated);
       }
       setDialogOpen(false);
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save customer');
+      toast.error(e instanceof Error ? e.message : T.toastSaveFail);
     } finally {
       setSaving(false);
     }
@@ -229,7 +343,7 @@ export function Customers() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">{t('nav.customers')}</h1>
+          <h1 className="text-3xl font-bold">{T.pageTitle ?? t('nav.customers')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -251,14 +365,14 @@ export function Customers() {
             <Button
               variant="outline"
               onClick={() => setBulkUploadOpen(true)}
-              title="Bulk upload customers from an Excel workbook"
+              title={T.bulkTooltip}
             >
               <Upload className="h-4 w-4 mr-1.5" /> Bulk Upload
             </Button>
           )}
           {canAdd && (
             <Button onClick={() => openAdd('individual')}>
-              <Plus className="h-4 w-4 mr-1.5" /> Add Customer
+              <Plus className="h-4 w-4 mr-1.5" /> {T.addButton}
             </Button>
           )}
         </div>
@@ -277,21 +391,30 @@ export function Customers() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              {TYPE_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setTypeFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-                    typeFilter === f.value
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            {/* Type filter tabs — Individual / Business / All. Hidden
+                on the Patients lens: patients are always saved as a
+                single fixed type (business + non_taxable, so the TIN
+                requirement doesn't fire) and the operator has no
+                reason to filter by shape. */}
+            {!isPatient ? (
+              <div className="flex items-center gap-1.5">
+                {TYPE_FILTERS.map(f => (
+                  <button
+                    key={f.value}
+                    onClick={() => setTypeFilter(f.value)}
+                    className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                      typeFilter === f.value
+                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div />
+            )}
             <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -322,9 +445,21 @@ export function Customers() {
                         column without losing the distinction. */}
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
-                    <TableHead>TIN</TableHead>
-                    <TableHead>Representative</TableHead>
-                    <TableHead>Site</TableHead>
+                    {/* Patients page swaps the accounting-oriented TIN /
+                        Representative / Site columns for clinical
+                        columns. Representative gets auto-seeded to the
+                        patient's own name on save (backend enforces
+                        non-null on business customers) but never
+                        surfaces on the Patients lens. */}
+                    {!isPatient && <TableHead>TIN</TableHead>}
+                    {!isPatient && <TableHead>Representative</TableHead>}
+                    {!isPatient && <TableHead>Site</TableHead>}
+                    {isPatient && <TableHead className="w-[120px]">Birth date</TableHead>}
+                    {isPatient && <TableHead className="w-[70px] text-right">Age</TableHead>}
+                    {isPatient && <TableHead className="w-[80px] text-right">Height</TableHead>}
+                    {isPatient && <TableHead className="w-[80px] text-right">Weight</TableHead>}
+                    {isPatient && <TableHead className="w-[160px]">Insurance</TableHead>}
+                    {isPatient && <TableHead className="w-[80px] text-right">Visits</TableHead>}
                     {canViewTelegram && (
                       <TableHead className="w-[160px]">Link</TableHead>
                     )}
@@ -336,7 +471,18 @@ export function Customers() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          {c.type === 'business' ? (
+                          {/* Patients lens forces every row to business+non_taxable
+                              underneath, but visually a hospital tenant thinks of
+                              a patient as a person — use the individual icon here
+                              regardless of the stored type. */}
+                          {isPatient ? (
+                            <span
+                              className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-100 text-teal-700 shrink-0"
+                              title="Patient"
+                            >
+                              <User className="h-3 w-3" />
+                            </span>
+                          ) : c.type === 'business' ? (
                             <span
                               className="inline-flex items-center justify-center w-5 h-5 rounded bg-violet-100 text-violet-700 shrink-0"
                               title="Business"
@@ -355,11 +501,50 @@ export function Customers() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{c.representative || '—'}</TableCell>
-                      <TableCell className="text-sm text-gray-600 max-w-[200px] truncate" title={c.site || ''}>
-                        {c.site || '—'}
-                      </TableCell>
+                      {!isPatient && (
+                        <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
+                      )}
+                      {!isPatient && (
+                        <TableCell className="text-sm text-gray-600">{c.representative || '—'}</TableCell>
+                      )}
+                      {!isPatient && (
+                        <TableCell className="text-sm text-gray-600 max-w-[200px] truncate" title={c.site || ''}>
+                          {c.site || '—'}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-gray-600 tabular-nums">
+                          {c.birthDate || '—'}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-right tabular-nums text-gray-600">
+                          {(() => {
+                            const y = ageInYears(c.birthDate);
+                            return y == null ? '—' : `${y}y`;
+                          })()}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-right tabular-nums text-gray-600">
+                          {c.heightCm != null ? `${c.heightCm} cm` : '—'}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-right tabular-nums text-gray-600">
+                          {c.weightKg != null ? `${c.weightKg} kg` : '—'}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-gray-600 max-w-[160px] truncate" title={c.insurance || ''}>
+                          {c.insurance || '—'}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-right tabular-nums">
+                          {visitCountById.get(c.id) ?? 0}
+                        </TableCell>
+                      )}
                       {canViewTelegram && (
                         <TableCell>
                           <TelegramCell
@@ -378,7 +563,7 @@ export function Customers() {
                               size="sm" variant="ghost"
                               className="h-7 w-7 p-0"
                               onClick={() => openEdit(c)}
-                              title="Edit customer"
+                              title={T.editTooltip}
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
@@ -388,7 +573,7 @@ export function Customers() {
                               size="sm" variant="ghost"
                               className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => setDeleteTarget(c)}
-                              title="Delete customer"
+                              title={T.deleteTooltip}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -424,11 +609,41 @@ export function Customers() {
       <Dialog open={dialogOpen} onOpenChange={(o) => { if (!o) setDialogOpen(false); }}>
         <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 p-0">
           <DialogHeader className="px-6 pt-6 pb-3 shrink-0">
-            <DialogTitle>{editing ? `Edit ${editing.name}` : 'New customer'}</DialogTitle>
-            <DialogDescription>
-              {form.type === 'business'
-                ? 'Business customer — TIN and representative are required.'
-                : 'Individual customer — only name is required.'}
+            {/* Description text used to sit under the title. On the
+                Patients lens the wording is short enough to fit a
+                tooltip, keeping the header compact — same pattern as
+                InvoiceFormDialog. Sale > Customer keeps the visible
+                description because the type-branched hint is
+                genuinely useful mid-form. */}
+            <DialogTitle className="flex items-center gap-1.5">
+              {editing ? `Edit ${editing.name}` : T.newDialog}
+              {isPatient && (
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Patient form description"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Only the patient name is required. Add contact + clinical fields as available.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </DialogTitle>
+            {/* Keep an SR-only description for a11y — the tooltip on
+                the Info button surfaces the same copy visually. */}
+            <DialogDescription className={isPatient ? 'sr-only' : ''}>
+              {isPatient
+                ? 'Only the patient name is required. Add contact + clinical fields as available.'
+                : form.type === 'business'
+                  ? 'Business customer — TIN and representative are required.'
+                  : 'Individual customer — only name is required.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -439,48 +654,54 @@ export function Customers() {
 
           {/* Type picker — segmented control, disabled when editing so a
               row can't silently switch shape and orphan business-only
-              fields. Edits stay within a type; create a new row to switch. */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Type</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={!!editing}
-                onClick={() => setForm(f => ({ ...f, type: 'individual' }))}
-                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
-                  form.type === 'individual'
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                } ${editing ? 'opacity-60 cursor-not-allowed' : ''}`}
-              >
-                <User className="h-4 w-4" /> Individual
-              </button>
-              <button
-                type="button"
-                disabled={!!editing}
-                onClick={() => setForm(f => ({ ...f, type: 'business' }))}
-                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
-                  form.type === 'business'
-                    ? 'bg-violet-50 border-violet-300 text-violet-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                } ${editing ? 'opacity-60 cursor-not-allowed' : ''}`}
-              >
-                <Building2 className="h-4 w-4" /> Business
-              </button>
+              fields. Edits stay within a type; create a new row to switch.
+              Hidden on the Patients lens: patients are forced to
+              {type: 'business', businessType: 'non_taxable'} so the
+              TIN-required validation never fires and the clinical
+              form stays uncluttered by accounting concepts. */}
+          {!isPatient && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Type</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={!!editing}
+                  onClick={() => setForm(f => ({ ...f, type: 'individual' }))}
+                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
+                    form.type === 'individual'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                  } ${editing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  <User className="h-4 w-4" /> Individual
+                </button>
+                <button
+                  type="button"
+                  disabled={!!editing}
+                  onClick={() => setForm(f => ({ ...f, type: 'business' }))}
+                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
+                    form.type === 'business'
+                      ? 'bg-violet-50 border-violet-300 text-violet-700'
+                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                  } ${editing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  <Building2 className="h-4 w-4" /> Business
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="cust-name" className="text-xs">
-                {form.type === 'business' ? 'Company name' : 'Name'}
+                {isPatient ? 'Patient name' : form.type === 'business' ? 'Company name' : 'Name'}
                 <span className="text-red-500"> *</span>
               </Label>
               <Input
                 id="cust-name"
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder={form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
+                placeholder={isPatient ? 'Sopheaktra Pich' : form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
               />
             </div>
 
@@ -519,11 +740,78 @@ export function Customers() {
               </div>
             </div>
 
-            {form.type === 'business' && (
+            {/* Patients lens — clinical block: DoB (→ derived age),
+                Height, Weight, Insurance. Sale > Customer skips
+                everything in here. */}
+            {isPatient && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="space-y-1.5 col-span-2">
+                    <Label htmlFor="cust-birth-date" className="text-xs">
+                      Date of birth
+                      {(() => {
+                        const y = ageInYears(form.birthDate);
+                        return y == null ? null : (
+                          <span className="text-gray-500 font-normal"> · {y} years</span>
+                        );
+                      })()}
+                    </Label>
+                    <Input
+                      id="cust-birth-date"
+                      type="date"
+                      value={form.birthDate ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value || null }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-height" className="text-xs">Height (cm)</Label>
+                    <Input
+                      id="cust-height"
+                      type="number" step="0.1" min="0" max="999.9"
+                      className="tabular-nums"
+                      value={form.heightCm == null ? '' : String(form.heightCm)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setForm(f => ({ ...f, heightCm: v === '' ? null : Number(v) }));
+                      }}
+                      placeholder="e.g. 168"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-weight" className="text-xs">Weight (kg)</Label>
+                    <Input
+                      id="cust-weight"
+                      type="number" step="0.1" min="0" max="999.9"
+                      className="tabular-nums"
+                      value={form.weightKg == null ? '' : String(form.weightKg)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setForm(f => ({ ...f, weightKg: v === '' ? null : Number(v) }));
+                      }}
+                      placeholder="e.g. 62"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-insurance" className="text-xs">Insurance</Label>
+                  <Input
+                    id="cust-insurance"
+                    value={form.insurance ?? ''}
+                    onChange={(e) => setForm(f => ({ ...f, insurance: e.target.value }))}
+                    placeholder="Provider / policy number"
+                    maxLength={255}
+                  />
+                </div>
+              </div>
+            )}
+
+            {form.type === 'business' && !isPatient && (
               <>
                 {/* Business sub-type — drives TIN visibility. The
                     operator must pick one before saving (validation
-                    above + backend CHECK). */}
+                    above + backend CHECK). Hidden on the Patients
+                    lens because we force businessType='non_taxable'
+                    for every patient (see emptyForm + openCreate). */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">
                     Business type<span className="text-red-500"> *</span>

@@ -120,11 +120,11 @@ export function BulkUploadReceiptsDialog({
       if (result.errors.length > 0) {
         toast.error(result.errors[0]);
       } else if (errorReceipts > 0) {
-        toast.error(`${errorReceipts} receipt${errorReceipts !== 1 ? 's' : ''} have issues — review before import.`);
+        toast.error(`${errorReceipts} expense${errorReceipts !== 1 ? 's' : ''} have issues — review before import.`);
       } else if (result.totalReceipts > 0) {
-        toast.success(`Ready to import ${result.validReceipts} receipt${result.validReceipts !== 1 ? 's' : ''}`);
+        toast.success(`Ready to import ${result.validReceipts} expense${result.validReceipts !== 1 ? 's' : ''}`);
       } else {
-        toast.error('No receipt rows found in the workbook.');
+        toast.error('No expense rows found in the workbook.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to parse');
@@ -140,7 +140,7 @@ export function BulkUploadReceiptsDialog({
       r => selectedRows.has(r.rowNumber) && isImportable(r, autoCreateVendors),
     );
     if (rowsToImport.length === 0) {
-      toast.error('Select at least one valid receipt to import.');
+      toast.error('Select at least one valid expense to import.');
       return;
     }
 
@@ -225,13 +225,13 @@ export function BulkUploadReceiptsDialog({
         : '';
       toast.success(
         failCount === 0
-          ? `Imported ${okCount} receipt${okCount !== 1 ? 's' : ''}${suffix}`
+          ? `Imported ${okCount} expense${okCount !== 1 ? 's' : ''}${suffix}`
           : `Imported ${okCount} of ${okCount + failCount} — ${failCount} failed${suffix}`,
         { duration: 6000 },
       );
     }
     if (okCount === 0 && failCount > 0) {
-      toast.error('No receipts imported — every row failed. See the list for details.', { duration: 8000 });
+      toast.error('No expenses imported — every row failed. See the list for details.', { duration: 8000 });
     }
   };
 
@@ -268,7 +268,7 @@ export function BulkUploadReceiptsDialog({
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Upload Bulk Receipts
+            Upload Bulk Expenses
             <TooltipProvider delayDuration={120}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -277,7 +277,7 @@ export function BulkUploadReceiptsDialog({
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-                  Upload an Excel file (.xlsx). One row per receipt — receipts don't have line items.
+                  Upload an Excel file (.xlsx). One row per expense — expenses don't have line items.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -290,7 +290,7 @@ export function BulkUploadReceiptsDialog({
               <div className="p-4 rounded-md border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-center">
                 <FileSpreadsheet className="h-10 w-10 text-gray-400 mb-2" />
                 <p className="text-sm font-medium">Download the Excel template</p>
-                <p className="text-xs text-gray-500 mb-3">Receipt + Guide tabs with sample data</p>
+                <p className="text-xs text-gray-500 mb-3">Expense + Guide tabs with sample data</p>
                 <Button variant="outline" size="sm" onClick={downloadReceiptTemplate}>
                   <Download className="h-4 w-4 mr-2" />
                   Download Template
@@ -396,9 +396,9 @@ export function BulkUploadReceiptsDialog({
                 <div className="flex-1 min-w-0">
                   <p className="font-medium">
                     {finalResult.failed === 0
-                      ? `All ${finalResult.ok} receipt${finalResult.ok !== 1 ? 's' : ''} imported successfully`
+                      ? `All ${finalResult.ok} expense${finalResult.ok !== 1 ? 's' : ''} imported successfully`
                       : finalResult.ok === 0
-                        ? `No receipts imported — all ${finalResult.failed} failed`
+                        ? `No expenses imported — all ${finalResult.failed} failed`
                         : `${finalResult.ok} imported · ${finalResult.failed} failed`}
                     {finalResult.vendorsCreated > 0 && (
                       <span className="text-gray-700 font-normal">
@@ -557,7 +557,7 @@ function ReceiptCard({
             {willAutoCreate && (
               <span
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-800 border border-indigo-200"
-                title="This vendor isn't in the roster yet — a new record will be created before the receipt."
+                title="This vendor isn't in the roster yet — a new record will be created before the expense."
               >
                 + New
               </span>
@@ -565,7 +565,7 @@ function ReceiptCard({
             {isSharedNewMention && autoCreateVendors && (
               <span
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100"
-                title="Same new vendor as an earlier row — the importer creates the vendor once and links every receipt to it."
+                title="Same new vendor as an earlier row — the importer creates the vendor once and links every expense to it."
               >
                 ↳ Shared
               </span>

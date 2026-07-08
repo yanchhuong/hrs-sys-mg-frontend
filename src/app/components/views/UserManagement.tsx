@@ -170,7 +170,9 @@ const MODULES: ModuleDef[] = [
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
   { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
   { key: 'bill',              label: 'Bill',              description: 'Vendor bills + Credit / Debit notes (Accounts Payable)',     parent: 'expenses' },
-  { key: 'receipt',           label: 'Receipt',           description: 'Single-amount tax receipts (WHT) tied to a vendor',           parent: 'expenses' },
+  // Row keyed on the internal `receipt` module key for continuity —
+  // the user-facing label is Expense (renamed 2026-07-06).
+  { key: 'receipt',           label: 'Expense',           description: 'Single-amount tax expenses (WHT) tied to a vendor',           parent: 'expenses' },
 
   // Stock is its own sidebar group (V150) with three leaves —
   // Items is the catalog (module key 'stock' for legacy reasons),
@@ -187,6 +189,21 @@ const MODULES: ModuleDef[] = [
   { key: 'cashflow-group',    label: 'Cash Flow',         description: '',                                                            header: true },
   { key: 'transaction',       label: 'Transactions',      description: 'Unified ledger of every cash movement (in + out)',            parent: 'cashflow-group' },
   { key: 'cashadvance',       label: 'Cash Advance',      description: 'Employee advances + expense receipts + settlement',            parent: 'cashflow-group' },
+
+  // Approval — top-level sidebar leaf (nav.ts:175). V172/V173 seeded
+  // the module + default role permissions; this row makes the matrix
+  // reflect that so admins can tune per-role access without SQL.
+  // "create" and "delete" are backend no-ops (chains are spawned by
+  // the source doc — Quotation / Bill / etc — never by the inbox
+  // itself), but the columns render for shape consistency.
+  { key: 'approval',          label: 'Approval',          description: 'Unified approval inbox for Cash Advance / Quotation / Voucher / Bill / Receipt / Payroll chains' },
+
+  // Healthcare Business Base (V181 / v-hospital-*). Rows appear
+  // regardless of the tenant's Business Base — the admin's toggles
+  // only take effect once Super Admin enables the Hospital Base.
+  { key: 'healthcare-group',  label: 'Healthcare',        description: '',                                                                            header: true },
+  { key: 'encounter',         label: 'Encounters',        description: 'Patient visits — record services rendered, then convert to a Medical Bill', parent: 'healthcare-group' },
+  { key: 'medical-service',   label: 'Medical Services',  description: 'Catalog of billable services (type=medical_service inside Items)',           parent: 'healthcare-group' },
 
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
@@ -259,6 +276,15 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       case 'exception':  return true;                     // V / C / U / D
       case 'overtime':   return true;                     // V / C / U / D
       case 'payroll':    return action === 'view';        // own payslip only
+      // Approval — managers are approvers by default; they need to
+      // see the inbox and decide (V173 seed). "create" and "delete"
+      // are backend no-ops (chains are spawned by source docs).
+      case 'approval':   return action === 'view' || action === 'update';
+      // Healthcare (V181 / v-hospital-*) — Manager acts as front-
+      // desk / attending doctor by default: full V/C/U on encounters,
+      // view-only on the service catalog.
+      case 'encounter':        return action === 'view' || action === 'create' || action === 'update';
+      case 'medical-service':  return action === 'view';
       default:           return false;
     }
   }
@@ -270,6 +296,15 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
     case 'exception':  return action === 'view' || action === 'create';
     case 'overtime':   return action === 'view' || action === 'create';
     case 'payroll':    return action === 'view';
+    // Any employee can be picked as a manual-assign approver on
+    // Cash Advance / Quotation / Voucher / Bill / Receipt — matches
+    // V173 seed.
+    case 'approval':   return action === 'view' || action === 'update';
+    // Healthcare — Employees (nurses, techs) can start an encounter
+    // and view the service catalog. Closing / converting to a bill
+    // stays with Manager+.
+    case 'encounter':        return action === 'view' || action === 'create';
+    case 'medical-service':  return action === 'view';
     default:           return false;
   }
 };

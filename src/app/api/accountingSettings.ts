@@ -7,7 +7,7 @@ import { apiJson } from './client';
  *  - receipt  → Receipt form
  *  - quotation → Quotation form (single QT prefix, no Bank Accounts)
  *  - voucher   → General Voucher form (single VCH prefix, no Bank Accounts) */
-export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher' | 'pos';
+export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher' | 'pos' | 'payroll' | 'hospital';
 
 export interface AccountingSettings {
   showNotes: boolean;
@@ -25,6 +25,16 @@ export interface AccountingSettings {
    *  carry the column at the default but the dialog doesn't expose
    *  it. V128. */
   autoIssue: boolean;
+  /** When true, the Quotation / Voucher form shows the Approvers
+   *  picker on create so the operator can spawn an approval chain.
+   *  Off by default (V175) — the existing progress → done / close
+   *  flow proceeds unchanged for tenants that haven't opted in. The
+   *  column sits on every scope's row for uniformity; only the
+   *  Quotation + Voucher form UIs read it today. */
+  showApproval: boolean;
+  /** How many approver slots the create form renders when
+   *  {@link showApproval} is on. 1..3 (V180). Default 3. */
+  approverCount: number;
   /** Scope-relative prefix fields. For 'sale' these mean Invoice /
    *  Tax Invoice / Credit Note / Debit Note (INV / TAX / CN / DN
    *  defaults). For 'purchase' they mean Bill / Tax Bill / Bill CN
@@ -92,6 +102,12 @@ export interface AccountingSettings {
   numberDateFormat: 'DDMMYYYY' | 'MMYYYY' | 'YYYY';
   /** Zero-pad width for the sequence portion. Dialog allows 2/3/4. */
   numberSeqWidth: number;
+  /** V190 — Encounter print-header block. Only the Hospital scope's
+   *  EncounterSettingsDialog surfaces these; other scopes leave
+   *  them null. */
+  headerName?: string | null;
+  headerPhone?: string | null;
+  headerAddress?: string | null;
   /** ISO-8601 timestamp of the last save, or null when the popup
    *  is still showing baked-in defaults (no row yet). */
   updatedAt: string | null;
@@ -145,6 +161,15 @@ function defaultPrefix(scope: AccountingScope): string {
     // prefixCreditNote, but the other three slots default to the
     // same value so the row stays internally consistent.
     case 'pos':       return 'POS';
+    // Payroll — the Payroll UI doesn't render any prefix input, but
+    // the accounting_settings row still needs a value. Anything works;
+    // 'PAY' matches the mental shorthand.
+    case 'payroll':   return 'PAY';
+    // Hospital — Encounters page doesn't render a prefix input; the
+    // Medical Bill prefix ('MED') is hardcoded in InvoiceService for
+    // now. 'MED' matches so a future tenant-configurable version
+    // migrates cleanly.
+    case 'hospital':  return 'MED';
   }
 }
 
@@ -161,6 +186,11 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     // Opt-in too — keep the legacy Draft-then-Issue two-step
     // unchanged for existing tenants. V128.
     autoIssue: false,
+    // Opt-in per scope — existing tenants' Quotation / Voucher forms
+    // stay picker-free until the operator flips the toggle. V175.
+    showApproval: false,
+    // Default 3 slots when Show Approver(s) is on. V180.
+    approverCount: 3,
     prefixCommercial: defaultPrefix(scope),
     prefixTax:        scope === 'sale' ? 'TAX'  : scope === 'purchase' ? 'TBILL' : scope === 'pos' ? 'POST' : defaultPrefix(scope),
     // POS — prefixCreditNote slot carries the queue prefix ("POSQ"
@@ -204,6 +234,10 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     // Number-format defaults match the dialog preview INV-2026-001.
     numberDateFormat: 'YYYY',
     numberSeqWidth: 3,
+    // V190 — Encounter print-header defaults null across the board.
+    headerName: null,
+    headerPhone: null,
+    headerAddress: null,
     updatedAt: null,
     updatedByEmail: null,
   };
@@ -219,6 +253,8 @@ const urlFor = (scope: AccountingScope) =>
   : scope === 'receipt'  ? '/api/v1/receipts/settings'
   : scope === 'quotation' ? '/api/v1/quotations/settings'
   : scope === 'pos'       ? '/api/v1/pos/settings'
+  : scope === 'payroll'   ? '/api/v1/payroll/settings'
+  : scope === 'hospital'  ? '/api/v1/hospital/settings'
   :                        '/api/v1/vouchers/settings';
 
 export async function get(scope: AccountingScope): Promise<AccountingSettings> {

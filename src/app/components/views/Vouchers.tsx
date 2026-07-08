@@ -64,6 +64,9 @@ const fmtMoney = (n: number, currency: string): string => {
 };
 
 const STATUS_BADGE_CLASS: Record<vouchersApi.VoucherStatus, string> = {
+  // Amber for pending — signals "waiting on chain approvers"
+  // without leaning on red. V176.
+  pending:  'border-amber-300 text-amber-700 bg-amber-50',
   progress: 'border-blue-300 text-blue-700 bg-blue-50',
   done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
   approved: 'border-emerald-400 text-emerald-800 bg-emerald-100',
@@ -75,6 +78,8 @@ const STATUS_BADGE_CLASS: Record<vouchersApi.VoucherStatus, string> = {
 
 const STATUS_FILTERS: ReadonlyArray<{ value: vouchersApi.VoucherStatus | 'all'; label: string }> = [
   { value: 'all',      label: 'All' },
+  // Pending first after All so operators spot chain-gated vouchers. V176.
+  { value: 'pending',  label: 'Pending' },
   { value: 'progress', label: 'Progress' },
   { value: 'done',     label: 'Done' },
   { value: 'approved', label: 'Approved' },
@@ -545,6 +550,14 @@ function VoucherFormDialog({
   const [terms, setTerms] = useState('');
   const [lines, setLines] = useState<FormLine[]>([newLine()]);
   const [saving, setSaving] = useState(false);
+  // Chain-approver picker state (V172, Phase 3b) — manual-assign
+  // chain, mirrors Quotations. Distinct from `approverId` above,
+  // which is the legacy per-voucher approver. Empty = skip chain,
+  // voucher flows through the existing progress → done states
+  // unchanged.
+  const [chainApprover1, setChainApprover1] = useState('');
+  const [chainApprover2, setChainApprover2] = useState('');
+  const [chainApprover3, setChainApprover3] = useState('');
   // Recent-items typeahead — shared with Invoices + Quotations.
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
   const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
@@ -620,6 +633,9 @@ function VoucherFormDialog({
       setNotes('');
       setTerms('');
       setLines([newLine()]);
+      setChainApprover1('');
+      setChainApprover2('');
+      setChainApprover3('');
     }
   }, [open, editing, initialPurpose]);
 
@@ -664,28 +680,41 @@ function VoucherFormDialog({
     return true;
   };
 
-  const buildPayload = (): vouchersApi.VoucherRequest => ({
-    voucherNo: voucherNo.trim() || undefined,
-    customerId,
-    issueDate,
-    currency: currency.trim().toUpperCase(),
-    exchangeRate: Number(exchangeRate) || 0,
-    purpose,
-    approverId: approverId || null,
-    taxType: taxType || undefined,
-    notes: notes.trim() || undefined,
-    terms: terms.trim() || undefined,
-    items: lines
-      .filter(l => l.name.trim())
-      .map(l => ({
-        stockItemId: l.stockItemId ?? null,
-        name: l.name.trim(),
-        description: l.description.trim() || null,
-        unit: l.unit.trim() || null,
-        quantity: Number(l.quantity) || 0,
-        unitPrice: Number(l.unitPrice) || 0,
-      })),
-  });
+  const buildPayload = (): vouchersApi.VoucherRequest => {
+    // Chain approvers — ordered, dedup, drop blanks. Only sent on
+    // create; update ignores the field server-side.
+    const orderedApprovers: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of [chainApprover1, chainApprover2, chainApprover3]) {
+      const v = raw?.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      orderedApprovers.push(v);
+    }
+    return {
+      voucherNo: voucherNo.trim() || undefined,
+      customerId,
+      issueDate,
+      currency: currency.trim().toUpperCase(),
+      exchangeRate: Number(exchangeRate) || 0,
+      purpose,
+      approverId: approverId || null,
+      taxType: taxType || undefined,
+      notes: notes.trim() || undefined,
+      terms: terms.trim() || undefined,
+      items: lines
+        .filter(l => l.name.trim())
+        .map(l => ({
+          stockItemId: l.stockItemId ?? null,
+          name: l.name.trim(),
+          description: l.description.trim() || null,
+          unit: l.unit.trim() || null,
+          quantity: Number(l.quantity) || 0,
+          unitPrice: Number(l.unitPrice) || 0,
+        })),
+      ...(isEdit ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
+    };
+  };
 
   const submit = async () => {
     if (!validate()) return;
@@ -1090,6 +1119,71 @@ function VoucherFormDialog({
               )}
             </div>
           </div>
+
+          {/* Chain approvers — manual-assign chain (V172, Phase 3b).
+              Distinct from the single-approver picker above: this
+              routes the voucher through the unified approval inbox.
+              Only shown on create AND when the tenant flipped
+              "Show Approval" on in Voucher Settings (V175). */}
+          {!isEdit && settings.showApproval && (
+            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to {settings.approverCount ?? 3})</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Approvers help"
+                      >
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Leave blank to skip approval. Otherwise the voucher waits until each picked approver acts, in order.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {(chainApprover1 || chainApprover2 || chainApprover3) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-gray-500"
+                    onClick={() => { setChainApprover1(''); setChainApprover2(''); setChainApprover3(''); }}
+                    type="button"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {[
+                { label: '1st', value: chainApprover1, set: setChainApprover1 },
+                { label: '2nd', value: chainApprover2, set: setChainApprover2 },
+                { label: '3rd', value: chainApprover3, set: setChainApprover3 },
+              ].slice(0, settings.approverCount ?? 3).map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
+                  <Select value={slot.value || '__none'} onValueChange={(v) => slot.set(v === '__none' ? '' : v)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="— none —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">— none —</SelectItem>
+                      {users
+                        .filter(u => u.isActive)
+                        .filter(u => u.id !== chainApprover1 || slot.value === chainApprover1)
+                        .filter(u => u.id !== chainApprover2 || slot.value === chainApprover2)
+                        .filter(u => u.id !== chainApprover3 || slot.value === chainApprover3)
+                        .map(u => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <DialogFooter>

@@ -1,6 +1,6 @@
 import { apiJson, apiFetch, apiVoid, API_BASE, getToken } from './client';
 
-export type AttachmentDocType = 'invoice' | 'bill' | 'receipt';
+export type AttachmentDocType = 'invoice' | 'bill' | 'receipt' | 'encounter' | 'hospital_logo';
 
 export interface Attachment {
   id: string;
@@ -47,7 +47,7 @@ export async function upload(
 export async function download(id: string, filename: string): Promise<void> {
   const tok = getToken();
   const res = await fetch(
-    `${API_BASE.replace(/\/$/, '')}/v1/attachments/${id}/download`,
+    `${API_BASE.replace(/\/$/, '')}/api/v1/attachments/${id}/download`,
     {
       headers: tok ? { Authorization: `Bearer ${tok}` } : {},
     },
