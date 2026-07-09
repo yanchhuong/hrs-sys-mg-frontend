@@ -49,6 +49,7 @@ const emptyForm: customersApi.CustomerRequest = {
   // operator can pick another sub-type before saving.
   businessType: undefined,
   birthDate: null,
+  sex: null,
   insurance: '',
   heightCm: null,
   weightKg: null,
@@ -269,6 +270,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
       site: c.site ?? '',
       businessType: c.businessType ?? undefined,
       birthDate: c.birthDate ?? null,
+      sex: c.sex ?? null,
       insurance: c.insurance ?? '',
       heightCm: c.heightCm ?? null,
       weightKg: c.weightKg ?? null,
@@ -456,6 +458,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     {!isPatient && <TableHead>Site</TableHead>}
                     {isPatient && <TableHead className="w-[120px]">Birth date</TableHead>}
                     {isPatient && <TableHead className="w-[70px] text-right">Age</TableHead>}
+                    {isPatient && <TableHead className="w-[80px]">Sex</TableHead>}
                     {isPatient && <TableHead className="w-[80px] text-right">Height</TableHead>}
                     {isPatient && <TableHead className="w-[80px] text-right">Weight</TableHead>}
                     {isPatient && <TableHead className="w-[160px]">Insurance</TableHead>}
@@ -523,6 +526,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                             const y = ageInYears(c.birthDate);
                             return y == null ? '—' : `${y}y`;
                           })()}
+                        </TableCell>
+                      )}
+                      {isPatient && (
+                        <TableCell className="text-sm text-gray-600 capitalize">
+                          {c.sex ?? '—'}
                         </TableCell>
                       )}
                       {isPatient && (
@@ -763,6 +771,25 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value || null }))}
                     />
                   </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label htmlFor="cust-sex" className="text-xs">Sex</Label>
+                    <select
+                      id="cust-sex"
+                      className="w-full h-9 px-3 border rounded-md text-sm bg-white capitalize"
+                      value={form.sex ?? ''}
+                      onChange={(e) => setForm(f => ({
+                        ...f,
+                        sex: (e.target.value || null) as customersApi.PatientSex | null,
+                      }))}
+                    >
+                      <option value="">—</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="cust-height" className="text-xs">Height (cm)</Label>
                     <Input

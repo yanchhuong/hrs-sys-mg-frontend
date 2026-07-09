@@ -6,6 +6,9 @@ export type CustomerType = 'individual' | 'business';
  *  type='business'; drives TIN visibility / required-ness. */
 export type BusinessSubType = 'non_taxable' | 'taxable' | 'oversee';
 
+/** V202 / v-patients-sex — patient sex enum. */
+export type PatientSex = 'male' | 'female' | 'other';
+
 export interface Customer {
   id: string;
   type: CustomerType;
@@ -25,6 +28,9 @@ export interface Customer {
   /** V187 — patient birth date (ISO yyyy-mm-dd). Only the Patients
    *  lens populates this; Sale > Customer leaves it null. */
   birthDate?: string | null;
+  /** V202 / v-patients-sex — male / female / other. Null on
+   *  non-clinical rows. */
+  sex?: PatientSex | null;
   /** V187 — free-text insurance provider / policy. */
   insurance?: string | null;
   /** V188 — height in centimetres (server returns as decimal number
@@ -52,6 +58,8 @@ export interface CustomerRequest {
   businessType?: BusinessSubType;
   /** V187 — patient DOB, ISO yyyy-mm-dd. */
   birthDate?: string | null;
+  /** V202 / v-patients-sex — patient sex. */
+  sex?: PatientSex | null;
   /** V187 — free-text insurance info. */
   insurance?: string | null;
   /** V188 — height in cm. */

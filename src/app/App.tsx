@@ -118,8 +118,11 @@ function AppContent() {
         />
       : <LandingPage
           onSignInClick={() => { setLoginPrefill(null); setShowLogin(true); }}
-          onDemoClick={() => {
-            setLoginPrefill({ email: 'admin@demo.com', password: 'admin123' });
+          onDemoClick={(email: string) => {
+            // v-landing-demo-dropdown — landing now passes the picked
+            // demo tenant's email (Accounting / HR / Hospital / Store);
+            // password is fixed at admin123 across every seeded demo.
+            setLoginPrefill({ email, password: 'admin123' });
             setShowLogin(true);
           }}
         />;

@@ -14,8 +14,12 @@ import {
   CalendarDays, FileText, Baby, Calculator, Scale, BookOpen,
   ShoppingCart, ShoppingBag, Package, Megaphone, Send,
   MonitorPlay, KeyRound, UserCheck, FileMinus, TrendingUp,
-  QrCode, Wallet, Smartphone,
+  QrCode, Wallet, Smartphone, Stethoscope, ChevronDown,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuLabel, DropdownMenuItem, DropdownMenuSeparator,
+} from './ui/dropdown-menu';
 // Real product screenshot — uses only the demo-named Payroll Management view.
 // The other two screenshots in src/imports contain real employee names and
 // must not be surfaced on the marketing page.
@@ -30,10 +34,49 @@ const REQUIREMENT_SURVEY_PATH = '/requirement-survey';
 
 interface LandingPageProps {
   onSignInClick: () => void;
-  /** Optional — when provided, renders a "Try Demo" button that opens
-   *  the login page with admin@demo.com / admin123 pre-filled. */
-  onDemoClick?: () => void;
+  /** v-landing-demo-dropdown — when provided, renders a "Try Demo"
+   *  dropdown listing each vertical's demo tenant. The chosen email
+   *  is passed back so the login form can pre-fill it (password is
+   *  fixed at `admin123` across all demo accounts). */
+  onDemoClick?: (email: string) => void;
 }
+
+/** v-landing-demo-dropdown — demo account catalog for the "Try Demo"
+ *  dropdown. Each entry maps a business vertical to a tenant login
+ *  the platform has seeded with sample data. Password is identical
+ *  across all four (`admin123`) so the landing dropdown only picks
+ *  which vertical to enter. */
+const DEMO_ACCOUNTS: ReadonlyArray<{
+  key: string;
+  label: { en: string; km: string; zh: string };
+  email: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  {
+    key: 'accounting',
+    label: { en: 'Accounting System', km: 'ប្រព័ន្ធគណនេយ្យ',    zh: '会计系统' },
+    email: 'adminaccountant@hr-share.com',
+    icon: Calculator,
+  },
+  {
+    key: 'hr',
+    label: { en: 'Human Resource System', km: 'ប្រព័ន្ធធនធានមនុស្ស', zh: '人力资源系统' },
+    email: 'adminhr@hr-share.com',
+    icon: Users,
+  },
+  {
+    key: 'healthcare',
+    label: { en: 'Hospital System', km: 'ប្រព័ន្ធមន្ទីរពេទ្យ',    zh: '医院系统' },
+    email: 'adminhealthcare@hr-share.com',
+    icon: Stethoscope,
+  },
+  {
+    key: 'store',
+    label: { en: 'Store System', km: 'ប្រព័ន្ធហាង',            zh: '商店系统' },
+    email: 'adminstore@hr-share.com',
+    icon: Store,
+  },
+];
 
 /** Bilingual copy. Keep keys terse, values short — long marketing copy lives inline below. */
 const T = {
@@ -332,6 +375,60 @@ function Container({ children, className = '' }: { children: React.ReactNode; cl
   return <div className={`mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-12 ${className}`}>{children}</div>;
 }
 
+/** v-landing-demo-dropdown — the "Try Demo" trigger. Renders a
+ *  dropdown listing each vertical (Accounting / HR / Hospital /
+ *  Store); picking one calls back with the demo tenant's email so
+ *  the login form can pre-fill it. Password is fixed at `admin123`
+ *  across every demo tenant, so no need to surface it in the menu. */
+function DemoDropdown({
+  lang, onPick, size, triggerClassName,
+}: {
+  lang: Lang;
+  onPick: (email: string) => void;
+  size: 'sm' | 'lg';
+  triggerClassName?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size={size}
+          className={`border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ${triggerClassName ?? ''}`}
+          title="Pick a demo tenant to sign in as"
+        >
+          {t(T.nav.tryDemo, lang)}
+          <ChevronDown className={`ml-1.5 ${size === 'lg' ? 'h-4 w-4' : 'h-3.5 w-3.5'}`} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          {lang === 'en' ? 'Choose a demo tenant'
+            : lang === 'km' ? 'ជ្រើសរើសមូលដ្ឋានសាកល្បង'
+            : '选择演示账户'}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {DEMO_ACCOUNTS.map(acc => {
+          const Icon = acc.icon;
+          return (
+            <DropdownMenuItem
+              key={acc.key}
+              onClick={() => onPick(acc.email)}
+              className="flex-col items-start gap-0.5 py-2"
+            >
+              <div className="flex w-full items-center gap-2 text-sm font-medium text-slate-800">
+                <Icon className="h-4 w-4 text-emerald-600" />
+                {t(acc.label, lang)}
+              </div>
+              <span className="pl-6 text-[11px] text-slate-500 truncate w-full">{acc.email}</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** Small eyebrow label above section titles. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -345,7 +442,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 /** Top navigation: brand on the left, anchor links + language + Sign In on the right. */
 function LandingNav({
   lang, setLang, onSignIn, onDemo,
-}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void; onDemo?: () => void }) {
+}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void; onDemo?: (email: string) => void }) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <Container className="flex h-16 items-center justify-between">
@@ -378,15 +475,12 @@ function LandingNav({
             {lang === 'en' ? 'ខ្មែរ' : lang === 'km' ? '中文' : 'EN'}
           </button>
           {onDemo && (
-            <Button
-              variant="outline"
+            <DemoDropdown
+              lang={lang}
+              onPick={onDemo}
+              triggerClassName="hidden sm:inline-flex"
               size="sm"
-              onClick={onDemo}
-              className="hidden sm:inline-flex border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-              title="Sign in as admin@demo.com"
-            >
-              {t(T.nav.tryDemo, lang)}
-            </Button>
+            />
           )}
           {/* Contact Us — opens the Requirement Survey landing page.
               Plain <a>, not an in-app router link, because /requirement-survey
@@ -408,7 +502,7 @@ function LandingNav({
 }
 
 /** Hero block with gradient background, dual CTA, and a stylised dashboard preview on the right. */
-function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; onDemo?: () => void }) {
+function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; onDemo?: (email: string) => void }) {
   return (
     <section id="top" className="relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-indigo-50" aria-hidden />
@@ -436,15 +530,12 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
             {onDemo && (
-              <Button
+              <DemoDropdown
+                lang={lang}
+                onPick={onDemo}
                 size="lg"
-                variant="outline"
-                onClick={onDemo}
-                className="h-12 px-6 text-base border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                title="Sign in as admin@demo.com"
-              >
-                {t(T.nav.tryDemo, lang)}
-              </Button>
+                triggerClassName="h-12 px-6 text-base"
+              />
             )}
             {/* Route straight to the Requirement Survey form — the
                 sales team can pick it up from the Super Admin side. */}

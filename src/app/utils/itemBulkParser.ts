@@ -48,7 +48,7 @@ const HEADERS = [
   'Current Stock',  // I — initial on-hand qty
   'Min Stock',      // J — reorder threshold
   'Active',         // K — Yes / No, defaults Yes
-  'Deduct on Sale', // L — Yes / No, defaults No (matches server default)
+  'Stock IN/OUT',   // L — Yes / No, defaults No. When Yes: Invoices & POS decrement (OUT), Bills increment (IN).
 ] as const;
 
 const ALLOWED_POS_CATEGORIES: ReadonlySet<string> =
@@ -163,7 +163,10 @@ function parseRow(row: Record<string, unknown>, excelRow: number): ParsedItemRow
   const stock = readNumber(row['Current Stock']);
   const minStock = readNumber(row['Min Stock']);
   const active = readBool(row['Active']);
-  const deduct = readBool(row['Deduct on Sale']);
+  // v-bill-stock-in-two-way — column was renamed from "Deduct on Sale"
+  // to "Stock IN/OUT" to reflect the two-way movement. Accept the old
+  // header too so upload spreadsheets in circulation don't break.
+  const deduct = readBool(row['Stock IN/OUT'] ?? row['Deduct on Sale']);
   const description = readString(row['Description']);
 
   const rec: ParsedItemRow = {
@@ -226,7 +229,7 @@ export function downloadItemTemplate(): void {
     ['Current Stock',   'Optional. Initial on-hand quantity. Negatives allowed if the tenant tracks back-orders.'],
     ['Min Stock',       'Optional. Reorder threshold — drives the Low / Out status badge.'],
     ['Active',          'Optional. Yes / No (accepts Y/N, True/False, 1/0). Defaults Yes on the server.'],
-    ['Deduct on Sale',  'Optional. When Yes, issuing an invoice line with this item decrements stock. Defaults No.'],
+    ['Stock IN/OUT',    'Optional. When Yes: Invoices & POS lines with this item decrement stock (OUT), Bills increment (IN). Defaults No.'],
   ];
   const gws = XLSX.utils.aoa_to_sheet(guide);
   gws['!cols'] = [{ wch: 18 }, { wch: 80 }];

@@ -391,7 +391,7 @@ export function Items() {
                 { header: 'Warehouse',      value: it => it.warehouseId
                                                         ? (warehouseLabelById.get(it.warehouseId) ?? '')
                                                         : '',                                             width: 18 },
-                { header: 'Deduct Stock',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
+                { header: 'Stock IN/OUT',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
                 { header: 'Active',         value: it => it.active ? 'Yes' : 'No',                        width: 10 },
                 { header: 'Image URL',      value: it => it.imageUrl ?? '',                              width: 40 },
               ],
@@ -513,7 +513,7 @@ export function Items() {
                     {warehouseFeatureOn && (
                       <TableHead className="w-[160px]">Warehouse</TableHead>
                     )}
-                    <TableHead className="text-center w-[110px]">Deduction</TableHead>
+                    <TableHead className="text-center w-[110px]">Stock IN/OUT</TableHead>
                     <TableHead className="text-center w-[80px]">Active</TableHead>
                     <TableHead className="text-right w-[140px]">Actions</TableHead>
                   </TableRow>
@@ -819,16 +819,19 @@ export function Items() {
               </div>
             )}
 
-            {/* V121 — per-item stock deduction toggle. When on, the
-                InvoiceService decrements on-hand on save AND refuses
-                to save when the line quantity exceeds the available
-                stock. Off = picker is autofill-only (back-compat). */}
+            {/* V121 + v-bill-stock-in-two-way — per-item stock tracking
+                toggle. When on, sale-side documents (Invoice + POS)
+                decrement on-hand (OUT) and refuse to save if a line
+                quantity exceeds the available balance; purchase-side
+                documents (Bill) increment on-hand (IN). Off = picker
+                is autofill-only, no movements recorded either way. */}
             <div className="flex items-start justify-between border rounded-md px-3 py-2 gap-3">
               <div className="flex-1 min-w-0">
-                <Label className="text-sm">Stock deduction</Label>
+                <Label className="text-sm">Stock (IN / OUT)</Label>
                 <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
-                  When on: choosing this item on an Invoice decrements stock;
-                  saving is blocked if the requested quantity exceeds on-hand.
+                  When on: Invoices &amp; POS decrement on-hand (OUT), Bills
+                  increment on-hand (IN). Sale is blocked if the line
+                  quantity exceeds available stock.
                 </div>
               </div>
               <Switch
