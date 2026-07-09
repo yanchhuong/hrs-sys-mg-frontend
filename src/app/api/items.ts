@@ -40,9 +40,22 @@ export interface Item {
   itemCategory?: string | null;
   /** Reorder threshold (V151). Drives the derived Status badge. */
   minStock?: number;
+  /** V182 — discriminator: product | service | medical_service |
+   *  class. Defaults to 'product' on legacy rows. */
+  type?: ItemType;
+  /* V206 / v-school-classes — Class-only fields. Null on non-class
+   * items. The Classes page reads these; the Items page ignores. */
+  teacherId?: string | null;
+  capacity?: number | null;
+  termCode?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
+
+/** V182 + V209 — item discriminator. */
+export type ItemType = 'product' | 'service' | 'medical_service' | 'class' | 'course';
 
 export type ItemCategory = 'drink' | 'snack' | 'food' | 'other';
 
@@ -117,6 +130,16 @@ export interface ItemRequest {
   itemCategory?: string;
   /** Reorder threshold (V151). */
   minStock?: number;
+  /** V182 — discriminator. Undefined on update leaves the existing
+   *  value; on create the backend defaults to 'product'. */
+  type?: ItemType;
+  /* V206 / v-school-classes — Class-only fields. Only the Classes
+   * page sends these. */
+  teacherId?: string | null;
+  capacity?: number | null;
+  termCode?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 export interface StockInRequest {
@@ -132,6 +155,10 @@ export interface ListParams {
    *  has the warehouse feature on AND the user picked a value from
    *  the dropdown. */
   warehouseId?: string;
+  /** V206 / v-school-classes — filter to a single item type.
+   *  The Classes page passes 'class' so school rows don't mix into
+   *  the POS/Stock catalog. */
+  type?: ItemType;
   page?: number;
   size?: number;
   /** Opt-in slim projection — server drops the description text
@@ -152,6 +179,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Item>
   const q: Record<string, string | number | boolean> = {};
   if (params.q) q.q = params.q;
   if (params.warehouseId) q.warehouseId = params.warehouseId;
+  if (params.type) q.type = params.type;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   if (params.slim) q.slim = true;

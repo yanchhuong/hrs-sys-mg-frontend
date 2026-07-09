@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 // Side-effect import — monkey-patches sonner's toast.error to swallow
 // module-disabled messages so a tenant with an uninstalled module sees
 // the page render empty instead of a red toast on every fetch.
@@ -14,7 +14,7 @@ import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
 import { Toaster } from './components/ui/sonner';
 import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
-import { NAV_BY_ID } from './config/nav';
+import { NAV_BY_ID, NAV_LEAVES } from './config/nav';
 import { QrScanPage } from './components/views/QrScanPage';
 import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
@@ -87,7 +87,7 @@ function NotAuthorizedView() {
 }
 
 function AppContent() {
-  const { currentUser, canView, loading } = useAuth();
+  const { currentUser, canView, isModuleAvailable, loading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   // Unauthenticated UX: marketing landing first, login surfaces when the
   // user clicks Sign In / Get Started. Reset to landing on every logout so
@@ -105,6 +105,41 @@ function AppContent() {
     setCurrentView('dashboard');
     if (currentUser) setShowLogin(false);
   }, [currentUser?.id]);
+
+  // ────────────────────────────────────────────────────────────────
+  // v-first-allowed-view-redirect — all Rules-of-Hooks hooks must
+  // fire BEFORE the early returns below (loading / no-user / super
+  // admin all render short-circuits). Compute view resolution at
+  // the top; the values are harmless when the user isn't logged in
+  // yet (the early returns bypass their use).
+  // ────────────────────────────────────────────────────────────────
+  const entry = NAV_BY_ID[currentView];
+  const allowed = !!entry
+    && canView(entry.module)
+    && isModuleAvailable(entry.module)
+    && (entry.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m));
+
+  // Pick the first NAV_LEAVES entry the user CAN see. Registry
+  // declaration order is the priority — no extra sort field.
+  const firstAllowedId = useMemo(() => {
+    if (allowed) return null;
+    const hit = NAV_LEAVES.find(l =>
+      !l.hideFromSidebar
+      && canView(l.module)
+      && isModuleAvailable(l.module)
+      && (l.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m))
+    );
+    return hit?.id ?? null;
+  }, [allowed, canView, isModuleAvailable]);
+
+  useEffect(() => {
+    // Only redirect when the user is logged in — dodges a spurious
+    // setCurrentView on the anonymous landing path.
+    if (!currentUser) return;
+    if (firstAllowedId && firstAllowedId !== currentView) {
+      setCurrentView(firstAllowedId);
+    }
+  }, [currentUser, firstAllowedId, currentView]);
 
   // Don't flash protected UI before we know whether the cached token is still
   // valid — AuthProvider calls /auth/me on boot to verify.
@@ -133,22 +168,14 @@ function AppContent() {
     return <SuperAdminApp />;
   }
 
-  // The view registry in `config/nav.ts` is the single source of truth: it
-  // binds id → permission module → component, and is also what the Layout
-  // sidebar is built from. Anything outside the registry, OR anything whose
-  // module isn't permitted for the current role, falls through to the
-  // friendly "Not Authorized" card instead of attempting an API call that
-  // would 403.
-  const entry = NAV_BY_ID[currentView];
-  // Mirror Layout's isLeafVisible AND-semantics — a leaf with
-  // requireAlso must clear every additional module too. Without this,
-  // a user whose sidebar correctly hides Attendance Settings could
-  // still land on it via a stale currentView from a previous session.
-  const allowed = entry
-    ? canView(entry.module)
-      && (entry.requireAlso ?? []).every(m => canView(m))
-    : false;
-  const ViewComponent = allowed ? entry!.component : NotAuthorizedView;
+  // If we're mid-redirect (disallowed view + a fallback exists),
+  // render nothing for one paint instead of NotAuthorizedView. The
+  // effect above lands the redirect on the same tick.
+  const ViewComponent = allowed
+    ? entry!.component
+    : firstAllowedId
+      ? (() => null)
+      : NotAuthorizedView;
 
   // Some leaves back the same component with different initial state
   // (e.g. the Reports sub-menu leaves all render Reports but pass an

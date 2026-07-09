@@ -160,9 +160,16 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   }, [canView, isModuleAvailable, t]);
 
   // If the user lands on a view they're not allowed to see (default
-  // 'dashboard' when their role doesn't grant it), redirect them to the
-  // first leaf they CAN see. Avoids the empty-page-with-403-toast confusion
-  // the screenshot showed for the Approver role.
+  // 'dashboard' when their role doesn't grant it, or dashboard
+  // disabled at the tenant level), redirect them to the first leaf
+  // they CAN see. Deps are the full tree + currentView, not just
+  // .length — otherwise a leaf change that keeps total count identical
+  // (or a redirect that races with tenant-module hydration) leaves
+  // the user stranded on Access denied.
+  //
+  // Belt-and-suspenders with the App.tsx firstAllowedId redirect
+  // (v-first-allowed-view-redirect): App handles the direct render
+  // path, this catches downstream sidebar visibility drift.
   useEffect(() => {
     if (visibleTree.length === 0) return;
     const allLeaves = visibleTree.flatMap(item => item.children ?? [item]);
@@ -170,8 +177,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
     if (!firstAllowed) return;
     const matchesCurrent = allLeaves.some(l => l.id === currentView);
     if (!matchesCurrent) onViewChange(firstAllowed.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleTree.length]);
+  }, [visibleTree, currentView, onViewChange]);
 
   // Accordion behaviour: at most one group open at a time. Opening a different
   // group closes whichever was previously open.

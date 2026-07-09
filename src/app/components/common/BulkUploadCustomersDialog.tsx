@@ -23,6 +23,12 @@ interface Props {
   onImported: () => void;
   /** Existing roster — feeds Name / TIN dupe detection at parse time. */
   existingCustomers?: customersApi.Customer[];
+  /** v-bulk-upload-lens — Customer / Patient / Student lens. Drives
+   *  the dialog's user-visible labels AND stamps the correct `kind`
+   *  on every imported row so bulk uploads land in the right dataset
+   *  (see v-customers-kind-separation). Defaults to 'customer' so
+   *  existing callers keep behaving. */
+  presentAs?: customersApi.CustomerKind;
 }
 
 type RowStatus = 'pending' | 'creating' | 'created' | 'failed';
@@ -66,8 +72,26 @@ async function runWithConcurrency<T, R>(
  * come back as 400s mid-import.
  */
 export function BulkUploadCustomersDialog({
-  open, onOpenChange, onImported, existingCustomers = [],
+  open, onOpenChange, onImported, existingCustomers = [], presentAs = 'customer',
 }: Props) {
+  // v-bulk-upload-lens — user-visible labels swap per lens; the DB
+  // path is identical (POST /api/v1/customers with kind stamped).
+  const T = presentAs === 'patient' ? {
+    entity: 'patient', entityPlural: 'patients',
+    title: 'Upload Bulk Patients',
+    templateHint: 'Patients + Guide tabs with sample data',
+    tooltip: 'Upload an Excel file (.xlsx). One row per patient. Only the Name column is required; clinical fields (birth date, sex, insurance) are optional.',
+  } : presentAs === 'student' ? {
+    entity: 'student', entityPlural: 'students',
+    title: 'Upload Bulk Students',
+    templateHint: 'Students + Guide tabs with sample data',
+    tooltip: 'Upload an Excel file (.xlsx). One row per student. Only the Name column is required; Student No + Guardian columns are optional.',
+  } : {
+    entity: 'customer', entityPlural: 'customers',
+    title: 'Upload Bulk Customers',
+    templateHint: 'Customers + Guide tabs with sample data',
+    tooltip: 'Upload an Excel file (.xlsx). One row per customer. Business rows require Business Type + Representative; taxable business rows additionally require a TIN.',
+  };
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parsed, setParsed] = useState<ParsedCustomerData | null>(null);
@@ -103,7 +127,10 @@ export function BulkUploadCustomersDialog({
     setFinalResult(null);
     setProgress(new Map());
     try {
-      const result = await parseCustomersExcel(f, existingCustomers);
+      // v-bulk-upload-lens-templates — parse against the lens's own
+      // header set so a Student upload doesn't error on missing
+      // customer-only columns (TIN / Representative / Business Type).
+      const result = await parseCustomersExcel(f, existingCustomers, presentAs);
       setParsed(result);
       const errorRows = result.customers.filter(r => r.errors.length > 0).length;
       if (result.errors.length > 0) {
@@ -111,9 +138,9 @@ export function BulkUploadCustomersDialog({
       } else if (errorRows > 0) {
         toast.error(`${errorRows} row${errorRows !== 1 ? 's' : ''} have issues — review before import.`);
       } else if (result.totalCustomers > 0) {
-        toast.success(`Ready to import ${result.validCustomers} customer${result.validCustomers !== 1 ? 's' : ''}`);
+        toast.success(`Ready to import ${result.validCustomers} ${T.entity}${result.validCustomers !== 1 ? 's' : ''}`);
       } else {
-        toast.error('No customer rows found in the workbook.');
+        toast.error(`No ${T.entity} rows found in the workbook.`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to parse');
@@ -150,7 +177,10 @@ export function BulkUploadCustomersDialog({
           next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'creating' });
           return next;
         });
-        return customersApi.create(toCustomerRequest(row));
+        // v-bulk-upload-lens — stamp the current lens on every
+        // imported row so Patients bulk lands under kind='patient',
+        // Students under 'student', etc. (see v-customers-kind-separation).
+        return customersApi.create({ ...toCustomerRequest(row), kind: presentAs });
       },
       5, // matches the Items dialog — single-row records, no nesting.
       (row, _i, result) => {
@@ -181,13 +211,13 @@ export function BulkUploadCustomersDialog({
       onImported();
       toast.success(
         failCount === 0
-          ? `Imported ${okCount} customer${okCount !== 1 ? 's' : ''}`
+          ? `Imported ${okCount} ${T.entity}${okCount !== 1 ? 's' : ''}`
           : `Imported ${okCount} of ${okCount + failCount} — ${failCount} failed`,
         { duration: 6000 },
       );
     }
     if (okCount === 0 && failCount > 0) {
-      toast.error('No customers imported — every row failed. See the list for details.', { duration: 8000 });
+      toast.error(`No ${T.entityPlural} imported — every row failed. See the list for details.`, { duration: 8000 });
     }
   };
 
@@ -225,7 +255,7 @@ export function BulkUploadCustomersDialog({
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Upload Bulk Customers
+            {T.title}
             <TooltipProvider delayDuration={120}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -234,7 +264,7 @@ export function BulkUploadCustomersDialog({
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-                  Upload an Excel file (.xlsx). One row per customer. Business rows require Business Type + Representative; taxable business rows additionally require a TIN.
+                  {T.tooltip}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -247,8 +277,8 @@ export function BulkUploadCustomersDialog({
               <div className="p-4 rounded-md border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-center">
                 <FileSpreadsheet className="h-10 w-10 text-gray-400 mb-2" />
                 <p className="text-sm font-medium">Download the Excel template</p>
-                <p className="text-xs text-gray-500 mb-3">Customers + Guide tabs with sample data</p>
-                <Button variant="outline" size="sm" onClick={downloadCustomerTemplate}>
+                <p className="text-xs text-gray-500 mb-3">{T.templateHint}</p>
+                <Button variant="outline" size="sm" onClick={() => downloadCustomerTemplate(presentAs)}>
                   <Download className="h-4 w-4 mr-2" />
                   Download Template
                 </Button>
@@ -337,9 +367,9 @@ export function BulkUploadCustomersDialog({
                 <div className="flex-1 min-w-0">
                   <p className="font-medium">
                     {finalResult.failed === 0
-                      ? `All ${finalResult.ok} customer${finalResult.ok !== 1 ? 's' : ''} imported successfully`
+                      ? `All ${finalResult.ok} ${T.entity}${finalResult.ok !== 1 ? 's' : ''} imported successfully`
                       : finalResult.ok === 0
-                        ? `No customers imported — all ${finalResult.failed} failed`
+                        ? `No ${T.entityPlural} imported — all ${finalResult.failed} failed`
                         : `${finalResult.ok} imported · ${finalResult.failed} failed`}
                   </p>
                   {finalResult.failed > 0 && (
@@ -479,8 +509,8 @@ export function BulkUploadCustomersDialog({
                   <>
                     <Upload className="h-4 w-4 mr-2" />
                     {selectedRows.size === 0
-                      ? 'No customers selected'
-                      : `Import ${selectedRows.size} Customer${selectedRows.size !== 1 ? 's' : ''}`}
+                      ? `No ${T.entityPlural} selected`
+                      : `Import ${selectedRows.size} ${T.entity[0].toUpperCase()}${T.entity.slice(1)}${selectedRows.size !== 1 ? 's' : ''}`}
                   </>
                 )}
               </Button>

@@ -97,6 +97,11 @@ export const dict: Dict = {
   'nav.patients':             { en: 'Patients',             km: 'អ្នកជំងឺ',             zh: '患者' },
   'nav.encounters':           { en: 'Encounters',           km: 'ការទស្សនាអ្នកជំងឺ',    zh: '就诊记录' },
   'nav.appointments':         { en: 'Appointments',         km: 'ការណាត់ជួប',          zh: '预约' },
+  // Education Business Base labels (v-school-students).
+  'nav.education':            { en: 'Education',            km: 'ការអប់រំ',              zh: '教育' },
+  'nav.students':             { en: 'Students',             km: 'សិស្សនិស្សិត',          zh: '学生' },
+  'nav.classes':              { en: 'Classes',              km: 'ថ្នាក់រៀន',             zh: '班级' },
+  'nav.enrollments':          { en: 'Enrollments',          km: 'ការចុះឈ្មោះ',           zh: '入学登记' },
   'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },

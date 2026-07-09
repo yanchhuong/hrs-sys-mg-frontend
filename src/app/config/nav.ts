@@ -24,6 +24,7 @@ import {
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
+  GraduationCap, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -57,6 +58,9 @@ import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
+import { Students } from '../components/views/Students';
+import { Classes } from '../components/views/Classes';
+import { Enrollments } from '../components/views/Enrollments';
 import { Appointments } from '../components/views/Appointments';
 import { StockAdjustments } from '../components/views/StockAdjustments';
 import { Announcements } from '../components/views/Announcements';
@@ -118,6 +122,10 @@ export const NAV_GROUPS: NavGroup[] = [
   // (i.e. Business Base isn't Hospital), Layout auto-hides the whole
   // group. Same collapsed-when-empty behaviour as Stock / Cashflow.
   { id: 'healthcare-group', labelKey: 'nav.healthcare',    icon: HeartPulse },
+  // Education — School Business Base. Auto-hides when the tenant
+  // has no School modules enabled; same collapsed-when-empty
+  // behaviour as Healthcare.
+  { id: 'education-group', labelKey: 'nav.education',    icon: GraduationCap },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -193,6 +201,20 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'patients',          labelKey: 'nav.patients',               icon: Users,           module: 'encounter',          component: Patients,                 group: 'healthcare-group' },
   { id: 'encounters',        labelKey: 'nav.encounters',             icon: Stethoscope,     module: 'encounter',          component: Encounters,               group: 'healthcare-group' },
   { id: 'appointments',      labelKey: 'nav.appointments',           icon: CalendarClock,   module: 'appointment',        component: Appointments,             group: 'healthcare-group' },
+  // Education — School Business Base (v-school-students). Students
+  // is a School-branded lens over the customers table, same pattern
+  // as Patients. Gates on 'enrollment' — the School Base activator
+  // module. Enrollments + Classes + tuition-invoice conversion land
+  // in later versions.
+  { id: 'students',          labelKey: 'nav.students',               icon: GraduationCap,   module: 'enrollment',         component: Students,                 group: 'education-group' },
+  // Classes — stock_items rows with type='class' (v-school-classes).
+  // Backend gate accepts either 'stock' OR 'class' scope so a
+  // School-only tenant with Stock disabled still passes.
+  { id: 'classes',           labelKey: 'nav.classes',                icon: BookOpen,        module: 'class',              component: Classes,                  group: 'education-group' },
+  // Enrollments — student ↔ class link + tuition invoice flow
+  // (v-school-enrollment). Gated on the same `enrollment` module
+  // as Students since they share a workflow.
+  { id: 'enrollments',       labelKey: 'nav.enrollments',            icon: ClipboardCheck,  module: 'enrollment',         component: Enrollments,              group: 'education-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —

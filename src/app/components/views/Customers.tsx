@@ -53,6 +53,10 @@ const emptyForm: customersApi.CustomerRequest = {
   insurance: '',
   heightCm: null,
   weightKg: null,
+  studentNo: '',
+  guardianName: '',
+  guardianPhone: '',
+  guardianEmail: '',
 };
 
 /** Compute integer years between a birth date (YYYY-MM-DD) and today.
@@ -98,11 +102,23 @@ const BUSINESS_TYPE_OPTIONS: ReadonlyArray<{ value: customersApi.BusinessSubType
  * Business, TIN, representative) stay unchanged since those are
  * cross-vertical accounting concepts.</p>
  */
-export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' | 'patient' } = {}) {
+export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' | 'patient' | 'student' } = {}) {
   const isPatient = presentAs === 'patient';
+  const isStudent = presentAs === 'student';
   // Terms — only top-level, user-visible strings. Deep form labels
   // (TIN, representative, business type, address) stay as-is.
-  const T = isPatient ? {
+  const T = isStudent ? {
+    pageTitle:     'Students',
+    addButton:     'Add Student',
+    newDialog:     'New student',
+    bulkTooltip:   'Bulk upload students from an Excel workbook',
+    editTooltip:   'Edit student',
+    deleteTooltip: 'Delete student',
+    toastCreated:  'Student created',
+    toastUpdated:  'Student updated',
+    toastSaveFail: 'Failed to save student',
+    toastLoadFail: 'Failed to load students',
+  } : isPatient ? {
     pageTitle:     'Patients',
     addButton:     'Add Patient',
     newDialog:     'New patient',
@@ -135,20 +151,24 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   // visibility for Patients is already gated on 'encounter' in
   // {@link config/nav.ts}, so keying actions off the same entity
   // keeps the two layers consistent.
-  const permEntity = isPatient ? 'encounter' : 'customer';
+  const permEntity = isStudent ? 'enrollment' : isPatient ? 'encounter' : 'customer';
   const canAdd = canCreate(permEntity);
   const canEdit = canUpdate(permEntity);
   const canRemove = canDelete(permEntity);
   // Telegram column visibility + permissions. Hidden entirely when
   // the tenant lacks telegram.view so non-telegram users see the
   // original table shape.
-  const canViewTelegram   = canView('telegram');
-  const canShareTelegram  = canCreate('telegram');
-  const canUnlinkTelegram = canDelete('telegram');
-  // Surface the bot-config gear only to admins who can actually change
-  // it. Update covers register+toggle+rotate-token; delete is wrapped
-  // inside the dialog with its own confirm.
-  const canManageTelegramBot = canUpdate('telegram');
+  // v-hide-telegram-from-clinical-school — the Telegram customer-bot
+  // surfaces (Link column + bot-config gear) are Sale-side affordances;
+  // Patient / Student lenses hide them entirely so a hospital's roster
+  // page doesn't advertise a customer-touchpoint that isn't part of
+  // the clinical / school workflow. Role permissions unchanged — this
+  // is a per-lens display gate only.
+  const telegramInLens    = !isPatient && !isStudent;
+  const canViewTelegram   = telegramInLens && canView('telegram');
+  const canShareTelegram  = telegramInLens && canCreate('telegram');
+  const canUnlinkTelegram = telegramInLens && canDelete('telegram');
+  const canManageTelegramBot = telegramInLens && canUpdate('telegram');
 
   // Bot-settings dialog open state. Moved here from the now-removed
   // Settings → Telegram tab so admins find the config next to the
@@ -182,9 +202,13 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
       // Server-side pagination would matter at the 5k-row scale; for now
       // we pull a generous page and paginate client-side so the search +
       // filter stay snappy without round-trips per keystroke.
+      // v-customers-kind-separation — each lens filters the list to
+       // its own kind so Sale > Customers, Healthcare > Patients, and
+       // Education > Students never leak rows into each other.
       const res = await customersApi.list({
         q: search.trim() || undefined,
         type: typeFilter === 'all' ? undefined : typeFilter,
+        kind: isStudent ? 'student' : isPatient ? 'patient' : 'customer',
         size: 200,
       });
       setRows(res.content ?? []);
@@ -274,6 +298,10 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
       insurance: c.insurance ?? '',
       heightCm: c.heightCm ?? null,
       weightKg: c.weightKg ?? null,
+      studentNo: c.studentNo ?? '',
+      guardianName: c.guardianName ?? '',
+      guardianPhone: c.guardianPhone ?? '',
+      guardianEmail: c.guardianEmail ?? '',
     });
     setDialogOpen(true);
   };
@@ -289,15 +317,33 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     // patient's own name so the row saves without an extra prompt —
     // the value is just a placeholder; the Representative table
     // column reads it back if we ever surface it.
+    // v-school-students — Student lens forces {type: 'individual'}
+    // so the backend's business-only constraints (TIN required for
+    // taxable, representative required for business) don't fire.
+    // Students are natural people; no business fields apply.
+    // v-customers-kind-separation — stamp the lens on outbound so
+    // the server drops the row into the right dataset. `kind` is
+    // immutable on the FE (dialog never re-lenses); each lens's
+    // load/save are self-consistent.
+    const kindOverride: customersApi.CustomerKind =
+      isStudent ? 'student' : isPatient ? 'patient' : 'customer';
     const outboundForm = isPatient
       ? {
           ...form,
           type: 'business' as const,
           businessType: 'non_taxable' as const,
           representative: form.representative?.trim() || form.name.trim(),
+          kind: kindOverride,
         }
-      : form;
-    if (!isPatient && form.type === 'business') {
+      : isStudent
+      ? {
+          ...form,
+          type: 'individual' as const,
+          businessType: undefined,
+          kind: kindOverride,
+        }
+      : { ...form, kind: kindOverride };
+    if (!isPatient && !isStudent && form.type === 'business') {
       if (!form.businessType) {
         toast.error('Pick a business sub-type (Taxable / Non-taxable / Oversee).');
         return;
@@ -382,11 +428,15 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
 
       {/* Bulk upload from Excel — mirrors the pattern used for
           Invoice / Bill / Item imports. Feeds the parser the current
-          roster so Name / TIN dupes surface at parse time. */}
+          roster so Name / TIN dupes surface at parse time.
+          v-bulk-upload-lens: pass presentAs so the dialog swaps
+          Customers / Patients / Students labels AND stamps the right
+          kind on every imported row. */}
       <BulkUploadCustomersDialog
         open={bulkUploadOpen}
         onOpenChange={setBulkUploadOpen}
         existingCustomers={rows}
+        presentAs={isStudent ? 'student' : isPatient ? 'patient' : 'customer'}
         onImported={() => { void load(); }}
       />
 
@@ -453,9 +503,16 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         patient's own name on save (backend enforces
                         non-null on business customers) but never
                         surfaces on the Patients lens. */}
-                    {!isPatient && <TableHead>TIN</TableHead>}
-                    {!isPatient && <TableHead>Representative</TableHead>}
-                    {!isPatient && <TableHead>Site</TableHead>}
+                    {!isPatient && !isStudent && <TableHead>TIN</TableHead>}
+                    {!isPatient && !isStudent && <TableHead>Representative</TableHead>}
+                    {!isPatient && !isStudent && <TableHead>Site</TableHead>}
+                    {isStudent && <TableHead className="w-[110px]">Student No</TableHead>}
+                    {isStudent && <TableHead className="w-[120px]">Birth date</TableHead>}
+                    {isStudent && <TableHead className="w-[70px] text-right">Age</TableHead>}
+                    {isStudent && <TableHead className="w-[80px]">Sex</TableHead>}
+                    {isStudent && <TableHead className="w-[160px]">Guardian</TableHead>}
+                    {isStudent && <TableHead className="w-[140px]">Guardian Phone</TableHead>}
+                    {isStudent && <TableHead className="w-[140px]">Insurance</TableHead>}
                     {isPatient && <TableHead className="w-[120px]">Birth date</TableHead>}
                     {isPatient && <TableHead className="w-[70px] text-right">Age</TableHead>}
                     {isPatient && <TableHead className="w-[80px]">Sex</TableHead>}
@@ -504,15 +561,53 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
-                      {!isPatient && (
+                      {!isPatient && !isStudent && (
                         <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
                       )}
-                      {!isPatient && (
+                      {!isPatient && !isStudent && (
                         <TableCell className="text-sm text-gray-600">{c.representative || '—'}</TableCell>
                       )}
-                      {!isPatient && (
+                      {!isPatient && !isStudent && (
                         <TableCell className="text-sm text-gray-600 max-w-[200px] truncate" title={c.site || ''}>
                           {c.site || '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 tabular-nums">
+                          {c.studentNo || '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 tabular-nums">
+                          {c.birthDate || '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-right tabular-nums text-gray-600">
+                          {(() => {
+                            const y = ageInYears(c.birthDate);
+                            return y == null ? '—' : `${y}y`;
+                          })()}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 capitalize">
+                          {c.sex ?? '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 max-w-[160px] truncate" title={c.guardianName || ''}>
+                          {c.guardianName || '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 tabular-nums">
+                          {c.guardianPhone || '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 max-w-[140px] truncate" title={c.insurance || ''}>
+                          {c.insurance || '—'}
                         </TableCell>
                       )}
                       {isPatient && (
@@ -646,12 +741,14 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
             </DialogTitle>
             {/* Keep an SR-only description for a11y — the tooltip on
                 the Info button surfaces the same copy visually. */}
-            <DialogDescription className={isPatient ? 'sr-only' : ''}>
-              {isPatient
-                ? 'Only the patient name is required. Add contact + clinical fields as available.'
-                : form.type === 'business'
-                  ? 'Business customer — TIN and representative are required.'
-                  : 'Individual customer — only name is required.'}
+            <DialogDescription className={isPatient || isStudent ? 'sr-only' : ''}>
+              {isStudent
+                ? 'Only the student name is required. Add contact + guardian details as available.'
+                : isPatient
+                  ? 'Only the patient name is required. Add contact + clinical fields as available.'
+                  : form.type === 'business'
+                    ? 'Business customer — TIN and representative are required.'
+                    : 'Individual customer — only name is required.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -663,11 +760,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
           {/* Type picker — segmented control, disabled when editing so a
               row can't silently switch shape and orphan business-only
               fields. Edits stay within a type; create a new row to switch.
-              Hidden on the Patients lens: patients are forced to
-              {type: 'business', businessType: 'non_taxable'} so the
-              TIN-required validation never fires and the clinical
-              form stays uncluttered by accounting concepts. */}
-          {!isPatient && (
+              Hidden on Patients + Students lenses: those force the
+              underlying type / businessType (see submit()) so the
+              business validation never fires and the clinical /
+              guardian form stays uncluttered by accounting concepts. */}
+          {!isPatient && !isStudent && (
             <div className="space-y-1.5">
               <Label className="text-xs">Type</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -702,14 +799,14 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="cust-name" className="text-xs">
-                {isPatient ? 'Patient name' : form.type === 'business' ? 'Company name' : 'Name'}
+                {isStudent ? 'Student name' : isPatient ? 'Patient name' : form.type === 'business' ? 'Company name' : 'Name'}
                 <span className="text-red-500"> *</span>
               </Label>
               <Input
                 id="cust-name"
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder={isPatient ? 'Sopheaktra Pich' : form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
+                placeholder={isStudent ? 'Sopheaktra Pich' : isPatient ? 'Sopheaktra Pich' : form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
               />
             </div>
 
@@ -751,6 +848,100 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
             {/* Patients lens — clinical block: DoB (→ derived age),
                 Height, Weight, Insurance. Sale > Customer skips
                 everything in here. */}
+            {/* v-school-students — Student-only fields. Mirrors the
+                Patient block except Height + Weight (see
+                v-school-students-patient-parity). Layout:
+                  row 1: Student No + DoB (with derived age)
+                  row 2: Sex + Insurance
+                  row 3: Guardian trio (name / phone / email)
+                Business + Height/Weight are entirely skipped. */}
+            {isStudent && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-student-no" className="text-xs">Student No</Label>
+                    <Input
+                      id="cust-student-no"
+                      value={form.studentNo ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, studentNo: e.target.value }))}
+                      placeholder="e.g. STU-001"
+                      maxLength={32}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-student-dob" className="text-xs">
+                      Date of birth
+                      {(() => {
+                        const y = ageInYears(form.birthDate);
+                        return y == null ? null : (
+                          <span className="text-gray-500 font-normal"> · {y} years</span>
+                        );
+                      })()}
+                    </Label>
+                    <Input
+                      id="cust-student-dob"
+                      type="date"
+                      value={form.birthDate ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value || null }))}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-student-sex" className="text-xs">Sex</Label>
+                    <select
+                      id="cust-student-sex"
+                      className="w-full h-9 px-3 border rounded-md text-sm bg-white capitalize"
+                      value={form.sex ?? ''}
+                      onChange={(e) => setForm(f => ({
+                        ...f,
+                        sex: (e.target.value || null) as customersApi.PatientSex | null,
+                      }))}
+                    >
+                      <option value="">—</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-student-insurance" className="text-xs">Insurance</Label>
+                    <Input
+                      id="cust-student-insurance"
+                      value={form.insurance ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, insurance: e.target.value }))}
+                      placeholder="Provider / policy number"
+                      maxLength={255}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-600 uppercase tracking-wide">Guardian</Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Input
+                      value={form.guardianName ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, guardianName: e.target.value }))}
+                      placeholder="Full name"
+                      maxLength={255}
+                    />
+                    <Input
+                      value={form.guardianPhone ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, guardianPhone: e.target.value }))}
+                      placeholder="+855 12 345 678"
+                      maxLength={64}
+                    />
+                    <Input
+                      type="email"
+                      value={form.guardianEmail ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, guardianEmail: e.target.value }))}
+                      placeholder="guardian@example.com"
+                      maxLength={255}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isPatient && (
               <div className="space-y-3">
                 <div className="grid grid-cols-4 gap-3">
@@ -832,7 +1023,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               </div>
             )}
 
-            {form.type === 'business' && !isPatient && (
+            {form.type === 'business' && !isPatient && !isStudent && (
               <>
                 {/* Business sub-type — drives TIN visibility. The
                     operator must pick one before saving (validation
