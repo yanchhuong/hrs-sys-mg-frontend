@@ -1041,7 +1041,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-600 uppercase tracking-wide">Guardian</Label>
+                  <Label className="text-xs text-gray-600 uppercase tracking-wide">Contact</Label>
                   <div className="grid grid-cols-3 gap-3">
                     <Input
                       value={form.guardianName ?? ''}
