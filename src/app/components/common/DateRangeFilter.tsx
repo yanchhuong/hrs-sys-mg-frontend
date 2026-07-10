@@ -43,33 +43,33 @@ export function DateRangeFilter({
 
   const hasFilter = !!(startDate || endDate);
 
+  // v-filter-strip-consistency — matches Transactions verbatim:
+  // xs gray labels (no colon), w-36 date inputs, no-wrap row,
+  // ghost Clear button. Prevents the "From: on line 1, To: on
+  // line 2" stacking when the header has a co-tenant like Add.
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5">
-        <Label className="text-sm whitespace-nowrap">From:</Label>
-        <Input
-          type="date"
-          value={startDate}
-          onChange={(e) => handleFromChange(e.target.value)}
-          max={endDate || undefined}
-          className="w-40 h-9"
-        />
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Label className="text-sm whitespace-nowrap">To:</Label>
-        <Input
-          type="date"
-          value={endDate}
-          onChange={(e) => handleToChange(e.target.value)}
-          min={startDate || undefined}
-          className="w-40 h-9"
-        />
-      </div>
+    <div className="flex items-center gap-2 whitespace-nowrap">
+      <Label className="text-xs text-gray-500">From</Label>
+      <Input
+        type="date"
+        value={startDate}
+        onChange={(e) => handleFromChange(e.target.value)}
+        max={endDate || undefined}
+        className="h-9 w-36 text-sm"
+      />
+      <Label className="text-xs text-gray-500">To</Label>
+      <Input
+        type="date"
+        value={endDate}
+        onChange={(e) => handleToChange(e.target.value)}
+        min={startDate || undefined}
+        className="h-9 w-36 text-sm"
+      />
       {hasFilter && (
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 px-2 text-xs text-gray-500"
+          className="h-9"
           onClick={handleClear}
           title="Clear date range"
         >
