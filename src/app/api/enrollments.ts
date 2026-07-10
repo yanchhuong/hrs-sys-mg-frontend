@@ -1,9 +1,10 @@
 import { apiJson, apiVoid } from './client';
 
 /**
- * School enrollment (v-school-enrollment). Sale-side event that ties
- * a Student (customer.kind='student') to a Class (stock_item.type='class')
- * and can convert into a Tuition Bill (invoice.kind='tuition').
+ * School enrollment. Sale-side event that ties a Student
+ * (customer.kind='student') to a Course Schedule
+ * (course_schedules table, V213 / v-course-schedule-model) and can
+ * convert into a Tuition Bill (invoice.kind='tuition').
  */
 export type EnrollmentStatus = 'enrolled' | 'active' | 'completed' | 'withdrawn';
 
@@ -11,10 +12,23 @@ export interface Enrollment {
   id: string;
   enrollmentNo: string;
   studentId: string;
-  classId: string;
+  courseScheduleId: string;
   enrollmentDate: string;      // ISO yyyy-mm-dd
   status: EnrollmentStatus;
   convertedInvoiceId?: string | null;
+  /** v-invoice-no-and-auto-payment — denormalised invoice number
+   *  hydrated by the server on list / get so the FE can render an
+   *  Invoice No. cell without a per-row fetch. */
+  convertedInvoiceNo?: string | null;
+  /** V215 / v-enrollment-session-count — "attended / total" session
+   *  counts on the list. Capped at today so future sessions don't
+   *  inflate the denominator. Both zero when the schedule has no
+   *  materialised past sessions yet. */
+  attendedSessions?: number;
+  totalSessions?: number;
+  /** v-creator-column — Registror (display name of the user who
+   *  created the enrollment). Hydrated on list only. */
+  createdByName?: string | null;
   currency: string;
   exchangeRate: number;
   unitPrice: number;
@@ -30,7 +44,7 @@ export interface Enrollment {
 export interface EnrollmentRequest {
   enrollmentNo?: string;
   studentId: string;
-  classId: string;
+  courseScheduleId: string;
   enrollmentDate?: string | null;
   currency?: string;
   exchangeRate?: number | null;

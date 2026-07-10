@@ -3,7 +3,9 @@ import { apiJson, apiVoid, Page } from './client';
 /** V196 — clinical role tag surfaced on the Healthcare business
  *  base. Drives the Doctor picker filter + the Staff Roles
  *  settings screen. */
-export type ClinicalRole = 'doctor' | 'cashier' | 'staff';
+/** V196 healthcare tags + V210 school tag. Column name is legacy
+ *  ("clinical_role") but the field carries any industry-role tag. */
+export type ClinicalRole = 'doctor' | 'cashier' | 'staff' | 'teacher';
 
 export interface Employee {
   id: string;

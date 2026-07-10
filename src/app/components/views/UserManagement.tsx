@@ -198,12 +198,24 @@ const MODULES: ModuleDef[] = [
   // itself), but the columns render for shape consistency.
   { key: 'approval',          label: 'Approval',          description: 'Unified approval inbox for Cash Advance / Quotation / Voucher / Bill / Receipt / Payroll chains' },
 
-  // Healthcare Business Base (V181 / v-hospital-*). Rows appear
-  // regardless of the tenant's Business Base — the admin's toggles
-  // only take effect once Super Admin enables the Hospital Base.
+  // Healthcare Business Base (V181 / v-hospital-*). Patients =
+  // Customer lens filtered to kind='patient' — shares the
+  // 'encounter' module gate with the Encounters page, so its row
+  // is a read-only inherit of Encounters (matches the sale-ledger
+  // / purchase-ledger pattern).
   { key: 'healthcare-group',  label: 'Healthcare',        description: '',                                                                            header: true },
+  { key: 'patients-visible',  label: 'Patients',          description: 'Patient roster (Customer lens with kind=patient)',                            parent: 'healthcare-group', inheritsFromLabel: 'Encounters' },
   { key: 'encounter',         label: 'Encounters',        description: 'Patient visits — record services rendered, then convert to a Medical Bill', parent: 'healthcare-group' },
-  { key: 'medical-service',   label: 'Medical Services',  description: 'Catalog of billable services (type=medical_service inside Items)',           parent: 'healthcare-group' },
+  { key: 'appointment',       label: 'Appointments',      description: 'Scheduled patient bookings — pair with Encounters for the daily desk',       parent: 'healthcare-group' },
+
+  // Education Business Base (V181 seed + v-course-schedule-model +
+  // v-attendance-module). Students = Customer lens filtered to
+  // kind='student' — shares 'enrollment' gate with Enrollments;
+  // inherit-row is a UI hint that both are one permission.
+  { key: 'education-group',   label: 'Education',         description: '',                                                                            header: true },
+  { key: 'students-visible',  label: 'Students',          description: 'Student roster (Customer lens with kind=student)',                            parent: 'education-group', inheritsFromLabel: 'Enrollment' },
+  { key: 'enrollment',        label: 'Enrollment',        description: 'Student ↔ Course Schedule link + tuition invoice conversion',                 parent: 'education-group' },
+  { key: 'class-attendance',  label: 'Attendance',        description: 'Per-session student attendance grid — the teacher\'s daily workspace',       parent: 'education-group' },
 
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
@@ -220,6 +232,11 @@ const INHERIT_PARENT_KEY: Record<string, string> = {
   'sale-ledger':     'invoice',
   'purchase-ledger': 'bill',
   'profit-loss':     'invoice',
+  // Business Base lenses that share a module with their sibling
+  // page: Patients and Students each live under Customer with a
+  // kind filter, so the same gate applies to both surfaces.
+  'patients-visible': 'encounter',
+  'students-visible': 'enrollment',
 };
 
 /**
@@ -229,7 +246,7 @@ const INHERIT_PARENT_KEY: Record<string, string> = {
  * Contracts endpoints still gate on it). Custom roles created from the
  * Admin base seed full grants on these so they don't silently 403.
  */
-const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts'] as const;
+const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts', 'medical-service'] as const;
 
 // Default permissions per role. The Permission Matrix UI calls this for
 // every (module, role, action) combo so "Reset to Defaults" produces a
@@ -281,10 +298,15 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       // are backend no-ops (chains are spawned by source docs).
       case 'approval':   return action === 'view' || action === 'update';
       // Healthcare (V181 / v-hospital-*) — Manager acts as front-
-      // desk / attending doctor by default: full V/C/U on encounters,
-      // view-only on the service catalog.
+      // desk / attending doctor by default: full V/C/U on encounters
+      // + appointments, view-only on the service catalog.
       case 'encounter':        return action === 'view' || action === 'create' || action === 'update';
+      case 'appointment':      return action === 'view' || action === 'create' || action === 'update';
       case 'medical-service':  return action === 'view';
+      // Education — Manager runs the school office: full V/C/U on
+      // Enrollment (register + tuition) and Attendance.
+      case 'enrollment':       return action === 'view' || action === 'create' || action === 'update';
+      case 'class-attendance': return action === 'view' || action === 'create' || action === 'update';
       default:           return false;
     }
   }
@@ -301,10 +323,16 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
     // V173 seed.
     case 'approval':   return action === 'view' || action === 'update';
     // Healthcare — Employees (nurses, techs) can start an encounter
-    // and view the service catalog. Closing / converting to a bill
-    // stays with Manager+.
+    // and book appointments; view the service catalog. Closing /
+    // converting to a bill stays with Manager+.
     case 'encounter':        return action === 'view' || action === 'create';
+    case 'appointment':      return action === 'view' || action === 'create';
     case 'medical-service':  return action === 'view';
+    // Education — Employees (teachers) view Enrollment and can
+    // update Attendance for their own sessions. Enroll creation
+    // stays with the office (Manager+).
+    case 'enrollment':       return action === 'view';
+    case 'class-attendance': return action === 'view' || action === 'update';
     default:           return false;
   }
 };
@@ -1652,12 +1680,23 @@ export function UserManagement() {
                               <div style={{ paddingLeft: 20 }}>
                                 <p className="font-medium text-sm flex items-center gap-2 flex-wrap">
                                   <span className="text-gray-300">└</span>
-                                  {mod.label}
+                                  <TooltipProvider delayDuration={120}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
+                                          {mod.label}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                                        <strong>{mod.label}</strong>
+                                        {mod.description ? ` — ${mod.description}` : ''}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                   <span className="text-[10px] text-blue-700 bg-white border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap font-normal">
                                     Inherits from <strong>{mod.inheritsFromLabel}</strong>
                                   </span>
                                 </p>
-                                <p className="text-xs text-gray-400">{mod.description}</p>
                               </div>
                             </TableCell>
                             {roles.filter(r => r.key !== 'admin').map(role => {
@@ -1720,9 +1759,20 @@ export function UserManagement() {
                           <div style={mod.parent ? { paddingLeft: 20 } : undefined}>
                             <p className="font-medium text-sm">
                               {mod.parent && <span className="text-gray-300 mr-1">└</span>}
-                              {mod.label}
+                              <TooltipProvider delayDuration={120}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
+                                      {mod.label}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                                    <strong>{mod.label}</strong>
+                                    {mod.description ? ` — ${mod.description}` : ''}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </p>
-                            <p className="text-xs text-gray-400">{mod.description}</p>
                           </div>
                         </TableCell>
                         {roles.filter(r => r.key !== 'admin').map(role => {

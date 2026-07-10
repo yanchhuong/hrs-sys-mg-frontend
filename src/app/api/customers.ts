@@ -54,6 +54,12 @@ export interface Customer {
   guardianName?: string | null;
   guardianPhone?: string | null;
   guardianEmail?: string | null;
+  /** V214 / v-student-remark-swap — free-text remark surfaced on
+   *  the Student popup (replaces Insurance + CID for that lens). */
+  remark?: string | null;
+  /** v-student-enroll-count — lifetime enrollment tally hydrated
+   *  by the backend on the Students lens list only. */
+  enrollmentCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -89,6 +95,8 @@ export interface CustomerRequest {
   guardianName?: string | null;
   guardianPhone?: string | null;
   guardianEmail?: string | null;
+  /** V214 / v-student-remark-swap — free-text remark. */
+  remark?: string | null;
 }
 
 export interface ListParams {

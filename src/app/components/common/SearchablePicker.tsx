@@ -1,12 +1,13 @@
 import { useState, ReactNode } from 'react';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '../ui/popover';
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from '../ui/command';
-import { ChevronsUpDown, Check, Plus } from 'lucide-react';
+import { ChevronsUpDown, Check, Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react';
 
 export interface PickerOption {
   /** Stable identifier — what gets emitted via onChange. */
@@ -46,6 +47,24 @@ interface Props {
   onCreate?: (label: string) => Promise<PickerOption>;
   /** Override the label on the create item — defaults to {@code Create "{query}"}. */
   createLabel?: (query: string) => string;
+  /**
+   * Inline-edit callback. When provided, each option row shows a
+   * pencil icon that swaps the label for an inline text input +
+   * cancel / save buttons. The callback receives the option's value
+   * + new label and is expected to return the updated PickerOption —
+   * the picker refreshes the local view via {@link onChange} being
+   * re-invoked with the same value (so the parent's option list is
+   * expected to be updated by the caller separately, typically inside
+   * this callback). Throw to signal failure.
+   */
+  onEdit?: (value: string, newLabel: string) => Promise<PickerOption>;
+  /**
+   * Inline-delete callback. When provided, each option row shows a
+   * trash icon. Confirmation is caller-owned (the callback fires
+   * only after the user clicks the icon, so wrap with confirm() /
+   * AlertDialog on the caller side if you want a guard).
+   */
+  onDelete?: (value: string) => Promise<void>;
   className?: string;
 }
 
@@ -53,6 +72,12 @@ interface Props {
  * Reusable single-select searchable picker. Visual style matches the
  * Manager / Lead picker in DepsGroup — Popover trigger with cmdk fuzzy-search
  * inside. Use for fields like Position, Department, Reports To.
+ *
+ * <p>Optional {@link onCreate} / {@link onEdit} / {@link onDelete}
+ * hooks turn it into a full "manage in place" picker — the user can
+ * add, rename, or remove options without leaving the form. Matches
+ * the UX pattern the school vertical needs on Course + Classroom
+ * pickers (v-course-schedule-model).</p>
  *
  * Empty value = unset. Pass {@link allowClear}=false to require a selection.
  */
@@ -69,31 +94,65 @@ export function SearchablePicker({
   allowClear = true,
   onCreate,
   createLabel,
+  onEdit,
+  onDelete,
   className,
 }: Props) {
   const [open, setOpen] = useState(false);
-  // Track the CommandInput's text so we can offer "Create '{query}'"
-  // when onCreate is provided. cmdk doesn't expose its internal query
-  // state, so we mirror it here via onValueChange.
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
+  // Inline-edit state — at most one row can be in edit mode at a time.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [busyOp, setBusyOp] = useState(false);
+
   const selected = options.find(o => o.value === value);
   const triggerLabel = selected
     ? (selected.secondary ? `${selected.label} (${selected.secondary})` : selected.label)
     : (allowClear ? emptyLabel : placeholder);
-  // Show the create row only when:
-  //  - onCreate is wired
-  //  - the user has typed something
-  //  - no existing option has the exact label (case-insensitive)
-  // so we don't tempt the user to dupe a vendor that's already there.
   const trimmed = query.trim();
   const exactExists = !!trimmed && options.some(
     o => o.label.toLowerCase() === trimmed.toLowerCase(),
   );
   const showCreate = !!onCreate && trimmed.length > 0 && !exactExists;
 
+  const startEdit = (o: PickerOption) => { setEditingId(o.value); setEditLabel(o.label); };
+  const cancelEdit = () => { setEditingId(null); setEditLabel(''); };
+  const saveEdit = async () => {
+    if (!editingId || !onEdit) return;
+    const next = editLabel.trim();
+    if (!next) return;
+    setBusyOp(true);
+    try {
+      await onEdit(editingId, next);
+      cancelEdit();
+    } catch {
+      // Caller surfaces the toast; keep edit mode open so the user
+      // can retry without retyping.
+    } finally {
+      setBusyOp(false);
+    }
+  };
+  const doDelete = async (v: string) => {
+    if (!onDelete) return;
+    setBusyOp(true);
+    try {
+      await onDelete(v);
+      // If we deleted the selected row, clear the selection so the
+      // trigger label doesn't dangle.
+      if (value === v) onChange('');
+    } catch {
+      // Caller-side toast handles the error surface.
+    } finally {
+      setBusyOp(false);
+    }
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={o => {
+      setOpen(o);
+      if (!o) cancelEdit();
+    }}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -120,9 +179,6 @@ export function SearchablePicker({
               <div className="px-3 py-4 text-xs text-gray-500">{emptyOptionsHint}</div>
             )}
             <CommandGroup>
-              {/* Inline-create row — appears at the top of the list
-                  when onCreate is wired and the typed query has no
-                  exact match among existing options. */}
               {showCreate && onCreate && (
                 <CommandItem
                   value={`__create__${trimmed}`}
@@ -135,9 +191,7 @@ export function SearchablePicker({
                       setQuery('');
                       setOpen(false);
                     } catch {
-                      // Surface the error via toast at the caller —
-                      // we just keep the popover open so the user
-                      // can retry without retyping.
+                      // toast on caller side
                     } finally {
                       setCreating(false);
                     }
@@ -160,17 +214,83 @@ export function SearchablePicker({
               )}
               {options.map(o => {
                 const haystack = o.searchKey ?? `${o.label} ${o.secondary ?? ''}`;
+                const inEdit = editingId === o.value;
+                if (inEdit) {
+                  // Inline-edit row — replace the CommandItem with a
+                  // plain div so keyboard nav skips it and the input
+                  // owns the caret. Save + cancel buttons stop event
+                  // propagation to keep cmdk from re-triggering select.
+                  return (
+                    <div key={o.value} className="flex items-center gap-1 px-2 py-1.5">
+                      <Input
+                        autoFocus
+                        value={editLabel}
+                        onChange={e => setEditLabel(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); void saveEdit(); }
+                          if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                        }}
+                        className="h-7 text-sm"
+                        disabled={busyOp}
+                      />
+                      <Button
+                        type="button" variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={ev => { ev.preventDefault(); ev.stopPropagation(); cancelEdit(); }}
+                        disabled={busyOp}
+                        title="Cancel"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button" size="icon" className="h-7 w-7"
+                        onClick={ev => { ev.preventDefault(); ev.stopPropagation(); void saveEdit(); }}
+                        disabled={busyOp || !editLabel.trim() || editLabel.trim() === o.label}
+                        title="Save"
+                      >
+                        {busyOp ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  );
+                }
                 return (
                   <CommandItem
                     key={o.value}
                     value={haystack}
                     onSelect={() => { onChange(o.value); setOpen(false); }}
+                    className="group"
                   >
                     <Check className={`mr-2 h-4 w-4 ${value === o.value ? 'opacity-100' : 'opacity-0'}`} />
                     <span className="flex-1 truncate">
                       {o.label}
                       {o.secondary ? <span className="text-gray-400"> · {o.secondary}</span> : null}
                     </span>
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onMouseDown={ev => ev.preventDefault()}
+                        onClick={ev => { ev.preventDefault(); ev.stopPropagation(); startEdit(o); }}
+                        className="ml-1 p-1 rounded text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-100 focus:opacity-100"
+                        title="Rename"
+                        aria-label={`Rename ${o.label}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onMouseDown={ev => ev.preventDefault()}
+                        onClick={ev => {
+                          ev.preventDefault(); ev.stopPropagation();
+                          if (confirm(`Delete "${o.label}"?`)) void doDelete(o.value);
+                        }}
+                        className="ml-0.5 p-1 rounded text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-700 hover:bg-red-50 focus:opacity-100"
+                        title="Delete"
+                        aria-label={`Delete ${o.label}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </CommandItem>
                 );
               })}

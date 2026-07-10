@@ -272,7 +272,24 @@ export function Invoices({
   // even with several years of data.
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [search, setSearch] = useState('');
+  // v-invoice-no-and-auto-payment — Enrollments (and other pages
+  // that surface a linked invoice) hand off the target invoice
+  // number via sessionStorage.invoicesFocus. Consume it once on
+  // mount so a click on ENR-2026-00001's Invoice No. lands the
+  // operator on this page with the search prefilled + focus
+  // cleared. Any consumer wanting to link here uses the same key.
+  const [search, setSearch] = useState(() => {
+    try {
+      const focus = sessionStorage.getItem('invoicesFocus');
+      if (focus) {
+        sessionStorage.removeItem('invoicesFocus');
+        return focus;
+      }
+    } catch {
+      // sessionStorage disabled — fall through
+    }
+    return '';
+  });
 
   // Per-side Accountant settings (V92) — Sale row is independent
   // from Purchase, so toggling Discount off here doesn't flip it on
@@ -766,6 +783,7 @@ export function Invoices({
                       </TooltipProvider>
                     </TableHead>
                     <TableHead className="w-[110px]">Status</TableHead>
+                    <TableHead className="w-[130px]">{isEncounter ? 'Cashier' : 'Seller'}</TableHead>
                     <TableHead className="text-right w-[160px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -887,6 +905,9 @@ export function Invoices({
                         <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
                           {inv.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-600 truncate max-w-[130px]" title={inv.createdByName ?? ''}>
+                        {inv.createdByName ?? '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1">

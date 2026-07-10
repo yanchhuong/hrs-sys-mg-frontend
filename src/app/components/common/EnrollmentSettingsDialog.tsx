@@ -4,8 +4,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -13,104 +11,88 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { BookOpen, GraduationCap, Plus, Pencil, Trash2 } from 'lucide-react';
-import * as itemsApi from '../../api/items';
+import {
+  Dialog as SubDialog, DialogContent as SubDialogContent, DialogDescription as SubDialogDescription,
+  DialogFooter as SubDialogFooter, DialogHeader as SubDialogHeader, DialogTitle as SubDialogTitle,
+} from '../ui/dialog';
+import { Label } from '../ui/label';
+import {
+  CalendarClock, Plus, Pencil, Trash2,
+  UserSquare2, Loader2, Info, X,
+} from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { SearchablePicker } from './SearchablePicker';
+import * as coursesApi from '../../api/courses';
+import * as classroomsApi from '../../api/classrooms';
+import * as schedulesApi from '../../api/courseSchedules';
 import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
+import { AddCourseScheduleDialog } from './AddCourseScheduleDialog';
 
 /**
- * Enrollment Settings — one popup for the school-side setup catalog
- * (v-enrollment-settings-courses). Two left-menu sections:
+ * Enrollment Settings — one popup for the school setup catalog
+ * (V213 / v-course-schedule-model). Four sections:
  *
- *   • Courses — curriculum templates ({@code stock_items.type='course'}).
- *     Minimal fields: Code (via {@code sku}), Name, Description,
- *     Base fee. Fed into the Classes tab as the "which course does
- *     this offering realise" pointer once the FK lands (v2).
- *   • Classes — enrollable offerings ({@code stock_items.type='class'}).
- *     Same shape as the top-level Classes page but tucked into the
- *     Enrollment workflow. Teacher / Term / Dates / Capacity / Fee.
- *
- * Both tabs hit the same {@code /api/v1/stock-items} endpoint with a
- * type filter — no new backend surface. Layout mirrors
- * {@link EmployeeSettingsDialog} so the left-sidebar-with-right-pane
- * pattern is consistent across settings dialogs.
+ *   • Courses      — curriculum ({@link coursesApi.Course}).
+ *   • Classrooms   — physical rooms ({@link classroomsApi.Classroom}).
+ *   • Course Schedules — enrollable sessions
+ *     ({@link schedulesApi.CourseSchedule}).
+ *   • Teachers     — Employees tagged with clinicalRole='teacher'.
  */
-type Section = 'courses' | 'classes';
+// v-enrollment-settings-trim — Courses + Classrooms are managed
+// inline on the Course Schedule popup (SearchablePicker onCreate /
+// onEdit / onDelete), so their standalone settings tabs were
+// redundant. Left menu now shows only Course Schedules + Teachers.
+type Section = 'schedules' | 'teachers';
 
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }
 
-const emptyCourse: itemsApi.ItemRequest = {
-  name: '', description: '', unitPrice: 0, active: true, type: 'course',
-};
-const emptyClass: itemsApi.ItemRequest = {
-  name: '', description: '', unitPrice: 0, active: true, type: 'class',
-  teacherId: null, capacity: null, termCode: '', startDate: null, endDate: null,
-};
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function EnrollmentSettingsDialog({ open, onOpenChange }: Props) {
   const { canCreate, canUpdate, canDelete } = useAuth();
-  const canWriteClass  = canCreate('class');
-  const canWriteCourse = canCreate('enrollment');
+  const canWrite = canCreate('enrollment');
 
-  const [section, setSection] = useState<Section>('courses');
+  const [section, setSection] = useState<Section>('schedules');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
           <DialogTitle>Enrollment Settings</DialogTitle>
           <DialogDescription className="sr-only">
-            Set up the curriculum catalog: Courses (templates) and
-            Classes (offerings) that students enroll into.
+            Set up the school catalog: Courses, Classrooms, Course Schedules,
+            and Teachers.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-[200px_1fr] flex-1 min-h-0">
+        <div className="grid grid-cols-[220px_1fr] flex-1 min-h-0">
           <aside className="border-r bg-gray-50/60 p-2 overflow-y-auto">
             <SidebarButton
-              active={section === 'courses'}
-              onClick={() => setSection('courses')}
-              icon={<BookOpen className="h-4 w-4" />}
-              label="Courses"
-              hint="Curriculum templates"
+              active={section === 'schedules'}
+              onClick={() => setSection('schedules')}
+              icon={<CalendarClock className="h-4 w-4" />}
+              label="Course Schedules"
+              hint="Teaching sessions"
             />
             <SidebarButton
-              active={section === 'classes'}
-              onClick={() => setSection('classes')}
-              icon={<GraduationCap className="h-4 w-4" />}
-              label="Classes"
-              hint="Enrollable offerings"
+              active={section === 'teachers'}
+              onClick={() => setSection('teachers')}
+              icon={<UserSquare2 className="h-4 w-4" />}
+              label="Teachers"
+              hint="Tag employees"
             />
           </aside>
 
           <div className="p-6 overflow-y-auto">
-            {section === 'courses' && (
-              <CatalogSection
-                key="courses"
-                title="Courses"
-                icon={<BookOpen className="h-4 w-4 text-emerald-600" />}
-                type="course"
-                emptyFormFactory={() => ({ ...emptyCourse })}
-                canWrite={canWriteCourse}
-                canUpdate={canUpdate('enrollment')}
-                canDelete={canDelete('enrollment')}
-              />
+            {section === 'schedules' && (
+              <SchedulesSection canWrite={canWrite}
+                canUpdate={canUpdate('enrollment')} canDelete={canDelete('enrollment')} />
             )}
-            {section === 'classes' && (
-              <CatalogSection
-                key="classes"
-                title="Classes"
-                icon={<GraduationCap className="h-4 w-4 text-emerald-600" />}
-                type="class"
-                emptyFormFactory={() => ({ ...emptyClass })}
-                canWrite={canWriteClass}
-                canUpdate={canUpdate('class')}
-                canDelete={canDelete('class')}
-              />
-            )}
+            {section === 'teachers' && <TeachersSection />}
           </div>
         </div>
       </DialogContent>
@@ -148,262 +130,115 @@ function SidebarButton({
   );
 }
 
-/**
- * Shared list + create/edit inline pane for a single {@code stock_items.type}.
- * Kept in-file (not extracted to its own component) so both tabs
- * can share the layout without a public API to maintain. Class-only
- * fields render only when {@code type === 'class'}.
- */
-function CatalogSection({
-  title, icon, type, emptyFormFactory, canWrite, canUpdate, canDelete,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  type: 'course' | 'class';
-  emptyFormFactory: () => itemsApi.ItemRequest;
-  canWrite: boolean;
-  canUpdate: boolean;
-  canDelete: boolean;
+
+/* ========================= Course Schedules ========================= */
+
+function SchedulesSection({ canWrite, canUpdate, canDelete }: {
+  canWrite: boolean; canUpdate: boolean; canDelete: boolean;
 }) {
-  const [rows, setRows] = useState<itemsApi.Item[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<schedulesApi.CourseSchedule[]>([]);
+  const [courses, setCourses] = useState<coursesApi.Course[]>([]);
+  const [classrooms, setClassrooms] = useState<classroomsApi.Classroom[]>([]);
   const [teachers, setTeachers] = useState<employeesApi.Employee[]>([]);
-  const [editing, setEditing] = useState<itemsApi.Item | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<itemsApi.ItemRequest>(emptyFormFactory);
-  const [saving, setSaving] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<itemsApi.Item | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<schedulesApi.CourseSchedule | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<schedulesApi.CourseSchedule | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const page = await itemsApi.list({ type, size: 200 });
-      setRows(page.content ?? []);
+      const [s, c, r, e] = await Promise.all([
+        schedulesApi.list({ size: 200 }),
+        coursesApi.list({ size: 500 }),
+        classroomsApi.list({ size: 500 }),
+        employeesApi.list({ size: 500, status: 'active' }),
+      ]);
+      setRows(s.content ?? []);
+      setCourses(c.content ?? []);
+      setClassrooms(r.content ?? []);
+      setTeachers((e.content ?? []).filter(x => x.clinicalRole === 'teacher'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Failed to load ${title.toLowerCase()}`);
+      toast.error(e instanceof Error ? e.message : 'Failed to load schedules');
     } finally {
       setLoading(false);
     }
   };
+  useEffect(() => { void load(); }, []);
 
-  useEffect(() => {
-    void load();
-    if (type === 'class') {
-      (async () => {
-        try {
-          const emps = await employeesApi.list({ size: 500, status: 'active' });
-          setTeachers(emps.content ?? []);
-        } catch { /* soft-fail */ }
-      })();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type]);
-
-  const teacherName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const e of teachers) map.set(e.apiId ?? e.id, e.name);
-    return (id: string | null | undefined) => id ? map.get(id) ?? '—' : '—';
-  }, [teachers]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm(emptyFormFactory());
-    setShowForm(true);
-  };
-
-  const openEdit = (r: itemsApi.Item) => {
-    setEditing(r);
-    setForm({
-      name: r.name, description: r.description ?? '',
-      unitPrice: r.unitPrice ?? 0, active: r.active ?? true, type,
-      teacherId: r.teacherId ?? null,
-      capacity: r.capacity ?? null,
-      termCode: r.termCode ?? '',
-      startDate: r.startDate ?? null,
-      endDate: r.endDate ?? null,
-      sku: r.sku ?? '',
-    });
-    setShowForm(true);
-  };
-
-  const submit = async () => {
-    if (!form.name?.trim()) { toast.error(`${title.slice(0, -1)} name is required`); return; }
-    setSaving(true);
-    try {
-      if (editing) {
-        await itemsApi.update(editing.id, form);
-        toast.success(`${title.slice(0, -1)} updated`);
-      } else {
-        await itemsApi.create(form);
-        toast.success(`${title.slice(0, -1)} created`);
-      }
-      setShowForm(false);
-      await load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Failed to save ${title.slice(0, -1).toLowerCase()}`);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const courseName    = useMemo(() => new Map(courses.map(c => [c.id, c.name])), [courses]);
+  const classroomName = useMemo(() => new Map(classrooms.map(c => [c.id, c.name])), [classrooms]);
+  const teacherName   = useMemo(
+    () => new Map(teachers.map(e => [e.apiId ?? e.id, e.name])), [teachers]);
 
   const doDelete = async () => {
     if (!deleteConfirm) return;
     try {
-      await itemsApi.remove(deleteConfirm.id);
-      toast.success(`${title.slice(0, -1)} deleted`);
+      await schedulesApi.remove(deleteConfirm.id);
+      toast.success('Schedule deleted');
       setDeleteConfirm(null);
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Failed to delete ${title.slice(0, -1).toLowerCase()}`);
+      toast.error(e instanceof Error ? e.message : 'Failed to delete schedule');
     }
   };
 
-  const isClass = type === 'class';
+  const summariseLearnTimes = (lts: schedulesApi.LearnTime[]): string => {
+    if (!lts || lts.length === 0) return '—';
+    return lts.map(t => `${DAY_LABELS[t.dayOfWeek - 1]} ${t.fromTime.slice(0, 5)}–${t.toTime.slice(0, 5)}`).join(', ');
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
-          {icon} {title}
+          <CalendarClock className="h-4 w-4 text-emerald-600" /> Course Schedules
         </h3>
-        {canWrite && !showForm && (
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add {title.slice(0, -1)}
+        {canWrite && (
+          <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add Schedule
           </Button>
         )}
       </div>
 
-      {showForm ? (
-        <div className="border rounded-md p-4 space-y-3 bg-gray-50/40">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5 col-span-2">
-              <Label className="text-xs">
-                Name<span className="text-red-500"> *</span>
-              </Label>
-              <Input
-                value={form.name ?? ''}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder={isClass ? 'e.g. Math Grade 7 (Morning)' : 'e.g. English Language Arts'}
-              />
-            </div>
-            {isClass && (
-              <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Teacher</Label>
-                  <select
-                    className="w-full h-9 px-3 border rounded-md text-sm bg-white"
-                    value={form.teacherId ?? ''}
-                    onChange={e => setForm(f => ({ ...f, teacherId: e.target.value || null }))}
-                  >
-                    <option value="">—</option>
-                    {teachers.map(t => (
-                      <option key={t.apiId ?? t.id} value={t.apiId ?? t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Term code</Label>
-                  <Input
-                    value={form.termCode ?? ''}
-                    onChange={e => setForm(f => ({ ...f, termCode: e.target.value }))}
-                    placeholder="e.g. 2026-T1"
-                    maxLength={32}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Start date</Label>
-                  <Input
-                    type="date"
-                    value={form.startDate ?? ''}
-                    onChange={e => setForm(f => ({ ...f, startDate: e.target.value || null }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">End date</Label>
-                  <Input
-                    type="date"
-                    value={form.endDate ?? ''}
-                    onChange={e => setForm(f => ({ ...f, endDate: e.target.value || null }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Capacity</Label>
-                  <Input
-                    type="number" min="0" step="1" className="tabular-nums"
-                    value={form.capacity == null ? '' : String(form.capacity)}
-                    onChange={e => setForm(f => ({ ...f, capacity: e.target.value === '' ? null : Number(e.target.value) }))}
-                    placeholder="e.g. 30"
-                  />
-                </div>
-              </>
-            )}
-            {!isClass && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Course code (optional)</Label>
-                <Input
-                  value={form.sku ?? ''}
-                  onChange={e => setForm(f => ({ ...f, sku: e.target.value }))}
-                  placeholder="e.g. ELA-G7"
-                  maxLength={64}
-                />
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label className="text-xs">{isClass ? 'Tuition fee' : 'Base fee'}</Label>
-              <Input
-                type="number" min="0" step="0.01" className="tabular-nums"
-                value={form.unitPrice == null ? '' : String(form.unitPrice)}
-                onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value === '' ? 0 : Number(e.target.value) }))}
-                placeholder="e.g. 120.00"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Description</Label>
-            <Input
-              value={form.description ?? ''}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Optional"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setShowForm(false)} disabled={saving}>Cancel</Button>
-            <Button size="sm" onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-          </div>
-        </div>
-      ) : loading && rows.length === 0 ? (
+      {loading && rows.length === 0 ? (
         <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-gray-500 py-6 text-center">
-          No {title.toLowerCase()} yet.
-        </p>
+        <p className="text-sm text-gray-500 py-6 text-center">No schedules yet.</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              {isClass && <TableHead className="w-[150px]">Teacher</TableHead>}
-              {isClass && <TableHead className="w-[100px]">Term</TableHead>}
-              {!isClass && <TableHead className="w-[110px]">Code</TableHead>}
-              <TableHead className="w-[90px] text-right">Fee</TableHead>
+              <TableHead>Course</TableHead>
+              <TableHead>Classroom</TableHead>
+              <TableHead>Teacher</TableHead>
+              <TableHead>Learn Times</TableHead>
+              <TableHead className="text-right w-[80px]">Fee</TableHead>
               <TableHead className="text-right w-[80px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map(r => (
               <TableRow key={r.id}>
-                <TableCell className="font-medium">{r.name}</TableCell>
-                {isClass && <TableCell className="text-sm text-gray-600">{teacherName(r.teacherId)}</TableCell>}
-                {isClass && <TableCell className="text-sm text-gray-600 tabular-nums">{r.termCode || '—'}</TableCell>}
-                {!isClass && <TableCell className="text-sm text-gray-600 tabular-nums">{r.sku || '—'}</TableCell>}
+                <TableCell className="font-medium">
+                  {courseName.get(r.courseId) ?? '—'}
+                  {r.name ? <span className="text-gray-500"> · {r.name}</span> : null}
+                </TableCell>
+                <TableCell className="text-sm text-gray-600">{classroomName.get(r.classroomId) ?? '—'}</TableCell>
+                <TableCell className="text-sm text-gray-600">
+                  {r.teacherId ? teacherName.get(r.teacherId) ?? '—' : '—'}
+                </TableCell>
+                <TableCell className="text-sm text-gray-600 max-w-[280px] truncate" title={summariseLearnTimes(r.learnTimes)}>
+                  {summariseLearnTimes(r.learnTimes)}
+                </TableCell>
                 <TableCell className="text-sm text-right tabular-nums text-gray-600">
                   {r.unitPrice != null ? r.unitPrice.toFixed(2) : '—'}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="inline-flex gap-1">
                     {canUpdate && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
+                      <Button variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={() => { setEditing(r); setDialogOpen(true); }} title="Edit">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                     )}
@@ -421,12 +256,20 @@ function CatalogSection({
         </Table>
       )}
 
+      <AddCourseScheduleDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+        onSaved={() => void load()}
+      />
+
       <AlertDialog open={!!deleteConfirm} onOpenChange={o => !o && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {title.slice(0, -1).toLowerCase()}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete schedule?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteConfirm?.name} will be removed. Existing enrollments referencing it stay in place.
+              This teaching session and its learn times will be removed. Existing
+              enrollments will stay in place.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -436,5 +279,241 @@ function CatalogSection({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/* ============================ Teachers ============================ */
+
+/**
+ * Follows the Doctor tagging UX from AppointmentSettingsDialog
+ * (v-healthcare-staff-roles): the table shows ONLY employees
+ * currently tagged as Teacher. The "Add Teacher" button opens a
+ * SearchablePicker over the pool of employees who have no role tag
+ * yet. Row-level Remove untags in place. One role per employee, so
+ * tagging Teacher clears any previous doctor / cashier / staff tag
+ * — the popup pool filters to untagged so the admin has to
+ * consciously choose to reassign via the other role's Settings.
+ */
+function TeachersSection() {
+  const { canUpdate } = useAuth();
+  const canTag = canUpdate('employees');
+  const [employees, setEmployees] = useState<employeesApi.Employee[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await employeesApi.list({ size: 500, status: 'active' });
+      setEmployees(r.content ?? []);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load employees');
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const teachers = useMemo(() => employees.filter(e => e.clinicalRole === 'teacher'), [employees]);
+  // Untagged pool — same filter as the Doctor UX. Employees with any
+  // other role stay hidden so the admin picks role-swaps deliberately.
+  const untagged = useMemo(() => employees.filter(e => !e.clinicalRole), [employees]);
+
+  const patchRole = async (emp: employeesApi.Employee, next: employeesApi.ClinicalRole | null) => {
+    const key = emp.apiId ?? emp.id;
+    setBusyId(key);
+    try {
+      const saved = await employeesApi.update(emp.apiId ?? emp.id, {
+        ...(emp as unknown as employeesApi.CreateEmployeeRequest),
+        clinicalRole: next,
+      });
+      setEmployees(list => list.map(e => (e.apiId ?? e.id) === key ? saved : e));
+      toast.success(next === 'teacher'
+        ? `Tagged ${emp.name} as Teacher`
+        : `Removed Teacher tag from ${emp.name}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update role');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remove = (emp: employeesApi.Employee) => {
+    if (!confirm(`Remove ${emp.name} from the Teacher list?`)) return;
+    void patchRole(emp, null);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+            <UserSquare2 className="h-4 w-4 text-emerald-600" /> Teachers
+          </h3>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Teacher role guidance"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                Tag an employee as Teacher to make them selectable in the Course
+                Schedule form's Teacher picker. One role per employee — a Teacher
+                tag clears any previous doctor / cashier / staff tag.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setAddOpen(true)}
+          disabled={!canTag || loading || untagged.length === 0}
+          title={untagged.length === 0 ? 'Every active employee is already tagged' : 'Add an employee to the Teacher list'}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add Teacher
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-center text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 inline mr-1 animate-spin" /> Loading employees…
+        </div>
+      ) : teachers.length === 0 ? (
+        <div className="py-10 text-center text-sm text-gray-500">
+          No teachers yet — click <b>Add Teacher</b> to tag your first.
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[120px]">Emp No</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Position</TableHead>
+              <TableHead className="text-right w-[80px]">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {teachers.map(e => {
+              const key = e.apiId ?? e.id;
+              const busy = busyId === key;
+              return (
+                <TableRow key={key} className="hover:bg-gray-50">
+                  <TableCell className="tabular-nums text-sm">{e.empNo}</TableCell>
+                  <TableCell className="text-sm font-medium">{e.name}</TableCell>
+                  <TableCell className="text-sm text-gray-600">{e.position || '—'}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => remove(e)}
+                      disabled={!canTag || busy}
+                      title="Remove from Teacher list"
+                    >
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+
+      <AddTeacherDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        candidates={untagged}
+        onAdded={async emp => {
+          setAddOpen(false);
+          await patchRole(emp, 'teacher');
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Compact "Add Teacher" popup, matching the AddStaffDialog shape in
+ * AppointmentSettingsDialog. Employees already carrying a role tag
+ * don't appear as candidates — the admin removes their prior tag
+ * from the owning Settings (Healthcare, Cashier, etc.) first.
+ */
+function AddTeacherDialog({ open, onOpenChange, candidates, onAdded }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  candidates: employeesApi.Employee[];
+  onAdded: (emp: employeesApi.Employee) => Promise<void> | void;
+}) {
+  const [empId, setEmpId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (open) setEmpId(''); }, [open]);
+
+  const options = useMemo(
+    () => candidates.map(e => ({
+      value: e.apiId ?? e.id,
+      label: e.name,
+      secondary: e.position || e.empNo || undefined,
+      searchKey: `${e.name} ${e.position ?? ''} ${e.empNo ?? ''} ${e.email ?? ''}`,
+    })),
+    [candidates],
+  );
+
+  const save = async () => {
+    const emp = candidates.find(e => (e.apiId ?? e.id) === empId);
+    if (!emp) { toast.error('Pick an employee'); return; }
+    setSaving(true);
+    try {
+      await onAdded(emp);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SubDialog open={open} onOpenChange={onOpenChange}>
+      <SubDialogContent className="sm:max-w-[520px] w-[92vw]">
+        <SubDialogHeader>
+          <SubDialogTitle>Add teacher</SubDialogTitle>
+          <SubDialogDescription className="sr-only">
+            Pick an untagged employee to add to the Teacher list.
+          </SubDialogDescription>
+        </SubDialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Employee *</Label>
+            <SearchablePicker
+              options={options}
+              value={empId}
+              onChange={setEmpId}
+              placeholder="Pick an employee"
+              searchPlaceholder="Search name, position, empNo, email…"
+              allowClear={false}
+              emptyResultsLabel="No untagged employees left."
+            />
+          </div>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            Employees already tagged with another clinical role (doctor / cashier
+            / staff) don't appear here — remove that tag from their owning
+            Settings first.
+          </p>
+        </div>
+        <SubDialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+            <X className="h-4 w-4 mr-1.5" /> Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || !empId}>
+            <Plus className="h-4 w-4 mr-1.5" /> {saving ? 'Adding…' : 'Add'}
+          </Button>
+        </SubDialogFooter>
+      </SubDialogContent>
+    </SubDialog>
   );
 }

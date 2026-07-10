@@ -92,6 +92,10 @@ export interface Invoice {
   diagnosis?: string | null;
   /** V186 — treating doctor (user id). Null on non-encounter invoices. */
   doctorId?: string | null;
+  /** v-creator-column — display name of the user who created the
+   *  invoice / encounter. Hydrated on the list endpoint only; null
+   *  on single-row reads. */
+  createdByName?: string | null;
   items: InvoiceItem[];
   /** Child Credit / Debit Notes attached to this invoice. Populated
    *  on the single-invoice GET; empty on the list payload. */

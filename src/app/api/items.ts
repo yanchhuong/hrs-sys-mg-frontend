@@ -40,22 +40,17 @@ export interface Item {
   itemCategory?: string | null;
   /** Reorder threshold (V151). Drives the derived Status badge. */
   minStock?: number;
-  /** V182 — discriminator: product | service | medical_service |
-   *  class. Defaults to 'product' on legacy rows. */
+  /** V182 — discriminator: product | service | medical_service.
+   *  V213 dropped 'class' and 'course' from this table (see the
+   *  Courses / Classrooms / Course Schedules tables in the school
+   *  vertical). Defaults to 'product' on legacy rows. */
   type?: ItemType;
-  /* V206 / v-school-classes — Class-only fields. Null on non-class
-   * items. The Classes page reads these; the Items page ignores. */
-  teacherId?: string | null;
-  capacity?: number | null;
-  termCode?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
 
-/** V182 + V209 — item discriminator. */
-export type ItemType = 'product' | 'service' | 'medical_service' | 'class' | 'course';
+/** V182 — item discriminator. */
+export type ItemType = 'product' | 'service' | 'medical_service';
 
 export type ItemCategory = 'drink' | 'snack' | 'food' | 'other';
 
@@ -131,15 +126,9 @@ export interface ItemRequest {
   /** Reorder threshold (V151). */
   minStock?: number;
   /** V182 — discriminator. Undefined on update leaves the existing
-   *  value; on create the backend defaults to 'product'. */
+   *  value; on create the backend defaults to 'product'. School
+   *  vertical no longer piggybacks on this table (V213). */
   type?: ItemType;
-  /* V206 / v-school-classes — Class-only fields. Only the Classes
-   * page sends these. */
-  teacherId?: string | null;
-  capacity?: number | null;
-  termCode?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
 }
 
 export interface StockInRequest {

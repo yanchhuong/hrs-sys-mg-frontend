@@ -20,9 +20,10 @@ import { Pagination } from '../common/Pagination';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
 import * as invoicesApi from '../../api/invoices';
-import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings, Upload, Info } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Send, Copy, Check, Link2Off, CheckCircle2, Settings, Upload, Download, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { BulkUploadCustomersDialog } from '../common/BulkUploadCustomersDialog';
+import { exportListToExcel } from '../../utils/excelExport';
 import { CustomerTelegramBotSettingsDialog } from '../common/CustomerTelegramBotSettingsDialog';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -118,6 +119,8 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastUpdated:  'Student updated',
     toastSaveFail: 'Failed to save student',
     toastLoadFail: 'Failed to load students',
+    exportFilename: 'Students',
+    exportSheet:    'Students',
   } : isPatient ? {
     pageTitle:     'Patients',
     addButton:     'Add Patient',
@@ -129,6 +132,8 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastUpdated:  'Patient updated',
     toastSaveFail: 'Failed to save patient',
     toastLoadFail: 'Failed to load patients',
+    exportFilename: 'Patients',
+    exportSheet:    'Patients',
   } : {
     pageTitle:     null,          // fall through to t('nav.customers')
     addButton:     'Add Customer',
@@ -140,6 +145,8 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastUpdated:  'Customer updated',
     toastSaveFail: 'Failed to save customer',
     toastLoadFail: 'Failed to load customers',
+    exportFilename: 'Customers',
+    exportSheet:    'Customers',
   };
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete, canView } = useAuth();
@@ -180,6 +187,10 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | customersApi.CustomerType>('all');
+  // Student lens: date range on createdAt (registration date).
+  // Matches [[feedback-filter-strip-consistency]] From/To pattern.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate,   setToDate]   = useState('');
   // Per-customer Telegram linkage. Keyed by customerId so the row
   // cell can look up its own status in O(1). Loaded alongside the
   // customer list when the tenant has telegram.view.
@@ -260,9 +271,19 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   const filtered = useMemo(() => {
     // Server already filtered by type+q on the last fetch; this is just
     // a defensive re-filter so a stale prop doesn't show through.
-    if (typeFilter === 'all') return rows;
-    return rows.filter(r => r.type === typeFilter);
-  }, [rows, typeFilter]);
+    return rows.filter(r => {
+      if (typeFilter !== 'all' && r.type !== typeFilter) return false;
+      // Student-lens date range on createdAt. ISO yyyy-mm-dd lex
+      // ordering matches chronological ordering; slicing the ISO
+      // timestamp to its date component sidesteps the `T` suffix.
+      if (isStudent && (fromDate || toDate)) {
+        const d = (r.createdAt ?? '').slice(0, 10);
+        if (fromDate && d < fromDate) return false;
+        if (toDate   && d > toDate)   return false;
+      }
+      return true;
+    });
+  }, [rows, typeFilter, isStudent, fromDate, toDate]);
 
   const pagination = usePagination(filtered, 25);
 
@@ -409,6 +430,55 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               <Settings className="h-4 w-4" />
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => exportListToExcel({
+              filename: T.exportFilename,
+              sheetName: T.exportSheet,
+              columns: isStudent ? [
+                { header: 'Name',            value: c => c.name },
+                { header: 'Student No',      value: c => c.studentNo ?? '' },
+                { header: 'Phone',           value: c => c.phone ?? '' },
+                { header: 'Birth date',      value: c => c.birthDate ?? '' },
+                { header: 'Age',             value: c => {
+                    const y = ageInYears(c.birthDate);
+                    return y == null ? '' : y;
+                  } },
+                { header: 'Sex',             value: c => c.sex ?? '' },
+                { header: 'Guardian',        value: c => c.guardianName ?? '' },
+                { header: 'Guardian Phone',  value: c => c.guardianPhone ?? '' },
+                { header: 'Guardian Email',  value: c => c.guardianEmail ?? '' },
+                { header: 'Address',         value: c => c.address ?? '' },
+                { header: 'Remark',          value: c => c.remark ?? '' },
+                { header: 'Enroll Count',    value: c => c.enrollmentCount ?? 0 },
+                { header: 'Registered',      value: c => c.createdAt ? c.createdAt.slice(0, 10) : '' },
+              ] : isPatient ? [
+                { header: 'Name',       value: c => c.name },
+                { header: 'Phone',      value: c => c.phone ?? '' },
+                { header: 'Birth date', value: c => c.birthDate ?? '' },
+                { header: 'Sex',        value: c => c.sex ?? '' },
+                { header: 'Height cm',  value: c => c.heightCm ?? '' },
+                { header: 'Weight kg',  value: c => c.weightKg ?? '' },
+                { header: 'Insurance',  value: c => c.insurance ?? '' },
+                { header: 'Address',    value: c => c.address ?? '' },
+              ] : [
+                { header: 'Type',           value: c => c.type },
+                { header: 'Name',           value: c => c.name },
+                { header: 'Phone',          value: c => c.phone ?? '' },
+                { header: 'Email',          value: c => c.email ?? '' },
+                { header: 'CID',            value: c => c.cid ?? '' },
+                { header: 'TIN',            value: c => c.tin ?? '' },
+                { header: 'Representative', value: c => c.representative ?? '' },
+                { header: 'Site',           value: c => c.site ?? '' },
+                { header: 'Address',        value: c => c.address ?? '' },
+              ],
+              rows: filtered,
+            })}
+            disabled={filtered.length === 0}
+            title={filtered.length === 0 ? 'Nothing to export' : 'Download the visible rows as Excel'}
+          >
+            <Download className="h-4 w-4 mr-1.5" /> Export
+          </Button>
           {canAdd && (
             <Button
               variant="outline"
@@ -444,11 +514,10 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             {/* Type filter tabs — Individual / Business / All. Hidden
-                on the Patients lens: patients are always saved as a
-                single fixed type (business + non_taxable, so the TIN
-                requirement doesn't fire) and the operator has no
+                on the Patients + Students lenses: those lenses each
+                pin to a single stored shape so the operator has no
                 reason to filter by shape. */}
-            {!isPatient ? (
+            {!isPatient && !isStudent ? (
               <div className="flex items-center gap-1.5">
                 {TYPE_FILTERS.map(f => (
                   <button
@@ -467,18 +536,38 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
             ) : (
               <div />
             )}
-            <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onBlur={() => void load()}
-                  placeholder="Search name, phone, TIN…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
-            </form>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Student lens: From/To range on createdAt, matching
+                  [[feedback-filter-strip-consistency]]. */}
+              {isStudent && (
+                <>
+                  <Label className="text-xs text-gray-500">From</Label>
+                  <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-36 text-sm" />
+                  <Label className="text-xs text-gray-500">To</Label>
+                  <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-36 text-sm" />
+                  {(fromDate || toDate) && (
+                    <Button
+                      size="sm" variant="ghost" className="h-9"
+                      onClick={() => { setFromDate(''); setToDate(''); }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </>
+              )}
+              <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onBlur={() => void load()}
+                    placeholder="Search name, phone, TIN…"
+                    className="h-8 pl-7 w-64 text-sm"
+                  />
+                </div>
+              </form>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -496,7 +585,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         type, the text carries the name. Saves a
                         column without losing the distinction. */}
                     <TableHead>Name</TableHead>
-                    <TableHead>Phone</TableHead>
+                    {/* v-student-column-merge — Students lens hides
+                        the Phone column: the student's own phone is
+                        stacked under the Name cell, and the Contact
+                        column consolidates guardian name + phone. */}
+                    {!isStudent && <TableHead>Phone</TableHead>}
                     {/* Patients page swaps the accounting-oriented TIN /
                         Representative / Site columns for clinical
                         columns. Representative gets auto-seeded to the
@@ -506,13 +599,13 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     {!isPatient && !isStudent && <TableHead>TIN</TableHead>}
                     {!isPatient && !isStudent && <TableHead>Representative</TableHead>}
                     {!isPatient && !isStudent && <TableHead>Site</TableHead>}
-                    {isStudent && <TableHead className="w-[110px]">Student No</TableHead>}
                     {isStudent && <TableHead className="w-[120px]">Birth date</TableHead>}
                     {isStudent && <TableHead className="w-[70px] text-right">Age</TableHead>}
                     {isStudent && <TableHead className="w-[80px]">Sex</TableHead>}
-                    {isStudent && <TableHead className="w-[160px]">Guardian</TableHead>}
-                    {isStudent && <TableHead className="w-[140px]">Guardian Phone</TableHead>}
-                    {isStudent && <TableHead className="w-[140px]">Insurance</TableHead>}
+                    {isStudent && <TableHead className="w-[200px]">Contact</TableHead>}
+                    {isStudent && <TableHead className="w-[90px] text-right">Enroll Count</TableHead>}
+                    {isStudent && <TableHead className="w-[160px]">Remark</TableHead>}
+                    {isStudent && <TableHead className="w-[110px]">Date</TableHead>}
                     {isPatient && <TableHead className="w-[120px]">Birth date</TableHead>}
                     {isPatient && <TableHead className="w-[70px] text-right">Age</TableHead>}
                     {isPatient && <TableHead className="w-[80px]">Sex</TableHead>}
@@ -557,10 +650,26 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                               <User className="h-3 w-3" />
                             </span>
                           )}
-                          <span>{c.name}</span>
+                          {/* v-student-column-merge — Students lens
+                              stacks Student No + own phone under the
+                              name so the merged "Student" column is
+                              the single go-to for identity. */}
+                          {isStudent ? (
+                            <span className="flex flex-col leading-tight">
+                              <span>{c.name}</span>
+                              <span className="text-[11px] text-gray-500 tabular-nums">
+                                {c.studentNo || '—'}
+                                {c.phone ? ` · ${c.phone}` : ''}
+                              </span>
+                            </span>
+                          ) : (
+                            <span>{c.name}</span>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
+                      {!isStudent && (
+                        <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
+                      )}
                       {!isPatient && !isStudent && (
                         <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
                       )}
@@ -570,11 +679,6 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       {!isPatient && !isStudent && (
                         <TableCell className="text-sm text-gray-600 max-w-[200px] truncate" title={c.site || ''}>
                           {c.site || '—'}
-                        </TableCell>
-                      )}
-                      {isStudent && (
-                        <TableCell className="text-sm text-gray-600 tabular-nums">
-                          {c.studentNo || '—'}
                         </TableCell>
                       )}
                       {isStudent && (
@@ -596,18 +700,31 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         </TableCell>
                       )}
                       {isStudent && (
-                        <TableCell className="text-sm text-gray-600 max-w-[160px] truncate" title={c.guardianName || ''}>
-                          {c.guardianName || '—'}
+                        <TableCell className="text-sm text-gray-600 max-w-[200px]" title={c.guardianName || ''}>
+                          {c.guardianName || c.guardianPhone ? (
+                            <span className="flex flex-col leading-tight">
+                              <span className="truncate">{c.guardianName || '—'}</span>
+                              <span className="text-[11px] text-gray-500 tabular-nums">
+                                {c.guardianPhone || '—'}
+                              </span>
+                            </span>
+                          ) : '—'}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-right tabular-nums text-gray-600"
+                          title="Lifetime enrollments (all statuses)">
+                          {c.enrollmentCount ?? 0}
+                        </TableCell>
+                      )}
+                      {isStudent && (
+                        <TableCell className="text-sm text-gray-600 max-w-[160px] truncate" title={c.remark || ''}>
+                          {c.remark || '—'}
                         </TableCell>
                       )}
                       {isStudent && (
                         <TableCell className="text-sm text-gray-600 tabular-nums">
-                          {c.guardianPhone || '—'}
-                        </TableCell>
-                      )}
-                      {isStudent && (
-                        <TableCell className="text-sm text-gray-600 max-w-[140px] truncate" title={c.insurance || ''}>
-                          {c.insurance || '—'}
+                          {c.createdAt ? c.createdAt.slice(0, 10) : '—'}
                         </TableCell>
                       )}
                       {isPatient && (
@@ -832,18 +949,24 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="cust-cid" className="text-xs">Customer ID (CID)</Label>
-              <Input
-                id="cust-cid"
-                value={form.cid ?? ''}
-                onChange={(e) => setForm(f => ({ ...f, cid: e.target.value }))}
-                placeholder="CID-001"
-              />
-              <div className="text-[10px] text-gray-500">
-                Your internal reference (e.g. <code>CID-001</code>, <code>CUS-014</code>). Free-form text.
+            {/* V214 / v-student-remark-swap — CID is a Sale / Patient
+                lens concept (matches your bookkeeping references).
+                Students don't use it; hide the field on that lens so
+                the popup stays focused. */}
+            {!isStudent && (
+              <div className="space-y-1.5">
+                <Label htmlFor="cust-cid" className="text-xs">Customer ID (CID)</Label>
+                <Input
+                  id="cust-cid"
+                  value={form.cid ?? ''}
+                  onChange={(e) => setForm(f => ({ ...f, cid: e.target.value }))}
+                  placeholder="CID-001"
+                />
+                <div className="text-[10px] text-gray-500">
+                  Your internal reference (e.g. <code>CID-001</code>, <code>CUS-014</code>). Free-form text.
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Patients lens — clinical block: DoB (→ derived age),
                 Height, Weight, Insurance. Sale > Customer skips
@@ -904,14 +1027,16 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       <option value="other">Other</option>
                     </select>
                   </div>
+                  {/* V214 / v-student-remark-swap — Insurance
+                      dropped for students (belongs to Patients).
+                      Remark takes its slot for a free-text note. */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="cust-student-insurance" className="text-xs">Insurance</Label>
+                    <Label htmlFor="cust-student-remark" className="text-xs">Remark</Label>
                     <Input
-                      id="cust-student-insurance"
-                      value={form.insurance ?? ''}
-                      onChange={(e) => setForm(f => ({ ...f, insurance: e.target.value }))}
-                      placeholder="Provider / policy number"
-                      maxLength={255}
+                      id="cust-student-remark"
+                      value={form.remark ?? ''}
+                      onChange={(e) => setForm(f => ({ ...f, remark: e.target.value }))}
+                      placeholder="Optional note"
                     />
                   </div>
                 </div>

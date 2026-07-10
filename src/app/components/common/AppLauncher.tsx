@@ -37,7 +37,7 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
 // platform-managed labels resolve. Default seed there: 'hr',
 // 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
 // admin additions).
-type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare';
+type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare' | 'education';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -90,6 +90,16 @@ const CATEGORIES: CategoryDef[] = [
     key: 'healthcare', labelKey: 'apps.category.healthcare',
     installedBadge: 'bg-teal-100 text-teal-700',
     ids: ['patients', 'encounters', 'appointments'],
+  },
+  {
+    // School business-base leaves (v-course-schedule-model +
+    // v-attendance-module). Students gates on 'enrollment';
+    // Enrollments gates on 'enrollment' too (paired install);
+    // Attendance gates on 'class-attendance' (independent toggle,
+    // see v-education-attendance-split-from-hr).
+    key: 'education', labelKey: 'apps.category.education',
+    installedBadge: 'bg-blue-100 text-blue-700',
+    ids: ['students', 'enrollments', 'attendances'],
   },
 ];
 
