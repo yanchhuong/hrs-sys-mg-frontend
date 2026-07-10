@@ -14,7 +14,7 @@ import {
   CalendarDays, FileText, Baby, Calculator, Scale, BookOpen,
   ShoppingCart, ShoppingBag, Package, Megaphone, Send,
   MonitorPlay, KeyRound, UserCheck, FileMinus, TrendingUp,
-  QrCode, Wallet, Smartphone, Stethoscope, ChevronDown,
+  QrCode, Wallet, Smartphone, Stethoscope, ChevronDown, GraduationCap,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -75,6 +75,12 @@ const DEMO_ACCOUNTS: ReadonlyArray<{
     label: { en: 'Store System', km: 'ប្រព័ន្ធហាង',            zh: '商店系统' },
     email: 'adminstore@hr-share.com',
     icon: Store,
+  },
+  {
+    key: 'school',
+    label: { en: 'School System', km: 'ប្រព័ន្ធសាលារៀន',        zh: '学校系统' },
+    email: 'adminschool@hr-share.com',
+    icon: GraduationCap,
   },
 ];
 
