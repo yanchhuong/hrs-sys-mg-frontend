@@ -6,9 +6,47 @@ import { Badge } from '../../ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
-import { Layers, Save, RotateCcw, Building2 } from 'lucide-react';
+import { Layers, Save, RotateCcw, Building2, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
+
+/**
+ * v-tenant-modules-menu-alignment — the "Modules & Apps" grid renders
+ * from the code-module registry (module_assignments), but the sidebar
+ * the tenant actually sees is nav-driven. Two nav items are derived
+ * views over another module's controllers and have no independent
+ * gate: Students (inherits Enrollment) and Patients (inherits
+ * Encounter). One code module has no sidebar entry: Medical Service
+ * (managed inline from Encounter's detail dialog).
+ *
+ * Rather than adding synthetic module_assignments rows for the derived
+ * views (which would create toggles that flip nothing on the backend)
+ * or hiding Medical Service via a status='draft' migration (which
+ * lies about its state), we shape display purely on the FE:
+ *
+ *   HIDDEN_MODULE_KEYS — dropped from the grid entirely.
+ *   INHERIT_TILES      — read-only tiles injected before a specific
+ *                        gate module, mirroring the Permission Matrix
+ *                        inherit-row pattern.
+ *   LABEL_OVERRIDES    — display labels that don't match the raw key.
+ */
+const HIDDEN_MODULE_KEYS = new Set(['medical-service']);
+
+const LABEL_OVERRIDES: Record<string, string> = {
+  enrollment:         'Enrollments',
+  'class-attendance': 'Attendance',
+};
+
+interface InheritTile {
+  key: string;         // synthetic display key (not a real module)
+  label: string;
+  inheritsFrom: string;// real module key whose enabled-state we mirror
+}
+const INHERIT_TILES: Record<string, InheritTile[]> = {
+  // Injected at the START of each category's tile list.
+  education:  [{ key: 'students', label: 'Students', inheritsFrom: 'enrollment' }],
+  healthcare: [{ key: 'patients', label: 'Patients', inheritsFrom: 'encounter'  }],
+};
 
 /**
  * Super Admin → Tenant Modules. Pick a company, toggle which menu
@@ -109,7 +147,9 @@ export function TenantModules() {
    * checkbox in spreadsheet UIs.
    */
   const handleCategoryToggle = (cat: platformApi.ModuleCategory) => {
-    const keys = flattenModules(cat.modules);
+    // Bulk-flip skips hidden modules so the operator can't toggle
+    // something they can't see — matches the tile grid's own filter.
+    const keys = flattenModules(cat.modules).filter(k => !HIDDEN_MODULE_KEYS.has(k));
     const allOn = keys.every(k => Boolean(draft[k]));
     const next = !allOn;
     setDraft(d => {
@@ -192,7 +232,11 @@ export function TenantModules() {
           ) : (
             <div className="space-y-4">
               {categories.map(cat => {
-                const moduleKeys = flattenModules(cat.modules);
+                // Real, togglable keys — hidden ones (e.g. medical-service)
+                // pruned before counting so the "N / M enabled" badge tracks
+                // what's actually visible.
+                const moduleKeys = flattenModules(cat.modules).filter(k => !HIDDEN_MODULE_KEYS.has(k));
+                const inheritTiles = INHERIT_TILES[cat.key] ?? [];
                 const total = moduleKeys.length;
                 const on = moduleKeys.filter(k => draft[k]).length;
                 const allOn = on === total && total > 0;
@@ -243,6 +287,34 @@ export function TenantModules() {
                         propagates through the same draft object so this
                         view stays in sync without extra wiring. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
+                      {/* Inherit tiles first — Students (before Enrollment),
+                          Patients (before Encounter). Read-only; state
+                          mirrors the parent module so the operator sees
+                          them light up when they enable the parent. */}
+                      {inheritTiles.map(tile => {
+                        const parentOn = Boolean(draft[tile.inheritsFrom]);
+                        const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
+                          ?? tile.inheritsFrom.replace(/-/g, ' ');
+                        return (
+                          <div
+                            key={tile.key}
+                            title={`Inherits from ${parentLabel} — no independent toggle`}
+                            className={`flex items-center justify-between px-3 py-2 rounded-md border border-dashed transition-colors ${
+                              parentOn
+                                ? 'border-emerald-200 bg-emerald-50/20'
+                                : 'border-slate-200 bg-slate-50/40'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Link2 className={`h-3 w-3 shrink-0 ${parentOn ? 'text-emerald-500' : 'text-slate-400'}`} />
+                              <span className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}>
+                                {tile.label}
+                              </span>
+                            </div>
+                            <Switch checked={parentOn} disabled aria-label={`${tile.label} inherits from ${parentLabel}`} />
+                          </div>
+                        );
+                      })}
                       {moduleKeys.map(key => (
                         <div
                           key={key}
@@ -253,8 +325,8 @@ export function TenantModules() {
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className={`text-sm capitalize truncate ${draft[key] ? 'text-slate-900' : 'text-slate-500'}`}>
-                              {key.replace(/-/g, ' ')}
+                            <span className={`text-sm truncate ${draft[key] ? 'text-slate-900' : 'text-slate-500'}`}>
+                              {LABEL_OVERRIDES[key] ?? key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                             </span>
                           </div>
                           <Switch
