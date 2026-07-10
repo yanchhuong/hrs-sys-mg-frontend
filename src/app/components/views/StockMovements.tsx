@@ -8,6 +8,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import * as movementsApi from '../../api/stockMovements';
 import { History, RefreshCw, Info, X } from 'lucide-react';
 import { Input } from '../ui/input';
@@ -110,24 +111,18 @@ export function StockMovements() {
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
             <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
-            <Input
-              id="mv-from"
-              type="date"
-              value={dateFrom}
+            <DateInput
+              value={dateFrom || null}
+              onChange={v => setDateFrom(v ?? '')}
               max={dateTo || undefined}
-              onChange={e => setDateFrom(e.target.value)}
-              className="h-8 w-36 text-sm"
-              aria-label="Filter movements from date"
+              placeholder="From"
             />
             <Label htmlFor="mv-to" className="text-xs text-gray-500">To</Label>
-            <Input
-              id="mv-to"
-              type="date"
-              value={dateTo}
+            <DateInput
+              value={dateTo || null}
+              onChange={v => setDateTo(v ?? '')}
               min={dateFrom || undefined}
-              onChange={e => setDateTo(e.target.value)}
-              className="h-8 w-36 text-sm"
-              aria-label="Filter movements to date"
+              placeholder="To"
             />
             {hasDateFilter && (
               <Button

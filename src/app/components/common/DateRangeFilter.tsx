@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { DateInput } from './DateInput';
 
 interface DateRangeFilterProps {
   onFilterChange: (startDate: string | null, endDate: string | null) => void;
@@ -13,6 +13,11 @@ interface DateRangeFilterProps {
  * Inline From / To date pair. Emits on every change (no Apply button) —
  * the caller receives `null` for empty bounds. A small Clear button is shown
  * when at least one side is filled.
+ *
+ * <p>Internals switched from native {@code <input type="date">} to the
+ * app-owned {@link DateInput} so the visible text follows the tenant's
+ * Date format setting instead of the browser/OS locale. ISO
+ * {@code YYYY-MM-DD} still speaks over the wire.</p>
  */
 export function DateRangeFilter({
   onFilterChange,
@@ -25,14 +30,16 @@ export function DateRangeFilter({
   const emit = (from: string, to: string) =>
     onFilterChange(from || null, to || null);
 
-  const handleFromChange = (v: string) => {
-    setStartDate(v);
-    emit(v, endDate);
+  const handleFromChange = (v: string | null) => {
+    const next = v ?? '';
+    setStartDate(next);
+    emit(next, endDate);
   };
 
-  const handleToChange = (v: string) => {
-    setEndDate(v);
-    emit(startDate, v);
+  const handleToChange = (v: string | null) => {
+    const next = v ?? '';
+    setEndDate(next);
+    emit(startDate, next);
   };
 
   const handleClear = () => {
@@ -44,26 +51,24 @@ export function DateRangeFilter({
   const hasFilter = !!(startDate || endDate);
 
   // v-filter-strip-consistency — matches Transactions verbatim:
-  // xs gray labels (no colon), w-36 date inputs, no-wrap row,
+  // xs gray labels (no colon), w-36 date buttons, no-wrap row,
   // ghost Clear button. Prevents the "From: on line 1, To: on
   // line 2" stacking when the header has a co-tenant like Add.
   return (
     <div className="flex items-center gap-2 whitespace-nowrap">
       <Label className="text-xs text-gray-500">From</Label>
-      <Input
-        type="date"
-        value={startDate}
-        onChange={(e) => handleFromChange(e.target.value)}
+      <DateInput
+        value={startDate || null}
+        onChange={handleFromChange}
         max={endDate || undefined}
-        className="h-9 w-36 text-sm"
+        placeholder="From"
       />
       <Label className="text-xs text-gray-500">To</Label>
-      <Input
-        type="date"
-        value={endDate}
-        onChange={(e) => handleToChange(e.target.value)}
+      <DateInput
+        value={endDate || null}
+        onChange={handleToChange}
         min={startDate || undefined}
-        className="h-9 w-36 text-sm"
+        placeholder="To"
       />
       {hasFilter && (
         <Button

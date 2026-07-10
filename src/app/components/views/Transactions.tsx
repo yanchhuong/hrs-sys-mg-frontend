@@ -10,6 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import * as txApi from '../../api/transactions';
 import * as currencyApi from '../../api/currencySettings';
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Info, RefreshCw, Wallet } from 'lucide-react';
@@ -283,9 +284,9 @@ export function Transactions() {
               {DIRECTION_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
             </select>
             <Label className="text-xs text-gray-500">From</Label>
-            <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} placeholder="From" />
             <Label className="text-xs text-gray-500">To</Label>
-            <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} placeholder="To" />
             {(from || to || refTypeFilter || dirFilter) && (
               <Button
                 size="sm" variant="ghost"

@@ -669,11 +669,10 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="enr-date" className="text-xs">Enrollment date</Label>
-                <Input
-                  id="enr-date"
-                  type="date"
-                  value={form.enrollmentDate ?? ''}
-                  onChange={e => setForm(f => ({ ...f, enrollmentDate: e.target.value || null }))}
+                <DateInput
+                  value={form.enrollmentDate ?? null}
+                  onChange={(v) => setForm(f => ({ ...f, enrollmentDate: v }))}
+                  placeholder="Pick a date"
                 />
               </div>
               <div className="space-y-1.5">
