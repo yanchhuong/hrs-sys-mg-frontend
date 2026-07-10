@@ -24,6 +24,7 @@ import * as employeesApi from '../../api/employees';
 import * as usersApi from '../../api/users';
 import * as paymentsApi from '../../api/payments';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /**
  * Healthcare > Encounters — first-class page (as of
@@ -40,6 +41,7 @@ import { useAuth } from '../../context/AuthContext';
  */
 export function Encounters() {
   const { canCreate, canDelete } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd    = canCreate('encounter');
   const canRemove = canDelete('encounter');
 
@@ -262,7 +264,7 @@ export function Encounters() {
                   return (
                     <TableRow key={r.id} className="hover:bg-gray-50">
                       <TableCell className="font-medium tabular-nums">{r.invoiceNo}</TableCell>
-                      <TableCell className="text-sm">{r.issueDate}</TableCell>
+                      <TableCell className="text-sm">{formatDate(r.issueDate)}</TableCell>
                       <TableCell className="text-sm">
                         <div className="font-medium">{patient?.name ?? '—'}</div>
                         {patient?.phone && (

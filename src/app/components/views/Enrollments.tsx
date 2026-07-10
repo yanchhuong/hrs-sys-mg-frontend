@@ -24,6 +24,8 @@ import * as coursesApi from '../../api/courses';
 import * as classroomsApi from '../../api/classrooms';
 import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { EnrollmentSettingsDialog } from '../common/EnrollmentSettingsDialog';
@@ -79,6 +81,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
  *  filter on mount. */
 export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
   const { canCreate, canUpdate, canDelete, canView } = useAuth();
+  const { formatDate } = useDateFormat();
   const canAdd = canCreate('enrollment');
   const canEdit = canUpdate('enrollment');
   const canRemove = canDelete('enrollment');
@@ -427,9 +430,19 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               ))}
             </select>
             <Label className="text-xs text-gray-500">From</Label>
-            <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput
+              value={fromDate || null}
+              onChange={(v) => setFromDate(v ?? '')}
+              max={toDate || undefined}
+              placeholder="From"
+            />
             <Label className="text-xs text-gray-500">To</Label>
-            <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput
+              value={toDate || null}
+              onChange={(v) => setToDate(v ?? '')}
+              min={fromDate || undefined}
+              placeholder="To"
+            />
             {(courseFilter || classroomFilter || teacherFilter || fromDate || toDate || statusFilter !== 'all') && (
               <Button
                 size="sm" variant="ghost"
@@ -479,8 +492,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                         <TableCell className="text-sm">{studentName(r.studentId)}</TableCell>
                         <TableCell className="text-sm text-gray-600">{sched ? scheduleLabel(sched) : '—'}</TableCell>
                         <TableCell className="text-sm text-gray-600 tabular-nums">{r.enrollmentDate}</TableCell>
-                        <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.startDate ?? '—'}</TableCell>
-                        <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.endDate ?? '—'}</TableCell>
+                        <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.startDate ? formatDate(sched.startDate) : '—'}</TableCell>
+                        <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.endDate ? formatDate(sched.endDate) : '—'}</TableCell>
                         <TableCell className="text-sm text-right tabular-nums">{r.total?.toFixed(2)}</TableCell>
                         <TableCell
                           className="text-sm text-right tabular-nums text-gray-600"
@@ -640,13 +653,12 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                   return (
                     <div className="rounded-md border bg-gray-50/60 px-2.5 py-1.5 text-[11px] leading-snug text-gray-600 space-y-0.5">
                       <div>
-                        <span className="text-gray-500">Learn times: </span>
                         <span className="tabular-nums">{allLearnTimes(picked)}</span>
                       </div>
                       {(picked.startDate || picked.endDate) && (
                         <div className="tabular-nums">
                           <span className="text-gray-500">Dates: </span>
-                          {picked.startDate ?? '—'} → {picked.endDate ?? '—'}
+                          {picked.startDate ? formatDate(picked.startDate) : '—'} → {picked.endDate ? formatDate(picked.endDate) : '—'}
                         </div>
                       )}
                     </div>

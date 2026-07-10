@@ -25,6 +25,7 @@ import * as invoicesApi from '../../api/invoices';
 import * as customersApi from '../../api/customers';
 import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /**
  * Healthcare > Appointment — the waiting-room queue (V194 /
@@ -41,6 +42,7 @@ import { useAuth } from '../../context/AuthContext';
  */
 export function Appointments() {
   const { canCreate, canUpdate, canDelete } = useAuth();
+  const { formatDateTime } = useDateFormat();
   const canAdd    = canCreate('appointment');
   const canEdit   = canUpdate('appointment');
   const canRemove = canDelete('appointment');
@@ -284,10 +286,7 @@ export function Appointments() {
                       </TableCell>
                       <TableCell className="text-sm tabular-nums">
                         {a.scheduledAt
-                          ? new Date(a.scheduledAt).toLocaleString('en-US', {
-                              year: 'numeric', month: 'short', day: '2-digit',
-                              hour: '2-digit', minute: '2-digit',
-                            })
+                          ? formatDateTime(a.scheduledAt)
                           : <span className="text-gray-400">Walk-in</span>}
                       </TableCell>
                       <TableCell className="tabular-nums text-sm">

@@ -15,6 +15,8 @@ import { SessionDetailDialog } from '../common/SessionDetailDialog';
 import { AddSessionDialog } from '../common/AddSessionDialog';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { DateInput } from '../common/DateInput';
 
 /**
  * V215 / v-attendance-module — the teacher's daily workspace.
@@ -65,6 +67,7 @@ function defaultRangeFor(tab: Tab): { from: string; to: string } {
 }
 
 export function Attendances() {
+  const { formatDate } = useDateFormat();
   const [tab, setTab] = useState<Tab>('today');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -187,11 +190,19 @@ export function Attendances() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-xs text-gray-500">From</Label>
-              <Input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                className="h-9 w-36 text-sm" />
+              <DateInput
+                value={from || null}
+                onChange={(v) => setFrom(v ?? '')}
+                max={to || undefined}
+                placeholder="From"
+              />
               <Label className="text-xs text-gray-500">To</Label>
-              <Input type="date" value={to} onChange={e => setTo(e.target.value)}
-                className="h-9 w-36 text-sm" />
+              <DateInput
+                value={to || null}
+                onChange={(v) => setTo(v ?? '')}
+                min={from || undefined}
+                placeholder="To"
+              />
               <div className="ml-auto text-xs text-gray-500 tabular-nums">
                 {rows.length} sessions
               </div>
@@ -210,7 +221,7 @@ export function Attendances() {
                 {grouped.map(([date, dayRows]) => (
                   <div key={date}>
                     <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                      {date}
+                      {formatDate(date)}
                     </div>
                     <Table>
                       <TableHeader>
