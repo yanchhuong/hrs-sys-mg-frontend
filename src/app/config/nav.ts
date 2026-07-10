@@ -233,7 +233,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'attendance-settings',labelKey: 'nav.setting.attendance',    icon: Clock,           module: 'settings',        component: AttendanceSettings,      group: 'settings-group', requireAlso: ['attendance'] },
   { id: 'employee-settings',  labelKey: 'nav.setting.empset',        icon: Briefcase,       module: 'settings',        component: EmployeeSettings,        group: 'settings-group', requireAlso: ['employees'] },
   { id: 'user-management',    labelKey: 'nav.setting.usermgmt',      icon: Users,           module: 'user-management', component: UserManagement,          group: 'settings-group' },
-  { id: 'payroll-categories', labelKey: 'nav.setting.payrollcat',    icon: DollarSign,      module: 'settings',        component: PayrollCategorySettings, group: 'settings-group' },
+  { id: 'payroll-categories', labelKey: 'nav.setting.payrollcat',    icon: DollarSign,      module: 'settings',        component: PayrollCategorySettings, group: 'settings-group', requireAlso: ['payroll'] },
 ];
 
 /** Map for O(1) lookup by id. */
