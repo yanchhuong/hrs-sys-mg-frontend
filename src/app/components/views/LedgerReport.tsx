@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { DateInput } from '../common/DateInput';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -220,13 +221,13 @@ export function LedgerReport({ kind }: LedgerReportProps) {
               <label className="text-xs text-gray-500 flex items-center gap-1">
                 <Calendar className="h-3 w-3" /> From
               </label>
-              <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="w-44" />
+              <DateInput value={from} onChange={setFrom} className="w-44" />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-gray-500 flex items-center gap-1">
                 <Calendar className="h-3 w-3" /> To
               </label>
-              <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-44" />
+              <DateInput value={to} onChange={setTo} className="w-44" />
             </div>
             <Button onClick={load} disabled={loading}>
               {loading ? 'Loading…' : 'Apply'}

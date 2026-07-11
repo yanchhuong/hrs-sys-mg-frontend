@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { DateInput } from '../common/DateInput';
 import { formatMoney, formatNumber } from '../../utils/format';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -725,18 +726,16 @@ function AttendanceReport({
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <Calendar className="h-4 w-4 text-gray-400" />
-            <Input
-              type="date"
+            <DateInput
               value={startDate}
-              onChange={e => setStartDate(e.target.value)}
+              onChange={setStartDate}
               className="h-8 w-36 text-sm"
               title="Start date"
             />
             <span className="text-gray-400 text-xs">→</span>
-            <Input
-              type="date"
+            <DateInput
               value={endDate}
-              onChange={e => setEndDate(e.target.value)}
+              onChange={setEndDate}
               className="h-8 w-36 text-sm"
               title="End date"
             />
@@ -1861,18 +1860,16 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <Calendar className="h-4 w-4 text-gray-400" />
-            <Input
-              type="date"
+            <DateInput
               value={startDate}
-              onChange={e => setStartDate(e.target.value)}
+              onChange={setStartDate}
               className="h-8 w-36 text-sm"
               title="Start date"
             />
             <span className="text-gray-400 text-xs">→</span>
-            <Input
-              type="date"
+            <DateInput
               value={endDate}
-              onChange={e => setEndDate(e.target.value)}
+              onChange={setEndDate}
               className="h-8 w-36 text-sm"
               title="End date"
             />
