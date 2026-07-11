@@ -434,14 +434,12 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               value={fromDate || null}
               onChange={(v) => setFromDate(v ?? '')}
               max={toDate || undefined}
-              placeholder="From"
             />
             <Label className="text-xs text-gray-500">To</Label>
             <DateInput
               value={toDate || null}
               onChange={(v) => setToDate(v ?? '')}
               min={fromDate || undefined}
-              placeholder="To"
             />
             {(courseFilter || classroomFilter || teacherFilter || fromDate || toDate || statusFilter !== 'all') && (
               <Button

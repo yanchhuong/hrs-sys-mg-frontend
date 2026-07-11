@@ -284,9 +284,9 @@ export function Transactions() {
               {DIRECTION_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
             </select>
             <Label className="text-xs text-gray-500">From</Label>
-            <DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} placeholder="From" />
+            <DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} />
             <Label className="text-xs text-gray-500">To</Label>
-            <DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} placeholder="To" />
+            <DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} />
             {(from || to || refTypeFilter || dirFilter) && (
               <Button
                 size="sm" variant="ghost"

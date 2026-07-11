@@ -11,6 +11,11 @@ interface Props {
    *  URL query params both speak ISO already. */
   value: string | null;
   onChange: (next: string | null) => void;
+  /** Override the empty-state placeholder. When omitted, the trigger
+   *  shows a lowercase skeleton of the tenant date pattern (e.g.
+   *  "dd-mm-yyyy" / "mmm dd, yyyy") — mirrors the native
+   *  {@code <input type="date">} convention so operators know the
+   *  expected shape at a glance. */
   placeholder?: string;
   /** ISO min / max bounds. When set, the Calendar disables out-of-range
    *  days and the pair rejects them silently. */
@@ -21,6 +26,13 @@ interface Props {
   /** Show the clear (×) button when a value is set. Off by default so
    *  a required date input can hide it. */
   clearable?: boolean;
+}
+
+/** Turn a date-fns pattern into a placeholder skeleton by lowercasing
+ *  every token letter. `MM` → `mm`, `MMM` → `mmm`, `yyyy` stays, and
+ *  the separators (dashes, slashes, spaces, commas) pass through. */
+function patternToPlaceholder(pattern: string): string {
+  return pattern.toLowerCase();
 }
 
 /** Parse an ISO YYYY-MM-DD as LOCAL midnight so the Calendar doesn't
@@ -56,11 +68,16 @@ function toIsoLocal(d: Date): string {
  * {@code react-day-picker} via the shadcn Calendar primitive.</p>
  */
 export function DateInput({
-  value, onChange, placeholder = 'Pick a date',
+  value, onChange, placeholder,
   min, max, className, disabled, clearable = true,
 }: Props) {
-  const { formatDate } = useDateFormat();
+  const { formatDate, pattern } = useDateFormat();
   const [open, setOpen] = useState(false);
+  // Default empty-state hint = lowercase tenant pattern so operators
+  // read the expected shape without needing a separate label. Callers
+  // can still override via the `placeholder` prop when a specific
+  // string ("From", "Start", …) reads better in context.
+  const effectivePlaceholder = placeholder ?? patternToPlaceholder(pattern);
 
   const selected = parseIsoLocal(value);
   const fromBound = parseIsoLocal(min);
@@ -76,7 +93,7 @@ export function DateInput({
           className={`h-9 w-36 justify-between font-normal text-sm ${!value ? 'text-gray-400' : ''} ${className ?? ''}`}
         >
           <span className="tabular-nums truncate">
-            {value ? formatDate(value) : placeholder}
+            {value ? formatDate(value) : effectivePlaceholder}
           </span>
           {clearable && value ? (
             <span

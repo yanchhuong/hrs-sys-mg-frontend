@@ -543,9 +543,9 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               {isStudent && (
                 <>
                   <Label className="text-xs text-gray-500">From</Label>
-                  <DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} placeholder="From" />
+                  <DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} />
                   <Label className="text-xs text-gray-500">To</Label>
-                  <DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} placeholder="To" />
+                  <DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} />
                   {(fromDate || toDate) && (
                     <Button
                       size="sm" variant="ghost" className="h-9"

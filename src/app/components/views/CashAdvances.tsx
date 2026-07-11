@@ -203,9 +203,9 @@ export function CashAdvances() {
               />
             </div>
             <Label className="text-xs text-gray-500">From</Label>
-            <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} placeholder="From" />
+            <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
             <Label className="text-xs text-gray-500">To</Label>
-            <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} placeholder="To" />
+            <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} />
             {(searchQuery || dateFrom || dateTo) && (
               <Button
                 size="sm" variant="ghost" className="h-9"

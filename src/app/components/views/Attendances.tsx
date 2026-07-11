@@ -194,14 +194,12 @@ export function Attendances() {
                 value={from || null}
                 onChange={(v) => setFrom(v ?? '')}
                 max={to || undefined}
-                placeholder="From"
               />
               <Label className="text-xs text-gray-500">To</Label>
               <DateInput
                 value={to || null}
                 onChange={(v) => setTo(v ?? '')}
                 min={from || undefined}
-                placeholder="To"
               />
               <div className="ml-auto text-xs text-gray-500 tabular-nums">
                 {rows.length} sessions

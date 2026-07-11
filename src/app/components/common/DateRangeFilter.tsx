@@ -61,14 +61,12 @@ export function DateRangeFilter({
         value={startDate || null}
         onChange={handleFromChange}
         max={endDate || undefined}
-        placeholder="From"
       />
       <Label className="text-xs text-gray-500">To</Label>
       <DateInput
         value={endDate || null}
         onChange={handleToChange}
         min={startDate || undefined}
-        placeholder="To"
       />
       {hasFilter && (
         <Button

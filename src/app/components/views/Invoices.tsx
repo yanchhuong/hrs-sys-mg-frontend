@@ -715,14 +715,12 @@ export function Invoices({
                 value={dateFrom || null}
                 onChange={v => setDateFrom(v ?? '')}
                 max={dateTo || undefined}
-                placeholder="From"
               />
               <Label className="text-xs text-gray-500">To</Label>
               <DateInput
                 value={dateTo || null}
                 onChange={v => setDateTo(v ?? '')}
                 min={dateFrom || undefined}
-                placeholder="To"
               />
               {(dateFrom || dateTo) && (
                 <Button
