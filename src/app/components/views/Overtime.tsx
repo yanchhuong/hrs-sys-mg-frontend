@@ -47,7 +47,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download } from 'lucide-react';
+import { exportListToExcel } from '../../utils/excelExport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -649,6 +650,37 @@ export function Overtime() {
 
   const byEmployeePagination = usePagination(byEmployeeRows, 10);
 
+  // Excel export — mirrors the on-screen columns and honours the current
+  // filters (date range, keyword search, scope, and the active status tab).
+  const handleExportExcel = () => {
+    exportListToExcel({
+      filename: 'Overtime',
+      sheetName: 'Overtime',
+      columns: [
+        { header: 'Employee ID', value: r => employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.id ?? r.employeeId },
+        { header: 'Employee', value: r => employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.name ?? '-' },
+        { header: 'Department', value: r => deptName(employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.department) },
+        { header: 'Date', value: r => r.date },
+        { header: 'End Date', value: r => r.endDate ?? '' },
+        { header: 'Start', value: r => r.startHour ?? '' },
+        { header: 'End', value: r => r.endHour ?? '' },
+        { header: 'Hours', value: r => r.hours },
+        { header: 'Rate', value: r => calculateOTRate(r) },
+        { header: 'Amount (USD)', value: r => {
+          const emp = employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId);
+          const amt = calculateOTAmount(emp?.baseSalary, r);
+          return amt > 0 ? Number(amt.toFixed(2)) : '';
+        } },
+        { header: 'Reason', value: r => r.reason ?? '' },
+        { header: 'Status', value: r => r.status },
+        { header: 'Requested At', value: r => r.requestedAt ?? '' },
+        { header: 'Submitted By', value: r => r.submittedByName ?? '' },
+        { header: 'Approved By', value: r => r.approvedByName ?? '' },
+      ],
+      rows: statusFiltered,
+    });
+  };
+
   useEffect(() => {
     byEmployeePagination.resetPage();
   }, [dateFilter]);
@@ -662,6 +694,15 @@ export function Overtime() {
         <div className="flex flex-wrap items-center gap-2">
           {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleExportExcel}
+            disabled={statusFiltered.length === 0}
+            title="Download Excel"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
         {isEmployee && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>

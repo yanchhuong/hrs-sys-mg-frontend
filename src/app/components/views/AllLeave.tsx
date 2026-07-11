@@ -33,7 +33,8 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
-import { Check, X, Plus, Search } from 'lucide-react';
+import { Check, X, Plus, Search, Download } from 'lucide-react';
+import { exportListToExcel } from '../../utils/excelExport';
 import {
   format, isWithinInterval, parseISO, eachDayOfInterval,
 } from 'date-fns';
@@ -439,6 +440,30 @@ export function AllLeave() {
     leavesPagination.resetPage();
   }, [dateFilter, statusFilter, categoryFilter, scopeMode, search]);
 
+  // Excel export — mirrors the on-screen columns and honours the current
+  // filters (date range, keyword search, scope, category, status tab).
+  const handleExportExcel = () => {
+    exportListToExcel({
+      filename: 'AllLeave',
+      sheetName: 'Leave Requests',
+      columns: [
+        { header: 'Employee ID', value: r => employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.id ?? r.employeeId },
+        { header: 'Employee', value: r => employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.name ?? '-' },
+        { header: 'Department', value: r => deptName(employees.find(e => e.id === r.employeeId || (e as any).apiId === r.employeeId)?.department) },
+        { header: 'Start Date', value: r => r.date },
+        { header: 'End Date', value: r => r.endDate ?? r.date },
+        { header: 'Category', value: r => r.category ? (LEAVE_CATEGORY_LABELS[r.category] ?? r.category) : '' },
+        { header: 'Duration', value: r => getTypeLabel(r.type) },
+        { header: 'Reason', value: r => r.reason ?? '' },
+        { header: 'Status', value: r => r.status },
+        { header: 'Submitted', value: r => r.submittedAt ?? '' },
+        { header: 'Author', value: r => (r as any).createdByName ?? '' },
+        { header: 'Modifier', value: r => (r as any).updatedByName ?? '' },
+      ],
+      rows: sortedLeaves,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -448,6 +473,15 @@ export function AllLeave() {
         <div className="flex flex-wrap items-center gap-2">
           {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleExportExcel}
+            disabled={sortedLeaves.length === 0}
+            title="Download Excel"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
           {isEmployee && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
