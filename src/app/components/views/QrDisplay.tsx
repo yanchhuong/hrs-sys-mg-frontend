@@ -56,16 +56,23 @@ export function QrDisplay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeId]);
 
+  // Rebuild the scan URL against the browser's actual origin so a QR
+  // printed from a staging / prod domain doesn't end up pointing at
+  // the backend's configured QR_SCAN_BASE_URL default (often localhost).
+  const buildScanUrl = (token: string) =>
+    `${window.location.origin}/scan?token=${encodeURIComponent(token)}`;
+
   const issueAndRender = async () => {
     setIssuing(true);
     try {
       const t = await qrApi.getToday(officeId);
-      setToday(t);
+      const scanUrl = buildScanUrl(t.token);
+      setToday({ ...t, scanUrl });
       if (canvasRef.current) {
         // High error-correction so a printout with a coffee stain or
         // bent corner still scans. 512px canvas gives a crisp image
         // when displayed on a 1080p monitor; print scales it.
-        await QRCode.toCanvas(canvasRef.current, t.scanUrl, {
+        await QRCode.toCanvas(canvasRef.current, scanUrl, {
           width: 512,
           margin: 2,
           errorCorrectionLevel: 'H',
