@@ -47,8 +47,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
+import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
+import { useAuth } from '../../context/AuthContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -116,6 +118,14 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
 export function Overtime() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  // "Full OT permission AND see all employees" — only surface bulk upload
+  // to operators who can legitimately file / edit / delete OT for any
+  // employee in the tenant. Employees / leaders scoped to their reports
+  // never see this button.
+  const canBulkUploadOt =
+    canCreate('overtime') && canUpdate('overtime') && canDelete('overtime');
+  const [bulkOpen, setBulkOpen] = useState(false);
   const {
     role,
     isAdmin,
@@ -703,6 +713,16 @@ export function Overtime() {
           >
             <Download className="h-4 w-4" />
           </Button>
+          {canBulkUploadOt && isTenantWide && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(true)}
+              title="Bulk upload overtime from an Excel workbook"
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              Bulk Upload
+            </Button>
+          )}
         {isEmployee && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -1428,6 +1448,15 @@ export function Overtime() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {canBulkUploadOt && isTenantWide && (
+        <BulkUploadOtDialog
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          employees={employees}
+          onImported={() => { void loadOtRequests(); }}
+        />
+      )}
     </div>
   );
 }
