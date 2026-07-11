@@ -33,6 +33,14 @@ export function QrDisplayDialog({ open, onOpenChange, officeId }: Props) {
   const [loading, setLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Rebuild the scan URL against the browser's actual origin so a QR
+  // printed from staging / prod doesn't encode the backend-configured
+  // QR_SCAN_BASE_URL default (which is localhost in most deployments).
+  const buildScanUrl = (t: qrApi.TodayToken) => ({
+    ...t,
+    scanUrl: `${window.location.origin}/scan?token=${encodeURIComponent(t.token)}`,
+  });
+
   // Fetch the token when the dialog opens / office changes. Drawing
   // is split into a separate effect below so the canvas can mount
   // before we draw to it — the previous combined version called
@@ -44,7 +52,7 @@ export function QrDisplayDialog({ open, onOpenChange, officeId }: Props) {
     let cancelled = false;
     setLoading(true);
     qrApi.getToday(officeId)
-      .then(t => { if (!cancelled) setToken(t); })
+      .then(t => { if (!cancelled) setToken(buildScanUrl(t)); })
       .catch(e => {
         if (!cancelled) {
           toast.error(e instanceof Error ? e.message : 'Failed to issue today\'s QR');
@@ -126,7 +134,7 @@ export function QrDisplayDialog({ open, onOpenChange, officeId }: Props) {
               if (!officeId) return;
               setLoading(true);
               qrApi.getToday(officeId)
-                .then(t => setToken(t))
+                .then(t => setToken(buildScanUrl(t)))
                 .catch(e => toast.error(e instanceof Error ? e.message : 'Refresh failed'))
                 .finally(() => setLoading(false));
             }}
