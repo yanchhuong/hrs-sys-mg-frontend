@@ -35,6 +35,7 @@ import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../utils/format';
 import * as vouchersApi from '../../api/vouchers';
@@ -315,18 +316,18 @@ export function Vouchers() {
             </div>
             <div className="flex items-center gap-2">
               <Label className="text-xs text-gray-500">From</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="h-8 w-36 text-sm"
+              <DateInput
+                value={dateFrom || null}
+                onChange={v => setDateFrom(v ?? '')}
+                max={dateTo || undefined}
+                placeholder="From"
               />
               <Label className="text-xs text-gray-500">To</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="h-8 w-36 text-sm"
+              <DateInput
+                value={dateTo || null}
+                onChange={v => setDateTo(v ?? '')}
+                min={dateFrom || undefined}
+                placeholder="To"
               />
               {(dateFrom || dateTo) && (
                 <Button

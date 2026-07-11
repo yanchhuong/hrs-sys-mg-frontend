@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { SearchablePicker } from '../common/SearchablePicker';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as cashAdvancePurposesApi from '../../api/cashAdvancePurposes';
 import * as employeesApi from '../../api/employees';
@@ -202,9 +203,9 @@ export function CashAdvances() {
               />
             </div>
             <Label className="text-xs text-gray-500">From</Label>
-            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} placeholder="From" />
             <Label className="text-xs text-gray-500">To</Label>
-            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 w-36 text-sm" />
+            <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} placeholder="To" />
             {(searchQuery || dateFrom || dateTo) && (
               <Button
                 size="sm" variant="ghost" className="h-9"

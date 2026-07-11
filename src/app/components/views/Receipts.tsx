@@ -24,6 +24,7 @@ import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
@@ -253,18 +254,18 @@ export function Receipts() {
             />
             <div className="flex items-center gap-2">
               <Label className="text-xs text-gray-500">From</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="w-40"
+              <DateInput
+                value={dateFrom || null}
+                onChange={v => setDateFrom(v ?? '')}
+                max={dateTo || undefined}
+                placeholder="From"
               />
               <Label className="text-xs text-gray-500">To</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="w-40"
+              <DateInput
+                value={dateTo || null}
+                onChange={v => setDateTo(v ?? '')}
+                min={dateFrom || undefined}
+                placeholder="To"
               />
               {(dateFrom || dateTo) && (
                 <Button variant="ghost" size="sm"

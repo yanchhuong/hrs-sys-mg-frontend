@@ -17,6 +17,7 @@ import {
 } from '../ui/table';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
 import * as invoicesApi from '../../api/invoices';
@@ -542,9 +543,9 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               {isStudent && (
                 <>
                   <Label className="text-xs text-gray-500">From</Label>
-                  <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-36 text-sm" />
+                  <DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} placeholder="From" />
                   <Label className="text-xs text-gray-500">To</Label>
-                  <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-36 text-sm" />
+                  <DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} placeholder="To" />
                   {(fromDate || toDate) && (
                     <Button
                       size="sm" variant="ghost" className="h-9"

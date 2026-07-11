@@ -25,6 +25,7 @@ import {
 } from '../ui/dropdown-menu';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
@@ -605,18 +606,18 @@ export function Bills() {
                   returns the most recent rows; the range narrows the
                   loaded page so HR doesn't need to re-fetch per scrub. */}
               <Label className="text-xs text-gray-500">From</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="h-8 w-36 text-sm"
+              <DateInput
+                value={dateFrom || null}
+                onChange={v => setDateFrom(v ?? '')}
+                max={dateTo || undefined}
+                placeholder="From"
               />
               <Label className="text-xs text-gray-500">To</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="h-8 w-36 text-sm"
+              <DateInput
+                value={dateTo || null}
+                onChange={v => setDateTo(v ?? '')}
+                min={dateFrom || undefined}
+                placeholder="To"
               />
               {(dateFrom || dateTo) && (
                 <Button
