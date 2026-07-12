@@ -824,6 +824,7 @@ export function AllLeave() {
                           size="sm"
                           className="h-7 text-xs"
                           onClick={() => setViewTarget(leave)}
+                          title="Read-only view. Approve / Reject is only available while pending."
                         >
                           View
                         </Button>
