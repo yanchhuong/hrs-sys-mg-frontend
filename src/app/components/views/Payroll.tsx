@@ -3587,33 +3587,32 @@ function PayslipBody({
           {earnings.length === 0 && (
             <p className="text-sm text-gray-400 italic">No earnings recorded.</p>
           )}
-          {earnings.map((line, i) => {
+          {earnings.flatMap((line, i) => {
             const isOtLine = /overtime|^ot$/i.test(line.label);
             const showBreakdown = isOtLine && otBreakdown && otBreakdown.length > 0;
-            return (
-              <div key={`e-${i}-${line.label}`}>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">{line.label}</span>
-                  <span className="font-medium">${formatMoney(line.amount)}</span>
+            // For an OT line with a known breakdown, expand into one row
+            // per rate group so each rate's hours × multiplier reads
+            // inline with the label (e.g. "OT (2h × 1.5)   $11.01") —
+            // matches operators' expectation of seeing the math on the
+            // slip instead of a bare aggregate. Falls back to the plain
+            // aggregate when the breakdown hasn't loaded yet or the row
+            // isn't OT.
+            if (showBreakdown) {
+              return otBreakdown!.map(g => (
+                <div key={`e-${i}-ot-${g.multiplier}`} className="flex justify-between text-sm">
+                  <span className="text-gray-700">
+                    {line.label} <span className="text-gray-500">({g.hours}h × {g.multiplier.toFixed(1)})</span>
+                  </span>
+                  <span className="font-medium tabular-nums">${formatMoney(g.amount)}</span>
                 </div>
-                {/* Per-rate OT breakdown — grouped by multiplier so a
-                    mixed weekday / weekend / holiday payslip reads at a
-                    glance. Amounts are computed against the payslip's
-                    baseSalary and the tenant OT rate config; the
-                    aggregate OT line above stays authoritative if it
-                    ever drifts from the sum. */}
-                {showBreakdown && (
-                  <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-gray-100 pl-3">
-                    {otBreakdown!.map(g => (
-                      <div key={`ot-${g.multiplier}`} className="flex justify-between text-xs text-gray-500">
-                        <span>{g.label} · {g.hours}h</span>
-                        <span className="tabular-nums">${formatMoney(g.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              ));
+            }
+            return [(
+              <div key={`e-${i}-${line.label}`} className="flex justify-between text-sm">
+                <span className="text-gray-700">{line.label}</span>
+                <span className="font-medium">${formatMoney(line.amount)}</span>
               </div>
-            );
+            )];
           })}
           <div className="border-t pt-2 flex justify-between font-semibold">
             <span>Total Earnings</span>
