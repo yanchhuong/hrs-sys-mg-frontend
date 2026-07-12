@@ -15,6 +15,13 @@ export interface OtRequest {
   startHour?: string;
   endHour?: string;
   hours: number;
+  /** Backend-computed day-of-week flag (Saturday / Sunday from the row's
+   *  start date). Used by the Payslip Details dialog to pick the
+   *  weekend OT rate when building the per-rate breakdown. */
+  isWeekend?: boolean;
+  /** Backend-computed holiday flag (tenant calendar match on the row's
+   *  start date). Same use as {@link isWeekend}. */
+  isHoliday?: boolean;
   /** Admin-only manual rate override (V62). When non-null the rate
    *  calculator skips day-type + night composition and pays this
    *  multiplier directly. Numeric on the wire; null = use auto rate. */
@@ -101,6 +108,15 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<OtReq
 
 export async function mine(): Promise<OtRequest[]> {
   return apiJson('/api/v1/ot-requests/mine');
+}
+
+/** Paid OT rows folded into a specific payroll batch. Used by the
+ *  Payslip Details dialog to render the per-rate breakdown under
+ *  the "Overtime Pay" line. Pass `employeeId` to narrow to one payslip. */
+export async function listByBatch(batchId: string, employeeId?: string): Promise<OtRequest[]> {
+  return apiJson(`/api/v1/ot-requests/by-batch/${batchId}`, {
+    query: employeeId ? { employeeId } : {},
+  });
 }
 
 export async function create(req: CreateOtRequest): Promise<OtRequest> {

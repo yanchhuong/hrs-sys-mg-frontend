@@ -929,6 +929,7 @@ export function Payroll() {
   // list was prefiltered by employeeId server-side.
   const adaptBackendItem = (it: payrollApi.PayrollItem): typeof mockPayroll[number] => ({
     id: it.id,
+    batchId: it.batchId,
     employeeId: it.employeeId,
     month: it.month,
     baseSalary: it.baseSalary,
@@ -3333,6 +3334,10 @@ export function Payroll() {
 
 type AnyPayslip = {
   id: string;
+  /** Owning payroll_batches UUID. Set in adaptBackendItem; absent on
+   *  legacy mock rows. Used by PayslipBody to fetch the per-rate OT
+   *  breakdown from /api/v1/ot-requests/by-batch/{batchId}. */
+  batchId?: string;
   employeeId: string;
   month: string;
   /** Owning batch's subject — set in adaptBackendItem; absent on legacy
@@ -3356,6 +3361,67 @@ type AnyPayslip = {
   otherDeductions?: number;
 };
 
+/**
+ * A single row of the per-rate OT breakdown rendered under "Overtime Pay"
+ * on the payslip. Rows are grouped by their effective multiplier so a
+ * payslip with mixed weekday / weekend / holiday OT reads as three
+ * indented sub-lines instead of one opaque total.
+ */
+type OtRateGroup = {
+  /** Human-readable rate label, e.g. "1.5×" or "2.0×". */
+  label: string;
+  /** Sort key so groups render in ascending multiplier order. */
+  multiplier: number;
+  /** Total hours worked at this multiplier. */
+  hours: number;
+  /** Sum of pay at this multiplier — hourly wage × hours × multiplier. */
+  amount: number;
+};
+
+/**
+ * Group a list of paid OT rows by their effective multiplier and sum
+ * hours + pay per group. Uses the tenant's OT rate config when
+ * available; falls back to the Cambodian Labour Law baselines
+ * (1.5× / 2× / 3× and 1.3× night) so the breakdown still renders even
+ * when the settings fetch fails.
+ *
+ * We ignore night-window composition here — the payslip's aggregate
+ * `otPay` is authoritative, and adding night splits would double the
+ * complexity for a breakdown that's primarily an "at a glance" aid.
+ */
+function buildOtRateGroups(
+  rows: overtimeApi.OtRequest[],
+  baseSalary: number,
+  otCfg: settingsApi.OtSettings | null,
+): OtRateGroup[] {
+  if (!rows.length) return [];
+  const nested = (k: keyof settingsApi.OtSettings): number | undefined => {
+    if (!otCfg) return undefined;
+    const v = (otCfg[k] as Record<string, unknown> | undefined)?.rate;
+    return typeof v === 'number' && v > 0 ? v : undefined;
+  };
+  const weekdayRate = nested('workdayRule') ?? (Number(otCfg?.weekdayRate) || 1.5);
+  const weekendRate = nested('weekendRule') ?? (Number(otCfg?.weekendRate) || 2);
+  const holidayRate = nested('holidayRule') ?? (Number(otCfg?.holidayRate) || 3);
+  const hourlyWage = baseSalary > 0 ? baseSalary / 160 : 0;
+
+  const groups = new Map<number, OtRateGroup>();
+  for (const r of rows) {
+    const override = r.rateOverride == null ? 0 : Number(r.rateOverride);
+    const rate = override > 0
+      ? override
+      : r.isHoliday ? holidayRate
+      : r.isWeekend ? weekendRate
+      : weekdayRate;
+    const key = Math.round(rate * 10) / 10;
+    const g = groups.get(key) ?? { label: `${key.toFixed(1)}×`, multiplier: key, hours: 0, amount: 0 };
+    g.hours += Number(r.hours ?? 0);
+    g.amount += hourlyWage * Number(r.hours ?? 0) * rate;
+    groups.set(key, g);
+  }
+  return Array.from(groups.values()).sort((a, b) => a.multiplier - b.multiplier);
+}
+
 function derivePayslipLines(
   payslip: AnyPayslip,
   earningCategories: PayrollCategory[],
@@ -3363,6 +3429,24 @@ function derivePayslipLines(
 ): { earnings: { label: string; amount: number }[]; deductions: { label: string; amount: number }[] } {
   const earnings: { label: string; amount: number }[] = [];
   const deductions: { label: string; amount: number }[] = [];
+
+  // Hard-coded labels for the well-known deduction codes so a payslip
+  // renders correctly even when the tenant's payroll_categories list
+  // doesn't include that code (e.g. viewing a 2nd Salary payslip while
+  // the Upload dialog is set to "One Time Salary" filters `first_salary`
+  // out of deductionCategories).
+  const FALLBACK_LABELS: Record<string, string> = {
+    first_salary: '1st Salary',
+    nssf: 'NSSF Pension 2%',
+    tax_on_salary: 'Tax on Salary (TOS)',
+    tax: 'Tax on Salary (TOS)',
+    other: 'Other Deductions',
+  };
+  const labelFor = (code: string): string => {
+    const cat = deductionCategories.find(c => c.code.toLowerCase() === code.toLowerCase());
+    if (cat) return cat.label;
+    return FALLBACK_LABELS[code.toLowerCase()] ?? code;
+  };
 
   if (payslip.extras) {
     // V43: the canonical earning fields (Basic / Position / Evaluation)
@@ -3400,9 +3484,27 @@ function derivePayslipLines(
   }
 
   if (payslip.deductionsExtras) {
-    deductionCategories.forEach(c => {
-      const v = Number(payslip.deductionsExtras![c.code] ?? 0);
-      if (v !== 0) deductions.push({ label: c.label, amount: v });
+    // Iterate every key present on the payslip (not just the categories
+    // visible to the current batchType filter) so 1st Salary / other
+    // codes always show up. Fallback labels cover the well-known codes
+    // when the tenant's category list is filtered.
+    const seenCodes = new Set<string>();
+    Object.entries(payslip.deductionsExtras).forEach(([code, raw]) => {
+      const v = Number(raw ?? 0);
+      if (v === 0) return;
+      deductions.push({ label: labelFor(code), amount: v });
+      seenCodes.add(code.toLowerCase());
+    });
+    // Preserve category-list order for the codes that DID map, by
+    // sorting the collected lines using the category order when we
+    // can find it, then appending unmapped codes in insertion order.
+    deductions.sort((a, b) => {
+      const ai = deductionCategories.findIndex(c => c.label === a.label);
+      const bi = deductionCategories.findIndex(c => c.label === b.label);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
     });
   } else {
     if ((payslip.firstSalaryDeduction ?? 0) > 0) deductions.push({ label: '1st Salary',          amount: payslip.firstSalaryDeduction! });
@@ -3429,6 +3531,32 @@ function PayslipBody({
   const empNo = employee?.id ?? '—';
   const empName = employee?.name ?? '—';
   const { earnings, deductions } = derivePayslipLines(payslip, earningCategories, deductionCategories);
+
+  // Per-rate OT breakdown for this employee inside the owning batch.
+  // Fetches asynchronously when the dialog opens — the base "Overtime
+  // Pay" line always renders (from the payslip's aggregate otPay); the
+  // breakdown appears below it once the OT rows land.
+  const [otBreakdown, setOtBreakdown] = useState<OtRateGroup[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const empUuid = (employee as Employee | undefined)?.apiId ?? payslip.employeeId;
+    if (!payslip.batchId || !empUuid) { setOtBreakdown(null); return; }
+    void (async () => {
+      try {
+        const [rows, otCfg] = await Promise.all([
+          overtimeApi.listByBatch(payslip.batchId!, empUuid),
+          settingsApi.getOtSettings().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setOtBreakdown(buildOtRateGroups(rows, payslip.baseSalary, otCfg));
+      } catch (err) {
+        console.warn('Failed to load OT breakdown for payslip', err);
+        if (!cancelled) setOtBreakdown([]);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payslip.id, payslip.batchId]);
 
   return (
     <div className="space-y-6">
@@ -3459,12 +3587,34 @@ function PayslipBody({
           {earnings.length === 0 && (
             <p className="text-sm text-gray-400 italic">No earnings recorded.</p>
           )}
-          {earnings.map((line, i) => (
-            <div key={`e-${i}-${line.label}`} className="flex justify-between text-sm">
-              <span className="text-gray-700">{line.label}</span>
-              <span className="font-medium">${formatMoney(line.amount)}</span>
-            </div>
-          ))}
+          {earnings.map((line, i) => {
+            const isOtLine = /overtime|^ot$/i.test(line.label);
+            const showBreakdown = isOtLine && otBreakdown && otBreakdown.length > 0;
+            return (
+              <div key={`e-${i}-${line.label}`}>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">{line.label}</span>
+                  <span className="font-medium">${formatMoney(line.amount)}</span>
+                </div>
+                {/* Per-rate OT breakdown — grouped by multiplier so a
+                    mixed weekday / weekend / holiday payslip reads at a
+                    glance. Amounts are computed against the payslip's
+                    baseSalary and the tenant OT rate config; the
+                    aggregate OT line above stays authoritative if it
+                    ever drifts from the sum. */}
+                {showBreakdown && (
+                  <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-gray-100 pl-3">
+                    {otBreakdown!.map(g => (
+                      <div key={`ot-${g.multiplier}`} className="flex justify-between text-xs text-gray-500">
+                        <span>{g.label} · {g.hours}h</span>
+                        <span className="tabular-nums">${formatMoney(g.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div className="border-t pt-2 flex justify-between font-semibold">
             <span>Total Earnings</span>
             <span>${formatMoney(payslip.totalEarnings)}</span>
