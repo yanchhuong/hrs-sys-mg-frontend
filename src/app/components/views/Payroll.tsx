@@ -3059,11 +3059,9 @@ export function Payroll() {
                   )}
                   {dispatchEnabled && (
                   <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
-                    <span className="text-gray-500">
-                      {selectedRowIds.size > 0
-                        ? `${selectedRowIds.size} selected`
-                        : 'Tick rows then choose a delivery channel:'}
-                    </span>
+                    {selectedRowIds.size > 0 && (
+                      <span className="text-gray-500">{selectedRowIds.size} selected</span>
+                    )}
                     {(() => {
                       // Count how many selected rows would actually fire on
                       // each channel (selected and not yet sent).
