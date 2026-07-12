@@ -6,7 +6,7 @@ export type EmployeeStatus = 'active' | 'inactive';
 
 export type ContractStatus = 'active' | 'expiring' | 'expired';
 
-export type OTStatus = 'pending' | 'approved' | 'rejected';
+export type OTStatus = 'pending' | 'approved' | 'rejected' | 'paid';
 
 export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'absent' | 'no_checkin' | 'no_checkout' | 'leave';
 
@@ -181,6 +181,10 @@ export interface OTRequest {
   approvedAt?: string;
   isWeekend: boolean;
   isHoliday: boolean;
+  /** Human-readable label of the owning payroll batch (its subject,
+   *  e.g. "Salary of July 2026"). Populated only for status='paid'
+   *  so the OT table can render a "Paid · <batch>" reference. */
+  payrollBatchSubject?: string | null;
 }
 
 export interface PayrollItem {

@@ -81,6 +81,7 @@ function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
     approvedAt: o.approvedAt ?? undefined,
     isWeekend: dow === 0 || dow === 6,
     isHoliday: false,
+    payrollBatchSubject: o.payrollBatchSubject ?? null,
   };
 }
 
@@ -165,7 +166,7 @@ export function Overtime() {
     start: null,
     end: null,
   });
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'done'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'paid'>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'by-request' | 'by-employee'>('by-request');
 
@@ -524,7 +525,7 @@ export function Overtime() {
       pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
       approved: 'bg-green-100 text-green-800 hover:bg-green-100',
       rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
-      done: 'bg-slate-200 text-slate-700 hover:bg-slate-200',
+      paid: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
     };
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
@@ -1203,19 +1204,23 @@ export function Overtime() {
                     <TableCell className="text-sm">{approverName || '-'}</TableCell>
                     <TableCell className="text-right">
                       {(() => {
-                        // Done = locked: row has been paid via a payroll
-                        // batch (V63). All admin/leader actions hide
-                        // until the batch is rejected.
-                        const isDone = request.status === 'done';
-                        if (isDone) {
+                        // Paid = locked: row has been folded into an
+                        // approved payroll batch. All admin/leader
+                        // actions hide until the batch is rejected. The
+                        // batch subject is surfaced as the slip ref.
+                        const isPaid = request.status === 'paid';
+                        if (isPaid) {
+                          const slipRef = request.payrollBatchSubject;
                           return (
                             <Badge
                               variant="outline"
-                              className="text-[10px] text-slate-600 bg-slate-50 border-slate-200"
-                              title="OT row is locked — folded into a payroll batch. Reject the batch to edit."
+                              className="text-[10px] text-blue-700 bg-blue-50 border-blue-200 max-w-[180px] truncate"
+                              title={slipRef
+                                ? `Paid via ${slipRef} — reject the batch to edit this row.`
+                                : 'OT row is locked — folded into a payroll batch. Reject the batch to edit.'}
                             >
-                              <Lock className="h-3 w-3 mr-1" />
-                              Locked
+                              <Lock className="h-3 w-3 mr-1 shrink-0" />
+                              <span className="truncate">{slipRef ? `Paid · ${slipRef}` : 'Paid'}</span>
                             </Badge>
                           );
                         }

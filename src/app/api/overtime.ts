@@ -1,6 +1,6 @@
 import { apiJson, apiVoid } from './client';
 
-export type OtStatus = 'pending' | 'approved' | 'rejected' | 'done';
+export type OtStatus = 'pending' | 'approved' | 'rejected' | 'paid';
 
 export interface OtRequest {
   id: string;
@@ -20,10 +20,15 @@ export interface OtRequest {
    *  multiplier directly. Numeric on the wire; null = use auto rate. */
   rateOverride?: number | null;
   /** When set, this OT row has been folded into a payroll batch and
-   *  is locked from further edits (V63). status === 'done' carries
+   *  is locked from further edits (V63). status === 'paid' carries
    *  the same signal; the id is exposed so the UI can deep-link to
    *  the batch in future. */
   payrollBatchId?: string | null;
+  /** Human-readable label of the owning payroll batch (its
+   *  {@code subject}, e.g. "Salary of July 2026"). Populated only for
+   *  rows in status='paid' so the OT table can render a "Paid ·
+   *  <batch>" reference. Null for pending / approved / rejected. */
+  payrollBatchSubject?: string | null;
   reason?: string;
   status: OtStatus;
   /** Backend sends submitter / approver as UUIDs. */
