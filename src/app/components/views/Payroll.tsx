@@ -2683,8 +2683,8 @@ export function Payroll() {
                           at={(batch as any).updatedAt}
                         />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                      <TableCell className="text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1 flex-nowrap">
                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSelectedBatch(batch)}>
                             <FileText className="h-3.5 w-3.5 mr-1" />
                             View
