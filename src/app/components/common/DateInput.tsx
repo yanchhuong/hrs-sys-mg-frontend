@@ -90,21 +90,28 @@ export function DateInput({
           type="button"
           variant="outline"
           disabled={disabled}
-          className={`h-9 w-36 justify-between font-normal text-sm ${!value ? 'text-gray-400' : ''} ${className ?? ''}`}
+          className={`group h-9 w-36 justify-between font-normal text-sm ${!value ? 'text-gray-400' : ''} ${className ?? ''}`}
         >
           <span className="tabular-nums truncate">
             {value ? formatDate(value) : effectivePlaceholder}
           </span>
+          {/* Trailing slot — the calendar icon reads as the default,
+              hover on the button swaps it for a clear (×) button when a
+              value is set. Keeps the row visually calm at rest while
+              still exposing a quick reset on hover. */}
           {clearable && value ? (
-            <span
-              role="button"
-              tabIndex={-1}
-              aria-label="Clear date"
-              className="ml-2 text-gray-400 hover:text-gray-600"
-              onClick={(e) => { e.stopPropagation(); onChange(null); }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </span>
+            <>
+              <CalendarIcon className="h-3.5 w-3.5 text-gray-400 shrink-0 group-hover:hidden" />
+              <span
+                role="button"
+                tabIndex={-1}
+                aria-label="Clear date"
+                className="ml-2 text-gray-400 hover:text-gray-600 hidden group-hover:inline-flex"
+                onClick={(e) => { e.stopPropagation(); onChange(null); }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </span>
+            </>
           ) : (
             <CalendarIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
           )}
