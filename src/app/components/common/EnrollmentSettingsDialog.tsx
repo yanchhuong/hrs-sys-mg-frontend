@@ -109,24 +109,33 @@ function SidebarButton({
   label: string;
   hint: string;
 }) {
+  // v-settings-menu-tooltip — hint moved from a truncated subtitle
+  // line to a right-side tooltip so the menu is single-line-per-item
+  // and the descriptive copy still shows on hover / keyboard focus.
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full text-left rounded-md p-2 flex items-start gap-2 transition ${
-        active ? 'bg-white shadow-sm border border-gray-200' : 'hover:bg-white/60'
-      }`}
-    >
-      <span className={active ? 'text-blue-600 mt-0.5' : 'text-gray-400 mt-0.5'}>
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className={`block text-sm font-medium ${active ? 'text-gray-900' : 'text-gray-700'}`}>
-          {label}
-        </span>
-        <span className="block text-[11px] text-gray-500 truncate">{hint}</span>
-      </span>
-    </button>
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onClick}
+            className={`w-full text-left rounded-md p-2 flex items-center gap-2 transition ${
+              active ? 'bg-white shadow-sm border border-gray-200' : 'hover:bg-white/60'
+            }`}
+          >
+            <span className={active ? 'text-blue-600' : 'text-gray-400'}>
+              {icon}
+            </span>
+            <span className={`flex-1 min-w-0 text-sm font-medium truncate ${active ? 'text-gray-900' : 'text-gray-700'}`}>
+              {label}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-xs text-xs">
+          {hint}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

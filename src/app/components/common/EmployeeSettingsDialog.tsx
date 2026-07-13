@@ -177,29 +177,36 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
 
           <div className="grid grid-cols-[200px_1fr] flex-1 min-h-0">
             <aside className="border-r bg-gray-50/60 p-2 overflow-y-auto">
-              {menu.map(m => {
-                const active = section === m.key;
-                return (
-                  <button
-                    key={m.key}
-                    type="button"
-                    onClick={() => setSection(m.key)}
-                    className={`w-full text-left rounded-md p-2 flex items-start gap-2 transition ${
-                      active ? 'bg-white shadow-sm border border-gray-200' : 'hover:bg-white/60'
-                    }`}
-                  >
-                    <span className={active ? 'text-blue-600 mt-0.5' : 'text-gray-400 mt-0.5'}>
-                      {m.icon}
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className={`block text-sm font-medium ${active ? 'text-gray-900' : 'text-gray-700'}`}>
-                        {m.label}
-                      </span>
-                      <span className="block text-[11px] text-gray-500 truncate">{m.hint}</span>
-                    </span>
-                  </button>
-                );
-              })}
+              {/* v-settings-menu-tooltip — hint moved to hover tooltip
+                  so the sidebar reads as single-line labels. */}
+              <TooltipProvider delayDuration={200}>
+                {menu.map(m => {
+                  const active = section === m.key;
+                  return (
+                    <Tooltip key={m.key}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => setSection(m.key)}
+                          className={`w-full text-left rounded-md p-2 flex items-center gap-2 transition ${
+                            active ? 'bg-white shadow-sm border border-gray-200' : 'hover:bg-white/60'
+                          }`}
+                        >
+                          <span className={active ? 'text-blue-600' : 'text-gray-400'}>
+                            {m.icon}
+                          </span>
+                          <span className={`flex-1 min-w-0 text-sm font-medium truncate ${active ? 'text-gray-900' : 'text-gray-700'}`}>
+                            {m.label}
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs text-xs">
+                        {m.hint}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </TooltipProvider>
             </aside>
 
             <div className="p-6 overflow-y-auto">

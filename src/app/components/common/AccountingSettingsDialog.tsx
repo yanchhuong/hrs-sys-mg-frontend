@@ -536,25 +536,31 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
             popup feels like the same surface. */}
         <div className="grid grid-cols-[200px_1fr] flex-1 min-h-0">
           <aside className="border-r bg-gray-50/60 p-2 overflow-y-auto">
-            {menu.map(m => {
-              const active = section === m.key;
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => setSection(m.key)}
-                  className={`w-full text-left rounded-md px-2.5 py-2 mb-0.5 transition-colors flex items-start gap-2 ${
-                    active ? 'bg-white shadow-sm text-blue-700' : 'text-gray-700 hover:bg-white'
-                  }`}
-                >
-                  <span className={`mt-0.5 ${active ? 'text-blue-600' : 'text-gray-500'}`}>{m.icon}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium leading-tight">{m.label}</span>
-                    <span className="block text-[11px] text-gray-500 leading-tight mt-0.5">{m.hint}</span>
-                  </span>
-                </button>
-              );
-            })}
+            {/* v-settings-menu-tooltip — hint on hover, labels stay single-line. */}
+            <TooltipProvider delayDuration={200}>
+              {menu.map(m => {
+                const active = section === m.key;
+                return (
+                  <Tooltip key={m.key}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setSection(m.key)}
+                        className={`w-full text-left rounded-md px-2.5 py-2 mb-0.5 transition-colors flex items-center gap-2 ${
+                          active ? 'bg-white shadow-sm text-blue-700' : 'text-gray-700 hover:bg-white'
+                        }`}
+                      >
+                        <span className={active ? 'text-blue-600' : 'text-gray-500'}>{m.icon}</span>
+                        <span className="flex-1 min-w-0 text-sm font-medium truncate">{m.label}</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs text-xs">
+                      {m.hint}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </TooltipProvider>
           </aside>
 
           <div className="overflow-y-auto p-6 space-y-4">
