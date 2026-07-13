@@ -30,7 +30,7 @@ function isExpiringSoon(endDate?: string | null, today = new Date()): boolean {
 
 export function Dashboard() {
   const { formatDate } = useDateFormat();
-  const { currentUser, currentEmployee } = useAuth();
+  const { currentUser, currentEmployee, isModuleAvailable } = useAuth();
 
   // ---------- State (mock-seeded in mock mode, refetched from API otherwise)
   const [employees, setEmployees] = useState(USE_MOCKS ? mockEmployees : []);
@@ -49,19 +49,35 @@ export function Dashboard() {
     (async () => {
       setLoading(true);
       try {
-        // Each fetch is wrapped in its own catch so a per-endpoint 403
-        // (e.g. an employee-role user hitting the admin-only leave /
-        // departments lists) shows an empty panel instead of collapsing
-        // the whole Dashboard into a single "Access denied" toast.
-        // The dashboard's individual panels already render sensibly on
-        // empty data.
+        // v-dashboard-module-preflight — skip fetches for modules the
+        // tenant doesn't have (e.g. a School tenant has no attendance /
+        // overtime / all-leave). Without this we still get the right
+        // UX (per-fetch catch swallows the 403), but the browser
+        // Network tab shows 3-5 red 403 rows on every Dashboard load,
+        // which reads as breakage to anyone watching DevTools. Each
+        // fetch is still wrapped in its own catch so a role-level 403
+        // (e.g. an employee-role user hitting an admin-only endpoint)
+        // still collapses to an empty panel rather than a page toast.
+        const attCall = isModuleAvailable('attendance')
+          ? attendanceApi.list({ date: todayISO(), size: 500 }).catch(() => ({ data: [] as any[] } as any))
+          : Promise.resolve({ data: [] as any[] } as any);
+        const otCall = isModuleAvailable('overtime')
+          ? overtimeApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any))
+          : Promise.resolve({ data: [] as any[] } as any);
+        const contractsCall = isModuleAvailable('contracts')
+          ? contractsApi.list({ status: 'active', size: 500 }).catch(() => ({ data: [] as any[] } as any))
+          : Promise.resolve({ data: [] as any[] } as any);
+        const leaveCall = isModuleAvailable('all-leave')
+          ? leaveApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any))
+          : Promise.resolve({ data: [] as any[] } as any);
+
         const [empRes, attRes, otRes, contractsRes, deps, leaveRes] = await Promise.all([
           employeesApi.list({ size: 500 }).catch(() => ({ content: [] as any[] } as any)),
-          attendanceApi.list({ date: todayISO(), size: 500 }).catch(() => ({ data: [] as any[] } as any)),
-          overtimeApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any)),
-          contractsApi.list({ status: 'active', size: 500 }).catch(() => ({ data: [] as any[] } as any)),
+          attCall,
+          otCall,
+          contractsCall,
           departmentsApi.list().catch(() => [] as departmentsApi.Department[]),
-          leaveApi.list({ status: 'pending', size: 200 }).catch(() => ({ data: [] as any[] } as any)),
+          leaveCall,
         ]);
         if (cancelled) return;
         setEmployees((empRes.content ?? []) as any);
@@ -77,6 +93,7 @@ export function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- Derived values
