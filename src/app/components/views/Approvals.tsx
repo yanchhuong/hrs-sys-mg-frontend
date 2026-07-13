@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
@@ -169,11 +169,7 @@ export function Approvals() {
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ClipboardCheck className="h-4 w-4 text-blue-600" />
-              Inbox
-            </CardTitle>
+          <div className="flex items-center justify-end gap-3 flex-wrap">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
               <TabsList>
                 {STATUS_TABS.map(f => (
