@@ -7,7 +7,8 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
-import { Copy, KeyRound, RefreshCw, Save, ShieldAlert, Eye, EyeOff } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { Copy, KeyRound, RefreshCw, Save, ShieldAlert, Eye, EyeOff, Info } from 'lucide-react';
 import * as payway from '../../api/payway';
 import { useConfirm } from '../../context/ConfirmContext';
 
@@ -130,8 +131,24 @@ export function PayWaySettingsDialog({ open, onOpenChange, onSaved }: Props) {
           <DialogTitle className="inline-flex items-center gap-2">
             <KeyRound className="h-4 w-4 text-blue-600" />
             PayWay (ABA) Integration
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="What is PayWay Integration?"
+                    className="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-300 rounded-full"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs">
+                  Per-tenant credentials for real-time payment processing on POS + Invoice.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="sr-only">
             Per-tenant credentials for real-time payment processing on POS + Invoice.
           </DialogDescription>
         </DialogHeader>
