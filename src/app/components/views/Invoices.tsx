@@ -977,7 +977,11 @@ export function Invoices({
                         }`}>
                           {fmtMoney(t.remain, t.currency)}
                         </TableCell>
-                        <TableCell colSpan={2} />
+                        {/* Trailing filler must span Status + Seller/Cashier +
+                            Actions — 3 cells. Was 2, leaving the Actions
+                            column as a visible empty rectangle on the totals
+                            rows. */}
+                        <TableCell colSpan={3} />
                       </TableRow>
                     ))}
                   </TableFooter>
