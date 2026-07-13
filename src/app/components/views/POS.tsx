@@ -857,6 +857,11 @@ export function POS() {
         method={checkoutMethod}
         onMethodChange={setCheckoutMethod}
         onSubmit={onCheckoutSubmit}
+        subtotal={subtotal}
+        discountAmount={discountAmount}
+        taxAmount={taxAmount}
+        taxRate={taxRate}
+        notes={posSettings.showNotes ? notes : ''}
       />
       <PosOpenOrdersDrawer
         open={drawerOpen}
@@ -1135,9 +1140,20 @@ interface CheckoutProps {
   method: PosPaymentMethod;
   onMethodChange: (m: PosPaymentMethod) => void;
   onSubmit: (method: PosPaymentMethod, received: number) => void;
+  /** Cart breakdown mirrored from the left summary panel so the
+   *  cashier sees Subtotal / Discount / Tax / Notes at confirmation
+   *  time — read-only here; edits still happen on the cart. */
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  taxRate: number;
+  notes: string;
 }
 
-function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, banks, method, onMethodChange, onSubmit }: CheckoutProps) {
+function PosCheckoutDialog({
+  open, onOpenChange, total, saving, invoiceKind, banks, method, onMethodChange, onSubmit,
+  subtotal, discountAmount, taxAmount, taxRate, notes,
+}: CheckoutProps) {
   const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
   /** Active PayWay session for the KHRQR flow (V164). Null while no
@@ -1355,7 +1371,33 @@ function PosCheckoutDialog({ open, onOpenChange, total, saving, invoiceKind, ban
           )}
 
           <div className="rounded-md bg-gray-50 p-3 space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-gray-600">Total</span><span className="font-semibold">${total.toFixed(2)}</span></div>
+            {/* v-checkout-breakdown — mirror the cart's Subtotal /
+                Discount / Tax / Notes lines so the cashier confirms
+                against the exact numbers they see on the left panel.
+                Read-only; edits still happen on the cart. */}
+            <div className="flex justify-between">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="tabular-nums">${subtotal.toFixed(2)}</span>
+            </div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Discount</span>
+                <span className="tabular-nums text-rose-700">−${discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-600">
+                Tax {taxRate > 0 ? `(${taxRate}%)` : ''}
+              </span>
+              <span className="tabular-nums">${taxAmount.toFixed(2)}</span>
+            </div>
+            {notes.trim().length > 0 && (
+              <div className="flex justify-between gap-2 border-t pt-1.5">
+                <span className="text-gray-600 shrink-0">Notes</span>
+                <span className="text-right text-gray-700 break-words">{notes}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t pt-1.5"><span className="text-gray-600">Total</span><span className="font-semibold">${total.toFixed(2)}</span></div>
             {method === 'cash' && (
               <>
                 <div className="flex items-center gap-2">
