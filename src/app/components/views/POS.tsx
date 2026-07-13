@@ -13,6 +13,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '../ui/sheet';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import * as posApi from '../../api/pos';
@@ -95,6 +98,9 @@ export function POS() {
 
   // Dialog state.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // v-pos-mobile-drawer — on <lg widths the cart aside is hidden and
+  // opens as a bottom sheet via the FAB. Boolean is unused on desktop.
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   // Lifted from PosCheckoutDialog so we can broadcast the active
   // payment method to the customer display — when set to 'khqr',
   // the display swaps to a fullscreen scan-to-pay overlay.
@@ -578,6 +584,71 @@ export function POS() {
     other: items.filter(i => (i.category ?? 'other') === 'other').length,
   };
 
+  // Cart panel JSX — rendered inside the desktop aside AND inside the
+  // mobile bottom Sheet, so both surfaces stay in sync without a
+  // duplicated JSX tree. Kept as a plain variable (not a memo) because
+  // the closures already track every state slice it reads.
+  const cartBody = (
+    <>
+      <div className="p-3 border-b bg-white shrink-0">
+        <Label className="text-xs text-gray-500">Customer</Label>
+        <Select value={customerId ?? '__walkin'} onValueChange={v => setCustomerId(v === '__walkin' ? null : v)}>
+          <SelectTrigger className="h-8 mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__walkin">Walk-in</SelectItem>
+            {customers.map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {cart.length === 0 ? (
+          <div className="text-center text-sm text-gray-400 mt-10 px-4">
+            Tap an item to add it to the cart.
+          </div>
+        ) : (
+          <ul className="divide-y bg-white">
+            {cart.map((l, idx) => (
+              <CartLineRow
+                key={idx}
+                line={l}
+                imageUrl={(l.stockItemId && items.find(i => i.id === l.stockItemId)?.imageUrl) || null}
+                onQty={n => setLineQty(idx, n)}
+                onRemove={() => removeLine(idx)}
+                onPatch={patch => patchLine(idx, patch)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t bg-white p-3 space-y-2 text-sm shrink-0">
+        <div className="flex justify-between text-lg font-bold">
+          <span>Total</span><span>${total.toFixed(2)}</span>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Button variant="outline" className="flex-1" onClick={saveDraft} disabled={saving || cart.length === 0}>
+            {saving && !checkoutOpen ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <FileText className="h-4 w-4 mr-1.5" />}
+            Save Draft
+          </Button>
+          <Button
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => { setMobileCartOpen(false); setCheckoutOpen(true); }}
+            disabled={cart.length === 0}
+          >
+            <CreditCard className="h-4 w-4 mr-1.5" />
+            Checkout
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     // h-full sizes POS to the Layout main's content area (which already
     // has a bounded height from the parent flex column). No 100vh math
@@ -676,7 +747,7 @@ export function POS() {
 
       <div className="flex-1 flex min-h-0 flex-col lg:flex-row">
         {/* ---- Items grid ---- */}
-        <section className="flex-1 flex flex-col border-r min-w-0 min-h-0">
+        <section className="flex-1 flex flex-col lg:border-r min-w-0 min-h-0">
           <div className="p-3 border-b bg-white space-y-2 shrink-0">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
@@ -719,7 +790,9 @@ export function POS() {
                   : 'No items match your search.'}
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              // v-pos-mobile-drawer — 3-per-row on <sm matches the
+              // mobile launcher tile aesthetic; step up progressively.
+              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-24 lg:pb-3">
                 {filteredItems.map(it => (
                   <PosItemCard key={it.id} item={it} onAdd={onItemTap} />
                 ))}
@@ -729,69 +802,43 @@ export function POS() {
         </section>
 
         {/* ---- Cart panel ----
-            On narrow screens (<lg) the cart drops below the items grid and
-            spans full width; on lg+ it sits as a 380px-wide column on the
-            right. min-h-0 lets the cart-rows list (flex-1 overflow-auto)
-            actually scroll inside the column. */}
-        <aside className="w-full lg:w-[380px] flex flex-col bg-gray-50 min-h-0 border-t lg:border-t-0">
-          <div className="p-3 border-b bg-white shrink-0">
-            <Label className="text-xs text-gray-500">Customer</Label>
-            <Select value={customerId ?? '__walkin'} onValueChange={v => setCustomerId(v === '__walkin' ? null : v)}>
-              <SelectTrigger className="h-8 mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__walkin">Walk-in</SelectItem>
-                {customers.map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {cart.length === 0 ? (
-              <div className="text-center text-sm text-gray-400 mt-10 px-4">
-                Tap an item to add it to the cart.
-              </div>
-            ) : (
-              <ul className="divide-y bg-white">
-                {cart.map((l, idx) => (
-                  <CartLineRow
-                    key={idx}
-                    line={l}
-                    imageUrl={(l.stockItemId && items.find(i => i.id === l.stockItemId)?.imageUrl) || null}
-                    onQty={n => setLineQty(idx, n)}
-                    onRemove={() => removeLine(idx)}
-                    onPatch={patch => patchLine(idx, patch)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="border-t bg-white p-3 space-y-2 text-sm shrink-0">
-            {/* v-pos-cart-slim — Subtotal / Discount / Tax / Notes
-                moved into the Checkout dialog (editable there) so the
-                cart panel keeps as much room as possible for the item
-                list. The cashier confirms the numbers at Checkout. */}
-            <div className="flex justify-between text-lg font-bold">
-              <span>Total</span><span>${total.toFixed(2)}</span>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" className="flex-1" onClick={saveDraft} disabled={saving || cart.length === 0}>
-                {saving && !checkoutOpen ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <FileText className="h-4 w-4 mr-1.5" />}
-                Save Draft
-              </Button>
-              <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => setCheckoutOpen(true)} disabled={cart.length === 0}>
-                <CreditCard className="h-4 w-4 mr-1.5" />
-                Checkout
-              </Button>
-            </div>
-          </div>
+            v-pos-mobile-drawer — desktop (lg+) keeps the fixed 380px
+            aside on the right. Mobile (<lg) hides the aside entirely;
+            the cart opens as a bottom Sheet triggered by the FAB
+            rendered outside the flex row. cartBody below is shared
+            between the two so we don't fork the JSX. */}
+        <aside className="hidden lg:flex w-[380px] flex-col bg-gray-50 min-h-0">
+          {cartBody}
         </aside>
       </div>
+
+      {/* Mobile-only FAB — hidden on lg+. Shows item count + running
+          total; tapping opens the cart Sheet from the bottom. */}
+      <Button
+        type="button"
+        onClick={() => setMobileCartOpen(true)}
+        className="lg:hidden fixed bottom-4 right-4 z-30 h-14 rounded-full pl-4 pr-5 shadow-lg bg-emerald-600 hover:bg-emerald-700 text-white"
+      >
+        <ShoppingCart className="h-5 w-5 mr-2" />
+        <span className="text-sm font-semibold">
+          {cart.reduce((n, l) => n + l.quantity, 0)} · ${total.toFixed(2)}
+        </span>
+      </Button>
+
+      {/* Mobile cart drawer — same content as the desktop aside. */}
+      <Sheet open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
+        <SheetContent side="bottom" className="h-[85vh] p-0 flex flex-col lg:hidden">
+          <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
+            <SheetTitle className="text-base">Cart</SheetTitle>
+            <SheetDescription className="sr-only">
+              Review items, adjust quantities, and continue to checkout.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 min-h-0 flex flex-col bg-gray-50">
+            {cartBody}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <PosCheckoutDialog
         open={checkoutOpen}
