@@ -6,8 +6,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  FileSpreadsheet, Upload, Download, AlertCircle, AlertTriangle, CheckCircle, RefreshCw,
+  FileSpreadsheet, Upload, Download, AlertCircle, AlertTriangle, CheckCircle, RefreshCw, Info,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { Employee } from '../../types/hrms';
 import { mockEmployees } from '../../data/mockData';
@@ -294,8 +295,24 @@ export function BulkUploadEmployeesDialog({
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Upload Bulk Employees
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Upload format details"
+                    className="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-300 rounded-full"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-sm text-xs leading-relaxed">
+                  Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Join Date, Base Salary. Department is optional. Blank rows are skipped automatically.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="sr-only">
             Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Join Date, Base Salary. Department is optional. Blank rows are skipped automatically.
           </DialogDescription>
         </DialogHeader>
