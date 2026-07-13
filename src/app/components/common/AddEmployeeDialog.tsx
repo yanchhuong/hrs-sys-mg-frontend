@@ -15,8 +15,9 @@ import { mockEmployees } from '../../data/mockData';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as positionsApi from '../../api/positions';
-import { USE_MOCKS } from '../../api/client';
+import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
+import { SeatCapDialog } from './SeatCapDialog';
 
 interface Props {
   open: boolean;
@@ -52,6 +53,7 @@ export function AddEmployeeDialog({
   const [tab, setTab] = useState<'personal' | 'employment' | 'banking'>('personal');
   const [form, setForm] = useState<Partial<Employee>>(blank);
   const [submitting, setSubmitting] = useState(false);
+  const [seatCapMessage, setSeatCapMessage] = useState<string | null>(null);
 
   const patch = (p: Partial<Employee>) => setForm({ ...form, ...p });
 
@@ -143,7 +145,14 @@ export function AddEmployeeDialog({
       reset();
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create employee');
+      // v-employee-seat-cap — plan cap reached returns HTTP 402. Open a
+      // dedicated dialog instead of the generic toast so the operator
+      // gets clear guidance to contact their platform admin.
+      if (e instanceof ApiClientError && e.status === 402) {
+        setSeatCapMessage(e.message || 'Employee seat cap reached for this plan.');
+      } else {
+        toast.error(e instanceof Error ? e.message : 'Failed to create employee');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -484,6 +493,11 @@ export function AddEmployeeDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <SeatCapDialog
+        open={seatCapMessage != null}
+        message={seatCapMessage}
+        onClose={() => setSeatCapMessage(null)}
+      />
     </Dialog>
   );
 }
