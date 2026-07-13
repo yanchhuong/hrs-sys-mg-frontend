@@ -17,7 +17,8 @@ import {
 } from '../../utils/employeeBulkParser';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
-import { USE_MOCKS } from '../../api/client';
+import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
+import { SeatCapDialog } from './SeatCapDialog';
 
 interface Props {
   open: boolean;
@@ -115,6 +116,9 @@ export function BulkUploadEmployeesDialog({
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState<Map<number, RowProgress>>(new Map());
   const [finalResult, setFinalResult] = useState<{ ok: number; failed: number } | null>(null);
+  // v-employee-seat-cap — populated when a row returns 402; remaining
+  // rows skip immediately and a SeatCapDialog surfaces the reason.
+  const [seatCapMessage, setSeatCapMessage] = useState<string | null>(null);
 
   // View filter + per-row selection. Passed rows start checked; failed rows
   // are uncheckable — the rule is "upload Green only".
@@ -215,17 +219,31 @@ export function BulkUploadEmployeesDialog({
     const created: Employee[] = [];
     let okCount = 0;
     let failCount = 0;
+    // v-employee-seat-cap — once one row returns 402 (plan cap reached),
+    // every remaining row is guaranteed to fail too. Flip a shared abort
+    // flag so the worker skips the remaining API calls instead of
+    // hammering the backend for 200+ predictable failures. In-flight
+    // requests (up to 5) still finish naturally.
+    let seatCapHit: string | null = null;
 
     await runWithConcurrency(
       rowsToImport,
       async (row) => {
+        if (seatCapHit) throw new Error('Skipped — plan seat cap reached earlier in this upload');
         setProgress(prev => {
           const next = new Map(prev);
           next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'creating' });
           return next;
         });
         const body = buildCreateRequest(row, deptByLowerName);
-        return employeesApi.create(body);
+        try {
+          return await employeesApi.create(body);
+        } catch (err) {
+          if (err instanceof ApiClientError && err.status === 402) {
+            seatCapHit = err.message || 'Employee seat cap reached for this plan.';
+          }
+          throw err;
+        }
       },
       5, // 5 concurrent POSTs — gentle on the backend, fast enough for 300+ rows
       (row, _i, result) => {
@@ -249,6 +267,8 @@ export function BulkUploadEmployeesDialog({
         }
       },
     );
+
+    if (seatCapHit) setSeatCapMessage(seatCapHit);
 
     setImporting(false);
     setFinalResult({ ok: okCount, failed: failCount });
@@ -671,6 +691,11 @@ export function BulkUploadEmployeesDialog({
           </div>
         </DialogFooter>
       </DialogContent>
+      <SeatCapDialog
+        open={seatCapMessage != null}
+        message={seatCapMessage}
+        onClose={() => setSeatCapMessage(null)}
+      />
     </Dialog>
   );
 }
