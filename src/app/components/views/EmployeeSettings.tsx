@@ -9,6 +9,7 @@ import { DepsGroup } from './DepsGroup';
 import { SalaryRules } from './SalaryRules';
 import { TaxBrackets } from './TaxBrackets';
 import { useI18n } from '../../i18n/I18nContext';
+import { useAuth } from '../../context/AuthContext';
 import * as positionsApi from '../../api/positions';
 import * as departmentsApi from '../../api/departments';
 import * as salaryRulesApi from '../../api/salaryRules';
@@ -35,6 +36,7 @@ const EMPTY_KPIS: SettingsKpis = {
 
 export function EmployeeSettings() {
   const { t } = useI18n();
+  const { isModuleAvailable } = useAuth();
   const [kpis, setKpis] = useState<SettingsKpis>(EMPTY_KPIS);
 
   useEffect(() => {
@@ -55,6 +57,13 @@ export function EmployeeSettings() {
         return;
       }
       try {
+        // v-employee-settings-module-preflight — the unmatched-device
+        // list is gated by the `attendance` module. Tenants without it
+        // (e.g. School System) would 403; preflight so the network tab
+        // stays clean.
+        const unmatchedCall = isModuleAvailable('attendance')
+          ? unmatchedApi.list().catch(() => [])
+          : Promise.resolve([]);
         const [positions, departments, salaryRules, employeesPage, unmatched] = await Promise.all([
           positionsApi.list().catch(() => []),
           departmentsApi.list().catch(() => []),
@@ -62,7 +71,7 @@ export function EmployeeSettings() {
           // Page 0 size 1 just to read totalElements for the assigned-positions
           // count fallback (we don't actually need the rows here).
           employeesApi.list({ size: 500 }).catch(() => ({ content: [] as employeesApi.Employee[] } as never)),
-          unmatchedApi.list().catch(() => []),
+          unmatchedCall,
         ]);
         if (cancelled) return;
         const assigned = new Set(
