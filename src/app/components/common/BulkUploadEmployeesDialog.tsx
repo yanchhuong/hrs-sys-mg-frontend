@@ -608,11 +608,6 @@ export function BulkUploadEmployeesDialog({
             );
           })()}
 
-          {!parsed && (
-            <div className="text-center text-sm text-gray-400 py-8">
-              Select a file to see the import preview here.
-            </div>
-          )}
         </div>
 
         <DialogFooter className="px-6 py-4 border-t shrink-0 bg-white sm:justify-between sm:items-center gap-3">
