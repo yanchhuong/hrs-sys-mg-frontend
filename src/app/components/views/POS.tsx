@@ -771,65 +771,11 @@ export function POS() {
           </div>
 
           <div className="border-t bg-white p-3 space-y-2 text-sm shrink-0">
-            <div className="flex justify-between"><span className="text-gray-600">Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
-
-            {/* Discount + Tax rows respect the POS Settings "Display"
-                toggles — flipping Show Discount / Show Tax off hides
-                the row AND zeros out its contribution so a stale
-                value never silently rides along. */}
-            {posSettings.showDiscount && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 flex-1">Discount</span>
-                <Select value={discountType} onValueChange={v => setDiscountType(v as 'amount' | 'percent')}>
-                  <SelectTrigger className="h-7 w-20"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="amount">$</SelectItem>
-                    <SelectItem value="percent">%</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  value={discountValue}
-                  onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)}
-                  className="h-7 w-20 text-right"
-                />
-              </div>
-            )}
-
-            {/* POS sales are either "no tax" (Commercial receipt) or
-                "VAT 10%" (Tax invoice). The receipt kind is derived
-                from this choice at checkout, so the cashier never has
-                to pick it twice. */}
-            {posSettings.showTax && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 flex-1">Tax</span>
-                <Select value={taxType ?? '__none'} onValueChange={v => setTaxType(v === '__none' ? null : v)}>
-                  <SelectTrigger className="h-7 w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">No tax</SelectItem>
-                    <SelectItem value="1">VAT 10%</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-xs text-gray-500 w-20 text-right">${taxAmount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Inline Notes — gated on the Display toggle. Saved with
-                the order, useful for "no straw" / "extra bag" cashier
-                notes; doesn't print on the receipt by default. */}
-            {posSettings.showNotes && (
-              <div className="space-y-1">
-                <span className="text-gray-600 text-xs">Notes</span>
-                <Input
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Order note (optional)"
-                  className="h-7 text-sm"
-                />
-              </div>
-            )}
-
-            <div className="flex justify-between text-lg font-bold pt-1 border-t">
+            {/* v-pos-cart-slim — Subtotal / Discount / Tax / Notes
+                moved into the Checkout dialog (editable there) so the
+                cart panel keeps as much room as possible for the item
+                list. The cashier confirms the numbers at Checkout. */}
+            <div className="flex justify-between text-lg font-bold">
               <span>Total</span><span>${total.toFixed(2)}</span>
             </div>
 
@@ -860,8 +806,17 @@ export function POS() {
         subtotal={subtotal}
         discountAmount={discountAmount}
         taxAmount={taxAmount}
-        taxRate={taxRate}
-        notes={posSettings.showNotes ? notes : ''}
+        discountType={discountType}
+        onDiscountTypeChange={setDiscountType}
+        discountValue={discountValue}
+        onDiscountValueChange={setDiscountValue}
+        taxType={taxType}
+        onTaxTypeChange={setTaxType}
+        notes={notes}
+        onNotesChange={setNotes}
+        showDiscount={posSettings.showDiscount}
+        showTax={posSettings.showTax}
+        showNotes={posSettings.showNotes}
       />
       <PosOpenOrdersDrawer
         open={drawerOpen}
@@ -1140,19 +1095,34 @@ interface CheckoutProps {
   method: PosPaymentMethod;
   onMethodChange: (m: PosPaymentMethod) => void;
   onSubmit: (method: PosPaymentMethod, received: number) => void;
-  /** Cart breakdown mirrored from the left summary panel so the
-   *  cashier sees Subtotal / Discount / Tax / Notes at confirmation
-   *  time — read-only here; edits still happen on the cart. */
+  /** Cart breakdown moved into this dialog (v-pos-cart-slim) so the
+   *  left cart panel keeps room for the item list. Subtotal + tax
+   *  amount are computed by POS.tsx; the rest are controlled inputs
+   *  the cashier can still edit here. Display gates come from POS
+   *  Settings — hiding a section here removes both the input and its
+   *  contribution to the total. */
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
-  taxRate: number;
+  discountType: 'amount' | 'percent';
+  onDiscountTypeChange: (v: 'amount' | 'percent') => void;
+  discountValue: number;
+  onDiscountValueChange: (v: number) => void;
+  taxType: string | null;
+  onTaxTypeChange: (v: string | null) => void;
   notes: string;
+  onNotesChange: (v: string) => void;
+  showDiscount: boolean;
+  showTax: boolean;
+  showNotes: boolean;
 }
 
 function PosCheckoutDialog({
   open, onOpenChange, total, saving, invoiceKind, banks, method, onMethodChange, onSubmit,
-  subtotal, discountAmount, taxAmount, taxRate, notes,
+  subtotal, discountAmount, taxAmount,
+  discountType, onDiscountTypeChange, discountValue, onDiscountValueChange,
+  taxType, onTaxTypeChange, notes, onNotesChange,
+  showDiscount, showTax, showNotes,
 }: CheckoutProps) {
   const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
@@ -1370,34 +1340,73 @@ function PosCheckoutDialog({
             </div>
           )}
 
-          <div className="rounded-md bg-gray-50 p-3 space-y-1.5 text-sm">
-            {/* v-checkout-breakdown — mirror the cart's Subtotal /
-                Discount / Tax / Notes lines so the cashier confirms
-                against the exact numbers they see on the left panel.
-                Read-only; edits still happen on the cart. */}
+          <div className="rounded-md bg-gray-50 p-3 space-y-2 text-sm">
+            {/* v-pos-cart-slim — the cart's Subtotal / Discount / Tax
+                / Notes block now lives here. Discount, Tax, Notes are
+                editable in the same layout the cart panel used to
+                show, so cashiers trained on the old placement don't
+                have to relearn anything. Display toggles from POS
+                Settings still gate each row. */}
             <div className="flex justify-between">
               <span className="text-gray-600">Subtotal</span>
               <span className="tabular-nums">${subtotal.toFixed(2)}</span>
             </div>
+
+            {showDiscount && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 flex-1">Discount</span>
+                <Select value={discountType} onValueChange={v => onDiscountTypeChange(v as 'amount' | 'percent')}>
+                  <SelectTrigger className="h-7 w-20"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="amount">$</SelectItem>
+                    <SelectItem value="percent">%</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  value={discountValue}
+                  onChange={e => onDiscountValueChange(parseFloat(e.target.value) || 0)}
+                  className="h-7 w-20 text-right"
+                />
+              </div>
+            )}
             {discountAmount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">Discount</span>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Discount amount</span>
                 <span className="tabular-nums text-rose-700">−${discountAmount.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-gray-600">
-                Tax {taxRate > 0 ? `(${taxRate}%)` : ''}
-              </span>
-              <span className="tabular-nums">${taxAmount.toFixed(2)}</span>
-            </div>
-            {notes.trim().length > 0 && (
-              <div className="flex justify-between gap-2 border-t pt-1.5">
-                <span className="text-gray-600 shrink-0">Notes</span>
-                <span className="text-right text-gray-700 break-words">{notes}</span>
+
+            {showTax && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 flex-1">Tax</span>
+                <Select value={taxType ?? '__none'} onValueChange={v => onTaxTypeChange(v === '__none' ? null : v)}>
+                  <SelectTrigger className="h-7 w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">No tax</SelectItem>
+                    <SelectItem value="1">VAT 10%</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-gray-500 w-20 text-right tabular-nums">${taxAmount.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between border-t pt-1.5"><span className="text-gray-600">Total</span><span className="font-semibold">${total.toFixed(2)}</span></div>
+
+            {showNotes && (
+              <div className="space-y-1">
+                <span className="text-gray-600 text-xs">Notes</span>
+                <Input
+                  value={notes}
+                  onChange={e => onNotesChange(e.target.value)}
+                  placeholder="Order note (optional)"
+                  className="h-7 text-sm"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="text-gray-600">Total</span>
+              <span className="font-semibold">${total.toFixed(2)}</span>
+            </div>
             {method === 'cash' && (
               <>
                 <div className="flex items-center gap-2">
