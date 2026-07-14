@@ -25,8 +25,14 @@ function TabsList({
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
+      // v-mobile-no-horizontal-scroll — `max-w-full overflow-x-auto`
+      // caps the tab strip at parent width and scrolls internally
+      // when the trigger set is wider than the viewport. Without
+      // this, a 5-tab strip on a 375px phone forced the whole page
+      // to scroll horizontally (Payroll Batches Pending/Approved/
+      // Done/Rejected + counter badges).
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-xl p-[3px] flex",
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit max-w-full items-center justify-center rounded-xl p-[3px] flex overflow-x-auto",
         className,
       )}
       {...props}
