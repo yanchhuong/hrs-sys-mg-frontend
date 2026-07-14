@@ -9,6 +9,7 @@ import { AgencyPortfolioPage } from './AgencyPortfolioPage';
 import { AgencyCasesPage } from './AgencyCasesPage';
 import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
 import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
+import { AgencyAnomaliesPage } from './AgencyAnomaliesPage';
 
 type Section = 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
 
@@ -154,24 +155,10 @@ export function AgencyApp() {
           {section === 'cases' && <AgencyCasesPage />}
           {section === 'tax' && <AgencyTaxCalendarPage />}
           {section === 'deliverables' && <AgencyDeliverablesPage />}
-          {section === 'anomalies' && <StubPage title="Anomalies" />}
+          {section === 'anomalies' && <AgencyAnomaliesPage />}
         </main>
       </div>
     </div>
   );
 }
 
-/** Placeholder for pages that land in FE turns #2 / #3. */
-function StubPage({ title }: { title: string }) {
-  return (
-    <div className="max-w-lg mx-auto text-center py-24">
-      <div className="text-sm text-gray-500 mb-2">Agency workspace</div>
-      <h2 className="text-2xl font-semibold">{title}</h2>
-      <p className="mt-3 text-sm text-gray-600">
-        This page arrives in the next FE turn. The backend endpoints are
-        live — you can already exercise them from the API modules
-        (<code>src/app/api/agency*.ts</code>).
-      </p>
-    </div>
-  );
-}

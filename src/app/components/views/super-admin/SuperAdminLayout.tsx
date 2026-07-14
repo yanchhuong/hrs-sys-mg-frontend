@@ -11,6 +11,7 @@ import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
   ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
   ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot, ClipboardList,
+  Briefcase,
 } from 'lucide-react';
 import { UserProfileDialog } from '../../common/UserProfileDialog';
 import { LanguageSwitcher } from '../../common/LanguageSwitcher';
@@ -18,6 +19,7 @@ import { useI18n } from '../../../i18n/I18nContext';
 
 export type SuperAdminView =
   | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules' | 'surveys'
+  | 'agencies'
   // Settings sub-menu
   | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'system_holidays' | 'module_categories'
   | 'platform_telegram';
@@ -84,6 +86,11 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
     { kind: 'leaf', id: 'surveys', icon: ClipboardList,
       label: 'Requirement Surveys',
       description: 'Inbound customer inquiries from the landing form.' },
+    // v-agency-fe-4 — external accounting / tax / audit firms that
+    // span multiple client Companies via agency_company_assignments.
+    { kind: 'leaf', id: 'agencies', icon: Briefcase,
+      label: 'Agencies',
+      description: 'Accounting firms that work across your Companies via case-based collaboration.' },
     {
       kind: 'group', id: 'settings', icon: Settings,
       label: t('nav.platform.settings'),
