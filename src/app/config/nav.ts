@@ -23,7 +23,7 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
-  ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
+  ClipboardCheck, Stethoscope, HeartPulse, CalendarClock, Calendar,
   GraduationCap, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
@@ -57,6 +57,8 @@ import { Transactions } from '../components/views/Transactions';
 import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
 import { CasesView } from '../components/views/CasesView';
+import { TaxCalendarView } from '../components/views/TaxCalendarView';
+import { DeliverablesView } from '../components/views/DeliverablesView';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
 import { Students } from '../components/views/Students';
@@ -228,6 +230,14 @@ export const NAV_LEAVES: NavLeaf[] = [
   // @PreAuthorize hasRole('ADMIN')); a dedicated agency-cases
   // module row lands with the FE #4 Super Admin work.
   { id: 'cases',             labelKey: 'nav.cases',                  icon: Briefcase,       module: 'settings',           component: CasesView },
+  // Cambodian tax calendar for this tenant. Agency writes here
+  // too via the /agency/tax-calendar/{mark-filed,sweep-overdue}
+  // parallel endpoints; both sides converge on the same rows.
+  { id: 'tax-calendar',      labelKey: 'nav.taxCalendar',            icon: Calendar,        module: 'settings',           component: TaxCalendarView },
+  // Delivered vault — only status='delivered' rows. Draft /
+  // review / approved are the agency's WIP and stay on their
+  // side.
+  { id: 'deliverables',      labelKey: 'nav.deliverables',           icon: FileText,        module: 'settings',           component: DeliverablesView },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.

@@ -7,6 +7,8 @@ import { Button } from '../../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
 import { AgencyCasesPage } from './AgencyCasesPage';
+import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
+import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
 
 type Section = 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
 
@@ -150,8 +152,8 @@ export function AgencyApp() {
             }} />
           )}
           {section === 'cases' && <AgencyCasesPage />}
-          {section === 'tax' && <StubPage title="Tax Calendar" />}
-          {section === 'deliverables' && <StubPage title="Deliverables" />}
+          {section === 'tax' && <AgencyTaxCalendarPage />}
+          {section === 'deliverables' && <AgencyDeliverablesPage />}
           {section === 'anomalies' && <StubPage title="Anomalies" />}
         </main>
       </div>
