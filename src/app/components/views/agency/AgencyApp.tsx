@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
-import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2, CheckSquare } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2, CheckSquare, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../../context/AuthContext';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { Button } from '../../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import * as notifApi from '../../../api/agencyNotifications';
 import { AgencyDashboardPage } from './AgencyDashboardPage';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
 import { AgencyTasksPage } from './AgencyTasksPage';
@@ -12,8 +13,9 @@ import { AgencyCasesPage } from './AgencyCasesPage';
 import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
 import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
 import { AgencyAnomaliesPage } from './AgencyAnomaliesPage';
+import { AgencyNotificationsPage } from './AgencyNotificationsPage';
 
-type Section = 'dashboard' | 'portfolio' | 'tasks' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
+type Section = 'dashboard' | 'portfolio' | 'tasks' | 'cases' | 'tax' | 'deliverables' | 'anomalies' | 'notifications';
 
 interface NavItem {
   key: Section;
@@ -25,6 +27,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { key: 'dashboard',    label: 'Dashboard',    icon: <LayoutDashboard className="h-4 w-4" />, requiresClient: false },
+  { key: 'notifications',label: 'Notifications',icon: <Bell className="h-4 w-4" />,            requiresClient: false },
   { key: 'portfolio',    label: 'Portfolio',    icon: <Users className="h-4 w-4" />,           requiresClient: false },
   { key: 'tasks',        label: 'Tasks',        icon: <CheckSquare className="h-4 w-4" />,     requiresClient: false },
   { key: 'cases',        label: 'Cases',        icon: <Briefcase className="h-4 w-4" />,       requiresClient: false },
@@ -46,6 +49,29 @@ export function AgencyApp() {
   const { currentUser, logout } = useAuth();
   const { portfolio, activeClientId, setActiveClient, loading } = useAgencyClient();
   const [section, setSection] = useState<Section>('dashboard');
+
+  // v-agency-fe-7 — unread badge on the sidebar Notifications
+  // item. Poll every 45s, refresh immediately when the user leaves
+  // the Notifications page (they may have marked things read).
+  const [unread, setUnread] = useState(0);
+  const refreshUnread = useCallback(async () => {
+    try {
+      const { count } = await notifApi.notifications.unreadCount();
+      setUnread(count);
+    } catch { /* silent — badge is best-effort */ }
+  }, []);
+  useEffect(() => {
+    void refreshUnread();
+    const id = window.setInterval(() => {
+      if (!document.hidden) void refreshUnread();
+    }, 45_000);
+    return () => window.clearInterval(id);
+  }, [refreshUnread]);
+  // Also refresh when transitioning back OUT of Notifications so
+  // the badge reflects the mark-read the user just did.
+  useEffect(() => {
+    if (section !== 'notifications') void refreshUnread();
+  }, [section, refreshUnread]);
 
   const agencyName = currentUser?.name || currentUser?.email || 'Agency';
   const activePickTitle = useMemo(
@@ -80,7 +106,12 @@ export function AgencyApp() {
                 } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 {item.icon}
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.key === 'notifications' && unread > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-4 rounded-full bg-rose-500 text-white text-[10px] font-semibold px-1.5">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -99,6 +130,7 @@ export function AgencyApp() {
           <div className="min-w-0 flex-1">
             <div className="text-xs text-gray-500">
               {section === 'dashboard' ? 'Agency dashboard'
+                : section === 'notifications' ? 'Notification inbox'
                 : section === 'portfolio' ? 'Portfolio overview'
                 : activePickTitle
                   ? `Working on: ${activePickTitle}`
@@ -109,7 +141,7 @@ export function AgencyApp() {
           {/* Client picker — hidden on Dashboard + Portfolio
               (Portfolio IS the picker, Dashboard aggregates
               portfolio-wide); visible on every scoped page. */}
-          {section !== 'portfolio' && section !== 'dashboard' && (
+          {section !== 'portfolio' && section !== 'dashboard' && section !== 'notifications' && (
             <div className="flex items-center gap-2">
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
@@ -149,6 +181,7 @@ export function AgencyApp() {
 
         <main className="flex-1 overflow-auto p-6">
           {section === 'dashboard' && <AgencyDashboardPage />}
+          {section === 'notifications' && <AgencyNotificationsPage />}
           {section === 'portfolio' && (
             <AgencyPortfolioPage onSelectClient={id => {
               setActiveClient(id);
