@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
-import { Building2, LogOut, LayoutDashboard, Briefcase, Calendar, FileText, ShieldAlert, Loader2 } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../../context/AuthContext';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { Button } from '../../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { AgencyDashboardPage } from './AgencyDashboardPage';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
 import { AgencyCasesPage } from './AgencyCasesPage';
 import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
 import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
 import { AgencyAnomaliesPage } from './AgencyAnomaliesPage';
 
-type Section = 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
+type Section = 'dashboard' | 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
 
 interface NavItem {
   key: Section;
@@ -22,10 +23,11 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { key: 'portfolio',    label: 'Portfolio',    icon: <LayoutDashboard className="h-4 w-4" />, requiresClient: false },
-  { key: 'cases',        label: 'Cases',        icon: <Briefcase className="h-4 w-4" />,       requiresClient: true },
+  { key: 'dashboard',    label: 'Dashboard',    icon: <LayoutDashboard className="h-4 w-4" />, requiresClient: false },
+  { key: 'portfolio',    label: 'Portfolio',    icon: <Users className="h-4 w-4" />,           requiresClient: false },
+  { key: 'cases',        label: 'Cases',        icon: <Briefcase className="h-4 w-4" />,       requiresClient: false },
   { key: 'tax',          label: 'Tax Calendar', icon: <Calendar className="h-4 w-4" />,        requiresClient: true },
-  { key: 'deliverables', label: 'Deliverables', icon: <FileText className="h-4 w-4" />,        requiresClient: true },
+  { key: 'deliverables', label: 'Deliverables', icon: <FileText className="h-4 w-4" />,        requiresClient: false },
   { key: 'anomalies',    label: 'Anomalies',    icon: <ShieldAlert className="h-4 w-4" />,     requiresClient: true },
 ];
 
@@ -41,7 +43,7 @@ const NAV: NavItem[] = [
 export function AgencyApp() {
   const { currentUser, logout } = useAuth();
   const { portfolio, activeClientId, setActiveClient, loading } = useAgencyClient();
-  const [section, setSection] = useState<Section>('portfolio');
+  const [section, setSection] = useState<Section>('dashboard');
 
   const agencyName = currentUser?.name || currentUser?.email || 'Agency';
   const activePickTitle = useMemo(
@@ -94,17 +96,18 @@ export function AgencyApp() {
         <header className="h-14 border-b bg-white flex items-center justify-between px-4 shrink-0">
           <div className="min-w-0 flex-1">
             <div className="text-xs text-gray-500">
-              {section === 'portfolio'
-                ? 'Portfolio overview'
+              {section === 'dashboard' ? 'Agency dashboard'
+                : section === 'portfolio' ? 'Portfolio overview'
                 : activePickTitle
                   ? `Working on: ${activePickTitle}`
                   : 'Pick a client Company to continue'}
             </div>
           </div>
 
-          {/* Client picker — hidden on Portfolio (which itself is
-              the client picker); visible on every scoped page. */}
-          {section !== 'portfolio' && (
+          {/* Client picker — hidden on Dashboard + Portfolio
+              (Portfolio IS the picker, Dashboard aggregates
+              portfolio-wide); visible on every scoped page. */}
+          {section !== 'portfolio' && section !== 'dashboard' && (
             <div className="flex items-center gap-2">
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
@@ -143,6 +146,7 @@ export function AgencyApp() {
         </header>
 
         <main className="flex-1 overflow-auto p-6">
+          {section === 'dashboard' && <AgencyDashboardPage />}
           {section === 'portfolio' && (
             <AgencyPortfolioPage onSelectClient={id => {
               setActiveClient(id);
