@@ -15,6 +15,11 @@ export type DocCategory =
   | 'bank_statement' | 'invoice' | 'bill' | 'receipt' | 'contract'
   | 'payroll_slip' | 'tax_notice' | 'patent_cert' | 'kyc_doc' | 'other';
 
+/** v-agency-doc-request-related-doc — hard link to the financial
+ *  doc a request concerns. Kept polymorphic across three tables
+ *  (sale_invoices / bills / receipts) via {@link RelatedDocType}. */
+export type RelatedDocType = 'invoice' | 'bill' | 'expense';
+
 export interface DocumentRequestDto {
   id: string;
   agencyId: string | null;
@@ -38,6 +43,12 @@ export interface DocumentRequestDto {
   reviewedByAgencyUserId: string | null;
   reviewedByName: string | null;
   rejectionNotes: string | null;
+  /** Hard-link fields. All three are populated together (or all
+   *  null). {@link #relatedDocNo} is server-hydrated so the FE can
+   *  render "INV-2025-001" without a follow-up lookup. */
+  relatedDocType: RelatedDocType | null;
+  relatedDocId: string | null;
+  relatedDocNo: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +60,11 @@ export interface CreateDocRequestRequest {
   category?: DocCategory;
   period?: string | null;
   dueDate?: string | null;
+  /** Optional hard link to the financial doc this request concerns.
+   *  Both fields together, or omit both. Server rejects a cross-
+   *  tenant link (relatedDocId must live in `tenantId`). */
+  relatedDocType?: RelatedDocType | null;
+  relatedDocId?: string | null;
 }
 
 export interface UploadDocRequest {
