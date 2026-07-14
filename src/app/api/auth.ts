@@ -1,4 +1,4 @@
-import { apiJson, setToken, USER_KEY, TOKEN_KEY, TENANT_KEY } from './client';
+import { apiJson, setToken, setActiveClientTenant, USER_KEY, TOKEN_KEY, TENANT_KEY } from './client';
 
 export interface LoginRequest {
   email: string;
@@ -6,16 +6,29 @@ export interface LoginRequest {
   tenantSlug?: string;
 }
 
+/** V222/V223 — agency users have their own JWT space. When
+ *  {@code agencyId} is set, {@code tenantId} + {@code tenantSlug}
+ *  are null and the client must route to the /agency workspace
+ *  instead of the tenant home. Regular tenant users have
+ *  {@code agencyId} null. Mutually exclusive today. */
+export type AuthRole =
+  | 'super_admin' | 'admin' | 'manager' | 'employee'
+  | 'agency_partner' | 'agency_manager' | 'agency_senior' | 'agency_staff';
+
 export interface AuthUser {
   id: string;
   email: string;
-  role: 'super_admin' | 'admin' | 'manager' | 'employee';
+  role: AuthRole;
   employeeId?: string;
   /** UUID of the tenant this user belongs to (V190 — needed as the
    *  {@code doc_id} on tenant-scoped attachments like the clinic
-   *  logo). Backend returns it from {@code /api/v1/auth/me}. */
-  tenantId: string;
-  tenantSlug: string;
+   *  logo). Null for agency users. Backend returns it from
+   *  {@code /api/v1/auth/me}. */
+  tenantId: string | null;
+  tenantSlug: string | null;
+  /** V222 — populated only for agency users. */
+  agencyId?: string | null;
+  agencySlug?: string | null;
   /** V196 — clinical role tag on the linked employee (if any).
    *  Populated so Doctor-only affordances (e.g. the Diagnosis
    *  field on an appointment) render server-consistent without a
@@ -60,6 +73,7 @@ export async function me(): Promise<AuthUser> {
 
 export function logout(): void {
   setToken(null);
+  setActiveClientTenant(null);
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(TENANT_KEY);

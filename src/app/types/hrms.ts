@@ -1,6 +1,12 @@
 // Core HRMS Types
 
-export type UserRole = 'super_admin' | 'admin' | 'manager' | 'employee';
+export type UserRole =
+  | 'super_admin' | 'admin' | 'manager' | 'employee'
+  // V222/V223 — agency users are a separate identity pool. When
+  // `role` starts with `agency_`, the user's session lives in the
+  // agency workspace and `agencyId` / `agencySlug` on the User row
+  // are populated instead of `tenantId` / `tenantSlug`.
+  | 'agency_partner' | 'agency_manager' | 'agency_senior' | 'agency_staff';
 
 export type EmployeeStatus = 'active' | 'inactive';
 
@@ -20,8 +26,13 @@ export interface User {
   /** UUID of the tenant this user belongs to. Populated from
    *  {@code /auth/me}; needed by tenant-scoped surfaces like the
    *  Encounter Settings logo upload (V190). Optional on the type
-   *  so pre-login state and mock rows stay valid. */
-  tenantId?: string;
+   *  so pre-login state and mock rows stay valid. Null for agency
+   *  users, whose session lives on {@link #agencyId} instead. */
+  tenantId?: string | null;
+  /** V222 — populated only for agency users (role starts with
+   *  {@code agency_}). Regular tenant users get null / undefined. */
+  agencyId?: string | null;
+  agencySlug?: string | null;
   /** V196 — clinical role tag on the linked employee (if any).
    *  Drives Doctor-only affordances like the editable Diagnosis
    *  on Appointments. Null when user has no employee link. */

@@ -18,6 +18,27 @@ export const TOKEN_KEY = 'hrms:apiToken';
 export const TENANT_KEY = 'hrms:tenantSlug';
 export const USER_KEY = 'hrms:authUser';
 
+/**
+ * v-agency-mvp-1c-ii client header. Agency users pick which
+ * client Company they're working with; that pick is stored here
+ * (module-level so every subsequent apiFetch attaches
+ * X-Client-Tenant automatically without threading a prop through
+ * every API module). Tenant users leave this null — the BE
+ * ignores the header for non-agency principals.
+ */
+const CLIENT_TENANT_KEY = 'hrms:agencyActiveClientTenantId';
+let activeClientTenantId: string | null =
+        typeof localStorage !== 'undefined' ? localStorage.getItem(CLIENT_TENANT_KEY) : null;
+
+export function getActiveClientTenant(): string | null { return activeClientTenantId; }
+
+export function setActiveClientTenant(tenantId: string | null): void {
+  activeClientTenantId = tenantId;
+  if (typeof localStorage === 'undefined') return;
+  if (tenantId) localStorage.setItem(CLIENT_TENANT_KEY, tenantId);
+  else localStorage.removeItem(CLIENT_TENANT_KEY);
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -100,6 +121,14 @@ export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<R
   if (auth) {
     const tok = getToken();
     if (tok) merged['Authorization'] = `Bearer ${tok}`;
+  }
+  // v-agency-mvp-1c-ii — attach X-Client-Tenant unconditionally
+  // whenever it's set; the BE only reads it for agency principals
+  // (AgencyClientContextFilter) so tenant users see no effect.
+  // Skip on the /agency/** paths — agency-workspace calls resolve
+  // scope from JWT + row-level checks, no header needed.
+  if (activeClientTenantId && !path.startsWith('/api/v1/agency/')) {
+    merged['X-Client-Tenant'] = activeClientTenantId;
   }
   return fetch(url, {
     ...rest,

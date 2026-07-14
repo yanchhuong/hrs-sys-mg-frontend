@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 // the page render empty instead of a red toast on every fetch.
 import './utils/moduleDisabledToastFilter';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { AgencyClientProvider } from './context/AgencyClientContext';
 import { DateFormatProvider } from './context/DateFormatContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { I18nProvider } from './i18n/I18nContext';
@@ -11,6 +12,7 @@ import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
 import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
+import { AgencyApp } from './components/views/agency/AgencyApp';
 import { Toaster } from './components/ui/sonner';
 import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
@@ -168,6 +170,13 @@ function AppContent() {
     return <SuperAdminApp />;
   }
 
+  // V222 — agency users span multiple client Companies via
+  // agency_company_assignments; they need their own workspace
+  // shell + client picker instead of the tenant sidebar.
+  if (typeof currentUser.role === 'string' && currentUser.role.startsWith('agency_')) {
+    return <AgencyApp />;
+  }
+
   // If we're mid-redirect (disallowed view + a fallback exists),
   // render nothing for one paint instead of NotAuthorizedView. The
   // effect above lands the redirect on the same tick.
@@ -260,12 +269,14 @@ export default function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <DateFormatProvider>
-          <ConfirmProvider>
-            <AppContent />
-            <Toaster />
-          </ConfirmProvider>
-        </DateFormatProvider>
+        <AgencyClientProvider>
+          <DateFormatProvider>
+            <ConfirmProvider>
+              <AppContent />
+              <Toaster />
+            </ConfirmProvider>
+          </DateFormatProvider>
+        </AgencyClientProvider>
       </AuthProvider>
     </I18nProvider>
   );
