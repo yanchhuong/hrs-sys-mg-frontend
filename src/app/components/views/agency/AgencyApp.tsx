@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2, CheckSquare, Bell } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2, CheckSquare, Bell, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../../context/AuthContext';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
@@ -9,13 +9,14 @@ import * as notifApi from '../../../api/agencyNotifications';
 import { AgencyDashboardPage } from './AgencyDashboardPage';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
 import { AgencyTasksPage } from './AgencyTasksPage';
+import { AgencyDocsPage } from './AgencyDocsPage';
 import { AgencyCasesPage } from './AgencyCasesPage';
 import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
 import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
 import { AgencyAnomaliesPage } from './AgencyAnomaliesPage';
 import { AgencyNotificationsPage } from './AgencyNotificationsPage';
 
-type Section = 'dashboard' | 'portfolio' | 'tasks' | 'cases' | 'tax' | 'deliverables' | 'anomalies' | 'notifications';
+type Section = 'dashboard' | 'portfolio' | 'tasks' | 'docs' | 'cases' | 'tax' | 'deliverables' | 'anomalies' | 'notifications';
 
 interface NavItem {
   key: Section;
@@ -30,6 +31,7 @@ const NAV: NavItem[] = [
   { key: 'notifications',label: 'Notifications',icon: <Bell className="h-4 w-4" />,            requiresClient: false },
   { key: 'portfolio',    label: 'Portfolio',    icon: <Users className="h-4 w-4" />,           requiresClient: false },
   { key: 'tasks',        label: 'Tasks',        icon: <CheckSquare className="h-4 w-4" />,     requiresClient: false },
+  { key: 'docs',         label: 'Documents',    icon: <FileSearch className="h-4 w-4" />,      requiresClient: false },
   { key: 'cases',        label: 'Cases',        icon: <Briefcase className="h-4 w-4" />,       requiresClient: false },
   { key: 'tax',          label: 'Tax Calendar', icon: <Calendar className="h-4 w-4" />,        requiresClient: true },
   { key: 'deliverables', label: 'Deliverables', icon: <FileText className="h-4 w-4" />,        requiresClient: false },
@@ -192,6 +194,7 @@ export function AgencyApp() {
             }} />
           )}
           {section === 'tasks' && <AgencyTasksPage />}
+          {section === 'docs' && <AgencyDocsPage />}
           {section === 'cases' && <AgencyCasesPage />}
           {section === 'tax' && <AgencyTaxCalendarPage />}
           {section === 'deliverables' && <AgencyDeliverablesPage />}

@@ -24,7 +24,7 @@ import {
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock, Calendar,
-  GraduationCap, BookOpen,
+  GraduationCap, BookOpen, FileSearch,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -59,6 +59,7 @@ import { Approvals } from '../components/views/Approvals';
 import { CasesView } from '../components/views/CasesView';
 import { TaxCalendarView } from '../components/views/TaxCalendarView';
 import { DeliverablesView } from '../components/views/DeliverablesView';
+import { DocumentCenterView } from '../components/views/DocumentCenterView';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
 import { Students } from '../components/views/Students';
@@ -230,6 +231,9 @@ export const NAV_LEAVES: NavLeaf[] = [
   // @PreAuthorize hasRole('ADMIN')); a dedicated agency-cases
   // module row lands with the FE #4 Super Admin work.
   { id: 'cases',             labelKey: 'nav.cases',                  icon: Briefcase,       module: 'settings',           component: CasesView },
+  // v-agency-fe-8 — tenant-facing document inbox. Where the
+  // client sees what the agency has requested + uploads answers.
+  { id: 'document-center',   labelKey: 'nav.documentCenter',         icon: FileSearch,      module: 'settings',           component: DocumentCenterView },
   // Cambodian tax calendar for this tenant. Agency writes here
   // too via the /agency/tax-calendar/{mark-filed,sweep-overdue}
   // parallel endpoints; both sides converge on the same rows.

@@ -106,6 +106,7 @@ export const dict: Dict = {
   'nav.attendances':          { en: 'Attendance',           km: 'វត្តមាន',                zh: '出勤' },
   'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.cases':                { en: 'Agency Cases',         km: 'ករណីភ្នាក់ងារ',          zh: '代理案例' },
+  'nav.documentCenter':       { en: 'Document Center',      km: 'មជ្ឈមណ្ឌលឯកសារ',       zh: '文档中心' },
   'nav.taxCalendar':          { en: 'Tax Calendar',         km: 'ប្រតិទិនពន្ធដារ',         zh: '税务日历' },
   'nav.deliverables':         { en: 'Deliverables',         km: 'ឯកសារបញ្ជូន',          zh: '交付物' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
