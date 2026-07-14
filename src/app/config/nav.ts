@@ -56,6 +56,7 @@ import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
 import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
+import { CasesView } from '../components/views/CasesView';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
 import { Students } from '../components/views/Students';
@@ -221,6 +222,12 @@ export const NAV_LEAVES: NavLeaf[] = [
   // collide (v-education-attendance-split-from-hr).
   { id: 'attendances',       labelKey: 'nav.attendances',            icon: CalendarClock,   module: 'class-attendance',   component: Attendances,              group: 'education-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
+  // v-agency-fe-2 — tenant-side view of cases the agency has
+  // filed against this Company. Gated on 'settings' as a
+  // placeholder module (BE 403s non-admins anyway via
+  // @PreAuthorize hasRole('ADMIN')); a dedicated agency-cases
+  // module row lands with the FE #4 Super Admin work.
+  { id: 'cases',             labelKey: 'nav.cases',                  icon: Briefcase,       module: 'settings',           component: CasesView },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.

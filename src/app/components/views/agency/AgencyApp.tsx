@@ -6,6 +6,7 @@ import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { Button } from '../../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
+import { AgencyCasesPage } from './AgencyCasesPage';
 
 type Section = 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
 
@@ -148,7 +149,7 @@ export function AgencyApp() {
               toast.success('Client selected — you\'re now working on their data');
             }} />
           )}
-          {section === 'cases' && <StubPage title="Cases" />}
+          {section === 'cases' && <AgencyCasesPage />}
           {section === 'tax' && <StubPage title="Tax Calendar" />}
           {section === 'deliverables' && <StubPage title="Deliverables" />}
           {section === 'anomalies' && <StubPage title="Anomalies" />}
