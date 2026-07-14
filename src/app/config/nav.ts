@@ -24,7 +24,7 @@ import {
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock, Calendar,
-  GraduationCap, BookOpen, FileSearch,
+  GraduationCap, BookOpen, FileSearch, FileSpreadsheet,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -60,6 +60,7 @@ import { CasesView } from '../components/views/CasesView';
 import { TaxCalendarView } from '../components/views/TaxCalendarView';
 import { DeliverablesView } from '../components/views/DeliverablesView';
 import { DocumentCenterView } from '../components/views/DocumentCenterView';
+import { TaxDeclarationsView } from '../components/views/TaxDeclarationsView';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
 import { Students } from '../components/views/Students';
@@ -238,6 +239,11 @@ export const NAV_LEAVES: NavLeaf[] = [
   // too via the /agency/tax-calendar/{mark-filed,sweep-overdue}
   // parallel endpoints; both sides converge on the same rows.
   { id: 'tax-calendar',      labelKey: 'nav.taxCalendar',            icon: Calendar,        module: 'settings',           component: TaxCalendarView },
+  // v-agency-fe-9 — read-only view of the agency's tax
+  // declaration pipeline for this tenant. Complements the
+  // calendar (which shows filed / due state) with the
+  // workflow behind each filing (draft → submitted → accepted).
+  { id: 'tax-declarations',  labelKey: 'nav.taxDeclarations',        icon: FileSpreadsheet, module: 'settings',           component: TaxDeclarationsView },
   // Delivered vault — only status='delivered' rows. Draft /
   // review / approved are the agency's WIP and stay on their
   // side.

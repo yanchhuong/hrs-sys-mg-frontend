@@ -108,6 +108,7 @@ export const dict: Dict = {
   'nav.cases':                { en: 'Agency Cases',         km: 'ករណីភ្នាក់ងារ',          zh: '代理案例' },
   'nav.documentCenter':       { en: 'Document Center',      km: 'មជ្ឈមណ្ឌលឯកសារ',       zh: '文档中心' },
   'nav.taxCalendar':          { en: 'Tax Calendar',         km: 'ប្រតិទិនពន្ធដារ',         zh: '税务日历' },
+  'nav.taxDeclarations':      { en: 'Tax Declarations',     km: 'របាយការណ៍ពន្ធដារ',       zh: '税务申报' },
   'nav.deliverables':         { en: 'Deliverables',         km: 'ឯកសារបញ្ជូន',          zh: '交付物' },
   'nav.contract':             { en: 'Contracts',            km: 'កិច្ចសន្យា',           zh: '合同' },
   'nav.setting':              { en: 'Setting',              km: 'ការកំណត់',         zh: '设置' },
