@@ -23,8 +23,8 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
-  ClipboardCheck, Stethoscope, HeartPulse, CalendarClock, Calendar,
-  GraduationCap, BookOpen, FileSearch, FileSpreadsheet,
+  ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
+  GraduationCap, BookOpen, FileSpreadsheet,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -56,10 +56,6 @@ import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
 import { CashAdvances } from '../components/views/CashAdvances';
 import { Approvals } from '../components/views/Approvals';
-import { CasesView } from '../components/views/CasesView';
-import { TaxCalendarView } from '../components/views/TaxCalendarView';
-import { DeliverablesView } from '../components/views/DeliverablesView';
-import { DocumentCenterView } from '../components/views/DocumentCenterView';
 import { TaxDeclarationsView } from '../components/views/TaxDeclarationsView';
 import { Encounters } from '../components/views/Encounters';
 import { Patients } from '../components/views/Patients';
@@ -105,6 +101,12 @@ export interface NavLeaf {
    *  Attendance Settings (settings + attendance), Employee Settings
    *  (settings + employees). */
   requireAlso?: string[];
+  /** Optional tenant-feature gate resolved at render time in Layout.
+   *  Unlike {@link #module} (role + tenant module catalog), this
+   *  reads from `tenantFeatures` on {@code /me/modules}. Currently
+   *  only {@code 'has-active-agency'} is defined — leaves the tenant
+   *  should see only when an agency is actively serving them. */
+  requireFeature?: 'has-active-agency';
 }
 
 export interface NavGroup {
@@ -226,28 +228,11 @@ export const NAV_LEAVES: NavLeaf[] = [
   // collide (v-education-attendance-split-from-hr).
   { id: 'attendances',       labelKey: 'nav.attendances',            icon: CalendarClock,   module: 'class-attendance',   component: Attendances,              group: 'education-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
-  // v-agency-fe-2 — tenant-side view of cases the agency has
-  // filed against this Company. Gated on 'settings' as a
-  // placeholder module (BE 403s non-admins anyway via
-  // @PreAuthorize hasRole('ADMIN')); a dedicated agency-cases
-  // module row lands with the FE #4 Super Admin work.
-  { id: 'cases',             labelKey: 'nav.cases',                  icon: Briefcase,       module: 'settings',           component: CasesView },
-  // v-agency-fe-8 — tenant-facing document inbox. Where the
-  // client sees what the agency has requested + uploads answers.
-  { id: 'document-center',   labelKey: 'nav.documentCenter',         icon: FileSearch,      module: 'settings',           component: DocumentCenterView },
-  // Cambodian tax calendar for this tenant. Agency writes here
-  // too via the /agency/tax-calendar/{mark-filed,sweep-overdue}
-  // parallel endpoints; both sides converge on the same rows.
-  { id: 'tax-calendar',      labelKey: 'nav.taxCalendar',            icon: Calendar,        module: 'settings',           component: TaxCalendarView },
   // v-agency-fe-9 — read-only view of the agency's tax
   // declaration pipeline for this tenant. Complements the
   // calendar (which shows filed / due state) with the
   // workflow behind each filing (draft → submitted → accepted).
-  { id: 'tax-declarations',  labelKey: 'nav.taxDeclarations',        icon: FileSpreadsheet, module: 'settings',           component: TaxDeclarationsView },
-  // Delivered vault — only status='delivered' rows. Draft /
-  // review / approved are the agency's WIP and stay on their
-  // side.
-  { id: 'deliverables',      labelKey: 'nav.deliverables',           icon: FileText,        module: 'settings',           component: DeliverablesView },
+  { id: 'tax-declarations',  labelKey: 'nav.taxDeclarations',        icon: FileSpreadsheet, module: 'settings',           component: TaxDeclarationsView, requireFeature: 'has-active-agency' },
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.

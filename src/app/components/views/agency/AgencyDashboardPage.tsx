@@ -257,7 +257,7 @@ export function AgencyDashboardPage() {
 
       {/* Quick nav hint */}
       <div className="text-center text-xs text-gray-400 pt-2">
-        <span>Use the sidebar to open Cases, Tax Calendar, Deliverables, or Anomalies</span>
+        <span>Use the sidebar to open Tasks, Sale &amp; Expense, or Tax Declarations</span>
         <ArrowRight className="inline h-3 w-3 ml-1" />
       </div>
     </div>
