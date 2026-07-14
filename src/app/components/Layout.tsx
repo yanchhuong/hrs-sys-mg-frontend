@@ -66,7 +66,7 @@ function AutoTag() {
 }
 
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
-  const { currentUser, currentEmployee, canView, isModuleAvailable, logout } = useAuth();
+  const { currentUser, currentEmployee, canView, isModuleAvailable, hasActiveAgency, logout } = useAuth();
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -97,7 +97,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
     !l.hideFromSidebar
     && canView(l.module)
     && isModuleAvailable(l.module)
-    && (l.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m));
+    && (l.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m))
+    && (l.requireFeature !== 'has-active-agency' || hasActiveAgency());
 
   const visibleTree = useMemo<MenuNode[]>(() => {
     // Each leaf maps to a permission `module` matching the role-permissions
@@ -418,8 +419,16 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           </div>
         </div>
 
-        {/* Main Content */}
-        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+        {/* Main Content.
+            v-mobile-no-horizontal-scroll — `min-w-0 overflow-x-hidden`
+            keep the page body pinned to viewport width on mobile.
+            Wide children (tables, wide grids) get clipped here and
+            must scroll INSIDE their own `overflow-x-auto` container
+            (the shared shadcn <Table> already ships that wrapper).
+            Without this, a wide table would push the whole page
+            sideways, shifting the sidebar toggle + top nav out of
+            view when the user swipes to scroll the table. */}
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto min-w-0 overflow-x-hidden">
           {children}
         </main>
       </div>

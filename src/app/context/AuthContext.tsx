@@ -57,6 +57,11 @@ interface AuthContextType {
    *  rendering. Defaults to true while the bootstrap fetch is in
    *  flight so the icon doesn't flicker. */
   isAppLauncherEnabled: () => boolean;
+  /** True when at least one agency has an active engagement with
+   *  the current tenant. Drives conditional agency-collaboration
+   *  menus (Tax Declarations). Defaults to false pre-fetch — the
+   *  affected menus stay hidden until we know they should show. */
+  hasActiveAgency: () => boolean;
   /** Resolve a category key (e.g. 'account', 'hr') to the human label
    *  the Super Admin set on the Module Categories page. Returns
    *  undefined when the platform doesn't know about the key — callers
@@ -89,6 +94,7 @@ const defaultAuthContext: AuthContextType = {
   isModuleEnabled: () => true,
   isModuleAvailable: () => true,
   isAppLauncherEnabled: () => true,
+  hasActiveAgency: () => false,
   getModuleCategoryLabel: () => undefined,
   setModuleEnabled: noopAsync,
   login: async () => ({ success: false }),
@@ -441,6 +447,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return tenantFeatures.appLauncherEnabled !== false;
   }, [tenantFeatures]);
 
+  /** Whether an agency is actively serving this tenant. Fed by
+   *  {@code agency_company_assignments}. Defaults to FALSE pre-fetch
+   *  so agency-only menus stay hidden until we confirm — opposite of
+   *  the launcher flag (which defaults ON to avoid a flicker). */
+  const hasActiveAgency = useCallback((): boolean => {
+    if (tenantFeatures == null) return false;
+    return tenantFeatures.hasActiveAgency === true;
+  }, [tenantFeatures]);
+
   const getModuleCategoryLabel = useCallback((key: string): string | undefined => {
     if (!tenantCategories) return undefined;
     return tenantCategories.find(c => c.key === key)?.label;
@@ -538,7 +553,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
       refreshUser,
-      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, getModuleCategoryLabel, setModuleEnabled,
+      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, hasActiveAgency, getModuleCategoryLabel, setModuleEnabled,
       login, logout, switchRole,
     }}>
       {children}

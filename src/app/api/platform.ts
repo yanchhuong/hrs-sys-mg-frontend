@@ -480,6 +480,11 @@ export interface MyModulesPayload {
 
 export interface TenantFeatures {
   appLauncherEnabled: boolean;
+  /** True when at least one agency has an active engagement with
+   *  this tenant. Drives visibility of agency-collaboration UI on
+   *  the tenant sidebar (Tax Declarations). Optional for API
+   *  back-compat with older deploys. */
+  hasActiveAgency?: boolean;
 }
 
 export const myModules = {

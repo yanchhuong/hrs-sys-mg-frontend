@@ -89,7 +89,7 @@ function NotAuthorizedView() {
 }
 
 function AppContent() {
-  const { currentUser, canView, isModuleAvailable, loading } = useAuth();
+  const { currentUser, canView, isModuleAvailable, hasActiveAgency, loading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   // Unauthenticated UX: marketing landing first, login surfaces when the
   // user clicks Sign In / Get Started. Reset to landing on every logout so
@@ -119,7 +119,8 @@ function AppContent() {
   const allowed = !!entry
     && canView(entry.module)
     && isModuleAvailable(entry.module)
-    && (entry.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m));
+    && (entry.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m))
+    && (entry.requireFeature !== 'has-active-agency' || hasActiveAgency());
 
   // Pick the first NAV_LEAVES entry the user CAN see. Registry
   // declaration order is the priority — no extra sort field.
@@ -130,9 +131,10 @@ function AppContent() {
       && canView(l.module)
       && isModuleAvailable(l.module)
       && (l.requireAlso ?? []).every(m => canView(m) && isModuleAvailable(m))
+      && (l.requireFeature !== 'has-active-agency' || hasActiveAgency())
     );
     return hit?.id ?? null;
-  }, [allowed, canView, isModuleAvailable]);
+  }, [allowed, canView, isModuleAvailable, hasActiveAgency]);
 
   useEffect(() => {
     // Only redirect when the user is logged in — dodges a spurious
