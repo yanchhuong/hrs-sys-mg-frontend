@@ -9,10 +9,11 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Badge } from '../../ui/badge';
 import {
-  Loader2, Send, CheckCircle2, ThumbsUp, Upload, XCircle, ClipboardCheck, Save,
+  Loader2, Send, CheckCircle2, ThumbsUp, Upload, XCircle, ClipboardCheck, Save, Paperclip,
 } from 'lucide-react';
 import * as declApi from '../../../api/agencyTaxDecl';
 import type { TaxDeclarationDto, TaxDeclStatus } from '../../../api/agencyTaxDecl';
+import { CATEGORY_LABELS, formatPeriodForDisplay } from '../../../api/agencyTaxDecl';
 
 interface Props {
   open: boolean;
@@ -123,10 +124,10 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
           <DialogTitle className="pr-8 truncate">
-            {row ? `${row.obligationName} — ${row.period}` : 'Tax declaration'}
+            {row ? `${row.obligationName} — ${formatPeriodForDisplay(row.period)}` : 'Tax declaration'}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            {row ? <>{row.tenantName ?? '—'} · {row.amountOwed} {row.currency}</> : 'Loading…'}
+            {row ? <>{row.tenantName ?? '—'} · {CATEGORY_LABELS[row.category]} · {row.amountOwed} {row.currency}</> : 'Loading…'}
           </DialogDescription>
         </DialogHeader>
 
@@ -196,6 +197,43 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                            note={row.gdtReferenceNo ? `Ref: ${row.gdtReferenceNo}` : null} />
                 <TrailLine label="Accepted by GDT" name={row.acceptedByName}  at={row.acceptedAt} />
               </div>
+
+              {/* Source docs attached to this declaration (V234). */}
+              {row.linkedDocs.length > 0 && (
+                <div className="border-t pt-3">
+                  <div className="text-xs font-medium mb-2 inline-flex items-center gap-1.5">
+                    <Paperclip className="h-3 w-3 text-gray-500" />
+                    Attached documents
+                    <span className="text-gray-400">({row.linkedDocs.length})</span>
+                  </div>
+                  <div className="rounded-md border max-h-56 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                          <th className="text-left font-medium px-3 py-1.5">Type</th>
+                          <th className="text-left font-medium px-3 py-1.5">Doc no.</th>
+                          <th className="text-right font-medium px-3 py-1.5">Amount</th>
+                          <th className="text-left font-medium px-3 py-1.5">Attached</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {row.linkedDocs.map(d => (
+                          <tr key={d.id ?? `${d.docType}:${d.docId}`}>
+                            <td className="px-3 py-1.5 uppercase text-gray-500">{d.docType}</td>
+                            <td className="px-3 py-1.5 font-medium tabular-nums">{d.docNo ?? d.docId.slice(0, 8)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">
+                              {d.docAmount == null ? '—' : Number(d.docAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500 tabular-nums">
+                              {d.attachedAt ? new Date(d.attachedAt).toLocaleDateString() : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {row.rejectionNotes && (
                 <div className="rounded-md border border-rose-200 bg-rose-50/60 px-3 py-2 text-sm">
