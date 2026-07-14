@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2 } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, Users, Briefcase, Calendar, FileText, ShieldAlert, Loader2, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../../context/AuthContext';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
@@ -7,12 +7,13 @@ import { Button } from '../../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { AgencyDashboardPage } from './AgencyDashboardPage';
 import { AgencyPortfolioPage } from './AgencyPortfolioPage';
+import { AgencyTasksPage } from './AgencyTasksPage';
 import { AgencyCasesPage } from './AgencyCasesPage';
 import { AgencyTaxCalendarPage } from './AgencyTaxCalendarPage';
 import { AgencyDeliverablesPage } from './AgencyDeliverablesPage';
 import { AgencyAnomaliesPage } from './AgencyAnomaliesPage';
 
-type Section = 'dashboard' | 'portfolio' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
+type Section = 'dashboard' | 'portfolio' | 'tasks' | 'cases' | 'tax' | 'deliverables' | 'anomalies';
 
 interface NavItem {
   key: Section;
@@ -25,6 +26,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { key: 'dashboard',    label: 'Dashboard',    icon: <LayoutDashboard className="h-4 w-4" />, requiresClient: false },
   { key: 'portfolio',    label: 'Portfolio',    icon: <Users className="h-4 w-4" />,           requiresClient: false },
+  { key: 'tasks',        label: 'Tasks',        icon: <CheckSquare className="h-4 w-4" />,     requiresClient: false },
   { key: 'cases',        label: 'Cases',        icon: <Briefcase className="h-4 w-4" />,       requiresClient: false },
   { key: 'tax',          label: 'Tax Calendar', icon: <Calendar className="h-4 w-4" />,        requiresClient: true },
   { key: 'deliverables', label: 'Deliverables', icon: <FileText className="h-4 w-4" />,        requiresClient: false },
@@ -156,6 +158,7 @@ export function AgencyApp() {
               toast.success('Client selected — you\'re now working on their data');
             }} />
           )}
+          {section === 'tasks' && <AgencyTasksPage />}
           {section === 'cases' && <AgencyCasesPage />}
           {section === 'tax' && <AgencyTaxCalendarPage />}
           {section === 'deliverables' && <AgencyDeliverablesPage />}
