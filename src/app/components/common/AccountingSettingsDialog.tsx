@@ -7,7 +7,7 @@ import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins, Gift } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
@@ -20,6 +20,7 @@ import {
 import { ImageDropZone } from './ImageDropZone';
 import * as paywayApi from '../../api/payway';
 import { PayWaySettingsDialog } from './PayWaySettingsDialog';
+import { Loyalty } from '../views/Loyalty';
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
  *  original 5-pattern VAT+WHT set; Receipt has its own 4-pattern WHT
@@ -191,7 +192,7 @@ function timeAgo(iso: string | null): string {
  * flag, then PUTs the lot on Save. Cancel discards in-flight
  * changes — never persists until Save is clicked.</p>
  */
-type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides' | 'currency';
+type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides' | 'currency' | 'loyalty';
 
 export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }: Props) {
   const [draft, setDraft] = useState<settingsApi.AccountingSettings>(() => settingsApi.defaultsFor(scope));
@@ -508,6 +509,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       { key: 'receipt' as Section, label: 'Receipt', hint: 'Print layout: PAID stamp, SKU, paper size', icon: <Printer className="h-4 w-4" /> },
       { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
       { key: 'slides' as Section, label: 'Display Ads', hint: 'Carousel shown on the customer screen when idle', icon: <MonitorPlay className="h-4 w-4" /> },
+      { key: 'loyalty' as Section, label: 'Loyalty', hint: 'Point / Stamp / Birthday reward programs', icon: <Gift className="h-4 w-4" /> },
     ] : []),
     // Currency picker (V166). Tenant-wide setting — appears on every
     // transactional scope (sale, pos, quotation, voucher, purchase,
@@ -892,6 +894,16 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 onMediaChange={raw => setDraft({ ...draft, posSlideMedia: raw })}
                 disabled={loading || saving}
               />
+            )}
+
+            {/* v-loyalty-mvp — embed the full Loyalty settings page
+                (Programs list + type-aware Create/Edit dialog)
+                inside the POS settings drawer. Same component the
+                sidebar's Loyalty leaf renders — a cashier admin
+                doesn't have to leave POS Settings to spin up a new
+                Stamp / Point program. */}
+            {section === 'loyalty' && scope === 'pos' && (
+              <Loyalty />
             )}
 
             {section === 'numbering' && (() => {

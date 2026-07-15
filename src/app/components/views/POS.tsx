@@ -21,7 +21,7 @@ import {
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
-import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary } from '../../api/loyalty';
+import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary } from '../../api/loyalty';
 import * as settingsApi from '../../api/accountingSettings';
 import * as posDisplayApi from '../../api/posDisplay';
 import * as paywayApi from '../../api/payway';
@@ -83,6 +83,11 @@ export function POS() {
   // the cart to show balances + apply Point-cost redeems as a cart
   // discount before payment.
   const [loyaltyState, setLoyaltyState] = useState<CustomerLoyaltyState | null>(null);
+  // v-loyalty-mvp — bulk snapshot: one row per customer with a
+  // balance. Keyed by customerId so the customer <Select> can
+  // render "· 230 pts" / "· 3 stamps" inline without a per-row
+  // network round-trip.
+  const [loyaltyBalances, setLoyaltyBalances] = useState<Record<string, CustomerBalanceSummary>>({});
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [taxType, setTaxType] = useState<string | null>(null);
@@ -175,6 +180,17 @@ export function POS() {
         setOpenOrders(open);
         setActiveOrders(active);
         setPosSettings(pos);
+        // v-loyalty-mvp — best-effort balance snapshot for the
+        // customer picker chip. Never blocks POS load on a
+        // loyalty-side hiccup (tenants without any programs get
+        // an empty array anyway).
+        loyaltyPos.balances()
+          .then(rows => {
+            const m: Record<string, CustomerBalanceSummary> = {};
+            for (const r of rows) m[r.customerId] = r;
+            setLoyaltyBalances(m);
+          })
+          .catch(() => setLoyaltyBalances({}));
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Failed to load POS');
       } finally {
@@ -642,9 +658,29 @@ export function POS() {
               // (case + whitespace insensitive) so only the synthetic
               // sentinel remains.
               .filter(c => (c.name ?? '').trim().toLowerCase() !== 'walk-in')
-              .map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
+              .map(c => {
+                // v-loyalty-mvp — inline balance chip on each row.
+                // Show whichever count is non-zero (a customer with
+                // both a Point and a Stamp program renders both).
+                const bal = loyaltyBalances[c.id];
+                return (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{c.name}</span>
+                      {bal && bal.currentPoint > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700">
+                          {bal.currentPoint} pts
+                        </span>
+                      )}
+                      {bal && bal.currentStamp > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
+                          {bal.currentStamp} stamp{bal.currentStamp === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                );
+              })}
           </SelectContent>
         </Select>
       </div>

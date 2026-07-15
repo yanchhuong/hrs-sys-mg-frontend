@@ -99,6 +99,13 @@ export interface RedeemResult {
   remainingStamp: number;
 }
 
+/** Compact per-customer loyalty snapshot for the POS picker chip. */
+export interface CustomerBalanceSummary {
+  customerId: string;
+  currentPoint: number;
+  currentStamp: number;
+}
+
 export const loyaltyPos = {
   /** Fire-and-forget after a POS invoice save. Wrap the caller in
    *  try/catch so a loyalty hiccup never blocks a sale. */
@@ -110,4 +117,7 @@ export const loyaltyPos = {
     apiJson<RedeemResult>(`/api/v1/loyalty/pos/customers/${customerId}/programs/${programId}/apply-reward`, {
       method: 'POST',
     }),
+  /** Bulk snapshot — one row per customer with any balance. */
+  balances: () =>
+    apiJson<CustomerBalanceSummary[]>('/api/v1/loyalty/pos/balances'),
 };
