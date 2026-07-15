@@ -28,7 +28,7 @@ import imgPayroll from '../../imports/image-3.png';
 // Placeholder-copied at first commit; replace with the real photos in
 // src/imports/pos-terminal.png and pos-retail.png.
 import imgPosTerminal from '../../imports/pos-terminal.png';
-import imgPosRetail   from '../../imports/pos-retail.png';
+import imgPosRetail   from '../../imports/pos-retail.jpg';
 
 export type Lang = 'en' | 'km' | 'zh';
 
