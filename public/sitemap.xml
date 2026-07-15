@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemap.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://smart-hrms.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://smart-hrms.com/" />
+    <xhtml:link rel="alternate" hreflang="km" href="https://smart-hrms.com/km" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://smart-hrms.com/zh" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://smart-hrms.com/" />
+  </url>
+  <url>
+    <loc>https://smart-hrms.com/cambodia</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>

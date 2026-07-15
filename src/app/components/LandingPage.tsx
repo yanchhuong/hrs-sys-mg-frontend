@@ -2513,8 +2513,8 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
           component definition stays in this file in case we want it
           back or slotted into another surface. */}
       <Industries lang={lang} />
-      <ModulesGrid lang={lang} />
       <PosShowcase lang={lang} />
+      <ModulesGrid lang={lang} />
       {/* RealProduct (Payroll Preview screenshot section) removed —
           the screenshot showed placeholder $0.00 rows which hurt
           credibility, and the ModulesGrid above already conveys

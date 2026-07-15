@@ -169,7 +169,7 @@ export function Approvals() {
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-end gap-3 flex-wrap">
+          <div className="flex items-center justify-start gap-3 flex-wrap">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
               <TabsList>
                 {STATUS_TABS.map(f => (

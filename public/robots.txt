@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Point crawlers straight at the sitemap so /km + /zh + /cambodia
+# get indexed on the first crawl instead of after link-graph
+# discovery. Update the hostname if the deploy target changes.
+Sitemap: https://smart-hrms.com/sitemap.xml
