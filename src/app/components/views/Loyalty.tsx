@@ -43,10 +43,13 @@ export function Loyalty() {
     try {
       const [list, itemList] = await Promise.all([
         loyalty.list(),
-        itemsApi.list({ size: 500 }).catch(() => ({ rows: [] as Item[] })),
+        itemsApi.list({ size: 500 }).catch(() => ({ content: [] as Item[] })),
       ]);
       setRows(list);
-      setItems('rows' in itemList ? itemList.rows : (itemList as unknown as Item[]));
+      // itemsApi.list returns a PagedResponse<Item> with `content`.
+      // Coerce defensively so a shape change doesn't crash the memo
+      // below with "items is not iterable".
+      setItems(Array.isArray(itemList?.content) ? itemList.content : []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load programs');
     } finally {
@@ -79,7 +82,7 @@ export function Loyalty() {
       await loyalty.update(r.id, {
         name: r.name, type: r.type, active: !r.active,
         rewardType: r.rewardType, buyQuantity: r.buyQuantity, rewardQuantity: r.rewardQuantity,
-        rewardItemId: r.rewardItemId, earnPointPerAmount: r.earnPointPerAmount,
+        rewardItemIds: r.rewardItemIds, earnPointPerAmount: r.earnPointPerAmount,
         earnPointPerItem: r.earnPointPerItem, redeemPointCost: r.redeemPointCost,
         redeemDiscountAmount: r.redeemDiscountAmount, minimumAmount: r.minimumAmount,
         expireDays: r.expireDays, startDate: r.startDate, endDate: r.endDate,
@@ -145,10 +148,10 @@ export function Loyalty() {
                           <span>· Redeem {r.redeemPointCost} pts → ${r.redeemDiscountAmount} off</span>
                         )}
                         {r.type === 'STAMP' && r.buyQuantity != null && r.rewardQuantity != null && (
-                          <span>Buy {r.buyQuantity} → get {r.rewardQuantity} free ({itemName.get(r.rewardItemId ?? '') ?? 'item'})</span>
+                          <span>Buy {r.buyQuantity} → get {r.rewardQuantity} free ({itemsLabel(r.rewardItemIds, itemName)})</span>
                         )}
                         {r.type === 'BIRTHDAY' && (
-                          <span>Free {itemName.get(r.rewardItemId ?? '') ?? 'item'} on birthday</span>
+                          <span>Free {itemsLabel(r.rewardItemIds, itemName)} on birthday</span>
                         )}
                       </div>
                     </div>
@@ -192,7 +195,7 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
   const [active, setActive]     = useState(true);
   const [buyQuantity, setBuyQuantity]           = useState<string>('');
   const [rewardQuantity, setRewardQuantity]     = useState<string>('1');
-  const [rewardItemId, setRewardItemId]         = useState<string>('');
+  const [rewardItemIds, setRewardItemIds]       = useState<string[]>([]);
   const [earnPointPerAmount, setEarnPointPerAmount] = useState<string>('1');
   const [redeemPointCost, setRedeemPointCost]   = useState<string>('100');
   const [redeemDiscountAmount, setRedeemDiscountAmount] = useState<string>('5');
@@ -207,14 +210,14 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
       setActive(editing.active);
       setBuyQuantity(str(editing.buyQuantity));
       setRewardQuantity(str(editing.rewardQuantity ?? 1));
-      setRewardItemId(editing.rewardItemId ?? '');
+      setRewardItemIds(editing.rewardItemIds ?? []);
       setEarnPointPerAmount(str(editing.earnPointPerAmount ?? 1));
       setRedeemPointCost(str(editing.redeemPointCost ?? 100));
       setRedeemDiscountAmount(str(editing.redeemDiscountAmount ?? 5));
       setMinimumAmount(str(editing.minimumAmount));
     } else {
       setName(''); setType('POINT'); setActive(true);
-      setBuyQuantity(''); setRewardQuantity('1'); setRewardItemId('');
+      setBuyQuantity(''); setRewardQuantity('1'); setRewardItemIds([]);
       setEarnPointPerAmount('1'); setRedeemPointCost('100'); setRedeemDiscountAmount('5');
       setMinimumAmount('');
     }
@@ -231,7 +234,7 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
         name: name.trim(), type, active, rewardType,
         buyQuantity: type === 'STAMP' ? num(buyQuantity) : null,
         rewardQuantity: type === 'STAMP' ? num(rewardQuantity) : null,
-        rewardItemId: (type === 'STAMP' || type === 'BIRTHDAY') ? (rewardItemId || null) : null,
+        rewardItemIds: (type === 'STAMP' || type === 'BIRTHDAY') ? rewardItemIds : [],
         earnPointPerAmount: type === 'POINT' ? numDec(earnPointPerAmount) : null,
         earnPointPerItem: null,
         redeemPointCost: type === 'POINT' ? num(redeemPointCost) : null,
@@ -315,7 +318,7 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
               </div>
               <div>
                 <Label className="text-xs">Reward item (SKU)</Label>
-                <ItemPicker value={rewardItemId} onChange={setRewardItemId} items={items} />
+                <MultiItemPicker value={rewardItemIds} onChange={setRewardItemIds} items={items} />
               </div>
             </>
           )}
@@ -356,22 +359,75 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
   );
 }
 
-function ItemPicker({ value, onChange, items }: {
-  value: string; onChange: (v: string) => void; items: Item[];
+/**
+ * v-loyalty-multi-reward-items — multi-select item picker. Selected
+ * items render as removable chips above a dropdown of unselected
+ * items. Adding an item clears the dropdown so the operator can
+ * pick another one immediately.
+ */
+function MultiItemPicker({ value, onChange, items }: {
+  value: string[]; onChange: (v: string[]) => void; items: Item[];
 }) {
+  const picked = new Set(value);
+  const nameById = new Map(items.map(i => [i.id, i.name] as const));
+  const remaining = items.filter(i => !picked.has(i.id));
+
+  const add = (id: string) => {
+    if (!id || picked.has(id)) return;
+    onChange([...value, id]);
+  };
+  const remove = (id: string) => {
+    onChange(value.filter(v => v !== id));
+  };
+
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Pick an item…" /></SelectTrigger>
-      <SelectContent>
-        {items.map(i => (
-          <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
-        ))}
-        {items.length === 0 && (
-          <div className="px-2 py-1.5 text-xs text-gray-500">No items yet.</div>
-        )}
-      </SelectContent>
-    </Select>
+    <div className="mt-1 space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map(id => (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-800"
+            >
+              {nameById.get(id) ?? id.slice(0, 8)}
+              <button
+                type="button"
+                onClick={() => remove(id)}
+                className="hover:text-blue-900"
+                aria-label="Remove"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <Select value="" onValueChange={add}>
+        <SelectTrigger className="h-9">
+          <SelectValue placeholder={value.length === 0 ? 'Pick items…' : 'Add another item…'} />
+        </SelectTrigger>
+        <SelectContent>
+          {remaining.map(i => (
+            <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+          ))}
+          {remaining.length === 0 && (
+            <div className="px-2 py-1.5 text-xs text-gray-500">
+              {items.length === 0 ? 'No items yet.' : 'All items already picked.'}
+            </div>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
   );
+}
+
+/** Comma-separated list of item names for row rendering. Truncates
+ *  after 3 to keep row heights reasonable. */
+function itemsLabel(ids: string[] | null | undefined, nameMap: Map<string, string>): string {
+  if (!ids || ids.length === 0) return 'item';
+  const names = ids.map(id => nameMap.get(id) ?? 'item');
+  if (names.length <= 3) return names.join(', ');
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
 }
 
 /* -------------------- helpers -------------------- */

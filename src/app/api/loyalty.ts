@@ -17,7 +17,10 @@ export interface LoyaltyProgram {
   rewardType: RewardType | null;
   buyQuantity: number | null;
   rewardQuantity: number | null;
-  rewardItemId: string | null;
+  /** v-loyalty-multi-reward-items — list of qualifying stock_items
+   *  UUIDs. Any one earns a stamp (STAMP) or fulfils the free item
+   *  (BIRTHDAY). Empty = rule off. */
+  rewardItemIds: string[];
   earnPointPerAmount: number | null;
   earnPointPerItem: number | null;
   redeemPointCost: number | null;
@@ -37,7 +40,7 @@ export interface UpsertLoyaltyProgram {
   rewardType?: RewardType | null;
   buyQuantity?: number | null;
   rewardQuantity?: number | null;
-  rewardItemId?: string | null;
+  rewardItemIds?: string[] | null;
   earnPointPerAmount?: number | null;
   earnPointPerItem?: number | null;
   redeemPointCost?: number | null;
@@ -73,7 +76,7 @@ export interface LoyaltyReward {
   kind: 'discount' | 'free_item';
   pointCost: number | null;
   discountAmount: number | null;
-  rewardItemId: string | null;
+  rewardItemIds: string[];
   label: string;
 }
 
