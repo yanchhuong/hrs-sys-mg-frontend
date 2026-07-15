@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
-import { Building2, Loader2, Plus, RefreshCw, Users, Briefcase, PauseCircle, PlayCircle, ChevronLeft, UserPlus, Link2Off } from 'lucide-react';
+import { Building2, Loader2, Plus, RefreshCw, Users, Briefcase, PauseCircle, PlayCircle, ChevronLeft, UserPlus, Link2Off, Edit3, Save } from 'lucide-react';
 import * as api from '../../../api/platformAgencies';
 import * as platformApi from '../../../api/platform';
 
@@ -54,11 +54,6 @@ export function Agencies() {
             <Building2 className="h-5 w-5 text-blue-600" />
             Agencies
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            External accounting / tax / audit firms. Each agency spans multiple
-            client Companies via assignments; agency users inherit the whole
-            portfolio through their agency membership.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -288,6 +283,9 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
   const [rows, setRows] = useState<api.AgencyUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  // v-super-admin-edit-agency-user — carries the row being edited
+  // when non-null the EditAgencyUserDialog is mounted + shown.
+  const [editing, setEditing] = useState<api.AgencyUser | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -337,9 +335,15 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
                   </div>
                   <div className="text-xs text-gray-500">{u.email}</div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => toggle(u)}>
-                  {u.isActive ? 'Deactivate' : 'Activate'}
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => setEditing(u)}>
+                    <Edit3 className="h-3.5 w-3.5 mr-1" />
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => toggle(u)}>
+                    {u.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -350,6 +354,11 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
         onOpenChange={setNewOpen}
         agencyId={agencyId}
         onCreated={() => void load()}
+      />
+      <EditAgencyUserDialog
+        user={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => void load()}
       />
     </Card>
   );
@@ -424,6 +433,124 @@ function NewAgencyUserDialog({ open, onOpenChange, agencyId, onCreated }: {
           >
             {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <UserPlus className="h-4 w-4 mr-1.5" />}
             Create user
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * v-super-admin-edit-agency-user — Super Admin edit dialog for an
+ * existing agency user. All fields are patch-shaped on the wire so
+ * blank password leaves the current hash untouched.
+ */
+function EditAgencyUserDialog({ user, onClose, onSaved }: {
+  user: api.AgencyUser | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<api.AgencyUser['role']>('staff');
+  const [isActive, setIsActive] = useState(true);
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    setName(user.userName ?? '');
+    setRole(user.role);
+    setIsActive(user.isActive);
+    setPassword('');
+  }, [user]);
+
+  const submit = async () => {
+    if (!user) return;
+    if (password && password.length < 8) {
+      toast.error('Password must be at least 8 characters (leave blank to keep current).');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.agencyUsers.update(user.id, {
+        name: name.trim() || null,
+        role,
+        isActive,
+        password: password || undefined,
+      });
+      toast.success('Agency user updated');
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!user} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit agency user</DialogTitle>
+          <DialogDescription>
+            Change name / role / active state, or set a new password (min 8 chars,
+            leave blank to keep the current one). Email is the login id and stays
+            fixed — create a new user for an email change.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input value={user?.email ?? ''} disabled className="h-9 text-sm mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Display name</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} className="h-9 text-sm mt-1" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Role</Label>
+              <Select value={role} onValueChange={v => setRole(v as api.AgencyUser['role'])}>
+                <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="partner">Partner</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="senior">Senior</SelectItem>
+                  <SelectItem value="staff">Staff</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Status</Label>
+              <Select value={isActive ? 'active' : 'inactive'} onValueChange={v => setIsActive(v === 'active')}>
+                <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Deactivated</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">New password (leave blank to keep current)</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="(unchanged)"
+              className="h-9 text-sm mt-1"
+              maxLength={100}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving || (!!password && password.length < 8)}>
+            {saving
+              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              : <Save className="h-4 w-4 mr-1.5" />}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

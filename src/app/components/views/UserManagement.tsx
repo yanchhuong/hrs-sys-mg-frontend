@@ -159,7 +159,7 @@ const MODULES: ModuleDef[] = [
   { key: 'quotation',         label: 'Quotation',         description: 'Sale quotes sent to customers (convert to Invoice)',          parent: 'sales' },
   { key: 'invoice',           label: 'Invoice',           description: 'Commercial / Tax invoices + Credit / Debit notes',            parent: 'sales' },
   { key: 'pos',               label: 'POS',               description: 'Counter checkout — orders, queue, draft, checkout',           parent: 'sales' },
-  { key: 'voucher',           label: 'General Voucher',   description: 'Free-of-charge giveaways (charity, donation, sponsorship)',   parent: 'sales' },
+  { key: 'voucher',           label: 'Voucher',           description: 'Free-of-charge giveaways (charity, donation, sponsorship)',   parent: 'sales' },
   // Payment intentionally NOT a matrix row — it has no sidebar leaf
   // (the Pay button lives inside Invoice). The backend's
   // {@code @perm.allow('payment', ...)} gate is still real; admin /

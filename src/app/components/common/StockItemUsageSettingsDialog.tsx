@@ -295,7 +295,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                   <ToggleRow
                     icon={<Receipt className="h-4 w-4" />}
                     label="Voucher"
-                    hint="Show the catalog picker on General Voucher line items."
+                    hint="Show the catalog picker on Voucher line items."
                     value={form.enabledForVoucher}
                     onChange={v => setForm(f => ({ ...f, enabledForVoucher: v }))}
                   />

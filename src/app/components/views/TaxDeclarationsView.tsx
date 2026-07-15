@@ -3,9 +3,12 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react';
+import { FileSpreadsheet, Loader2, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import * as declApi from '../../api/agencyTaxDecl';
 import type { TaxDeclStatus, TaxDeclarationDto } from '../../api/agencyTaxDecl';
+import { PageTitleTooltip } from './agency/PageTitleTooltip';
+import { AgencyAccessDialog } from '../common/AgencyAccessDialog';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_CLS: Record<TaxDeclStatus, string> = {
   draft:     'bg-slate-100 text-slate-700 border-slate-200',
@@ -24,8 +27,11 @@ const STATUS_CLS: Record<TaxDeclStatus, string> = {
  * also surface as filed rows on the Tax Calendar view.
  */
 export function TaxDeclarationsView() {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
   const [rows, setRows] = useState<TaxDeclarationDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,22 +49,33 @@ export function TaxDeclarationsView() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-blue-600" />
-            Tax Declarations
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Read-only view of the tax filings your agency is preparing. Green
-            "submitted" or "accepted" rows have been lodged with GDT — the
-            reference number is shown alongside.
-          </p>
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+          Tax Declarations
+          <PageTitleTooltip label="About Tax Declarations">
+            Read-only view of the tax filings your agency is preparing.
+            Green <b>"submitted"</b> or <b>"accepted"</b> rows have been
+            lodged with GDT — the reference number is shown alongside.
+          </PageTitleTooltip>
+        </h1>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button
+              variant="outline" size="icon"
+              onClick={() => setSettingsOpen(true)}
+              title="Agency access settings"
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
       </div>
+
+      <AgencyAccessDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <Card>
         <CardHeader className="pb-2">

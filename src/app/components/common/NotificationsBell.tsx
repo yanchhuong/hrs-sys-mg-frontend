@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '../ui/button';
@@ -7,6 +7,10 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from '../ui/popover';
 import * as api from '../../api/notifications';
+import { TenantDocCommentDialog } from './TenantDocCommentDialog';
+import type { PortfolioDocType } from '../../api/agencyPortfolioDocs';
+
+const DOC_TYPES = new Set<string>(['invoice', 'bill', 'expense']);
 
 /**
  * Top-bar notification bell — sits between the AppLauncher and
@@ -23,6 +27,10 @@ export function NotificationsBell() {
   const [items, setItems] = useState<api.Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [unread, setUnread] = useState(0);
+  // v-agency-doc-comments-tenant-reply — when a doc-comment
+  // notification is clicked, open the reply dialog scoped to
+  // that Invoice / Bill / Expense.
+  const [replyingTo, setReplyingTo] = useState<{ type: PortfolioDocType; id: string } | null>(null);
 
   const refreshCount = async () => {
     try { setUnread(await api.unreadCount()); } catch { /* soft-fail */ }
@@ -59,6 +67,14 @@ export function NotificationsBell() {
         toast.error(e instanceof Error ? e.message : 'Could not mark as read');
       }
     }
+    // v-agency-doc-comments-tenant-reply — if this ping is an
+    // agency comment on a doc, open the tenant reply dialog so
+    // the user can respond inline. Close the popover so the
+    // dialog isn't hidden behind it.
+    if (n.entityId && n.entityType && DOC_TYPES.has(n.entityType)) {
+      setReplyingTo({ type: n.entityType as PortfolioDocType, id: n.entityId });
+      setOpen(false);
+    }
   };
 
   const onMarkAll = async () => {
@@ -72,6 +88,7 @@ export function NotificationsBell() {
   };
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative h-9 w-9"
@@ -141,17 +158,23 @@ export function NotificationsBell() {
         </div>
       </PopoverContent>
     </Popover>
+    <TenantDocCommentDialog target={replyingTo} onClose={() => setReplyingTo(null)} />
+    </>
   );
 }
 
 function TypeIcon({ type }: { type: api.NotificationType }) {
   const cls = "h-4 w-4 mt-0.5 shrink-0";
-  switch (type) {
+  // Cast — BE ships strings the FE enum doesn't statically list
+  // (e.g. 'doc_comment' from V233); the string is compared here
+  // as a plain value so unknown types just fall through to Inbox.
+  switch (type as string) {
     case 'HOLIDAY':              return <PartyPopper   className={`${cls} text-rose-600`} />;
     case 'NEWS':                 return <Newspaper     className={`${cls} text-blue-600`} />;
     case 'EVENTS':               return <CalendarHeart className={`${cls} text-purple-600`} />;
     case 'encounter_assigned':   return <Stethoscope   className={`${cls} text-emerald-600`} />;
     case 'appointment_assigned': return <CalendarClock className={`${cls} text-emerald-600`} />;
+    case 'doc_comment':          return <MessageCircle className={`${cls} text-blue-600`} />;
     case 'OTHERS':
     default:                     return <Inbox         className={`${cls} text-gray-500`} />;
   }

@@ -107,11 +107,21 @@ export const assignments = {
     apiJson<void>(`/api/v1/platform/agencies/assignments/${assignmentId}/disengage`, { method: 'POST' }),
 };
 
+export interface UpdateAgencyUserRequest {
+  name?: string | null;
+  role?: 'partner' | 'manager' | 'senior' | 'staff';
+  isActive?: boolean;
+  /** Send only when changing the password; blank/undefined keeps the current one. */
+  password?: string;
+}
+
 export const agencyUsers = {
   list:       (agencyId: string) =>
     apiJson<AgencyUser[]>(`/api/v1/platform/agencies/${agencyId}/users`),
   create:     (agencyId: string, req: CreateAgencyUserRequest) =>
     apiJson<AgencyUser>(`/api/v1/platform/agencies/${agencyId}/users`, { method: 'POST', json: req }),
+  update:     (id: string, req: UpdateAgencyUserRequest) =>
+    apiJson<AgencyUser>(`/api/v1/platform/agencies/users/${id}`, { method: 'PATCH', json: req }),
   activate:   (id: string) =>
     apiJson<AgencyUser>(`/api/v1/platform/agencies/users/${id}/activate`, { method: 'POST' }),
   deactivate: (id: string) =>

@@ -497,6 +497,9 @@ export function Employees() {
   const { formatDate } = useDateFormat();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
   const { currentUser } = useAuth();
+  // Underlined-button page-level tab state — mirrors the pattern
+  // used by the agency's Sale & Expense page.
+  const [pageTab, setPageTab] = useState<'roster' | 'documents'>('roster');
   void isAdmin; void isManager;
   // Live-data visibility resolver. The mock-backed canViewEmployee can't
   // see live employee UUIDs, so a manager logging into a fresh DB sees
@@ -1377,17 +1380,17 @@ export function Employees() {
         existingEmails={USE_MOCKS ? employees.map(e => e.email) : rawEmployees.map(e => e.email)}
       />
 
-      {/* Two tabs: the existing roster table, and a tenant-wide
-          documents browser. The roster is the default so existing
-          muscle-memory stays intact; All Documents is opt-in. */}
-      <Tabs defaultValue="roster" className="space-y-4">
+      {/* Two tabs — roster + tenant-wide documents. Uses shadcn
+          Tabs so the underline styling comes from the shared
+          {@code ui/tabs.tsx} theme (single source of truth). */}
+      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'documents')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="roster">
-            <User className="h-4 w-4 mr-1.5" />
+            <User className="h-3.5 w-3.5" />
             Employees
           </TabsTrigger>
           <TabsTrigger value="documents">
-            <FileText className="h-4 w-4 mr-1.5" />
+            <FileText className="h-3.5 w-3.5" />
             All Documents
           </TabsTrigger>
         </TabsList>

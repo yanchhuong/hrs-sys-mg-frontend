@@ -38,6 +38,13 @@ export const agencyDocComments = {
       method: 'POST',
       json: { type, id, body },
     }),
+  /** v-agency-doc-comments-count-col — bulk-count for the Case
+   *  tab's Comments column. Server returns only docs with >0
+   *  comments; the caller treats missing ids as zero. */
+  counts: (type: PortfolioDocType, ids: string[]) =>
+    apiJson<Record<string, number>>('/api/v1/agency/doc-comments/counts', {
+      query: { type, ids: ids.join(',') },
+    }),
 };
 
 export const tenantDocComments = {
@@ -49,5 +56,9 @@ export const tenantDocComments = {
     apiJson<DocCommentDto>('/api/v1/doc-comments', {
       method: 'POST',
       json: { type, id, body },
+    }),
+  counts: (type: PortfolioDocType, ids: string[]) =>
+    apiJson<Record<string, number>>('/api/v1/doc-comments/counts', {
+      query: { type, ids: ids.join(',') },
     }),
 };

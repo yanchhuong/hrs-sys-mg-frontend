@@ -19,7 +19,6 @@ import {
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -258,7 +257,7 @@ export function Vouchers() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-3xl font-bold">General Voucher</h1>
+        <h1 className="text-3xl font-bold">Voucher</h1>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -293,15 +292,24 @@ export function Vouchers() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             <div className="flex items-center gap-3 flex-wrap">
-              <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-                <TabsList>
+              <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
+                <SelectTrigger className="h-8 w-44 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
                   {STATUS_FILTERS.map(f => (
-                    <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.value === 'all' ? (
+                        <span className="text-sm">{f.label}</span>
+                      ) : (
+                        <Badge variant="outline" className={`capitalize text-[10px] px-1.5 py-0 ${STATUS_BADGE_CLASS[f.value as vouchersApi.VoucherStatus]}`}>
+                          {f.label}
+                        </Badge>
+                      )}
+                    </SelectItem>
                   ))}
-                </TabsList>
-              </Tabs>
+                </SelectContent>
+              </Select>
               <Select value={purposeFilter} onValueChange={v => setPurposeFilter(v as typeof purposeFilter)}>
                 <SelectTrigger className="h-8 w-56 text-sm">
                   <SelectValue placeholder="All purposes" />
@@ -745,13 +753,13 @@ function VoucherFormDialog({
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
-            {isEdit ? `Edit ${editing?.voucherNo}` : 'New General Voucher'}
+            {isEdit ? `Edit ${editing?.voucherNo}` : 'New Voucher'}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   className="text-gray-400 hover:text-gray-600"
-                  aria-label="General Voucher description"
+                  aria-label="Voucher description"
                 >
                   <Info className="h-3.5 w-3.5" />
                 </button>

@@ -5,15 +5,19 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import { FileSpreadsheet, Loader2, Plus, RefreshCw, Search, Paperclip } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import * as declApi from '../../../api/agencyTaxDecl';
 import type { TaxDeclStatus, TaxDeclarationDto, TaxDeclCategory, TaxDeclFrequency } from '../../../api/agencyTaxDecl';
 import { CATEGORY_LABELS, formatPeriodForDisplay } from '../../../api/agencyTaxDecl';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { NewTaxDeclarationDialog } from './NewTaxDeclarationDialog';
 import { TaxDeclarationDetailDialog } from './TaxDeclarationDetailDialog';
+import { PageTitleTooltip } from './PageTitleTooltip';
+import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
 
 type FreqTab = 'monthly' | 'annual';
 type CategoryFilter = 'all' | TaxDeclCategory;
+type StatusFilter = 'all' | TaxDeclStatus;
 
 const FREQ_TABS: Array<{ key: FreqTab; label: string; hint: string }> = [
   { key: 'monthly', label: 'Monthly', hint: 'MM-YYYY' },
@@ -21,12 +25,23 @@ const FREQ_TABS: Array<{ key: FreqTab; label: string; hint: string }> = [
 ];
 
 const CATEGORY_FILTERS: Array<{ key: CategoryFilter; label: string }> = [
-  { key: 'all',     label: 'All' },
+  { key: 'all',     label: 'All categories' },
   { key: 'income',  label: 'Income' },
   { key: 'expense', label: 'Expense' },
   { key: 'salary',  label: 'Salary' },
   { key: 'wht',     label: 'Withholding Tax' },
   { key: 'nssf',    label: 'NSSF' },
+];
+
+const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
+  { key: 'all',       label: 'All statuses' },
+  { key: 'draft',     label: 'Draft' },
+  { key: 'prepared',  label: 'Prepared' },
+  { key: 'reviewed',  label: 'Reviewed' },
+  { key: 'approved',  label: 'Approved' },
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'accepted',  label: 'Accepted' },
+  { key: 'rejected',  label: 'Rejected' },
 ];
 
 const STATUS_CLS: Record<TaxDeclStatus, string> = {
@@ -60,7 +75,10 @@ export function AgencyTaxDeclarationsPage() {
   const [loading, setLoading] = useState(false);
   const [freq, setFreq] = useState<FreqTab>('monthly');
   const [category, setCategory] = useState<CategoryFilter>('all');
+  const [status, setStatus] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo,   setDateTo]   = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -89,12 +107,17 @@ export function AgencyTaxDeclarationsPage() {
             : null);
       if (freq !== rowFreq) return false;
       if (category !== 'all' && r.category !== category) return false;
+      if (status !== 'all' && r.status !== status) return false;
+      // Date-range filter — falls back to createdAt so declarations
+      // still show up in "This month" etc. regardless of workflow
+      // status. (Submitted-at date range would exclude drafts.)
+      if ((dateFrom || dateTo) && !inRange(r.createdAt, dateFrom, dateTo)) return false;
       if (q && !r.obligationName.toLowerCase().includes(q)
            && !r.period.toLowerCase().includes(q)
            && !(r.tenantName ?? '').toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, freq, category, search]);
+  }, [rows, freq, category, status, search, dateFrom, dateTo]);
 
   // Count per category within the active frequency tab so the
   // chips are actionable — you see zeros before clicking.
@@ -113,20 +136,20 @@ export function AgencyTaxDeclarationsPage() {
   }, [rows, freq]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-blue-600" />
             Tax Declarations
+            <PageTitleTooltip label="About Tax Declarations">
+              {activeClient
+                ? <>Pipeline for <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>. </>
+                : <>Portfolio pipeline across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. </>}
+              One declaration ↔ many Invoices / Bills / Expenses. Do the monthly
+              filings first, and yearly aggregates fall out the bottom.
+            </PageTitleTooltip>
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {activeClient
-              ? `Pipeline for ${activeClient.tenantName ?? activeClient.tenantSlug}. `
-              : `Portfolio pipeline across ${portfolio.length} client${portfolio.length === 1 ? '' : 's'}. `}
-            One declaration ↔ many Invoices / Bills / Expenses. Do the monthly
-            filings first, and yearly aggregates fall out the bottom.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -162,29 +185,58 @@ export function AgencyTaxDeclarationsPage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            {CATEGORY_FILTERS.map(f => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setCategory(f.key)}
-                className={`px-3 h-8 rounded-md border text-xs font-medium transition ${
-                  category === f.key
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                }`}
-              >
-                {f.label}
-                <span className="ml-1 text-[10px] opacity-70">({categoryCounts[f.key]})</span>
-              </button>
-            ))}
-            <div className="ml-auto relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search obligation / period / client…"
-                className="pl-8 h-9 w-72 text-sm"
+            {/* v-tax-decl-filters-dropdown — Category + Status are
+                dropdowns (chip strip was noisy once we added five
+                categories × seven statuses). Counts stay inline in
+                each dropdown item so the operator sees at a glance
+                which category has open rows for the frequency tab. */}
+            <Select value={category} onValueChange={v => setCategory(v as CategoryFilter)}>
+              <SelectTrigger className="h-9 w-56 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CATEGORY_FILTERS.map(f => (
+                  <SelectItem key={f.key} value={f.key}>
+                    <div className="inline-flex items-center gap-2">
+                      <span>{f.label}</span>
+                      <span className="text-[10px] text-gray-500 tabular-nums">
+                        ({categoryCounts[f.key]})
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={status} onValueChange={v => setStatus(v as StatusFilter)}>
+              <SelectTrigger className="h-9 w-44 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STATUS_FILTERS.map(f => (
+                  <SelectItem key={f.key} value={f.key}>
+                    {f.key === 'all'
+                      ? <span>{f.label}</span>
+                      : (
+                        <Badge className={`border text-[10px] px-1.5 py-0 ${STATUS_CLS[f.key]}`}>
+                          {f.label}
+                        </Badge>
+                      )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex items-center gap-2 flex-wrap">
+              <DateRangeFilter
+                enablePresets
+                defaultStartDate={dateFrom ?? ''}
+                defaultEndDate={dateTo ?? ''}
+                onFilterChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
               />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search obligation / period / client…"
+                  className="pl-8 h-9 w-72 text-sm"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>

@@ -4,16 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import {
-  LayoutDashboard, Briefcase, Calendar, AlertTriangle, FileText,
+  LayoutDashboard, Briefcase, Calendar, AlertTriangle,
   Users, ClipboardCheck, RefreshCw, ArrowRight,
 } from 'lucide-react';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import * as casesApi from '../../../api/agencyCases';
 import * as taxApi from '../../../api/agencyTax';
-import * as delivsApi from '../../../api/agencyDeliverables';
 import type { CaseDto } from '../../../api/agencyCases';
 import type { CalendarEntry } from '../../../api/agencyTax';
-import type { DeliverableDto } from '../../../api/agencyDeliverables';
+import { PageTitleTooltip } from './PageTitleTooltip';
 
 /**
  * v-agency-fe-5 — agency dashboard landing page.
@@ -27,11 +26,9 @@ import type { DeliverableDto } from '../../../api/agencyDeliverables';
  *       so blocking cases jump out</li>
  *   <li><b>Tax obligations</b> — overdue + due-soon counts across all
  *       clients (only meaningful when a client is picked)</li>
- *   <li><b>Deliverables in-flight</b> — draft / submitted / reviewed
- *       stacks so the operator knows where the pipeline is jammed</li>
  * </ul>
  *
- * <p>All data pulled from existing endpoints — no new BE. Refreshes
+ * <p>All data pulled from live BE endpoints (no mocks). Refreshes
  * every ~60s (background poll) so the KPIs stay live without the
  * operator hitting a button.</p>
  */
@@ -39,25 +36,22 @@ export function AgencyDashboardPage() {
   const { portfolio, activeClient, activeClientId } = useAgencyClient();
   const [cases, setCases] = useState<CaseDto[]>([]);
   const [calendar, setCalendar] = useState<CalendarEntry[]>([]);
-  const [deliverables, setDeliverables] = useState<DeliverableDto[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Cases + Deliverables can be fetched portfolio-wide (no
-      // clientTenantId) — agency-side endpoints scope by the JWT's
-      // agencyId. Tax calendar is client-scoped, so we skip it when
-      // no client is picked.
-      const [c, d, tax] = await Promise.all([
+      // Cases is fetched portfolio-wide (no clientTenantId) — the
+      // agency-side endpoint scopes by the JWT's agencyId. Tax
+      // calendar is client-scoped, so we skip it when no client is
+      // picked.
+      const [c, tax] = await Promise.all([
         casesApi.agency.list().catch(() => [] as CaseDto[]),
-        delivsApi.agency.list().catch(() => [] as DeliverableDto[]),
         activeClientId
           ? taxApi.agency.calendar(activeClientId).catch(() => [] as CalendarEntry[])
           : Promise.resolve([] as CalendarEntry[]),
       ]);
       setCases(c);
-      setDeliverables(d);
       setCalendar(tax);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -100,17 +94,6 @@ export function AgencyDashboardPage() {
     return { overdue, dueSoon, filed };
   }, [calendar]);
 
-  const delivKpis = useMemo(() => {
-    let draft = 0, submitted = 0, reviewed = 0, approved = 0;
-    for (const d of deliverables) {
-      if (d.status === 'draft')     draft++;
-      if (d.status === 'submitted') submitted++;
-      if (d.status === 'reviewed')  reviewed++;
-      if (d.status === 'approved')  approved++;
-    }
-    return { draft, submitted, reviewed, approved, inFlight: draft + submitted + reviewed + approved };
-  }, [deliverables]);
-
   const recentCases = useMemo(() => {
     return [...cases]
       .filter(c => c.status !== 'closed')
@@ -126,18 +109,18 @@ export function AgencyDashboardPage() {
   }, [calendar]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <LayoutDashboard className="h-5 w-5 text-blue-600" />
             Agency dashboard
+            <PageTitleTooltip label="About Agency dashboard">
+              {activeClient
+                ? <>Live view for <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>. Refreshes every minute.</>
+                : <>Portfolio overview across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client to see tax-calendar counts here.</>}
+            </PageTitleTooltip>
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {activeClient
-              ? `Live view for ${activeClient.tenantName ?? activeClient.tenantSlug}. Refreshes every minute.`
-              : `Portfolio overview across ${portfolio.length} client${portfolio.length === 1 ? '' : 's'}. Pick a client on the Portfolio page to see tax-calendar counts here.`}
-          </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -145,8 +128,8 @@ export function AgencyDashboardPage() {
         </Button>
       </div>
 
-      {/* Top row — 4 KPI tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Top row — 3 KPI tiles */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KpiTile
           icon={<Users className="h-5 w-5 text-blue-600" />}
           label="Clients"
@@ -170,12 +153,6 @@ export function AgencyDashboardPage() {
               : `${taxKpis.dueSoon} due this week`
           }
           tone={taxKpis.overdue > 0 ? 'danger' : 'default'}
-        />
-        <KpiTile
-          icon={<FileText className="h-5 w-5 text-emerald-600" />}
-          label="Deliverables in flight"
-          value={delivKpis.inFlight}
-          hint={`${delivKpis.draft}D · ${delivKpis.submitted}S · ${delivKpis.reviewed}R · ${delivKpis.approved}A`}
         />
       </div>
 
@@ -257,7 +234,7 @@ export function AgencyDashboardPage() {
 
       {/* Quick nav hint */}
       <div className="text-center text-xs text-gray-400 pt-2">
-        <span>Use the sidebar to open Tasks, Sale &amp; Expense, or Tax Declarations</span>
+        <span>Use the sidebar to open Tasks, Sale &amp; Expense, Tax Declarations, or Settings</span>
         <ArrowRight className="inline h-3 w-3 ml-1" />
       </div>
     </div>

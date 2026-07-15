@@ -8,7 +8,8 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { Loader2, Plus, Paperclip } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
+import { Info, Loader2, Plus, Paperclip } from 'lucide-react';
 import * as declApi from '../../../api/agencyTaxDecl';
 import type { TaxDeclCategory, LinkedDoc } from '../../../api/agencyTaxDecl';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
@@ -174,11 +175,32 @@ export function NewTaxDeclarationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
-          <DialogTitle>New tax declaration</DialogTitle>
-          <DialogDescription>
-            Starts in <b>draft</b>. Attach the source Invoices / Bills / Expenses
-            below; the reviewer chain kicks in when you send it up. On <b>submit-to-GDT</b>
-            the Tax Calendar row auto-flips to filed.
+          <DialogTitle className="flex items-center gap-1.5">
+            New tax declaration
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={0}
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="About new tax declaration"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Starts in <b>draft</b>. Attach the source Invoices / Bills / Expenses
+                  below; the reviewer chain kicks in when you send it up. On <b>submit-to-GDT</b>
+                  the Tax Calendar row auto-flips to filed.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </DialogTitle>
+          {/* sr-only description — Radix Dialog announces this via
+              aria-describedby; the visual explainer moved into the
+              Info tooltip beside the title. */}
+          <DialogDescription className="sr-only">
+            Create a draft tax declaration; attach source Invoices, Bills, or Expenses.
           </DialogDescription>
         </DialogHeader>
 

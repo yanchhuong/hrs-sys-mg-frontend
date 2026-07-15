@@ -206,7 +206,7 @@ export function Vendors() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             <div className="flex items-center gap-1.5">
               {TYPE_FILTERS.map(f => (
                 <button

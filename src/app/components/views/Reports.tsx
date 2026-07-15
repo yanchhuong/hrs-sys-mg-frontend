@@ -1208,7 +1208,7 @@ function AttendanceDetailTable({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
           <CardTitle className="text-base flex items-center gap-2 flex-wrap">
             <FileText className="h-4 w-4" />
             Detailed Records
@@ -1548,7 +1548,7 @@ function PayrollDetailTable({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
           <CardTitle className="text-base flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Detailed Records

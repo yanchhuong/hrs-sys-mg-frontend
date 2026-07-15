@@ -131,7 +131,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
 
   return (
     <div className="p-6 space-y-6 print:p-0 print:space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
+      <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible print:hidden">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-gray-500" />
           <h1 className="text-2xl font-semibold">{t('nav.reports.profit_loss')}</h1>

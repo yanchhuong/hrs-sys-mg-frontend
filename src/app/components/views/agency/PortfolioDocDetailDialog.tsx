@@ -8,8 +8,9 @@ import { Textarea } from '../../ui/textarea';
 import { Badge } from '../../ui/badge';
 import {
   FileText, Receipt as ReceiptIcon, Wallet, Loader2, Send, MessageCircle, Building2, Lock,
+  FileSpreadsheet,
 } from 'lucide-react';
-import type { PortfolioDoc, PortfolioDocDetail, PortfolioDocType } from '../../../api/agencyPortfolioDocs';
+import type { PortfolioDoc, PortfolioDocDetail, PortfolioDocTaxRef, PortfolioDocType } from '../../../api/agencyPortfolioDocs';
 import { portfolioDocs } from '../../../api/agencyPortfolioDocs';
 import { agencyDocComments, type DocCommentDto } from '../../../api/agencyDocComments';
 
@@ -49,6 +50,9 @@ const DOC_STATUS_CLS: Record<string, string> = {
 export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
   const [detail, setDetail] = useState<PortfolioDocDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  // v-agency-case-tax-ref-col — fetched separately alongside detail
+  // so the badge appears even before the full detail lands.
+  const [taxRef, setTaxRef] = useState<PortfolioDocTaxRef | null>(null);
 
   const [comments, setComments] = useState<DocCommentDto[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -87,10 +91,16 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
       setDetail(null);
       setComments([]);
       setDraft('');
+      setTaxRef(null);
       return;
     }
     void loadDetail();
     void loadComments();
+    // Fetch tax ref (if declared) alongside detail so the header
+    // badge shows immediately.
+    portfolioDocs.taxRefs(seed.type, [seed.id])
+      .then(refs => setTaxRef(refs[seed.id] ?? null))
+      .catch(() => setTaxRef(null));
   }, [seed, loadDetail, loadComments]);
 
   const send = async () => {
@@ -115,12 +125,21 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
     <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex items-center gap-2 text-base flex-wrap">
             {typeMeta?.icon}
             {typeMeta?.label} · {seed?.docNo}
             <Badge className="border border-amber-200 bg-amber-50 text-amber-700 text-[10px] px-1.5 py-0 inline-flex items-center gap-1">
               <Lock className="h-2.5 w-2.5" /> Read-only
             </Badge>
+            {taxRef && (
+              <Badge
+                className="border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0 inline-flex items-center gap-1"
+                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + new Date(taxRef.submittedAt).toLocaleDateString() : ''}`}
+              >
+                <FileSpreadsheet className="h-2.5 w-2.5" />
+                Declared · GDT {taxRef.gdtReferenceNo}
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription className="inline-flex items-center gap-1.5 text-xs">
             <Building2 className="h-3.5 w-3.5" />

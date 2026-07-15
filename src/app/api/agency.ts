@@ -36,6 +36,10 @@ export interface AgencyClient {
   tenantName: string | null;
   scope: 'full' | 'tax' | 'audit' | 'bookkeeping';
   isPrimary: boolean;
+  /** v-tenant-request-disconnect — 'active' | 'disconnect_pending'.
+   *  Workspace shows a read-only banner + disables write actions
+   *  when this is disconnect_pending. */
+  status: 'active' | 'disconnect_pending';
 }
 
 export async function me(): Promise<AgencyMeResponse> {

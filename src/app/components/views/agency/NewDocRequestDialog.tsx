@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -134,11 +134,6 @@ export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCre
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Request a document</DialogTitle>
-          <DialogDescription>
-            The tenant admin sees this in their Document Center inbox with a
-            bell ping. Once they upload, you review and either accept or send
-            it back with a note.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

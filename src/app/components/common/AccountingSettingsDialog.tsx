@@ -328,7 +328,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
               : scope === 'quotation' ? 'Quotation Settings'
               : scope === 'pos'       ? 'POS Settings'
               : scope === 'hospital'  ? 'Encounter Settings'
-              :                         'General Voucher Settings';
+              :                         'Voucher Settings';
   const sideLabel = scope === 'sale'      ? 'Invoice'
                   : scope === 'purchase'  ? 'Bill'
                   : scope === 'receipt'   ? 'Expense'

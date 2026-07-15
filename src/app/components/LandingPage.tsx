@@ -24,6 +24,11 @@ import {
 // The other two screenshots in src/imports contain real employee names and
 // must not be surfaced on the marketing page.
 import imgPayroll from '../../imports/image-3.png';
+// POS hardware + retail-checkout shots for the Accounting/POS visual break.
+// Placeholder-copied at first commit; replace with the real photos in
+// src/imports/pos-terminal.png and pos-retail.png.
+import imgPosTerminal from '../../imports/pos-terminal.png';
+import imgPosRetail   from '../../imports/pos-retail.png';
 
 export type Lang = 'en' | 'km' | 'zh';
 
@@ -1398,7 +1403,7 @@ function ModulesGrid({ lang }: { lang: Lang }) {
                    km: 'កត់ត្រាសាច់ប្រាក់ + ធនាគារ + កាត; បង្ហាញ KHQR លើអេក្រង់អតិថិជន; ភ្ជាប់ PayWay (ABA) ពេលវេលាជាក់ស្តែង។',
                    zh: '记录现金/银行/卡支付；客显展示 KHRQR 扫码；与 PayWay（ABA）实时网关对接。' } },
         { icon: FileMinus,
-          title: { en: 'General Vouchers', km: 'ប័ណ្ណផ្តល់ទូទៅ', zh: '通用凭单' },
+          title: { en: 'Vouchers', km: 'ប័ណ្ណផ្តល់', zh: '凭单' },
           desc:  { en: 'Free-of-charge giveaways: charity, donation, sponsorship, promo. Printed with the right per-purpose title and customer block.',
                    km: 'ប័ណ្ណផ្តល់ឥតគិតថ្លៃ៖ សប្បុរសធម៌ អំណោយ ឧបត្ថម្ភ ប្រូម៉ូសិន។ បោះពុម្ពតាមចំណងជើងសម្រាប់គោលបំណង។',
                    zh: '免费赠送：慈善、捐赠、赞助、推广等，按用途自动套用对应抬头与客户区块。' } },
@@ -2411,6 +2416,76 @@ function LandingFooter({ lang }: { lang: Lang }) {
   );
 }
 
+/**
+ * POS visual band — two side-by-side photos (POS terminal hardware +
+ * retail-checkout scene) that sit between the Modules grid and How-
+ * It-Works. Reinforces that the Accounting module ships with a real
+ * point-of-sale flow, not just Invoice/Bill CRUD. Both images are
+ * loaded from src/imports.
+ */
+function PosShowcase({ lang }: { lang: Lang }) {
+  const copy = {
+    eyebrow: { en: 'Point of Sale',
+               km: 'ការទូទាត់នៅបញ្ជរ',
+               zh: '门店收银' },
+    title:   { en: 'Retail-ready POS on the same platform',
+               km: 'ប្រព័ន្ធ POS សម្រាប់ការលក់រាយ លើវេទិកាតែមួយ',
+               zh: '零售就绪的 POS，与其他模块共用一平台' },
+    desc:    { en: 'One database powers checkout, invoicing, and inventory. Barcode scanner, cash drawer, receipt printer — plug the hardware in, log the cashier in, ring the first sale in minutes.',
+               km: 'ទិន្នន័យតែមួយ គ្រប់គ្រងការទូទាត់ វិក្កយបត្រ និងស្តុក។ ស្កែនបាកូដ ថតលុយ ម៉ាស៊ីនបោះពុម្ពវិក្កយបត្រ — ដោតប្រើភ្លាម។',
+               zh: '同一数据库统一收银、开票与库存。条码枪、钱柜、小票打印机即插即用。' },
+    hwCap:   { en: 'All-in-one POS terminal with cash drawer, keyboard, and receipt printer',
+               km: 'ស្ថានីយ៍ POS ពេញលេញ (ថតលុយ · ក្ដារចុច · ម៉ាស៊ីនបោះពុម្ព)',
+               zh: '一体化 POS 终端（现金抽屉、键盘、打印机）' },
+    liveCap: { en: 'Live retail checkout — card reader, scanner, receipt printer wired to the same tenant.',
+               km: 'ការទូទាត់ជាក់ស្ដែងក្នុងហាង — កម្មវិធីអានកាត ស្កែន និងម៉ាស៊ីនបោះពុម្ព។',
+               zh: '实景收银 — 刷卡机、扫码枪与打印机共用同一租户。' },
+  };
+  return (
+    <section className="bg-slate-50/60 py-20 sm:py-24">
+      <Container>
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>{t(copy.eyebrow, lang)}</Eyebrow>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            {t(copy.title, lang)}
+          </h2>
+          <p className="mt-4 text-base leading-relaxed text-slate-600">{t(copy.desc, lang)}</p>
+        </div>
+
+        <div className="mt-14 grid gap-6 lg:grid-cols-2">
+          <figure className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="aspect-[4/3] overflow-hidden bg-slate-50">
+              <img
+                src={imgPosTerminal}
+                alt={t(copy.hwCap, lang)}
+                loading="lazy"
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <figcaption className="border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-xs font-medium text-slate-600">
+              {t(copy.hwCap, lang)}
+            </figcaption>
+          </figure>
+
+          <figure className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="aspect-[4/3] overflow-hidden bg-slate-50">
+              <img
+                src={imgPosRetail}
+                alt={t(copy.liveCap, lang)}
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <figcaption className="border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-xs font-medium text-slate-600">
+              {t(copy.liveCap, lang)}
+            </figcaption>
+          </figure>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
 export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
   // Drive the landing language off the global I18nContext so the toggle here
   // also flips the html.lang-km class (which triggers Khmer typography) and
@@ -2439,6 +2514,7 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
           back or slotted into another surface. */}
       <Industries lang={lang} />
       <ModulesGrid lang={lang} />
+      <PosShowcase lang={lang} />
       {/* RealProduct (Payroll Preview screenshot section) removed —
           the screenshot showed placeholder $0.00 rows which hurt
           credibility, and the ModulesGrid above already conveys

@@ -693,54 +693,59 @@ export function Invoices({
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            {/* Kind tabs — hidden when a fixedKind is pinned (Encounter
-                lens narrows the list to a single kind, so the switcher
-                would be dead controls). */}
-            {!fixedKind && (
-              <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
-                <TabsList>
-                  {KIND_FILTERS.map(f => (
-                    <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            )}
-            <div className="flex items-center gap-2">
-              {/* Date range — inclusive, either end may be open. Backend
-                  returns the most recent rows; the range narrows the
-                  loaded page so HR doesn't need to re-fetch per scrub. */}
-              <Label className="text-xs text-gray-500">From</Label>
-              <DateInput
-                value={dateFrom || null}
-                onChange={v => setDateFrom(v ?? '')}
-                max={dateTo || undefined}
-              />
-              <Label className="text-xs text-gray-500">To</Label>
-              <DateInput
-                value={dateTo || null}
-                onChange={v => setDateTo(v ?? '')}
-                min={dateFrom || undefined}
-              />
-              {(dateFrom || dateTo) && (
-                <Button
-                  size="sm" variant="ghost" className="h-8 text-xs"
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
-                >
-                  Clear
-                </Button>
+          {/* v-mobile-scrollable-filter-strip — on mobile the row
+              stays on ONE line and the container scrolls
+              horizontally; on sm: falls back to the original
+              justify-between + flex-wrap. Same treatment across
+              every list page (Bills, Quotations, Vendors, ...). */}
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+              {/* Kind tabs — hidden when a fixedKind is pinned (Encounter
+                  lens narrows the list to a single kind, so the switcher
+                  would be dead controls). */}
+              {!fixedKind && (
+                <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
+                  <TabsList>
+                    {KIND_FILTERS.map(f => (
+                      <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
               )}
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search invoice no, customer, notes…"
-                  className="h-8 pl-7 w-64 text-sm"
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Date range — inclusive, either end may be open. Backend
+                    returns the most recent rows; the range narrows the
+                    loaded page so HR doesn't need to re-fetch per scrub. */}
+                <Label className="text-xs text-gray-500">From</Label>
+                <DateInput
+                  value={dateFrom || null}
+                  onChange={v => setDateFrom(v ?? '')}
+                  max={dateTo || undefined}
                 />
+                <Label className="text-xs text-gray-500">To</Label>
+                <DateInput
+                  value={dateTo || null}
+                  onChange={v => setDateTo(v ?? '')}
+                  min={dateFrom || undefined}
+                />
+                {(dateFrom || dateTo) && (
+                  <Button
+                    size="sm" variant="ghost" className="h-8 text-xs"
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  >
+                    Clear
+                  </Button>
+                )}
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                  <Input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search invoice no, customer, notes…"
+                    className="h-8 pl-7 w-64 text-sm"
+                  />
+                </div>
               </div>
             </div>
-          </div>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (

@@ -593,7 +593,11 @@ export function Bills() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* v-mobile-scrollable-filter-strip — on mobile the row
+              stays on ONE line and the container scrolls
+              horizontally; on sm: falls back to the original
+              justify-between + flex-wrap. */}
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
               <TabsList>
                 {KIND_FILTERS.map(f => (

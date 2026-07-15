@@ -45,7 +45,7 @@ function sourceLabel(t: string): string {
     case 'exception':    return 'Attendance Exception';
     // Sale + Purchase chain gates (V172 Phase 3b + V176).
     case 'quotation':    return 'Quotation';
-    case 'voucher':      return 'General Voucher';
+    case 'voucher':      return 'Voucher';
     case 'bill':         return 'Bill';
     case 'receipt':      return 'Expense';
     // Payroll batch — the legacy per-batch approver flow now also

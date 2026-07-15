@@ -71,4 +71,20 @@ export const portfolioDocs = {
    *  engagement. */
   get: (type: PortfolioDocType, id: string) =>
     apiJson<PortfolioDocDetail>(`/api/v1/agency/portfolio-docs/${type}/${id}`),
+
+  /** v-agency-case-tax-ref-col — bulk map docId → GDT ref for
+   *  docs that have been included in a submitted/accepted tax
+   *  declaration. Missing docIds mean "not yet declared". */
+  taxRefs: (type: PortfolioDocType, ids: string[]) =>
+    apiJson<Record<string, PortfolioDocTaxRef>>('/api/v1/agency/portfolio-docs/tax-refs', {
+      query: { type, ids: ids.join(',') },
+    }),
 };
+
+export interface PortfolioDocTaxRef {
+  declarationId: string;
+  gdtReferenceNo: string;
+  status: 'submitted' | 'accepted';
+  submittedAt: string | null;
+  period: string;
+}

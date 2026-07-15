@@ -513,7 +513,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             {/* Type filter tabs — Individual / Business / All. Hidden
                 on the Patients + Students lenses: those lenses each
                 pin to a single stored shape so the operator has no

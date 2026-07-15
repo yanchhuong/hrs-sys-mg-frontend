@@ -71,3 +71,16 @@ export const tasks = {
     apiJson<TaskDto>(`/api/v1/agency/tasks/${id}/status`, { method: 'POST', json: { status } }),
   del:       (id: string) => apiJson<void>(`/api/v1/agency/tasks/${id}`, { method: 'DELETE' }),
 };
+
+/* -------------------- agency members (assignee picker) -------------------- */
+
+export interface AgencyMember {
+  id: string;
+  email: string;
+  displayName: string;
+  role: string;
+}
+
+export const members = {
+  list: () => apiJson<AgencyMember[]>('/api/v1/agency/members'),
+};

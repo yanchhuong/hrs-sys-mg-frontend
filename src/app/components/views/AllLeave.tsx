@@ -629,7 +629,7 @@ export function AllLeave() {
               Leave Type filter on the right. Page title above the card
               already labels the section so the redundant "All Leave"
               card title is dropped. */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <TabsList>
                 <TabsTrigger value="all">

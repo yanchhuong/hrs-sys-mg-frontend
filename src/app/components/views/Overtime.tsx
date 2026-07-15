@@ -1019,7 +1019,7 @@ export function Overtime() {
           {/* Tabs + search share a single row, mirroring AllLeave.
               The by-employee tab swaps the search for the rate hint
               since that view doesn't filter by keyword. */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
               <TabsList>
                 <TabsTrigger value="by-request">By Request</TabsTrigger>

@@ -11,6 +11,8 @@ import type { TaskDto, TaskPriority, TaskStatus } from '../../../api/agencyTasks
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { useAuth } from '../../../context/AuthContext';
 import { TaskDialog } from './TaskDialog';
+import { PageTitleTooltip } from './PageTitleTooltip';
+import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
 
 type Tab = 'all' | 'todo' | 'in_progress' | 'blocked' | 'done';
 
@@ -50,6 +52,8 @@ export function AgencyTasksPage() {
   const [tab, setTab] = useState<Tab>('todo');
   const [scope, setScope] = useState<'portfolio' | 'client' | 'mine'>('portfolio');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo,   setDateTo]   = useState<string | null>(null);
   const [editRow, setEditRow] = useState<TaskDto | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -74,12 +78,15 @@ export function AgencyTasksPage() {
     const q = search.trim().toLowerCase();
     return rows.filter(t => {
       if (tab !== 'all' && t.status !== tab) return false;
+      // Due-date range filter — treats null due dates as excluded
+      // when a range is set (they have no due date to fall inside).
+      if ((dateFrom || dateTo) && !inRange(t.dueDate, dateFrom, dateTo)) return false;
       if (q && !t.title.toLowerCase().includes(q)
            && !(t.tenantName ?? '').toLowerCase().includes(q)
            && !(t.description ?? '').toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, tab, search]);
+  }, [rows, tab, search, dateFrom, dateTo]);
 
   const counts = useMemo(() => {
     const c: Record<Tab, number> = { all: rows.length, todo: 0, in_progress: 0, blocked: 0, done: 0 };
@@ -105,17 +112,18 @@ export function AgencyTasksPage() {
   const openEdit = (t: TaskDto) => { setEditRow(t); setDialogOpen(true); };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <CheckSquare className="h-5 w-5 text-blue-600" />
             Tasks
+            <PageTitleTooltip label="About Tasks">
+              Internal to-dos for the agency. Optionally scope a task to one
+              client, or leave portfolio-wide. Cycle status inline from the
+              row's pill; click a row to edit.
+            </PageTitleTooltip>
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Internal work items. Distinct from Cases (which are client-facing).
-            Optionally scope a task to one client, or leave portfolio-wide.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -132,22 +140,35 @@ export function AgencyTasksPage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={`px-3 h-8 rounded-md border text-xs font-medium transition ${
-                  tab === t.key
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                }`}
-              >
-                {t.label}
-                <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
-              </button>
-            ))}
-            <div className="ml-auto flex items-center gap-2">
+            <Select value={tab} onValueChange={v => setTab(v as Tab)}>
+              <SelectTrigger className="h-9 w-48 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TABS.map(t => (
+                  <SelectItem key={t.key} value={t.key}>
+                    <div className="flex items-center gap-2">
+                      {t.key === 'all' ? (
+                        <span className="text-sm">{t.label}</span>
+                      ) : (
+                        <Badge className={`border text-[10px] px-1.5 py-0 ${STATUS_CLS[t.key as TaskStatus]}`}>
+                          {t.label}
+                        </Badge>
+                      )}
+                      <span className="text-[10px] text-gray-500">({counts[t.key]})</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex items-center gap-2 flex-wrap">
+              {/* v-date-range-filter — filter tasks by due-date range.
+                  Tasks without a due date drop out when a range is
+                  set (nothing to compare against). */}
+              <DateRangeFilter
+                enablePresets
+                defaultStartDate={dateFrom ?? ''}
+                defaultEndDate={dateTo ?? ''}
+                onFilterChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+              />
               <Select value={scope} onValueChange={v => setScope(v as typeof scope)}>
                 <SelectTrigger className="h-9 w-40 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>

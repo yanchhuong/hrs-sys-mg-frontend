@@ -31,6 +31,7 @@ import {
   Settings as SettingsIcon, ShieldCheck, Save, Plus,
   CheckCircle, AlertTriangle, Cloud, CloudOff, CloudDownload, Link2, Link2Off,
   RefreshCw, Eye, EyeOff, Upload, KeyRound, Coins, Loader2, Info,
+  Handshake, FileText, Building2, Search,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
@@ -47,6 +48,11 @@ import { useI18n } from '../../i18n/I18nContext';
 import * as settingsApi from '../../api/settings';
 import { DATE_FORMAT_PRESETS, useDateFormat } from '../../context/DateFormatContext';
 import { USE_MOCKS, API_BASE, apiJson } from '../../api/client';
+import { Textarea } from '../ui/textarea';
+import { Checkbox } from '../ui/checkbox';
+import { tenantAgencyRequests } from '../../api/tenantAgencyRequests';
+import * as TenantAgencyApi from '../../api/tenantAgencyRequests';
+import { PageTitleTooltip } from './agency/PageTitleTooltip';
 
 export function Settings() {
   const { t } = useI18n();
@@ -88,7 +94,15 @@ export function Settings() {
             <ShieldCheck className="mr-2 h-4 w-4" />
             Policy
           </TabsTrigger>
+          <TabsTrigger value="agency">
+            <Handshake className="mr-2 h-4 w-4" />
+            Agency
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="agency" className="space-y-6">
+          <AgencyRequestTab />
+        </TabsContent>
 
         <TabsContent value="policy" className="space-y-6">
           <Card>
@@ -1519,3 +1533,392 @@ function PayWayIntegrationCard() {
     </Card>
   );
 }
+
+/* ================================================================
+ * v-tenant-request-agency — Settings ▸ Agency tab.
+ * ================================================================ */
+
+function AgencyRequestTab() {
+  const [directory, setDirectory] = useState<TenantAgencyApi.AgencyDirectoryItem[]>([]);
+  const [myRequests, setMyRequests] = useState<TenantAgencyApi.MyRequestDto[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState<TenantAgencyApi.AgencyDirectoryItem | null>(null);
+  const [disconnecting, setDisconnecting] = useState<TenantAgencyApi.MyRequestDto | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [d, m] = await Promise.all([
+        tenantAgencyRequests.directory(),
+        tenantAgencyRequests.my(),
+      ]);
+      setDirectory(d);
+      setMyRequests(m);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load agencies');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const filtered = directory.filter(a => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return a.name.toLowerCase().includes(q)
+        || a.slug.toLowerCase().includes(q)
+        || (a.contactEmail ?? '').toLowerCase().includes(q);
+  });
+
+  // Newest engagement row per agency — the BE returns myRequests
+  // sorted DESC by createdAt, so the FIRST match per agencyId is
+  // the current status. Used to tag each directory row with its
+  // actual state (Active / Pending / Declined / Disengaged)
+  // instead of a generic "Requested / engaged" pill.
+  const latestByAgency = new Map<string, TenantAgencyApi.MyRequestDto>();
+  for (const r of myRequests) {
+    if (!latestByAgency.has(r.agencyId)) latestByAgency.set(r.agencyId, r);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="border-b pb-4 space-y-3">
+          <CardTitle className="flex items-center gap-2">
+            <Handshake className="h-5 w-5 text-blue-600" />
+            Request an accounting / tax agency
+            <PageTitleTooltip label="About agency requests">
+              Browse registered agencies below, read their <b>Terms &amp;
+              Agreement</b>, then send a request. Once the agency accepts,
+              they can begin reading your books (Invoices / Bills /
+              Expenses) and preparing your tax filings.
+            </PageTitleTooltip>
+          </CardTitle>
+          <div className="flex items-center gap-2 sm:justify-end sm:flex-wrap overflow-x-auto sm:overflow-visible">
+            <div className="relative flex-1 sm:flex-initial min-w-0">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search agencies…"
+                className="pl-8 h-9 w-full sm:w-64 text-sm"
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading && directory.length === 0 ? (
+            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading agencies…
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 px-6 py-6">
+              {directory.length === 0
+                ? 'No agencies are registered on the platform yet.'
+                : 'No agencies match this filter.'}
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {filtered.map(a => (
+                <li key={a.id} className="px-6 py-3 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold shrink-0">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900">{a.name}</div>
+                    <div className="text-[11px] text-gray-500 truncate">
+                      {[a.contactEmail, a.contactPhone, a.country].filter(Boolean).join(' · ')
+                        || a.slug}
+                    </div>
+                    {a.termsAndConditions ? (
+                      <div className="mt-1 text-[11px] text-emerald-700 inline-flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        Terms &amp; Agreement published
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[11px] text-amber-700 inline-flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        No Terms &amp; Agreement published — request will only carry the platform default.
+                      </div>
+                    )}
+                  </div>
+                  {(() => {
+                    const my = latestByAgency.get(a.id);
+                    // Live engagement (pending/active) OR a prior
+                    // declined/disengaged history — surface the
+                    // status pill; no Request button.
+                    if (my) {
+                      return (
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <RequestStatusBadge status={my.status} />
+                          <span className="text-[10px] text-gray-500">
+                            Sent {new Date(my.createdAt).toLocaleDateString()}
+                            {my.initiatedBy !== 'tenant' && (
+                              <> · by {my.initiatedBy === 'super_admin' ? 'Super Admin' : 'Agency'}</>
+                            )}
+                          </span>
+                          {my.status === 'declined' && my.declineReason && (
+                            <span className="text-[10px] text-rose-600 max-w-[220px] text-right">
+                              {my.declineReason}
+                            </span>
+                          )}
+                          {my.status === 'active' && (
+                            <Button
+                              size="sm" variant="outline"
+                              className="h-7 text-[11px] px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
+                              onClick={() => setDisconnecting(my)}
+                            >
+                              Request disconnect
+                            </Button>
+                          )}
+                          {my.status === 'disconnect_pending' && (
+                            <span className="text-[10px] text-amber-700 max-w-[220px] text-right">
+                              Awaiting agency to accept disconnect. Their workspace is read-only until then.
+                            </span>
+                          )}
+                        </div>
+                      );
+                    }
+                    return (
+                      <Button size="sm" className="shrink-0" onClick={() => setPicked(a)}>
+                        Read terms &amp; Request
+                      </Button>
+                    );
+                  })()}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <RequestAgencyDialog
+        agency={picked}
+        onClose={() => setPicked(null)}
+        onSubmitted={() => { setPicked(null); void load(); }}
+      />
+
+      <DisconnectAgencyDialog
+        request={disconnecting}
+        onClose={() => setDisconnecting(null)}
+        onSubmitted={() => { setDisconnecting(null); void load(); }}
+      />
+    </div>
+  );
+}
+
+/**
+ * v-tenant-request-disconnect — confirm-and-reason dialog. On
+ * submit the engagement flips to disconnect_pending. Until the
+ * agency Partner accepts, the tenant retains full write access
+ * on their OWN data plane; only the agency's write endpoints
+ * against this Company are frozen.
+ */
+function DisconnectAgencyDialog({
+  request, onClose, onSubmitted,
+}: {
+  request: TenantAgencyApi.MyRequestDto | null;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const open = !!request;
+
+  useEffect(() => { if (request) setReason(''); }, [request]);
+
+  const submit = async () => {
+    if (!request) return;
+    setSaving(true);
+    try {
+      await tenantAgencyRequests.requestDisconnect(request.id, reason.trim() || undefined);
+      toast.success('Disconnect requested — the agency will accept from their Clients page.');
+      onSubmitted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to submit disconnect');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            Request disconnect — {request?.agencyName}
+          </DialogTitle>
+          <DialogDescription>
+            You are asking the agency to end this engagement. Once submitted,
+            the agency's workspace for your Company becomes <b>read-only</b>
+            (view only — no new cases, tasks, tax declarations, or comments)
+            until a Partner accepts the disconnect. After they accept, the
+            agency can no longer read your data.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 text-sm">
+          <Label className="text-xs">Reason (optional)</Label>
+          <Textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="e.g. Closing the business, switching agencies, contract expiry…"
+            className="text-sm"
+            maxLength={2000}
+            rows={3}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button
+            onClick={submit} disabled={saving}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+          >
+            {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            Request disconnect
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RequestStatusBadge({ status }: { status: TenantAgencyApi.EngagementStatus }) {
+  const cls: Record<TenantAgencyApi.EngagementStatus, string> = {
+    pending:             'border-amber-200 bg-amber-50 text-amber-700',
+    active:              'border-emerald-200 bg-emerald-50 text-emerald-700',
+    declined:            'border-rose-200 bg-rose-50 text-rose-700',
+    disengaged:          'border-slate-200 bg-slate-50 text-slate-600',
+    disconnect_pending:  'border-amber-300 bg-amber-100 text-amber-800',
+  };
+  const label: Record<TenantAgencyApi.EngagementStatus, string> = {
+    pending: 'Pending', active: 'Active', declined: 'Declined',
+    disengaged: 'Disengaged',
+    disconnect_pending: 'Disconnect pending',
+  };
+  return (
+    <Badge variant="outline" className={`text-[10px] shrink-0 ${cls[status]}`}>
+      {label[status]}
+    </Badge>
+  );
+}
+
+function RequestAgencyDialog({
+  agency, onClose, onSubmitted,
+}: {
+  agency: TenantAgencyApi.AgencyDirectoryItem | null;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [agreed, setAgreed] = useState(false);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [scrolledToBottom, setScrolledToBottom] = useState(false);
+  const open = !!agency;
+
+  useEffect(() => {
+    if (!agency) return;
+    setAgreed(false);
+    setNote('');
+    // If the agency has no T&C published we can't require a scroll,
+    // so treat that case as "bottom reached" up front.
+    setScrolledToBottom(!agency.termsAndConditions);
+  }, [agency]);
+
+  const submit = async () => {
+    if (!agency) return;
+    setSaving(true);
+    try {
+      await tenantAgencyRequests.request({
+        agencyId: agency.id,
+        acceptedTerms: true,
+        note: note.trim() || undefined,
+      });
+      toast.success('Request sent — the agency will decide from their Clients page.');
+      onSubmitted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to submit request');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Handshake className="h-4 w-4 text-blue-600" />
+            Terms &amp; Agreement — {agency?.name}
+          </DialogTitle>
+          <DialogDescription>
+            Read the full agreement before submitting. Once accepted, the
+            agency will be able to see your Invoices, Bills, and Expenses
+            once they approve your request.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div
+          className="max-h-72 overflow-y-auto border rounded-md p-3 text-xs leading-relaxed whitespace-pre-wrap bg-gray-50"
+          onScroll={e => {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) {
+              setScrolledToBottom(true);
+            }
+          }}
+        >
+          {agency?.termsAndConditions ?? (
+            <span className="italic text-gray-500">
+              This agency has not published a Terms &amp; Agreement yet.
+              Your request will proceed under the platform's standard
+              engagement terms; the agency may attach their own terms
+              before accepting.
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <Label className="text-xs">Optional note to the agency</Label>
+          <Textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="Anything you want them to know upfront?"
+            className="text-sm"
+            maxLength={2000}
+            rows={3}
+          />
+          <label className="flex items-center gap-2 text-xs mt-1 cursor-pointer">
+            <Checkbox
+              checked={agreed}
+              onCheckedChange={v => setAgreed(!!v)}
+              disabled={!scrolledToBottom}
+            />
+            <span>
+              I have read and agree to the <b>Terms &amp; Agreement</b> above.
+              {!scrolledToBottom && agency?.termsAndConditions && (
+                <span className="text-gray-500 ml-1">(scroll to the end to enable)</span>
+              )}
+            </span>
+          </label>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving || !agreed}>
+            {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            Send request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+

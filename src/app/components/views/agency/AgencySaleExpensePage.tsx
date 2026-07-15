@@ -5,19 +5,24 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import { Textarea } from '../../ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import {
   Loader2, Plus, RefreshCw, Search, Wallet, FileSearch, FileText,
   CheckCircle2, XCircle, Clock, Inbox, Download, Receipt as ReceiptIcon,
+  MessageCircle, FileSpreadsheet,
 } from 'lucide-react';
 import * as docsApi from '../../../api/agencyDocs';
 import type { DocStatus, DocumentRequestDto, DocCategory } from '../../../api/agencyDocs';
-import { portfolioDocs, type PortfolioDoc, type PortfolioDocType } from '../../../api/agencyPortfolioDocs';
+import { portfolioDocs, type PortfolioDoc, type PortfolioDocType, type PortfolioDocTaxRef } from '../../../api/agencyPortfolioDocs';
+import { agencyDocComments } from '../../../api/agencyDocComments';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { NewDocRequestDialog } from './NewDocRequestDialog';
 import { PortfolioDocDetailDialog } from './PortfolioDocDetailDialog';
+import { PageTitleTooltip } from './PageTitleTooltip';
+import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
 
 type TopTab = 'case' | 'documents';
 type DocKindFilter = 'all' | PortfolioDocType;
@@ -48,6 +53,23 @@ const DOC_STATUS_CLS: Record<string, string> = {
   returned:   'bg-purple-100 text-purple-700 border-purple-200',
   refunded:   'bg-purple-100 text-purple-700 border-purple-200',
 };
+
+/**
+ * Bug fix: bills + expenses on the tenant side display non-terminal
+ * statuses (draft / progress / partially / overdue) as the collapsed
+ * label "progress" — that's the V98 two-state Progress → Paid model
+ * mirrored in {@code views/Bills.tsx} and {@code views/Receipts.tsx}.
+ * The agency side was rendering the raw stored value ("draft") which
+ * disagreed visually with what the tenant sees on their own page.
+ * Invoices don't collapse — Sale side keeps the raw enum verbatim.
+ */
+function displayStatus(type: string, raw: string): string {
+  const collapse = new Set(['draft', 'progress', 'partially', 'overdue']);
+  if ((type === 'bill' || type === 'expense') && collapse.has(raw)) {
+    return 'progress';
+  }
+  return raw;
+}
 
 const DOC_TYPE_META: Record<PortfolioDocType, { label: string; cls: string }> = {
   invoice: { label: 'Invoice', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -102,6 +124,17 @@ export function AgencySaleExpensePage() {
   const [docs, setDocs] = useState<PortfolioDoc[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [docSearch, setDocSearch] = useState('');
+  // v-date-range-filter — issue-date range for the Case tab.
+  const [docDateFrom, setDocDateFrom] = useState<string | null>(null);
+  const [docDateTo,   setDocDateTo]   = useState<string | null>(null);
+  // v-agency-doc-comments-count-col — comment count per (type:id).
+  // Populated after loadDocs via a single bulk endpoint call per
+  // doc-type present in the list.
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  // v-agency-case-tax-ref-col — GDT reference per (type:id) for
+  // docs that have been declared in a submitted/accepted tax
+  // declaration. Missing keys = "not yet declared".
+  const [taxRefs, setTaxRefs] = useState<Record<string, PortfolioDocTaxRef>>({});
 
   // Row-click detail dialog (Case tab) — carries the seed row that
   // was clicked so the dialog can render immediately while the full
@@ -113,6 +146,9 @@ export function AgencySaleExpensePage() {
   const [reqsLoading, setReqsLoading] = useState(false);
   const [reqTab, setReqTab] = useState<DocReqTab>('uploaded');
   const [reqSearch, setReqSearch] = useState('');
+  // v-date-range-filter — created-date range for the Documents tab.
+  const [reqDateFrom, setReqDateFrom] = useState<string | null>(null);
+  const [reqDateTo,   setReqDateTo]   = useState<string | null>(null);
   const [newReqOpen, setNewReqOpen] = useState(false);
   const [rejectRow, setRejectRow] = useState<DocumentRequestDto | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -125,6 +161,32 @@ export function AgencySaleExpensePage() {
         tenantId: activeClientId ?? undefined,
       });
       setDocs(list);
+
+      // Bulk lookups for the Comments + Tax Ref columns. One
+      // call per doc type present in the list; silent on failure
+      // so a hiccup on either lookup doesn't break the table.
+      const byType: Record<PortfolioDocType, string[]> = { invoice: [], bill: [], expense: [] };
+      for (const d of list) byType[d.type].push(d.id);
+      const nextCounts: Record<string, number> = {};
+      const nextRefs: Record<string, PortfolioDocTaxRef> = {};
+      await Promise.all(
+        (Object.entries(byType) as [PortfolioDocType, string[]][])
+          .filter(([, ids]) => ids.length > 0)
+          .flatMap(([t, ids]) => [
+            agencyDocComments.counts(t, ids)
+              .then(counts => {
+                for (const [id, n] of Object.entries(counts)) nextCounts[`${t}:${id}`] = n;
+              })
+              .catch(() => { /* silent — Comments column renders 0 */ }),
+            portfolioDocs.taxRefs(t, ids)
+              .then(refs => {
+                for (const [id, r] of Object.entries(refs)) nextRefs[`${t}:${id}`] = r;
+              })
+              .catch(() => { /* silent — Tax Ref column renders — */ }),
+          ]),
+      );
+      setCommentCounts(nextCounts);
+      setTaxRefs(nextRefs);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load documents');
     } finally {
@@ -151,13 +213,14 @@ export function AgencySaleExpensePage() {
 
   const filteredDocs = useMemo(() => {
     const q = docSearch.trim().toLowerCase();
-    if (!q) return docs;
-    return docs.filter(d =>
-      d.docNo.toLowerCase().includes(q)
-      || d.tenantName.toLowerCase().includes(q)
-      || d.status.toLowerCase().includes(q)
-    );
-  }, [docs, docSearch]);
+    return docs.filter(d => {
+      if ((docDateFrom || docDateTo) && !inRange(d.issueDate, docDateFrom, docDateTo)) return false;
+      if (!q) return true;
+      return d.docNo.toLowerCase().includes(q)
+          || d.tenantName.toLowerCase().includes(q)
+          || d.status.toLowerCase().includes(q);
+    });
+  }, [docs, docSearch, docDateFrom, docDateTo]);
 
   // Restrict to invoice/bill/receipt categories then apply the
   // status tab + free-text filter.
@@ -176,12 +239,13 @@ export function AgencySaleExpensePage() {
     const q = reqSearch.trim().toLowerCase();
     return financialReqs.filter(r => {
       if (reqTab !== 'all' && r.status !== reqTab) return false;
+      if ((reqDateFrom || reqDateTo) && !inRange(r.createdAt, reqDateFrom, reqDateTo)) return false;
       if (q && !r.title.toLowerCase().includes(q)
            && !(r.tenantName ?? '').toLowerCase().includes(q)
            && !(r.description ?? '').toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [financialReqs, reqTab, reqSearch]);
+  }, [financialReqs, reqTab, reqSearch, reqDateFrom, reqDateTo]);
 
   const doReview = async (r: DocumentRequestDto) => {
     setBusy(r.id);
@@ -200,20 +264,20 @@ export function AgencySaleExpensePage() {
   const refresh = () => topTab === 'case' ? void loadDocs() : void loadReqs();
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <Wallet className="h-5 w-5 text-blue-600" />
             Sale &amp; Expense
+            <PageTitleTooltip label="About Sale & Expense">
+              {topTab === 'case'
+                ? (activeClient
+                    ? <>Invoices, bills, and expenses on <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>.</>
+                    : <>Invoices, bills, and expenses across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client in the header to narrow.</>)
+                : 'Uploads the agency has requested against invoices, bills, or expenses. Review or reject as they land.'}
+            </PageTitleTooltip>
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {topTab === 'case'
-              ? (activeClient
-                  ? `Invoices, bills, and expenses on ${activeClient.tenantName ?? activeClient.tenantSlug}.`
-                  : `Invoices, bills, and expenses across ${portfolio.length} client${portfolio.length === 1 ? '' : 's'}. Pick a client in the header to narrow.`)
-              : 'Uploads the agency has requested against invoices, bills, or expenses. Review or reject as they land.'}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
@@ -229,24 +293,19 @@ export function AgencySaleExpensePage() {
         </div>
       </div>
 
-      {/* Top-level tabs — Case | Documents. */}
-      <div className="flex items-center gap-1 border-b">
-        {TOP_TABS.map(t => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTopTab(t.key)}
-            className={`inline-flex items-center gap-1.5 px-3 h-9 text-sm border-b-2 -mb-px transition ${
-              topTab === t.key
-                ? 'border-blue-500 text-blue-700 font-medium'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Top-level tabs — Case | Documents. Styling lives on the
+          shared shadcn Tabs primitive so every page in the app
+          renders the underline consistently. */}
+      <Tabs value={topTab} onValueChange={v => setTopTab(v as TopTab)}>
+        <TabsList>
+          {TOP_TABS.map(t => (
+            <TabsTrigger key={t.key} value={t.key}>
+              {t.icon}
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {topTab === 'case' && (
         <Card>
@@ -267,14 +326,22 @@ export function AgencySaleExpensePage() {
                   {f.label}
                 </button>
               ))}
-              <div className="ml-auto relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                <Input
-                  value={docSearch}
-                  onChange={e => setDocSearch(e.target.value)}
-                  placeholder="Search doc no / status…"
-                  className="pl-8 h-9 w-72 text-sm"
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                <DateRangeFilter
+                  enablePresets
+                  defaultStartDate={docDateFrom ?? ''}
+                  defaultEndDate={docDateTo ?? ''}
+                  onFilterChange={(f, t) => { setDocDateFrom(f); setDocDateTo(t); }}
                 />
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                  <Input
+                    value={docSearch}
+                    onChange={e => setDocSearch(e.target.value)}
+                    placeholder="Search doc no / status…"
+                    className="pl-8 h-9 w-72 text-sm"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -297,11 +364,18 @@ export function AgencySaleExpensePage() {
                       <th className="text-left font-medium px-4 py-2">Issue date</th>
                       <th className="text-right font-medium px-4 py-2">Amount</th>
                       <th className="text-left font-medium px-4 py-2">Status</th>
+                      <th className="text-left font-medium px-4 py-2">Tax Ref</th>
+                      <th className="text-center font-medium px-4 py-2">
+                        <MessageCircle className="h-3.5 w-3.5 inline text-gray-400" />
+                        <span className="sr-only">Comments</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {filteredDocs.map(d => {
                       const typeMeta = DOC_TYPE_META[d.type];
+                      const commentCount = commentCounts[`${d.type}:${d.id}`] ?? 0;
+                      const taxRef = taxRefs[`${d.type}:${d.id}`];
                       return (
                         <tr
                           key={`${d.type}:${d.id}`}
@@ -319,9 +393,37 @@ export function AgencySaleExpensePage() {
                             {d.currency} {Number(d.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-2">
-                            <Badge className={`border text-[10px] px-1.5 py-0 ${DOC_STATUS_CLS[d.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                              {d.status}
-                            </Badge>
+                            {(() => {
+                              const label = displayStatus(d.type, d.status);
+                              return (
+                                <Badge className={`border text-[10px] px-1.5 py-0 ${DOC_STATUS_CLS[label] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                  {label}
+                                </Badge>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-4 py-2">
+                            {taxRef ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium tabular-nums"
+                                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + new Date(taxRef.submittedAt).toLocaleDateString() : ''}`}
+                              >
+                                <FileSpreadsheet className="h-3 w-3" />
+                                {taxRef.gdtReferenceNo}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            {commentCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-medium tabular-nums">
+                                <MessageCircle className="h-3 w-3" />
+                                {commentCount}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -353,14 +455,22 @@ export function AgencySaleExpensePage() {
                   <span className="ml-1 text-[10px] opacity-70">({reqCounts[t.key]})</span>
                 </button>
               ))}
-              <div className="ml-auto relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                <Input
-                  value={reqSearch}
-                  onChange={e => setReqSearch(e.target.value)}
-                  placeholder="Search title / client…"
-                  className="pl-8 h-9 w-64 text-sm"
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                <DateRangeFilter
+                  enablePresets
+                  defaultStartDate={reqDateFrom ?? ''}
+                  defaultEndDate={reqDateTo ?? ''}
+                  onFilterChange={(f, t) => { setReqDateFrom(f); setReqDateTo(t); }}
                 />
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+                  <Input
+                    value={reqSearch}
+                    onChange={e => setReqSearch(e.target.value)}
+                    placeholder="Search title / client…"
+                    className="pl-8 h-9 w-64 text-sm"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
