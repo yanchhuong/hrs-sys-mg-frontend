@@ -3,7 +3,7 @@ import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
-  ClipboardList, ArrowRight, RotateCcw,
+  ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -21,6 +21,7 @@ import {
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
+import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary } from '../../api/loyalty';
 import * as settingsApi from '../../api/accountingSettings';
 import * as posDisplayApi from '../../api/posDisplay';
 import * as paywayApi from '../../api/payway';
@@ -77,6 +78,11 @@ export function POS() {
   const [cart, setCart] = useState<PosOrderItem[]>([]);
   const [currentOrder, setCurrentOrder] = useState<PosOrder | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  // v-loyalty-mvp — loyalty state for the currently picked customer.
+  // Loaded when the customer flips; used by the customer panel below
+  // the cart to show balances + apply Point-cost redeems as a cart
+  // discount before payment.
+  const [loyaltyState, setLoyaltyState] = useState<CustomerLoyaltyState | null>(null);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [taxType, setTaxType] = useState<string | null>(null);
@@ -215,6 +221,18 @@ export function POS() {
     };
     return () => { ch.close(); displayChannelRef.current = null; };
   }, []);
+
+  // v-loyalty-mvp — refresh loyalty state each time the customer
+  // picker flips. Walk-in (customerId = null) clears the panel.
+  // Best-effort — an error here never blocks the sale.
+  useEffect(() => {
+    if (!customerId) { setLoyaltyState(null); return; }
+    let cancelled = false;
+    loyaltyPos.state(customerId)
+      .then(s => { if (!cancelled) setLoyaltyState(s); })
+      .catch(() => { if (!cancelled) setLoyaltyState(null); });
+    return () => { cancelled = true; };
+  }, [customerId]);
 
   // Build + broadcast a snapshot on every cart / totals / settings
   // change. The display window treats this as the single source of
@@ -478,6 +496,24 @@ export function POS() {
     setSaving(true);
     try {
       const checked = await posApi.checkout(order.id, { invoiceKind, paymentMethod: method, paymentReceived: received });
+      // v-loyalty-mvp — fire the earn hook against the just-paid
+      // invoice. Fire-and-forget: any hiccup here never blocks the
+      // sale. Toast surfaces the earn/redeem result so the cashier
+      // sees the outcome without opening a second panel.
+      if (checked.invoiceId && checked.customerId) {
+        (async () => {
+          try {
+            const summary: EarnSummary = await loyaltyPos.earn(checked.invoiceId!);
+            for (const l of summary.lines) {
+              const parts: string[] = [];
+              if (l.pointsEarned > 0) parts.push(`+${l.pointsEarned} pts`);
+              if (l.stampsEarned > 0) parts.push(`+${l.stampsEarned} stamp${l.stampsEarned === 1 ? '' : 's'}`);
+              if (l.note) parts.push(l.note);
+              if (parts.length) toast.success(`${l.programName}: ${parts.join(' · ')}`);
+            }
+          } catch { /* silent — loyalty never blocks checkout */ }
+        })();
+      }
       setOpenOrders(prev => prev.filter(o => o.id !== checked.id));
       // V165 — the just-paid order enters the kitchen pipeline at
       // 'requested'. Prepend it so the Active Orders drawer reflects
@@ -598,9 +634,17 @@ export function POS() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__walkin">Walk-in</SelectItem>
-            {customers.map(c => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-            ))}
+            {customers
+              // Bug fix: some tenants have a real Customer row named
+              // "Walk-in" seeded into the DB — it collided with the
+              // synthetic __walkin option above and produced a
+              // duplicate entry in this dropdown. Filter it out
+              // (case + whitespace insensitive) so only the synthetic
+              // sentinel remains.
+              .filter(c => (c.name ?? '').trim().toLowerCase() !== 'walk-in')
+              .map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>
@@ -625,6 +669,26 @@ export function POS() {
           </ul>
         )}
       </div>
+
+      <LoyaltyPanel
+        state={loyaltyState}
+        onApplyReward={async (programId, discount) => {
+          if (!customerId) return;
+          try {
+            await loyaltyPos.applyReward(customerId, programId);
+            // Move the redeemed discount into the cart's own
+            // discount slot so it's reflected in Total. Amount-mode
+            // sums with any manual discount already keyed in.
+            setDiscountType('amount');
+            setDiscountValue(v => Number(v) + Number(discount));
+            toast.success(`Applied $${discount.toFixed(2)} loyalty discount.`);
+            const next = await loyaltyPos.state(customerId);
+            setLoyaltyState(next);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Failed to apply reward');
+          }
+        }}
+      />
 
       <div className="border-t bg-white p-3 space-y-2 text-sm shrink-0">
         <div className="flex justify-between text-lg font-bold">
@@ -1993,6 +2057,66 @@ function ModifierPickerDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * v-loyalty-mvp — customer panel below the cart. Shows each active
+ * program's balance (points / stamps) and any redeemable rewards.
+ * Cashier clicks "Apply" on a reward to redeem — the discount
+ * amount is patched into the cart's discount slot so Total updates
+ * before payment. Silent when there's no picked customer OR no
+ * balance yet (walk-in customers never see this block).
+ */
+function LoyaltyPanel({
+  state, onApplyReward,
+}: {
+  state: CustomerLoyaltyState | null;
+  onApplyReward: (programId: string, discountAmount: number) => void;
+}) {
+  if (!state) return null;
+  const anyBalance = state.programs.some(p =>
+    p.currentPoint > 0 || p.currentStamp > 0 || p.rewards.length > 0
+  );
+  if (!anyBalance) return null;
+  return (
+    <div className="border-t bg-purple-50/50 px-3 py-2 space-y-1.5 shrink-0">
+      <div className="text-[11px] font-semibold text-purple-800 inline-flex items-center gap-1">
+        <Gift className="h-3 w-3" /> Loyalty
+      </div>
+      {state.programs.map(p => {
+        const isStamp = p.programType === 'STAMP';
+        return (
+          <div key={p.programId} className="flex items-center gap-2 text-[11px]">
+            {isStamp
+              ? <StampIcon className="h-3 w-3 text-emerald-600" />
+              : <Star className="h-3 w-3 text-blue-600" />}
+            <span className="flex-1 truncate">
+              <span className="font-medium">{p.programName}:</span>{' '}
+              {isStamp
+                ? <>{p.currentStamp}{p.stampTarget ? ` / ${p.stampTarget}` : ''} stamps</>
+                : <>{p.currentPoint} pts</>}
+            </span>
+            {p.rewards.map((r, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() =>
+                  r.kind === 'discount' && r.discountAmount != null
+                    ? onApplyReward(p.programId, Number(r.discountAmount))
+                    : undefined
+                }
+                disabled={r.kind !== 'discount'}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                title={r.label}
+              >
+                {r.kind === 'discount' ? `Apply ${r.label}` : r.label}
+              </button>
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

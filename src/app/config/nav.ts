@@ -24,7 +24,7 @@ import {
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
-  GraduationCap, BookOpen, FileSpreadsheet,
+  GraduationCap, BookOpen, FileSpreadsheet, Gift,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -49,6 +49,7 @@ import { Invoices } from '../components/views/Invoices';
 import { POS } from '../components/views/POS';
 import { Quotations } from '../components/views/Quotations';
 import { Vouchers } from '../components/views/Vouchers';
+import { Loyalty } from '../components/views/Loyalty';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
@@ -185,6 +186,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   // switching context.
   { id: 'pos',               labelKey: 'nav.pos',                    icon: ShoppingCart,    module: 'pos',                component: POS,                      group: 'sales-group' },
   { id: 'vouchers',          labelKey: 'nav.vouchers',               icon: FileText,        module: 'voucher',            component: Vouchers,                 group: 'sales-group' },
+  { id: 'loyalty',           labelKey: 'nav.loyalty',                icon: Gift,            module: 'voucher',            component: Loyalty,                  group: 'sales-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
