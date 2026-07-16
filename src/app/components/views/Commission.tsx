@@ -14,7 +14,8 @@ import { commission, commissionFor } from '../../api/commission';
 import type { CommissionProgram } from '../../api/commission';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { CommissionSettings } from './CommissionSettings';
-import { formatMoney, formatNumber, formatUSD } from '../../utils/format';
+import { formatNumber, formatUSD } from '../../utils/format';
+import * as currencyApi from '../../api/currencySettings';
 
 /**
  * v-commission-mvp — Commission report. One row per seller with
@@ -30,18 +31,32 @@ export function Commission() {
   const [to, setTo]   = useState<string>(today);
   const [report, setReport] = useState<LedgerReportResponse | null>(null);
   const [plans, setPlans]   = useState<CommissionProgram[]>([]);
+  /** Tenant currency settings — needed to fold Received / Refund
+   *  KHR into USD when computing AR. Falls back to 4100 KHR/USD
+   *  (server default) so the report still renders on new tenants
+   *  that haven't touched the settings row. */
+  const [khrPerUsd, setKhrPerUsd] = useState<number>(4100);
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rep, ps] = await Promise.all([
+      const [rep, ps, cs] = await Promise.all([
         saleLedger({ from, to }),
         commission.list().catch(() => [] as CommissionProgram[]),
+        currencyApi.get().catch(() => null),
       ]);
       setReport(rep);
       setPlans(ps);
+      // Only USD-primary tenants can convert KHR down to USD via
+      // secondaryRate. On single-currency or KHR-primary setups
+      // we fall back to the built-in 4100 and note the KHR
+      // portion may be off — commission tenants in Cambodia are
+      // ~always USD-primary so this matches reality.
+      if (cs && cs.primaryCurrency === 'USD' && cs.secondaryCurrency === 'KHR' && cs.secondaryRate) {
+        setKhrPerUsd(cs.secondaryRate);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load commission report');
     } finally {
@@ -58,23 +73,14 @@ export function Commission() {
       invoiceCount: number;
       totalAmount: number;
       receivedUsd: number; receivedKhr: number;
+      refundUsd: number;   refundKhr: number;
       totalRefund: number;
-      /** Accounts Receivable — sum of per-invoice closing balances
-       *  (only the parent doc carries a balance; CN/DN children are
-       *  null-balance and roll their amount up into the parent). */
-      ar: number;
     }>();
     for (const g of report.groups) {
       for (const e of g.entries) {
         if (!e.sellerId) continue;
-        // The sale-ledger endpoint emits "ghost rows" for
-        // invoices ISSUED before the date range that received
-        // an in-range payment — amount = 0 but receivedUsd /
-        // receivedKhr populated. Great for the Sale Ledger's
-        // chain-based accounting, wrong for Commission which
-        // should mirror the Invoice list (invoices issued in
-        // the range only). Skip them so Total / Received / AR
-        // reconcile with the Invoice list totals row.
+        // Skip ghost rows — pre-range invoices with in-range
+        // payments (amount=0, balance!=null). See earlier commit.
         const isGhost = (e.amount ?? 0) === 0 && e.balance !== null;
         if (isGhost) continue;
         const isRoot = e.balance !== null;
@@ -86,25 +92,34 @@ export function Commission() {
           totalAmount: 0,
           receivedUsd: 0,
           receivedKhr: 0,
+          refundUsd: 0,
+          refundKhr: 0,
           totalRefund: 0,
-          ar: 0,
         };
         cur.invoiceCount += isRoot ? 1 : 0;
         cur.totalAmount  += e.amount ?? 0;
         cur.receivedUsd  += e.receivedUsd ?? 0;
         cur.receivedKhr  += e.receivedKhr ?? 0;
-        cur.totalRefund  += e.refund ?? 0;
-        cur.ar           += isRoot ? (e.balance ?? 0) : 0;
+        cur.refundUsd    += e.refundUsd ?? 0;
+        cur.refundKhr    += e.refundKhr ?? 0;
+        cur.totalRefund  += (e.refundUsd ?? 0) + ((e.refundKhr ?? 0) / khrPerUsd);
         acc.set(key, cur);
       }
     }
     return Array.from(acc.values())
       .map(g => {
+        // AR = what the seller's invoices still owe. Fold every
+        // received / refund currency down to USD via the tenant's
+        // exchange rate so the number reconciles with the Invoice
+        // list totals row (which does the same conversion).
+        const receivedUsdEquiv = g.receivedUsd + g.receivedKhr / khrPerUsd;
+        const refundUsdEquiv   = g.refundUsd   + g.refundKhr   / khrPerUsd;
+        const ar = Math.max(0, g.totalAmount - receivedUsdEquiv - refundUsdEquiv);
         const c = commissionFor(g.sellerId, g.totalAmount, g.invoiceCount, plans);
-        return { ...g, commission: c.amount, planName: c.plan?.name ?? null };
+        return { ...g, ar, commission: c.amount, planName: c.plan?.name ?? null };
       })
       .sort((a, b) => b.commission - a.commission || a.sellerName.localeCompare(b.sellerName));
-  }, [report, plans]);
+  }, [report, plans, khrPerUsd]);
 
   const totals = useMemo(() => sellerGroups.reduce((acc, g) => ({
     invoiceCount: acc.invoiceCount + g.invoiceCount,
