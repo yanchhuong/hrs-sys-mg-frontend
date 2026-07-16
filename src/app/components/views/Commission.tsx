@@ -59,6 +59,10 @@ export function Commission() {
       totalAmount: number;
       receivedUsd: number; receivedKhr: number;
       totalRefund: number;
+      /** Accounts Receivable — sum of per-invoice closing balances
+       *  (only the parent doc carries a balance; CN/DN children are
+       *  null-balance and roll their amount up into the parent). */
+      ar: number;
     }>();
     for (const g of report.groups) {
       for (const e of g.entries) {
@@ -73,12 +77,14 @@ export function Commission() {
           receivedUsd: 0,
           receivedKhr: 0,
           totalRefund: 0,
+          ar: 0,
         };
         cur.invoiceCount += isRoot ? 1 : 0;
         cur.totalAmount  += e.amount ?? 0;
         cur.receivedUsd  += e.receivedUsd ?? 0;
         cur.receivedKhr  += e.receivedKhr ?? 0;
         cur.totalRefund  += e.refund ?? 0;
+        cur.ar           += isRoot ? (e.balance ?? 0) : 0;
         acc.set(key, cur);
       }
     }
@@ -93,8 +99,9 @@ export function Commission() {
   const totals = useMemo(() => sellerGroups.reduce((acc, g) => ({
     invoiceCount: acc.invoiceCount + g.invoiceCount,
     totalAmount:  acc.totalAmount  + g.totalAmount,
+    ar:           acc.ar           + g.ar,
     commission:   acc.commission   + g.commission,
-  }), { invoiceCount: 0, totalAmount: 0, commission: 0 }), [sellerGroups]);
+  }), { invoiceCount: 0, totalAmount: 0, ar: 0, commission: 0 }), [sellerGroups]);
 
   const anyPlan = plans.some(p => p.status === 'ACTIVE' && p.rate != null && p.mode != null);
 
@@ -102,10 +109,13 @@ export function Commission() {
     <div className="space-y-4">
       {/* Totals strip — matches the shared StatCard pattern used by
           Sale Ledger / P&L / Purchase Ledger. */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Sellers"       value={formatNumber(sellerGroups.length)} icon={Percent}      tone="purple" />
         <StatCard label="Invoices"      value={formatNumber(totals.invoiceCount)} icon={ReceiptText}  tone="blue" />
         <StatCard label="Total Sales"   value={formatUSD(totals.totalAmount)}     icon={DollarSign}   tone="green" />
+        <StatCard label="AR"            value={formatUSD(totals.ar)}              icon={Wallet}       tone="orange"
+          hint="Accounts Receivable — unpaid balance across sellers in the range"
+        />
         <StatCard label="Commission"    value={formatUSD(totals.commission)}      icon={Wallet}       tone="amber"
           hint={anyPlan ? null : 'No active plan with a rate — configure one in POS → Settings → Commission Plans'}
         />
@@ -155,6 +165,7 @@ export function Commission() {
                   <TableHead className="text-right">Received (USD)</TableHead>
                   <TableHead className="text-right">Received (KHR)</TableHead>
                   <TableHead className="text-right">Refund (−)</TableHead>
+                  <TableHead className="text-right">AR</TableHead>
                   <TableHead className="text-right">Commission</TableHead>
                 </TableRow>
               </TableHeader>
@@ -179,6 +190,10 @@ export function Commission() {
                     </TableCell>
                     <TableCell className={`text-right tabular-nums ${s.totalRefund > 0 ? 'text-red-600' : ''}`}>
                       {formatUSD(s.totalRefund)}
+                    </TableCell>
+                    <TableCell className={`text-right tabular-nums ${s.ar > 0 ? 'text-amber-700 font-medium' : ''}`}
+                      title="Accounts Receivable — sum of unpaid invoice balances created by this seller">
+                      {s.ar > 0 ? formatUSD(s.ar) : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {s.commission > 0
