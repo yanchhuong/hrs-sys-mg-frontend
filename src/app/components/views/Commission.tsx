@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Percent, Loader2, RefreshCw, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon } from 'lucide-react';
+import { Percent, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon, Calendar } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
+import { DateInput } from '../common/DateInput';
 import { saleLedger } from '../../api/ledgerReports';
 import type { LedgerReportResponse } from '../../api/ledgerReports';
 import { commission, commissionFor } from '../../api/commission';
@@ -127,21 +126,16 @@ export function Commission() {
             >
               <SettingsIcon className="h-4 w-4" />
             </button>
-            <span className="text-xs text-gray-500">
-              One row per cashier who created a sale invoice in the range.
-            </span>
           </div>
-          <div className="flex items-end gap-2">
-            <div>
-              <Label htmlFor="c-from" className="text-xs text-gray-500">From</Label>
-              <Input id="c-from" type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 w-36" />
-            </div>
-            <div>
-              <Label htmlFor="c-to" className="text-xs text-gray-500">To</Label>
-              <Input id="c-to" type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 w-36" />
-            </div>
-            <Button variant="outline" size="sm" onClick={load} disabled={loading} className="h-8">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {/* Date filter matches Sale Ledger / P&L / Purchase Ledger:
+              Calendar icon → From date → arrow → To date → Apply. */}
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <Calendar className="h-4 w-4 text-gray-400" />
+            <DateInput value={from} onChange={setFrom} className="h-8 w-36 text-sm" title="From date" />
+            <span className="text-gray-400 text-xs">→</span>
+            <DateInput value={to}   onChange={setTo}   className="h-8 w-36 text-sm" title="To date" />
+            <Button size="sm" onClick={load} disabled={loading} className="h-8">
+              {loading ? 'Loading…' : 'Apply'}
             </Button>
           </div>
         </CardHeader>
