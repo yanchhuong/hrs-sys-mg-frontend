@@ -7,12 +7,14 @@ import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Percent, Loader2, RefreshCw, Wallet, ReceiptText, DollarSign } from 'lucide-react';
+import { Percent, Loader2, RefreshCw, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
 import { saleLedger } from '../../api/ledgerReports';
 import type { LedgerReportResponse } from '../../api/ledgerReports';
 import { commission, commissionFor } from '../../api/commission';
 import type { CommissionProgram } from '../../api/commission';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { CommissionSettings } from './CommissionSettings';
 
 /**
  * v-commission-mvp — Commission report. One row per seller with
@@ -29,6 +31,7 @@ export function Commission() {
   const [report, setReport] = useState<LedgerReportResponse | null>(null);
   const [plans, setPlans]   = useState<CommissionProgram[]>([]);
   const [loading, setLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +115,18 @@ export function Commission() {
         <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <CardTitle>By Seller</CardTitle>
+            {/* Gear icon opens the same Commission Plans manager
+                embedded in POS Settings — a manager viewing the
+                report can adjust rates without navigating to POS. */}
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="text-gray-400 hover:text-gray-700 transition"
+              aria-label="Manage Commission Plans"
+              title="Manage Commission Plans"
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </button>
             <span className="text-xs text-gray-500">
               One row per cashier who created a sale invoice in the range.
             </span>
@@ -182,6 +197,25 @@ export function Commission() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={settingsOpen}
+        onOpenChange={open => {
+          setSettingsOpen(open);
+          // Reload the report once the settings dialog closes —
+          // rate / assignment edits in there change how the
+          // Commission column computes, so the numbers below
+          // should refresh without the operator hitting Reload.
+          if (!open) void load();
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manage Commission Plans</DialogTitle>
+          </DialogHeader>
+          <CommissionSettings />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
