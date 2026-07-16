@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { DateInput } from '../common/DateInput';
-import { Loader2, Plus, RefreshCw, Trash2, Eye, Wallet, ReceiptText, DollarSign } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Trash2, Eye, Wallet, ReceiptText, DollarSign, Edit3 } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
 import { formatNumber, formatUSD } from '../../utils/format';
 import {
@@ -51,6 +51,7 @@ export function CommissionSettlementView() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewing, setViewing] = useState<SettlementFull | null>(null);
+  const [editingStatus, setEditingStatus] = useState<SettlementHeader | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,6 +165,9 @@ export function CommissionSettlementView() {
                           <Button variant="outline" size="sm" onClick={() => doView(r)} title="View details">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
+                          <Button variant="outline" size="sm" onClick={() => setEditingStatus(r)} title="Update status / payment">
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => doDelete(r)} title="Delete">
                             <Trash2 className="h-3.5 w-3.5 text-red-600" />
                           </Button>
@@ -189,6 +193,12 @@ export function CommissionSettlementView() {
         full={viewing}
         onOpenChange={o => { if (!o) setViewing(null); }}
         sellerName={viewing ? (userName.get(viewing.header.sellerId) ?? viewing.header.sellerId.slice(0, 8)) : ''}
+      />
+
+      <StatusUpdateDialog
+        row={editingStatus}
+        onOpenChange={o => { if (!o) setEditingStatus(null); }}
+        onSaved={() => { setEditingStatus(null); void load(); }}
       />
     </div>
   );
@@ -474,6 +484,167 @@ function ViewSettlementDialog({
             </Card>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------ */
+/* Status update dialog — flip Draft/Confirmed/Partial/Paid/    */
+/* Cancelled and capture the payment details when relevant.     */
+/* ------------------------------------------------------------ */
+
+function StatusUpdateDialog({
+  row, onOpenChange, onSaved,
+}: {
+  row: SettlementHeader | null;
+  onOpenChange: (v: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [status, setStatus] = useState<SettlementStatus>('CONFIRMED');
+  const [paidAmount, setPaidAmount] = useState<string>('');
+  const [paymentDate, setPaymentDate] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [referenceNo, setReferenceNo] = useState('');
+  const [remark, setRemark] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (row) {
+      setStatus(row.status);
+      setPaidAmount(row.paidAmount != null ? String(row.paidAmount) : '');
+      setPaymentDate(row.paymentDate ?? '');
+      setPaymentMethod(row.paymentMethod ?? '');
+      setReferenceNo(row.referenceNo ?? '');
+      setRemark(row.remark ?? '');
+    }
+  }, [row]);
+
+  if (!row) return null;
+
+  const needsPaidAmount = status === 'PARTIALLY_PAID';
+  const parsedPaid = paidAmount.trim() === '' ? null : Number(paidAmount);
+  const paidError = (() => {
+    if (!needsPaidAmount) return null;
+    if (parsedPaid == null || Number.isNaN(parsedPaid) || parsedPaid <= 0) {
+      return 'Enter the amount received so far (must be > 0).';
+    }
+    if (parsedPaid >= row.totalCommission) {
+      return `Partial payment must be less than the total commission (${formatUSD(row.totalCommission)}). Use Paid for a full settlement.`;
+    }
+    return null;
+  })();
+
+  const submit = async () => {
+    if (paidError) { toast.error(paidError); return; }
+    setSaving(true);
+    try {
+      await commissionSettlement.updateStatus(row.id, {
+        status,
+        paidAmount: parsedPaid,
+        paymentDate: paymentDate || null,
+        paymentMethod: paymentMethod || null,
+        referenceNo: referenceNo || null,
+        remark: remark || null,
+      });
+      toast.success('Settlement updated');
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={!!row} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Update {row.settlementNo}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <div className="text-gray-500">Total Commission</div>
+              <div className="font-medium">{formatUSD(row.totalCommission)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Currently</div>
+              <div><Badge className={STATUS_META[row.status].cls}>{STATUS_META[row.status].label}</Badge></div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label>Status *</Label>
+            <Select value={status} onValueChange={v => setStatus(v as SettlementStatus)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(STATUS_META) as SettlementStatus[]).map(k => (
+                  <SelectItem key={k} value={k}>{STATUS_META[k].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {status === 'PAID' && (
+              <p className="text-[11px] text-gray-500">
+                Marking as Paid sets the amount to the full commission and clears the balance.
+              </p>
+            )}
+            {status === 'CANCELLED' && (
+              <p className="text-[11px] text-amber-700">
+                Cancelling releases this settlement's invoices — they'll be eligible for a new settlement.
+              </p>
+            )}
+          </div>
+
+          {needsPaidAmount && (
+            <div className="space-y-1">
+              <Label>Amount received</Label>
+              <Input
+                type="number" min="0" step="0.01"
+                value={paidAmount}
+                onChange={e => setPaidAmount(e.target.value)}
+                placeholder="e.g. 500.00"
+              />
+              {paidError && <p className="text-[11px] text-red-600">{paidError}</p>}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Payment Date</Label>
+              <DateInput value={paymentDate} onChange={setPaymentDate} className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label>Payment Method</Label>
+              <Select value={paymentMethod} onValueChange={v => setPaymentMethod(v as PaymentMethod)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PM_LABEL) as PaymentMethod[]).map(k => (
+                    <SelectItem key={k} value={k}>{PM_LABEL[k]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Reference No</Label>
+              <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="TRX-…" maxLength={120} />
+            </div>
+            <div className="space-y-1">
+              <Label>Remark</Label>
+              <Input value={remark} onChange={e => setRemark(e.target.value)} maxLength={500} />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving || !!paidError}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+            Save
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

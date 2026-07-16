@@ -76,6 +76,15 @@ export interface CreateRequest extends PreviewRequest {
   remark?:       string | null;
 }
 
+export interface StatusUpdateRequest {
+  status?: SettlementStatus | null;
+  paidAmount?:    number | null;
+  paymentDate?:   string | null;
+  paymentMethod?: PaymentMethod | null;
+  referenceNo?:   string | null;
+  remark?:        string | null;
+}
+
 export const commissionSettlement = {
   list:    () => apiJson<SettlementHeader[]>('/api/v1/commission/settlements'),
   get:     (id: string) => apiJson<SettlementFull>(`/api/v1/commission/settlements/${id}`),
@@ -83,6 +92,8 @@ export const commissionSettlement = {
     apiJson<Preview>('/api/v1/commission/settlements/preview', { method: 'POST', json: req }),
   create:  (req: CreateRequest) =>
     apiJson<SettlementFull>('/api/v1/commission/settlements', { method: 'POST', json: req }),
+  updateStatus: (id: string, req: StatusUpdateRequest) =>
+    apiJson<SettlementFull>(`/api/v1/commission/settlements/${id}`, { method: 'PATCH', json: req }),
   remove:  (id: string) =>
     apiVoid(`/api/v1/commission/settlements/${id}`, { method: 'DELETE' }),
 };
