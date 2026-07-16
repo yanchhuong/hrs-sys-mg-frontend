@@ -59,6 +59,9 @@ export interface Preview {
   totalSales: number;
   totalCommission: number;
   lines: PreviewLine[];
+  /** How many candidate invoices in the range were already tied
+   *  to another (non-cancelled) settlement and got excluded. */
+  skippedAlreadySettled: number;
 }
 
 export interface PreviewRequest {

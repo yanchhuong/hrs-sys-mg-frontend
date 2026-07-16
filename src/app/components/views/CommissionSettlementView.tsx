@@ -227,8 +227,19 @@ function NewSettlementDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  /** Client-side guardrails so an obviously-broken period never
+   *  hits the wire. Server enforces the same rules — this is
+   *  belt-and-braces so the operator sees a fast, precise error. */
+  const periodError = (() => {
+    if (!from || !to) return 'Pick a period';
+    if (from > to)    return `From (${from}) is after To (${to}). Swap the dates.`;
+    if (to > today)   return `To (${to}) is in the future. Settlements can only cover past sales.`;
+    return null;
+  })();
+
   const doPreview = async () => {
     if (!sellerId) { toast.error('Pick a seller first'); return; }
+    if (periodError) { toast.error(periodError); return; }
     setLoading(true);
     try {
       setPreview(await commissionSettlement.preview({
@@ -241,6 +252,7 @@ function NewSettlementDialog({
 
   const doConfirm = async () => {
     if (!sellerId) { toast.error('Pick a seller first'); return; }
+    if (periodError) { toast.error(periodError); return; }
     if (!preview || preview.invoiceCount === 0) {
       toast.error('Nothing to settle — preview first and check for unsettled invoices in this range.');
       return;
@@ -299,13 +311,19 @@ function NewSettlementDialog({
             <Label>Period</Label>
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs text-gray-500">From</Label>
-              <DateInput value={from} onChange={setFrom} className="h-9 w-40 text-sm" title="From date" />
+              <DateInput value={from} onChange={setFrom} max={to || today} className="h-9 w-40 text-sm" title="From date" />
               <Label className="text-xs text-gray-500">To</Label>
-              <DateInput value={to}   onChange={setTo}   className="h-9 w-40 text-sm" title="To date" />
-              <Button size="sm" variant="outline" onClick={doPreview} disabled={loading || !sellerId} className="h-9">
+              <DateInput value={to}   onChange={setTo}   min={from || undefined} max={today} className="h-9 w-40 text-sm" title="To date" />
+              <Button size="sm" variant="outline"
+                onClick={doPreview}
+                disabled={loading || !sellerId || !!periodError}
+                className="h-9">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview'}
               </Button>
             </div>
+            {periodError && (
+              <p className="text-[11px] text-red-600 mt-1">{periodError}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -339,6 +357,11 @@ function NewSettlementDialog({
                     <div className="font-medium text-emerald-700">{formatUSD(preview.totalCommission)}</div>
                   </div>
                 </div>
+                {preview.skippedAlreadySettled > 0 && (
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-3">
+                    {preview.skippedAlreadySettled}{' '}invoice{preview.skippedAlreadySettled === 1 ? '' : 's'} in this range {preview.skippedAlreadySettled === 1 ? 'was' : 'were'} already covered by another settlement and excluded.
+                  </p>
+                )}
                 {preview.invoiceCount === 0 ? (
                   <div className="text-center py-4 text-xs text-gray-500">
                     No unsettled sale invoices for this seller in this period.
