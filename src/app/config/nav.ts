@@ -49,7 +49,9 @@ import { Invoices } from '../components/views/Invoices';
 import { POS } from '../components/views/POS';
 import { Quotations } from '../components/views/Quotations';
 import { Vouchers } from '../components/views/Vouchers';
-import { Loyalty } from '../components/views/Loyalty';
+// Loyalty is not registered as a sidebar leaf — its component is
+// embedded in POS Settings via AccountingSettingsDialog. No import
+// here.
 import { Commission } from '../components/views/Commission';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
@@ -187,12 +189,16 @@ export const NAV_LEAVES: NavLeaf[] = [
   // switching context.
   { id: 'pos',               labelKey: 'nav.pos',                    icon: ShoppingCart,    module: 'pos',                component: POS,                      group: 'sales-group' },
   { id: 'vouchers',          labelKey: 'nav.vouchers',               icon: FileText,        module: 'voucher',            component: Vouchers,                 group: 'sales-group' },
-  { id: 'loyalty',           labelKey: 'nav.loyalty',                icon: Gift,            module: 'voucher',            component: Loyalty,                  group: 'sales-group' },
-  // v-commission-mvp — sales-commission plans (per-invoice / per-item /
-  // tiered). Sits under Sale next to Loyalty; both configure how sales
-  // trigger downstream payouts (customers vs sellers respectively).
-  // Reuses the `invoice` module gate so tenants with a Sale side see it.
+  // v-commission-mvp — sales-commission REPORT (accrued per seller +
+  // Settlement tab). The Commission Plans configuration lives in POS
+  // → Settings → Commission Plans; only the report belongs in the
+  // sidebar. Reuses the `invoice` module gate so tenants with a Sale
+  // side see it.
   { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'invoice',            component: Commission,               group: 'sales-group' },
+  // Loyalty is settings-only (no consumer-facing report yet), so it
+  // lives in POS → Settings → Loyalty and NOT as a sidebar leaf —
+  // matches Commission Plans, which moved out of the sidebar for the
+  // same reason. If a Loyalty report ships later, add its leaf then.
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
