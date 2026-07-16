@@ -14,6 +14,7 @@ import { commission, commissionFor } from '../../api/commission';
 import type { CommissionProgram } from '../../api/commission';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { CommissionSettings } from './CommissionSettings';
+import { formatMoney, formatNumber, formatUSD } from '../../utils/format';
 
 /**
  * v-commission-mvp — Commission report. One row per seller with
@@ -102,10 +103,10 @@ export function Commission() {
       {/* Totals strip — matches the shared StatCard pattern used by
           Sale Ledger / P&L / Purchase Ledger. */}
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Sellers"       value={sellerGroups.length} icon={Percent}      tone="purple" />
-        <StatCard label="Invoices"      value={totals.invoiceCount} icon={ReceiptText}  tone="blue" />
-        <StatCard label="Total Sales"   value={`$${totals.totalAmount.toFixed(2)}`} icon={DollarSign} tone="green" />
-        <StatCard label="Commission"    value={`$${totals.commission.toFixed(2)}`}  icon={Wallet}     tone="amber"
+        <StatCard label="Sellers"       value={formatNumber(sellerGroups.length)} icon={Percent}      tone="purple" />
+        <StatCard label="Invoices"      value={formatNumber(totals.invoiceCount)} icon={ReceiptText}  tone="blue" />
+        <StatCard label="Total Sales"   value={formatUSD(totals.totalAmount)}     icon={DollarSign}   tone="green" />
+        <StatCard label="Commission"    value={formatUSD(totals.commission)}      icon={Wallet}       tone="amber"
           hint={anyPlan ? null : 'No active plan with a rate — configure one in POS → Settings → Commission Plans'}
         />
       </div>
@@ -166,22 +167,22 @@ export function Commission() {
                         <div className="text-[11px] text-gray-500">Plan: {s.planName}</div>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{s.invoiceCount}</TableCell>
-                    <TableCell className="text-right tabular-nums">${s.totalAmount.toFixed(2)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatNumber(s.invoiceCount)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatUSD(s.totalAmount)}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {s.receivedUsd > 0 ? `$${s.receivedUsd.toFixed(2)}` : <span className="text-gray-300">—</span>}
+                      {s.receivedUsd > 0 ? formatUSD(s.receivedUsd) : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {s.receivedKhr > 0
-                        ? `${s.receivedKhr.toLocaleString(undefined, { maximumFractionDigits: 0 })} ៛`
+                        ? `${formatNumber(s.receivedKhr)} ៛`
                         : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className={`text-right tabular-nums ${s.totalRefund > 0 ? 'text-red-600' : ''}`}>
-                      ${s.totalRefund.toFixed(2)}
+                      {formatUSD(s.totalRefund)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {s.commission > 0
-                        ? <span className="font-medium text-emerald-700">${s.commission.toFixed(2)}</span>
+                        ? <span className="font-medium text-emerald-700">{formatUSD(s.commission)}</span>
                         : <span className="text-gray-300">—</span>}
                     </TableCell>
                   </TableRow>

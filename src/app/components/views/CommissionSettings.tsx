@@ -21,6 +21,7 @@ import type {
   UpsertCommissionProgram,
 } from '../../api/commission';
 import * as usersApi from '../../api/users';
+import { formatMoney, formatNumber } from '../../utils/format';
 
 const TYPE_META: Record<CommissionType, { label: string; hint: string; cls: string }> = {
   PER_INVOICE: { label: 'Per Invoice', hint: 'One payout per invoice (% or $ of the total).',          cls: 'border-blue-200 bg-blue-50 text-blue-700' },
@@ -139,8 +140,8 @@ export function CommissionSettings() {
                         {r.rate == null || r.mode == null
                           ? <span className="text-gray-400">—</span>
                           : r.mode === 'PERCENT'
-                            ? `${r.rate}%`
-                            : `$${r.rate.toFixed(2)}`}
+                            ? `${formatNumber(r.rate)}%`
+                            : `$${formatMoney(r.rate)}`}
                       </TableCell>
                       <TableCell className="text-sm">
                         {r.assignedUserIds.length === 0
