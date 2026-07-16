@@ -125,7 +125,7 @@ export const loyaltyPos = {
    *  stock_items pricing. `rewardItemId` is optional; the BE
    *  verifies it's in the rule's qualifying set if provided. */
   applyReward: (customerId: string, programId: string,
-                body?: { discountAmount?: number; rewardItemId?: string }) =>
+                body?: { discountAmount?: number; rewardItemId?: string; count?: number }) =>
     apiJson<RedeemResult>(`/api/v1/loyalty/pos/customers/${customerId}/programs/${programId}/apply-reward`, {
       method: 'POST', json: body ?? {},
     }),

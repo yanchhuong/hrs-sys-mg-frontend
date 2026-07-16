@@ -1313,6 +1313,10 @@ function PosCheckoutDialog({
     rewardItemId?: string;
     programName: string;
     programType: LoyaltyType;
+    /** v-loyalty-multi-card-redeem — Buy-5-Get-1 with 10 stamps in
+     *  hand redeems TWO free items in one shot. BE burns
+     *  count × buyQuantity stamps. Defaults to 1 for POINT. */
+    count: number;
   }>>(new Map());
 
   // Reset applied when the dialog re-opens (fresh checkout) so a
@@ -1328,35 +1332,46 @@ function PosCheckoutDialog({
    *  surfaced by the BE via {@code p.rewards}; we only project for
    *  STAMP here. */
   const renderableRewards = useMemo(() => {
-    if (!loyaltyState) return [] as Array<{
+    type Entry = {
       programId: string;
       programName: string;
       programType: LoyaltyType;
       reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[]; label: string };
-    }>;
-    const out: Array<{
-      programId: string;
-      programName: string;
-      programType: LoyaltyType;
-      reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[]; label: string };
-    }> = [];
+      /** v-loyalty-multi-card-redeem — how many completed cards
+       *  are redeemable. STAMP-only; POINT rewards ignore this. */
+      redeemableCount: number;
+    };
+    if (!loyaltyState) return [] as Entry[];
+    const out: Entry[] = [];
     for (const p of loyaltyState.programs) {
-      // 1) Pass through anything the BE already surfaces (Point
-      //    discounts, or Stamp rewards where the current balance
-      //    already crossed the target).
+      // 1) Pass-through: BE-surfaced Point discounts + Stamp
+      //    rewards where the CURRENT balance already crossed the
+      //    target (no projection needed).
       for (const r of p.rewards) {
-        out.push({ programId: p.programId, programName: p.programName, programType: p.programType, reward: r });
+        out.push({
+          programId: p.programId,
+          programName: p.programName,
+          programType: p.programType,
+          reward: r,
+          redeemableCount: p.programType === 'STAMP' && p.stampTarget
+            ? Math.floor(p.currentStamp / p.stampTarget)
+            : 1,
+        });
       }
-      // 2) Project STAMP programs whose CURRENT balance is below the
-      //    target but this cart's qualifying lines would push it
-      //    over.
+      // 2) Project STAMP programs — a card completes WITH this
+      //    sale when (current + qualifying items in cart) crosses
+      //    the target. Compute redeemableCount = floor(total /
+      //    target) so a 10-item purchase against a Buy-5-Get-1
+      //    rule offers TWO free items in one apply.
       if (p.programType === 'STAMP' && p.stampTarget != null && p.currentStamp < p.stampTarget) {
         const set = new Set(p.rewardItemIds ?? []);
         let projected = 0;
         for (const l of cartLines) {
           if (l.stockItemId && set.has(l.stockItemId)) projected += l.quantity;
         }
-        if (p.currentStamp + projected >= p.stampTarget) {
+        const totalAfterEarn = p.currentStamp + projected;
+        const count = Math.floor(totalAfterEarn / p.stampTarget);
+        if (count >= 1) {
           out.push({
             programId: p.programId,
             programName: p.programName,
@@ -1365,8 +1380,11 @@ function PosCheckoutDialog({
               kind: 'free_item',
               discountAmount: null,
               rewardItemIds: p.rewardItemIds ?? [],
-              label: `Card completes with this sale — free item unlocked`,
+              label: count === 1
+                ? 'Card completes with this sale — free item unlocked'
+                : `${count} cards complete with this sale — ${count} free items unlocked`,
             },
+            redeemableCount: count,
           });
         }
       }
@@ -1412,7 +1430,8 @@ function PosCheckoutDialog({
    *  same delta. Forces amount-mode so percent + loyalty don't
    *  interact confusingly. */
   const toggleReward = (programId: string, programName: string, programType: LoyaltyType,
-                        reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[] }) => {
+                        reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[] },
+                        redeemableCount: number) => {
     setApplied(prev => {
       const next = new Map(prev);
       if (next.has(programId)) {
@@ -1424,6 +1443,7 @@ function PosCheckoutDialog({
       }
       let delta = 0;
       let rewardItemId: string | undefined;
+      let count = 1;
       if (reward.kind === 'discount') {
         delta = Number(reward.discountAmount ?? 0);
       } else if (reward.kind === 'free_item') {
@@ -1432,11 +1452,15 @@ function PosCheckoutDialog({
           toast.error('Add a qualifying item to the cart to redeem this reward.');
           return prev;
         }
-        delta = pick.price;
+        // v-loyalty-multi-card-redeem — apply ALL completed cards
+        // in one shot. Buy-5-Get-1 with 10 qualifying items → 2
+        // free items, discount = 2 × cheapest qualifying price.
+        count = Math.max(1, redeemableCount);
+        delta = pick.price * count;
         rewardItemId = pick.rewardItemId;
       }
       if (delta <= 0) return prev;
-      next.set(programId, { delta, rewardItemId, programName, programType });
+      next.set(programId, { delta, rewardItemId, programName, programType, count });
       onDiscountTypeChange('amount');
       onDiscountValueChange(Number(discountValue) + delta);
       return next;
@@ -1454,6 +1478,7 @@ function PosCheckoutDialog({
         await loyaltyPos.applyReward(customerId, programId, {
           discountAmount: entry.delta,
           rewardItemId: entry.rewardItemId,
+          count: entry.count,
         });
       } catch (e) {
         toast.error(`Loyalty apply failed on "${entry.programName}": ${e instanceof Error ? e.message : String(e)}`);
@@ -1692,9 +1717,10 @@ function PosCheckoutDialog({
               </div>
               <ul className="space-y-1.5">
                 {renderableRewards.map((entry, idx) => {
-                  const { programId, programName, programType, reward: r } = entry;
+                  const { programId, programName, programType, reward: r, redeemableCount } = entry;
                   const key = `${programId}:${idx}`;
                   const isApplied = applied.has(programId);
+                  const appliedDelta = isApplied ? applied.get(programId)!.delta : null;
                   return (
                     <li key={key} className="flex items-center gap-2 text-[12px]">
                       {programType === 'STAMP'
@@ -1703,14 +1729,21 @@ function PosCheckoutDialog({
                       <span className="flex-1 truncate">
                         <span className="font-medium">{programName}:</span>{' '}
                         {r.label}
-                        {r.kind === 'discount' && r.discountAmount != null && (
-                          <span className="text-gray-500"> · ${Number(r.discountAmount).toFixed(2)} off</span>
+                        {/* Show the exact $ deduction — either the
+                            BE-declared amount (POINT) or the
+                            per-toggle delta we already computed
+                            from the cart (STAMP). */}
+                        {(r.kind === 'discount' && r.discountAmount != null) && (
+                          <span className="text-rose-700 font-medium"> · −${Number(r.discountAmount).toFixed(2)}</span>
+                        )}
+                        {(r.kind === 'free_item' && appliedDelta != null) && (
+                          <span className="text-rose-700 font-medium"> · −${appliedDelta.toFixed(2)}</span>
                         )}
                       </span>
                       {isApplied ? (
                         <button
                           type="button"
-                          onClick={() => toggleReward(programId, programName, programType, r)}
+                          onClick={() => toggleReward(programId, programName, programType, r, redeemableCount)}
                           className="text-[10px] px-2 py-0.5 rounded border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1"
                         >
                           Applied — Reset
@@ -1718,7 +1751,7 @@ function PosCheckoutDialog({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => toggleReward(programId, programName, programType, r)}
+                          onClick={() => toggleReward(programId, programName, programType, r, redeemableCount)}
                           className="text-[10px] px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100"
                         >
                           Use this time
@@ -1728,12 +1761,6 @@ function PosCheckoutDialog({
                   );
                 })}
               </ul>
-              {applied.size > 0 && (
-                <p className="text-[10px] text-gray-500">
-                  Loyalty discount was added to the cart's discount below.
-                  Click <b>Reset</b> above to undo before Confirm.
-                </p>
-              )}
             </div>
           )}
 
@@ -1749,9 +1776,26 @@ function PosCheckoutDialog({
               <span className="tabular-nums">${subtotal.toFixed(2)}</span>
             </div>
 
+            {/* v-loyalty-redeem-at-checkout — the Discount row
+                stays visible when a loyalty reward is applied so
+                the cashier sees exactly what's coming off the
+                cart. A small "Reward" chip beside the input
+                signals that the amount was populated by the
+                loyalty panel (as opposed to the cashier keying a
+                manual discount). The duplicate "Discount amount"
+                readout below is suppressed while a reward is on
+                — the Loyalty panel + this row together already
+                convey both source and total. */}
             {showDiscount && (
               <div className="flex items-center gap-2">
-                <span className="text-gray-600 flex-1">Discount</span>
+                <span className="text-gray-600 flex-1 inline-flex items-center gap-1.5">
+                  Discount
+                  {applied.size > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full border border-purple-300 bg-purple-50 text-purple-800">
+                      <Gift className="h-2.5 w-2.5" /> Reward
+                    </span>
+                  )}
+                </span>
                 <Select value={discountType} onValueChange={v => onDiscountTypeChange(v as 'amount' | 'percent')}>
                   <SelectTrigger className="h-7 w-20"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1767,7 +1811,7 @@ function PosCheckoutDialog({
                 />
               </div>
             )}
-            {discountAmount > 0 && (
+            {discountAmount > 0 && applied.size === 0 && (
               <div className="flex justify-between text-xs">
                 <span className="text-gray-500">Discount amount</span>
                 <span className="tabular-nums text-rose-700">−${discountAmount.toFixed(2)}</span>
