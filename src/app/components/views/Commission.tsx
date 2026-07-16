@@ -15,17 +15,37 @@ import { commission, commissionFor } from '../../api/commission';
 import type { CommissionProgram } from '../../api/commission';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { CommissionSettings } from './CommissionSettings';
+import { CommissionSettlementView } from './CommissionSettlementView';
 import { formatNumber, formatUSD } from '../../utils/format';
 import * as currencyApi from '../../api/currencySettings';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 /**
- * v-commission-mvp — Commission report. One row per seller with
- * their invoice count, running totals from the Sale Ledger, and
- * the commission owed based on any Active Plan they are covered
- * by (per-seller assignment or global). Plans are configured in
- * POS → Settings → Commission Plans.
+ * v-commission-settlement-mvp — Commission page shell. Two tabs:
+ * "Commission" (the accrued-per-seller report) and "Settlement"
+ * (create + track payout records). Same nav leaf; the tab drives
+ * which sub-view renders.
  */
 export function Commission() {
+  return (
+    <Tabs defaultValue="report" className="w-full">
+      <TabsList>
+        <TabsTrigger value="report">Commission</TabsTrigger>
+        <TabsTrigger value="settlement">Settlement</TabsTrigger>
+      </TabsList>
+      <TabsContent value="report" className="mt-4">
+        <CommissionReport />
+      </TabsContent>
+      <TabsContent value="settlement" className="mt-4">
+        <CommissionSettlementView />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+/** The by-seller accrued-commission report (formerly the whole
+ *  Commission page). Now the first tab under the shell above. */
+function CommissionReport() {
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = today.slice(0, 8) + '01';
   const [from, setFrom] = useState<string>(firstOfMonth);
