@@ -18,6 +18,7 @@ import * as currencyApi from '../../api/currencySettings';
 import { formatMoneyForCurrency } from '../../utils/format';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { StatCard } from '../common/StatCard';
 
 /** Render an amount with the currency in front (matches the Bills /
  *  Invoices list pages). USD collapses to "$" with 2dp, KHR uses ISO
@@ -368,14 +369,14 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           payments stay on their own rail. */}
       {report && (
         <div className={`grid gap-3 ${['sm:grid-cols-3', 'sm:grid-cols-4', 'sm:grid-cols-5'][splitCols]} grid-cols-2`}>
-          <LedgerStatCard
+          <StatCard
             icon={FileText}
             tone="blue"
             label="Total"
             value={formatMoney(report.grandTotalAmount, 'USD')}
           />
           {showUsd && (
-            <LedgerStatCard
+            <StatCard
               icon={TrendingUp}
               tone="green"
               label={`${labels.settledHeader} (USD)`}
@@ -386,7 +387,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
             />
           )}
           {showKhr && (
-            <LedgerStatCard
+            <StatCard
               icon={Wallet}
               tone="amber"
               label={`${labels.settledHeader} (KHR)`}
@@ -396,7 +397,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
               hint={<SettledTooltip kind={kind} />}
             />
           )}
-          <LedgerStatCard
+          <StatCard
             icon={RotateCcw}
             tone={kind === 'sale' ? 'red' : 'green'}
             label={labels.refundHeader}
@@ -404,7 +405,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
               ? formatMoney(0, 'USD')
               : `${labels.refundSign}${formatMoney(report.grandTotalRefund, 'USD')}`}
           />
-          <LedgerStatCard
+          <StatCard
             icon={DollarSign}
             tone="purple"
             label={`Closing Balance (${labels.balanceLabel})`}
@@ -692,41 +693,5 @@ export function SaleLedger()     { return <LedgerReport kind="sale" />; }
 /** Purchase Ledger wrapper — same idea, vendor-side. */
 export function PurchaseLedger() { return <LedgerReport kind="purchase" />; }
 
-/** Per-metric KPI card used across the Sale / Purchase Ledger
- *  totals strip. Mirrors the StatCard shape in {@code Reports.tsx}
- *  (icon chip top-left, big number top-right, muted label below)
- *  so the totals strip reads the same as the Payroll Report. */
-const LEDGER_TONE: Record<string, { bg: string; text: string }> = {
-  blue:   { bg: 'bg-blue-50',   text: 'text-blue-700'   },
-  green:  { bg: 'bg-green-50',  text: 'text-green-700'  },
-  red:    { bg: 'bg-red-50',    text: 'text-red-700'    },
-  purple: { bg: 'bg-purple-50', text: 'text-purple-700' },
-  amber:  { bg: 'bg-amber-50',  text: 'text-amber-700'  },
-};
-function LedgerStatCard({
-  label, value, icon: Icon, tone, hint,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: keyof typeof LEDGER_TONE;
-  hint?: React.ReactNode;
-}) {
-  const t = LEDGER_TONE[tone];
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className={`p-2 rounded-lg ${t.bg}`}>
-            <Icon className={`h-4 w-4 ${t.text}`} />
-          </div>
-          <span className={`text-2xl font-bold tabular-nums ${t.text}`}>{value}</span>
-        </div>
-        <p className="text-xs text-gray-500 inline-flex items-center gap-1">
-          {label}
-          {hint}
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
+// StatCard is imported from common/StatCard — single source of truth
+// shared with Reports.tsx and ProfitLossReport.tsx.

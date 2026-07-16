@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { DateInput } from '../common/DateInput';
+import { StatCard, STAT_CARD_TONES } from '../common/StatCard';
 import { formatMoney, formatNumber } from '../../utils/format';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -1961,38 +1962,10 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
   );
 }
 
-const TONE_MAP: Record<string, { bg: string; text: string; ring: string }> = {
-  blue:   { bg: 'bg-blue-50',   text: 'text-blue-700',   ring: 'ring-blue-300' },
-  green:  { bg: 'bg-green-50',  text: 'text-green-700',  ring: 'ring-green-300' },
-  red:    { bg: 'bg-red-50',    text: 'text-red-700',    ring: 'ring-red-300' },
-  purple: { bg: 'bg-purple-50', text: 'text-purple-700', ring: 'ring-purple-300' },
-  orange: { bg: 'bg-orange-50', text: 'text-orange-700', ring: 'ring-orange-300' },
-  amber:  { bg: 'bg-amber-50',  text: 'text-amber-700',  ring: 'ring-amber-300' },
-};
-
-function StatCard({
-  label, value, icon: Icon, tone,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: keyof typeof TONE_MAP;
-}) {
-  const t = TONE_MAP[tone];
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className={`p-2 rounded-lg ${t.bg}`}>
-            <Icon className={`h-4 w-4 ${t.text}`} />
-          </div>
-          <span className={`text-2xl font-bold ${t.text}`}>{value}</span>
-        </div>
-        <p className="text-xs text-gray-500">{label}</p>
-      </CardContent>
-    </Card>
-  );
-}
+// StatCard + TONE_MAP consolidated into common/StatCard.tsx. The
+// KpiCard below (clickable filter tile with ring on active state)
+// uses the same tone palette via STAT_CARD_TONES.
+const TONE_MAP = STAT_CARD_TONES;
 
 /** KPI card — count of employees / total active, clickable to filter the
  *  Detailed Records table below. Active state shown with a colored ring. */

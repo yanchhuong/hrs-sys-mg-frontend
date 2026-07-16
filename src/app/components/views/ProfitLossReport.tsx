@@ -12,6 +12,7 @@ import { TrendingUp, TrendingDown, Wallet, Printer, Calendar, ChevronDown, Chevr
 import * as plApi from '../../api/profitLossReport';
 import * as currencyApi from '../../api/currencySettings';
 import { useI18n } from '../../i18n/I18nContext';
+import { StatCard } from '../common/StatCard';
 
 /** Render an amount with the tenant's primary currency prefix. USD
  *  collapses to "$", KHR / KRW show the local symbol without decimals;
@@ -147,14 +148,14 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
           muted label below with a supporting detail hint. */}
       {report && (
         <div className="grid gap-3 sm:grid-cols-3 grid-cols-2 print:grid-cols-3">
-          <PlStatCard
+          <StatCard
             icon={TrendingUp}
             tone="green"
             label="Total Income"
             hint="Invoices & adjustments"
             value={fmtMoney(report.totalIncome)}
           />
-          <PlStatCard
+          <StatCard
             icon={TrendingDown}
             tone="red"
             label="Total Expense"
@@ -166,7 +167,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
             }
             value={fmtMoney(report.totalExpense)}
           />
-          <PlStatCard
+          <StatCard
             icon={Wallet}
             tone={report.netProfit >= 0 ? 'green' : 'red'}
             label="Net Profit"
@@ -425,39 +426,5 @@ export function consumeProfitLossNavIntent(source: PlLineSource): string | null 
   }
 }
 
-/** Per-metric KPI card — mirrors Sale Ledger's LedgerStatCard and
- *  Payroll Report's StatCard so the totals strip reads the same
- *  across all three reports (colored icon top-left, big colored
- *  number top-right, muted label + optional hint below). */
-const PL_TONE: Record<string, { bg: string; text: string }> = {
-  blue:   { bg: 'bg-blue-50',   text: 'text-blue-700'   },
-  green:  { bg: 'bg-green-50',  text: 'text-green-700'  },
-  red:    { bg: 'bg-red-50',    text: 'text-red-700'    },
-  purple: { bg: 'bg-purple-50', text: 'text-purple-700' },
-  amber:  { bg: 'bg-amber-50',  text: 'text-amber-700'  },
-};
-function PlStatCard({
-  label, value, hint, icon: Icon, tone,
-}: {
-  label: string;
-  value: string | number;
-  hint?: React.ReactNode;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: keyof typeof PL_TONE;
-}) {
-  const t = PL_TONE[tone];
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className={`p-2 rounded-lg ${t.bg}`}>
-            <Icon className={`h-4 w-4 ${t.text}`} />
-          </div>
-          <span className={`text-2xl font-bold tabular-nums ${t.text}`}>{value}</span>
-        </div>
-        <p className="text-xs text-gray-500">{label}</p>
-        {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
-}
+// StatCard is imported from common/StatCard — single source of truth
+// shared with Reports.tsx and LedgerReport.tsx.
