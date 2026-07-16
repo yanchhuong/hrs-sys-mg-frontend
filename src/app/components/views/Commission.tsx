@@ -5,8 +5,9 @@ import { Button } from '../ui/button';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Percent, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon, Calendar } from 'lucide-react';
+import { Percent, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
+import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import { saleLedger } from '../../api/ledgerReports';
 import type { LedgerReportResponse } from '../../api/ledgerReports';
@@ -172,14 +173,15 @@ export function Commission() {
               <SettingsIcon className="h-4 w-4" />
             </button>
           </div>
-          {/* Date filter matches Sale Ledger / P&L / Purchase Ledger:
-              Calendar icon → From date → arrow → To date → Apply. */}
+          {/* Date filter — matches Transactions verbatim (canonical
+              style per feedback: From / To labels + DateInput, no
+              calendar icon or arrow). */}
           <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <Calendar className="h-4 w-4 text-gray-400" />
-            <DateInput value={from} onChange={setFrom} className="h-8 w-36 text-sm" title="From date" />
-            <span className="text-gray-400 text-xs">→</span>
-            <DateInput value={to}   onChange={setTo}   className="h-8 w-36 text-sm" title="To date" />
-            <Button size="sm" onClick={load} disabled={loading} className="h-8">
+            <Label className="text-xs text-gray-500">From</Label>
+            <DateInput value={from} onChange={setFrom} className="h-9 w-36 text-sm" title="From date" />
+            <Label className="text-xs text-gray-500">To</Label>
+            <DateInput value={to}   onChange={setTo}   className="h-9 w-36 text-sm" title="To date" />
+            <Button size="sm" onClick={load} disabled={loading} className="h-9">
               {loading ? 'Loading…' : 'Apply'}
             </Button>
           </div>

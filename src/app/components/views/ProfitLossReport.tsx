@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { format, startOfYear, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
-import { TrendingUp, TrendingDown, Wallet, Printer, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Printer, ChevronDown, ChevronRight } from 'lucide-react';
 import * as plApi from '../../api/profitLossReport';
 import * as currencyApi from '../../api/currencySettings';
 import { useI18n } from '../../i18n/I18nContext';
@@ -194,21 +195,21 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
             <div className="flex items-center gap-3 flex-wrap justify-between">
               <CardTitle className="text-base">Monthly Breakdown</CardTitle>
               <div className="flex flex-wrap items-center gap-2 print:hidden">
-                <Calendar className="h-4 w-4 text-gray-400" />
+                <Label className="text-xs text-gray-500">From</Label>
                 <DateInput
                   value={from}
                   onChange={setFrom}
-                  className="h-8 w-36 text-sm"
+                  className="h-9 w-36 text-sm"
                   title="From date"
                 />
-                <span className="text-gray-400 text-xs">→</span>
+                <Label className="text-xs text-gray-500">To</Label>
                 <DateInput
                   value={to}
                   onChange={setTo}
-                  className="h-8 w-36 text-sm"
+                  className="h-9 w-36 text-sm"
                   title="To date"
                 />
-                <Button size="sm" onClick={load} disabled={loading} className="h-8">
+                <Button size="sm" onClick={load} disabled={loading} className="h-9">
                   {loading ? 'Loading…' : 'Apply'}
                 </Button>
               </div>

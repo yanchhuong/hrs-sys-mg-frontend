@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Users, UserRound } from 'lucide-react';
@@ -11,7 +12,7 @@ import {
 } from '../ui/table';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
-import { BookOpen, Printer, Calendar, Eye, ArrowLeft, Info, FileText, TrendingUp, DollarSign, RotateCcw, Wallet } from 'lucide-react';
+import { BookOpen, Printer, Eye, ArrowLeft, Info, FileText, TrendingUp, DollarSign, RotateCcw, Wallet } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as ledgerApi from '../../api/ledgerReports';
 import * as currencyApi from '../../api/currencySettings';
@@ -254,27 +255,28 @@ export function LedgerReport({ kind }: LedgerReportProps) {
   const moneyOrDash = (n: number, currency: string) =>
     n === 0 ? <span className="text-gray-300">—</span> : formatMoney(n, currency);
 
-  /** Compact date-range filter — inline (no Card wrapper) so it
-   *  can sit on the SAME row as the Customers / Sellers tabs (or
-   *  the Vendors card title on Purchase). Payroll Report visual
-   *  style: Calendar icon, From → To, Apply. */
+  /** Compact date-range filter — matches Transactions verbatim
+   *  (feedback: filter strips must be consistent across list
+   *  pages). "From" / "To" labels next to their DateInputs,
+   *  no calendar icon or arrow. Apply stays here (Reports load
+   *  on click, not on change, for backend cost reasons). */
   const inlineFilter = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
-      <Calendar className="h-4 w-4 text-gray-400" />
+      <Label className="text-xs text-gray-500">From</Label>
       <DateInput
         value={from}
         onChange={setFrom}
-        className="h-8 w-36 text-sm"
+        className="h-9 w-36 text-sm"
         title="From date"
       />
-      <span className="text-gray-400 text-xs">→</span>
+      <Label className="text-xs text-gray-500">To</Label>
       <DateInput
         value={to}
         onChange={setTo}
-        className="h-8 w-36 text-sm"
+        className="h-9 w-36 text-sm"
         title="To date"
       />
-      <Button size="sm" onClick={load} disabled={loading} className="h-8">
+      <Button size="sm" onClick={load} disabled={loading} className="h-9">
         {loading ? 'Loading…' : 'Apply'}
       </Button>
     </div>
