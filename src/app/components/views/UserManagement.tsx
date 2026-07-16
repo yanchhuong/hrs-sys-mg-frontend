@@ -1412,7 +1412,7 @@ export function UserManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
+                    <TableHead>Name / User</TableHead>
                     <TableHead>Employee</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Role</TableHead>
