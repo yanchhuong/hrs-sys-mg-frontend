@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import { StatCard, STAT_CARD_TONES } from '../common/StatCard';
 import { formatMoney, formatNumber } from '../../utils/format';
@@ -15,7 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Calendar, Clock, DollarSign, Download, FileText, Eye,
+  Clock, DollarSign, Download, FileText, Eye,
   TrendingUp, Users, Building2, AlertCircle,
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -726,22 +727,22 @@ function AttendanceReport({
       <Card>
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-400" />
+            <Label className="text-xs text-gray-500">From</Label>
             <DateInput
               value={startDate}
               onChange={setStartDate}
-              className="h-8 w-36 text-sm"
+              className="h-9 w-36 text-sm"
               title="Start date"
             />
-            <span className="text-gray-400 text-xs">→</span>
+            <Label className="text-xs text-gray-500">To</Label>
             <DateInput
               value={endDate}
               onChange={setEndDate}
-              className="h-8 w-36 text-sm"
+              className="h-9 w-36 text-sm"
               title="End date"
             />
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
                 {departments.map(d => (
@@ -751,7 +752,7 @@ function AttendanceReport({
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-8 w-36 text-sm" title="Status"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-36 text-sm" title="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="present">Present</SelectItem>
@@ -951,9 +952,9 @@ function PayrollReport({
       <Card>
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-400" />
+            <Label className="text-xs text-gray-500">Month</Label>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="h-8 w-44 text-sm" title="Month"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-44 text-sm" title="Month"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
                 {availableMonths.map(m => (
@@ -962,7 +963,7 @@ function PayrollReport({
               </SelectContent>
             </Select>
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
                 {departments.map(d => (
@@ -1860,22 +1861,22 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
       <Card>
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-400" />
+            <Label className="text-xs text-gray-500">From</Label>
             <DateInput
               value={startDate}
               onChange={setStartDate}
-              className="h-8 w-36 text-sm"
+              className="h-9 w-36 text-sm"
               title="Start date"
             />
-            <span className="text-gray-400 text-xs">→</span>
+            <Label className="text-xs text-gray-500">To</Label>
             <DateInput
               value={endDate}
               onChange={setEndDate}
-              className="h-8 w-36 text-sm"
+              className="h-9 w-36 text-sm"
               title="End date"
             />
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-8 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
                 {departments.map(d => (

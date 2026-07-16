@@ -48,7 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, Calendar, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon } from 'lucide-react';
 import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
@@ -1671,7 +1671,7 @@ export function Payroll() {
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-500" />
+            <Label className="text-xs text-gray-500">Year</Label>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
