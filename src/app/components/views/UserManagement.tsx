@@ -1412,7 +1412,8 @@ export function UserManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name / User</TableHead>
+                    <TableHead>Display Name</TableHead>
+                    <TableHead>User ID</TableHead>
                     <TableHead>Employee</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Role</TableHead>
@@ -1429,21 +1430,13 @@ export function UserManagement() {
                     );
                     return (
                       <TableRow key={user.id}>
-                        <TableCell>
-                          {(() => {
-                            const displayName =
-                              user.name?.trim() ||
-                              (employee?.name ?? '') ||
-                              '';
-                            return displayName ? (
-                              <div>
-                                <div className="font-medium">{displayName}</div>
-                                <div className="text-xs text-gray-500">{user.email}</div>
-                              </div>
-                            ) : (
-                              <div className="font-medium">{user.email}</div>
-                            );
-                          })()}
+                        <TableCell className="font-medium">
+                          {user.name?.trim() || employee?.name || (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-700">
+                          {user.username?.trim() || user.email}
                         </TableCell>
                         <TableCell>
                           {employee ? (
