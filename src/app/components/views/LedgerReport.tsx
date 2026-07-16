@@ -335,28 +335,6 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         </Button>
       </div>
 
-      <Card className="print:shadow-none print:border-0">
-        <CardHeader className="pb-3">
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="space-y-1">
-              <label className="text-xs text-gray-500 flex items-center gap-1">
-                <Calendar className="h-3 w-3" /> From
-              </label>
-              <DateInput value={from} onChange={setFrom} className="w-44" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-gray-500 flex items-center gap-1">
-                <Calendar className="h-3 w-3" /> To
-              </label>
-              <DateInput value={to} onChange={setTo} className="w-44" />
-            </div>
-            <Button onClick={load} disabled={loading}>
-              {loading ? 'Loading…' : 'Apply'}
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
-
       {/* Grand totals strip. Total · Received(USD) · Received(KHR) ·
           Refund · Closing — the Received column splits by currency so
           mixed-currency payments don't get arithmetic-mashed into one
@@ -407,6 +385,36 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* Compact date-range filter bar — Payroll Report style
+          (Card + p-3 CardContent, no CardHeader). Sits next to
+          the summary table so the range is where the operator's
+          eye is. Left: From → To. Right: Apply. */}
+      <Card className="print:hidden">
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 text-gray-400" />
+            <DateInput
+              value={from}
+              onChange={setFrom}
+              className="h-8 w-36 text-sm"
+              title="From date"
+            />
+            <span className="text-gray-400 text-xs">→</span>
+            <DateInput
+              value={to}
+              onChange={setTo}
+              className="h-8 w-36 text-sm"
+              title="To date"
+            />
+            <div className="ml-auto">
+              <Button size="sm" onClick={load} disabled={loading} className="h-8">
+                {loading ? 'Loading…' : 'Apply'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {report && report.groups.length === 0 && (
         <Card>
