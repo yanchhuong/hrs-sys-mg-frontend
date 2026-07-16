@@ -67,6 +67,16 @@ export function Commission() {
     for (const g of report.groups) {
       for (const e of g.entries) {
         if (!e.sellerId) continue;
+        // The sale-ledger endpoint emits "ghost rows" for
+        // invoices ISSUED before the date range that received
+        // an in-range payment — amount = 0 but receivedUsd /
+        // receivedKhr populated. Great for the Sale Ledger's
+        // chain-based accounting, wrong for Commission which
+        // should mirror the Invoice list (invoices issued in
+        // the range only). Skip them so Total / Received / AR
+        // reconcile with the Invoice list totals row.
+        const isGhost = (e.amount ?? 0) === 0 && e.balance !== null;
+        if (isGhost) continue;
         const isRoot = e.balance !== null;
         const key = e.sellerId;
         const cur = acc.get(key) ?? {
