@@ -673,7 +673,12 @@ export function UserManagement() {
   };
 
   const handleSaveUser = async () => {
-    if (!formData.email || !formData.employeeId || (!editingUser && !formData.password)) {
+    // Administrator is the company-owner role — it doesn't need to be
+    // tied to an Employee record (the owner may not appear in the
+    // Employees table yet). Every other role is a person on payroll,
+    // so Employee stays required for them.
+    const employeeRequired = formData.role !== 'admin';
+    if (!formData.email || (employeeRequired && !formData.employeeId) || (!editingUser && !formData.password)) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -1269,7 +1274,12 @@ export function UserManagement() {
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="employeeId">Employee *</Label>
+                          <Label htmlFor="employeeId">
+                            Employee{formData.role !== 'admin' ? ' *' : ''}
+                            {formData.role === 'admin' && (
+                              <span className="ml-1 text-xs font-normal text-gray-500">(optional)</span>
+                            )}
+                          </Label>
                           <UserEmployeePicker
                             employees={employees}
                             deptName={deptName}
