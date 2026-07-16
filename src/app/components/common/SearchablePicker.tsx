@@ -16,6 +16,12 @@ export interface PickerOption {
   label: string;
   /** Optional secondary label rendered after the primary, in muted color. */
   secondary?: string;
+  /** Optional right-aligned trailing content rendered at the end of
+   *  the row (e.g. a badge / chip). Free-form ReactNode so callers
+   *  can compose coloured pills without the picker needing to know
+   *  their shape. Not part of the search haystack — put searchable
+   *  keywords in {@link searchKey}. */
+  trailing?: ReactNode;
   /** Used as the cmdk fuzzy-search haystack (defaults to label + secondary). */
   searchKey?: string;
 }
@@ -264,6 +270,11 @@ export function SearchablePicker({
                       {o.label}
                       {o.secondary ? <span className="text-gray-400"> · {o.secondary}</span> : null}
                     </span>
+                    {o.trailing != null && (
+                      <span className="ml-2 shrink-0 text-right text-[10px]">
+                        {o.trailing}
+                      </span>
+                    )}
                     {onEdit && (
                       <button
                         type="button"

@@ -691,16 +691,38 @@ export function POS() {
               .filter(c => (c.name ?? '').trim().toLowerCase() !== 'walk-in')
               .map(c => {
                 const bal = loyaltyBalances[c.id];
-                const chips: string[] = [];
-                if (bal && bal.currentPoint > 0) chips.push(`${bal.currentPoint} pts`);
-                if (bal && bal.currentStamp > 0) chips.push(`${bal.currentStamp} stamp${bal.currentStamp === 1 ? '' : 's'}`);
-                // Include phone in the fuzzy-search haystack so
-                // "0123..." matches too.
-                const searchKey = `${c.name} ${c.phone ?? ''} ${chips.join(' ')}`;
+                // v-pos-customer-searchable — last 4 digits of the
+                // phone as a compact identifier suffix so two "John
+                // Smith" rows are still distinguishable at a glance.
+                // Full phone still searchable (see searchKey below).
+                const phone = (c.phone ?? '').trim();
+                const phoneTail = phone.length >= 4 ? '••' + phone.slice(-4) : phone || undefined;
+                // Reward chips on the RIGHT edge — coloured so pts
+                // (blue) and stamps (green) read like the loyalty
+                // panel below the cart.
+                const trailing = (bal && (bal.currentPoint > 0 || bal.currentStamp > 0)) ? (
+                  <span className="inline-flex items-center gap-1">
+                    {bal.currentPoint > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700">
+                        {bal.currentPoint} pts
+                      </span>
+                    )}
+                    {bal.currentStamp > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
+                        {bal.currentStamp} stamp{bal.currentStamp === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </span>
+                ) : undefined;
+                // Include the FULL phone (not just the tail) so
+                // "01234" also matches — the display trims for
+                // brevity, search stays permissive.
+                const searchKey = `${c.name} ${phone} ${bal?.currentPoint ?? ''} ${bal?.currentStamp ?? ''}`;
                 return {
                   value: c.id,
                   label: c.name,
-                  secondary: chips.length ? chips.join(' · ') : (c.phone ?? undefined),
+                  secondary: phoneTail,
+                  trailing,
                   searchKey,
                 };
               }),
