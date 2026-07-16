@@ -501,34 +501,33 @@ export function POS() {
     }
   };
 
-  const onCheckoutSubmit = async (method: PosPaymentMethod, received: number) => {
+  const onCheckoutSubmit = async (method: PosPaymentMethod, received: number): Promise<boolean> => {
     // Persist the cart first if it isn't already saved — the checkout
     // endpoint needs a real ticket to flip.
     let order = currentOrder;
     if (!order) order = await saveDraft();
-    else if (saving) return; // mid-save guard
+    else if (saving) return false; // mid-save guard
     else order = await saveDraft(); // re-save in case the cart edited since last save
-    if (!order) return;
+    if (!order) return false;
     setSaving(true);
     try {
       const checked = await posApi.checkout(order.id, { invoiceKind, paymentMethod: method, paymentReceived: received });
       // v-loyalty-mvp — fire the earn hook against the just-paid
-      // invoice. Fire-and-forget: any hiccup here never blocks the
-      // sale. Toast surfaces the earn/redeem result so the cashier
-      // sees the outcome without opening a second panel.
+      // invoice. AWAITED (not fire-and-forget) so the dialog can
+      // chain a burn against the freshly-elevated balance (see
+      // v-loyalty-projected-redeem). A loyalty hiccup still never
+      // blocks the sale — errors are swallowed inline.
       if (checked.invoiceId && checked.customerId) {
-        (async () => {
-          try {
-            const summary: EarnSummary = await loyaltyPos.earn(checked.invoiceId!);
-            for (const l of summary.lines) {
-              const parts: string[] = [];
-              if (l.pointsEarned > 0) parts.push(`+${l.pointsEarned} pts`);
-              if (l.stampsEarned > 0) parts.push(`+${l.stampsEarned} stamp${l.stampsEarned === 1 ? '' : 's'}`);
-              if (l.note) parts.push(l.note);
-              if (parts.length) toast.success(`${l.programName}: ${parts.join(' · ')}`);
-            }
-          } catch { /* silent — loyalty never blocks checkout */ }
-        })();
+        try {
+          const summary: EarnSummary = await loyaltyPos.earn(checked.invoiceId);
+          for (const l of summary.lines) {
+            const parts: string[] = [];
+            if (l.pointsEarned > 0) parts.push(`+${l.pointsEarned} pts`);
+            if (l.stampsEarned > 0) parts.push(`+${l.stampsEarned} stamp${l.stampsEarned === 1 ? '' : 's'}`);
+            if (l.note) parts.push(l.note);
+            if (parts.length) toast.success(`${l.programName}: ${parts.join(' · ')}`);
+          }
+        } catch { /* silent — loyalty never blocks checkout */ }
       }
       setOpenOrders(prev => prev.filter(o => o.id !== checked.id));
       // V165 — the just-paid order enters the kitchen pipeline at
@@ -554,8 +553,10 @@ export function POS() {
         paidClearTimerRef.current = null;
       }, PAID_SPLASH_MS);
       newSale();
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Checkout failed');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1257,7 +1258,9 @@ interface CheckoutProps {
    *  overlay (V143 follow-up). */
   method: PosPaymentMethod;
   onMethodChange: (m: PosPaymentMethod) => void;
-  onSubmit: (method: PosPaymentMethod, received: number) => void;
+  /** Returns true on a successful checkout so the dialog can chain
+   *  the loyalty burn after the earn hook has fired server-side. */
+  onSubmit: (method: PosPaymentMethod, received: number) => Promise<boolean>;
   /** Cart breakdown moved into this dialog (v-pos-cart-slim) so the
    *  left cart panel keeps room for the item list. Subtotal + tax
    *  amount are computed by POS.tsx; the rest are controlled inputs
@@ -1317,6 +1320,59 @@ function PosCheckoutDialog({
   useEffect(() => {
     if (open) setApplied(new Map());
   }, [open]);
+
+  /** v-loyalty-projected-redeem — walk each STAMP program and check
+   *  if (current balance + stamps THIS cart is about to earn) crosses
+   *  the target. When it does, synthesize a free_item reward so the
+   *  cashier can burn it against this very sale. Points are already
+   *  surfaced by the BE via {@code p.rewards}; we only project for
+   *  STAMP here. */
+  const renderableRewards = useMemo(() => {
+    if (!loyaltyState) return [] as Array<{
+      programId: string;
+      programName: string;
+      programType: LoyaltyType;
+      reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[]; label: string };
+    }>;
+    const out: Array<{
+      programId: string;
+      programName: string;
+      programType: LoyaltyType;
+      reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[]; label: string };
+    }> = [];
+    for (const p of loyaltyState.programs) {
+      // 1) Pass through anything the BE already surfaces (Point
+      //    discounts, or Stamp rewards where the current balance
+      //    already crossed the target).
+      for (const r of p.rewards) {
+        out.push({ programId: p.programId, programName: p.programName, programType: p.programType, reward: r });
+      }
+      // 2) Project STAMP programs whose CURRENT balance is below the
+      //    target but this cart's qualifying lines would push it
+      //    over.
+      if (p.programType === 'STAMP' && p.stampTarget != null && p.currentStamp < p.stampTarget) {
+        const set = new Set(p.rewardItemIds ?? []);
+        let projected = 0;
+        for (const l of cartLines) {
+          if (l.stockItemId && set.has(l.stockItemId)) projected += l.quantity;
+        }
+        if (p.currentStamp + projected >= p.stampTarget) {
+          out.push({
+            programId: p.programId,
+            programName: p.programName,
+            programType: p.programType,
+            reward: {
+              kind: 'free_item',
+              discountAmount: null,
+              rewardItemIds: p.rewardItemIds ?? [],
+              label: `Card completes with this sale — free item unlocked`,
+            },
+          });
+        }
+      }
+    }
+    return out;
+  }, [loyaltyState, cartLines]);
 
   /** For a STAMP reward, pick the cheapest qualifying item from the
    *  cart (line's stockItemId in the reward's item set). Falls back
@@ -1623,10 +1679,11 @@ function PosCheckoutDialog({
 
           {/* v-loyalty-redeem-at-checkout — per-reward "Use / Reset"
               toggles for the picked customer's redeemable rewards.
-              Cashier decides transaction-by-transaction whether to
-              burn a stamp card or point discount for this sale.
+              Includes v-loyalty-projected-redeem: a Stamp program
+              whose card completes WITH this sale (4 stamps + 2
+              qualifying in cart >= 5 target) surfaces here too.
               Hidden entirely for walk-in checkouts. */}
-          {customerId && loyaltyState && loyaltyState.programs.some(p => p.rewards.length > 0) && (
+          {customerId && renderableRewards.length > 0 && (
             <div className="rounded-md border border-purple-200 bg-purple-50/50 p-3 space-y-2 text-sm">
               <div className="text-[11px] font-semibold text-purple-800 inline-flex items-center gap-1.5">
                 <Gift className="h-3.5 w-3.5" />
@@ -1634,43 +1691,42 @@ function PosCheckoutDialog({
                 <span className="text-purple-600 font-normal">— apply this time or save for later</span>
               </div>
               <ul className="space-y-1.5">
-                {loyaltyState.programs.flatMap(p =>
-                  p.rewards.map((r, idx) => {
-                    const key = `${p.programId}:${idx}`;
-                    const isApplied = applied.has(p.programId);
-                    return (
-                      <li key={key} className="flex items-center gap-2 text-[12px]">
-                        {p.programType === 'STAMP'
-                          ? <StampIcon className="h-3 w-3 text-emerald-700" />
-                          : <Star className="h-3 w-3 text-blue-700" />}
-                        <span className="flex-1 truncate">
-                          <span className="font-medium">{p.programName}:</span>{' '}
-                          {r.label}
-                          {r.kind === 'discount' && r.discountAmount != null && (
-                            <span className="text-gray-500"> · ${Number(r.discountAmount).toFixed(2)} off</span>
-                          )}
-                        </span>
-                        {isApplied ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleReward(p.programId, p.programName, p.programType, r)}
-                            className="text-[10px] px-2 py-0.5 rounded border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1"
-                          >
-                            Applied — Reset
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => toggleReward(p.programId, p.programName, p.programType, r)}
-                            className="text-[10px] px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100"
-                          >
-                            Use this time
-                          </button>
+                {renderableRewards.map((entry, idx) => {
+                  const { programId, programName, programType, reward: r } = entry;
+                  const key = `${programId}:${idx}`;
+                  const isApplied = applied.has(programId);
+                  return (
+                    <li key={key} className="flex items-center gap-2 text-[12px]">
+                      {programType === 'STAMP'
+                        ? <StampIcon className="h-3 w-3 text-emerald-700" />
+                        : <Star className="h-3 w-3 text-blue-700" />}
+                      <span className="flex-1 truncate">
+                        <span className="font-medium">{programName}:</span>{' '}
+                        {r.label}
+                        {r.kind === 'discount' && r.discountAmount != null && (
+                          <span className="text-gray-500"> · ${Number(r.discountAmount).toFixed(2)} off</span>
                         )}
-                      </li>
-                    );
-                  })
-                )}
+                      </span>
+                      {isApplied ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleReward(programId, programName, programType, r)}
+                          className="text-[10px] px-2 py-0.5 rounded border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1"
+                        >
+                          Applied — Reset
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => toggleReward(programId, programName, programType, r)}
+                          className="text-[10px] px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100"
+                        >
+                          Use this time
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
               {applied.size > 0 && (
                 <p className="text-[10px] text-gray-500">
@@ -1774,12 +1830,20 @@ function PosCheckoutDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button
             onClick={async () => {
-              // v-loyalty-redeem-at-checkout — burn any ticked
-              // loyalty rewards BE-side first. If any fail, abort
-              // the whole checkout so the cashier can retry.
-              const ok = await commitLoyalty();
+              // v-loyalty-redeem-at-checkout — order matters:
+              //  1) onSubmit runs the checkout, which fires the earn
+              //     hook server-side. For "projected balance" cases
+              //     (customer arrives with 4 stamps, buys 2 more →
+              //     card completes with THIS sale), the balance is
+              //     only ≥ target AFTER earn runs.
+              //  2) Once checkout succeeded, burn the applied
+              //     rewards from the freshly-elevated balance. Any
+              //     failure here is a soft error — the customer
+              //     already paid the discounted total, so we just
+              //     toast and let admin reconcile via ADJUST.
+              const ok = await onSubmit(method, method === 'cash' ? received : total);
               if (!ok) return;
-              onSubmit(method, method === 'cash' ? received : total);
+              await commitLoyalty();
             }}
             disabled={saving || short || total <= 0}
             className="bg-emerald-600 hover:bg-emerald-700"

@@ -87,6 +87,9 @@ export interface ProgramState {
   currentPoint: number;
   currentStamp: number;
   stampTarget: number | null;
+  /** Qualifying SKUs — needed FE-side to project earn from the
+   *  current cart before checkout. */
+  rewardItemIds: string[];
   rewards: LoyaltyReward[];
 }
 
