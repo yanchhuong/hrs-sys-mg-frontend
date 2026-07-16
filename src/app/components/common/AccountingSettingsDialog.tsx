@@ -7,7 +7,7 @@ import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins, Gift } from 'lucide-react';
+import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins, Gift, Percent as PercentIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/accountingSettings';
@@ -21,6 +21,7 @@ import { ImageDropZone } from './ImageDropZone';
 import * as paywayApi from '../../api/payway';
 import { PayWaySettingsDialog } from './PayWaySettingsDialog';
 import { Loyalty } from '../views/Loyalty';
+import { CommissionSettings } from '../views/CommissionSettings';
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
  *  original 5-pattern VAT+WHT set; Receipt has its own 4-pattern WHT
@@ -192,7 +193,7 @@ function timeAgo(iso: string | null): string {
  * flag, then PUTs the lot on Save. Cancel discards in-flight
  * changes — never persists until Save is clicked.</p>
  */
-type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides' | 'currency' | 'loyalty';
+type Section = 'display' | 'numbering' | 'tax' | 'bank' | 'reminders' | 'receipt' | 'slides' | 'currency' | 'loyalty' | 'commission';
 
 export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }: Props) {
   const [draft, setDraft] = useState<settingsApi.AccountingSettings>(() => settingsApi.defaultsFor(scope));
@@ -510,6 +511,10 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
       { key: 'slides' as Section, label: 'Display Ads', hint: 'Carousel shown on the customer screen when idle', icon: <MonitorPlay className="h-4 w-4" /> },
       { key: 'loyalty' as Section, label: 'Loyalty', hint: 'Point / Stamp / Birthday reward programs', icon: <Gift className="h-4 w-4" /> },
+      // v-commission-mvp — sales-commission plans (per-seller
+      // payout rate). Sits next to Loyalty because both configure
+      // downstream-of-sale rewards (customer vs. seller).
+      { key: 'commission' as Section, label: 'Commission', hint: 'Seller-side commission plans (% / $ per sale)', icon: <PercentIcon className="h-4 w-4" /> },
     ] : []),
     // Currency picker (V166). Tenant-wide setting — appears on every
     // transactional scope (sale, pos, quotation, voucher, purchase,
@@ -904,6 +909,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 Stamp / Point program. */}
             {section === 'loyalty' && scope === 'pos' && (
               <Loyalty />
+            )}
+
+            {/* v-commission-mvp — Commission Plans settings live
+                alongside Loyalty in the POS drawer. The Sale →
+                Commission report reads these plans to compute
+                per-seller payouts. */}
+            {section === 'commission' && scope === 'pos' && (
+              <CommissionSettings />
             )}
 
             {section === 'numbering' && (() => {
