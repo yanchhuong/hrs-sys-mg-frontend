@@ -1378,8 +1378,33 @@ function PosCheckoutDialog({
           },
           redeemableCount: count,
         });
+      } else if (p.programType === 'POINT') {
+        // v-loyalty-point-multi-redeem — project earn from cart
+        // subtotal (pre-discount) and offer as many redemptions as
+        // the post-earn balance covers. Ex: 90 pts prior, $10 sale
+        // at 1 pt/$1 → 100 total → 1 × $5 off, 0 pts remain.
+        if (!p.pointRedeemCost || !p.pointRedeemDiscount) continue;
+        const perAmount = p.pointEarnPerAmount ?? 0;
+        const projectedPts = perAmount > 0 ? Math.floor(subtotal / perAmount) : 0;
+        const totalPtsAfterEarn = p.currentPoint + projectedPts;
+        const count = Math.floor(totalPtsAfterEarn / p.pointRedeemCost);
+        if (count < 1) continue;
+        const totalDiscount = Number((p.pointRedeemDiscount * count).toFixed(2));
+        const remainingPts = totalPtsAfterEarn - count * p.pointRedeemCost;
+        out.push({
+          programId: p.programId,
+          programName: p.programName,
+          programType: p.programType,
+          reward: {
+            kind: 'discount',
+            discountAmount: totalDiscount,
+            rewardItemIds: [],
+            label: '', // rendered inline as "N pts → M × $X off (R pts remain)"
+          },
+          redeemableCount: count,
+        });
       } else {
-        // POINT / BIRTHDAY — pass through BE-surfaced rewards.
+        // BIRTHDAY — pass through BE-surfaced rewards untouched.
         for (const r of p.rewards) {
           out.push({
             programId: p.programId,
@@ -1392,7 +1417,7 @@ function PosCheckoutDialog({
       }
     }
     return out;
-  }, [loyaltyState, cartLines]);
+  }, [loyaltyState, cartLines, subtotal]);
 
   /** For a STAMP reward, pick the cheapest qualifying item from the
    *  cart (line's stockItemId in the reward's item set). Falls back
@@ -1447,7 +1472,12 @@ function PosCheckoutDialog({
       let rewardItemId: string | undefined;
       let count = 1;
       if (reward.kind === 'discount') {
+        // v-loyalty-point-multi-redeem — discountAmount here is
+        // already count × per-redeem discount (rendered synthetic
+        // reward). Send the count to the BE so it burns the right
+        // number of point-cost chunks.
         delta = Number(reward.discountAmount ?? 0);
+        count = Math.max(1, redeemableCount);
       } else if (reward.kind === 'free_item') {
         const pick = pickStampFreeItem(reward.rewardItemIds);
         if (!pick) {
@@ -1740,6 +1770,26 @@ function PosCheckoutDialog({
                     }
                     stampTotalForDisplay = stampProg.currentStamp + projected;
                   }
+                  // Same idea for POINT: "N pts → M × $X off (R pts remain)"
+                  // reads faster than a raw label.
+                  const pointProg = programType === 'POINT'
+                    ? loyaltyState?.programs.find(p => p.programId === programId)
+                    : null;
+                  let pointBreakdown: {
+                    total: number; remain: number;
+                    redeemCost: number; redeemDiscount: number;
+                  } | null = null;
+                  if (pointProg && pointProg.pointRedeemCost && pointProg.pointRedeemDiscount) {
+                    const perAmount = pointProg.pointEarnPerAmount ?? 0;
+                    const projectedPts = perAmount > 0 ? Math.floor(subtotal / perAmount) : 0;
+                    const totalPts = pointProg.currentPoint + projectedPts;
+                    pointBreakdown = {
+                      total: totalPts,
+                      remain: totalPts - redeemableCount * pointProg.pointRedeemCost,
+                      redeemCost: pointProg.pointRedeemCost,
+                      redeemDiscount: pointProg.pointRedeemDiscount,
+                    };
+                  }
                   return (
                     <li key={key} className="flex items-center gap-2 text-[12px]">
                       {programType === 'STAMP'
@@ -1752,6 +1802,14 @@ function PosCheckoutDialog({
                             <b className="text-emerald-800">{stampTotalForDisplay}</b> stamp{stampTotalForDisplay === 1 ? '' : 's'}
                             {' → '}
                             <b className="text-emerald-800">{redeemableCount}</b> free item{redeemableCount === 1 ? '' : 's'}
+                          </>
+                        ) : r.kind === 'discount' && pointBreakdown ? (
+                          <>
+                            <b className="text-blue-800">{pointBreakdown.total}</b> pt{pointBreakdown.total === 1 ? '' : 's'}
+                            {' → '}
+                            <b className="text-blue-800">{redeemableCount}</b>
+                            {' × $' + pointBreakdown.redeemDiscount.toFixed(2)} off
+                            <span className="text-gray-500"> ({pointBreakdown.remain} pt{pointBreakdown.remain === 1 ? '' : 's'} remain)</span>
                           </>
                         ) : (
                           r.label

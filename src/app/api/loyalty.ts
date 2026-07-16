@@ -95,6 +95,12 @@ export interface ProgramState {
   /** Qualifying SKUs — needed FE-side to project earn from the
    *  current cart before checkout. */
   rewardItemIds: string[];
+  /** v-loyalty-point-multi-redeem — POINT rule shape surfaced so
+   *  the FE can project earn from cart subtotal + compute
+   *  redeemableCount. Null for non-POINT programs. */
+  pointEarnPerAmount: number | null;
+  pointRedeemCost: number | null;
+  pointRedeemDiscount: number | null;
   rewards: LoyaltyReward[];
 }
 
