@@ -801,8 +801,14 @@ export function POS() {
     // The inner flex-1 panels with min-h-0 carry the two scrollable
     // regions (items grid + cart rows).
     <div className="flex flex-col h-full bg-white">
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-white shrink-0">
-        <div className="flex items-center gap-2">
+      {/* overflow-x-auto + shrink-0 on both groups: when the viewport
+          is narrower than the total button strip (mobile in portrait
+          Safari, screenshot from a small-tablet cashier device),
+          nothing wraps and nothing clips out of reach — the header
+          scrolls horizontally so a finger-swipe brings the trailing
+          buttons (Share, drawer, etc.) into view. */}
+      <header className="flex items-center justify-between gap-2 px-4 py-3 border-b bg-white shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-2 shrink-0">
           <ShoppingCart className="h-5 w-5 text-emerald-600" />
           <h1 className="text-lg font-semibold">POS</h1>
           {/* Gear icon — opens the POS-scope AccountingSettingsDialog
@@ -823,7 +829,7 @@ export function POS() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Customer-display "mirror screen". Pops out a second
               window the customer can see — cart + total update live
               via BroadcastChannel as the cashier rings up items. */}
