@@ -194,7 +194,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   // → Settings → Commission Plans; only the report belongs in the
   // sidebar. Reuses the `invoice` module gate so tenants with a Sale
   // side see it.
-  { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'invoice',            component: Commission,               group: 'sales-group' },
+  { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'commission',         component: Commission,               group: 'sales-group' },
   // Loyalty is settings-only (no consumer-facing report yet), so it
   // lives in POS → Settings → Loyalty and NOT as a sidebar leaf —
   // matches Commission Plans, which moved out of the sidebar for the
