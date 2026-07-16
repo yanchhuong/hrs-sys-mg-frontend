@@ -24,9 +24,9 @@ import * as usersApi from '../../api/users';
 import { formatMoney, formatNumber } from '../../utils/format';
 
 const TYPE_META: Record<CommissionType, { label: string; hint: string; cls: string }> = {
-  PER_INVOICE: { label: 'Per Invoice', hint: 'One payout per invoice (% or $ of the total).',          cls: 'border-blue-200 bg-blue-50 text-blue-700' },
-  PER_ITEM:    { label: 'Per Item',    hint: 'Payout calculated per line item on the invoice.',        cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  TIERED:      { label: 'Tiered',      hint: 'Different rates based on invoice total or seller tier.', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
+  PER_INVOICE: { label: 'Per Invoice', hint: 'Rate applied to the invoiced total (% or $).',                  cls: 'border-blue-200 bg-blue-50 text-blue-700' },
+  PER_ITEM:    { label: 'Per Item',    hint: 'Rate applied per line item on the invoice.',                    cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  TOTAL_PAID:  { label: 'Total Paid',  hint: 'Rate applied to money the customer has actually paid, not the invoiced total.', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
 };
 
 const STATUS_META: Record<CommissionStatus, { label: string; cls: string }> = {

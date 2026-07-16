@@ -125,7 +125,16 @@ export function Commission() {
     }
     return Array.from(acc.values())
       .map(g => {
-        const c = commissionFor(g.sellerId, g.totalAmount, g.invoiceCount, plans);
+        // TOTAL_PAID plans need the actually-received amount in
+        // USD equivalent; PER_INVOICE / PER_ITEM keep using the
+        // invoiced total.  Refunds reduce the payable base too
+        // — a payment that was later refunded shouldn't count
+        // toward a commission plan.
+        const totalPaid = Math.max(
+          0,
+          g.receivedUsd + g.receivedKhr / khrPerUsd - g.totalRefund,
+        );
+        const c = commissionFor(g.sellerId, g.totalAmount, g.invoiceCount, plans, { totalPaid });
         return { ...g, ar: Math.max(0, g.ar), commission: c.amount, planName: c.plan?.name ?? null };
       })
       .sort((a, b) => b.commission - a.commission || a.sellerName.localeCompare(b.sellerName));

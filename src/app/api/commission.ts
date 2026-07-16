@@ -6,7 +6,7 @@ import { apiJson } from './client';
  * list + upsert-dialog pattern.
  * ================================================================ */
 
-export type CommissionType   = 'PER_INVOICE' | 'PER_ITEM' | 'TIERED';
+export type CommissionType   = 'PER_INVOICE' | 'PER_ITEM' | 'TOTAL_PAID';
 export type CommissionStatus = 'ACTIVE' | 'INACTIVE';
 export type CommissionMode   = 'PERCENT' | 'FIXED';
 
@@ -46,15 +46,20 @@ export const commission = {
 };
 
 /**
- * Compute the commission earned by a seller against a running
- * sales total. Returns 0 when no plan applies.
+ * Compute the commission earned by a seller. Returns 0 when no
+ * plan applies.
  *
- * v-commission-mvp math (kept simple until the follow-up):
- *  - PERCENT + PER_INVOICE / PER_ITEM: rate% × totalSales
- *  - FIXED   + PER_INVOICE: rate × invoiceCount
- *  - FIXED   + PER_ITEM:    rate × itemCount (falls back to invoiceCount
- *                                             when itemCount is unknown)
- *  - TIERED: not yet supported (returns 0)
+ * v-commission-mvp math:
+ *  - PERCENT + PER_INVOICE / PER_ITEM: rate% × totalSales (invoiced)
+ *  - PERCENT + TOTAL_PAID:             rate% × totalPaid   (received)
+ *  - FIXED   + PER_INVOICE:            rate × invoiceCount
+ *  - FIXED   + PER_ITEM:               rate × itemCount
+ *                                       (falls back to invoiceCount)
+ *  - FIXED   + TOTAL_PAID:             rate × invoiceCount
+ *                                       (interpretation: rate per
+ *                                        paid invoice — a fully-
+ *                                        paid vs. partly-paid
+ *                                        distinction is deferred)
  *
  * A plan applies to a seller when either its `assignedUserIds` is
  * empty (global) or contains the seller's user id.
@@ -64,24 +69,32 @@ export function commissionFor(
   totalSales: number,
   invoiceCount: number,
   plans: CommissionProgram[],
-  itemCount?: number,
+  opts?: { itemCount?: number; totalPaid?: number },
 ): { amount: number; plan: CommissionProgram | null } {
   const active = plans.filter(
     p => p.status === 'ACTIVE'
       && (p.assignedUserIds.length === 0 || p.assignedUserIds.includes(sellerId)),
   );
   if (active.length === 0) return { amount: 0, plan: null };
+  const itemCount = opts?.itemCount;
+  const totalPaid = opts?.totalPaid ?? 0;
   let best: { amount: number; plan: CommissionProgram } | null = null;
   for (const p of active) {
     const rate = p.rate ?? 0;
     if (!rate) continue;
     let amount = 0;
-    if (p.mode === 'PERCENT' && (p.type === 'PER_INVOICE' || p.type === 'PER_ITEM')) {
-      amount = totalSales * (rate / 100);
-    } else if (p.mode === 'FIXED' && p.type === 'PER_INVOICE') {
-      amount = rate * invoiceCount;
-    } else if (p.mode === 'FIXED' && p.type === 'PER_ITEM') {
-      amount = rate * (itemCount ?? invoiceCount);
+    if (p.mode === 'PERCENT') {
+      if (p.type === 'PER_INVOICE' || p.type === 'PER_ITEM') {
+        amount = totalSales * (rate / 100);
+      } else if (p.type === 'TOTAL_PAID') {
+        amount = totalPaid * (rate / 100);
+      }
+    } else if (p.mode === 'FIXED') {
+      if (p.type === 'PER_INVOICE' || p.type === 'TOTAL_PAID') {
+        amount = rate * invoiceCount;
+      } else if (p.type === 'PER_ITEM') {
+        amount = rate * (itemCount ?? invoiceCount);
+      }
     }
     if (!best || amount > best.amount) best = { amount, plan: p };
   }
