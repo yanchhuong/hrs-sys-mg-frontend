@@ -41,6 +41,9 @@ export interface User {
    *  takes precedence over the linked employee's name across the
    *  app (sidebar avatar, POS Cashier line, etc.). */
   name?: string;
+  /** V146 — optional secondary login identifier (3..64 chars from
+   *  [a-z0-9._-]). Null when the user signs in by email only. */
+  username?: string | null;
   /** V199 — six personal profile fields resolved server-side from
    *  the linked Employee when present, otherwise from the User row
    *  itself. Populated on every /auth/me hydrate; the Profile

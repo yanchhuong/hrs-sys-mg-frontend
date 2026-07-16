@@ -430,6 +430,8 @@ function adaptApiUser(u: usersApi.User): User {
     isActive: u.isActive,
     lastLogin: u.lastLogin ?? undefined,
     createdAt: u.createdAt ?? new Date().toISOString(),
+    name: u.name ?? undefined,
+    username: u.username ?? undefined,
   };
 }
 
