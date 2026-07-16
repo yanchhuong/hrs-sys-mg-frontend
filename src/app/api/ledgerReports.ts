@@ -30,6 +30,13 @@ export interface LedgerEntry {
    *  regroups the flat entry list by cashier. */
   sellerId?: string | null;
   sellerName?: string | null;
+  /** Snapshot exchange rate on the source invoice/bill at the
+   *  time it was created (KHR per USD when the tenant is
+   *  USD-primary). Used by seller-side AR aggregators so the
+   *  KHR-payment split converts back to USD with the SAME rate
+   *  the chain math used — matches the Sale Ledger closing
+   *  balance to the cent. */
+  exchangeRate?: number | null;
 }
 
 export interface LedgerGroup {

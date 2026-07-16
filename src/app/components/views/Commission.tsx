@@ -75,6 +75,11 @@ export function Commission() {
       receivedUsd: number; receivedKhr: number;
       refundUsd: number;   refundKhr: number;
       totalRefund: number;
+      /** AR accumulated per row using each row's OWN snapshot rate,
+       *  so the total matches Sale Ledger's Closing Balance to the
+       *  cent (Sale Ledger uses the same per-invoice rate for its
+       *  chain math). */
+      ar: number;
     }>();
     for (const g of report.groups) {
       for (const e of g.entries) {
@@ -95,28 +100,32 @@ export function Commission() {
           refundUsd: 0,
           refundKhr: 0,
           totalRefund: 0,
+          ar: 0,
         };
+        // Per-row rate — falls back to the tenant-wide setting
+        // only when the entry was created before the exchangeRate
+        // column was populated (old rows). New rows always carry
+        // it.
+        const rowRate = (e.exchangeRate && e.exchangeRate > 0) ? e.exchangeRate : khrPerUsd;
+        const rowReceivedUsdEquiv = (e.receivedUsd ?? 0) + (e.receivedKhr ?? 0) / rowRate;
+        const rowRefundUsdEquiv   = (e.refundUsd ?? 0)   + (e.refundKhr ?? 0)   / rowRate;
+        const rowRemaining        = (e.amount ?? 0) - rowReceivedUsdEquiv - rowRefundUsdEquiv;
+
         cur.invoiceCount += isRoot ? 1 : 0;
         cur.totalAmount  += e.amount ?? 0;
         cur.receivedUsd  += e.receivedUsd ?? 0;
         cur.receivedKhr  += e.receivedKhr ?? 0;
         cur.refundUsd    += e.refundUsd ?? 0;
         cur.refundKhr    += e.refundKhr ?? 0;
-        cur.totalRefund  += (e.refundUsd ?? 0) + ((e.refundKhr ?? 0) / khrPerUsd);
+        cur.totalRefund  += rowRefundUsdEquiv;
+        cur.ar           += rowRemaining;
         acc.set(key, cur);
       }
     }
     return Array.from(acc.values())
       .map(g => {
-        // AR = what the seller's invoices still owe. Fold every
-        // received / refund currency down to USD via the tenant's
-        // exchange rate so the number reconciles with the Invoice
-        // list totals row (which does the same conversion).
-        const receivedUsdEquiv = g.receivedUsd + g.receivedKhr / khrPerUsd;
-        const refundUsdEquiv   = g.refundUsd   + g.refundKhr   / khrPerUsd;
-        const ar = Math.max(0, g.totalAmount - receivedUsdEquiv - refundUsdEquiv);
         const c = commissionFor(g.sellerId, g.totalAmount, g.invoiceCount, plans);
-        return { ...g, ar, commission: c.amount, planName: c.plan?.name ?? null };
+        return { ...g, ar: Math.max(0, g.ar), commission: c.amount, planName: c.plan?.name ?? null };
       })
       .sort((a, b) => b.commission - a.commission || a.sellerName.localeCompare(b.sellerName));
   }, [report, plans, khrPerUsd]);
