@@ -87,6 +87,11 @@ export interface ProgramState {
   currentPoint: number;
   currentStamp: number;
   stampTarget: number | null;
+  /** Reward quantity (free items per redeem). Needed FE-side to
+   *  compute the burn-per-redeem = buyQuantity + rewardQuantity
+   *  (the free items shouldn't have earned, so we deduct extra
+   *  stamps on redeem to net them out). */
+  stampRewardQuantity: number | null;
   /** Qualifying SKUs — needed FE-side to project earn from the
    *  current cart before checkout. */
   rewardItemIds: string[];

@@ -1344,47 +1344,49 @@ function PosCheckoutDialog({
     if (!loyaltyState) return [] as Entry[];
     const out: Entry[] = [];
     for (const p of loyaltyState.programs) {
-      // 1) Pass-through: BE-surfaced Point discounts + Stamp
-      //    rewards where the CURRENT balance already crossed the
-      //    target (no projection needed).
-      for (const r of p.rewards) {
-        out.push({
-          programId: p.programId,
-          programName: p.programName,
-          programType: p.programType,
-          reward: r,
-          redeemableCount: p.programType === 'STAMP' && p.stampTarget
-            ? Math.floor(p.currentStamp / p.stampTarget)
-            : 1,
-        });
-      }
-      // 2) Project STAMP programs — a card completes WITH this
-      //    sale when (current + qualifying items in cart) crosses
-      //    the target. Compute redeemableCount = floor(total /
-      //    target) so a 10-item purchase against a Buy-5-Get-1
-      //    rule offers TWO free items in one apply.
-      if (p.programType === 'STAMP' && p.stampTarget != null && p.currentStamp < p.stampTarget) {
+      if (p.programType === 'STAMP') {
+        // v-loyalty-multi-card-redeem — unify the "already at
+        // target" and "will hit target with this cart" cases so
+        // count always reflects the FULL post-earn balance. Prior
+        // pass-through used currentStamp / target (missed cart
+        // projection), so 4 prior + 10 in cart showed "1 free"
+        // instead of "2 free". Fix: always add projected earn.
+        if (p.stampTarget == null) continue;
         const set = new Set(p.rewardItemIds ?? []);
         let projected = 0;
         for (const l of cartLines) {
           if (l.stockItemId && set.has(l.stockItemId)) projected += l.quantity;
         }
         const totalAfterEarn = p.currentStamp + projected;
-        const count = Math.floor(totalAfterEarn / p.stampTarget);
-        if (count >= 1) {
+        // v-loyalty-free-item-earn-adjust — burn cost per redeem is
+        // buyQuantity + rewardQuantity because the free item's earn
+        // has to be netted out. Cap count by post-earn balance /
+        // burn cost so we never offer a redeem the BE can't cover.
+        const rewardQty = p.stampRewardQuantity && p.stampRewardQuantity > 0 ? p.stampRewardQuantity : 1;
+        const stampsPerRedeem = p.stampTarget + rewardQty;
+        const count = Math.floor(totalAfterEarn / stampsPerRedeem);
+        if (count < 1) continue;
+        out.push({
+          programId: p.programId,
+          programName: p.programName,
+          programType: p.programType,
+          reward: {
+            kind: 'free_item',
+            discountAmount: null,
+            rewardItemIds: p.rewardItemIds ?? [],
+            label: '', // label rendered inline (stamps → free items) — leave empty here
+          },
+          redeemableCount: count,
+        });
+      } else {
+        // POINT / BIRTHDAY — pass through BE-surfaced rewards.
+        for (const r of p.rewards) {
           out.push({
             programId: p.programId,
             programName: p.programName,
             programType: p.programType,
-            reward: {
-              kind: 'free_item',
-              discountAmount: null,
-              rewardItemIds: p.rewardItemIds ?? [],
-              label: count === 1
-                ? 'Card completes with this sale — free item unlocked'
-                : `${count} cards complete with this sale — ${count} free items unlocked`,
-            },
-            redeemableCount: count,
+            reward: r,
+            redeemableCount: 1,
           });
         }
       }
@@ -1721,6 +1723,23 @@ function PosCheckoutDialog({
                   const key = `${programId}:${idx}`;
                   const isApplied = applied.has(programId);
                   const appliedDelta = isApplied ? applied.get(programId)!.delta : null;
+                  // For STAMP rewards, surface the running stamp
+                  // total (current + projected earn from this
+                  // cart) alongside the reward count so the
+                  // cashier can eyeball "10 stamps → 2 free" at
+                  // a glance instead of parsing the label.
+                  const stampProg = programType === 'STAMP'
+                    ? loyaltyState?.programs.find(p => p.programId === programId)
+                    : null;
+                  let stampTotalForDisplay: number | null = null;
+                  if (stampProg && stampProg.rewardItemIds) {
+                    const set = new Set(stampProg.rewardItemIds);
+                    let projected = 0;
+                    for (const l of cartLines) {
+                      if (l.stockItemId && set.has(l.stockItemId)) projected += l.quantity;
+                    }
+                    stampTotalForDisplay = stampProg.currentStamp + projected;
+                  }
                   return (
                     <li key={key} className="flex items-center gap-2 text-[12px]">
                       {programType === 'STAMP'
@@ -1728,11 +1747,18 @@ function PosCheckoutDialog({
                         : <Star className="h-3 w-3 text-blue-700" />}
                       <span className="flex-1 truncate">
                         <span className="font-medium">{programName}:</span>{' '}
-                        {r.label}
-                        {/* Show the exact $ deduction — either the
-                            BE-declared amount (POINT) or the
-                            per-toggle delta we already computed
-                            from the cart (STAMP). */}
+                        {r.kind === 'free_item' && stampTotalForDisplay != null ? (
+                          <>
+                            <b className="text-emerald-800">{stampTotalForDisplay}</b> stamp{stampTotalForDisplay === 1 ? '' : 's'}
+                            {' → '}
+                            <b className="text-emerald-800">{redeemableCount}</b> free item{redeemableCount === 1 ? '' : 's'}
+                          </>
+                        ) : (
+                          r.label
+                        )}
+                        {/* $ deduction — POINT uses the BE-declared
+                            amount; STAMP uses the per-toggle delta
+                            (only visible once applied). */}
                         {(r.kind === 'discount' && r.discountAmount != null) && (
                           <span className="text-rose-700 font-medium"> · −${Number(r.discountAmount).toFixed(2)}</span>
                         )}
@@ -1809,12 +1835,6 @@ function PosCheckoutDialog({
                   onChange={e => onDiscountValueChange(parseFloat(e.target.value) || 0)}
                   className="h-7 w-20 text-right"
                 />
-              </div>
-            )}
-            {discountAmount > 0 && applied.size === 0 && (
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Discount amount</span>
-                <span className="tabular-nums text-rose-700">−${discountAmount.toFixed(2)}</span>
               </div>
             )}
 
