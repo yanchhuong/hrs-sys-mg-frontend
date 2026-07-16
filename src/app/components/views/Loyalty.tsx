@@ -105,10 +105,16 @@ export function Loyalty() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button size="sm" onClick={openNew}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New program
-          </Button>
+          {/* v-loyalty-one-per-tenant — a Company runs a single
+              policy at a time. Hide the New button once one
+              exists so the operator edits it instead of trying
+              to create a second (BE would reject with 409). */}
+          {rows.length === 0 && (
+            <Button size="sm" onClick={openNew}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              New program
+            </Button>
+          )}
         </div>
       </div>
 
@@ -118,6 +124,12 @@ export function Loyalty() {
             Programs
             <span className="text-xs text-gray-500 font-normal ml-2">({rows.length})</span>
           </CardTitle>
+          {rows.length > 0 && (
+            <p className="text-[11px] text-gray-500 mt-1">
+              One loyalty policy per company — edit the program's <b>Type</b>
+              {' '}to switch between Point, Stamp, or Birthday.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
@@ -283,11 +295,12 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
           </div>
 
           {type === 'POINT' && (
+            <>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="text-xs">$ per point</Label>
+                <Label className="text-xs">Earn 1 pt every $</Label>
                 <Input value={earnPointPerAmount} onChange={e => setEarnPointPerAmount(e.target.value)}
-                       inputMode="decimal" className="h-9 mt-1" placeholder="1" />
+                       inputMode="decimal" className="h-9 mt-1" placeholder="5" />
               </div>
               <div>
                 <Label className="text-xs">Redeem cost</Label>
@@ -300,6 +313,34 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
                        inputMode="decimal" className="h-9 mt-1" placeholder="5" />
               </div>
             </div>
+            {/* Live preview so cashiers understand what the numbers
+                actually do — the old "$ per point" label was
+                ambiguous and led operators to enter 1 (meaning
+                "1 pt per $1") when they wanted 5 (meaning "1 pt
+                per $5"). Preview mirrors real earn + redeem math. */}
+            {(() => {
+              const perAmt = numDec(earnPointPerAmount);
+              const cost = num(redeemPointCost);
+              const disc = numDec(redeemDiscountAmount);
+              if (!perAmt || perAmt <= 0 || !cost || cost <= 0) return null;
+              const sample5 = Math.floor(5 / perAmt);
+              const sample10 = Math.floor(10 / perAmt);
+              const sample50 = Math.floor(50 / perAmt);
+              return (
+                <div className="text-[10px] text-gray-600 bg-gray-50 border rounded px-2 py-1.5 mt-1 leading-relaxed">
+                  <b>Preview:</b>{' '}
+                  $5 sale earns <b>{sample5}</b> pt{sample5 === 1 ? '' : 's'}
+                  {' · '}
+                  $10 → <b>{sample10}</b>
+                  {' · '}
+                  $50 → <b>{sample50}</b>
+                  {disc != null && disc > 0 && (
+                    <>. Redeem <b>{cost}</b> pts for <b>${disc}</b> off.</>
+                  )}
+                </div>
+              );
+            })()}
+            </>
           )}
 
           {type === 'STAMP' && (
