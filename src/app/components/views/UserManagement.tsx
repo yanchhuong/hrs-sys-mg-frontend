@@ -1429,7 +1429,22 @@ export function UserManagement() {
                     );
                     return (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.email}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const displayName =
+                              user.name?.trim() ||
+                              (employee?.name ?? '') ||
+                              '';
+                            return displayName ? (
+                              <div>
+                                <div className="font-medium">{displayName}</div>
+                                <div className="text-xs text-gray-500">{user.email}</div>
+                              </div>
+                            ) : (
+                              <div className="font-medium">{user.email}</div>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell>
                           {employee ? (
                             <EmployeeCell employee={employee} subtitle={employee.id} />
