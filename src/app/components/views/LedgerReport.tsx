@@ -253,6 +253,32 @@ export function LedgerReport({ kind }: LedgerReportProps) {
   const moneyOrDash = (n: number, currency: string) =>
     n === 0 ? <span className="text-gray-300">—</span> : formatMoney(n, currency);
 
+  /** Compact date-range filter — inline (no Card wrapper) so it
+   *  can sit on the SAME row as the Customers / Sellers tabs (or
+   *  the Vendors card title on Purchase). Payroll Report visual
+   *  style: Calendar icon, From → To, Apply. */
+  const inlineFilter = (
+    <div className="flex flex-wrap items-center gap-2 print:hidden">
+      <Calendar className="h-4 w-4 text-gray-400" />
+      <DateInput
+        value={from}
+        onChange={setFrom}
+        className="h-8 w-36 text-sm"
+        title="From date"
+      />
+      <span className="text-gray-400 text-xs">→</span>
+      <DateInput
+        value={to}
+        onChange={setTo}
+        className="h-8 w-36 text-sm"
+        title="To date"
+      />
+      <Button size="sm" onClick={load} disabled={loading} className="h-8">
+        {loading ? 'Loading…' : 'Apply'}
+      </Button>
+    </div>
+  );
+
   /** v-sale-ledger-sellers — extracted so both the Sale-side
    *  Customers tab and the Purchase-side single card render the
    *  same per-party summary without JSX drift. */
@@ -387,36 +413,6 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         </div>
       )}
 
-      {/* Compact date-range filter bar — Payroll Report style
-          (Card + p-3 CardContent, no CardHeader). Sits next to
-          the summary table so the range is where the operator's
-          eye is. Left: From → To. Right: Apply. */}
-      <Card className="print:hidden">
-        <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-400" />
-            <DateInput
-              value={from}
-              onChange={setFrom}
-              className="h-8 w-36 text-sm"
-              title="From date"
-            />
-            <span className="text-gray-400 text-xs">→</span>
-            <DateInput
-              value={to}
-              onChange={setTo}
-              className="h-8 w-36 text-sm"
-              title="To date"
-            />
-            <div className="ml-auto">
-              <Button size="sm" onClick={load} disabled={loading} className="h-8">
-                {loading ? 'Loading…' : 'Apply'}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {report && report.groups.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-gray-500">
@@ -431,16 +427,22 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           so it keeps the single Vendors view. */}
       {report && report.groups.length > 0 && selectedPartyId === null && kind === 'sale' && (
         <Tabs defaultValue="customers" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="customers">
-              <Users className="h-3.5 w-3.5" />
-              Customers
-            </TabsTrigger>
-            <TabsTrigger value="sellers">
-              <UserRound className="h-3.5 w-3.5" />
-              Sellers
-            </TabsTrigger>
-          </TabsList>
+          {/* Tabs on the LEFT, date filter on the RIGHT — same
+              row. Wraps on narrow screens without collapsing the
+              underline of the tab strip. */}
+          <div className="flex items-center gap-3 flex-wrap justify-between">
+            <TabsList>
+              <TabsTrigger value="customers">
+                <Users className="h-3.5 w-3.5" />
+                Customers
+              </TabsTrigger>
+              <TabsTrigger value="sellers">
+                <UserRound className="h-3.5 w-3.5" />
+                Sellers
+              </TabsTrigger>
+            </TabsList>
+            {inlineFilter}
+          </div>
 
           <TabsContent value="sellers" className="mt-0">
             <Card className="print:shadow-none print:border-0">
@@ -517,11 +519,16 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
       {/* Purchase side keeps the single Vendors card (no seller
           concept on bills). Uses the shared renderCustomerTable
-          helper defined above so both sides stay in visual sync. */}
+          helper defined above so both sides stay in visual sync.
+          Date filter sits inline with the CardTitle so it's on
+          the same row as the "Vendors" heading. */}
       {report && report.groups.length > 0 && selectedPartyId === null && kind === 'purchase' && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{labels.party}s</CardTitle>
+            <div className="flex items-center gap-3 flex-wrap justify-between">
+              <CardTitle className="text-base">{labels.party}s</CardTitle>
+              {inlineFilter}
+            </div>
           </CardHeader>
           <CardContent className="pt-0">
             {renderCustomerTable()}
