@@ -4,6 +4,8 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { DateInput } from '../common/DateInput';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Users, UserRound } from 'lucide-react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -185,6 +187,55 @@ export function LedgerReport({ kind }: LedgerReportProps) {
     return out;
   }, [report]);
 
+  /** v-sale-ledger-sellers — regroup the flat entry list by
+   *  seller (invoice.createdById). Only the parent doc rows count
+   *  (child CN/DN carry balance=null but still contribute to
+   *  Total / Received / Refund). Empty when no entry carries a
+   *  seller ID (e.g., pre-v-sale-ledger-sellers data or Purchase
+   *  side). */
+  const sellerGroups = useMemo(() => {
+    if (!report) return [] as Array<{
+      sellerId: string; sellerName: string;
+      invoiceCount: number;
+      totalAmount: number;
+      receivedUsd: number; receivedKhr: number;
+      totalRefund: number;
+    }>;
+    const acc = new Map<string, {
+      sellerId: string; sellerName: string;
+      invoiceCount: number;
+      totalAmount: number;
+      receivedUsd: number; receivedKhr: number;
+      totalRefund: number;
+    }>();
+    for (const g of report.groups) {
+      for (const e of g.entries) {
+        if (!e.sellerId) continue;
+        // Only count parent docs (balance != null) as invoices
+        // toward the "Invoices" count — CN/DN children roll their
+        // amount + refund up here but shouldn't inflate the count.
+        const isRoot = e.balance !== null;
+        const key = e.sellerId;
+        const cur = acc.get(key) ?? {
+          sellerId: e.sellerId,
+          sellerName: e.sellerName ?? '(unknown)',
+          invoiceCount: 0,
+          totalAmount: 0,
+          receivedUsd: 0,
+          receivedKhr: 0,
+          totalRefund: 0,
+        };
+        cur.invoiceCount += isRoot ? 1 : 0;
+        cur.totalAmount  += e.amount ?? 0;
+        cur.receivedUsd  += e.receivedUsd ?? 0;
+        cur.receivedKhr  += e.receivedKhr ?? 0;
+        cur.totalRefund  += e.refund ?? 0;
+        acc.set(key, cur);
+      }
+    }
+    return Array.from(acc.values()).sort((a, b) => a.sellerName.localeCompare(b.sellerName));
+  }, [report]);
+
   /** Grand-strip Received split: sum of every group's per-currency
    *  Received. Drives the two cards in the totals strip. */
   const grandReceivedByCurrency = useMemo(() => {
@@ -201,6 +252,76 @@ export function LedgerReport({ kind }: LedgerReportProps) {
    *  one currency. */
   const moneyOrDash = (n: number, currency: string) =>
     n === 0 ? <span className="text-gray-300">—</span> : formatMoney(n, currency);
+
+  /** v-sale-ledger-sellers — extracted so both the Sale-side
+   *  Customers tab and the Purchase-side single card render the
+   *  same per-party summary without JSX drift. */
+  const renderCustomerTable = () => (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{labels.party}</TableHead>
+          <TableHead className="text-right w-28">Opening</TableHead>
+          <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
+          {showUsd && (
+            <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+          )}
+          {showKhr && (
+            <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+          )}
+          <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
+          <TableHead className="text-right w-32">Closing ({labels.balanceLabel})</TableHead>
+          <TableHead className="w-28 print:hidden"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {report!.groups.map(g => {
+          const split = receivedByCurrencyPerGroup[g.partyId] ?? { usd: 0, khr: 0 };
+          return (
+            <TableRow key={g.partyId} className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setSelectedPartyId(g.partyId)}>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{g.partyName}</span>
+                  {g.partyType && (
+                    <Badge variant="outline" className={g.partyType === 'business'
+                      ? 'bg-violet-50 text-violet-700 border-violet-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'}>
+                      {g.partyType}
+                    </Badge>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-sm">
+                {formatMoney(g.openingBalance, g.currency)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-sm">{formatMoney(g.totalAmount, g.currency)}</TableCell>
+              {showUsd && (
+                <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.usd, 'USD')}</TableCell>
+              )}
+              {showKhr && (
+                <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.khr, 'KHR')}</TableCell>
+              )}
+              <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                {g.totalRefund === 0
+                  ? formatMoney(0, g.currency)
+                  : `${labels.refundSign}${formatMoney(g.totalRefund, g.currency)}`}
+              </TableCell>
+              <TableCell className={`text-right tabular-nums text-sm font-medium ${grandClass(g.closingBalance)}`}>
+                {formatMoney(g.closingBalance, g.currency)}
+              </TableCell>
+              <TableCell className="text-right print:hidden">
+                <Button size="sm" variant="outline"
+                        onClick={ev => { ev.stopPropagation(); setSelectedPartyId(g.partyId); }}>
+                  <Eye className="h-3.5 w-3.5 mr-1" /> View Details
+                </Button>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
 
   return (
     <div className="p-6 space-y-6 print:p-0 print:space-y-3">
@@ -295,83 +416,108 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         </Card>
       )}
 
-      {/* Summary list — one row per party. Renders when no party is
-          selected; clicking View Details switches to the per-party
-          detail view (the chain-grouped table below). */}
-      {report && report.groups.length > 0 && selectedPartyId === null && (
+      {/* v-sale-ledger-sellers — Sale-side gets two tabs:
+          Customers (existing per-party summary) + Sellers (per-
+          cashier aggregate). Purchase side has no cashier concept
+          so it keeps the single Vendors view. */}
+      {report && report.groups.length > 0 && selectedPartyId === null && kind === 'sale' && (
+        <Tabs defaultValue="customers" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="customers">
+              <Users className="h-3.5 w-3.5" />
+              Customers
+            </TabsTrigger>
+            <TabsTrigger value="sellers">
+              <UserRound className="h-3.5 w-3.5" />
+              Sellers
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="sellers" className="mt-0">
+            <Card className="print:shadow-none print:border-0">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Sellers</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {sellerGroups.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">
+                    No seller data in this period.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Seller</TableHead>
+                        <TableHead className="text-right w-28">Invoices</TableHead>
+                        <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
+                        {showUsd && (
+                          <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
+                        )}
+                        {showKhr && (
+                          <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
+                        )}
+                        <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sellerGroups.map(s => (
+                        <TableRow key={s.sellerId}>
+                          <TableCell>
+                            <span className="font-medium">{s.sellerName}</span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {s.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {formatMoney(s.totalAmount, 'USD')}
+                          </TableCell>
+                          {showUsd && (
+                            <TableCell className="text-right tabular-nums text-sm">
+                              {moneyOrDash(s.receivedUsd, 'USD')}
+                            </TableCell>
+                          )}
+                          {showKhr && (
+                            <TableCell className="text-right tabular-nums text-sm">
+                              {moneyOrDash(s.receivedKhr, 'KHR')}
+                            </TableCell>
+                          )}
+                          <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                            {s.totalRefund === 0
+                              ? formatMoney(0, 'USD')
+                              : `${labels.refundSign}${formatMoney(s.totalRefund, 'USD')}`}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="customers" className="mt-0">
+            <Card className="print:shadow-none print:border-0">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{labels.party}s</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {renderCustomerTable()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
+
+      {/* Purchase side keeps the single Vendors card (no seller
+          concept on bills). Uses the shared renderCustomerTable
+          helper defined above so both sides stay in visual sync. */}
+      {report && report.groups.length > 0 && selectedPartyId === null && kind === 'purchase' && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{labels.party}s</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{labels.party}</TableHead>
-                  <TableHead className="text-right w-28">Opening</TableHead>
-                  <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
-                  {/* Received/Paid splits per-currency so payments
-                      taken in USD vs KHR stay on their own rail — the
-                      rail is only shown when its currency is enabled
-                      in the tenant Currency setting. */}
-                  {showUsd && (
-                    <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
-                  )}
-                  {showKhr && (
-                    <TableHead className="text-right w-28">{labels.settledHeader} (KHR)</TableHead>
-                  )}
-                  <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
-                  <TableHead className="text-right w-32">Closing ({labels.balanceLabel})</TableHead>
-                  <TableHead className="w-28 print:hidden"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.groups.map(g => {
-                  const split = receivedByCurrencyPerGroup[g.partyId] ?? { usd: 0, khr: 0 };
-                  return (
-                  <TableRow key={g.partyId} className="hover:bg-gray-50 cursor-pointer"
-                            onClick={() => setSelectedPartyId(g.partyId)}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{g.partyName}</span>
-                        {g.partyType && (
-                          <Badge variant="outline" className={g.partyType === 'business'
-                            ? 'bg-violet-50 text-violet-700 border-violet-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'}>
-                            {g.partyType}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-sm">
-                      {formatMoney(g.openingBalance, g.currency)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-sm">{formatMoney(g.totalAmount, g.currency)}</TableCell>
-                    {showUsd && (
-                      <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.usd, 'USD')}</TableCell>
-                    )}
-                    {showKhr && (
-                      <TableCell className="text-right tabular-nums text-sm">{moneyOrDash(split.khr, 'KHR')}</TableCell>
-                    )}
-                    <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                      {g.totalRefund === 0
-                        ? formatMoney(0, g.currency)
-                        : `${labels.refundSign}${formatMoney(g.totalRefund, g.currency)}`}
-                    </TableCell>
-                    <TableCell className={`text-right tabular-nums text-sm font-medium ${grandClass(g.closingBalance)}`}>
-                      {formatMoney(g.closingBalance, g.currency)}
-                    </TableCell>
-                    <TableCell className="text-right print:hidden">
-                      <Button size="sm" variant="outline"
-                              onClick={ev => { ev.stopPropagation(); setSelectedPartyId(g.partyId); }}>
-                        <Eye className="h-3.5 w-3.5 mr-1" /> View Details
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            {renderCustomerTable()}
           </CardContent>
         </Card>
       )}

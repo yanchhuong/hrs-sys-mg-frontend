@@ -25,6 +25,11 @@ export interface LedgerEntry {
   refundUsd: number;
   refundKhr: number;
   reference: string;
+  /** v-sale-ledger-sellers — the user who created the source
+   *  invoice (Sale side only). Feeds the FE "Sellers" tab that
+   *  regroups the flat entry list by cashier. */
+  sellerId?: string | null;
+  sellerName?: string | null;
 }
 
 export interface LedgerGroup {
