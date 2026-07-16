@@ -24,7 +24,7 @@ import {
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
-  GraduationCap, BookOpen, FileSpreadsheet, Gift,
+  GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -50,6 +50,7 @@ import { POS } from '../components/views/POS';
 import { Quotations } from '../components/views/Quotations';
 import { Vouchers } from '../components/views/Vouchers';
 import { Loyalty } from '../components/views/Loyalty';
+import { Commission } from '../components/views/Commission';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { Items } from '../components/views/Items';
@@ -187,6 +188,11 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'pos',               labelKey: 'nav.pos',                    icon: ShoppingCart,    module: 'pos',                component: POS,                      group: 'sales-group' },
   { id: 'vouchers',          labelKey: 'nav.vouchers',               icon: FileText,        module: 'voucher',            component: Vouchers,                 group: 'sales-group' },
   { id: 'loyalty',           labelKey: 'nav.loyalty',                icon: Gift,            module: 'voucher',            component: Loyalty,                  group: 'sales-group' },
+  // v-commission-mvp — sales-commission plans (per-invoice / per-item /
+  // tiered). Sits under Sale next to Loyalty; both configure how sales
+  // trigger downstream payouts (customers vs sellers respectively).
+  // Reuses the `invoice` module gate so tenants with a Sale side see it.
+  { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'invoice',            component: Commission,               group: 'sales-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
