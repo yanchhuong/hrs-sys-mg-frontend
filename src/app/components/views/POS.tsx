@@ -21,7 +21,7 @@ import {
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
-import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary } from '../../api/loyalty';
+import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary, type LoyaltyType } from '../../api/loyalty';
 import * as settingsApi from '../../api/accountingSettings';
 import * as posDisplayApi from '../../api/posDisplay';
 import * as paywayApi from '../../api/payway';
@@ -964,6 +964,22 @@ export function POS() {
         showDiscount={posSettings.showDiscount}
         showTax={posSettings.showTax}
         showNotes={posSettings.showNotes}
+        customerId={customerId}
+        loyaltyState={loyaltyState}
+        cartLines={cart}
+        catalogItems={items}
+        onLoyaltyChanged={() => {
+          // Re-fetch balance snapshot + this customer's state so the
+          // picker chip + LoyaltyPanel reflect the burn.
+          if (customerId) {
+            loyaltyPos.state(customerId).then(setLoyaltyState).catch(() => {});
+          }
+          loyaltyPos.balances().then(rows => {
+            const m: Record<string, CustomerBalanceSummary> = {};
+            for (const r of rows) m[r.customerId] = r;
+            setLoyaltyBalances(m);
+          }).catch(() => {});
+        }}
       />
       <PosOpenOrdersDrawer
         open={drawerOpen}
@@ -1262,6 +1278,14 @@ interface CheckoutProps {
   showDiscount: boolean;
   showTax: boolean;
   showNotes: boolean;
+  /* -------------------- v-loyalty-redeem-at-checkout -------------------- */
+  customerId: string | null;
+  loyaltyState: CustomerLoyaltyState | null;
+  cartLines: posApi.PosOrderItem[];
+  catalogItems: itemsApi.Item[];
+  /** Parent re-fetches balance snapshot + customer state after
+   *  Confirm so the LoyaltyPanel + picker chip reflect the burn. */
+  onLoyaltyChanged: () => void;
 }
 
 function PosCheckoutDialog({
@@ -1270,9 +1294,119 @@ function PosCheckoutDialog({
   discountType, onDiscountTypeChange, discountValue, onDiscountValueChange,
   taxType, onTaxTypeChange, notes, onNotesChange,
   showDiscount, showTax, showNotes,
+  customerId, loyaltyState, cartLines, catalogItems, onLoyaltyChanged,
 }: CheckoutProps) {
   const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
+
+  /* v-loyalty-redeem-at-checkout — local map of rewards the cashier
+   *  has ticked "Use this time". Each entry carries the loyalty
+   *  discount delta so Reset can subtract exactly what was added
+   *  (avoids drift when the cashier also edits the manual discount).
+   *  Rewards are ONLY committed BE-side (balance burned) at Confirm
+   *  Payment — clicking Cancel drops the map with no side effects. */
+  const [applied, setApplied] = useState<Map<string, {
+    delta: number;
+    rewardItemId?: string;
+    programName: string;
+    programType: LoyaltyType;
+  }>>(new Map());
+
+  // Reset applied when the dialog re-opens (fresh checkout) so a
+  // prior sale's toggles don't carry over.
+  useEffect(() => {
+    if (open) setApplied(new Map());
+  }, [open]);
+
+  /** For a STAMP reward, pick the cheapest qualifying item from the
+   *  cart (line's stockItemId in the reward's item set). Falls back
+   *  to the cheapest matching catalog item if the cart has none
+   *  (rare — cashier would then be redeeming without a matching
+   *  line, meaning the free item can't be added to this sale).
+   *  Returns { rewardItemId, unitPrice } or null when nothing
+   *  qualifies. */
+  const pickStampFreeItem = (rewardItemIds: string[]): { rewardItemId: string; price: number } | null => {
+    if (!rewardItemIds || rewardItemIds.length === 0) return null;
+    const set = new Set(rewardItemIds);
+    // 1) Prefer a line already in the cart.
+    let bestCart: { id: string; price: number } | null = null;
+    for (const l of cartLines) {
+      if (l.stockItemId && set.has(l.stockItemId)) {
+        if (!bestCart || l.unitPrice < bestCart.price) {
+          bestCart = { id: l.stockItemId, price: l.unitPrice };
+        }
+      }
+    }
+    if (bestCart) return { rewardItemId: bestCart.id, price: bestCart.price };
+    // 2) Fallback to the catalog.
+    let bestCat: { id: string; price: number } | null = null;
+    for (const it of catalogItems) {
+      if (set.has(it.id)) {
+        const p = Number(it.unitPrice ?? 0);
+        if (p > 0 && (!bestCat || p < bestCat.price)) {
+          bestCat = { id: it.id, price: p };
+        }
+      }
+    }
+    return bestCat ? { rewardItemId: bestCat.id, price: bestCat.price } : null;
+  };
+
+  /** Toggle a reward. On tick: bump the parent's discount by the
+   *  reward amount + remember the delta. On untick: subtract the
+   *  same delta. Forces amount-mode so percent + loyalty don't
+   *  interact confusingly. */
+  const toggleReward = (programId: string, programName: string, programType: LoyaltyType,
+                        reward: { kind: 'discount' | 'free_item'; discountAmount: number | null; rewardItemIds: string[] }) => {
+    setApplied(prev => {
+      const next = new Map(prev);
+      if (next.has(programId)) {
+        const entry = next.get(programId)!;
+        next.delete(programId);
+        onDiscountTypeChange('amount');
+        onDiscountValueChange(Math.max(0, Number(discountValue) - entry.delta));
+        return next;
+      }
+      let delta = 0;
+      let rewardItemId: string | undefined;
+      if (reward.kind === 'discount') {
+        delta = Number(reward.discountAmount ?? 0);
+      } else if (reward.kind === 'free_item') {
+        const pick = pickStampFreeItem(reward.rewardItemIds);
+        if (!pick) {
+          toast.error('Add a qualifying item to the cart to redeem this reward.');
+          return prev;
+        }
+        delta = pick.price;
+        rewardItemId = pick.rewardItemId;
+      }
+      if (delta <= 0) return prev;
+      next.set(programId, { delta, rewardItemId, programName, programType });
+      onDiscountTypeChange('amount');
+      onDiscountValueChange(Number(discountValue) + delta);
+      return next;
+    });
+  };
+
+  /** Fire the BE apply-reward calls for every ticked reward. Runs
+   *  in sequence so a mid-chain failure surfaces cleanly (the
+   *  earlier redeems have already burned balance; not rolling back
+   *  by design — a rare case, cashier can manually ADJUST). */
+  const commitLoyalty = async (): Promise<boolean> => {
+    if (!customerId || applied.size === 0) return true;
+    for (const [programId, entry] of applied.entries()) {
+      try {
+        await loyaltyPos.applyReward(customerId, programId, {
+          discountAmount: entry.delta,
+          rewardItemId: entry.rewardItemId,
+        });
+      } catch (e) {
+        toast.error(`Loyalty apply failed on "${entry.programName}": ${e instanceof Error ? e.message : String(e)}`);
+        return false;
+      }
+    }
+    onLoyaltyChanged();
+    return true;
+  };
   /** Active PayWay session for the KHRQR flow (V164). Null while no
    *  session is open. Polled at 2s intervals; flipping to status='paid'
    *  auto-fires onSubmit. The polling effect is also responsible for
@@ -1487,6 +1621,66 @@ function PosCheckoutDialog({
             </div>
           )}
 
+          {/* v-loyalty-redeem-at-checkout — per-reward "Use / Reset"
+              toggles for the picked customer's redeemable rewards.
+              Cashier decides transaction-by-transaction whether to
+              burn a stamp card or point discount for this sale.
+              Hidden entirely for walk-in checkouts. */}
+          {customerId && loyaltyState && loyaltyState.programs.some(p => p.rewards.length > 0) && (
+            <div className="rounded-md border border-purple-200 bg-purple-50/50 p-3 space-y-2 text-sm">
+              <div className="text-[11px] font-semibold text-purple-800 inline-flex items-center gap-1.5">
+                <Gift className="h-3.5 w-3.5" />
+                Loyalty rewards
+                <span className="text-purple-600 font-normal">— apply this time or save for later</span>
+              </div>
+              <ul className="space-y-1.5">
+                {loyaltyState.programs.flatMap(p =>
+                  p.rewards.map((r, idx) => {
+                    const key = `${p.programId}:${idx}`;
+                    const isApplied = applied.has(p.programId);
+                    return (
+                      <li key={key} className="flex items-center gap-2 text-[12px]">
+                        {p.programType === 'STAMP'
+                          ? <StampIcon className="h-3 w-3 text-emerald-700" />
+                          : <Star className="h-3 w-3 text-blue-700" />}
+                        <span className="flex-1 truncate">
+                          <span className="font-medium">{p.programName}:</span>{' '}
+                          {r.label}
+                          {r.kind === 'discount' && r.discountAmount != null && (
+                            <span className="text-gray-500"> · ${Number(r.discountAmount).toFixed(2)} off</span>
+                          )}
+                        </span>
+                        {isApplied ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleReward(p.programId, p.programName, p.programType, r)}
+                            className="text-[10px] px-2 py-0.5 rounded border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 inline-flex items-center gap-1"
+                          >
+                            Applied — Reset
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleReward(p.programId, p.programName, p.programType, r)}
+                            className="text-[10px] px-2 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100"
+                          >
+                            Use this time
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+              {applied.size > 0 && (
+                <p className="text-[10px] text-gray-500">
+                  Loyalty discount was added to the cart's discount below.
+                  Click <b>Reset</b> above to undo before Confirm.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-md bg-gray-50 p-3 space-y-2 text-sm">
             {/* v-pos-cart-slim — the cart's Subtotal / Discount / Tax
                 / Notes block now lives here. Discount, Tax, Notes are
@@ -1579,7 +1773,14 @@ function PosCheckoutDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button
-            onClick={() => onSubmit(method, method === 'cash' ? received : total)}
+            onClick={async () => {
+              // v-loyalty-redeem-at-checkout — burn any ticked
+              // loyalty rewards BE-side first. If any fail, abort
+              // the whole checkout so the cashier can retry.
+              const ok = await commitLoyalty();
+              if (!ok) return;
+              onSubmit(method, method === 'cash' ? received : total);
+            }}
             disabled={saving || short || total <= 0}
             className="bg-emerald-600 hover:bg-emerald-700"
           >

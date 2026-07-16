@@ -116,9 +116,15 @@ export const loyaltyPos = {
     apiJson<EarnSummary>(`/api/v1/loyalty/pos/invoices/${invoiceId}/earn`, { method: 'POST' }),
   state: (customerId: string) =>
     apiJson<CustomerLoyaltyState>(`/api/v1/loyalty/pos/customers/${customerId}/state`),
-  applyReward: (customerId: string, programId: string) =>
+  /** POINT rewards ignore the body (the rule carries the fixed
+   *  discount). STAMP rewards must send `discountAmount` — the
+   *  FE-computed price of the free item — since BE doesn't join
+   *  stock_items pricing. `rewardItemId` is optional; the BE
+   *  verifies it's in the rule's qualifying set if provided. */
+  applyReward: (customerId: string, programId: string,
+                body?: { discountAmount?: number; rewardItemId?: string }) =>
     apiJson<RedeemResult>(`/api/v1/loyalty/pos/customers/${customerId}/programs/${programId}/apply-reward`, {
-      method: 'POST',
+      method: 'POST', json: body ?? {},
     }),
   /** Bulk snapshot — one row per customer with any balance. */
   balances: () =>
