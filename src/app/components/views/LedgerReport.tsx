@@ -11,7 +11,7 @@ import {
 } from '../ui/table';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
-import { BookOpen, Printer, Calendar, Eye, ArrowLeft, Info } from 'lucide-react';
+import { BookOpen, Printer, Calendar, Eye, ArrowLeft, Info, FileText, TrendingUp, DollarSign, RotateCcw, Wallet } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as ledgerApi from '../../api/ledgerReports';
 import * as currencyApi from '../../api/currencySettings';
@@ -335,55 +335,56 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         </Button>
       </div>
 
-      {/* Grand totals strip. Total · Received(USD) · Received(KHR) ·
-          Refund · Closing — the Received column splits by currency so
-          mixed-currency payments don't get arithmetic-mashed into one
-          USD-looking sum that's actually nonsense. */}
+      {/* Grand totals strip — one Card per metric, Payroll Report
+          style. Card count is 3 / 4 / 5 depending on which
+          currencies the tenant has enabled (USD-only, KHR-only,
+          or both). Received splits per-currency so mixed-currency
+          payments stay on their own rail. */}
       {report && (
-        <Card className="print:shadow-none print:border-0">
-          <CardContent className="py-4">
-            <div className={`grid gap-6 text-sm ${['grid-cols-3', 'grid-cols-4', 'grid-cols-5'][splitCols]}`}>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">Total</div>
-                <div className="text-lg tabular-nums mt-0.5">{formatMoney(report.grandTotalAmount, 'USD')}</div>
-              </div>
-              {showUsd && (
-                <div>
-                  <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
-                    {labels.settledHeader} (USD)
-                    <SettledTooltip kind={kind} />
-                  </div>
-                  <div className="text-lg tabular-nums mt-0.5">{moneyOrDash(grandReceivedByCurrency.usd, 'USD')}</div>
-                </div>
-              )}
-              {showKhr && (
-                <div>
-                  <div className="text-gray-500 text-xs uppercase tracking-wide inline-flex items-center gap-1">
-                    {labels.settledHeader} (KHR)
-                    <SettledTooltip kind={kind} />
-                  </div>
-                  <div className="text-lg tabular-nums mt-0.5">{moneyOrDash(grandReceivedByCurrency.khr, 'KHR')}</div>
-                </div>
-              )}
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">{labels.refundHeader}</div>
-                <div className={`text-lg tabular-nums mt-0.5 ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                  {report.grandTotalRefund === 0
-                    ? formatMoney(0, 'USD')
-                    : `${labels.refundSign}${formatMoney(report.grandTotalRefund, 'USD')}`}
-                </div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">
-                  Closing Balance ({labels.balanceLabel})
-                </div>
-                <div className={`text-lg tabular-nums mt-0.5 ${grandClass(report.grandTotalBalance)}`}>
-                  {formatMoney(report.grandTotalBalance, 'USD')}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className={`grid gap-3 ${['sm:grid-cols-3', 'sm:grid-cols-4', 'sm:grid-cols-5'][splitCols]} grid-cols-2`}>
+          <LedgerStatCard
+            icon={FileText}
+            tone="blue"
+            label="Total"
+            value={formatMoney(report.grandTotalAmount, 'USD')}
+          />
+          {showUsd && (
+            <LedgerStatCard
+              icon={TrendingUp}
+              tone="green"
+              label={`${labels.settledHeader} (USD)`}
+              value={grandReceivedByCurrency.usd === 0
+                ? formatMoney(0, 'USD')
+                : formatMoney(grandReceivedByCurrency.usd, 'USD')}
+              hint={<SettledTooltip kind={kind} />}
+            />
+          )}
+          {showKhr && (
+            <LedgerStatCard
+              icon={Wallet}
+              tone="amber"
+              label={`${labels.settledHeader} (KHR)`}
+              value={grandReceivedByCurrency.khr === 0
+                ? formatMoney(0, 'KHR')
+                : formatMoney(grandReceivedByCurrency.khr, 'KHR')}
+              hint={<SettledTooltip kind={kind} />}
+            />
+          )}
+          <LedgerStatCard
+            icon={RotateCcw}
+            tone={kind === 'sale' ? 'red' : 'green'}
+            label={labels.refundHeader}
+            value={report.grandTotalRefund === 0
+              ? formatMoney(0, 'USD')
+              : `${labels.refundSign}${formatMoney(report.grandTotalRefund, 'USD')}`}
+          />
+          <LedgerStatCard
+            icon={DollarSign}
+            tone="purple"
+            label={`Closing Balance (${labels.balanceLabel})`}
+            value={formatMoney(report.grandTotalBalance, 'USD')}
+          />
+        </div>
       )}
 
       {/* Compact date-range filter bar — Payroll Report style
@@ -443,10 +444,9 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
           <TabsContent value="sellers" className="mt-0">
             <Card className="print:shadow-none print:border-0">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Sellers</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
+              {/* Card title dropped — the tab label above already
+                  reads "Sellers", so a second heading is noise. */}
+              <CardContent className="pt-3">
                 {sellerGroups.length === 0 ? (
                   <p className="text-sm text-gray-500 py-6 text-center">
                     No seller data in this period.
@@ -505,10 +505,9 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
           <TabsContent value="customers" className="mt-0">
             <Card className="print:shadow-none print:border-0">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{labels.party}s</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
+              {/* Card title dropped — tab label above says
+                  "Customers" already. */}
+              <CardContent className="pt-3">
                 {renderCustomerTable()}
               </CardContent>
             </Card>
@@ -685,3 +684,42 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 export function SaleLedger()     { return <LedgerReport kind="sale" />; }
 /** Purchase Ledger wrapper — same idea, vendor-side. */
 export function PurchaseLedger() { return <LedgerReport kind="purchase" />; }
+
+/** Per-metric KPI card used across the Sale / Purchase Ledger
+ *  totals strip. Mirrors the StatCard shape in {@code Reports.tsx}
+ *  (icon chip top-left, big number top-right, muted label below)
+ *  so the totals strip reads the same as the Payroll Report. */
+const LEDGER_TONE: Record<string, { bg: string; text: string }> = {
+  blue:   { bg: 'bg-blue-50',   text: 'text-blue-700'   },
+  green:  { bg: 'bg-green-50',  text: 'text-green-700'  },
+  red:    { bg: 'bg-red-50',    text: 'text-red-700'    },
+  purple: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  amber:  { bg: 'bg-amber-50',  text: 'text-amber-700'  },
+};
+function LedgerStatCard({
+  label, value, icon: Icon, tone, hint,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: keyof typeof LEDGER_TONE;
+  hint?: React.ReactNode;
+}) {
+  const t = LEDGER_TONE[tone];
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className={`p-2 rounded-lg ${t.bg}`}>
+            <Icon className={`h-4 w-4 ${t.text}`} />
+          </div>
+          <span className={`text-2xl font-bold tabular-nums ${t.text}`}>{value}</span>
+        </div>
+        <p className="text-xs text-gray-500 inline-flex items-center gap-1">
+          {label}
+          {hint}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
