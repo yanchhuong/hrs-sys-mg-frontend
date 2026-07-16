@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
@@ -28,6 +28,7 @@ import * as paywayApi from '../../api/payway';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { ShareShopDialog } from '../common/ShareShopDialog';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
+import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
 import { printPosReceipt } from '../../utils/posReceipt';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
@@ -88,6 +89,19 @@ export function POS() {
   // render "· 230 pts" / "· 3 stamps" inline without a per-row
   // network round-trip.
   const [loyaltyBalances, setLoyaltyBalances] = useState<Record<string, CustomerBalanceSummary>>({});
+  // v-pos-customer-searchable — inline "add customer" dialog state.
+  // The Ref bridges the SearchablePicker's onCreate promise (which
+  // stays pending while the dialog is open) to the dialog's Save /
+  // Cancel handlers. Resolve when the customer is created;
+  // reject on Cancel so the picker doesn't select a phantom value.
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerSaving, setNewCustomerSaving] = useState(false);
+  const pendingCustomerCreateRef: MutableRefObject<{
+    resolve: (o: PickerOption) => void;
+    reject: (e: unknown) => void;
+  } | null> = useRef(null);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [taxType, setTaxType] = useState<string | null>(null);
@@ -645,45 +659,53 @@ export function POS() {
     <>
       <div className="p-3 border-b bg-white shrink-0">
         <Label className="text-xs text-gray-500">Customer</Label>
-        <Select value={customerId ?? '__walkin'} onValueChange={v => setCustomerId(v === '__walkin' ? null : v)}>
-          <SelectTrigger className="h-8 mt-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__walkin">Walk-in</SelectItem>
-            {customers
-              // Bug fix: some tenants have a real Customer row named
-              // "Walk-in" seeded into the DB — it collided with the
-              // synthetic __walkin option above and produced a
-              // duplicate entry in this dropdown. Filter it out
-              // (case + whitespace insensitive) so only the synthetic
-              // sentinel remains.
+        {/* v-pos-customer-searchable — search-as-you-type customer
+            picker with an inline "+ Create '<name>'" item that
+            opens a Name + Phone dialog. Replaces the plain Select
+            so a busy cashier can add a walk-in-turned-repeat in
+            one flow without navigating away. */}
+        <SearchablePicker
+          className="h-8 mt-1"
+          placeholder="Walk-in"
+          searchPlaceholder="Search name / phone…"
+          emptyResultsLabel="No customer matches — type a name to create."
+          allowClear={false}
+          value={customerId ?? '__walkin'}
+          onChange={v => setCustomerId(v === '__walkin' ? null : v)}
+          onCreate={async (name) => {
+            // Open the Name+Phone dialog and wait for the operator
+            // to fill in phone. Resolves with the picker option
+            // when the create succeeds; rejects on Cancel so the
+            // picker stays open without a spurious selection.
+            return new Promise<{ value: string; label: string; secondary?: string }>((resolve, reject) => {
+              pendingCustomerCreateRef.current = { resolve, reject };
+              setNewCustomerName(name);
+              setNewCustomerPhone('');
+              setNewCustomerOpen(true);
+            });
+          }}
+          createLabel={q => `Add "${q}" as a new customer`}
+          options={[
+            { value: '__walkin', label: 'Walk-in' },
+            ...customers
               .filter(c => (c.name ?? '').trim().toLowerCase() !== 'walk-in')
               .map(c => {
-                // v-loyalty-mvp — inline balance chip on each row.
-                // Show whichever count is non-zero (a customer with
-                // both a Point and a Stamp program renders both).
                 const bal = loyaltyBalances[c.id];
-                return (
-                  <SelectItem key={c.id} value={c.id}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span>{c.name}</span>
-                      {bal && bal.currentPoint > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700">
-                          {bal.currentPoint} pts
-                        </span>
-                      )}
-                      {bal && bal.currentStamp > 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
-                          {bal.currentStamp} stamp{bal.currentStamp === 1 ? '' : 's'}
-                        </span>
-                      )}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-          </SelectContent>
-        </Select>
+                const chips: string[] = [];
+                if (bal && bal.currentPoint > 0) chips.push(`${bal.currentPoint} pts`);
+                if (bal && bal.currentStamp > 0) chips.push(`${bal.currentStamp} stamp${bal.currentStamp === 1 ? '' : 's'}`);
+                // Include phone in the fuzzy-search haystack so
+                // "0123..." matches too.
+                const searchKey = `${c.name} ${c.phone ?? ''} ${chips.join(' ')}`;
+                return {
+                  value: c.id,
+                  label: c.name,
+                  secondary: chips.length ? chips.join(' · ') : (c.phone ?? undefined),
+                  searchKey,
+                };
+              }),
+          ]}
+        />
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
@@ -982,6 +1004,103 @@ export function POS() {
           }).catch(() => {});
         }}
       />
+
+      {/* v-pos-customer-searchable — inline "Add customer" dialog.
+          Pre-fills Name from the picker's typed query; Phone is
+          optional but recommended so future returning customers
+          fuzzy-match on the digits. Auto-selects the newly-created
+          customer once the POST succeeds. */}
+      <Dialog
+        open={newCustomerOpen}
+        onOpenChange={o => {
+          if (!o && pendingCustomerCreateRef.current) {
+            // Cancel path — reject the pending picker promise so
+            // it doesn't select a phantom value.
+            pendingCustomerCreateRef.current.reject(new Error('cancelled'));
+            pendingCustomerCreateRef.current = null;
+          }
+          setNewCustomerOpen(o);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={newCustomerName}
+                onChange={e => setNewCustomerName(e.target.value)}
+                className="h-9 mt-1"
+                placeholder="Full name"
+                maxLength={255}
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Phone (optional)</Label>
+              <Input
+                value={newCustomerPhone}
+                onChange={e => setNewCustomerPhone(e.target.value)}
+                className="h-9 mt-1"
+                placeholder="012 345 678"
+                inputMode="tel"
+                maxLength={64}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              if (pendingCustomerCreateRef.current) {
+                pendingCustomerCreateRef.current.reject(new Error('cancelled'));
+                pendingCustomerCreateRef.current = null;
+              }
+              setNewCustomerOpen(false);
+            }} disabled={newCustomerSaving}>Cancel</Button>
+            <Button
+              onClick={async () => {
+                const name = newCustomerName.trim();
+                if (!name) { toast.error('Name is required'); return; }
+                setNewCustomerSaving(true);
+                try {
+                  const created = await customersApi.create({
+                    type: 'individual',
+                    kind: 'customer',
+                    name,
+                    phone: newCustomerPhone.trim() || undefined,
+                  });
+                  // Refresh the local customers list so the picker
+                  // sees the new row on the next open and the
+                  // upstream loyalty balance chip works.
+                  setCustomers(prev => [...prev, created]);
+                  setCustomerId(created.id);
+                  toast.success(`Added ${created.name}`);
+                  // Resolve the picker's pending onCreate promise
+                  // so the SearchablePicker closes with the new
+                  // option selected.
+                  pendingCustomerCreateRef.current?.resolve({
+                    value: created.id,
+                    label: created.name,
+                    secondary: created.phone ?? undefined,
+                  });
+                  pendingCustomerCreateRef.current = null;
+                  setNewCustomerOpen(false);
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Failed to add customer');
+                } finally {
+                  setNewCustomerSaving(false);
+                }
+              }}
+              disabled={newCustomerSaving || !newCustomerName.trim()}
+            >
+              {newCustomerSaving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Add customer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <PosOpenOrdersDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
