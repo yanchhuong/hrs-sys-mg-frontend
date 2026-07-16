@@ -8,7 +8,7 @@ import {
 } from '../ui/table';
 import { format, startOfYear, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
-import { TrendingUp, Printer, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Printer, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
 import * as plApi from '../../api/profitLossReport';
 import * as currencyApi from '../../api/currencySettings';
 import { useI18n } from '../../i18n/I18nContext';
@@ -141,60 +141,39 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
         </Button>
       </div>
 
-      <Card className="print:shadow-none print:border-0">
-        <CardHeader className="pb-3">
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="space-y-1">
-              <label className="text-xs text-gray-500 flex items-center gap-1">
-                <Calendar className="h-3 w-3" /> From
-              </label>
-              <DateInput value={from} onChange={setFrom} className="w-44" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-gray-500 flex items-center gap-1">
-                <Calendar className="h-3 w-3" /> To
-              </label>
-              <DateInput value={to} onChange={setTo} className="w-44" />
-            </div>
-            <Button onClick={load} disabled={loading}>
-              {loading ? 'Loading…' : 'Apply'}
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Headline strip — Total Income · Total Expense · Net Profit.
-          The Expense card shows the Bills / Receipts split as a
-          sub-line so the user can see where the spend is concentrated. */}
+      {/* Headline strip — separate cards per metric, matching the
+          Sale Ledger totals-strip pattern (which mirrors Payroll
+          Report's StatCard). Colored icon + big number on top,
+          muted label below with a supporting detail hint. */}
       {report && (
-        <Card className="print:shadow-none print:border-0">
-          <CardContent className="py-4">
-            <div className="grid grid-cols-3 gap-6">
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">Total Income</div>
-                <div className="text-2xl tabular-nums mt-1 text-emerald-700">{fmtMoney(report.totalIncome)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">Invoices &amp; adjustments</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">Total Expense</div>
-                <div className="text-2xl tabular-nums mt-1 text-rose-700">{fmtMoney(report.totalExpense)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  Bills <span className="tabular-nums">{fmtMoney(report.totalBillExpense)}</span>
-                  {' · '}Receipts <span className="tabular-nums">{fmtMoney(report.totalReceiptExpense)}</span>
-                </div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-xs uppercase tracking-wide">Net Profit</div>
-                <div className={`text-2xl tabular-nums mt-1 font-medium ${netClass(report.netProfit)}`}>
-                  {signedMoney(report.netProfit)}
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {report.netProfit >= 0 ? 'Income exceeds expense' : 'Expense exceeds income'}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid gap-3 sm:grid-cols-3 grid-cols-2 print:grid-cols-3">
+          <PlStatCard
+            icon={TrendingUp}
+            tone="green"
+            label="Total Income"
+            hint="Invoices & adjustments"
+            value={fmtMoney(report.totalIncome)}
+          />
+          <PlStatCard
+            icon={TrendingDown}
+            tone="red"
+            label="Total Expense"
+            hint={
+              <>
+                Bills <span className="tabular-nums">{fmtMoney(report.totalBillExpense)}</span>
+                {' · '}Receipts <span className="tabular-nums">{fmtMoney(report.totalReceiptExpense)}</span>
+              </>
+            }
+            value={fmtMoney(report.totalExpense)}
+          />
+          <PlStatCard
+            icon={Wallet}
+            tone={report.netProfit >= 0 ? 'green' : 'red'}
+            label="Net Profit"
+            hint={report.netProfit >= 0 ? 'Income exceeds expense' : 'Expense exceeds income'}
+            value={signedMoney(report.netProfit)}
+          />
+        </div>
       )}
 
       {report && report.monthly.length === 0 && (
@@ -205,13 +184,34 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
         </Card>
       )}
 
-      {/* Monthly breakdown — table + bar chart. Same dataset, two
-          views: the table is exact, the bars give a quick "is the
-          trend up or down" read at a glance. */}
+      {/* Monthly breakdown — table + bar chart. Filter bar sits
+          inline with the CardTitle, same "controls on the header
+          row" convention as the Sale Ledger's tabs + filter. */}
       {report && report.monthly.length > 0 && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Monthly Breakdown</CardTitle>
+            <div className="flex items-center gap-3 flex-wrap justify-between">
+              <CardTitle className="text-base">Monthly Breakdown</CardTitle>
+              <div className="flex flex-wrap items-center gap-2 print:hidden">
+                <Calendar className="h-4 w-4 text-gray-400" />
+                <DateInput
+                  value={from}
+                  onChange={setFrom}
+                  className="h-8 w-36 text-sm"
+                  title="From date"
+                />
+                <span className="text-gray-400 text-xs">→</span>
+                <DateInput
+                  value={to}
+                  onChange={setTo}
+                  className="h-8 w-36 text-sm"
+                  title="To date"
+                />
+                <Button size="sm" onClick={load} disabled={loading} className="h-8">
+                  {loading ? 'Loading…' : 'Apply'}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="pt-0">
             <Table>
@@ -423,4 +423,41 @@ export function consumeProfitLossNavIntent(source: PlLineSource): string | null 
   } catch {
     return null;
   }
+}
+
+/** Per-metric KPI card — mirrors Sale Ledger's LedgerStatCard and
+ *  Payroll Report's StatCard so the totals strip reads the same
+ *  across all three reports (colored icon top-left, big colored
+ *  number top-right, muted label + optional hint below). */
+const PL_TONE: Record<string, { bg: string; text: string }> = {
+  blue:   { bg: 'bg-blue-50',   text: 'text-blue-700'   },
+  green:  { bg: 'bg-green-50',  text: 'text-green-700'  },
+  red:    { bg: 'bg-red-50',    text: 'text-red-700'    },
+  purple: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  amber:  { bg: 'bg-amber-50',  text: 'text-amber-700'  },
+};
+function PlStatCard({
+  label, value, hint, icon: Icon, tone,
+}: {
+  label: string;
+  value: string | number;
+  hint?: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: keyof typeof PL_TONE;
+}) {
+  const t = PL_TONE[tone];
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className={`p-2 rounded-lg ${t.bg}`}>
+            <Icon className={`h-4 w-4 ${t.text}`} />
+          </div>
+          <span className={`text-2xl font-bold tabular-nums ${t.text}`}>{value}</span>
+        </div>
+        <p className="text-xs text-gray-500">{label}</p>
+        {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
+      </CardContent>
+    </Card>
+  );
 }
