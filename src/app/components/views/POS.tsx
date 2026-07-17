@@ -4,6 +4,7 @@ import {
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -152,6 +153,30 @@ export function POS() {
    *  so the paired tablet sees the cart in real time over SSE. */
   const [pairedDisplayCode, setPairedDisplayCode] = useState<string | null>(null);
   const [pairDisplayOpen, setPairDisplayOpen] = useState(false);
+  /** v-pos-fullscreen — mirror the browser's fullscreen state so the
+   *  header icon flips between Enter / Exit. `fullscreenchange` also
+   *  fires when the user hits Esc, so we stay in sync without
+   *  polling. Fullscreen is per-window, so leaving POS mid-session
+   *  is preserved by the natural DOM event on unmount. */
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(
+    typeof document !== 'undefined' && !!document.fullscreenElement,
+  );
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    // Best-effort — some browsers reject requestFullscreen when not
+    // triggered by a user gesture, or the tenant is embedded in an
+    // iframe. Silent-fail: the icon toggles based on the actual
+    // fullscreenchange event, so nothing gets stuck.
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => { /* swallow */ });
+    } else {
+      document.exitFullscreen?.().catch(() => { /* swallow */ });
+    }
+  };
   // Latch the "paid" snapshot through the receipt dialog so the
   // customer screen keeps the thank-you splash visible until the
   // cashier starts a New Sale. Cleared on cart reset.
@@ -830,6 +855,20 @@ export function POS() {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* v-pos-fullscreen — hides browser chrome so the cashier
+              gets max screen real estate. Icon-only to keep the top
+              strip compact on tablets; tooltip carries the label
+              plus the Esc-to-exit hint most POS operators haven't
+              met yet. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
           {/* Customer-display "mirror screen". Pops out a second
               window the customer can see — cart + total update live
               via BroadcastChannel as the cashier rings up items. */}
