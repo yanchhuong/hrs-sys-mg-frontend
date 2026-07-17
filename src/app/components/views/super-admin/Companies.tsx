@@ -599,6 +599,13 @@ export function Companies() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <Input
+              /* Distinct name + autoComplete off so Chrome doesn't
+                 lump this generic text input together with the
+                 Create dialog's Name field. Without them, typing
+                 "Yanchhuong" into the popup would leak into this
+                 outer search via Chrome's saved-form-data. */
+              name="sa-companies-search"
+              autoComplete="off"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search name, slug, contact, country…"
@@ -635,27 +642,27 @@ export function Companies() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="c-name">Name *</Label>
-                  <Input id="c-name" value={form.name ?? ''} onChange={e => setForm({ ...form, name: e.target.value })} />
+                  <Input id="c-name" name="c-name" autoComplete="off" value={form.name ?? ''} onChange={e => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="c-slug">Slug *</Label>
-                  <Input id="c-slug" placeholder="acme" value={form.slug ?? ''} onChange={e => setForm({ ...form, slug: e.target.value })} />
+                  <Input id="c-slug" name="c-slug" autoComplete="off" placeholder="acme" value={form.slug ?? ''} onChange={e => setForm({ ...form, slug: e.target.value })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="c-email">Contact Email *</Label>
-                  <Input id="c-email" type="email" value={form.contactEmail ?? ''} onChange={e => setForm({ ...form, contactEmail: e.target.value })} />
+                  <Input id="c-email" name="c-email" autoComplete="off" type="email" value={form.contactEmail ?? ''} onChange={e => setForm({ ...form, contactEmail: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="c-phone">Contact Phone</Label>
-                  <Input id="c-phone" value={form.contactPhone ?? ''} onChange={e => setForm({ ...form, contactPhone: e.target.value })} />
+                  <Input id="c-phone" name="c-phone" autoComplete="off" value={form.contactPhone ?? ''} onChange={e => setForm({ ...form, contactPhone: e.target.value })} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="c-country">Country</Label>
-                  <Input id="c-country" value={form.country ?? ''} onChange={e => setForm({ ...form, country: e.target.value })} />
+                  <Input id="c-country" name="c-country" autoComplete="off" value={form.country ?? ''} onChange={e => setForm({ ...form, country: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Plan</Label>
@@ -752,7 +759,7 @@ export function Companies() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="c-notes">Notes</Label>
-                <Input id="c-notes" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+                <Input id="c-notes" name="c-notes" autoComplete="off" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
               </div>
 
               {/* v-create-with-apps — per-app install picks. Only
