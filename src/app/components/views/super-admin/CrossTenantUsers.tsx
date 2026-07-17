@@ -58,6 +58,12 @@ export function CrossTenantUsers() {
   const [addCompanySlug, setAddCompanySlug] = useState('');
   const [addTenantId, setAddTenantId] = useState<string>('');
   const [addSubmitting, setAddSubmitting] = useState(false);
+  /** v-admin-attach-existing — when role=admin, operator picks
+   *  between minting a brand new company for this user ('new') and
+   *  attaching them as an admin to an existing tenant ('existing').
+   *  Non-admin roles ignore this and always use the existing-company
+   *  dropdown. */
+  const [addAdminMode, setAddAdminMode] = useState<'new' | 'existing'>('new');
 
   const resetAddForm = () => {
     setAddRole('admin');
@@ -67,6 +73,7 @@ export function CrossTenantUsers() {
     setAddCompanyName('');
     setAddCompanySlug('');
     setAddTenantId('');
+    setAddAdminMode('new');
   };
 
   // Auto-derive slug from name as the admin types (lowercase + dash-safe).
@@ -87,9 +94,13 @@ export function CrossTenantUsers() {
     }
     setAddSubmitting(true);
     try {
-      if (addRole === 'admin') {
+      // v-admin-attach-existing — admin has two branches now:
+      // "new" mints a tenant + admin atomically; "existing" attaches
+      // the admin to a company the SA picks from the dropdown.
+      // Non-admin roles keep the existing-company-only path.
+      if (addRole === 'admin' && addAdminMode === 'new') {
         if (!addCompanyName.trim()) {
-          toast.error('Company name is required for an admin');
+          toast.error('Company name is required for a new company');
           return;
         }
         const slug = addCompanySlug.trim() || slugify(addCompanyName);
@@ -643,8 +654,8 @@ export function CrossTenantUsers() {
               Add User
             </DialogTitle>
             <DialogDescription>
-              Choosing <strong>Admin</strong> as the role creates a new company alongside the user.
-              Other roles attach the user to an existing company.
+              <strong>Admin</strong> can either create a new company or be added to an existing one.
+              Manager and Employee always attach to an existing company.
             </DialogDescription>
           </DialogHeader>
 
@@ -669,7 +680,32 @@ export function CrossTenantUsers() {
               </div>
             </div>
 
-            {addRole === 'admin' ? (
+            {addRole === 'admin' && (
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-gray-500">Company</Label>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  {([
+                    ['new',      'Create new'],
+                    ['existing', 'Existing'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setAddAdminMode(key)}
+                      className={`h-9 rounded-md border text-sm transition ${
+                        addAdminMode === key
+                          ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {addRole === 'admin' && addAdminMode === 'new' ? (
               <>
                 <div>
                   <Label htmlFor="add-company-name" className="text-xs uppercase tracking-wide text-gray-500">
@@ -706,8 +742,12 @@ export function CrossTenantUsers() {
                 </div>
               </>
             ) : (
+              // Existing-company picker: shared by manager / employee
+              // and by admin when addAdminMode === 'existing'.
               <div>
-                <Label className="text-xs uppercase tracking-wide text-gray-500">Company</Label>
+                <Label className="text-xs uppercase tracking-wide text-gray-500">
+                  {addRole === 'admin' ? 'Attach to Company' : 'Company'}
+                </Label>
                 <select
                   value={addTenantId}
                   onChange={e => setAddTenantId(e.target.value)}
@@ -763,7 +803,9 @@ export function CrossTenantUsers() {
             <Button onClick={handleAddSubmit} disabled={addSubmitting}>
               {addSubmitting
                 ? 'Creating…'
-                : addRole === 'admin' ? 'Create Company + Admin' : `Create ${addRole}`}
+                : addRole === 'admin'
+                  ? (addAdminMode === 'new' ? 'Create Company + Admin' : 'Add Admin to Company')
+                  : `Create ${addRole}`}
             </Button>
           </DialogFooter>
         </DialogContent>
