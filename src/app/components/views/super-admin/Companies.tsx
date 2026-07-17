@@ -92,6 +92,70 @@ function toTenant(c: Company): platformApi.PlatformTenant {
   };
 }
 
+/**
+ * v-create-with-apps — curated module keys shown in the Create
+ * dialog's "Apps to install" section. Grouped so the SA can pick
+ * whole categories at a glance. Keys match the backend module
+ * catalog + FE nav.ts, and the tenantModules bulk endpoint accepts
+ * any subset — anything absent from a category (e.g. hospital
+ * modules on a POS-only tenant) is auto-seeded by the Business
+ * Base logic and can be adjusted from the Apps launcher later.
+ */
+const INSTALL_GROUPS: Array<{ label: string; modules: Array<{ key: string; label: string }> }> = [
+  { label: 'HR', modules: [
+    { key: 'dashboard',          label: 'Dashboard' },
+    { key: 'employees',          label: 'Employees' },
+    { key: 'attendance',         label: 'Attendance' },
+    { key: 'overtime',           label: 'Overtime' },
+    { key: 'all-leave',          label: 'Leave' },
+    { key: 'exception',          label: 'Exception' },
+    { key: 'payroll',            label: 'Payroll' },
+    { key: 'benefit-calculator', label: 'Benefits' },
+    { key: 'increase',           label: 'Increase' },
+    { key: 'deduction',          label: 'Deduction' },
+  ] },
+  { label: 'Sale', modules: [
+    { key: 'customer',   label: 'Customers' },
+    { key: 'quotation',  label: 'Quotations' },
+    { key: 'invoice',    label: 'Invoices' },
+    { key: 'pos',        label: 'POS' },
+    { key: 'voucher',    label: 'Vouchers' },
+    { key: 'commission', label: 'Commission' },
+  ] },
+  { label: 'Purchase', modules: [
+    { key: 'vendor',  label: 'Vendors' },
+    { key: 'bill',    label: 'Bills' },
+    { key: 'receipt', label: 'Expenses' },
+  ] },
+  { label: 'Stock', modules: [
+    { key: 'stock',      label: 'Items' },
+    { key: 'movement',   label: 'Movement' },
+    { key: 'adjustment', label: 'Adjustment' },
+  ] },
+  { label: 'Cash Flow', modules: [
+    { key: 'transaction', label: 'Transactions' },
+    { key: 'cashadvance', label: 'Cash Advance' },
+  ] },
+  { label: 'Reports', modules: [
+    { key: 'attendance-report', label: 'Attendance Report' },
+    { key: 'payroll-report',    label: 'Payroll Report' },
+    { key: 'compliance',        label: 'Compliance' },
+  ] },
+  { label: 'Healthcare', modules: [
+    { key: 'encounter',       label: 'Encounters' },
+    { key: 'medical-service', label: 'Medical Services' },
+    { key: 'appointment',     label: 'Appointments' },
+  ] },
+  { label: 'Education', modules: [
+    { key: 'enrollment',       label: 'Enrollments' },
+    { key: 'class-attendance', label: 'Class Attendance' },
+  ] },
+];
+
+/** All module keys the Create dialog's checkbox list covers. Used
+ *  to reset the toggle state cleanly when the dialog opens. */
+const ALL_INSTALL_KEYS: string[] = INSTALL_GROUPS.flatMap(g => g.modules.map(m => m.key));
+
 export function Companies() {
   const { formatDate } = useDateFormat();
   const [companies, setCompanies] = useState<platformApi.PlatformTenant[]>([]);
@@ -116,6 +180,10 @@ export function Companies() {
     'indefinite' | '1m' | '3m' | '6m' | '1y' | 'custom'
   >('indefinite');
   const [freezeCustomDate, setFreezeCustomDate] = useState<string>('');
+  /** v-create-with-apps — per-app install picks applied AFTER the
+   *  tenant is created via a bulk tenantModules.set. Empty on Edit
+   *  (that path uses the Apps launcher / Tenant Modules page). */
+  const [moduleToggles, setModuleToggles] = useState<Record<string, boolean>>({});
   // Business Base multi-select for the create/edit dialog (V181 +
   // v-business-base-picker). Empty array = "no industry"; on create
   // it defaults to ['pos'] to match the legacy MVP behaviour so a
@@ -233,6 +301,12 @@ export function Companies() {
     // Admin can uncheck it in the dialog if they want a
     // no-industry tenant.
     setBases(['pos']);
+    // v-create-with-apps — seed every curated module ON. SA can
+    // uncheck what they don't want; Business Base will override
+    // anyway on backend seed for industry-specific modules.
+    const seed: Record<string, boolean> = {};
+    for (const k of ALL_INSTALL_KEYS) seed[k] = true;
+    setModuleToggles(seed);
     setDialogOpen(true);
   };
   const handleOpenEdit = (c: Company) => {
@@ -335,7 +409,7 @@ export function Companies() {
         }
         toast.success(`Updated ${form.name}`);
       } else {
-        await platformApi.tenants.create({
+        const created = await platformApi.tenants.create({
           name: form.name!,
           slug: form.slug!,
           planTier: (form.planTier as PlanTier) ?? 'starter',
@@ -347,6 +421,24 @@ export function Companies() {
           // this list. Empty array = "no industry" (rare but legal).
           businessBases: bases,
         });
+        // v-create-with-apps — apply the per-app toggle picks on top
+        // of the Business-Base auto-seed. Bulk endpoint accepts any
+        // subset, so we push only the keys we curated a checkbox
+        // for — anything else keeps the Base-driven default.
+        const toApply: Record<string, boolean> = {};
+        for (const k of ALL_INSTALL_KEYS) {
+          if (k in moduleToggles) toApply[k] = moduleToggles[k];
+        }
+        if (Object.keys(toApply).length > 0) {
+          try {
+            await platformApi.tenantModules.set(created.id, toApply);
+          } catch (err) {
+            // Non-fatal — tenant is already created; SA can adjust
+            // apps from Tenant Modules / Apps launcher.
+            toast.warning('Company created, but the app install list didn\'t apply — adjust from Tenant Modules.');
+            console.warn('tenantModules.set after create failed', err);
+          }
+        }
         toast.success('Company created');
       }
       setDialogOpen(false);
@@ -662,6 +754,76 @@ export function Companies() {
                 <Label htmlFor="c-notes">Notes</Label>
                 <Input id="c-notes" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
               </div>
+
+              {/* v-create-with-apps — per-app install picks. Only
+                  visible on Create (Edit uses the Apps launcher +
+                  Tenant Modules page for tuning post-hoc). All boxes
+                  default checked; the Business Base picker above
+                  still owns industry-specific defaults on the BE. */}
+              {!editing && (
+                <div className="rounded-md border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Apps to install</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, true])))}
+                        className="text-[11px] text-blue-600 hover:underline"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-gray-300">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, false])))}
+                        className="text-[11px] text-blue-600 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {INSTALL_GROUPS.map(group => {
+                      const allOn  = group.modules.every(m => moduleToggles[m.key]);
+                      const someOn = group.modules.some(m => moduleToggles[m.key]);
+                      return (
+                        <div key={group.label} className="border rounded-md p-2 space-y-1.5">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={allOn}
+                              ref={el => { if (el) el.indeterminate = !allOn && someOn; }}
+                              onChange={e => {
+                                const next = { ...moduleToggles };
+                                for (const m of group.modules) next[m.key] = e.target.checked;
+                                setModuleToggles(next);
+                              }}
+                              className="h-3.5 w-3.5"
+                            />
+                            {group.label}
+                          </label>
+                          <div className="pl-5 space-y-1">
+                            {group.modules.map(m => (
+                              <label key={m.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!moduleToggles[m.key]}
+                                  onChange={e => setModuleToggles({ ...moduleToggles, [m.key]: e.target.checked })}
+                                  className="h-3.5 w-3.5"
+                                />
+                                {m.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    You can adjust these later from Tenant Modules or the tenant's Apps launcher.
+                  </p>
+                </div>
+              )}
               {/* Feature toggles — Super Admin controls visibility of
                   tenant-side surfaces that don't fit the per-module
                   catalog (single-flag features, not a whole sub-app).
