@@ -28,7 +28,7 @@ type TopTab = 'case' | 'documents';
 type DocKindFilter = 'all' | PortfolioDocType;
 
 const TOP_TABS: Array<{ key: TopTab; label: string; icon: React.ReactNode }> = [
-  { key: 'case',      label: 'Case',      icon: <Wallet className="h-3.5 w-3.5" /> },
+  { key: 'case',      label: 'Journal',   icon: <Wallet className="h-3.5 w-3.5" /> },
   { key: 'documents', label: 'Documents', icon: <FileSearch className="h-3.5 w-3.5" /> },
 ];
 
@@ -269,8 +269,8 @@ export function AgencySaleExpensePage() {
         <div>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <Wallet className="h-5 w-5 text-blue-600" />
-            Sale &amp; Expense
-            <PageTitleTooltip label="About Sale & Expense">
+            Journals
+            <PageTitleTooltip label="About Journals">
               {topTab === 'case'
                 ? (activeClient
                     ? <>Invoices, bills, and expenses on <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>.</>

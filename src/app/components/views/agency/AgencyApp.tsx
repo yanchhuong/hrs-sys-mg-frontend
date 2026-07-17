@@ -28,7 +28,7 @@ interface NavLeaf {
 const TOP_NAV: NavLeaf[] = [
   { key: 'dashboard',    label: 'Dashboard',        icon: <LayoutDashboard className="h-4 w-4" />, requiresClient: false },
   { key: 'tasks',        label: 'Tasks',            icon: <CheckSquare className="h-4 w-4" />,     requiresClient: false },
-  { key: 'sale-expense', label: 'Sale & Expense',   icon: <Wallet className="h-4 w-4" />,          requiresClient: false },
+  { key: 'sale-expense', label: 'Journals',         icon: <Wallet className="h-4 w-4" />,          requiresClient: false },
   { key: 'declarations', label: 'Tax Declarations', icon: <FileSpreadsheet className="h-4 w-4" />, requiresClient: false },
 ];
 
