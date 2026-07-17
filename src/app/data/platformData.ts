@@ -67,6 +67,11 @@ export interface Company {
   /** Super-Admin Apps-launcher toggle. Optional on legacy mock rows;
    *  the toLegacyCompany adapter fills in true when the backend omits it. */
   appLauncherEnabled?: boolean;
+  /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Only
+   *  meaningful when status === 'frozen'. Null = indefinite freeze
+   *  (SA lifts manually). */
+  frozenUntil?: string | null;
+  frozenReason?: string | null;
 }
 
 export interface LocalInstall {

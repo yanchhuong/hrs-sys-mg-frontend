@@ -64,6 +64,10 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     // edit dialog's switch defaults to "on" even if a legacy mock row
     // skips the field.
     appLauncherEnabled: t.appLauncherEnabled ?? true,
+    // v-tenant-freeze-schedule — carry through so the Companies
+    // table can render the Schedule column for frozen tenants.
+    frozenUntil:  t.frozenUntil  ?? null,
+    frozenReason: t.frozenReason ?? null,
   };
 }
 
@@ -658,6 +662,7 @@ export function Companies() {
                 <TableHead>Industry</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Schedule</TableHead>
                 <TableHead className="min-w-[220px]">Usage</TableHead>
                 <TableHead className="text-right">MRR</TableHead>
                 <TableHead>Created</TableHead>
@@ -667,7 +672,7 @@ export function Companies() {
             <TableBody>
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
                     {loading ? 'Loading companies…' : 'No companies match these filters.'}
                   </TableCell>
                 </TableRow>
@@ -726,6 +731,25 @@ export function Companies() {
                         </Badge>
                       )}
                     </div>
+                  </TableCell>
+                  {/* v-tenant-freeze-schedule — Schedule column. Only
+                      populated for frozen tenants; the date shown is
+                      the nightly-auto-unfreeze deadline. Indefinite
+                      freezes read "Indefinite" so the SA can tell
+                      apart "set for a date" vs "manual lift only".
+                      Non-frozen tenants keep the cell empty (em-dash)
+                      so the column doesn't disappear on data reshape. */}
+                  <TableCell className="text-xs">
+                    {c.status === 'frozen'
+                      ? (c.frozenUntil
+                          ? (
+                            <span className="inline-flex items-center gap-1 text-amber-800">
+                              <Snowflake className="h-3 w-3" />
+                              {new Date(c.frozenUntil).toLocaleDateString()}
+                            </span>
+                          )
+                          : <span className="text-gray-500 italic">Indefinite</span>)
+                      : <span className="text-gray-300">—</span>}
                   </TableCell>
                   <TableCell>
                     {/* Live counts from the backend, replacing the
