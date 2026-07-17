@@ -430,6 +430,9 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
             </span>
             <span className="opacity-80">
               This company has been frozen by an administrator. You can view but not create, update, or delete.
+              {currentUser.tenantFrozenUntil
+                ? ` Auto-unfreezes on ${new Date(currentUser.tenantFrozenUntil).toLocaleDateString()}.`
+                : ''}
               {currentUser.tenantFrozenReason ? ` — ${currentUser.tenantFrozenReason}` : ''}
             </span>
           </div>

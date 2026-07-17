@@ -31,6 +31,9 @@ export interface PlatformTenant {
   frozenAt: string | null;
   frozenReason: string | null;
   frozenById: string | null;
+  /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
+   *  indefinite freeze (SA lifts manually). */
+  frozenUntil: string | null;
   createdAt: string;
   updatedAt: string;
   /** Live counts surfaced in the Super Admin Companies page Usage column.
@@ -97,11 +100,16 @@ export const tenants = {
     apiJson(`/api/v1/platform/tenants/${id}/suspend`, { method: 'POST' }),
   reactivate: (id: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/reactivate`, { method: 'POST' }),
-  /** v-tenant-freeze — Super Admin flips tenant into read-only. */
-  freeze: (id: string, reason?: string): Promise<PlatformTenant> =>
+  /** v-tenant-freeze — Super Admin flips tenant into read-only.
+   *  frozenUntil is an ISO-8601 string; null / omitted = indefinite
+   *  (SA lifts manually). See v-tenant-freeze-schedule. */
+  freeze: (id: string, opts?: { reason?: string | null; frozenUntil?: string | null }): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/freeze`, {
       method: 'POST',
-      json: reason ? { reason } : {},
+      json: {
+        ...(opts?.reason ? { reason: opts.reason } : {}),
+        ...(opts?.frozenUntil ? { frozenUntil: opts.frozenUntil } : {}),
+      },
     }),
   unfreeze: (id: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/unfreeze`, { method: 'POST' }),

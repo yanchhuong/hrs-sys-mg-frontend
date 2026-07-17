@@ -153,6 +153,7 @@ function fromApi(apiUser: authApi.AuthUser): User {
     // can render the read-only banner without a second fetch.
     tenantStatus: apiUser.tenantStatus ?? null,
     tenantFrozenReason: apiUser.tenantFrozenReason ?? null,
+    tenantFrozenUntil: apiUser.tenantFrozenUntil ?? null,
     createdAt: new Date().toISOString(),
     isActive: true,
   };

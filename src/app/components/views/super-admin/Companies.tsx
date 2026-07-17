@@ -105,6 +105,13 @@ export function Companies() {
   const [freezeTarget, setFreezeTarget] = useState<Company | null>(null);
   const [freezeReason, setFreezeReason] = useState<string>('');
   const [freezing, setFreezing] = useState<boolean>(false);
+  /** v-tenant-freeze-schedule — duration preset ('indefinite' / '1m'
+   *  / '3m' / '6m' / '1y' / 'custom'). 'custom' surfaces an inline
+   *  date input so an SA can pick any deadline. */
+  const [freezeDuration, setFreezeDuration] = useState<
+    'indefinite' | '1m' | '3m' | '6m' | '1y' | 'custom'
+  >('indefinite');
+  const [freezeCustomDate, setFreezeCustomDate] = useState<string>('');
   // Business Base multi-select for the create/edit dialog (V181 +
   // v-business-base-picker). Empty array = "no industry"; on create
   // it defaults to ['pos'] to match the legacy MVP behaviour so a
@@ -324,9 +331,31 @@ export function Companies() {
       setSubmitting(false);
     }
   };
+  /** Translate the duration preset into an ISO timestamp for the
+   *  BE. 'indefinite' → null; 'custom' → the datepicker value; the
+   *  rest are today + N months. Anchored to now() so freezing "1m"
+   *  at 3pm gives a deadline of the same wall time next month. */
+  const computeFreezeUntil = (): string | null => {
+    if (freezeDuration === 'indefinite') return null;
+    if (freezeDuration === 'custom') {
+      return freezeCustomDate ? new Date(freezeCustomDate).toISOString() : null;
+    }
+    const d = new Date();
+    if      (freezeDuration === '1m') d.setMonth(d.getMonth() + 1);
+    else if (freezeDuration === '3m') d.setMonth(d.getMonth() + 3);
+    else if (freezeDuration === '6m') d.setMonth(d.getMonth() + 6);
+    else if (freezeDuration === '1y') d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString();
+  };
+
   const handleFreezeToggle = async () => {
     if (!freezeTarget) return;
     const willFreeze = freezeTarget.status !== 'frozen';
+    const frozenUntil = willFreeze ? computeFreezeUntil() : null;
+    if (willFreeze && freezeDuration === 'custom' && !frozenUntil) {
+      toast.error('Pick a custom unfreeze date, or choose Indefinite.');
+      return;
+    }
     if (USE_MOCKS) {
       const next: CompanyStatus = willFreeze ? ('frozen' as CompanyStatus) : 'active';
       setCompanies(prev => prev.map(t =>
@@ -334,18 +363,25 @@ export function Companies() {
       ));
       toast.success(willFreeze ? `Froze ${freezeTarget.name}` : `Unfroze ${freezeTarget.name}`);
       setFreezeTarget(null); setFreezeReason('');
+      setFreezeDuration('indefinite'); setFreezeCustomDate('');
       return;
     }
     setFreezing(true);
     try {
       if (willFreeze) {
-        await platformApi.tenants.freeze(freezeTarget.id, freezeReason.trim() || undefined);
-        toast.success(`Froze ${freezeTarget.name} — writes now blocked`);
+        await platformApi.tenants.freeze(freezeTarget.id, {
+          reason: freezeReason.trim() || null,
+          frozenUntil,
+        });
+        toast.success(frozenUntil
+          ? `Froze ${freezeTarget.name} — auto-unfreeze ${new Date(frozenUntil).toLocaleDateString()}`
+          : `Froze ${freezeTarget.name} — writes now blocked`);
       } else {
         await platformApi.tenants.unfreeze(freezeTarget.id);
         toast.success(`Unfroze ${freezeTarget.name}`);
       }
       setFreezeTarget(null); setFreezeReason('');
+      setFreezeDuration('indefinite'); setFreezeCustomDate('');
       await loadCompanies();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Action failed');
@@ -814,15 +850,68 @@ export function Companies() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           {freezeTarget?.status !== 'frozen' && (
-            <div className="space-y-1 py-2">
-              <Label htmlFor="freeze-reason" className="text-xs">Reason (optional — audit note)</Label>
-              <Input
-                id="freeze-reason"
-                placeholder="e.g. Non-payment / compliance hold / migration"
-                value={freezeReason}
-                onChange={e => setFreezeReason(e.target.value)}
-                maxLength={500}
-              />
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label htmlFor="freeze-duration" className="text-xs">Freeze for</Label>
+                {/* v-tenant-freeze-schedule — a nightly job on the
+                    BE auto-unfreezes the tenant at this deadline.
+                    Indefinite keeps the original manual-unfreeze
+                    behaviour. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    ['indefinite', 'Indefinite'],
+                    ['1m',         '1 month'],
+                    ['3m',         '3 months'],
+                    ['6m',         '6 months'],
+                    ['1y',         '1 year'],
+                    ['custom',     'Custom date'],
+                  ] as const).map(([key, label]) => (
+                    <Button
+                      key={key} type="button" size="sm"
+                      variant={freezeDuration === key ? 'default' : 'outline'}
+                      onClick={() => setFreezeDuration(key)}
+                      className="h-7 px-2 text-[11px]"
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {freezeDuration === 'custom' ? (
+                  <Input
+                    type="date"
+                    value={freezeCustomDate}
+                    onChange={e => setFreezeCustomDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                    className="h-8 w-40 text-sm mt-1"
+                  />
+                ) : freezeDuration === 'indefinite' ? (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Stays frozen until you unfreeze it manually.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Auto-unfreezes on {(() => {
+                      const d = new Date();
+                      if      (freezeDuration === '1m') d.setMonth(d.getMonth() + 1);
+                      else if (freezeDuration === '3m') d.setMonth(d.getMonth() + 3);
+                      else if (freezeDuration === '6m') d.setMonth(d.getMonth() + 6);
+                      else if (freezeDuration === '1y') d.setFullYear(d.getFullYear() + 1);
+                      return d.toLocaleDateString();
+                    })()}
+                    .
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="freeze-reason" className="text-xs">Reason (optional — audit note)</Label>
+                <Input
+                  id="freeze-reason"
+                  placeholder="e.g. Non-payment / compliance hold / migration"
+                  value={freezeReason}
+                  onChange={e => setFreezeReason(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
             </div>
           )}
           <AlertDialogFooter>

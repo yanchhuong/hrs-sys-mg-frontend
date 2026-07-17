@@ -53,6 +53,9 @@ export interface AuthUser {
    *  the backend tenants.status column. */
   tenantStatus?: 'active' | 'suspended' | 'cancelled' | 'frozen' | null;
   tenantFrozenReason?: string | null;
+  /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
+   *  indefinite freeze OR tenant not frozen at all. */
+  tenantFrozenUntil?: string | null;
 }
 
 export interface LoginResponse {

@@ -59,6 +59,9 @@ export interface User {
    *  'frozen' so users know why writes are being blocked. */
   tenantStatus?: 'active' | 'suspended' | 'cancelled' | 'frozen' | null;
   tenantFrozenReason?: string | null;
+  /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
+   *  indefinite freeze OR tenant not frozen at all. */
+  tenantFrozenUntil?: string | null;
   createdAt: string;
   lastLogin?: string;
   isActive: boolean;
