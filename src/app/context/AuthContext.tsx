@@ -149,6 +149,10 @@ function fromApi(apiUser: authApi.AuthUser): User {
     placeOfBirth: apiUser.placeOfBirth,
     contactNumber: apiUser.contactNumber,
     currentAddress: apiUser.currentAddress,
+    // v-tenant-freeze — carry the tenant status through so Layout
+    // can render the read-only banner without a second fetch.
+    tenantStatus: apiUser.tenantStatus ?? null,
+    tenantFrozenReason: apiUser.tenantFrozenReason ?? null,
     createdAt: new Date().toISOString(),
     isActive: true,
   };

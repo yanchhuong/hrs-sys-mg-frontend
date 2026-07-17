@@ -19,7 +19,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUpDown, HardDrive, UsersRound,
-  AlertTriangle, Shield, Calendar, FileText, Info,
+  AlertTriangle, Shield, Calendar, FileText, Info, Snowflake, Sun,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { format } from 'date-fns';
@@ -101,6 +101,10 @@ export function Companies() {
   const [editing, setEditing] = useState<Company | null>(null);
   const [form, setForm] = useState<Partial<Company>>({});
   const [suspendTarget, setSuspendTarget] = useState<Company | null>(null);
+  /** v-tenant-freeze — target of the Freeze / Unfreeze dialog. */
+  const [freezeTarget, setFreezeTarget] = useState<Company | null>(null);
+  const [freezeReason, setFreezeReason] = useState<string>('');
+  const [freezing, setFreezing] = useState<boolean>(false);
   // Business Base multi-select for the create/edit dialog (V181 +
   // v-business-base-picker). Empty array = "no industry"; on create
   // it defaults to ['pos'] to match the legacy MVP behaviour so a
@@ -320,6 +324,34 @@ export function Companies() {
       setSubmitting(false);
     }
   };
+  const handleFreezeToggle = async () => {
+    if (!freezeTarget) return;
+    const willFreeze = freezeTarget.status !== 'frozen';
+    if (USE_MOCKS) {
+      const next: CompanyStatus = willFreeze ? ('frozen' as CompanyStatus) : 'active';
+      setCompanies(prev => prev.map(t =>
+        t.id === freezeTarget.id ? { ...t, status: next } : t
+      ));
+      toast.success(willFreeze ? `Froze ${freezeTarget.name}` : `Unfroze ${freezeTarget.name}`);
+      setFreezeTarget(null); setFreezeReason('');
+      return;
+    }
+    setFreezing(true);
+    try {
+      if (willFreeze) {
+        await platformApi.tenants.freeze(freezeTarget.id, freezeReason.trim() || undefined);
+        toast.success(`Froze ${freezeTarget.name} — writes now blocked`);
+      } else {
+        await platformApi.tenants.unfreeze(freezeTarget.id);
+        toast.success(`Unfroze ${freezeTarget.name}`);
+      }
+      setFreezeTarget(null); setFreezeReason('');
+      await loadCompanies();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Action failed');
+    } finally { setFreezing(false); }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
 
@@ -707,6 +739,18 @@ export function Companies() {
                       >
                         {c.status === 'suspended' ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                       </Button>
+                      {/* v-tenant-freeze — read-only lockout. Distinct
+                          from Suspend (which blocks login entirely). */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`h-7 w-7 p-0 ${c.status === 'frozen' ? 'text-yellow-600 hover:bg-yellow-50' : 'text-sky-700 hover:bg-sky-50'}`}
+                        onClick={() => { setFreezeTarget(c); setFreezeReason(''); }}
+                        title={c.status === 'frozen' ? 'Unfreeze (restore write access)' : 'Freeze (read-only)'}
+                        disabled={c.status === 'cancelled' || c.status === 'suspended'}
+                      >
+                        {c.status === 'frozen' ? <Sun className="h-3.5 w-3.5" /> : <Snowflake className="h-3.5 w-3.5" />}
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -751,6 +795,40 @@ export function Companies() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleSuspendToggle}>
               {suspendTarget?.status === 'suspended' ? 'Reactivate' : 'Suspend'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v-tenant-freeze — Freeze / Unfreeze confirmation */}
+      <AlertDialog open={!!freezeTarget} onOpenChange={(o) => { if (!o) { setFreezeTarget(null); setFreezeReason(''); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {freezeTarget?.status === 'frozen' ? 'Unfreeze' : 'Freeze'} {freezeTarget?.name}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {freezeTarget?.status === 'frozen'
+                ? 'Users regain full write access — creates, updates, and deletes work again.'
+                : 'Every write (create / update / delete) will be blocked with 423 across the whole tenant until you unfreeze. Users can still log in and view.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {freezeTarget?.status !== 'frozen' && (
+            <div className="space-y-1 py-2">
+              <Label htmlFor="freeze-reason" className="text-xs">Reason (optional — audit note)</Label>
+              <Input
+                id="freeze-reason"
+                placeholder="e.g. Non-payment / compliance hold / migration"
+                value={freezeReason}
+                onChange={e => setFreezeReason(e.target.value)}
+                maxLength={500}
+              />
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={freezing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFreezeToggle} disabled={freezing}>
+              {freezeTarget?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

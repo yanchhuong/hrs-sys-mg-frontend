@@ -41,7 +41,7 @@ export function computeUsage(company: Company, installs: LocalInstall[] = []): U
   };
 }
 
-export type CompanyStatus = 'active' | 'trial' | 'suspended' | 'cancelled';
+export type CompanyStatus = 'active' | 'trial' | 'suspended' | 'cancelled' | 'frozen';
 export type SyncHealth = 'healthy' | 'degraded' | 'down' | 'never';
 
 export interface Company {

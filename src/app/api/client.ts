@@ -166,6 +166,16 @@ export function isModuleDisabledError(e: unknown): e is ModuleDisabledError {
   return e instanceof ModuleDisabledError;
 }
 
+/** v-tenant-freeze — the TenantFrozenGuard on the BE responds with
+ *  423 Locked and a JSON body of shape { code: 'TenantFrozen', ... }.
+ *  Detected here so the FE can wrap it in a friendlier ApiError
+ *  message ("This company is in read-only mode. Contact your
+ *  administrator.") without every call site having to catch on
+ *  code === 'TenantFrozen'. */
+function isTenantFrozenResponse(status: number, body: any): boolean {
+  return status === 423 && body && body.code === 'TenantFrozen';
+}
+
 /** JSON request that throws ApiError on non-2xx. */
 export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   const res = await apiFetch(path, opts);
@@ -173,6 +183,11 @@ export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise
   const body = await safeJson<any>(res);
   if (isModuleDisabledResponse(res.status, body)) {
     throw new ModuleDisabledError(path);
+  }
+  if (isTenantFrozenResponse(res.status, body)) {
+    throw new ApiError(
+      'This company is in read-only mode. Contact your administrator to unfreeze.',
+      423, path, body);
   }
   if (!res.ok) {
     throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
@@ -187,6 +202,11 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
   if (!res.ok) {
     const body = await safeJson<any>(res);
     if (isModuleDisabledResponse(res.status, body)) throw new ModuleDisabledError(path);
+    if (isTenantFrozenResponse(res.status, body)) {
+      throw new ApiError(
+        'This company is in read-only mode. Contact your administrator to unfreeze.',
+        423, path, body);
+    }
     throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
   }
 }

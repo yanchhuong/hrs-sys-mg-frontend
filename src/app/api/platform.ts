@@ -16,7 +16,7 @@ export interface PlatformTenant {
   name: string;
   slug: string;
   planTier: string;        // 'starter' | 'business' | 'enterprise' | 'free'
-  status: string;          // 'active' | 'trial' | 'suspended' | 'cancelled'
+  status: string;          // 'active' | 'trial' | 'suspended' | 'cancelled' | 'frozen'
   contactEmail: string;
   contactPhone: string;
   country: string;
@@ -26,6 +26,11 @@ export interface PlatformTenant {
   appLauncherEnabled: boolean;
   suspendedAt: string | null;
   cancelledAt: string | null;
+  /** v-tenant-freeze — populated only when status='frozen'; cleared
+   *  when the SA unfreezes. */
+  frozenAt: string | null;
+  frozenReason: string | null;
+  frozenById: string | null;
   createdAt: string;
   updatedAt: string;
   /** Live counts surfaced in the Super Admin Companies page Usage column.
@@ -92,6 +97,14 @@ export const tenants = {
     apiJson(`/api/v1/platform/tenants/${id}/suspend`, { method: 'POST' }),
   reactivate: (id: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/reactivate`, { method: 'POST' }),
+  /** v-tenant-freeze — Super Admin flips tenant into read-only. */
+  freeze: (id: string, reason?: string): Promise<PlatformTenant> =>
+    apiJson(`/api/v1/platform/tenants/${id}/freeze`, {
+      method: 'POST',
+      json: reason ? { reason } : {},
+    }),
+  unfreeze: (id: string): Promise<PlatformTenant> =>
+    apiJson(`/api/v1/platform/tenants/${id}/unfreeze`, { method: 'POST' }),
   changePlan: (id: string, planTier: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/plan`, { method: 'PATCH', json: { planTier } }),
   /** Switch a tenant's Business Base atomically. Empty array is a

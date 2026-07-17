@@ -48,6 +48,11 @@ export interface AuthUser {
   placeOfBirth?: string | null;
   contactNumber?: string | null;
   currentAddress?: string | null;
+  /** v-tenant-freeze — current tenant lifecycle status. FE renders
+   *  a top-bar banner + toast when this is 'frozen'. Values match
+   *  the backend tenants.status column. */
+  tenantStatus?: 'active' | 'suspended' | 'cancelled' | 'frozen' | null;
+  tenantFrozenReason?: string | null;
 }
 
 export interface LoginResponse {

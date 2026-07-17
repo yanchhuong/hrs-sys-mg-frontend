@@ -419,6 +419,21 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           </div>
         </div>
 
+        {/* v-tenant-freeze — read-only banner. Only shown when the
+            Super Admin has frozen this tenant. Sits between the top
+            bar and the main scroller so it stays visible whichever
+            page the user opens. */}
+        {currentUser?.tenantStatus === 'frozen' && (
+          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex items-center gap-2 print:hidden">
+            <span className="inline-flex items-center gap-1.5 font-medium">
+              <span aria-hidden>❄</span> Read-only mode
+            </span>
+            <span className="opacity-80">
+              This company has been frozen by an administrator. You can view but not create, update, or delete.
+              {currentUser.tenantFrozenReason ? ` — ${currentUser.tenantFrozenReason}` : ''}
+            </span>
+          </div>
+        )}
         {/* Main Content.
             v-mobile-no-horizontal-scroll — `min-w-0 overflow-x-hidden`
             keep the page body pinned to viewport width on mobile.

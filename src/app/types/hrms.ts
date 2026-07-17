@@ -54,6 +54,11 @@ export interface User {
   placeOfBirth?: string | null;
   contactNumber?: string | null;
   currentAddress?: string | null;
+  /** v-tenant-freeze — current tenant lifecycle status. Populated
+   *  from /auth/me. Layout renders a top-bar banner when this is
+   *  'frozen' so users know why writes are being blocked. */
+  tenantStatus?: 'active' | 'suspended' | 'cancelled' | 'frozen' | null;
+  tenantFrozenReason?: string | null;
   createdAt: string;
   lastLogin?: string;
   isActive: boolean;
