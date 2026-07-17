@@ -192,7 +192,12 @@ export function Companies() {
     });
   }, [companiesView, search, statusTab, planFilter]);
 
-  const pager = usePagination(filtered, 10);
+  /** v-companies-page-size — user-controllable rows-per-page. 10 is
+   *  the historical default; a smaller value makes pagination
+   *  actually engage on small tenants (nine companies used to fit in
+   *  one page so the pager row never rendered). */
+  const [pageSize, setPageSize] = useState<number>(10);
+  const pager = usePagination(filtered, pageSize);
 
   // CRUD
   const handleOpenCreate = () => {
@@ -277,6 +282,31 @@ export function Companies() {
         const after  = [...bases].sort().join(',');
         if (before !== after) {
           await platformApi.tenants.setBusinessBase(editing.id, bases);
+        }
+        // v-tenant-edit-status — the /tenants PATCH doesn't accept
+        // `status` (each transition has its own audit + side effects).
+        // When the operator changes the status field in the edit
+        // dialog, translate it into the matching side-effect call so
+        // the "just change the dropdown and save" flow works.
+        // Cancelled → active is not supported at the endpoint level;
+        // trial isn't a lifecycle transition either, so both fall
+        // through as no-ops with a toast.
+        const desired = (form.status as CompanyStatus | undefined) ?? editing.status;
+        if (desired !== editing.status) {
+          if (desired === 'active' && editing.status === 'suspended') {
+            await platformApi.tenants.reactivate(editing.id);
+          } else if (desired === 'active' && editing.status === 'frozen') {
+            await platformApi.tenants.unfreeze(editing.id);
+          } else if (desired === 'suspended' && editing.status !== 'cancelled') {
+            await platformApi.tenants.suspend(editing.id);
+          } else if (desired === 'frozen' && editing.status !== 'cancelled' && editing.status !== 'suspended') {
+            // Indefinite freeze from the edit dialog. For a scheduled
+            // freeze (1m / 3m / …) the operator uses the ❄ row button
+            // which surfaces the duration picker + reason input.
+            await platformApi.tenants.freeze(editing.id);
+          } else {
+            toast.info(`Status change ${editing.status} → ${desired} isn't supported from Edit. Use the row actions instead.`);
+          }
         }
         toast.success(`Updated ${form.name}`);
       } else {
@@ -533,8 +563,15 @@ export function Companies() {
                     <option value="trial">Trial</option>
                     <option value="active">Active</option>
                     <option value="suspended">Suspended</option>
+                    <option value="frozen">Frozen (read-only)</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
+                  {editing && (
+                    <p className="text-[11px] text-gray-500">
+                      Changing here fires the matching transition on save. For a scheduled freeze
+                      (1 month / 3 months / etc.), use the ❄ button on the row instead.
+                    </p>
+                  )}
                 </div>
               </div>
               {/* Business Base — industry preset. Multi-select: a
@@ -634,24 +671,42 @@ export function Companies() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <CardTitle>All Companies</CardTitle>
-            <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as typeof statusTab)}>
-              <TabsList>
-                {([
-                  { key: 'all',       label: 'All',       cls: 'bg-gray-100 text-gray-700' },
-                  { key: 'active',    label: 'Active',    cls: 'bg-green-100 text-green-800' },
-                  { key: 'trial',     label: 'Trial',     cls: 'bg-blue-100 text-blue-800' },
-                  { key: 'suspended', label: 'Suspended', cls: 'bg-amber-100 text-amber-900' },
-                  { key: 'cancelled', label: 'Cancelled', cls: 'bg-gray-100 text-gray-700' },
-                ] as const).map(chip => (
-                  <TabsTrigger key={chip.key} value={chip.key}>
-                    {chip.label}
-                    <Badge className={`ml-1.5 h-5 px-1.5 text-[10px] ${chip.cls}`}>
-                      {counts[chip.key]}
-                    </Badge>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as typeof statusTab)}>
+                <TabsList>
+                  {([
+                    { key: 'all',       label: 'All',       cls: 'bg-gray-100 text-gray-700' },
+                    { key: 'active',    label: 'Active',    cls: 'bg-green-100 text-green-800' },
+                    { key: 'trial',     label: 'Trial',     cls: 'bg-blue-100 text-blue-800' },
+                    { key: 'suspended', label: 'Suspended', cls: 'bg-amber-100 text-amber-900' },
+                    { key: 'cancelled', label: 'Cancelled', cls: 'bg-gray-100 text-gray-700' },
+                  ] as const).map(chip => (
+                    <TabsTrigger key={chip.key} value={chip.key}>
+                      {chip.label}
+                      <Badge className={`ml-1.5 h-5 px-1.5 text-[10px] ${chip.cls}`}>
+                        {counts[chip.key]}
+                      </Badge>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+              {/* v-companies-page-size — rows-per-page picker. Sits
+                  next to the status tabs so pagination is
+                  discoverable even when only one page's worth of
+                  rows exists. */}
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <span>Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={e => { setPageSize(Number(e.target.value)); pager.goToPage(1); }}
+                  className="h-8 px-2 border rounded-md bg-white text-sm"
+                >
+                  {[5, 10, 20, 50, 100].map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
