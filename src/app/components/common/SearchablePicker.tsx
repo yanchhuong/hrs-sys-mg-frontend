@@ -172,7 +172,15 @@ export function SearchablePicker({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      {/* Explicit var() + min-width — popover.tsx primitive carries a
+          default w-72 that outranks the Tailwind arbitrary-CSS-var
+          shorthand `w-[--…]` on some builds, so the dropdown was
+          rendering narrower than the trigger. Using both `w-[var(…)]`
+          and a matching min-w hardens against that. */}
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+      >
         <Command>
           <CommandInput
             placeholder={searchPlaceholder}
