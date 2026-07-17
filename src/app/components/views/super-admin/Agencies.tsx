@@ -102,8 +102,11 @@ export function Agencies() {
                           <span className="inline-flex items-center gap-1">
                             <Users className="h-3 w-3" /> {a.userCount} user{a.userCount === 1 ? '' : 's'}
                           </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Briefcase className="h-3 w-3" /> {a.clientCount} active client{a.clientCount === 1 ? '' : 's'}
+                          <span className={`inline-flex items-center gap-1 ${a.maxClients != null && a.clientCount >= a.maxClients ? 'text-amber-700 font-medium' : ''}`}>
+                            <Briefcase className="h-3 w-3" />
+                            {a.clientCount}
+                            {a.maxClients != null && ` / ${a.maxClients}`}
+                            {' '}active client{a.clientCount === 1 ? '' : 's'}
                           </span>
                           {a.contactEmail && <span>{a.contactEmail}</span>}
                         </div>
@@ -179,11 +182,24 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
   const [patent, setPatent] = useState(agency.patentNo ?? '');
   const [vatTin, setVatTin] = useState(agency.vatTin ?? '');
   const [notes, setNotes] = useState(agency.notes ?? '');
+  /** v-agency-max-clients — empty string in the input = "unlimited"
+   *  (server clears the cap). A positive integer sets the ceiling
+   *  on active client engagements. */
+  const [maxClients, setMaxClients] = useState<string>(agency.maxClients != null ? String(agency.maxClients) : '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
+      // v-agency-max-clients — server convention: 0 clears the cap,
+      // omitted / null leaves unchanged. Blank input → 0 so the SA
+      // can flip from capped back to unlimited by wiping the field.
+      const capNum = maxClients.trim() === '' ? 0 : Number(maxClients);
+      if (Number.isNaN(capNum) || capNum < 0) {
+        toast.error('Max clients must be a non-negative integer, or blank for unlimited.');
+        setSaving(false);
+        return;
+      }
       await api.agencies.update(agency.id, {
         name: name.trim(),
         contactEmail: email.trim() || null,
@@ -192,6 +208,7 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
         patentNo: patent.trim() || null,
         vatTin: vatTin.trim() || null,
         notes: notes.trim() || null,
+        maxClients: capNum,
       });
       toast.success('Agency updated');
       onChanged();
@@ -250,6 +267,24 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
           <div>
             <Label className="text-xs">VAT TIN</Label>
             <Input value={vatTin} onChange={e => setVatTin(e.target.value)} className="h-9 text-sm mt-1" />
+          </div>
+        </div>
+        {/* v-agency-max-clients — Super Admin cap. Blank = unlimited;
+            positive integer caps active client engagements. Currently
+            active count shown so the SA sees the guardrail context. */}
+        <div>
+          <Label className="text-xs">Max clients (active)</Label>
+          <div className="flex items-center gap-2 mt-1">
+            <Input
+              type="number" min="0" step="1"
+              value={maxClients}
+              onChange={e => setMaxClients(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="Unlimited"
+              className="h-9 text-sm w-40"
+            />
+            <span className="text-[11px] text-gray-500">
+              Currently {agency.clientCount} active. Blank = unlimited; 0 also clears the cap.
+            </span>
           </div>
         </div>
         <div>

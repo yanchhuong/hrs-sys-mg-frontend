@@ -23,6 +23,10 @@ export interface PlatformAgency {
   cancelledAt: string | null;
   userCount: number;
   clientCount: number;
+  /** v-agency-max-clients — Super Admin cap on active client
+   *  Companies. Null = unlimited. Enforced on the agency-side
+   *  Accept endpoint with a 409. */
+  maxClients: number | null;
 }
 
 export interface CreateAgencyRequest {
@@ -44,6 +48,11 @@ export interface UpdateAgencyRequest {
   patentNo?: string | null;
   vatTin?: string | null;
   notes?: string | null;
+  /** v-agency-max-clients — set / clear the cap. Server convention:
+   *   undefined / omitted → leave unchanged
+   *   0                   → clear the cap (unlimited)
+   *   >0                  → set the cap */
+  maxClients?: number | null;
 }
 
 export interface AgencyAssignment {
