@@ -361,8 +361,10 @@ export function AgencySaleExpensePage() {
                     <tr>
                       <th className="text-left font-medium px-4 py-2">Type</th>
                       <th className="text-left font-medium px-4 py-2">Doc no.</th>
+                      <th className="text-left font-medium px-4 py-2">Customer</th>
                       <th className="text-left font-medium px-4 py-2">Issue date</th>
                       <th className="text-right font-medium px-4 py-2">Amount</th>
+                      <th className="text-right font-medium px-4 py-2">VAT</th>
                       <th className="text-left font-medium px-4 py-2">Status</th>
                       <th className="text-left font-medium px-4 py-2">Tax Ref</th>
                       <th className="text-center font-medium px-4 py-2">
@@ -388,9 +390,17 @@ export function AgencySaleExpensePage() {
                             </Badge>
                           </td>
                           <td className="px-4 py-2 font-medium text-gray-900">{d.docNo}</td>
+                          <td className="px-4 py-2 text-gray-700">
+                            {d.counterpartyName ?? <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="px-4 py-2 text-gray-600">{d.issueDate}</td>
                           <td className="px-4 py-2 text-right tabular-nums">
                             {d.currency} {Number(d.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                            {d.taxAmount != null && d.taxAmount > 0
+                              ? `${d.currency} ${Number(d.taxAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : <span className="text-gray-300">—</span>}
                           </td>
                           <td className="px-4 py-2">
                             {(() => {

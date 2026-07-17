@@ -21,6 +21,13 @@ export interface PortfolioDoc {
   total: number;
   status: string;
   currency: string;
+  /** v-agency-journal-columns — customer name (Sale) or vendor
+   *  name (Bill / Expense). Null when the counterparty row has
+   *  been hard-deleted. */
+  counterpartyName: string | null;
+  /** v-agency-journal-columns — VAT / tax portion of the total.
+   *  Null when the row predates the tax-amount column. */
+  taxAmount: number | null;
 }
 
 export interface PortfolioDocLine {
