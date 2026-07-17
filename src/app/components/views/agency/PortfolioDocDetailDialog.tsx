@@ -28,6 +28,17 @@ const TYPE_META: Record<PortfolioDocType, { label: string; icon: JSX.Element; cl
   expense: { label: 'Expense', icon: <Wallet className="h-4 w-4" />,       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 
+/** v-agency-doc-detail-kind-label — human labels + colour for the
+ *  invoice/bill "kind" enum. Backend stores raw snake_case values;
+ *  the popup renders these instead so the SA / agency sees
+ *  "Tax Invoice" not "tax". */
+const KIND_META: Record<string, { label: string; cls: string }> = {
+  commercial:  { label: 'Commercial',   cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  tax:         { label: 'Tax',          cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  credit_note: { label: 'Credit Note',  cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  debit_note:  { label: 'Debit Note',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+
 const DOC_STATUS_CLS: Record<string, string> = {
   draft:      'bg-slate-100 text-slate-700 border-slate-200',
   pending:    'bg-amber-100 text-amber-700 border-amber-200',
@@ -171,7 +182,16 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
                 {detail.exchangeRate != null && (
                   <Field label="FX rate">{detail.exchangeRate}</Field>
                 )}
-                {detail.kind && <Field label="Kind">{detail.kind}</Field>}
+                {detail.kind && (
+                  <Field label="Tax type">
+                    {(() => {
+                      const meta = KIND_META[detail.kind];
+                      return meta
+                        ? <Badge className={`border text-[10px] px-1.5 py-0 ${meta.cls}`}>{meta.label}</Badge>
+                        : <span className="capitalize">{detail.kind.replace(/_/g, ' ')}</span>;
+                    })()}
+                  </Field>
+                )}
               </div>
             ) : (
               // Seed-only fallback — enough for the caller to see
