@@ -176,11 +176,6 @@ export function Plans() {
               <Layers className="h-5 w-5 text-blue-600" />
               Price Plans
             </CardTitle>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Manage the catalogue tenants choose from on signup or plan change.
-              Limits are enforced at usage time; the price column drives the
-              tenant's monthly subscription line.
-            </p>
           </div>
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4 mr-1.5" />

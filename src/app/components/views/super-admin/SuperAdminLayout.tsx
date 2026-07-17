@@ -85,7 +85,7 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
     // first-class part of the sales workflow, not buried under Settings.
     { kind: 'leaf', id: 'surveys', icon: ClipboardList,
       label: 'Requirement Surveys',
-      description: 'Inbound customer inquiries from the landing form.' },
+      description: '' },
     // v-agency-fe-4 — external accounting / tax / audit firms that
     // span multiple client Companies via agency_company_assignments.
     { kind: 'leaf', id: 'agencies', icon: Briefcase,

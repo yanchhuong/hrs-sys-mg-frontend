@@ -113,7 +113,6 @@ export function RequirementSurveys() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Requirement Surveys</h1>
-          <p className="text-sm text-gray-500">Inbound customer inquiries from the landing form.</p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />

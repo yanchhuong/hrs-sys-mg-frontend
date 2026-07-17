@@ -653,10 +653,6 @@ export function CrossTenantUsers() {
               <UserPlus className="h-5 w-5" />
               Add User
             </DialogTitle>
-            <DialogDescription>
-              <strong>Admin</strong> can either create a new company or be added to an existing one.
-              Manager and Employee always attach to an existing company.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
