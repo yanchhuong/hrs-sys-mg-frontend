@@ -379,6 +379,42 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                   belong to any tenant's office). */}
               {currentUser?.role !== 'super_admin' && <AttendanceCheckInWidget />}
               <AppLauncher currentView={currentView} onSelect={handleMenuClick} />
+              {/* v-tenant-freeze — compact frozen-mode indicator.
+                  Replaces the full-width banner: an amber pill in
+                  the top-bar action strip with the full explanation
+                  on hover. Only rendered when the tenant is frozen. */}
+              {currentUser?.tenantStatus === 'frozen' && (
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 px-2 h-8 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-xs font-medium cursor-help print:hidden"
+                        aria-label="Read-only mode"
+                      >
+                        <span aria-hidden>❄</span>
+                        <span className="hidden sm:inline">Read-only</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <p className="text-xs font-medium mb-1">Read-only mode</p>
+                      <p className="text-[11px] leading-relaxed">
+                        This company has been frozen by an administrator. You can view but not create, update, or delete.
+                      </p>
+                      {currentUser.tenantFrozenUntil && (
+                        <p className="text-[11px] leading-relaxed mt-1">
+                          Auto-unfreezes on {new Date(currentUser.tenantFrozenUntil).toLocaleDateString()}.
+                        </p>
+                      )}
+                      {currentUser.tenantFrozenReason && (
+                        <p className="text-[11px] leading-relaxed mt-1 opacity-80">
+                          Reason: {currentUser.tenantFrozenReason}
+                        </p>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {/* Notification bell (V127). Hidden for super_admin —
                   they don't subscribe to tenant announcements. */}
               {currentUser?.role !== 'super_admin' && <NotificationsBell />}
@@ -419,24 +455,6 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
           </div>
         </div>
 
-        {/* v-tenant-freeze — read-only banner. Only shown when the
-            Super Admin has frozen this tenant. Sits between the top
-            bar and the main scroller so it stays visible whichever
-            page the user opens. */}
-        {currentUser?.tenantStatus === 'frozen' && (
-          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex items-center gap-2 print:hidden">
-            <span className="inline-flex items-center gap-1.5 font-medium">
-              <span aria-hidden>❄</span> Read-only mode
-            </span>
-            <span className="opacity-80">
-              This company has been frozen by an administrator. You can view but not create, update, or delete.
-              {currentUser.tenantFrozenUntil
-                ? ` Auto-unfreezes on ${new Date(currentUser.tenantFrozenUntil).toLocaleDateString()}.`
-                : ''}
-              {currentUser.tenantFrozenReason ? ` — ${currentUser.tenantFrozenReason}` : ''}
-            </span>
-          </div>
-        )}
         {/* Main Content.
             v-mobile-no-horizontal-scroll — `min-w-0 overflow-x-hidden`
             keep the page body pinned to viewport width on mobile.
