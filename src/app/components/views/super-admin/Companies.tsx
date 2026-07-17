@@ -599,11 +599,13 @@ export function Companies() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <Input
-              /* Distinct name + autoComplete off so Chrome doesn't
-                 lump this generic text input together with the
-                 Create dialog's Name field. Without them, typing
-                 "Yanchhuong" into the popup would leak into this
-                 outer search via Chrome's saved-form-data. */
+              /* type="search" tells Chrome this is a search field
+                 (not a form input), which sidesteps the saved-form-
+                 data autofill that was leaking values in from the
+                 Create dialog's Name field. name + autoComplete
+                 off is belt-and-braces for older browsers that
+                 ignore type="search" for autofill grouping. */
+              type="search"
               name="sa-companies-search"
               autoComplete="off"
               value={search}
