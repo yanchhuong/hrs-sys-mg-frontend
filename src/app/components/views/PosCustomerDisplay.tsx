@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ShoppingCart, CheckCircle2, Package } from 'lucide-react';
+import { ShoppingCart, CheckCircle2, Package, Maximize2, Minimize2 } from 'lucide-react';
 import {
   POS_DISPLAY_CHANNEL,
   POS_DISPLAY_PATH,
@@ -47,6 +47,27 @@ export function PosCustomerDisplay() {
    *  subscribe via BroadcastChannel (the original behaviour). The
    *  rendered tree below this hook is identical either way. */
   const pairedCode = readDisplayCode();
+
+  /** v-display-fullscreen — mirror the browser's fullscreen state
+   *  so the corner icon flips between Enter / Exit. Matches the POS
+   *  header's toggle so the cashier can maximise the paired tablet
+   *  with one tap. Esc-to-exit works because fullscreenchange fires
+   *  either way. */
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(
+    typeof document !== 'undefined' && !!document.fullscreenElement,
+  );
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => { /* swallow */ });
+    } else {
+      document.exitFullscreen?.().catch(() => { /* swallow */ });
+    }
+  };
 
   useEffect(() => {
     if (pairedCode) {
@@ -107,6 +128,19 @@ export function PosCustomerDisplay() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-slate-200 text-slate-900">
+      {/* v-display-fullscreen — floating maximise / exit icon. Sits
+          top-right, semi-transparent so it doesn't distract the
+          customer. Cashier taps once to enter fullscreen; Esc or
+          the same icon (now Minimize2) exits. */}
+      <button
+        type="button"
+        onClick={toggleFullscreen}
+        className="fixed top-3 right-3 z-30 p-2 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-slate-800 border border-slate-200 shadow-sm backdrop-blur-sm transition"
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
+      >
+        {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+      </button>
       <Header
         shopName={state.shopName}
         logoUrl={state.logoUrl}
