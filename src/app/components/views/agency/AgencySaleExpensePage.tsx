@@ -359,10 +359,10 @@ export function AgencySaleExpensePage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs text-gray-500">
                     <tr>
-                      <th className="text-left font-medium px-4 py-2">Type</th>
+                      <th className="text-left font-medium px-4 py-2">Issue date</th>
                       <th className="text-left font-medium px-4 py-2">Doc no.</th>
                       <th className="text-left font-medium px-4 py-2">Customer</th>
-                      <th className="text-left font-medium px-4 py-2">Issue date</th>
+                      <th className="text-left font-medium px-4 py-2">Type</th>
                       <th className="text-right font-medium px-4 py-2">Amount</th>
                       <th className="text-right font-medium px-4 py-2">VAT</th>
                       <th className="text-left font-medium px-4 py-2">Status</th>
@@ -384,16 +384,16 @@ export function AgencySaleExpensePage() {
                           onClick={() => setOpenedDoc(d)}
                           className="hover:bg-gray-50 cursor-pointer"
                         >
+                          <td className="px-4 py-2 text-gray-600">{d.issueDate}</td>
+                          <td className="px-4 py-2 font-medium text-gray-900">{d.docNo}</td>
+                          <td className="px-4 py-2 text-gray-700">
+                            {d.counterpartyName ?? <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="px-4 py-2">
                             <Badge className={`border text-[10px] px-1.5 py-0 ${typeMeta.cls}`}>
                               {typeMeta.label}
                             </Badge>
                           </td>
-                          <td className="px-4 py-2 font-medium text-gray-900">{d.docNo}</td>
-                          <td className="px-4 py-2 text-gray-700">
-                            {d.counterpartyName ?? <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-2 text-gray-600">{d.issueDate}</td>
                           <td className="px-4 py-2 text-right tabular-nums">
                             {d.currency} {Number(d.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
