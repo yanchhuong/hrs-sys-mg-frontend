@@ -105,12 +105,31 @@ export function buildQuery(query?: FetchOptions['query']): string {
  * Boot directly without a proxy.
  */
 function buildUrl(path: string, query: FetchOptions['query']): string {
-  const base = API_BASE.replace(/\/$/, '');
-  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(base);
-  const trimmedPath = baseEndsInApi && path.startsWith('/api/')
+  return `${apiOrigin()}${apiPath(path)}${buildQuery(query)}`;
+}
+
+/**
+ * Base URL with any trailing slash stripped. Shared by apiJson +
+ * hand-rolled callers (EventSource / native fetch of a stream).
+ */
+export function apiOrigin(): string {
+  return API_BASE.replace(/\/$/, '');
+}
+
+/**
+ * Apply the same "/api"-strip logic buildUrl uses so callers that
+ * bypass apiJson (SSE / WebSocket / direct EventSource) still hit
+ * the right proxied path. Without this, a subscribe URL like
+ *   `${API_BASE}/api/v1/pos/display/CXTUK/stream`
+ * lands at `/api-02/api/v1/…` on production and 404s against the
+ * `/api-02/v1/` nginx location — same URL apiJson would have
+ * shortened to `/api-02/v1/pos/display/CXTUK/stream`.
+ */
+export function apiPath(path: string): string {
+  const baseEndsInApi = /\/api(-[\w-]+)?$/.test(apiOrigin());
+  return baseEndsInApi && path.startsWith('/api/')
     ? path.slice('/api'.length)
     : path;
-  return `${base}${trimmedPath}${buildQuery(query)}`;
 }
 
 export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<Response> {

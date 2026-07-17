@@ -1,4 +1,4 @@
-import { API_BASE, apiJson, apiVoid } from './client';
+import { apiJson, apiOrigin, apiPath, apiVoid } from './client';
 
 /**
  * Cross-device POS Display bridge — client helpers.
@@ -50,8 +50,14 @@ export function subscribe(
   onState: (payload: unknown) => void,
   onError?: (e: Event) => void,
 ): EventSource {
-  const base = API_BASE.replace(/\/$/, '');
-  const es = new EventSource(`${base}/api/v1/pos/display/${encodeURIComponent(code)}/stream`);
+  // Route via apiOrigin + apiPath so the same "/api" prefix strip
+  // that apiJson performs (see client.ts:apiPath) applies here too.
+  // Without this, EventSource lands at `${base}/api/v1/…` which on
+  // a deploy where nginx exposes the app under `/api-02/v1/`
+  // (VITE_API_BASE=…/api-02) turns into a 404 — the SSE proxy
+  // location only matches after the "/api" prefix is stripped.
+  const path = apiPath(`/api/v1/pos/display/${encodeURIComponent(code)}/stream`);
+  const es = new EventSource(`${apiOrigin()}${path}`);
   es.addEventListener('state', (e: MessageEvent<string>) => {
     try {
       onState(JSON.parse(e.data));
