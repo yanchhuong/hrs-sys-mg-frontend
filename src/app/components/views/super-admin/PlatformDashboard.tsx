@@ -76,6 +76,10 @@ export function PlatformDashboard() {
     USE_MOCKS ? (mockAuditTrail as unknown as platformApi.PlatformAuditEntry[]) : [],
   );
   const [metrics, setMetrics] = useState<PlatformMetricsSummary | null>(null);
+  /** v-companies-live-plans — pull real plan prices so total MRR
+   *  reflects SA edits in the Plans page rather than the hardcoded
+   *  FE constant. */
+  const [plansByTier, setPlansByTier] = useState<Record<string, platformApi.PlanLimits>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -88,12 +92,13 @@ export function PlatformDashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [t, i, u, a, m] = await Promise.all([
+        const [t, i, u, a, m, p] = await Promise.all([
           platformApi.tenants.list(),
           platformApi.installs.list(),
           platformApi.users.list(),
           platformApi.activity.list({ unacked: true }),
           getMetricsSummary().catch(() => null),
+          platformApi.plans.list().catch(() => [] as platformApi.PlanLimits[]),
         ]);
         if (cancelled) return;
         setCompanies(t);
@@ -101,6 +106,9 @@ export function PlatformDashboard() {
         setUsersList(u);
         setAuditEvents(a);
         setMetrics(m);
+        const map: Record<string, platformApi.PlanLimits> = {};
+        for (const row of p) map[row.planTier] = row;
+        setPlansByTier(map);
       } catch { /* leave empty arrays */ }
       finally { if (!cancelled) setLoading(false); }
     })();
@@ -114,7 +122,18 @@ export function PlatformDashboard() {
     const trial = legacyCompanies.filter(c => c.status === 'trial').length;
     const suspended = legacyCompanies.filter(c => c.status === 'suspended').length;
     const totalEmployees = legacyCompanies.reduce((s, c) => s + c.employeeCount, 0);
-    const mrr = legacyCompanies.filter(c => c.status === 'active').reduce((s, c) => s + c.monthlyCostUsd, 0);
+    // v-companies-live-plans — sum from the live BE plan prices so
+    // SA edits in the Plans page flow through immediately. Falls back
+    // to the FE PLAN_LIMITS constant when the tier isn't in the
+    // fetched list (e.g. legacy tier not yet migrated).
+    const priceOf = (tier: string): number => {
+      const live = plansByTier[tier];
+      if (live) return live.monthlyPriceCents / 100;
+      return PLAN_LIMITS[tier as PlanTier]?.monthlyPriceUsd ?? 0;
+    };
+    const mrr = legacyCompanies
+      .filter(c => c.status === 'active')
+      .reduce((s, c) => s + priceOf(c.planTier), 0);
     const totalStorage = legacyCompanies.reduce((s, c) => s + c.storageMb, 0);
     const syncIssues = legacyInstalls.filter(l => l.syncHealth === 'degraded' || l.syncHealth === 'down').length;
     const never = legacyInstalls.filter(l => l.syncHealth === 'never').length;
@@ -138,7 +157,7 @@ export function PlatformDashboard() {
       else if (b[0] === 'hospital') industryMix.hospital++;
     }
     return { active, trial, suspended, totalEmployees, mrr, totalStorage, syncIssues, never, overQuotaCount, totalStorageCap, storagePct, usageRows, legacyCompanies, legacyInstalls, industryMix };
-  }, [companies, installs]);
+  }, [companies, installs, plansByTier]);
 
   // Plan tier breakdown
   const byPlan = useMemo(() => {
@@ -404,7 +423,13 @@ export function PlatformDashboard() {
                   <TableCell><StatusBadge status={c.status} /></TableCell>
                   <TableCell className="text-right text-sm">{c.employeeCount}</TableCell>
                   <TableCell className="text-right text-sm">
-                    {c.monthlyCostUsd > 0 ? `$${c.monthlyCostUsd.toLocaleString()}` : '—'}
+                    {(() => {
+                      const live = plansByTier[c.planTier];
+                      const mrr = live
+                        ? live.monthlyPriceCents / 100
+                        : (PLAN_LIMITS[c.planTier as PlanTier]?.monthlyPriceUsd ?? 0);
+                      return mrr > 0 ? `$${mrr.toLocaleString()}` : '—';
+                    })()}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
                     {c.lastActiveAt ? format(new Date(c.lastActiveAt), 'MMM dd, HH:mm') : '—'}

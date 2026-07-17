@@ -199,6 +199,31 @@ export function Companies() {
   const [pageSize, setPageSize] = useState<number>(10);
   const pager = usePagination(filtered, pageSize);
 
+  /** v-companies-live-plans — pull real plan prices from the BE so
+   *  the MRR column reflects SA edits in the Plans page instead of
+   *  reading the hardcoded FE PLAN_LIMITS constant. Keyed by
+   *  planTier for O(1) lookup. Empty on first render → fallback to
+   *  the constant so the page still shows something while loading. */
+  const [plansByTier, setPlansByTier] = useState<Record<string, platformApi.PlanLimits>>({});
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    platformApi.plans.list()
+      .then(list => {
+        const map: Record<string, platformApi.PlanLimits> = {};
+        for (const p of list) map[p.planTier] = p;
+        setPlansByTier(map);
+      })
+      .catch(() => { /* silent — MRR falls back to PLAN_LIMITS */ });
+  }, []);
+  /** USD monthly price for a plan tier. Prefers the live plan row
+   *  (in cents); falls back to the FE constant when the BE hasn't
+   *  loaded yet or the tier is unknown. */
+  const priceOf = (tier: string): number => {
+    const live = plansByTier[tier];
+    if (live) return live.monthlyPriceCents / 100;
+    return PLAN_LIMITS[tier as PlanTier]?.monthlyPriceUsd ?? 0;
+  };
+
   // CRUD
   const handleOpenCreate = () => {
     setEditing(null);
@@ -835,7 +860,14 @@ export function Companies() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {c.monthlyCostUsd > 0 ? `$${c.monthlyCostUsd.toLocaleString()}` : '—'}
+                    {/* v-companies-live-plans — read the price from
+                        the live BE plan row, not the hardcoded FE
+                        constant. SA edits in the Plans page reflect
+                        here on the next refresh. */}
+                    {(() => {
+                      const mrr = priceOf(c.planTier);
+                      return mrr > 0 ? `$${mrr.toLocaleString()}` : '—';
+                    })()}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
                     {formatDate(c.createdAt)}
