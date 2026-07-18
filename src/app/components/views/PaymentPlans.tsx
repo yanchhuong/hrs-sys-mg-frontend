@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
@@ -17,7 +17,8 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { DateInput } from '../common/DateInput';
 import { toast } from 'sonner';
-import { Plus, Search, Eye, Ban, Trash2, FileText, DollarSign, Calendar } from 'lucide-react';
+import { Plus, Search, Eye, Ban, Trash2, FileText, DollarSign, Calendar, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { format } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -140,10 +141,21 @@ export function PaymentPlans() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">Payment Plans</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Installment, rental, loan, and tuition schedules — one plan holds many expected payments.
-          </p>
+          <h1 className="text-3xl font-bold inline-flex items-center gap-2">
+            Payment Plans
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Installment, rental, loan, and tuition schedules — one plan holds many expected payments.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </h1>
         </div>
         {canAdd && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -405,10 +417,6 @@ function CreatePlanDialogContent({
           <DollarSign className="h-4 w-4 text-emerald-600" />
           New Payment Plan
         </DialogTitle>
-        <DialogDescription>
-          Set the total, terms, and frequency. The system auto-generates the schedule; loan plans use
-          standard amortization (equal payment) with the annual rate you enter.
-        </DialogDescription>
       </DialogHeader>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1">
