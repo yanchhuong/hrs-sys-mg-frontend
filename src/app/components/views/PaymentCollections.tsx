@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateInput } from '../common/DateInput';
 import { toast } from 'sonner';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
@@ -36,22 +37,45 @@ export function PaymentCollections() {
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [asOf]);
 
-  const buckets = useMemo(() => {
-    const b = { '0-30': [] as any[], '31-60': [] as any[], '61-90': [] as any[], '90+': [] as any[] };
+  // Three aging buckets — 0-30 (recent overdue), 31-60 (mid), 60+
+  // (long-standing). Reduced from the earlier four-bucket split so
+  // the collections screen stays scannable at a glance.
+  type BucketKey = '0-30' | '31-60' | '60+';
+  type BucketRow = paymentPlansApi.PaymentSchedule & { daysPastDue: number; bucket: BucketKey };
+  const bucketed = useMemo<BucketRow[]>(() => {
     const now = asOf ? new Date(asOf) : new Date();
-    for (const r of rows) {
+    return rows.map(r => {
       const due = new Date(r.dueDate);
       const days = Math.floor((now.getTime() - due.getTime()) / (24 * 3600 * 1000));
-      const key = days <= 30 ? '0-30'
-                : days <= 60 ? '31-60'
-                : days <= 90 ? '61-90'
-                : '90+';
-      b[key as keyof typeof b].push({ ...r, daysPastDue: Math.max(0, days) });
-    }
-    return b;
+      const bucket: BucketKey = days <= 30 ? '0-30'
+                              : days <= 60 ? '31-60'
+                              : '60+';
+      return { ...r, daysPastDue: Math.max(0, days), bucket };
+    });
   }, [rows, asOf]);
 
-  const total = rows.reduce((s, r) => s + Number(r.balance ?? 0), 0);
+  const [filter, setFilter] = useState<'all' | BucketKey>('all');
+  const filtered = useMemo(() => filter === 'all' ? bucketed : bucketed.filter(r => r.bucket === filter), [bucketed, filter]);
+
+  const counts = useMemo(() => ({
+    'all':   bucketed.length,
+    '0-30':  bucketed.filter(r => r.bucket === '0-30').length,
+    '31-60': bucketed.filter(r => r.bucket === '31-60').length,
+    '60+':   bucketed.filter(r => r.bucket === '60+').length,
+  }), [bucketed]);
+
+  const sums = useMemo(() => ({
+    'all':   bucketed.reduce((s, r) => s + Number(r.balance ?? 0), 0),
+    '0-30':  bucketed.filter(r => r.bucket === '0-30').reduce((s, r) => s + Number(r.balance ?? 0), 0),
+    '31-60': bucketed.filter(r => r.bucket === '31-60').reduce((s, r) => s + Number(r.balance ?? 0), 0),
+    '60+':   bucketed.filter(r => r.bucket === '60+').reduce((s, r) => s + Number(r.balance ?? 0), 0),
+  }), [bucketed]);
+
+  const BUCKET_BADGE: Record<BucketKey, string> = {
+    '0-30':  'bg-amber-100 text-amber-800 hover:bg-amber-100',
+    '31-60': 'bg-orange-100 text-orange-800 hover:bg-orange-100',
+    '60+':   'bg-red-100 text-red-800 hover:bg-red-100',
+  };
 
   return (
     <div className="space-y-6">
@@ -74,60 +98,59 @@ export function PaymentCollections() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <BucketTile label="Total Overdue" count={rows.length} amount={total} tone="red" />
-        {(['0-30','31-60','61-90','90+'] as const).map(k => (
-          <BucketTile
-            key={k}
-            label={`${k} days`}
-            count={buckets[k].length}
-            amount={buckets[k].reduce((s, r) => s + Number(r.balance ?? 0), 0)}
-            tone={k === '90+' ? 'red' : k === '61-90' ? 'amber' : undefined}
-          />
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <BucketTile label="Total Overdue"  count={counts.all}     amount={sums.all}     tone="red" />
+        <BucketTile label="0-30 days"      count={counts['0-30']} amount={sums['0-30']} tone="amber" />
+        <BucketTile label="31-60 days"     count={counts['31-60']} amount={sums['31-60']} tone="amber" />
+        <BucketTile label="60+ days"       count={counts['60+']}  amount={sums['60+']}  tone="red" />
       </div>
 
-      {(['0-30','31-60','61-90','90+'] as const).map(k => (
-        <Card key={k}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">
-                {k} days past due
-              </h3>
-              <Badge variant="outline">{buckets[k].length}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>#</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Days</TableHead>
-                  <TableHead className="text-right">Due</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
+      <Card>
+        <CardHeader className="pb-3">
+          <Tabs value={filter} onValueChange={v => setFilter(v as any)}>
+            <TabsList>
+              <TabsTrigger value="all">All <Badge variant="secondary" className="ml-2">{counts.all}</Badge></TabsTrigger>
+              <TabsTrigger value="0-30">0-30 days <Badge variant="secondary" className="ml-2">{counts['0-30']}</Badge></TabsTrigger>
+              <TabsTrigger value="31-60">31-60 days <Badge variant="secondary" className="ml-2">{counts['31-60']}</Badge></TabsTrigger>
+              <TabsTrigger value="60+">60+ days <Badge variant="secondary" className="ml-2">{counts['60+']}</Badge></TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead>Days</TableHead>
+                <TableHead>Bucket</TableHead>
+                <TableHead className="text-right">Due</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (<TableRow><TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">Loading…</TableCell></TableRow>)}
+              {!loading && filtered.length === 0 && (
+                <TableRow><TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
+                  {rows.length === 0 ? 'Nothing overdue as of that date.' : 'No rows in this bucket.'}
+                </TableCell></TableRow>
+              )}
+              {filtered.map(r => (
+                <TableRow key={r.id} className="bg-red-50/40">
+                  <TableCell className="font-mono text-xs">#{r.installmentNo}</TableCell>
+                  <TableCell className="text-sm">{formatDate(r.dueDate)}</TableCell>
+                  <TableCell className="text-sm text-red-700 font-medium tabular-nums">{r.daysPastDue}d</TableCell>
+                  <TableCell><Badge className={BUCKET_BADGE[r.bucket]}>{r.bucket}</Badge></TableCell>
+                  <TableCell className="text-right tabular-nums">${formatMoney(r.dueAmount)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-green-700">${formatMoney(r.paidAmount)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">${formatMoney(r.balance)}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {buckets[k].length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">No rows in this bucket.</TableCell></TableRow>
-                )}
-                {buckets[k].map((r: any) => (
-                  <TableRow key={r.id} className="bg-red-50/40">
-                    <TableCell className="font-mono text-xs">#{r.installmentNo}</TableCell>
-                    <TableCell className="text-sm">{formatDate(r.dueDate)}</TableCell>
-                    <TableCell className="text-sm text-red-700 font-medium tabular-nums">{r.daysPastDue}d</TableCell>
-                    <TableCell className="text-right tabular-nums">${formatMoney(r.dueAmount)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-green-700">${formatMoney(r.paidAmount)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">${formatMoney(r.balance)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ))}
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
