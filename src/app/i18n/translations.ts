@@ -25,6 +25,7 @@ export const dict: Dict = {
   'header.language':          { en: 'Language',             km: 'ភាសា',              zh: '语言' },
   'header.apps':              { en: 'Apps',                 km: 'កម្មវិធី',           zh: '应用' },
   'apps.category.account':    { en: 'Account',              km: 'គណនី',              zh: '账务' },
+  'apps.category.receivables':{ en: 'Receivables',          km: 'ការប្រមូលបំណុល',      zh: '应收账款' },
   'apps.category.cashflow':   { en: 'Cash Flow',            km: 'លំហូរសាច់ប្រាក់',     zh: '现金流' },
   'apps.category.hr':         { en: 'HR Management',        km: 'គ្រប់គ្រងធនធានមនុស្ស', zh: '人力资源' },
   'apps.category.admin':      { en: 'Administration',       km: 'រដ្ឋបាល',           zh: '管理' },

@@ -37,7 +37,7 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
 // platform-managed labels resolve. Default seed there: 'hr',
 // 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
 // admin additions).
-type CategoryKey = 'accounting' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare' | 'education';
+type CategoryKey = 'accounting' | 'receivables' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare' | 'education';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -49,6 +49,15 @@ const CATEGORIES: CategoryDef[] = [
     key: 'accounting', labelKey: 'apps.category.account',
     installedBadge: 'bg-emerald-100 text-emerald-700',
     ids: ['customers', 'quotations', 'invoices', 'pos', 'vouchers', 'commission', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'stock-adjustment'],
+  },
+  {
+    // Receivables — Business Agreements / Payment Plans (V251).
+    // Three tiles that all gate on their own module keys so a tenant
+    // can adopt just Payment Plans without also enabling Schedules /
+    // Collections (same rule as Accounting sub-tiles).
+    key: 'receivables', labelKey: 'apps.category.receivables',
+    installedBadge: 'bg-indigo-100 text-indigo-700',
+    ids: ['payment-plans', 'payment-schedules', 'payment-collections'],
   },
   {
     key: 'cashflow', labelKey: 'apps.category.cashflow',
