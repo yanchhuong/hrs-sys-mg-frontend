@@ -664,7 +664,13 @@ export function POS() {
   /* ----- main UI ----- */
   const filteredItems = items.filter(i => {
     if (categoryFilter !== 'all' && (i.category ?? 'other') !== categoryFilter) return false;
-    return i.name.toLowerCase().includes(search.toLowerCase());
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    // Match either the display name OR the item code (SKU) so a
+    // cashier scanning / typing a barcode-like code hits the item
+    // without having to remember the name.
+    return i.name.toLowerCase().includes(q)
+        || (i.sku ?? '').toLowerCase().includes(q);
   });
   // Category counts drive the chip labels — "Drink (12)" etc. so the
   // cashier sees stock counts at a glance.
