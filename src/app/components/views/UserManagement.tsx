@@ -168,6 +168,12 @@ const MODULES: ModuleDef[] = [
   // inherit them via RoleService.copyFromBaseRole, so the matrix
   // doesn't need to expose a separate toggle.
 
+  { key: 'receivables-group', label: 'Receivables',       description: '',                                                            header: true },
+  { key: 'payment_plan',        label: 'Payment Plans',      description: 'Installment / rental / loan / tuition — one plan holds many expected payments', parent: 'receivables-group' },
+  { key: 'payment_schedule',    label: 'Schedules',          description: 'Flat cross-plan schedule view (due dates, balances, status)', parent: 'receivables-group' },
+  { key: 'payment_transaction', label: 'Payments',           description: 'Recorded receipts allocated against schedule installments',   parent: 'receivables-group' },
+  { key: 'payment_collection',  label: 'Collections',        description: 'Aging report — overdue installments bucketed by days past due', parent: 'receivables-group' },
+
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
   { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
   { key: 'bill',              label: 'Bill',              description: 'Vendor bills + Credit / Debit notes (Accounts Payable)',     parent: 'expenses' },
@@ -308,6 +314,14 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       // Enrollment (register + tuition) and Attendance.
       case 'enrollment':       return action === 'view' || action === 'create' || action === 'update';
       case 'class-attendance': return action === 'view' || action === 'create' || action === 'update';
+      // Receivables — Manager can see everything but only Admin
+      // creates / cancels / deletes plans by default. Matches V251
+      // backend seed (manager -> view only on all four).
+      case 'payment_plan':
+      case 'payment_schedule':
+      case 'payment_transaction':
+      case 'payment_collection':
+                            return action === 'view';
       default:           return false;
     }
   }
