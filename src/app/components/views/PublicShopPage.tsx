@@ -978,9 +978,9 @@ function PublicShopCard({
     <button
       type="button"
       onClick={onAdd}
-      className="group relative text-left rounded-lg border bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="group relative flex flex-col text-left rounded-lg border bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 p-0"
     >
-      <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden">
+      <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
         {showImage ? (
           <img
             src={item.imageUrl}
@@ -993,7 +993,7 @@ function PublicShopCard({
           <Package className="h-12 w-12 text-gray-300" strokeWidth={1.25} />
         )}
       </div>
-      <div className="p-2">
+      <div className="p-2 flex-1">
         <div className="font-medium text-sm text-gray-900 line-clamp-2 leading-snug" title={item.name}>
           {item.name}
         </div>
