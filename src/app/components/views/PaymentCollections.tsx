@@ -8,7 +8,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateInput } from '../common/DateInput';
 import { toast } from 'sonner';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { format } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { formatMoney } from '../../utils/format';
@@ -84,10 +85,19 @@ export function PaymentCollections() {
           <h1 className="text-3xl font-bold inline-flex items-center gap-2">
             <AlertTriangle className="h-7 w-7 text-red-600" />
             Collections
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Overdue installments across every active plan, bucketed by days past due.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Overdue installments across every active plan, bucketed by days past due.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-xs text-gray-500 mr-1">As of</div>
