@@ -982,7 +982,7 @@ export function POS() {
             ) : (
               // v-pos-mobile-drawer — 3-per-row on <sm matches the
               // mobile launcher tile aesthetic; step up progressively.
-              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-24 lg:pb-3">
+              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 pb-24 lg:pb-3">
                 {filteredItems.map(it => (
                   <PosItemCard key={it.id} item={it} onAdd={onItemTap} />
                 ))}
