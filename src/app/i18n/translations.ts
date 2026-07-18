@@ -80,6 +80,11 @@ export const dict: Dict = {
   'nav.vouchers':             { en: 'Voucher',              km: 'ប័ណ្ណផ្តល់',            zh: '凭单' },
   'nav.loyalty':              { en: 'Loyalty',              km: 'ភាពស្មោះត្រង់',        zh: '会员积分' },
   'nav.commission':           { en: 'Commission',           km: 'កម្រៃជើងសា',          zh: '销售佣金' },
+  'nav.receivables':              { en: 'Receivables',            km: 'ការប្រមូលបំណុល',      zh: '应收账款' },
+  'nav.receivables.plans':        { en: 'Payment Plans',          km: 'ផែនការទូទាត់',         zh: '付款计划' },
+  'nav.receivables.schedules':    { en: 'Schedules',              km: 'កាលវិភាគ',             zh: '付款排程' },
+  'nav.receivables.collections':  { en: 'Collections',            km: 'ការប្រមូល',           zh: '催收' },
+
   'nav.purchases':            { en: 'Purchases',            km: 'ការទិញ',             zh: '采购' },
   'nav.vendors':              { en: 'Vendors',              km: 'អ្នកលក់',             zh: '供应商' },
   'nav.bills':                { en: 'Bill',                 km: 'វិក្កយបត្រទិញ',      zh: '账单' },

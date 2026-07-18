@@ -25,6 +25,7 @@ import {
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
   GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
+  CreditCard, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -55,6 +56,9 @@ import { Vouchers } from '../components/views/Vouchers';
 import { Commission } from '../components/views/Commission';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
+import { PaymentPlans } from '../components/views/PaymentPlans';
+import { PaymentSchedules } from '../components/views/PaymentSchedules';
+import { PaymentCollections } from '../components/views/PaymentCollections';
 import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
@@ -125,6 +129,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { id: 'payroll-mgmt',   labelKey: 'nav.payroll_mgmt',  icon: DollarSign },
   { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
+  { id: 'receivables-group', labelKey: 'nav.receivables', icon: CreditCard },
   { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
   { id: 'stock-group',    labelKey: 'nav.stock',         icon: Boxes },
   { id: 'cashflow-group', labelKey: 'nav.cashflow',      icon: Wallet },
@@ -199,6 +204,14 @@ export const NAV_LEAVES: NavLeaf[] = [
   // lives in POS → Settings → Loyalty and NOT as a sidebar leaf —
   // matches Commission Plans, which moved out of the sidebar for the
   // same reason. If a Loyalty report ships later, add its leaf then.
+
+  // Receivables — Payment Plans / Business Agreements. Each leaf has
+  // its own module key so Super Admin can promote them independently
+  // (see V251 migration). Auto-hides for tenants without any of the
+  // four keys enabled, matching the Stock / Cashflow behaviour.
+  { id: 'payment-plans',       labelKey: 'nav.receivables.plans',        icon: CreditCard,     module: 'payment_plan',         component: PaymentPlans,       group: 'receivables-group' },
+  { id: 'payment-schedules',   labelKey: 'nav.receivables.schedules',    icon: CalendarClock,  module: 'payment_schedule',     component: PaymentSchedules,   group: 'receivables-group' },
+  { id: 'payment-collections', labelKey: 'nav.receivables.collections',  icon: AlertTriangle,  module: 'payment_collection',   component: PaymentCollections, group: 'receivables-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
