@@ -78,8 +78,16 @@ export function PaymentPlans() {
   useEffect(() => {
     void loadPlans();
     // Customers + Invoices for the picker in the create dialog.
-    void customersApi.list({ size: 500 }).then(r => setCustomers(r.data)).catch(() => {});
-    void invoicesApi.list({ size: 500 }).then(r => setInvoices(r.data)).catch(() => {});
+    // Defensive `?? []` guards against a rejected fetch (connection
+    // refused during API restart) or an unexpected response shape —
+    // the create dialog reads .slice() on these and would crash if
+    // the state ever went undefined.
+    void customersApi.list({ size: 500 })
+      .then(r => setCustomers(Array.isArray(r?.data) ? r.data : []))
+      .catch(() => setCustomers([]));
+    void invoicesApi.list({ size: 500 })
+      .then(r => setInvoices(Array.isArray(r?.data) ? r.data : []))
+      .catch(() => setInvoices([]));
   }, []);
 
   const statusCounts = useMemo(() => ({
@@ -405,11 +413,17 @@ function CreatePlanDialogContent({
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1">
           <Label>Source Invoice (optional)</Label>
-          <Select value={invoiceId} onValueChange={setInvoiceId}>
+          <Select
+            value={invoiceId || 'none'}
+            onValueChange={v => setInvoiceId(v === 'none' ? '' : v)}
+          >
             <SelectTrigger><SelectValue placeholder="No invoice — standalone plan" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Standalone —</SelectItem>
-              {invoices.slice(0, 100).map(i => (
+              {/* Radix rejects empty-string SelectItem values, so we
+                  route "no invoice" through the sentinel 'none' and
+                  translate back to empty on write. */}
+              <SelectItem value="none">— Standalone —</SelectItem>
+              {(Array.isArray(invoices) ? invoices : []).slice(0, 100).map(i => (
                 <SelectItem key={i.id} value={i.id}>{i.invoiceNo}{i.customerName ? ` · ${i.customerName}` : ''}</SelectItem>
               ))}
             </SelectContent>
@@ -420,7 +434,7 @@ function CreatePlanDialogContent({
           <Select value={customerId} onValueChange={setCustomerId}>
             <SelectTrigger><SelectValue placeholder="Pick a customer" /></SelectTrigger>
             <SelectContent>
-              {customers.map(c => (
+              {(Array.isArray(customers) ? customers : []).map(c => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
             </SelectContent>
