@@ -115,6 +115,10 @@ export function POS() {
   const [posSettings, setPosSettings] = useState<settingsApi.AccountingSettings>(
     () => settingsApi.defaultsFor('pos'),
   );
+  // Company profile (address + phone) — surfaced under the shop name
+  // on the printed receipt so the tenant's contact info reaches the
+  // customer without the operator hand-editing the POS Settings block.
+  const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // KHQR bank-account cards (V133 settings dialog → Bank Account
@@ -219,6 +223,12 @@ export function POS() {
         setOpenOrders(open);
         setActiveOrders(active);
         setPosSettings(pos);
+        // Fire-and-forget the company profile fetch — the receipt
+        // renders without it if the request fails; no reason to
+        // block POS load on a hiccup here.
+        settingsApi.getCompanyInfo()
+          .then(setCompanyInfo)
+          .catch(() => setCompanyInfo(null));
         // v-loyalty-mvp — best-effort balance snapshot for the
         // customer picker chip. Never blocks POS load on a
         // loyalty-side hiccup (tenants without any programs get
@@ -1190,6 +1200,7 @@ export function POS() {
         order={receipt}
         settings={posSettings}
         items={items}
+        companyInfo={companyInfo}
         onClose={() => setReceipt(null)}
       />
 
@@ -2340,10 +2351,14 @@ interface ReceiptDialogProps {
   /** Items catalog — needed so the receipt body can resolve SKUs back
    *  from {@code stockItemId} for the optional line prefix. */
   items: itemsApi.Item[];
+  /** Tenant profile — used to render address + phone under the shop
+   *  name on the receipt. Null when the fetch failed / isn't loaded
+   *  yet; the receipt drops those lines silently. */
+  companyInfo: settingsApi.CompanyInfo | null;
   onClose: () => void;
 }
 
-function PosReceiptDialog({ order, settings, items, onClose }: ReceiptDialogProps) {
+function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: ReceiptDialogProps) {
   // Auto-print once when the dialog first appears for a given order
   // and the tenant opted in. Tracking the last-printed id stops a
   // re-render from re-firing the print job.
@@ -2379,6 +2394,7 @@ function PosReceiptDialog({ order, settings, items, onClose }: ReceiptDialogProp
 
         <PosReceiptBody order={order} settings={settings} items={items}
                         shopName={shopName}
+                        companyInfo={companyInfo}
                         datePart={datePart} timePart={timePart} />
 
         <DialogFooter>
@@ -2402,12 +2418,16 @@ function PosReceiptDialog({ order, settings, items, onClose }: ReceiptDialogProp
  *  shape used for both the in-dialog preview and the print window
  *  (innerHTML copy). */
 function PosReceiptBody({
-  order, settings, items, shopName, datePart, timePart,
+  order, settings, items, shopName, companyInfo, datePart, timePart,
 }: {
   order: PosOrder;
   settings: settingsApi.AccountingSettings;
   items: itemsApi.Item[];
   shopName: string;
+  /** Tenant profile — address + phone go under the shop name so the
+   *  printed receipt carries the same contact block that appears on
+   *  the invoice PDF. Optional; the rows drop when unset. */
+  companyInfo: settingsApi.CompanyInfo | null;
   datePart: string;
   timePart: string;
 }) {
@@ -2429,6 +2449,18 @@ function PosReceiptBody({
         </div>
       )}
       <div className="text-center text-lg font-bold mt-1">{shopName}</div>
+      {/* Tenant contact block — hidden per row when the field is
+          blank so a lean profile still gets a clean receipt. */}
+      {(companyInfo?.address ?? '').trim() && (
+        <div className="text-center text-xs text-gray-600 mt-1 whitespace-pre-line leading-snug max-w-xs mx-auto">
+          {companyInfo!.address}
+        </div>
+      )}
+      {(companyInfo?.phone ?? '').trim() && (
+        <div className="text-center text-xs text-gray-600 mt-0.5 tabular-nums">
+          {companyInfo!.phone}
+        </div>
+      )}
       {cashierParts && (
         <div className="text-center text-xs text-gray-500 mt-1">Cashier: {cashierParts}</div>
       )}

@@ -23,7 +23,6 @@ import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { PublicShopPage } from './components/views/PublicShopPage';
 import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
 import { CambodiaLearnPage } from './components/CambodiaLearnPage';
-import { MobileApp } from './mobile/MobileApp';
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -64,15 +63,6 @@ const isCambodiaLearnPath = (): boolean =>
   typeof window !== 'undefined'
   && (window.location.pathname === '/cambodia'
       || window.location.pathname.startsWith('/cambodia/'));
-
-/** /mobile — tablet-sized bottom-tab shell (Dashboard / Sale / Profile).
- *  Renders inside the same AuthProvider tree so session cookies are
- *  shared with the desktop web; the shell just swaps out the desktop
- *  Layout for its own tab-based chrome. */
-const isMobilePath = (): boolean =>
-  typeof window !== 'undefined'
-  && (window.location.pathname === '/mobile'
-      || window.location.pathname.startsWith('/mobile/'));
 
 function NotAuthorizedView() {
   // Pull the active role from AuthContext so we can name it on the
@@ -275,21 +265,6 @@ export default function App() {
       <I18nProvider>
         <CambodiaLearnPage />
         <Toaster />
-      </I18nProvider>
-    );
-  }
-  // /mobile — tablet shell. Needs the auth + i18n + date-format
-  // providers (session, tenant date format for the profile row); skips
-  // the desktop AppContent + Layout so the shell owns its own chrome.
-  if (isMobilePath()) {
-    return (
-      <I18nProvider>
-        <AuthProvider>
-          <DateFormatProvider>
-            <MobileApp />
-            <Toaster />
-          </DateFormatProvider>
-        </AuthProvider>
       </I18nProvider>
     );
   }
