@@ -41,14 +41,19 @@ export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }:
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
 
-  // Filter to active items only — disabled items in the catalog
-  // shouldn't surface in the picker (operator hides them when they
-  // stop selling a SKU but want to keep the history).
+  // Filter to active + in-stock items. Disabled items are hidden
+  // (operator hides them when they stop selling a SKU but want to
+  // keep the history). Out-of-stock deduction items are also hidden
+  // so an operator can't cut an invoice for a SKU the warehouse
+  // can't ship — matches the POS grid's disabled-tile rule.
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const active = catalog.filter(c => c.active);
-    if (!term) return active;
-    return active.filter(c =>
+    const inStock = catalog.filter(c =>
+      c.active
+      && !(c.deductionEnabled === true && (c.stockQty ?? 0) <= 0),
+    );
+    if (!term) return inStock;
+    return inStock.filter(c =>
       c.name.toLowerCase().includes(term)
       || (c.sku ?? '').toLowerCase().includes(term),
     );
