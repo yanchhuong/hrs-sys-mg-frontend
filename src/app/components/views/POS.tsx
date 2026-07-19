@@ -24,6 +24,10 @@ import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary, type LoyaltyType } from '../../api/loyalty';
 import * as settingsApi from '../../api/accountingSettings';
+// {@code settingsApi.getCompanyInfo} lives in the sibling `settings.ts`
+// module, not this one — pull it in under a separate alias so the
+// POS receipt can render the tenant's address + phone.
+import * as companyApi from '../../api/settings';
 import * as posDisplayApi from '../../api/posDisplay';
 import * as paywayApi from '../../api/payway';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
@@ -118,7 +122,7 @@ export function POS() {
   // Company profile (address + phone) — surfaced under the shop name
   // on the printed receipt so the tenant's contact info reaches the
   // customer without the operator hand-editing the POS Settings block.
-  const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  const [companyInfo, setCompanyInfo] = useState<companyApi.CompanyInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // KHQR bank-account cards (V133 settings dialog → Bank Account
@@ -226,7 +230,7 @@ export function POS() {
         // Fire-and-forget the company profile fetch — the receipt
         // renders without it if the request fails; no reason to
         // block POS load on a hiccup here.
-        settingsApi.getCompanyInfo()
+        companyApi.getCompanyInfo()
           .then(setCompanyInfo)
           .catch(() => setCompanyInfo(null));
         // v-loyalty-mvp — best-effort balance snapshot for the
@@ -2354,7 +2358,7 @@ interface ReceiptDialogProps {
   /** Tenant profile — used to render address + phone under the shop
    *  name on the receipt. Null when the fetch failed / isn't loaded
    *  yet; the receipt drops those lines silently. */
-  companyInfo: settingsApi.CompanyInfo | null;
+  companyInfo: companyApi.CompanyInfo | null;
   onClose: () => void;
 }
 
@@ -2427,7 +2431,7 @@ function PosReceiptBody({
   /** Tenant profile — address + phone go under the shop name so the
    *  printed receipt carries the same contact block that appears on
    *  the invoice PDF. Optional; the rows drop when unset. */
-  companyInfo: settingsApi.CompanyInfo | null;
+  companyInfo: companyApi.CompanyInfo | null;
   datePart: string;
   timePart: string;
 }) {
