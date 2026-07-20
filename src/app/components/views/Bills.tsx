@@ -2068,11 +2068,12 @@ function BillDetailDialog({
               </Table>
             </div>
 
-            {/* Notes / Terms 2-col + summary. Same gating as the
-                create form — a section hidden there is hidden here
-                too. Drops to single-col when only one is on. */}
+            {/* Notes stays fixed-left; right column carries T&C (when
+                on) + the summary. Notes-on → 2-col even if T&C is off,
+                so the summary shifts into T&C's slot instead of
+                stacking under Notes. Mirrors Invoices.tsx. */}
             <div className={`grid gap-3 ${
-              (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+              settings.showNotes ? 'grid-cols-2' : 'grid-cols-1'
             }`}>
               {settings.showNotes && (
               <div className="bg-slate-50 rounded-md p-3 text-sm">

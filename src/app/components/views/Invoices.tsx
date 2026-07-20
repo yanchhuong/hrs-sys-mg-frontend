@@ -2598,13 +2598,15 @@ function InvoiceDetailDialog({
               )}
             </div>
 
-            {/* Notes / Terms 2-col + summary. Gated by the same tenant
-                Accountant Settings as the create form — a section
-                hidden on the form is hidden here too. Layout drops to
-                single-column when only one side is on so the summary
-                still aligns to the right. */}
+            {/* Notes stays fixed-left; the right column carries the
+                Terms & Conditions card (when on) + the summary. So:
+                  - Notes ON  → 2-col (left = Notes, right = T&C + Summary)
+                  - Notes ON, T&C OFF → still 2-col (Summary shifts up
+                    into T&C's slot per operator's expectation).
+                  - Notes OFF → 1-col (nothing on the left; T&C + Summary
+                    stack in the center). */}
             <div className={`grid gap-3 ${
-              (settings.showNotes && settings.showTerms) ? 'grid-cols-2' : 'grid-cols-1'
+              settings.showNotes ? 'grid-cols-2' : 'grid-cols-1'
             }`}>
               {settings.showNotes && (
               <div className="bg-slate-50 rounded-md p-3 text-sm">
