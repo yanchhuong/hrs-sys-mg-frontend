@@ -573,12 +573,14 @@ function CompanyInformationCard() {
 
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="ci-address">Address</Label>
-            <Input
+            <Textarea
               id="ci-address"
               value={info.address ?? ''}
               onChange={(e) => patch({ address: e.target.value })}
-              placeholder="Street, District, City, Country"
+              placeholder={'Street, District, City, Country\nMulti-line supported — Enter breaks a line.'}
               disabled={loading}
+              rows={3}
+              className="min-h-[80px] resize-y"
             />
           </div>
         </div>

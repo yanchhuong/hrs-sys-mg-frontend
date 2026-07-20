@@ -202,9 +202,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   // side see it.
   { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'commission',         component: Commission,               group: 'sales-group' },
   // v-invoice-template-mvp — per-tenant custom invoice / receipt
-  // layouts. Sits under Sale next to Commission; reuses the
-  // `invoice` module gate so tenants with the Sale side see it.
-  { id: 'invoice-templates', labelKey: 'nav.templates',              icon: FileText,        module: 'invoice',            component: InvoiceTemplates,         group: 'sales-group' },
+  // layouts. Sits under Sale next to Commission; own module key
+  // `invoice_template` (V256) so tenants can toggle it independently
+  // of the Invoice module.
+  { id: 'invoice-templates', labelKey: 'nav.templates',              icon: FileText,        module: 'invoice_template',   component: InvoiceTemplates,         group: 'sales-group' },
   // Loyalty is settings-only (no consumer-facing report yet), so it
   // lives in POS → Settings → Loyalty and NOT as a sidebar leaf —
   // matches Commission Plans, which moved out of the sidebar for the

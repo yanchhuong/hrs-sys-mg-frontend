@@ -1681,8 +1681,12 @@ function PrintQuotation({
     secondaryCode === 'KHR' || secondaryCode === 'KRW'
       ? `${secondarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
       : `${secondarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const showVat = quotation.taxAmount > 0;
-  const vatPct = quotation.subtotal > 0 ? Math.round((quotation.taxAmount / quotation.subtotal) * 100) : 0;
+  const showVat      = quotation.taxAmount > 0;
+  const showDiscount = (quotation.discountAmount ?? 0) > 0;
+  const vatPct      = quotation.subtotal > 0 ? Math.round((quotation.taxAmount / quotation.subtotal) * 100) : 0;
+  const discountPct = quotation.discountType === 'percent'
+    ? Math.round(Number(quotation.discountValue ?? 0))
+    : (quotation.subtotal > 0 ? Math.round(((quotation.discountAmount ?? 0) / quotation.subtotal) * 100) : 0);
   const fmtDate = (iso?: string | null) => {
     if (!iso) return '';
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -1703,38 +1707,47 @@ function PrintQuotation({
       position: 'relative',
       fontFamily: "'Battambang', 'Noto Sans Khmer', system-ui, sans-serif",
     }}>
-      {/* Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px', alignItems: 'center', gap: '16px' }}>
-        <div style={{ minHeight: '52px' }}>
-          {company?.logoUrl && (
-            <img src={company.logoUrl} alt="" style={{ height: '52px', objectFit: 'contain' }} />
-          )}
-        </div>
+      {/* Header — logo pinned to the left, company info centered on
+       *  the FULL page width so it lines up with the QUOTATION title
+       *  strip and the body table below. */}
+      <div style={{ position: 'relative', minHeight: '60px' }}>
+        {company?.logoUrl && (
+          <img
+            src={company.logoUrl}
+            alt=""
+            style={{
+              position: 'absolute', left: 0, top: 0,
+              maxHeight: '60px', maxWidth: '140px', objectFit: 'contain',
+            }}
+          />
+        )}
         <div style={{ textAlign: 'center' }}>
           <div className="kh-title" style={{
             fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
             fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
           }}>{companyKh}</div>
           {companyEn && companyEn !== companyKh && (
-            <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px' }}>{companyEn}</div>
+            <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
+          )}
+          {company?.address && (
+            <div style={{ marginTop: '4px', fontSize: '11px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{company.address}</div>
+          )}
+          {(company?.phone || company?.taxId) && (
+            <div style={{
+              marginTop: '2px', fontSize: '11px', lineHeight: 1.5,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              gap: '16px', flexWrap: 'wrap',
+            }}>
+              {company?.phone && <span>{company.phone}</span>}
+              {company?.taxId && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <QBiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                  <QVatTinBoxes tin={company.taxId} />
+                </span>
+              )}
+            </div>
           )}
         </div>
-        <div />
-      </div>
-
-      <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px', lineHeight: 1.5 }}>
-        {company?.address && <div>{company.address}</div>}
-        {(company?.phone || company?.taxId) && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            {company?.phone && <span>{company.phone}</span>}
-            {company?.taxId && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <QBiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
-                <QVatTinBoxes tin={company.taxId} />
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Title — the only material difference from the invoice print. */}
@@ -1815,6 +1828,14 @@ function PrintQuotation({
             <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
             <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(quotation.subtotal)}</td>
           </tr>
+          {showDiscount && (
+            <tr>
+              <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>
+                បញ្ចុះតម្លៃ{quotation.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode}) / Discount{quotation.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode})
+              </td>
+              <td style={{ ...qTdStyle, textAlign: 'right' }}>− {fmtPrimary(quotation.discountAmount ?? 0)}</td>
+            </tr>
+          )}
           {showVat && (
             <tr>
               <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>
@@ -1878,12 +1899,13 @@ function PrintQuotation({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', marginTop: '60px', fontSize: '11px', textAlign: 'center' }}>
-        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
+      {/* Signatures — marginTop is the pen-room. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', marginTop: '110px', fontSize: '11px', textAlign: 'center' }}>
+        <div style={{ borderTop: '1px solid #000', paddingTop: '6px' }}>
           <div>ហត្ថលេខា និងឈ្មោះអ្នកទិញ</div>
           <div style={{ fontSize: '10px', color: '#555' }}>Customer's Signature &amp; Name</div>
         </div>
-        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
+        <div style={{ borderTop: '1px solid #000', paddingTop: '6px' }}>
           <div>ហត្ថលេខា និងឈ្មោះអ្នកលក់</div>
           <div style={{ fontSize: '10px', color: '#555' }}>Seller's Signature &amp; Name</div>
         </div>

@@ -47,6 +47,8 @@ import { PaymentReceiptCard } from '../common/PaymentReceiptCard';
 import * as posApi from '../../api/pos';
 import * as paywayApi from '../../api/payway';
 import * as currencyApi from '../../api/currencySettings';
+import { invoiceTemplates, defaultTemplateConfig } from '../../api/invoiceTemplates';
+import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
@@ -2089,6 +2091,11 @@ function InvoiceDetailDialog({
   // VAT TIN boxes, address, phone). Loaded once when the dialog opens —
   // soft-fail so the print still renders without it.
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  /** Tenant's active default invoice template. Null until the API
+   *  responds; the print component falls back to the built-in config
+   *  in that window (and permanently when the tenant has no custom
+   *  default active). */
+  const [invoiceTemplate, setInvoiceTemplate] = useState<InvoiceTemplate | null>(null);
   // Payments augmented with the source document they were recorded
   // against — so the unified table on a root invoice can show
   // payments + DN receipts + CN refunds in one chronological view.
@@ -2289,6 +2296,13 @@ function InvoiceDetailDialog({
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [invoiceId]);
   useEffect(() => {
     settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
+  }, []);
+  /** Fetch the active default template on mount. 404 → null → the
+   *  print component uses the built-in config. */
+  useEffect(() => {
+    invoiceTemplates.getDefault('invoice')
+      .then(setInvoiceTemplate)
+      .catch(() => setInvoiceTemplate(null));
   }, []);
 
   /** Auto-send-Telegram one-shot — used by the Save & Close create
@@ -2936,7 +2950,7 @@ function InvoiceDetailDialog({
                 @page { margin: 0; size: A4; }
               }
             `}</style>
-            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} />
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} />
           </>
         )}
 
@@ -3107,7 +3121,7 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
 }
 
 function PrintTaxInvoice({
-  invoice, customer, company, paid, currencySettings,
+  invoice, customer, company, paid, currencySettings, template,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -3119,7 +3133,22 @@ function PrintTaxInvoice({
   /** Tenant currency settings — decides whether the secondary
    *  Grand Total row prints and what code / symbol it uses. */
   currencySettings?: currencyApi.CurrencySettings | null;
+  /** Tenant's active default invoice template. Null when the tenant
+   *  hasn't promoted a custom template — we then use the built-in
+   *  config so the print output stays identical to the pre-template
+   *  behaviour. */
+  template?: InvoiceTemplate | null;
 }) {
+  /* Merge the tenant template config with the built-in defaults so
+   * every knob has a value regardless of whether the tenant has a
+   * partial custom config. Header / columns / footer default groups
+   * are merged shallowly (deep enough — none of them nest further). */
+  const defaults = defaultTemplateConfig();
+  const cfg: TemplateConfig = template?.config ?? {};
+  const cfgHeader  = { ...defaults.header,       ...(cfg.header ?? {}) };
+  const cfgCols    = { ...defaults.columns,      ...(cfg.columns ?? {}) };
+  const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
+  const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
   // Primary currency comes from the invoice itself (per-doc snapshot);
   // secondary comes from tenant settings so it can be USD/KHR/KRW.
   const primaryCode = invoice.currency || 'USD';
@@ -3139,10 +3168,16 @@ function PrintTaxInvoice({
     secondaryCode === 'KHR' || secondaryCode === 'KRW'
       ? `${secondarySym} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
       : `${secondarySym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  // VAT line shows only when the invoice actually has tax — the totals
-  // block stays tight on zero-VAT exports / receipts.
-  const showVat = invoice.taxAmount > 0;
+  // VAT / Discount lines show only when non-zero — the totals block
+  // stays tight on zero-VAT exports / no-discount invoices. When
+  // either is > 0 the operator MUST see it broken out, otherwise
+  // "Sub Total $3 → Grand Total $2" reads like a bug.
+  const showVat      = invoice.taxAmount > 0;
+  const showDiscount = (invoice.discountAmount ?? 0) > 0;
   const vatPct = invoice.subtotal > 0 ? Math.round((invoice.taxAmount / invoice.subtotal) * 100) : 0;
+  const discountPct = invoice.discountType === 'percent'
+    ? Math.round(Number(invoice.discountValue ?? 0))
+    : (invoice.subtotal > 0 ? Math.round(((invoice.discountAmount ?? 0) / invoice.subtotal) * 100) : 0);
   // Issue / due dates rendered as DD-MM-YYYY to match the WABOOKS sample.
   const fmtDate = (iso?: string | null) => {
     if (!iso) return '';
@@ -3166,7 +3201,9 @@ function PrintTaxInvoice({
   );
   const ticked = filledBanks.filter(b => b.showOnInvoice);
   const banks = (ticked.length > 0 ? ticked : filledBanks).slice(0, MAX_BANK_ACCOUNTS_ON_INVOICE);
-  const showBank = banks.length > 0;
+  // Banking gated by template config too — a receipt-style template
+  // might switch it off even when the tenant has bank cards saved.
+  const showBank = banks.length > 0 && cfgFooter.showBanking !== false;
 
   const tree = (
     <div className="print-tax-invoice" style={{
@@ -3186,47 +3223,79 @@ function PrintTaxInvoice({
           stamp lower on the page so it sits over the Invoice N° /
           Issue Date / Payment Due Date block on the right column. */}
       <PaidStamp show={!!paid} variant="print" />
-      {/* Header — logo on the left (blank slot when absent so the centered
-       *  name doesn't drift), company name centered. No divider line
-       *  below; contact / VAT TIN render in a clean centered block under. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px', alignItems: 'center', gap: '16px' }}>
-        <div style={{ minHeight: '52px' }}>
-          {company?.logoUrl && (
-            <img src={company.logoUrl} alt="" style={{ height: '52px', objectFit: 'contain' }} />
-          )}
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          {/* Moul has a single weight (400). Don't request 700 here
-              or the browser falls back to a substitute that doesn't
-              look like Moul. The face is already heavy by design. */}
-          <div className="kh-title" style={{
-            fontSize: '20px',
-            fontWeight: 400,
-            lineHeight: 1.15,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
-          }}>{companyKh}</div>
-          {companyEn && companyEn !== companyKh && (
-            <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px' }}>{companyEn}</div>
-          )}
-        </div>
-        <div />
-      </div>
-
-      {/* Company contact line — centered, plain, no border */}
-      <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px', lineHeight: 1.5 }}>
-        {company?.address && <div>{company.address}</div>}
-        {(company?.phone || company?.taxId) && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            {company?.phone && <span>{company.phone}</span>}
-            {company?.taxId && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
-                <VatTinBoxes tin={company.taxId} />
-              </span>
+      {/* Header — three-slot grid driven by the template config so
+       *  logo position (left/middle/right) + size + shape reflect the
+       *  operator's Templates choices. Company block centres on the
+       *  full page width regardless of slot occupancy. */}
+      {(() => {
+        const logoPos   = cfgHeader.logoPosition ?? 'left';
+        const logoShape = cfgHeader.logoShape    ?? 'rectangle';
+        const logoSize  = Math.min(120, Math.max(24, cfgHeader.logoSize ?? 60));
+        const logoDims  =
+          logoShape === 'circle'   ? { width: logoSize, height: logoSize, borderRadius: 9999 }
+          : logoShape === 'square' ? { width: logoSize, height: logoSize, borderRadius: 4 }
+          :                          { width: Math.round(logoSize * 90 / 40), height: logoSize, borderRadius: 4 };
+        const slot   = cfgHeader.showLogo && company?.logoUrl ? Math.max(60, logoDims.width + 16) : 0;
+        const Logo   = () => cfgHeader.showLogo && company?.logoUrl ? (
+          <img
+            src={company.logoUrl}
+            alt=""
+            style={{
+              width: logoDims.width, height: logoDims.height,
+              borderRadius: logoDims.borderRadius, objectFit: 'contain',
+            }}
+          />
+        ) : null;
+        const CompanyBlock = () => !cfgHeader.showCompanyBlock ? null : (
+          <div style={{ textAlign: 'center' }}>
+            <div className="kh-title" style={{
+              fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
+              fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+            }}>{companyKh}</div>
+            {companyEn && companyEn !== companyKh && (
+              <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
+            )}
+            {company?.address && (
+              <div style={{ marginTop: '4px', fontSize: '11px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{company.address}</div>
+            )}
+            {(company?.phone || company?.taxId) && (
+              <div style={{
+                marginTop: '2px', fontSize: '11px', lineHeight: 1.5,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                gap: '16px', flexWrap: 'wrap',
+              }}>
+                {company?.phone && <span>{company.phone}</span>}
+                {company?.taxId && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                    <VatTinBoxes tin={company.taxId} />
+                  </span>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        );
+        return (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: `${slot}px 1fr ${slot}px`,
+            alignItems: 'center',
+            gap: '12px',
+            minHeight: Math.max(60, logoDims.height + 4),
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+              {logoPos === 'left' && <Logo />}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              {logoPos === 'middle' && <Logo />}
+              <CompanyBlock />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              {logoPos === 'right' && <Logo />}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Centered bilingual title with side rules. Per-kind so a
           Commercial invoice prints "INVOICE" / "វិក្កយបត្រ" rather
@@ -3234,13 +3303,19 @@ function PrintTaxInvoice({
           every kind. CN / DN carry their own banner so the recipient
           sees at a glance which document this is. */}
       {(() => {
+        /* Template config lets the tenant override the printed
+         * English title (e.g. "COMMERCIAL INVOICE"). Kh side stays
+         * per-doc-kind. Only kicks in on the regular INVOICE kind —
+         * CN / DN keep their fixed banners so the recipient still
+         * sees at a glance which document this is. */
+        const templateTitle = (cfgHeader.title ?? '').trim();
         const kindTitle = invoice.kind === 'tax'
           ? { kh: 'វិក្កយបត្រអាករ',     en: 'TAX INVOICE' }
           : invoice.kind === 'credit_note'
           ? { kh: 'លិខិតឥណទាន',         en: 'CREDIT NOTE' }
           : invoice.kind === 'debit_note'
           ? { kh: 'លិខិតឥណពន្ធ',         en: 'DEBIT NOTE' }
-          : { kh: 'វិក្កយបត្រ',           en: 'INVOICE' };
+          : { kh: 'វិក្កយបត្រ', en: (templateTitle || 'INVOICE').toUpperCase() };
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
             <div style={{ flex: 1, borderTop: '1px solid #000' }} />
@@ -3307,52 +3382,88 @@ function PrintTaxInvoice({
         fontSize: '11px',
       }}>
         <thead>
+          {/* Column toggles + custom labels come from the tenant's
+              active invoice template. Discount column stays fixed
+              per-doc (there's no template knob for it — it prints
+              only in the per-line context, not as a togglable
+              column). */}
           <tr>
-            <th style={thStyle} ><BiLabel kh="ល.រ." en="N°" /></th>
-            <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en="Description" /></th>
-            <th style={thStyle}><BiLabel kh="បរិមាណ" en="Quantity" /></th>
-            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en="Unit Price" /></th>
+            <th style={thStyle}><BiLabel kh="ល.រ." en="N°" /></th>
+            {cfgCols.item      && <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
+            {cfgCols.uom       && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
+            {cfgCols.quantity  && <th style={thStyle}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} /></th>}
+            {cfgCols.unitPrice && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} /></th>}
             <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="បញ្ចុះតម្លៃ" en="Discount" /></th>
-            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en="Amount" /></th>
+            {cfgCols.total     && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} /></th>}
           </tr>
         </thead>
         <tbody>
           {invoice.items.map((it, idx) => (
             <tr key={it.id}>
               <td style={{ ...tdStyle, textAlign: 'center' }}>{idx + 1}</td>
-              <td style={tdStyle}>
-                <div>{it.name}</div>
-                {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
+              {cfgCols.item && (
+                <td style={tdStyle}>
+                  <div>{it.name}</div>
+                  {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
+                </td>
+              )}
+              {cfgCols.uom       && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.unit ?? ''}</td>}
+              {cfgCols.quantity  && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>}
+              {cfgCols.unitPrice && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
               <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
+              {cfgCols.total     && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
             </tr>
           ))}
-          {/* Totals folded into the same table — looks like the WABOOKS PDF */}
-          <tr>
-            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
-            <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(invoice.subtotal)}</td>
-          </tr>
-          {showVat && (
-            <tr>
-              <td colSpan={5} style={{ ...tdStyle, textAlign: 'right' }}>
-                អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(invoice.taxAmount)}</td>
-            </tr>
-          )}
-          <tr>
-            <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
-            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(invoice.total)}</td>
-          </tr>
-          {showSecondary && (
-            <tr>
-              <td colSpan={5} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
-              <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
-            </tr>
-          )}
+          {/* Totals folded into the same table. colSpan tracks how
+              many data columns the template turned on so the label
+              stays flush-right and the value lines up with the
+              Amount column. */}
+          {(() => {
+            const dataCols =
+              1 /* N° */ +
+              (cfgCols.item ? 1 : 0) + (cfgCols.uom ? 1 : 0) +
+              (cfgCols.quantity ? 1 : 0) + (cfgCols.unitPrice ? 1 : 0) +
+              1 /* Discount column always prints */;
+            const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
+            const AmountCell = ({ value, bold }: { value: string; bold?: boolean }) =>
+              cfgCols.total
+                ? <td style={{ ...tdStyle, textAlign: 'right', ...(bold ? { fontWeight: 700 } : {}) }}>{value}</td>
+                : null;
+            return (
+              <>
+                <tr>
+                  <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+                  <AmountCell value={fmtPrimary(invoice.subtotal)} />
+                </tr>
+                {showDiscount && (
+                  <tr>
+                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
+                      បញ្ចុះតម្លៃ{invoice.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode}) / Discount{invoice.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode})
+                    </td>
+                    <AmountCell value={`− ${fmtPrimary(invoice.discountAmount ?? 0)}`} />
+                  </tr>
+                )}
+                {showVat && (
+                  <tr>
+                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
+                      អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
+                    </td>
+                    <AmountCell value={fmtPrimary(invoice.taxAmount)} />
+                  </tr>
+                )}
+                <tr>
+                  <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+                  <AmountCell value={fmtPrimary(invoice.total)} bold />
+                </tr>
+                {showSecondary && (
+                  <tr>
+                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+                    <AmountCell value={fmtSecondary(grandSecondary)} bold />
+                  </tr>
+                )}
+              </>
+            );
+          })()}
         </tbody>
       </table>
 
@@ -3438,19 +3549,49 @@ function PrintTaxInvoice({
         {(invoice.exchangeRate || 0) > 0 && (
           <div style={{ marginTop: '6px' }}>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
         )}
+        {/* Template-configurable thank-you line + terms line. Both
+            live under Notes so they end up near the bottom of the
+            document without competing with banking. */}
+        {cfgFooter.showThankYou && (cfgFooter.thankYouText ?? '').trim() && (
+          <div style={{ marginTop: '8px', fontWeight: 600 }}>{cfgFooter.thankYouText}</div>
+        )}
+        {cfgFooter.showTerms && (
+          <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
+            Terms &amp; Conditions apply.
+          </div>
+        )}
       </div>
 
-      {/* Signatures */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', marginTop: '60px', fontSize: '11px', textAlign: 'center' }}>
-        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
-          <div>ហត្ថលេខា និងឈ្មោះអ្នកទិញ</div>
-          <div style={{ fontSize: '10px', color: '#555' }}>Customer's Signature &amp; Name</div>
-        </div>
-        <div style={{ borderTop: '1px solid #000', paddingTop: '4px' }}>
-          <div>ហត្ថលេខា និងឈ្មោះអ្នកលក់</div>
-          <div style={{ fontSize: '10px', color: '#555' }}>Seller's Signature &amp; Name</div>
-        </div>
-      </div>
+      {/* Signatures — the marginTop is the actual pen-room where the
+       *  customer / seller signs. paddingTop under the border keeps
+       *  the labels off the line. Template config decides whether to
+       *  print each side; when both are off the block is dropped
+       *  entirely and the printed page ends after the totals. */}
+      {(() => {
+        const showCust = cfgFooter.showCustomerSignature !== false;
+        const showSell = cfgFooter.showSellerSignature   !== false;
+        if (!showCust && !showSell) return null;
+        return (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: (showCust && showSell) ? '1fr 1fr' : '1fr',
+            gap: '64px', marginTop: '110px', fontSize: '11px', textAlign: 'center',
+          }}>
+            {showCust && (
+              <div style={{ borderTop: '1px solid #000', paddingTop: '6px' }}>
+                <div>ហត្ថលេខា និងឈ្មោះអ្នកទិញ</div>
+                <div style={{ fontSize: '10px', color: '#555' }}>Customer's Signature &amp; Name</div>
+              </div>
+            )}
+            {showSell && (
+              <div style={{ borderTop: '1px solid #000', paddingTop: '6px' }}>
+                <div>ហត្ថលេខា និងឈ្មោះអ្នកលក់</div>
+                <div style={{ fontSize: '10px', color: '#555' }}>Seller's Signature &amp; Name</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
   // createPortal's return type changed between React 17 / 18 type defs
