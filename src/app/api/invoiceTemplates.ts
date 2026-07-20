@@ -10,10 +10,15 @@ export type TemplateKind = 'invoice' | 'receipt';
 /** Config shape the editor writes + the print path reads. Kept
  *  additive on purpose — a new field with a sensible default lets
  *  older rows keep working without a migration.  */
+export type LogoPosition = 'left' | 'middle' | 'right';
+
 export interface TemplateConfig {
   header?: {
     /** Print the tenant logo (company_info.logo_url) at the top. */
     showLogo?: boolean;
+    /** Horizontal placement of the logo inside the header bar.
+     *  Doc title + company block move around it. Default: left. */
+    logoPosition?: LogoPosition;
     /** Print company name / address / tax id block. */
     showCompanyBlock?: boolean;
     /** Overrides for the printed doc title (default: 'Invoice'). */
@@ -75,6 +80,7 @@ export function defaultTemplateConfig(): TemplateConfig {
   return {
     header: {
       showLogo: true,
+      logoPosition: 'left',
       showCompanyBlock: true,
       title: 'Invoice',
       accentColor: '#2563eb',

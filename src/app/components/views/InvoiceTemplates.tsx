@@ -20,7 +20,7 @@ import {
   invoiceTemplates, defaultTemplateConfig,
 } from '../../api/invoiceTemplates';
 import type {
-  InvoiceTemplate, TemplateKind, TemplateConfig, UpsertInvoiceTemplate,
+  InvoiceTemplate, TemplateKind, TemplateConfig, UpsertInvoiceTemplate, LogoPosition,
 } from '../../api/invoiceTemplates';
 
 const KIND_META: Record<TemplateKind, { label: string; cls: string }> = {
@@ -262,6 +262,34 @@ function TemplateEditorDialog({
                 <SwitchRow label="Show logo"          checked={!!config.header?.showLogo}         onChange={v => patchHeader({ showLogo: v })} />
                 <SwitchRow label="Show company block" checked={!!config.header?.showCompanyBlock} onChange={v => patchHeader({ showCompanyBlock: v })} />
               </div>
+              {/* v-invoice-template-logo-position — segmented picker
+                  for where the logo sits inside the header bar.
+                  Doc title + company block re-flow around it (see
+                  TemplatePreview below). */}
+              {config.header?.showLogo && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Logo position</Label>
+                  <div className="inline-flex items-center gap-1 rounded-md border p-1 bg-white">
+                    {(['left', 'middle', 'right'] as const).map(pos => {
+                      const active = (config.header?.logoPosition ?? 'left') === pos;
+                      return (
+                        <button
+                          key={pos}
+                          type="button"
+                          onClick={() => patchHeader({ logoPosition: pos as LogoPosition })}
+                          className={`px-3 h-7 text-xs rounded capitalize transition ${
+                            active
+                              ? 'bg-blue-600 text-white font-medium'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          {pos}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border rounded-md p-3 space-y-3">
@@ -348,17 +376,59 @@ function TemplatePreview({ config }: { config: TemplateConfig }) {
   ];
   const subtotal = SAMPLE_LINES.reduce((s, l) => s + l.qty * l.unit, 0);
 
+  const logoPos = h.logoPosition ?? 'left';
+  /** Placeholder box representing the tenant logo — the real print
+   *  path swaps this for the company_info.logo_url image. Colour
+   *  contrasts with the header background so it's visible on both
+   *  the dark default and any lighter accent choice. */
+  const LogoBox = () => (
+    <div
+      className="rounded flex items-center justify-center font-bold tracking-wider"
+      style={{
+        width: 90, height: 32,
+        background: 'rgba(255,255,255,0.15)',
+        border: '1px solid rgba(255,255,255,0.35)',
+        color: h.headerTextColor,
+      }}
+    >
+      LOGO
+    </div>
+  );
+
   return (
     <div className="border rounded-md overflow-hidden bg-white text-[11px]">
-      {/* Header bar */}
-      <div className="px-4 py-3 flex items-center justify-between" style={{ background: h.headerBackgroundColor, color: h.headerTextColor }}>
-        <div className="text-xl font-semibold tracking-widest">{h.title || 'INVOICE'}</div>
-        {h.showCompanyBlock && (
-          <div className="text-right leading-tight">
-            <div className="font-semibold">Acme Ltd.</div>
-            <div className="opacity-80">1901 Thornridge Cir.</div>
+      {/* Header bar — three-slot flex row so the logo can sit left,
+          middle or right of the doc title + company block. */}
+      <div
+        className="relative px-4 py-3 flex items-center justify-between gap-3"
+        style={{ background: h.headerBackgroundColor, color: h.headerTextColor }}
+      >
+        {/* Left slot: logo (if left-positioned) + doc title */}
+        <div className="flex items-center gap-3">
+          {h.showLogo && logoPos === 'left' && <LogoBox />}
+          <div className="text-xl font-semibold tracking-widest">{h.title || 'INVOICE'}</div>
+        </div>
+
+        {/* Middle slot: only used when logoPosition === 'middle'.
+            Absolute so it doesn't push the outer flex — keeps the
+            visual balance between title (left) and company block
+            (right). */}
+        {h.showLogo && logoPos === 'middle' && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <LogoBox />
           </div>
         )}
+
+        {/* Right slot: company block + logo (if right-positioned) */}
+        <div className="flex items-center gap-3">
+          {h.showCompanyBlock && (
+            <div className="text-right leading-tight">
+              <div className="font-semibold">Acme Ltd.</div>
+              <div className="opacity-80">1901 Thornridge Cir.</div>
+            </div>
+          )}
+          {h.showLogo && logoPos === 'right' && <LogoBox />}
+        </div>
       </div>
       {/* Body */}
       <div className="p-4 space-y-3">
