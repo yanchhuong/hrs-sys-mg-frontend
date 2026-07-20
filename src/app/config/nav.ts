@@ -58,7 +58,6 @@ import { InvoiceTemplates } from '../components/views/InvoiceTemplates';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { PaymentPlans } from '../components/views/PaymentPlans';
-import { PaymentSchedules } from '../components/views/PaymentSchedules';
 import { PaymentCollections } from '../components/views/PaymentCollections';
 import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
@@ -216,7 +215,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   // (see V251 migration). Auto-hides for tenants without any of the
   // four keys enabled, matching the Stock / Cashflow behaviour.
   { id: 'payment-plans',       labelKey: 'nav.receivables.plans',        icon: CreditCard,     module: 'payment_plan',         component: PaymentPlans,       group: 'receivables-group' },
-  { id: 'payment-schedules',   labelKey: 'nav.receivables.schedules',    icon: CalendarClock,  module: 'payment_schedule',     component: PaymentSchedules,   group: 'receivables-group' },
+  // v-payment-schedule-retirement: the standalone Schedules page was
+  // redundant with the Payment Plan detail dialog (same rows, same
+  // pay-against actions). Nav leaf, permission matrix row, apps-
+  // launcher tile, and module registration all retired together.
   { id: 'payment-collections', labelKey: 'nav.receivables.collections',  icon: AlertTriangle,  module: 'payment_collection',   component: PaymentCollections, group: 'receivables-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },

@@ -52,12 +52,13 @@ const CATEGORIES: CategoryDef[] = [
   },
   {
     // Receivables — Business Agreements / Payment Plans (V251).
-    // Three tiles that all gate on their own module keys so a tenant
-    // can adopt just Payment Plans without also enabling Schedules /
-    // Collections (same rule as Accounting sub-tiles).
+    // Standalone Schedules tile retired (v-payment-schedule-
+    // retirement): the same rows are already inline in the Payment
+    // Plan detail dialog with pay-against actions, so a separate
+    // sidebar leaf + apps tile was pure duplication.
     key: 'receivables', labelKey: 'apps.category.receivables',
     installedBadge: 'bg-indigo-100 text-indigo-700',
-    ids: ['payment-plans', 'payment-schedules', 'payment-collections'],
+    ids: ['payment-plans', 'payment-collections'],
   },
   {
     key: 'cashflow', labelKey: 'apps.category.cashflow',

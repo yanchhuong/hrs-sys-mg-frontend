@@ -171,7 +171,11 @@ const MODULES: ModuleDef[] = [
 
   { key: 'receivables-group', label: 'Receivables',       description: '',                                                            header: true },
   { key: 'payment_plan',        label: 'Payment Plans',      description: 'Installment / rental / loan / tuition — one plan holds many expected payments', parent: 'receivables-group' },
-  { key: 'payment_schedule',    label: 'Schedules',          description: 'Flat cross-plan schedule view (due dates, balances, status)', parent: 'receivables-group' },
+  // v-payment-schedule-retirement: `payment_schedule` module retired.
+  // The standalone Schedules page duplicated the Payment Plan detail
+  // dialog, so the sidebar leaf, apps tile, and this matrix row all
+  // went away together. BE side purged the module_assignments row +
+  // any lingering role_permissions grants via V258.
   // V253 retired `payment_transaction` — recorded receipts are an
   // internal concept inside a plan; anyone who can update the plan
   // can log a payment against it. See BE V253 migration for the
@@ -322,7 +326,6 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       // creates / cancels / deletes plans by default. Matches V251
       // backend seed (manager -> view only on all four).
       case 'payment_plan':
-      case 'payment_schedule':
       case 'payment_collection':
                             return action === 'view';
       default:           return false;

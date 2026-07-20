@@ -7,7 +7,7 @@ import { apiJson } from './client';
  *  - receipt  → Receipt form
  *  - quotation → Quotation form (single QT prefix, no Bank Accounts)
  *  - voucher   → General Voucher form (single VCH prefix, no Bank Accounts) */
-export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher' | 'pos' | 'payroll' | 'hospital';
+export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'voucher' | 'pos' | 'payroll' | 'hospital' | 'payment_plan';
 
 export interface AccountingSettings {
   showNotes: boolean;
@@ -72,6 +72,18 @@ export interface AccountingSettings {
    *  details as a second message so the customer doesn't have to
    *  scroll up to find the previous one. V129. */
   reminderResendInvoice: boolean;
+  /** Payment Plan reminders (V261). Only surfaced in the
+   *  scope='payment_plan' dialog; other scopes carry the columns
+   *  for shape uniformity. Placeholders: {planNo}, {installmentNo},
+   *  {termsCount}, {amount}, {dueDate}, {customerName}. */
+  ppReminderBeforeDueEnabled: boolean;
+  ppReminderBeforeDueDays: number;
+  ppReminderAfterDueEnabled: boolean;
+  ppReminderAfterDueRepeat: boolean;
+  ppReminderAfterDueFrequency: 'daily' | 'weekly';
+  ppReminderPaidEnabled: boolean;
+  ppReminderTemplate: string;
+  ppReminderResendSchedule: boolean;
   /** POS receipt — show a "PAID" stamp after a successful checkout (V133). */
   posShowPaidStamp: boolean;
   /** POS receipt — auto-open the print dialog on checkout (V133). */
@@ -219,6 +231,18 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     reminderTemplate:
       'Hi {customerName}, this is a reminder for invoice {invoiceNo} ({amount}) due on {dueDate}.',
     reminderResendInvoice: false,
+    // V261 — Payment Plan reminders. Same off-by-default philosophy;
+    // template pre-fills with the six placeholders the scheduler
+    // substitutes.
+    ppReminderBeforeDueEnabled: false,
+    ppReminderBeforeDueDays: 1,
+    ppReminderAfterDueEnabled: false,
+    ppReminderAfterDueRepeat: false,
+    ppReminderAfterDueFrequency: 'daily',
+    ppReminderPaidEnabled: false,
+    ppReminderTemplate:
+      'Hi {customerName}, this is a reminder for your payment plan {planNo} — installment {installmentNo} of {termsCount} ({amount}) due on {dueDate}.',
+    ppReminderResendSchedule: false,
     // V133 — POS receipt defaults. Stamp on, auto-print off, SKU on,
     // thermal-80 paper, no shop name (FE falls back to tenant name).
     posShowPaidStamp: true,

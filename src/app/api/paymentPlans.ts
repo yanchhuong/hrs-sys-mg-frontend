@@ -20,6 +20,19 @@ export interface PaymentSchedule {
   /** True when balance > 0 and dueDate < today. Server-computed so the
    *  FE renders red without owning the "today" comparison. */
   isOverdue: boolean;
+  /** ISO date of the most recent payment against this schedule.
+   *  Null when the row has never been paid. */
+  lastPaidDate?: string | null;
+  /** Display-friendly name / email of the operator who booked the
+   *  most recent payment. Null when unpaid. */
+  lastPaidBy?: string | null;
+  /** Method of the most recent transaction booked against this
+   *  schedule (cash / bank / khqr / card / wing / other). Null
+   *  when unpaid. */
+  lastPaymentMethod?: PaymentMethod | null;
+  /** ISO timestamp of the most recent Telegram reminder sent for
+   *  this row. Null when the scheduler hasn't touched it. */
+  lastReminderSentAt?: string | null;
 }
 
 export interface PaymentTransaction {
@@ -32,6 +45,11 @@ export interface PaymentTransaction {
   note?: string | null;
   createdAt: string;
 }
+
+/** Interest-rate mode — 'annual' is the legacy default; 'monthly'
+ *  lets the operator enter a per-month percent and the BE
+ *  annualises it before applying the amortisation math. */
+export type InterestRateMode = 'annual' | 'monthly';
 
 export interface PaymentPlan {
   id: string;
@@ -46,6 +64,9 @@ export interface PaymentPlan {
   financedAmount: number;
   numberOfTerms: number;
   interestRate: number;
+  interestRateMode?: InterestRateMode | null;
+  /** Catalogue row (payment_plan_items) the plan is written against. */
+  itemId?: string | null;
   frequency: PlanFrequency;
   startDate: string;
   endDate?: string | null;
@@ -70,8 +91,11 @@ export interface PaymentPlanCreateRequest {
   totalAmount: number;
   downPayment: number;
   numberOfTerms: number;
-  /** Annual percentage. Zero for INSTALLMENT / RENTAL / TUITION. */
+  /** Percent value. Units match {@link interestRateMode}. Zero for
+   *  INSTALLMENT / RENTAL / TUITION. */
   interestRate: number;
+  interestRateMode?: InterestRateMode;
+  itemId?: string | null;
   frequency: PlanFrequency;
   startDate: string;
   remarks?: string;
