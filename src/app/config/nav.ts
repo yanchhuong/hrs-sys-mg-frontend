@@ -54,6 +54,7 @@ import { Vouchers } from '../components/views/Vouchers';
 // embedded in POS Settings via AccountingSettingsDialog. No import
 // here.
 import { Commission } from '../components/views/Commission';
+import { InvoiceTemplates } from '../components/views/InvoiceTemplates';
 import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { PaymentPlans } from '../components/views/PaymentPlans';
@@ -200,6 +201,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   // sidebar. Reuses the `invoice` module gate so tenants with a Sale
   // side see it.
   { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'commission',         component: Commission,               group: 'sales-group' },
+  // v-invoice-template-mvp — per-tenant custom invoice / receipt
+  // layouts. Sits under Sale next to Commission; reuses the
+  // `invoice` module gate so tenants with the Sale side see it.
+  { id: 'invoice-templates', labelKey: 'nav.templates',              icon: FileText,        module: 'invoice',            component: InvoiceTemplates,         group: 'sales-group' },
   // Loyalty is settings-only (no consumer-facing report yet), so it
   // lives in POS → Settings → Loyalty and NOT as a sidebar leaf —
   // matches Commission Plans, which moved out of the sidebar for the
