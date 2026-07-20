@@ -388,6 +388,40 @@ function CompanyInformationCard() {
           </p>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Logo first — matches the printed order (logo at the top of
+              invoices / quotations / POS receipts), and gives the
+              operator a visual anchor for the identity block that
+              follows. */}
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="ci-logo">Company logo</Label>
+            {/* Drag-drop / click-to-browse. Stores the image as a
+                base64 data URL directly in the settings row — same
+                convention as the POS receipt logo (V138). Downstream
+                surfaces (invoice / quotation / POS receipt) already
+                render `company.logoUrl` as a plain <img src>, so a
+                data URL works everywhere without a follow-up upload
+                round-trip. */}
+            <ImageDropZone
+              value={info.logoUrl}
+              onChange={(v) => patch({ logoUrl: v ?? '' })}
+              hint="PNG / JPG / SVG · prints at the top of invoices, quotations, and POS receipts"
+              height={120}
+              disabled={loading}
+            />
+            {/* Fallback text input for operators who prefer pasting
+                a CDN link instead of uploading. Blanks itself out
+                when the field holds a data URL. */}
+            <Input
+              id="ci-logo"
+              type="url"
+              value={info.logoUrl?.startsWith('data:') ? '' : (info.logoUrl ?? '')}
+              onChange={(e) => patch({ logoUrl: e.target.value })}
+              placeholder="…or paste a public URL like https://cdn.example.com/logo.png"
+              disabled={loading}
+              className="text-sm"
+            />
+          </div>
+
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="ci-name">
               Company Name <span className="text-red-500">*</span>
@@ -537,37 +571,6 @@ function CompanyInformationCard() {
                 if (Number.isFinite(n)) patch({ payDayOfMonth: Math.max(1, Math.min(31, n)) });
               }}
               disabled={loading}
-            />
-          </div>
-
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="ci-logo">Company logo</Label>
-            {/* Drag-drop / click-to-browse. Stores the image as a
-                base64 data URL directly in the settings row — same
-                convention as the POS receipt logo (V138). Downstream
-                surfaces (invoice / quotation / POS receipt) already
-                render `company.logoUrl` as a plain <img src>, so a
-                data URL works everywhere without a follow-up upload
-                round-trip. */}
-            <ImageDropZone
-              value={info.logoUrl}
-              onChange={(v) => patch({ logoUrl: v ?? '' })}
-              hint="PNG / JPG / SVG · prints at the top of invoices, quotations, and POS receipts"
-              height={120}
-              disabled={loading}
-            />
-            {/* Fallback text input for operators who prefer pasting
-                a CDN link instead of uploading. Kept for continuity
-                with the pre-upload behaviour + so an existing http
-                URL still displays in the field. */}
-            <Input
-              id="ci-logo"
-              type="url"
-              value={info.logoUrl?.startsWith('data:') ? '' : (info.logoUrl ?? '')}
-              onChange={(e) => patch({ logoUrl: e.target.value })}
-              placeholder="…or paste a public URL like https://cdn.example.com/logo.png"
-              disabled={loading}
-              className="text-sm"
             />
           </div>
 
