@@ -83,6 +83,28 @@ export function InvoiceTemplates() {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Set default failed'); }
   };
 
+  /** Un-promote a custom template so the built-in fallback takes
+   *  over for that kind. Sends isDefault=false on the currently-
+   *  default row for the same kind; the BE happily accepts the
+   *  clear (see InvoiceTemplateController.update). */
+  const clearDefault = async (r: InvoiceTemplate) => {
+    try {
+      await invoiceTemplates.update(r.id, { name: r.name, kind: r.kind, isDefault: false });
+      toast.success(`${r.name} no longer default — built-in ${r.kind} template takes over`);
+      await load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Clear default failed'); }
+  };
+
+  /** Switch back to the built-in default for kind='invoice'. Finds
+   *  whichever custom template currently holds the slot and clears
+   *  its is_default flag; the built-in fallback then applies on
+   *  the next print. */
+  const restoreBuiltinDefault = async () => {
+    const current = rows.find(r => r.isDefault && r.kind === 'invoice');
+    if (!current) return; // nothing to unset — built-in already active
+    await clearDefault(current);
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -141,7 +163,14 @@ export function InvoiceTemplates() {
                         promoted a custom template for kind=invoice.
                         Same rule the print path will apply. */}
                     {rows.some(r => r.isDefault && r.kind === 'invoice') ? (
-                      <span className="text-[11px] text-gray-400">Overridden</span>
+                      <button
+                        type="button"
+                        onClick={restoreBuiltinDefault}
+                        className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1"
+                        title="Switch back to the built-in default"
+                      >
+                        <StarOff className="h-3 w-3" /> Overridden · restore
+                      </button>
                     ) : (
                       <Badge className="bg-emerald-100 text-emerald-800 gap-1">
                         <Star className="h-3 w-3 fill-current" /> Default
@@ -175,9 +204,15 @@ export function InvoiceTemplates() {
                     </TableCell>
                     <TableCell>
                       {r.isDefault ? (
-                        <Badge className="bg-emerald-100 text-emerald-800 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => clearDefault(r)}
+                          className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold hover:bg-emerald-200 transition"
+                          title="Unset default — built-in template will take over"
+                        >
                           <Star className="h-3 w-3 fill-current" /> Default
-                        </Badge>
+                          <span className="ml-1 opacity-70 group-hover:opacity-100">· unset</span>
+                        </button>
                       ) : (
                         <button
                           type="button"
