@@ -30,7 +30,27 @@ import * as platformApi from '../../../api/platform';
  *                        inherit-row pattern.
  *   LABEL_OVERRIDES    — display labels that don't match the raw key.
  */
-const HIDDEN_MODULE_KEYS = new Set(['medical-service']);
+const HIDDEN_MODULE_KEYS = new Set([
+  // Data-model helpers with no user-facing app tile — permission
+  // gates only. Toggling them here would mislead the operator into
+  // thinking there's a sidebar leaf to enable.
+  'medical-service',
+  // Settings-only modules: no page in the sidebar, no Apps-launcher
+  // tile. They gate a slice of admin actions inside another app:
+  //   * hr_telegram   — Telegram bot config (admin sub-setting
+  //                     under Employees/Settings)
+  //   * qr_attendance — QR / Offices management (dialog off the
+  //                     Attendance page, V116). The Attendance leaf
+  //                     itself is `attendance`; this row is the
+  //                     admin gate on the Manage Offices dialog.
+  //   * office        — same offices concept, retired standalone
+  //                     leaf (see nav.ts comment); kept as a
+  //                     permission key so back-end @perm.allow calls
+  //                     don't break.
+  'hr_telegram',
+  'qr_attendance',
+  'office',
+]);
 
 const LABEL_OVERRIDES: Record<string, string> = {
   enrollment:         'Enrollments',
