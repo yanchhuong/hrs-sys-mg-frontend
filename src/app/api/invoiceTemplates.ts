@@ -11,6 +11,7 @@ export type TemplateKind = 'invoice' | 'receipt';
  *  additive on purpose — a new field with a sensible default lets
  *  older rows keep working without a migration.  */
 export type LogoPosition = 'left' | 'middle' | 'right';
+export type LogoShape    = 'circle' | 'square' | 'rectangle';
 
 export interface TemplateConfig {
   header?: {
@@ -19,6 +20,12 @@ export interface TemplateConfig {
     /** Horizontal placement of the logo inside the header bar.
      *  Doc title + company block move around it. Default: left. */
     logoPosition?: LogoPosition;
+    /** Frame shape for the logo:
+     *   - circle    → 1:1 aspect, full-round border-radius
+     *   - square    → 1:1 aspect, small border-radius
+     *   - rectangle → landscape (wider than tall), small radius
+     *  Default: rectangle (matches the current print behaviour). */
+    logoShape?: LogoShape;
     /** Print company name / address / tax id block. */
     showCompanyBlock?: boolean;
     /** Overrides for the printed doc title (default: 'Invoice'). */
@@ -81,6 +88,7 @@ export function defaultTemplateConfig(): TemplateConfig {
     header: {
       showLogo: true,
       logoPosition: 'left',
+      logoShape: 'rectangle',
       showCompanyBlock: true,
       title: 'Invoice',
       accentColor: '#2563eb',

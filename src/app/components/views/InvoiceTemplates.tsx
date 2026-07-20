@@ -20,7 +20,8 @@ import {
   invoiceTemplates, defaultTemplateConfig,
 } from '../../api/invoiceTemplates';
 import type {
-  InvoiceTemplate, TemplateKind, TemplateConfig, UpsertInvoiceTemplate, LogoPosition,
+  InvoiceTemplate, TemplateKind, TemplateConfig, UpsertInvoiceTemplate,
+  LogoPosition, LogoShape,
 } from '../../api/invoiceTemplates';
 
 const KIND_META: Record<TemplateKind, { label: string; cls: string }> = {
@@ -267,26 +268,55 @@ function TemplateEditorDialog({
                   Doc title + company block re-flow around it (see
                   TemplatePreview below). */}
               {config.header?.showLogo && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Logo position</Label>
-                  <div className="inline-flex items-center gap-1 rounded-md border p-1 bg-white">
-                    {(['left', 'middle', 'right'] as const).map(pos => {
-                      const active = (config.header?.logoPosition ?? 'left') === pos;
-                      return (
-                        <button
-                          key={pos}
-                          type="button"
-                          onClick={() => patchHeader({ logoPosition: pos as LogoPosition })}
-                          className={`px-3 h-7 text-xs rounded capitalize transition ${
-                            active
-                              ? 'bg-blue-600 text-white font-medium'
-                              : 'text-gray-600 hover:bg-gray-100'
-                          }`}
-                        >
-                          {pos}
-                        </button>
-                      );
-                    })}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Logo position</Label>
+                    <div className="inline-flex items-center gap-1 rounded-md border p-1 bg-white">
+                      {(['left', 'middle', 'right'] as const).map(pos => {
+                        const active = (config.header?.logoPosition ?? 'left') === pos;
+                        return (
+                          <button
+                            key={pos}
+                            type="button"
+                            onClick={() => patchHeader({ logoPosition: pos as LogoPosition })}
+                            className={`px-3 h-7 text-xs rounded capitalize transition ${
+                              active
+                                ? 'bg-blue-600 text-white font-medium'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {pos}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* v-invoice-template-logo-shape — how the logo
+                      frame is cropped. Circle enforces 1:1 with a
+                      pill radius; Square enforces 1:1 with a small
+                      radius; Rectangle keeps the natural landscape
+                      aspect (matches today's print behaviour). */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Logo shape</Label>
+                    <div className="inline-flex items-center gap-1 rounded-md border p-1 bg-white">
+                      {(['circle', 'square', 'rectangle'] as const).map(shape => {
+                        const active = (config.header?.logoShape ?? 'rectangle') === shape;
+                        return (
+                          <button
+                            key={shape}
+                            type="button"
+                            onClick={() => patchHeader({ logoShape: shape as LogoShape })}
+                            className={`px-3 h-7 text-xs rounded capitalize transition ${
+                              active
+                                ? 'bg-blue-600 text-white font-medium'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {shape}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -376,24 +406,35 @@ function TemplatePreview({ config }: { config: TemplateConfig }) {
   ];
   const subtotal = SAMPLE_LINES.reduce((s, l) => s + l.qty * l.unit, 0);
 
-  const logoPos = h.logoPosition ?? 'left';
+  const logoPos   = h.logoPosition ?? 'left';
+  const logoShape = h.logoShape    ?? 'rectangle';
   /** Placeholder box representing the tenant logo — the real print
-   *  path swaps this for the company_info.logo_url image. Colour
-   *  contrasts with the header background so it's visible on both
-   *  the dark default and any lighter accent choice. */
-  const LogoBox = () => (
-    <div
-      className="rounded flex items-center justify-center font-bold tracking-wider"
-      style={{
-        width: 90, height: 32,
-        background: 'rgba(255,255,255,0.15)',
-        border: '1px solid rgba(255,255,255,0.35)',
-        color: h.headerTextColor,
-      }}
-    >
-      LOGO
-    </div>
-  );
+   *  path swaps this for the company_info.logo_url image. Shape
+   *  drives width x height x border-radius:
+   *    circle    → 40x40 with a fully-round pill radius
+   *    square    → 40x40 with a small rounded corner
+   *    rectangle → 90x32 landscape (matches today's print)
+   *  Colour contrasts with the header background so it's visible
+   *  on both the dark default and any lighter accent choice. */
+  const LogoBox = () => {
+    const { width, height, borderRadius } =
+      logoShape === 'circle'   ? { width: 40, height: 40, borderRadius: 9999 }
+      : logoShape === 'square' ? { width: 40, height: 40, borderRadius: 4 }
+      :                          { width: 90, height: 32, borderRadius: 4 };
+    return (
+      <div
+        className="flex items-center justify-center font-bold tracking-wider text-[10px]"
+        style={{
+          width, height, borderRadius,
+          background: 'rgba(255,255,255,0.15)',
+          border: '1px solid rgba(255,255,255,0.35)',
+          color: h.headerTextColor,
+        }}
+      >
+        LOGO
+      </div>
+    );
+  };
 
   return (
     <div className="border rounded-md overflow-hidden bg-white text-[11px]">
