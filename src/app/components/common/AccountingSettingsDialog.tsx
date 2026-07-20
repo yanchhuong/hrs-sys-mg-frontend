@@ -1341,8 +1341,8 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
                   Currency
                   <HelpHint>
-                    Tenant-wide setting. Drives the Currency dropdown on every Invoice / POS / Quotation / Voucher form
-                    plus totals on receipts. It is Max two currencies.
+                    Pick the currencies this tenant transacts in. Drives every Invoice / POS / Quotation / Voucher
+                    form and totals on receipts. It is Max two currencies.
                   </HelpHint>
                 </h3>
 
