@@ -532,11 +532,18 @@ export function UserManagement() {
     // from invoice) follow the parent module's installed state — they
     // don't appear as separate entries in the tenant catalog, so the
     // raw `installed(m.key)` lookup would always evict them.
+    // Inherited-only rows (Sale Ledger, Profit & Loss, Patients,
+    // Students…) used to render as disabled/greyed-out rows with a
+    // "Inherits from X" pill — operators consistently read that as a
+    // bug ("why are these checkboxes disabled?"). Since editing them
+    // did nothing anyway (they mirror the parent module), drop them
+    // from the matrix entirely. The parent row (Invoice / Bill /
+    // Encounter / Enrollment) is where the admin makes the change,
+    // and the sidebar-leaf visibility that these rows tracked stays
+    // gated by that parent module in nav.ts.
     const kept = MODULES.filter(m =>
-      m.header
-      || (m.inheritsFromLabel
-          ? installed(INHERIT_PARENT_KEY[m.key] ?? m.key)
-          : installed(m.key))
+      !m.inheritsFromLabel
+      && (m.header || installed(m.key))
     );
     // Second pass: drop a header if the next non-header before another
     // header is missing — i.e. no children survived the install filter.
