@@ -171,7 +171,10 @@ const MODULES: ModuleDef[] = [
   { key: 'receivables-group', label: 'Receivables',       description: '',                                                            header: true },
   { key: 'payment_plan',        label: 'Payment Plans',      description: 'Installment / rental / loan / tuition — one plan holds many expected payments', parent: 'receivables-group' },
   { key: 'payment_schedule',    label: 'Schedules',          description: 'Flat cross-plan schedule view (due dates, balances, status)', parent: 'receivables-group' },
-  { key: 'payment_transaction', label: 'Payments',           description: 'Recorded receipts allocated against schedule installments',   parent: 'receivables-group' },
+  // V253 retired `payment_transaction` — recorded receipts are an
+  // internal concept inside a plan; anyone who can update the plan
+  // can log a payment against it. See BE V253 migration for the
+  // matching module_assignments / role_permissions cleanup.
   { key: 'payment_collection',  label: 'Collections',        description: 'Aging report — overdue installments bucketed by days past due', parent: 'receivables-group' },
 
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
@@ -319,7 +322,6 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       // backend seed (manager -> view only on all four).
       case 'payment_plan':
       case 'payment_schedule':
-      case 'payment_transaction':
       case 'payment_collection':
                             return action === 'view';
       default:           return false;

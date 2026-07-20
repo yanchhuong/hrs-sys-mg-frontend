@@ -40,7 +40,10 @@ export function PaymentPlanDetailDialog({
 }) {
   const { canCreate, canUpdate } = useAuth();
   const { formatDate } = useDateFormat();
-  const canPay      = canCreate('payment_transaction') || canUpdate('payment_plan');
+  // V253 retired the `payment_transaction` permission module —
+  // recording a payment is now gated on payment_plan.update, matching
+  // "if you can change the plan, you can log a receipt against it".
+  const canPay      = canUpdate('payment_plan');
   const canActivate = canUpdate('payment_plan');
 
   const [plan, setPlan] = useState<paymentPlansApi.PaymentPlan | null>(null);
