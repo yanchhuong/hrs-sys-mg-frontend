@@ -15,7 +15,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '../ui/dialog';
-import { FileText, Plus, RefreshCw, Trash2, Edit3, Star, StarOff, Loader2 } from 'lucide-react';
+import { FileText, Plus, RefreshCw, Trash2, Edit3, Star, StarOff, Loader2, Copy, Lock } from 'lucide-react';
 import {
   invoiceTemplates, defaultTemplateConfig,
 } from '../../api/invoiceTemplates';
@@ -39,6 +39,22 @@ export function InvoiceTemplates() {
   const [loading, setLoad]  = useState(false);
   const [open, setOpen]     = useState(false);
   const [editing, setEdit]  = useState<InvoiceTemplate | null>(null);
+  /** Built-in preview state — opens the editor in view-only mode so
+   *  the operator can inspect what the current default template
+   *  looks like before deciding to customise. Null = closed. */
+  const [previewingBuiltin, setPreviewingBuiltin] = useState(false);
+
+  /** Open the editor pre-seeded with the built-in default config —
+   *  operator ends up with a fresh custom template that starts from
+   *  the current print layout instead of a blank canvas. */
+  const duplicateBuiltin = () => {
+    setEdit({
+      id: '', name: 'Copy of Default Template', kind: 'invoice', isDefault: false,
+      config: defaultTemplateConfig(),
+      createdAt: '', updatedAt: '',
+    } as InvoiceTemplate);
+    setOpen(true);
+  };
 
   const load = useCallback(async () => {
     setLoad(true);
@@ -88,21 +104,69 @@ export function InvoiceTemplates() {
           </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
-            <div className="text-center py-10 text-sm text-gray-500">
-              No templates yet. Prints use the built-in default layout until you create one.
-            </div>
-          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Kind</TableHead>
                   <TableHead>Default</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
+                  <TableHead className="w-48">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* v-invoice-template-builtin-row — pinned first row
+                    representing the system-provided default. Not a
+                    real DB row; the operator can Preview it, or
+                    Duplicate it to a customisable copy. No Edit /
+                    Delete because it's not user-owned.
+                    Shown even when the tenant has custom templates
+                    so the "starting point" stays discoverable. */}
+                <TableRow className="bg-gray-50/60">
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Lock className="h-3 w-3 text-gray-400" />
+                      Default Template
+                    </span>
+                    <div className="text-[11px] text-gray-500 mt-0.5">
+                      System-provided layout used when no custom template is set as default.
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="border-gray-300 bg-white text-gray-600">
+                      Built-in
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {/* Only "active default" when the tenant hasn't
+                        promoted a custom template for kind=invoice.
+                        Same rule the print path will apply. */}
+                    {rows.some(r => r.isDefault && r.kind === 'invoice') ? (
+                      <span className="text-[11px] text-gray-400">Overridden</span>
+                    ) : (
+                      <Badge className="bg-emerald-100 text-emerald-800 gap-1">
+                        <Star className="h-3 w-3 fill-current" /> Default
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="outline" size="sm"
+                        onClick={() => setPreviewingBuiltin(true)}
+                        title="Preview the built-in layout"
+                      >
+                        <FileText className="h-3.5 w-3.5 mr-1" /> Preview
+                      </Button>
+                      <Button
+                        variant="outline" size="sm"
+                        onClick={duplicateBuiltin}
+                        title="Duplicate this into a new custom template"
+                      >
+                        <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
                 {rows.map(r => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
@@ -139,7 +203,6 @@ export function InvoiceTemplates() {
                 ))}
               </TableBody>
             </Table>
-          )}
         </CardContent>
       </Card>
 
@@ -149,6 +212,26 @@ export function InvoiceTemplates() {
         editing={editing}
         onSaved={() => { setOpen(false); void load(); }}
       />
+
+      {/* Built-in preview — read-only. Reuses the same TemplatePreview
+          the editor uses so the operator sees exactly what a
+          duplicated copy would start from. */}
+      <Dialog open={previewingBuiltin} onOpenChange={setPreviewingBuiltin}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Default Template · Preview</DialogTitle>
+          </DialogHeader>
+          <TemplatePreview config={defaultTemplateConfig()} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewingBuiltin(false)}>Close</Button>
+            <Button
+              onClick={() => { setPreviewingBuiltin(false); duplicateBuiltin(); }}
+            >
+              <Copy className="h-4 w-4 mr-1.5" /> Duplicate & customise
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -194,7 +277,9 @@ function TemplateEditorDialog({
     setSaving(true);
     try {
       const body: UpsertInvoiceTemplate = { name: name.trim(), kind, isDefault, config };
-      if (editing) {
+      // editing?.id === '' → duplicate flow (built-in seeded), still a
+      // create. Real edits carry a non-empty id.
+      if (editing && editing.id) {
         await invoiceTemplates.update(editing.id, body);
         toast.success('Template updated');
       } else {
@@ -211,7 +296,16 @@ function TemplateEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit ${editing.name}` : 'New template'}</DialogTitle>
+          <DialogTitle>
+            {/* Duplicate flow (editing has no id) reads as "New" —
+                we're creating a fresh row seeded with the built-in
+                config, not editing an existing one. */}
+            {editing?.id
+              ? `Edit ${editing.name}`
+              : editing
+                ? 'New template (from Default)'
+                : 'New template'}
+          </DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4">
           {/* Left — form */}
