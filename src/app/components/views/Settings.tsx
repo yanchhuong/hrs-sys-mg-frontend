@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { ImageDropZone } from '../common/ImageDropZone';
 import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -540,14 +541,33 @@ function CompanyInformationCard() {
           </div>
 
           <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="ci-logo">Logo URL</Label>
+            <Label htmlFor="ci-logo">Company logo</Label>
+            {/* Drag-drop / click-to-browse. Stores the image as a
+                base64 data URL directly in the settings row — same
+                convention as the POS receipt logo (V138). Downstream
+                surfaces (invoice / quotation / POS receipt) already
+                render `company.logoUrl` as a plain <img src>, so a
+                data URL works everywhere without a follow-up upload
+                round-trip. */}
+            <ImageDropZone
+              value={info.logoUrl}
+              onChange={(v) => patch({ logoUrl: v ?? '' })}
+              hint="PNG / JPG / SVG · prints at the top of invoices, quotations, and POS receipts"
+              height={120}
+              disabled={loading}
+            />
+            {/* Fallback text input for operators who prefer pasting
+                a CDN link instead of uploading. Kept for continuity
+                with the pre-upload behaviour + so an existing http
+                URL still displays in the field. */}
             <Input
               id="ci-logo"
               type="url"
-              value={info.logoUrl ?? ''}
+              value={info.logoUrl?.startsWith('data:') ? '' : (info.logoUrl ?? '')}
               onChange={(e) => patch({ logoUrl: e.target.value })}
-              placeholder="https://cdn.example.com/logo.png"
+              placeholder="…or paste a public URL like https://cdn.example.com/logo.png"
               disabled={loading}
+              className="text-sm"
             />
           </div>
 
