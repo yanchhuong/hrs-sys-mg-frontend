@@ -422,35 +422,57 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
                 {prettyRoleLabel(currentUser?.role, t)}
               </Badge>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                    <Avatar>
-                      <AvatarFallback>
-                        {currentEmployee?.name.split(' ').map(n => n[0]).join('')}
-                      </AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm">{currentEmployee?.name}</p>
-                      <p className="text-xs text-gray-500">{currentEmployee?.email}</p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setProfileOpen(true)}>
-                    <UserCog className="mr-2 h-4 w-4" />
-                    <span>{t('header.profile')}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>{t('header.logout')}</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {(() => {
+                // Avatar / dropdown identity — falls through when the
+                // Admin has no linked Employee (valid state since
+                // v-admin-optional-employee). Preference order:
+                //   1. Employee name (has family + given → nicer initials)
+                //   2. Explicit user.name from /auth/me
+                //   3. Email local-part
+                //   4. Literal "?" so the circle isn't just a grey blob.
+                const displayName =
+                  (currentEmployee?.name?.trim())
+                  || (currentUser?.name?.trim())
+                  || (currentUser?.email?.split('@')[0] ?? '')
+                  || 'User';
+                const displayEmail = currentEmployee?.email || currentUser?.email || '';
+                const initials = displayName
+                  .split(/\s+/)
+                  .map(part => part[0])
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase() || '?';
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                        <Avatar>
+                          <AvatarFallback>{initials}</AvatarFallback>
+                        </Avatar>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>
+                        <div className="flex flex-col space-y-1">
+                          <p className="text-sm">{displayName}</p>
+                          <p className="text-xs text-gray-500">{displayEmail}</p>
+                        </div>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                        <UserCog className="mr-2 h-4 w-4" />
+                        <span>{t('header.profile')}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={logout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>{t('header.logout')}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              })()}
             </div>
           </div>
         </div>
