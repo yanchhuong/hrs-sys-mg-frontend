@@ -129,14 +129,28 @@ export function TenantModules() {
    * concept managed in Module Categories; here we just enumerate
    * every togglable key so a tenant admin can flip each one.
    */
-  const flattenModules = (nodes: platformApi.ModuleNode[]): string[] => {
-    const out: string[] = [];
+  const flattenModules = (nodes: platformApi.ModuleNode[]): Array<{ key: string; label: string }> => {
+    const out: Array<{ key: string; label: string }> = [];
     const walk = (ns: platformApi.ModuleNode[]) => {
-      for (const n of ns) { out.push(n.key); if (n.children?.length) walk(n.children); }
+      for (const n of ns) {
+        // Preserve the BE-supplied label (module_assignments.label) so
+        // the display picks up SA edits + V253-style DB renames without
+        // any client-side transform. Falls back to key-derived title
+        // case at render time when the BE omits label (older deploys).
+        out.push({ key: n.key, label: n.label });
+        if (n.children?.length) walk(n.children);
+      }
     };
     walk(nodes);
     return out;
   };
+
+  /** Fallback for when the BE omits label. Handles BOTH kebab (`-`)
+   *  AND snake (`_`) separators so keys like `payment_plan` don't
+   *  render as `Payment_plan` (the previous regex only replaced `-`,
+   *  leaving the underscore intact — flagged by an operator). */
+  const prettifyKey = (key: string): string =>
+    key.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   /**
    * Parent (category) toggle: bulk-flip every child to the same state.
@@ -149,7 +163,9 @@ export function TenantModules() {
   const handleCategoryToggle = (cat: platformApi.ModuleCategory) => {
     // Bulk-flip skips hidden modules so the operator can't toggle
     // something they can't see — matches the tile grid's own filter.
-    const keys = flattenModules(cat.modules).filter(k => !HIDDEN_MODULE_KEYS.has(k));
+    const keys = flattenModules(cat.modules)
+      .filter(n => !HIDDEN_MODULE_KEYS.has(n.key))
+      .map(n => n.key);
     const allOn = keys.every(k => Boolean(draft[k]));
     const next = !allOn;
     setDraft(d => {
@@ -235,7 +251,10 @@ export function TenantModules() {
                 // Real, togglable keys — hidden ones (e.g. medical-service)
                 // pruned before counting so the "N / M enabled" badge tracks
                 // what's actually visible.
-                const moduleKeys = flattenModules(cat.modules).filter(k => !HIDDEN_MODULE_KEYS.has(k));
+                // Node objects here so the render loop below has the
+                // BE-supplied label ready to render.
+                const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
+                const moduleKeys = modules.map(n => n.key);
                 const inheritTiles = INHERIT_TILES[cat.key] ?? [];
                 const total = moduleKeys.length;
                 const on = moduleKeys.filter(k => draft[k]).length;
@@ -315,7 +334,7 @@ export function TenantModules() {
                           </div>
                         );
                       })}
-                      {moduleKeys.map(key => (
+                      {modules.map(({ key, label }) => (
                         <div
                           key={key}
                           className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
@@ -326,7 +345,14 @@ export function TenantModules() {
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span className={`text-sm truncate ${draft[key] ? 'text-slate-900' : 'text-slate-500'}`}>
-                              {LABEL_OVERRIDES[key] ?? key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                              {/* BE label wins (module_assignments.label,
+                                  edited via V253 and the SA Module
+                                  Categories page). Only fall back to a
+                                  key-derived title case when the BE row
+                                  is blank. LABEL_OVERRIDES is the last
+                                  resort so the hardcoded map still fires
+                                  for keys we deliberately alias. */}
+                              {LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key))}
                             </span>
                           </div>
                           <Switch
