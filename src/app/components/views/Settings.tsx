@@ -377,10 +377,7 @@ function CompanyInformationCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Company Information</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         {loading && (
           <p className="text-xs text-gray-500 flex items-center gap-2">
             <RefreshCw className="h-3.5 w-3.5 animate-spin" />
