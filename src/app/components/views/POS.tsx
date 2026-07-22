@@ -1017,13 +1017,13 @@ export function POS() {
             {/* V142 — category filter pills. "All" is the default;
                 tapping a chip narrows the items grid to that bucket.
                 V149 — when the tenant has 2+ warehouses, a matching
-                warehouse-filter row renders on the right so the cashier
-                can narrow "same product across warehouses" at a glance.
-                Both rows use `chip-row` (styles/index.css) so they stay
-                on a single line and scroll horizontally on narrow screens
-                instead of wrapping into a tall block. */}
-            <div className="space-y-1.5">
-              <div className="chip-row">
+                warehouse-filter row sits on the RIGHT of the same
+                physical row (category on left, warehouse on right).
+                Each side is its own `.chip-row` — each scrolls
+                independently on narrow screens so a long category
+                list doesn't push the warehouse filter off-screen. */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="chip-row flex-1 min-w-0">
                 {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'] as const)
                   // Hide chips whose bucket is empty unless it's the active tab
                   // OR the "All" chip — the "All" tab must always be present.
@@ -1049,7 +1049,12 @@ export function POS() {
                   })}
               </div>
               {showWarehouseFilter && (
-                <div className="chip-row">
+                // Right side of the same row. `max-w-[45%]` caps its
+                // share on wide screens so the category chips keep
+                // their scroll headroom; both sides then compete for
+                // the remaining width but their internal scroll keeps
+                // them reachable.
+                <div className="chip-row shrink-0 max-w-[45%] pl-3 border-l border-gray-200">
                   <WarehouseIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                   <button
                     type="button"

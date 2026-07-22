@@ -30,7 +30,7 @@ export function OfficesDialog({ open, onOpenChange }: Props) {
   const [section, setSection] = useState<Section>('offices');
 
   const menu: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
-    { key: 'offices',     label: 'Offices',     hint: 'Locations + QR geofence',     icon: <MapPin className="h-4 w-4" /> },
+    { key: 'offices',     label: 'Branches/Offices', hint: 'Locations + QR geofence', icon: <MapPin className="h-4 w-4" /> },
     { key: 'devices',     label: 'Devices',     hint: 'Fingerprint / face terminals', icon: <Fingerprint className="h-4 w-4" /> },
     { key: 'assignments', label: 'Assignments', hint: 'Pin employees to offices',     icon: <UserCog className="h-4 w-4" /> },
   ];
