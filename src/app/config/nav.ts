@@ -177,13 +177,19 @@ export const NAV_LEAVES: NavLeaf[] = [
   // (`invoice` / `bill`) so they show up whenever Super Admin has
   // enabled the Sale or Purchase side for the tenant, without
   // needing a separate flag in the tenant module catalog.
-  { id: 'sale-ledger',       labelKey: 'nav.reports.sale_ledger',     icon: FileText,        module: 'invoice',            component: SaleLedger,     group: 'reports-group' },
-  { id: 'purchase-ledger',   labelKey: 'nav.reports.purchase_ledger', icon: FileText,        module: 'bill',               component: PurchaseLedger, group: 'reports-group' },
+  // v-report-leaves-first-class — each report leaf gates on its own
+  // permission key now (V267 seeded these for existing tenants that
+  // already had invoice/bill grants).
+  { id: 'sale-ledger',       labelKey: 'nav.reports.sale_ledger',     icon: FileText,        module: 'sale-ledger',        component: SaleLedger,     group: 'reports-group' },
+  { id: 'purchase-ledger',   labelKey: 'nav.reports.purchase_ledger', icon: FileText,        module: 'purchase-ledger',    component: PurchaseLedger, group: 'reports-group' },
   // Profit & Loss — pulls income from the Sale side and expenses from
   // the Purchase side. Gated on `invoice` for visibility (matches Sale
   // Ledger); the backend additionally requires bill.view so a Sales-
   // only user can't see the expense numbers.
-  { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'invoice',            component: ProfitLossReport, group: 'reports-group' },
+  // v-report-leaves-first-class — P&L gates on its own key now.
+  // requireAlso dropped: the endpoint's OR clause accepts the
+  // profit-loss key on its own (no need to also have invoice + bill).
+  { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'profit-loss',        component: ProfitLossReport, group: 'reports-group' },
 
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers,                group: 'sales-group' },
   { id: 'quotations',        labelKey: 'nav.quotations',             icon: FileText,        module: 'quotation',          component: Quotations,               group: 'sales-group' },

@@ -146,13 +146,14 @@ const MODULES: ModuleDef[] = [
   { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
   { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
   { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
-  // The next three sidebar items live under Reports but reuse the
-  // Invoice / Bill module gates (see nav.ts:130-140) — surface them
-  // here so the matrix matches the sidebar 1:1, marked as inherited
-  // so admins know which row actually controls visibility.
-  { key: 'sale-ledger',       label: 'Sale Ledger',       description: 'Customer-side invoice ledger',                                parent: 'reports', inheritsFromLabel: 'Invoice' },
-  { key: 'purchase-ledger',   label: 'Purchase Ledger',   description: 'Vendor-side bill ledger',                                     parent: 'reports', inheritsFromLabel: 'Bill' },
-  { key: 'profit-loss',       label: 'Profit & Loss',     description: 'Sale income minus Purchase expense',                          parent: 'reports', inheritsFromLabel: 'Invoice + Bill' },
+  // v-report-leaves-first-class (V267) — each report leaf now owns its
+  // permission key. Endpoints accept the specific key OR the parent
+  // (invoice / bill), so a role can be granted the report without also
+  // unlocking the raw Invoice / Bill pages. Legacy tenants get seeded
+  // by the V267 backfill so nothing regresses on upgrade.
+  { key: 'sale-ledger',       label: 'Sale Ledger',       description: 'Customer-side invoice ledger',                                parent: 'reports' },
+  { key: 'purchase-ledger',   label: 'Purchase Ledger',   description: 'Vendor-side bill ledger',                                     parent: 'reports' },
+  { key: 'profit-loss',       label: 'Profit & Loss',     description: 'Sale income minus Purchase expense',                          parent: 'reports' },
 
   { key: 'sales',             label: 'Sale',              description: '',                                                            header: true },
   { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'sales' },
@@ -244,9 +245,9 @@ const MODULES: ModuleDef[] = [
  *  ('Invoice + Bill') reminds the admin that Bill also matters for the
  *  expense column, even though the visibility row is Invoice. */
 const INHERIT_PARENT_KEY: Record<string, string> = {
-  'sale-ledger':     'invoice',
-  'purchase-ledger': 'bill',
-  'profit-loss':     'invoice',
+  // v-report-leaves-first-class (V267) — sale-ledger / purchase-ledger /
+  // profit-loss are no longer inherit-only display rows; each owns
+  // its permission key and is togglable in the matrix.
   // Business Base lenses that share a module with their sibling
   // page: Patients and Students each live under Customer with a
   // kind filter, so the same gate applies to both surfaces.
