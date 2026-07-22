@@ -1562,16 +1562,36 @@ export function Employees() {
                     {canUpdateEmp ? (
                       <SearchablePicker
                         options={(() => {
-                          const filtered = positions
+                          const eligible = positions
                             .filter(p => !employee.department
                               || employee.department === '-'
                               || !p.departmentId
-                              || p.departmentId === employee.department)
-                            .map(p => ({
-                              value: p.name,
-                              label: p.name,
-                              secondary: p.departmentId ? deptName(p.departmentId) : undefined,
-                            }));
+                              || p.departmentId === employee.department);
+                          // Dedupe by position name — {@code employee.position}
+                          // is stored as a plain name string, so two catalog
+                          // rows sharing a name are indistinguishable at save
+                          // time. Both would also render check-marked in the
+                          // picker (SearchablePicker's selection equality is
+                          // on value). Prefer the row whose department matches
+                          // the employee's department; fall back to the
+                          // unassigned row; fall back to first-seen.
+                          const byName = new Map<string, typeof eligible[number]>();
+                          const empDept = employee.department === '-' ? '' : (employee.department ?? '');
+                          for (const p of eligible) {
+                            const key = p.name.toLowerCase();
+                            const kept = byName.get(key);
+                            if (!kept) { byName.set(key, p); continue; }
+                            const keptMatches   = kept.departmentId === empDept;
+                            const currentMatches = p.departmentId === empDept;
+                            if (currentMatches && !keptMatches) byName.set(key, p);
+                            else if (!kept.departmentId && p.departmentId) { /* keep unassigned */ }
+                            else if (kept.departmentId && !p.departmentId && !keptMatches) byName.set(key, p);
+                          }
+                          const filtered = Array.from(byName.values()).map(p => ({
+                            value: p.name,
+                            label: p.name,
+                            secondary: p.departmentId ? deptName(p.departmentId) : undefined,
+                          }));
                           // If the row's current position isn't in the
                           // filtered list (deleted, or in a different dept),
                           // prepend it as a synthetic option so the trigger
@@ -2080,17 +2100,29 @@ export function Employees() {
                       <FieldRow label="Position" required={isEditing} isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <SearchablePicker
-                            options={positions
-                              // Show positions in the chosen department first; cross-dept
-                              // positions (no departmentId) always pass through.
-                              .filter(p => !editedEmployee.department
+                            options={(() => {
+                              // Same "one row per position name" dedupe as the
+                              // inline picker on the Employees list — see that
+                              // block's comment for why. Prefer the row whose
+                              // departmentId matches the employee's dept.
+                              const eligible = positions.filter(p =>
+                                !editedEmployee.department
                                 || !p.departmentId
-                                || p.departmentId === editedEmployee.department)
-                              .map(p => ({
+                                || p.departmentId === editedEmployee.department);
+                              const byName = new Map<string, typeof eligible[number]>();
+                              const empDept = editedEmployee.department ?? '';
+                              for (const p of eligible) {
+                                const key = p.name.toLowerCase();
+                                const kept = byName.get(key);
+                                if (!kept) { byName.set(key, p); continue; }
+                                if (p.departmentId === empDept && kept.departmentId !== empDept) byName.set(key, p);
+                              }
+                              return Array.from(byName.values()).map(p => ({
                                 value: p.name,
                                 label: p.name,
                                 secondary: p.departmentId ? deptName(p.departmentId) : undefined,
-                              }))}
+                              }));
+                            })()}
                             value={editedEmployee.position}
                             onChange={v => setEditedEmployee({ ...editedEmployee, position: v })}
                             placeholder="Select position…"

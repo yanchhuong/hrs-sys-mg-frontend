@@ -76,8 +76,8 @@ export function AddEmployeeDialog({
     if (!form.name?.trim())      return 'Name is required';
     if (!form.email?.trim())     return 'Email is required';
     if (!/^\S+@\S+\.\S+$/.test(form.email!)) return 'Email is not valid';
-    if (!form.position?.trim())  return 'Position is required';
-    if (!form.department)        return 'Department is required';
+    // Department + Position optional — an operator may want to add a
+    // new hire before the org chart / job title is finalised.
     if (!form.joinDate)          return 'Join date is required';
     if (!Number.isFinite(form.baseSalary) || (form.baseSalary as number) < 0) return 'Base salary must be ≥ 0';
     return null;
@@ -295,7 +295,7 @@ export function AddEmployeeDialog({
           {/* Employment */}
           <TabsContent value="employment" className="space-y-4 pt-4">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Department" required>
+              <Field label="Department">
                 <SearchablePicker
                   options={departmentOptions}
                   value={form.department ?? ''}
@@ -305,7 +305,7 @@ export function AddEmployeeDialog({
                   allowClear={false}
                 />
               </Field>
-              <Field label="Position" required>
+              <Field label="Position">
                 <SearchablePicker
                   options={positionOptions}
                   value={form.position ?? ''}

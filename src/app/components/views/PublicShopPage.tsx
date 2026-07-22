@@ -606,6 +606,7 @@ export function PublicShopPage() {
                   .filter(l => l.item.id === it.id)
                   .reduce((s, l) => s + l.qty, 0)}
                 onOpen={() => setDetailTarget(it)}
+                onAdd={() => addOne(it)}
               />
             ))}
           </div>
@@ -1086,32 +1087,42 @@ function FullPageState({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** POS-style card with a small qty-in-cart badge in the top-right
- *  corner once the customer has added one. Click anywhere on the card
- *  to add another — the explicit "+" pill in the corner is just a
- *  visual cue, the whole card is the touch target. */
+/** Product card with two tap targets:
+ *   • whole card → opens the detail dialog (image carousel + full copy)
+ *   • floating "+" pill on the bottom-right of the image → adds one
+ *     directly, so a customer who's already decided doesn't have to
+ *     open the dialog just to add.
+ *  The image-count badge (+N extra images) sits top-left so it's the
+ *  first thing the eye lands on above the product name. */
 function PublicShopCard({
-  item, qtyInCart, onOpen,
+  item, qtyInCart, onOpen, onAdd,
 }: {
   item: shopApi.PublicShopItem;
   qtyInCart: number;
-  /** v-shop-item-detail — the whole card is now a "view" surface;
-   *  tapping it opens the detail dialog. Add-to-cart moved inside
-   *  the dialog so customers can see the images and description
-   *  before committing. */
   onOpen: () => void;
+  onAdd: () => void;
 }) {
   const [broken, setBroken] = useState(false);
   const cover = shopApi.itemImages(item)[0] ?? '';
   const showImage = !!cover && !broken;
   const totalImages = shopApi.itemImages(item).length;
   return (
-    <button
-      type="button"
+    // Card is a div (not a button) so the nested Add button is valid
+    // HTML — button-in-button breaks Firefox click routing. Keyboard
+    // affordance kept via role/tabIndex/onKeyDown for accessibility.
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="group relative flex flex-col text-left rounded-lg border bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 p-0"
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="group relative flex flex-col text-left rounded-lg border bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
     >
-      <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+      <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0 relative">
         {showImage ? (
           <img
             src={cover}
@@ -1124,20 +1135,40 @@ function PublicShopCard({
           <Package className="h-12 w-12 text-gray-300" strokeWidth={1.25} />
         )}
         {totalImages > 1 && (
-          <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5">
+          <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5">
             +{totalImages - 1}
           </span>
         )}
       </div>
       <div className="p-2 flex-1">
-        <div className="font-medium text-sm text-gray-900 line-clamp-2 leading-snug" title={item.name}>
-          {item.name}
+        {/* Name row — unit sits inline to the right so the price row
+            below can be dedicated to price + the quick-add button. */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-medium text-sm text-gray-900 line-clamp-2 leading-snug min-w-0" title={item.name}>
+            {item.name}
+          </div>
+          {item.unit && (
+            <span className="text-[11px] text-gray-500 shrink-0 mt-0.5">{item.unit}</span>
+          )}
         </div>
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-1 flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-emerald-700">
             ${Number(item.unitPrice).toFixed(2)}
           </span>
-          <span className="text-[11px] text-gray-500">{item.unit ?? ''}</span>
+          {/* Quick-add button — stopPropagation so tapping the "+" only
+              adds one and doesn't also open the detail dialog. Items with
+              modifiers still open the picker via addOne()'s existing
+              fork, so the customer picks Size/Sugar before committing. */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAdd(); }}
+            disabled={!item.inStock}
+            aria-label={`Add ${item.name} to cart`}
+            title="Add to cart"
+            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
       {qtyInCart > 0 && (
@@ -1145,7 +1176,7 @@ function PublicShopCard({
           {qtyInCart}
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
