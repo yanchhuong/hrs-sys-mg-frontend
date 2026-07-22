@@ -7,7 +7,10 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Checkbox } from './ui/checkbox';
 import { UserRole } from '../types/hrms';
-import { Building2, Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react';
+import { Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react';
+// Wordmark shown at the top of the sign-in card. Matches the landing
+// nav; the CardTitle text below carries the tagline.
+import imgBrandLogo from '../../imports/smrt-web-logo.png';
 import { isTauri, getDesktopApiMode } from '../utils/runtime';
 
 /** localStorage keys for the "Remember me" pre-fill. Password is
@@ -156,12 +159,14 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
         )}
       <Card className="w-full">
         <CardHeader className="space-y-1 text-center">
-          <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-600 rounded-full">
-              <Building2 className="h-8 w-8 text-white" />
-            </div>
+          <div className="flex justify-center mb-2">
+            <img
+              src={imgBrandLogo}
+              alt="SMRT HRSM 360°"
+              className="h-14 w-auto object-contain"
+              draggable={false}
+            />
           </div>
-          <CardTitle className="text-2xl">Smart-HRMS</CardTitle>
           <CardDescription>Human Resource Management System</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

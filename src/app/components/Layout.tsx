@@ -34,6 +34,12 @@ import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
 import { appIconColor } from '../utils/appColors';
 import { DesktopApiModeBadge } from './DesktopApiModeBadge';
 import { isTauri } from '../utils/runtime';
+// Sidebar brand assets — wide wordmark when the sidebar is expanded,
+// square app icon when collapsed. Same files that back the landing
+// nav and the Tauri desktop shell so the identity stays coherent
+// wherever the tenant lands.
+import imgBrandLogo from '../../imports/smrt-web-logo.png';
+import imgAppIcon   from '../../imports/smrt-app-icon.png';
 
 interface LayoutProps {
   children: ReactNode;
@@ -222,15 +228,28 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
         `}
       >
         <div className={`flex items-center gap-2 h-16 border-b shrink-0 ${sidebarCollapsed ? 'lg:justify-center px-2' : 'px-4'}`}>
-          <div className="p-2 bg-blue-600 rounded-lg shrink-0">
-            <LayoutDashboard className="h-5 w-5 text-white" />
-          </div>
-          {!sidebarCollapsed && (
+          {sidebarCollapsed ? (
+            // Collapsed rail — square app icon fits the narrow strip.
+            <img
+              src={imgAppIcon}
+              alt="SMRT HRSM"
+              className="h-9 w-9 object-contain rounded-lg shrink-0"
+              draggable={false}
+            />
+          ) : (
             <>
-              <span className="font-semibold text-lg truncate">{t('brand.hrms')}</span>
-              {/* Fold toggle sits next to the brand on desktop. Tucked
-                  to the right via ml-auto so it stays anchored at the
-                  edge even on different brand-string lengths. */}
+              {/* Expanded — wide wordmark fills the header. Height caps
+                  at the row's inner space so it never pushes the border
+                  down. */}
+              <img
+                src={imgBrandLogo}
+                alt="SMRT HRSM 360°"
+                className="h-9 w-auto object-contain shrink-0"
+                draggable={false}
+              />
+              {/* Fold toggle sits at the right edge — anchored via
+                  ml-auto so it stays put regardless of the wordmark's
+                  actual rendered width. */}
               <Button
                 variant="ghost"
                 size="icon"

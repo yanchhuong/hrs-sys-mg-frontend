@@ -29,6 +29,11 @@ import imgPayroll from '../../imports/image-3.png';
 // src/imports/pos-terminal.png and pos-retail.png.
 import imgPosTerminal from '../../imports/pos-terminal.png';
 import imgPosRetail   from '../../imports/pos-retail.jpg';
+// Wordmark used as the top-nav brand + the Sign-in card header.
+// Wide format ("SMRT HRSM 360°"), rendered at its native aspect so
+// the taglined version below the mark stays legible on desktop and
+// crunches down cleanly on mobile.
+import imgBrandLogo   from '../../imports/smrt-web-logo.png';
 
 export type Lang = 'en' | 'km' | 'zh';
 
@@ -463,10 +468,12 @@ function LandingNav({
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <Container className="flex h-16 items-center justify-between">
         <a href="#top" className="flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white">
-            <Building2 className="h-5 w-5" />
-          </span>
-          <span className="text-base font-semibold tracking-tight">Smart-HRMS</span>
+          <img
+            src={imgBrandLogo}
+            alt="SMRT HRSM 360°"
+            className="h-9 w-auto object-contain"
+            draggable={false}
+          />
         </a>
 
         <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
