@@ -59,7 +59,21 @@ export interface Item {
 /** V182 — item discriminator. */
 export type ItemType = 'product' | 'service' | 'medical_service';
 
-export type ItemCategory = 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'other';
+/** POS category. As of V269 this is free-text on the DB — the union
+ *  members are the common categories that get first-class filter
+ *  chips on POS + public shop; anything else is bucketed under
+ *  "Other" for chip purposes but stored as-is. `& {}` on the string
+ *  branch preserves the literal-completion behaviour on IDE
+ *  autocomplete while still accepting arbitrary strings. */
+export type ItemCategory =
+  | 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'jewelry' | 'other'
+  | (string & {});
+
+/** The chip set POS + shop render as filter buttons. Any category
+ *  value NOT in this set falls into the "other" chip's bucket. */
+export const KNOWN_ITEM_CATEGORIES = [
+  'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other',
+] as const;
 
 /** One option inside a modifier group — e.g. "Size: L (+$1.00)". */
 export interface ModifierOption {

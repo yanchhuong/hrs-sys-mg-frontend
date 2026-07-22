@@ -52,7 +52,7 @@ const HEADERS = [
 ] as const;
 
 const ALLOWED_POS_CATEGORIES: ReadonlySet<string> =
-  new Set<ItemCategory>(['drink', 'snack', 'food', 'craft', 'souvenir', 'other']);
+  new Set<ItemCategory>(['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other']);
 
 /* -------------------------------------------------------------------------
  * Value helpers
@@ -190,8 +190,15 @@ function parseRow(row: Record<string, unknown>, excelRow: number): ParsedItemRow
   };
 
   if (!name) rec.errors.push('Item Name is required.');
-  if (posCategoryRaw && !ALLOWED_POS_CATEGORIES.has(posCategoryRaw)) {
-    rec.errors.push(`POS Category "${row['POS Category']}" is not one of drink / snack / food / craft / souvenir / other.`);
+  // v-item-category-free-text (V269) — no allow-list check anymore.
+  // Any non-empty string is accepted and saved as-is; the BE trims +
+  // lowercases and caps at 64 chars. Warn (don't error) when the
+  // value falls outside the common set so the operator knows their
+  // POS filter chip will bucket the item under "Other".
+  if (posCategoryRaw && !ALLOWED_POS_CATEGORIES.has(posCategoryRaw) && posCategoryRaw.length > 64) {
+    rec.errors.push(`POS Category "${row['POS Category']}" is over 64 characters — shorten it.`);
+  } else if (posCategoryRaw && !ALLOWED_POS_CATEGORIES.has(posCategoryRaw)) {
+    rec.warnings.push(`POS Category "${row['POS Category']}" is not one of drink / snack / food / craft / souvenir / jewelry — it will appear under "Other" on POS + shop filters.`);
   }
   if (cost != null && cost < 0)   rec.errors.push('Cost Price cannot be negative.');
   if (price != null && price < 0) rec.errors.push('Selling Price cannot be negative.');

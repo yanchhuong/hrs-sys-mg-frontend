@@ -62,7 +62,7 @@ function composeLineNotes(mods: SelectedModifier[], note: string): string | unde
  * </ul>
  */
 
-const CATEGORIES = ['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'other'] as const;
+const CATEGORIES = ['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'] as const;
 type Category = (typeof CATEGORIES)[number];
 
 const CATEGORY_LABEL: Record<Category, string> = {
@@ -72,6 +72,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
   food:     'Food',
   craft:    'Craft',
   souvenir: 'Souvenir',
+  jewelry:  'Jewelry',
   other:    'Other',
 };
 
@@ -232,7 +233,7 @@ export function PublicShopPage() {
 
   const counts = useMemo(() => {
     const c: Record<Category, number> = {
-      all: 0, drink: 0, snack: 0, food: 0, craft: 0, souvenir: 0, other: 0,
+      all: 0, drink: 0, snack: 0, food: 0, craft: 0, souvenir: 0, jewelry: 0, other: 0,
     };
     c.all = inStockItems.length;
     for (const it of inStockItems) {

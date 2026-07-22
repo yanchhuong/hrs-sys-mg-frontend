@@ -862,19 +862,30 @@ export function Items() {
                 so the cashier can configure Size / Sugar Level. */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Category</Label>
-              <select
+              {/* Free-text since V269 — datalist shows the common
+                  categories as suggestions but the operator can type
+                  any label (e.g. "Handmade Jewelry"). BE trims +
+                  lowercases + caps at 64 chars. Values outside the
+                  known set still save cleanly; POS + shop chips
+                  bucket them under "Other" for filter purposes. */}
+              <input
+                list="pos-category-suggestions"
                 value={form.category}
-                onChange={e => setForm({ ...form, category: e.target.value as itemsApi.ItemCategory })}
+                onChange={e => setForm({ ...form, category: e.target.value })}
                 disabled={saving}
+                maxLength={64}
+                placeholder="drink, jewelry, or your own label…"
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="drink">Drink</option>
-                <option value="snack">Snack</option>
-                <option value="food">Food</option>
-                <option value="craft">Craft</option>
-                <option value="souvenir">Souvenir</option>
-                <option value="other">Other</option>
-              </select>
+              />
+              <datalist id="pos-category-suggestions">
+                <option value="drink" />
+                <option value="snack" />
+                <option value="food" />
+                <option value="craft" />
+                <option value="souvenir" />
+                <option value="jewelry" />
+                <option value="other" />
+              </datalist>
             </div>
 
             {/* V142 — modifier editor. Available for every category

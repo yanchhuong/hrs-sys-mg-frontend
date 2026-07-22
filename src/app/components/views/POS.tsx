@@ -689,8 +689,18 @@ export function POS() {
   }
 
   /* ----- main UI ----- */
+  // v-item-category-free-text (V269) — categories are free-text.
+  // The chip strip only shows the common set; anything else falls
+  // under the "other" bucket so a custom "Handmade Jewelry" import
+  // still lives somewhere the cashier can find it.
+  const KNOWN_POS_CATEGORIES: readonly itemsApi.ItemCategory[] =
+    ['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'];
+  const bucketOf = (raw: string | undefined | null): itemsApi.ItemCategory => {
+    const c = (raw ?? 'other') as itemsApi.ItemCategory;
+    return KNOWN_POS_CATEGORIES.includes(c) ? c : 'other';
+  };
   const filteredItems = items.filter(i => {
-    if (categoryFilter !== 'all' && (i.category ?? 'other') !== categoryFilter) return false;
+    if (categoryFilter !== 'all' && bucketOf(i.category) !== categoryFilter) return false;
     if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -720,12 +730,16 @@ export function POS() {
   // cashier sees stock counts at a glance.
   const categoryCounts = {
     all:      items.length,
-    drink:    items.filter(i => i.category === 'drink').length,
-    snack:    items.filter(i => i.category === 'snack').length,
-    food:     items.filter(i => i.category === 'food').length,
-    craft:    items.filter(i => i.category === 'craft').length,
-    souvenir: items.filter(i => i.category === 'souvenir').length,
-    other:    items.filter(i => (i.category ?? 'other') === 'other').length,
+    drink:    items.filter(i => bucketOf(i.category) === 'drink').length,
+    snack:    items.filter(i => bucketOf(i.category) === 'snack').length,
+    food:     items.filter(i => bucketOf(i.category) === 'food').length,
+    craft:    items.filter(i => bucketOf(i.category) === 'craft').length,
+    souvenir: items.filter(i => bucketOf(i.category) === 'souvenir').length,
+    jewelry:  items.filter(i => bucketOf(i.category) === 'jewelry').length,
+    // 'other' now includes both explicit 'other' AND any unrecognised
+    // custom label — a Store System tenant who imports "Ceramic" or
+    // "Silverware" still sees those items under the Other chip.
+    other:    items.filter(i => bucketOf(i.category) === 'other').length,
   };
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
@@ -1010,7 +1024,7 @@ export function POS() {
                 instead of wrapping into a tall block. */}
             <div className="space-y-1.5">
               <div className="chip-row">
-                {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'other'] as const)
+                {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'] as const)
                   // Hide chips whose bucket is empty unless it's the active tab
                   // OR the "All" chip — the "All" tab must always be present.
                   .filter(key => key === 'all' || categoryFilter === key || categoryCounts[key] > 0)
