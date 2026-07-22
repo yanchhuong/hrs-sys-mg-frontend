@@ -52,7 +52,7 @@ const HEADERS = [
 ] as const;
 
 const ALLOWED_POS_CATEGORIES: ReadonlySet<string> =
-  new Set<ItemCategory>(['drink', 'snack', 'food', 'other']);
+  new Set<ItemCategory>(['drink', 'snack', 'food', 'craft', 'souvenir', 'other']);
 
 /* -------------------------------------------------------------------------
  * Value helpers
@@ -191,7 +191,7 @@ function parseRow(row: Record<string, unknown>, excelRow: number): ParsedItemRow
 
   if (!name) rec.errors.push('Item Name is required.');
   if (posCategoryRaw && !ALLOWED_POS_CATEGORIES.has(posCategoryRaw)) {
-    rec.errors.push(`POS Category "${row['POS Category']}" is not one of drink / snack / food / other.`);
+    rec.errors.push(`POS Category "${row['POS Category']}" is not one of drink / snack / food / craft / souvenir / other.`);
   }
   if (cost != null && cost < 0)   rec.errors.push('Cost Price cannot be negative.');
   if (price != null && price < 0) rec.errors.push('Selling Price cannot be negative.');

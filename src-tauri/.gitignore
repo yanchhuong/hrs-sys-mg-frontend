@@ -1,0 +1,7 @@
+# Rust build artifacts — these are ~100s of MB and regenerate on every build.
+/target/
+/gen/
+
+# Tauri-generated schema (auto-produced by `tauri build` from
+# capabilities/*.json). Safe to regenerate.
+gen/schemas/

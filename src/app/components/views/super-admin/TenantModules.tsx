@@ -50,6 +50,22 @@ const HIDDEN_MODULE_KEYS = new Set([
   'hr_telegram',
   'qr_attendance',
   'office',
+  // Display-only module rows — no nav leaf reads them as a gate, so
+  // the toggle here has no effect. Kept in module_assignments (so
+  // Module Categories still lists them) but hidden from the tenant
+  // grid to stop operators asking why the toggle "does nothing":
+  //   * payment       — historical row from V80 / V203 (module
+  //                     'payment' with category 'accounting'). No
+  //                     nav leaf uses module:'payment' — the real
+  //                     payment surfaces are `payment_plan` and
+  //                     `payment_collection`, each with their own
+  //                     dedicated toggle.
+  //   * time-tracking — sidebar grouping label (nav.ts uses it as a
+  //                     `group` id, never as a leaf's `module`). Its
+  //                     children (attendance / overtime / all-leave
+  //                     / exception) each carry the real gate.
+  'payment',
+  'time-tracking',
 ]);
 
 const LABEL_OVERRIDES: Record<string, string> = {
@@ -220,8 +236,12 @@ export function TenantModules() {
     }
   };
 
-  const enabledCount = catalog.filter(k => draft[k]).length;
-  const disabledCount = catalog.length - enabledCount;
+  // Global enabled/disabled counters exclude HIDDEN_MODULE_KEYS so the
+  // top-of-page badge matches what the operator actually sees below.
+  // Without this, adding a new hidden entry silently drifted the total.
+  const visibleCatalog = catalog.filter(k => !HIDDEN_MODULE_KEYS.has(k));
+  const enabledCount = visibleCatalog.filter(k => draft[k]).length;
+  const disabledCount = visibleCatalog.length - enabledCount;
   const selectedTenant = tenants.find(t => t.id === selectedTenantId);
 
   return (

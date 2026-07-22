@@ -14,6 +14,7 @@
 import type { PosOrder } from '../api/pos';
 import type { AccountingSettings } from '../api/accountingSettings';
 import type { Item } from '../api/items';
+import { printHtmlViaIframe } from './printHtml';
 
 function esc(s: string | null | undefined): string {
   if (s == null) return '';
@@ -242,12 +243,5 @@ function buildPosReceiptDoc(args: BuildArgs): string {
 }
 
 export function printPosReceipt(args: BuildArgs): boolean {
-  const w = window.open('', '_blank', 'width=380,height=720');
-  if (!w) return false;
-  w.document.write(buildPosReceiptDoc(args));
-  w.document.close();
-  w.focus();
-  w.print();
-  setTimeout(() => { try { w.close(); } catch { /* user may have closed already */ } }, 600);
-  return true;
+  return printHtmlViaIframe(buildPosReceiptDoc(args));
 }

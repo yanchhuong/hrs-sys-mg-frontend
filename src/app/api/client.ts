@@ -6,9 +6,32 @@
  * by `auth.logout()`. A 401 response clears the token so the caller can re-auth.
  */
 
+/**
+ * Resolves the API base in this order (highest precedence first):
+ *   1. `localStorage['hrms:apiBaseOverride']` — set by the shipped
+ *      Tauri Windows app's Settings screen (or dev tools) so a
+ *      single build can point at any tenant's droplet.
+ *   2. `VITE_API_BASE` build-time env — used by `npm run build`.
+ *   3. `http://localhost:4000` — dev fallback.
+ */
+const API_BASE_KEY = 'hrms:apiBaseOverride';
+function readApiBaseOverride(): string | null {
+  try { return typeof localStorage !== 'undefined' ? localStorage.getItem(API_BASE_KEY) : null; }
+  catch { return null; }
+}
 export const API_BASE: string =
-  (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
+  readApiBaseOverride()
+  ?? (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
   ?? 'http://localhost:4000';
+/** Called by a Settings dialog to change the API base for the
+ *  installed app. Reload is required — the exported `API_BASE`
+ *  above is evaluated once at import time. */
+export function setApiBaseOverride(url: string | null): void {
+  try {
+    if (!url) localStorage.removeItem(API_BASE_KEY);
+    else localStorage.setItem(API_BASE_KEY, url);
+  } catch { /* private mode / storage disabled — no-op */ }
+}
 
 export const USE_MOCKS: boolean =
   String((import.meta as { env?: { VITE_USE_MOCKS?: string } }).env?.VITE_USE_MOCKS ?? '')

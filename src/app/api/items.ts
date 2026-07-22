@@ -26,8 +26,15 @@ export interface Item {
    *  line records the FK but the on-hand balance never changes. V121. */
   deductionEnabled: boolean;
   /** Optional cover image URL (V132). Surfaced on the POS items
-   *  grid as a product card; null / empty falls back to a placeholder. */
+   *  grid as a product card; null / empty falls back to a placeholder.
+   *  Kept in sync with {@link imageUrls}[0] server-side (V265) so
+   *  legacy card readers keep working. */
   imageUrl?: string | null;
+  /** Full ordered image list (V265) — up to 5 entries. First entry
+   *  matches {@link imageUrl}. Null on legacy items that only have
+   *  the single-image column populated; treat as `[imageUrl]` in that
+   *  case (see {@link resolveImages}). */
+  imageUrls?: string[] | null;
   /** POS category — drives the filter tabs on the items grid. (V142) */
   category?: ItemCategory;
   /** Per-item modifier groups as a JSON string (V142). Parse with
@@ -52,7 +59,7 @@ export interface Item {
 /** V182 — item discriminator. */
 export type ItemType = 'product' | 'service' | 'medical_service';
 
-export type ItemCategory = 'drink' | 'snack' | 'food' | 'other';
+export type ItemCategory = 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'other';
 
 /** One option inside a modifier group — e.g. "Size: L (+$1.00)". */
 export interface ModifierOption {
@@ -110,8 +117,14 @@ export interface ItemRequest {
   /** Null on update = keep existing value. V121. */
   deductionEnabled?: boolean;
   /** Cover image URL (V132). Empty string clears; undefined leaves
-   *  the existing value untouched on update. */
+   *  the existing value untouched on update. Legacy field — the FE
+   *  now sends {@link imageUrls} instead, and the BE derives this
+   *  from imageUrls[0]. */
   imageUrl?: string;
+  /** Full ordered image list (V265) — up to 5 entries. Undefined on
+   *  update leaves existing images untouched (patch); an empty array
+   *  clears every image. */
+  imageUrls?: string[];
   /** POS category (V142). Undefined on update = leave as-is. */
   category?: ItemCategory;
   /** Modifiers JSON (V142). Empty string clears; undefined on update
@@ -129,6 +142,17 @@ export interface ItemRequest {
    *  value; on create the backend defaults to 'product'. School
    *  vertical no longer piggybacks on this table (V213). */
   type?: ItemType;
+}
+
+/** V265 — normalise the two image fields into a single ordered list.
+ *  Legacy rows only have {@link Item.imageUrl}; new rows carry the
+ *  full {@link Item.imageUrls}. Callers that only need the cover can
+ *  read the first entry (or fall back to {@code null}). */
+export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[] {
+  if (Array.isArray(it.imageUrls) && it.imageUrls.length > 0) {
+    return it.imageUrls.filter((s): s is string => typeof s === 'string' && s.length > 0);
+  }
+  return it.imageUrl ? [it.imageUrl] : [];
 }
 
 export interface StockInRequest {

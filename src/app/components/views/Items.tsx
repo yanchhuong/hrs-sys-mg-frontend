@@ -30,7 +30,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
-import { ImageDropZone } from '../common/ImageDropZone';
+import { MultiImageDropZone } from '../common/MultiImageDropZone';
 
 interface FormState {
   sku: string;
@@ -44,8 +44,9 @@ interface FormState {
   /** V121 — when true, picking this item on an invoice decrements
    *  stock and refuses to save when qty > on-hand. */
   deductionEnabled: boolean;
-  /** Optional cover image URL (V132). */
-  imageUrl: string;
+  /** Full ordered image list (V265) — up to 5 entries. First entry
+   *  is the cover surfaced on the POS / shop card. */
+  imageUrls: string[];
   /** POS category (V142). */
   category: itemsApi.ItemCategory;
   /** Per-item modifier groups (V142). Empty array = no modifiers,
@@ -69,7 +70,7 @@ const EMPTY_FORM: FormState = {
   stockQty: '0',
   active: true,
   deductionEnabled: false,
-  imageUrl: '',
+  imageUrls: [],
   category: 'other',
   modifierGroups: [],
   warehouseId: '',
@@ -228,7 +229,7 @@ export function Items() {
       stockQty: String(it.stockQty ?? 0),
       active: it.active,
       deductionEnabled: it.deductionEnabled,
-      imageUrl: it.imageUrl ?? '',
+      imageUrls: itemsApi.resolveImages(it),
       category: it.category ?? 'other',
       modifierGroups: itemsApi.parseModifiers(it.modifiers)?.groups ?? [],
       warehouseId: it.warehouseId ?? '',
@@ -260,9 +261,10 @@ export function Items() {
         stockQty,
         active: form.active,
         deductionEnabled: form.deductionEnabled,
-        // Empty string is meaningful here — backend treats it as
-        // "clear the field". undefined leaves the existing value.
-        imageUrl: form.imageUrl.trim(),
+        // V265 — send the full ordered list; the BE derives imageUrl
+        // from imageUrls[0] so legacy readers keep working. An empty
+        // array clears every image.
+        imageUrls: form.imageUrls,
         category: form.category,
         // Serialise the typed groups back to a JSON string. Empty
         // groups → '' so the server NULLs the column.
@@ -840,19 +842,18 @@ export function Items() {
               />
             </div>
 
-            {/* V132 + V138 — cover image. Drag-drop a file or click
-                the zone to browse; stored as a base64 data URL on the
-                item so it round-trips without external hosting. The
-                POS items grid renders this as the card image, with a
-                placeholder when blank. */}
+            {/* V132 + V138 + V265 — up to 5 images. First slot is the
+                cover shown as the POS / shop card; the rest surface
+                in the product detail carousel. Big source files are
+                auto-compressed client-side. */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Image (optional)</Label>
-              <ImageDropZone
-                value={form.imageUrl}
-                onChange={v => setForm({ ...form, imageUrl: v ?? '' })}
-                hint="PNG / JPG · shown as the product card on POS"
-                height={140}
+              <Label className="text-xs text-gray-600">Images (optional, up to 5)</Label>
+              <MultiImageDropZone
+                value={form.imageUrls}
+                onChange={next => setForm({ ...form, imageUrls: next })}
+                max={5}
                 disabled={saving}
+                hint="PNG / JPG · first image is the product card cover. Big files are auto-compressed."
               />
             </div>
 
@@ -870,21 +871,21 @@ export function Items() {
                 <option value="drink">Drink</option>
                 <option value="snack">Snack</option>
                 <option value="food">Food</option>
+                <option value="craft">Craft</option>
+                <option value="souvenir">Souvenir</option>
                 <option value="other">Other</option>
               </select>
             </div>
 
-            {/* V142 — modifier editor. Surfaces only for Drinks today
-                (the user-confirmed pattern: Size + Sugar Level). The
-                schema supports any category, so a future iteration
-                can drop the gate without further migrations. */}
-            {form.category === 'drink' && (
-              <ModifiersEditor
-                groups={form.modifierGroups}
-                onChange={g => setForm({ ...form, modifierGroups: g })}
-                disabled={saving}
-              />
-            )}
+            {/* V142 — modifier editor. Available for every category
+                now (was Drink-only). Craft/Souvenir stores use it to
+                offer Size / Color / Wrap variants the same way a
+                coffee shop offers Size / Sugar Level. */}
+            <ModifiersEditor
+              groups={form.modifierGroups}
+              onChange={g => setForm({ ...form, modifierGroups: g })}
+              disabled={saving}
+            />
           </div>
 
           {/* Pinned footer — sits outside the scrolling body so Save +

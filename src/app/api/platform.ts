@@ -178,6 +178,12 @@ export interface PlatformUser {
   tenantName?: string | null;
   isActive: boolean;
   lastLogin: string | null;
+  /** V266 — throttled activity heartbeat. Null on legacy users that
+   *  never hit an authenticated endpoint since the column was added. */
+  lastSeen?: string | null;
+  /** V266 — derived server-side. True when {@link lastSeen} is within
+   *  the last 5 minutes. */
+  online?: boolean;
   createdAt: string;
 }
 
@@ -185,6 +191,9 @@ export interface ListUsersParams {
   tenantId?: string;
   q?: string;
   role?: string;
+  /** V266 — 'online' / 'offline' / 'all' (or omit). Filters the
+   *  Super Admin Users list to only rows currently online / offline. */
+  online?: 'online' | 'offline' | 'all';
 }
 
 export interface CreateUserRequest {

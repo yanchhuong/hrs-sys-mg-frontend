@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SMRT HRMS",
+  "version": "0.1.0",
+  "identifier": "kh.kosign.hrms.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build:desktop",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SMRT HRMS",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "Kosign",
+    "shortDescription": "HRMS by Kosign — Windows desktop shell.",
+    "longDescription": "Windows desktop client for the Kosign HRMS platform. Points at your hosted API (default configurable from the Settings screen).",
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}

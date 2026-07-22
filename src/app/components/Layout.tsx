@@ -32,6 +32,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { Badge } from './ui/badge';
 import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
 import { appIconColor } from '../utils/appColors';
+import { DesktopApiModeBadge } from './DesktopApiModeBadge';
+import { isTauri } from '../utils/runtime';
 
 interface LayoutProps {
   children: ReactNode;
@@ -418,6 +420,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               {/* Notification bell (V127). Hidden for super_admin —
                   they don't subscribe to tenant announcements. */}
               {currentUser?.role !== 'super_admin' && <NotificationsBell />}
+              {isTauri() && <DesktopApiModeBadge />}
               <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>
                 {prettyRoleLabel(currentUser?.role, t)}

@@ -25,7 +25,10 @@ export interface PublicShopItem {
   unit: string;
   unitPrice: number;
   imageUrl: string;
-  category: 'drink' | 'snack' | 'food' | 'other' | string;
+  /** V265 — full ordered image list. Null / omitted on legacy items;
+   *  the FE falls back to [imageUrl] via {@link itemImages}. */
+  imageUrls?: string[] | null;
+  category: 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'other' | string;
   inStock: boolean;
   /** Modifier groups JSON string (Size / Sugar Level / etc.). Same
    *  shape as the cashier-side Items.modifiers — parsed via
@@ -34,10 +37,26 @@ export interface PublicShopItem {
   modifiers?: string | null;
 }
 
+/** V265 — resolve the full ordered image list for a public-shop item,
+ *  falling back to the single {@link PublicShopItem.imageUrl} for
+ *  legacy rows that pre-date multi-image. */
+export function itemImages(it: PublicShopItem): string[] {
+  if (Array.isArray(it.imageUrls) && it.imageUrls.length > 0) {
+    return it.imageUrls.filter((s): s is string => typeof s === 'string' && s.length > 0);
+  }
+  return it.imageUrl ? [it.imageUrl] : [];
+}
+
 export interface PublicShopPayload {
   code: string;
   shopName: string;
   country: string;
+  /** V266 — company profile surfaced on the banner. Any of these may
+   *  be null when the tenant hasn't filled Settings → Company. */
+  logoUrl?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
   items: PublicShopItem[];
 }
 

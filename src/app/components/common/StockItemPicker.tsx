@@ -1,9 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Package } from 'lucide-react';
 import * as itemsApi from '../../api/items';
+import * as warehousesApi from '../../api/warehouses';
+
+/**
+ * Warehouse lookup cached at module scope so every StockItemPicker
+ * instance on a form (one per line) shares a single fetch — a busy
+ * invoice with 10 lines doesn't fan out 10 GETs. The promise is
+ * memoised, so concurrent callers on the very first render still
+ * dedupe. Legitimately null when the feature is off or the fetch
+ * fails — the picker just falls back to the plain name row. */
+let warehousesCache: Promise<warehousesApi.Warehouse[]> | null = null;
+function loadWarehouses(): Promise<warehousesApi.Warehouse[]> {
+  if (!warehousesCache) {
+    warehousesCache = warehousesApi.list().catch(() => [] as warehousesApi.Warehouse[]);
+  }
+  return warehousesCache;
+}
 
 interface Props {
   /** In-memory catalog the form is holding. Parent lazy-loads it via
@@ -40,6 +56,28 @@ interface Props {
 export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+
+  // Fetch once when the popover first opens — no wasted request when
+  // the operator never uses the picker. Uses the module-level cache so
+  // multiple pickers on a form (one per invoice line) share the fetch.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    loadWarehouses().then(list => { if (!cancelled) setWarehouses(list); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Map id → name for O(1) lookup on each row. Only surfaced when the
+  // catalog actually has warehouse assignments (the feature-on signal)
+  // so tenants without warehouses see no visual change.
+  const warehouseName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of warehouses) m.set(w.id, w.name);
+    return m;
+  }, [warehouses]);
+  const showWarehouses = warehouseName.size > 0
+    && catalog.some(c => c.warehouseId);
 
   // Filter to active + in-stock items. Disabled items are hidden
   // (operator hides them when they stop selling a SKU but want to
@@ -96,25 +134,40 @@ export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }:
                 : 'No matches'}
             </div>
           ) : (
-            filtered.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                onClick={() => { onPick(c); setOpen(false); setQ(''); }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">{c.name}</span>
-                  <span className="text-[11px] text-gray-500 tabular-nums shrink-0">
-                    {Number(c.unitPrice ?? 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
-                  <span className="tabular-nums truncate">{c.sku || '—'}</span>
-                  <span>{Number(c.stockQty ?? 0).toLocaleString('en-US')} {c.unit || ''}</span>
-                </div>
-              </button>
-            ))
+            filtered.map(c => {
+              // Warehouse suffix highlighted with a coloured pill so the
+              // operator can distinguish "Americano · Warehouse A" from
+              // "Americano · Warehouse B" at a glance. Only rendered when
+              // the tenant has the warehouse feature on (detected via
+              // showWarehouses); otherwise the row stays as before.
+              const wh = c.warehouseId ? warehouseName.get(c.warehouseId) : null;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                  onClick={() => { onPick(c); setOpen(false); setQ(''); }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate flex items-center gap-1.5 min-w-0">
+                      <span className="truncate">{c.name}</span>
+                      {showWarehouses && wh && (
+                        <span className="shrink-0 inline-flex items-center rounded bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                          {wh}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[11px] text-gray-500 tabular-nums shrink-0">
+                      {Number(c.unitPrice ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="tabular-nums truncate">{c.sku || '—'}</span>
+                    <span>{Number(c.stockQty ?? 0).toLocaleString('en-US')} {c.unit || ''}</span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </PopoverContent>

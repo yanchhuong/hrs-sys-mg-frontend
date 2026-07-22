@@ -69,6 +69,15 @@ export async function login(req: LoginRequest): Promise<AuthUser> {
     json: req,
     auth: false,
   });
+  // apiJson returns null when the response body isn't JSON (empty
+  // body, HTML error page, or a same-origin path that resolved to
+  // the SPA's own index.html — the Tauri Windows shell used to hit
+  // this when VITE_API_BASE was a relative path).
+  if (!res || !res.token || !res.user) {
+    throw new Error(
+      'Login response was empty or malformed. Check that VITE_API_BASE points at an absolute API URL (Tauri desktop can\'t use relative paths) and that the API\'s CORS allow-list includes this app\'s origin.'
+    );
+  }
   setToken(res.token);
   localStorage.setItem(USER_KEY, JSON.stringify(res.user));
   if (res.user.tenantSlug) localStorage.setItem(TENANT_KEY, res.user.tenantSlug);

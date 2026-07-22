@@ -3,6 +3,7 @@ import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
   ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
   Navigation, ExternalLink, Info, Truck, Hand, QrCode, Banknote,
+  Phone, Mail, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -12,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
+import { MapPicker } from '../common/MapPicker';
 
 /** Customer's pick inside one modifier group. The cashier sees these
  *  baked into the line's notes field so they can fulfil the order
@@ -60,15 +62,17 @@ function composeLineNotes(mods: SelectedModifier[], note: string): string | unde
  * </ul>
  */
 
-const CATEGORIES = ['all', 'drink', 'snack', 'food', 'other'] as const;
+const CATEGORIES = ['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'other'] as const;
 type Category = (typeof CATEGORIES)[number];
 
 const CATEGORY_LABEL: Record<Category, string> = {
-  all:   'All',
-  drink: 'Drinks',
-  snack: 'Snacks',
-  food:  'Food',
-  other: 'Other',
+  all:      'All',
+  drink:    'Drinks',
+  snack:    'Snacks',
+  food:     'Food',
+  craft:    'Craft',
+  souvenir: 'Souvenir',
+  other:    'Other',
 };
 
 /** Per-item line in the local cart state. The map key is a composite
@@ -128,6 +132,11 @@ export function PublicShopPage() {
    *  cashier can click straight through to Google Maps from the
    *  ticket. */
   const [pickupLocation, setPickupLocation] = useState('');
+  /** v-shop-pin-map — modal for picking a delivery location on a
+   *  Leaflet map. Confirmed pin becomes a google.com/maps?q=lat,lng
+   *  URL which lands in {@link pickupLocation}. */
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pinLatLng, setPinLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [geoBusy, setGeoBusy] = useState(false);
   /** Fulfilment mode. {@code pickup} keeps the contact fields
    *  optional; {@code delivery} marks Name + Phone + Location as
@@ -222,7 +231,9 @@ export function PublicShopPage() {
   }, [inStockItems, search, category]);
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { all: 0, drink: 0, snack: 0, food: 0, other: 0 };
+    const c: Record<Category, number> = {
+      all: 0, drink: 0, snack: 0, food: 0, craft: 0, souvenir: 0, other: 0,
+    };
     c.all = inStockItems.length;
     for (const it of inStockItems) {
       const k = (CATEGORIES as readonly string[]).includes(it.category as Category)
@@ -298,6 +309,12 @@ export function PublicShopPage() {
   /** Modifier picker target — set when the customer taps an item that
    *  carries a modifierGroups JSON. Null while no picker is open. */
   const [modifierTarget, setModifierTarget] = useState<shopApi.PublicShopItem | null>(null);
+  /** v-shop-item-detail — item card tap opens this dialog so the
+   *  customer can flip through multi-image carousels + read the full
+   *  description before adding. Add-to-cart from inside the dialog
+   *  routes back through {@link addOne} so modifiers still open the
+   *  existing picker. */
+  const [detailTarget, setDetailTarget] = useState<shopApi.PublicShopItem | null>(null);
 
   // Cart mutators — keep them out of the JSX so the buttons stay
   // terse. `addOne` is the tap-to-add path on the card itself;
@@ -469,11 +486,13 @@ export function PublicShopPage() {
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Header banner */}
       <div className="bg-gradient-to-r from-blue-600 to-violet-600 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center gap-4">
-          <div className="h-14 w-14 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-            <Store className="h-7 w-7" />
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-start gap-4">
+          <div className="h-14 w-14 rounded-xl bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
+            {data.logoUrl
+              ? <img src={data.logoUrl} alt="" className="h-full w-full object-cover" />
+              : <Store className="h-7 w-7" />}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-semibold truncate">
               {data.shopName || 'Shop'}
             </h1>
@@ -492,6 +511,39 @@ export function PublicShopPage() {
                 {data.code}
               </span>
             </div>
+            {/* V266 — company profile row (address / phone / email).
+                Renders only when the tenant has filled any of them.
+                Each chip is a link when the value is actionable
+                (tel: / mailto:) so a phone tap opens the dialer on
+                mobile. */}
+            {(data.address || data.phone || data.email) && (
+              <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-white/85 flex-wrap">
+                {data.address && (
+                  <span className="inline-flex items-center gap-1 max-w-full">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate" title={data.address}>{data.address}</span>
+                  </span>
+                )}
+                {data.phone && (
+                  <a
+                    href={`tel:${data.phone.replace(/\s+/g, '')}`}
+                    className="inline-flex items-center gap-1 hover:text-white"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    {data.phone}
+                  </a>
+                )}
+                {data.email && (
+                  <a
+                    href={`mailto:${data.email}`}
+                    className="inline-flex items-center gap-1 hover:text-white"
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    {data.email}
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -508,24 +560,31 @@ export function PublicShopPage() {
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {CATEGORIES.map(key => {
-            const active = category === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setCategory(key)}
-                className={`px-3 h-8 rounded-full border text-sm font-medium transition ${
-                  active
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {CATEGORY_LABEL[key]}
-                <span className="ml-1 text-[11px] opacity-70">({counts[key]})</span>
-              </button>
-            );
-          })}
+          {CATEGORIES
+            // Hide chips whose bucket has zero items — keeps the shop
+            // menu clean for tenants that only sell drinks (no Snacks(0)
+            // / Food(0) / Other(0) clutter next to Drinks). "All" is
+            // always visible; the active chip stays visible even if a
+            // filter change leaves its count at 0 mid-search.
+            .filter(key => key === 'all' || category === key || counts[key] > 0)
+            .map(key => {
+              const active = category === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setCategory(key)}
+                  className={`px-3 h-8 rounded-full border text-sm font-medium transition ${
+                    active
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {CATEGORY_LABEL[key]}
+                  <span className="ml-1 text-[11px] opacity-70">({counts[key]})</span>
+                </button>
+              );
+            })}
         </div>
       </div>
 
@@ -546,7 +605,7 @@ export function PublicShopPage() {
                 qtyInCart={cartLines
                   .filter(l => l.item.id === it.id)
                   .reduce((s, l) => s + l.qty, 0)}
-                onAdd={() => addOne(it)}
+                onOpen={() => setDetailTarget(it)}
               />
             ))}
           </div>
@@ -754,7 +813,7 @@ export function PublicShopPage() {
                   on submit so the cashier can click it from the ticket.
                   Required when orderMode === 'delivery'. */}
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -768,16 +827,32 @@ export function PublicShopPage() {
                       : <Navigation className="h-3.5 w-3.5 mr-1.5" />}
                     Use my location
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Seed the map with the existing pin (if any) or the last
+                      // "Use my location" hit parsed out of pickupLocation.
+                      const m = pickupLocation.match(/q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+                      if (m) setPinLatLng({ lat: Number(m[1]), lng: Number(m[2]) });
+                      setPinOpen(true);
+                    }}
+                    className="h-9 shrink-0"
+                  >
+                    <MapPin className="h-3.5 w-3.5 mr-1.5" />
+                    Pin on map
+                  </Button>
                   <Input
                     value={pickupLocation}
                     onChange={e => setPickupLocation(e.target.value)}
                     placeholder={orderMode === 'delivery'
-                      ? 'Or paste a Google Maps link *'
-                      : 'Or paste a Google Maps link'}
+                      ? 'Or paste a map link *'
+                      : 'Or paste a map link'}
                     inputMode="url"
                     maxLength={400}
                     aria-required={orderMode === 'delivery'}
-                    className={`flex-1 ${
+                    className={`flex-1 min-w-[180px] ${
                       orderMode === 'delivery' && !pickupLocation.trim().startsWith('http')
                         ? 'border-red-300' : ''
                     }`}
@@ -810,7 +885,7 @@ export function PublicShopPage() {
               <Input
                 value={custNote}
                 onChange={e => setCustNote(e.target.value)}
-                placeholder="Note for the kitchen (e.g. less sugar)"
+                placeholder="Note"
                 maxLength={240}
               />
             </div>
@@ -949,6 +1024,56 @@ export function PublicShopPage() {
           setModifierTarget(null);
         }}
       />
+
+      {/* v-shop-item-detail — image carousel + description + Add. */}
+      <ItemDetailDialog
+        item={detailTarget}
+        qtyInCart={detailTarget
+          ? cartLines.filter(l => l.item.id === detailTarget.id).reduce((s, l) => s + l.qty, 0)
+          : 0}
+        onClose={() => setDetailTarget(null)}
+        onAdd={() => { if (detailTarget) addOne(detailTarget); }}
+      />
+
+      {/* v-shop-pin-map — Leaflet-based location picker. Customer drops
+          a pin (or searches by place name); we save it as a google.com/maps
+          URL so the cashier ticket has a click-through the driver can use. */}
+      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+        <DialogContent className="sm:max-w-lg p-0 gap-0">
+          <DialogHeader className="px-5 py-3 border-b">
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-blue-600" />
+              Pin your location
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Click the map or search a place to drop a pin. The cashier will
+              use this to route the delivery.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4">
+            <MapPicker
+              lat={pinLatLng?.lat ?? null}
+              lng={pinLatLng?.lng ?? null}
+              onChange={(lat, lng) => setPinLatLng({ lat, lng })}
+            />
+          </div>
+          <DialogFooter className="px-5 py-3 border-t">
+            <Button variant="outline" onClick={() => setPinOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!pinLatLng}
+              onClick={() => {
+                if (!pinLatLng) return;
+                const { lat, lng } = pinLatLng;
+                setPickupLocation(`https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}`);
+                setPinOpen(false);
+              }}
+            >
+              Use this location
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -966,24 +1091,30 @@ function FullPageState({ children }: { children: React.ReactNode }) {
  *  to add another — the explicit "+" pill in the corner is just a
  *  visual cue, the whole card is the touch target. */
 function PublicShopCard({
-  item, qtyInCart, onAdd,
+  item, qtyInCart, onOpen,
 }: {
   item: shopApi.PublicShopItem;
   qtyInCart: number;
-  onAdd: () => void;
+  /** v-shop-item-detail — the whole card is now a "view" surface;
+   *  tapping it opens the detail dialog. Add-to-cart moved inside
+   *  the dialog so customers can see the images and description
+   *  before committing. */
+  onOpen: () => void;
 }) {
   const [broken, setBroken] = useState(false);
-  const showImage = !!item.imageUrl && !broken;
+  const cover = shopApi.itemImages(item)[0] ?? '';
+  const showImage = !!cover && !broken;
+  const totalImages = shopApi.itemImages(item).length;
   return (
     <button
       type="button"
-      onClick={onAdd}
+      onClick={onOpen}
       className="group relative flex flex-col text-left rounded-lg border bg-white overflow-hidden hover:border-blue-400 hover:shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 p-0"
     >
       <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
         {showImage ? (
           <img
-            src={item.imageUrl}
+            src={cover}
             alt={item.name}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
             loading="lazy"
@@ -991,6 +1122,11 @@ function PublicShopCard({
           />
         ) : (
           <Package className="h-12 w-12 text-gray-300" strokeWidth={1.25} />
+        )}
+        {totalImages > 1 && (
+          <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5">
+            +{totalImages - 1}
+          </span>
         )}
       </div>
       <div className="p-2 flex-1">
@@ -1004,16 +1140,129 @@ function PublicShopCard({
           <span className="text-[11px] text-gray-500">{item.unit ?? ''}</span>
         </div>
       </div>
-      {qtyInCart > 0 ? (
+      {qtyInCart > 0 && (
         <div className="absolute top-1.5 right-1.5 bg-blue-600 text-white text-[11px] font-bold rounded-full h-6 min-w-[1.5rem] px-1.5 flex items-center justify-center shadow-md">
           {qtyInCart}
         </div>
-      ) : (
-        <div className="absolute top-1.5 right-1.5 bg-white/90 text-blue-600 border border-blue-200 rounded-full h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-          <Plus className="h-3.5 w-3.5" />
-        </div>
       )}
     </button>
+  );
+}
+
+/* ====================================================================
+ *  v-shop-item-detail — item detail dialog with image carousel.
+ *
+ *  Opens on card tap. Shows every image the tenant uploaded (V265),
+ *  the full description, and an Add-to-cart button that routes back
+ *  through the parent's addOne() so items with modifiers keep going
+ *  through the existing picker.
+ * =================================================================== */
+function ItemDetailDialog({
+  item, qtyInCart, onClose, onAdd,
+}: {
+  item: shopApi.PublicShopItem | null;
+  qtyInCart: number;
+  onClose: () => void;
+  onAdd: () => void;
+}) {
+  const images = item ? shopApi.itemImages(item) : [];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => { setIdx(0); }, [item?.id]);
+
+  if (!item) return null;
+  const hasMulti = images.length > 1;
+  const prev = () => setIdx(i => (i - 1 + images.length) % images.length);
+  const next = () => setIdx(i => (i + 1) % images.length);
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-5 py-3 border-b">
+          <DialogTitle className="pr-6">{item.name}</DialogTitle>
+          <DialogDescription className="sr-only">Item details and images</DialogDescription>
+        </DialogHeader>
+
+        {/* Carousel */}
+        <div className="relative bg-gray-100 aspect-square w-full flex items-center justify-center overflow-hidden">
+          {images.length === 0 ? (
+            <Package className="h-14 w-14 text-gray-300" strokeWidth={1.25} />
+          ) : (
+            <img
+              key={idx}
+              src={images[idx]}
+              alt=""
+              className="w-full h-full object-contain"
+              draggable={false}
+            />
+          )}
+          {hasMulti && (
+            <>
+              <button
+                type="button"
+                onClick={prev}
+                aria-label="Previous image"
+                className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={next}
+                aria-label="Next image"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-full">
+                {images.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setIdx(i)}
+                    aria-label={`Image ${i + 1}`}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === idx ? 'bg-white w-4' : 'bg-white/50 w-1.5 hover:bg-white/80'
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-2xl font-semibold text-emerald-700">
+              ${Number(item.unitPrice).toFixed(2)}
+            </span>
+            {item.unit && (
+              <span className="text-xs text-gray-500">per {item.unit}</span>
+            )}
+          </div>
+          {item.description && (
+            <p className="text-sm text-gray-700 whitespace-pre-line">{item.description}</p>
+          )}
+          {qtyInCart > 0 && (
+            <div className="text-xs text-blue-700 bg-blue-50 rounded px-2.5 py-1.5 inline-flex items-center gap-1.5">
+              <ShoppingCart className="h-3.5 w-3.5" />
+              Already {qtyInCart} in cart
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="px-5 py-3 border-t">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button
+            className="bg-blue-600 hover:bg-blue-700"
+            disabled={!item.inStock}
+            onClick={() => { onAdd(); onClose(); }}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            {item.inStock ? 'Add to cart' : 'Out of stock'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -146,7 +146,9 @@ export function StockMovements() {
             </select>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        {/* Default CardContent padding — matches the Items page so
+            the leftmost column doesn't butt against the card edge. */}
+        <CardContent>
           <Table>
             <TableHeader>
               <TableRow>

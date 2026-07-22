@@ -23,6 +23,8 @@ import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { PublicShopPage } from './components/views/PublicShopPage';
 import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
 import { CambodiaLearnPage } from './components/CambodiaLearnPage';
+import { DesktopApiModeSwitch } from './components/DesktopApiModeSwitch';
+import { isTauri } from './utils/runtime';
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -105,7 +107,13 @@ function AppContent() {
   // logged-in approver may briefly land on the previous admin's last page.
   useEffect(() => {
     setCurrentView('dashboard');
-    if (currentUser) setShowLogin(false);
+    // Reset the login-vs-landing flag on EVERY user transition (login
+    // AND logout). Without the logout branch, a signed-out user stays
+    // stuck on the login card instead of dropping back to the marketing
+    // landing — the comment above `showLogin` already promised this;
+    // the effect just wasn't clearing on the null side of the change.
+    setShowLogin(false);
+    setLoginPrefill(null);
   }, [currentUser?.id]);
 
   // ────────────────────────────────────────────────────────────────
@@ -150,6 +158,12 @@ function AppContent() {
   if (loading) return null;
 
   if (!currentUser) {
+    // Desktop shell diverges from the web landing in two ways:
+    //   1. an Online/Offline API-base toggle in the top nav
+    //   2. the "Try Demo" dropdown is hidden (customers running the
+    //      installed exe against their own droplet have no use for
+    //      the shared demo tenants).
+    const desktop = isTauri();
     return showLogin
       ? <LoginPage
           onBack={() => { setShowLogin(false); setLoginPrefill(null); }}
@@ -157,13 +171,14 @@ function AppContent() {
         />
       : <LandingPage
           onSignInClick={() => { setLoginPrefill(null); setShowLogin(true); }}
-          onDemoClick={(email: string) => {
+          onDemoClick={desktop ? undefined : (email: string) => {
             // v-landing-demo-dropdown — landing now passes the picked
             // demo tenant's email (Accounting / HR / Hospital / Store);
             // password is fixed at admin123 across every seeded demo.
             setLoginPrefill({ email, password: 'admin123' });
             setShowLogin(true);
           }}
+          navSlot={desktop ? <DesktopApiModeSwitch /> : undefined}
         />;
   }
 

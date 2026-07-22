@@ -1366,18 +1366,54 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         </tbody>
       </table>
 
-      {/* Notes + exchange rate */}
-      <div style={{ marginTop: 10, fontSize: 10, lineHeight: 1.5 }}>
-        <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-        <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
+      {/* Notes + exchange rate — two-column layout so the KHQR
+          cards sit top-right ALIGNED with the "Notes" label instead
+          of stacking below the Payment method line. */}
+      <div style={{
+        marginTop: 10, fontSize: 10, lineHeight: 1.5,
+        display: 'flex', gap: 12, alignItems: 'flex-start',
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+          <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
+          {f.showBanking && (
+            <div style={{ marginTop: 6, color: '#555' }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method</div>
+          )}
+          {f.showThankYou && (
+            <div style={{ marginTop: 6, fontWeight: 600 }}>{f.thankYouText ?? 'Thank you for your business!'}</div>
+          )}
+          {f.showTerms && (
+            <div style={{ marginTop: 6, fontStyle: 'italic', color: '#666' }}>Terms &amp; Conditions apply.</div>
+          )}
+        </div>
+        {/* KHQR column — sits at the top of the Notes row, right side.
+            Two placeholder cards; real cards come from bank settings
+            on the actual print. */}
         {f.showBanking && (
-          <div style={{ marginTop: 6, color: '#555' }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method</div>
-        )}
-        {f.showThankYou && (
-          <div style={{ marginTop: 6, fontWeight: 600 }}>{f.thankYouText ?? 'Thank you for your business!'}</div>
-        )}
-        {f.showTerms && (
-          <div style={{ marginTop: 6, fontStyle: 'italic', color: '#666' }}>Terms &amp; Conditions apply.</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', flexShrink: 0 }}>
+            {[0, 1].map(i => (
+              <div
+                key={i}
+                style={{
+                  width: 68, textAlign: 'center', display: 'flex',
+                  flexDirection: 'column', alignItems: 'center', gap: 3,
+                }}
+              >
+                <div style={{ fontSize: 8, fontWeight: 600, color: '#1e3a8a' }}>Bank {i + 1}</div>
+                <div
+                  style={{
+                    width: '100%', aspectRatio: '1 / 1',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#999', fontSize: 8, border: '1px dashed #ccc', borderRadius: 6,
+                  }}
+                >
+                  KHQR
+                </div>
+                <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#666' }}>0000-0000</div>
+                <div style={{ fontSize: 8, fontWeight: 600, color: '#333', textTransform: 'uppercase' }}>Account</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

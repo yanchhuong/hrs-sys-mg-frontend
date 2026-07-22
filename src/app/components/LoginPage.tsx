@@ -5,8 +5,38 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Checkbox } from './ui/checkbox';
 import { UserRole } from '../types/hrms';
 import { Building2, Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react';
+import { isTauri, getDesktopApiMode } from '../utils/runtime';
+
+/** localStorage keys for the "Remember me" pre-fill. Password is
+ *  intentionally obfuscated (base64) rather than encrypted — anyone
+ *  with DevTools access to this origin can still recover it, so users
+ *  who tick the checkbox are trusting their local machine. This
+ *  matches the user-requested behaviour where the shipped Windows
+ *  shell auto-fills BOTH fields (there's no system password manager
+ *  in the Tauri WebView the way Chrome offers one). */
+const REMEMBERED_EMAIL_KEY = 'hrms:rememberedEmail';
+const REMEMBERED_PASSWORD_KEY = 'hrms:rememberedPasswordB64';
+
+function readRememberedEmail(): string | null {
+  try {
+    return typeof localStorage !== 'undefined'
+      ? localStorage.getItem(REMEMBERED_EMAIL_KEY)
+      : null;
+  } catch { return null; }
+}
+
+function readRememberedPassword(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const b64 = localStorage.getItem(REMEMBERED_PASSWORD_KEY);
+    if (!b64) return null;
+    // atob throws on non-base64 input — treat that as no stored value.
+    return atob(b64);
+  } catch { return null; }
+}
 
 interface LoginPageProps {
   /** Optional — when provided, renders a "Back to home" link above the card. */
@@ -17,11 +47,50 @@ interface LoginPageProps {
   prefill?: { email: string; password: string } | null;
 }
 
+/** Signatures of the "server unreachable" family across the browsers
+ *  Chromium's WebView ships. Used to distinguish a network failure
+ *  ("can't reach the host at all") from a login-side failure
+ *  ("wrong password"). */
+const NETWORK_ERROR_MARKERS = [
+  'failed to fetch',      // Chromium / Edge / Tauri WebView2
+  'network error',        // some Fetch polyfills
+  'networkerror',         // Firefox
+  'load failed',          // Safari
+  'err_connection',       // Chromium detailed variants
+  'empty or malformed',   // our own guard when the shell resolves to a non-JSON same-origin page
+];
+
+function isNetworkError(msg: string | undefined): boolean {
+  if (!msg) return false;
+  const m = msg.toLowerCase();
+  return NETWORK_ERROR_MARKERS.some(marker => m.includes(marker));
+}
+
+/** Desktop-only error copy. Web keeps the raw message so devs / QA
+ *  still see the underlying detail. In the shipped Windows app we
+ *  swap network failures for mode-specific guidance:
+ *   - Online + no internet  → "Please check your Internet..."
+ *   - Offline + no local API → "Offline is not available now! Contact Admin."
+ */
+function reshapeLoginError(raw: string | undefined): string {
+  const fallback = raw ?? 'Invalid credentials';
+  if (!isTauri() || !isNetworkError(raw)) return fallback;
+  return getDesktopApiMode() === 'online'
+    ? 'Please check your Internet — make sure it is working!'
+    : 'Offline is not available now! Contact Admin.';
+}
+
 export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
-  const [email, setEmail] = useState(prefill?.email ?? '');
-  const [password, setPassword] = useState(prefill?.password ?? '');
+  // If we've stashed credentials from a previous "Remember me" tick,
+  // seed the form with them. A parent-supplied prefill (from clicking
+  // Demo) still wins — explicit user intent beats persistence.
+  const rememberedEmail = readRememberedEmail();
+  const rememberedPassword = readRememberedPassword();
+  const [email, setEmail] = useState(prefill?.email ?? rememberedEmail ?? '');
+  const [password, setPassword] = useState(prefill?.password ?? rememberedPassword ?? '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState<boolean>(!!rememberedEmail);
   const { login, switchRole } = useAuth();
 
   // Reflect prefill updates from the parent — covers the case where the
@@ -41,7 +110,22 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
     setBusy(true);
     try {
       const res = await login(email, password);
-      if (!res.success) setError(res.error ?? 'Invalid credentials');
+      if (!res.success) {
+        setError(reshapeLoginError(res.error));
+        return;
+      }
+      // Only persist credentials on a successful sign-in — an invalid
+      // attempt shouldn't imprint the typo. Password is base64-encoded
+      // (see the key comment); it's obfuscation, not encryption.
+      try {
+        if (remember) {
+          localStorage.setItem(REMEMBERED_EMAIL_KEY, email);
+          localStorage.setItem(REMEMBERED_PASSWORD_KEY, btoa(password));
+        } else {
+          localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+          localStorage.removeItem(REMEMBERED_PASSWORD_KEY);
+        }
+      } catch { /* private mode / storage disabled — non-fatal */ }
     } finally {
       setBusy(false);
     }
@@ -110,6 +194,16 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="remember-me"
+                checked={remember}
+                onCheckedChange={(v) => setRemember(v === true)}
+              />
+              <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer select-none">
+                Remember me
+              </Label>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>

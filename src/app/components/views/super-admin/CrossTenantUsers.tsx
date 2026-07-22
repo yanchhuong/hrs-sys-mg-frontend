@@ -25,6 +25,29 @@ import * as platformApi from '../../../api/platform';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 
+/** Compact "time ago" formatter for the Last Login column. Ladder:
+ *   • < 45 sec         → "just now"
+ *   • 45s – 59 min     → "12m ago"
+ *   • 1h  – 23h        → "5h ago"
+ *   • ≥ 24h            → absolute date ("Jul 22, 2026")
+ *
+ * Older than a day drops to a bare date because "3 days ago" reads
+ * fine but "27 days ago" doesn't — a calendar date is easier to skim
+ * once the recency signal stops mattering. */
+function formatLastLogin(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '—';
+  const diffMs = Date.now() - t;
+  const sec = Math.round(diffMs / 1000);
+  if (sec < 45)          return 'just now';
+  const min = Math.round(diffMs / 60000);
+  if (min < 60)          return `${min}m ago`;
+  const hr = Math.round(diffMs / 3600000);
+  if (hr < 24)           return `${hr}h ago`;
+  return format(new Date(iso), 'MMM dd, yyyy');
+}
+
 export function CrossTenantUsers() {
   const { formatDate } = useDateFormat();
   const [users, setUsers] = useState<platformApi.PlatformUser[]>([]);
@@ -37,6 +60,10 @@ export function CrossTenantUsers() {
   // In live mode we fetch the real tenants and use their UUID `id`.
   const [tenantOptions, setTenantOptions] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [roleTab, setRoleTab] = useState<'all' | 'admin' | 'manager' | 'employee'>('all');
+  /** V266 — presence filter. 'all' passes through; 'online' / 'offline'
+   *  narrow the returned list to users whose last_seen_at falls inside
+   *  or outside the server's 5-min online window. */
+  const [presence, setPresence] = useState<'all' | 'online' | 'offline'>('all');
   const [resetTarget, setResetTarget] = useState<platformApi.PlatformUser | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<platformApi.PlatformUser | null>(null);
   // Merge dialog state — surfaces every user sharing the same email and lets
@@ -157,6 +184,7 @@ export function CrossTenantUsers() {
         tenantId: companyFilter !== 'all' ? companyFilter : undefined,
         q: search.trim() || undefined,
         role: roleTab !== 'all' ? roleTab : undefined,
+        online: presence,
       });
       setUsers(data);
     } catch (err) {
@@ -170,7 +198,7 @@ export function CrossTenantUsers() {
   useEffect(() => {
     void loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyFilter, roleTab, search]);
+  }, [companyFilter, roleTab, presence, search]);
 
   // Populate the Company filter dropdown from the real tenants endpoint
   // (live mode) or the mock seed (mock mode). Loaded once on mount.
@@ -399,6 +427,19 @@ export function CrossTenantUsers() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {/* V266 — presence filter. Server treats the value as a
+                strict membership predicate (5-min window); "all"
+                passes the flag through as-is. */}
+            <select
+              value={presence}
+              onChange={(e) => setPresence(e.target.value as typeof presence)}
+              className="h-9 px-3 border rounded-md text-sm min-w-[130px]"
+              aria-label="Filter by online status"
+            >
+              <option value="all">All statuses</option>
+              <option value="online">Online</option>
+              <option value="offline">Offline</option>
+            </select>
             <Button size="sm" className="ml-auto" onClick={() => { resetAddForm(); setAddOpen(true); }}>
               <UserPlus className="h-4 w-4 mr-2" />
               Add User
@@ -413,6 +454,7 @@ export function CrossTenantUsers() {
                 <TableHead>Company</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Online</TableHead>
                 <TableHead>Last Login</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -421,7 +463,7 @@ export function CrossTenantUsers() {
             <TableBody>
               {pager.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
                     {loading ? 'Loading…' : 'No users match these filters.'}
                   </TableCell>
                 </TableRow>
@@ -462,8 +504,25 @@ export function CrossTenantUsers() {
                         ? <Badge className="bg-green-100 text-green-800">Active</Badge>
                         : <Badge className="bg-gray-100 text-gray-700">Suspended</Badge>}
                     </TableCell>
+                    <TableCell>
+                      <span
+                        className="inline-flex items-center gap-1.5 text-xs"
+                        title={u.lastSeen ? `Last seen ${format(new Date(u.lastSeen), 'MMM dd, HH:mm:ss')}` : 'Never seen'}
+                      >
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${
+                            u.online ? 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]' : 'bg-gray-300'
+                          }`}
+                        />
+                        <span className={u.online ? 'text-emerald-700 font-medium' : 'text-gray-500'}>
+                          {u.online ? 'Online' : 'Offline'}
+                        </span>
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm text-gray-500">
-                      {u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, HH:mm') : '—'}
+                      <span title={u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, yyyy · HH:mm:ss') : 'Never'}>
+                        {formatLastLogin(u.lastLogin)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
                       {formatDate(u.createdAt)}
@@ -608,7 +667,7 @@ export function CrossTenantUsers() {
                     <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-3">
                       <span>Created {formatDate(u.createdAt)}</span>
                       <span>
-                        Last login {u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, HH:mm') : 'never'}
+                        Last login {formatLastLogin(u.lastLogin)}
                       </span>
                     </div>
                   </div>

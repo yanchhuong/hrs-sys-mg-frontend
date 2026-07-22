@@ -4,7 +4,7 @@ import {
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Warehouse as WarehouseIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -21,6 +21,7 @@ import {
 } from '../ui/select';
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
+import * as warehousesApi from '../../api/warehouses';
 import * as customersApi from '../../api/customers';
 import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary, type LoyaltyType } from '../../api/loyalty';
 import * as settingsApi from '../../api/accountingSettings';
@@ -75,6 +76,12 @@ export function POS() {
   // V142 — category filter tabs. 'all' is the default; selecting a
   // specific category narrows the items grid below the search bar.
   const [categoryFilter, setCategoryFilter] = useState<itemsApi.ItemCategory | 'all'>('all');
+  // Warehouse filter (V149 feature-on). Empty string = All warehouses.
+  // Rendered on the right side of the category chip row and only
+  // appears when the tenant has ≥2 warehouses configured — a single-
+  // warehouse tenant gets zero clutter.
+  const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('');
   // Modifier picker (V142). When the cashier taps an item with
   // modifiers, this holds the item being configured; the picker
   // dialog reads it and commits the selection back into the cart.
@@ -233,6 +240,12 @@ export function POS() {
         companyApi.getCompanyInfo()
           .then(setCompanyInfo)
           .catch(() => setCompanyInfo(null));
+        // Same fire-and-forget shape for warehouses — the filter chip
+        // row hides itself when fewer than 2 warehouses exist, so a
+        // fetch failure is silently equivalent to "feature off".
+        warehousesApi.list()
+          .then(list => setWarehouses(list.filter(w => w.enabled)))
+          .catch(() => setWarehouses([]));
         // v-loyalty-mvp — best-effort balance snapshot for the
         // customer picker chip. Never blocks POS load on a
         // loyalty-side hiccup (tenants without any programs get
@@ -678,6 +691,7 @@ export function POS() {
   /* ----- main UI ----- */
   const filteredItems = items.filter(i => {
     if (categoryFilter !== 'all' && (i.category ?? 'other') !== categoryFilter) return false;
+    if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     // Match either the display name OR the item code (SKU) so a
@@ -686,14 +700,32 @@ export function POS() {
     return i.name.toLowerCase().includes(q)
         || (i.sku ?? '').toLowerCase().includes(q);
   });
+  // V149 — warehouse counts drive the chip labels ("A (7)"). Only
+  // computed / rendered when the tenant has 2+ warehouses; a single-
+  // warehouse tenant sees no filter chips at all.
+  //
+  // Plain compute (not useMemo) — this block sits AFTER the early-
+  // return guards at the top of the component, and adding a hook here
+  // shifts the hook count between renders (loading branch: N; loaded
+  // branch: N+1) → "Rendered more hooks than during the previous
+  // render". Cost is trivial: capped at 200 items by the POS fetch.
+  const showWarehouseFilter = warehouses.length >= 2;
+  const warehouseCounts = new Map<string, number>();
+  warehouseCounts.set('', items.length);
+  for (const it of items) {
+    if (!it.warehouseId) continue;
+    warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
+  }
   // Category counts drive the chip labels — "Drink (12)" etc. so the
   // cashier sees stock counts at a glance.
   const categoryCounts = {
-    all:   items.length,
-    drink: items.filter(i => i.category === 'drink').length,
-    snack: items.filter(i => i.category === 'snack').length,
-    food:  items.filter(i => i.category === 'food').length,
-    other: items.filter(i => (i.category ?? 'other') === 'other').length,
+    all:      items.length,
+    drink:    items.filter(i => i.category === 'drink').length,
+    snack:    items.filter(i => i.category === 'snack').length,
+    food:     items.filter(i => i.category === 'food').length,
+    craft:    items.filter(i => i.category === 'craft').length,
+    souvenir: items.filter(i => i.category === 'souvenir').length,
+    other:    items.filter(i => (i.category ?? 'other') === 'other').length,
   };
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
@@ -969,27 +1001,78 @@ export function POS() {
               />
             </div>
             {/* V142 — category filter pills. "All" is the default;
-                tapping a chip narrows the items grid to that bucket. */}
-            <div className="flex flex-wrap gap-1.5">
-              {(['all', 'drink', 'snack', 'food', 'other'] as const).map(key => {
-                const active = categoryFilter === key;
-                const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
-                return (
+                tapping a chip narrows the items grid to that bucket.
+                V149 — when the tenant has 2+ warehouses, a matching
+                warehouse-filter row renders on the right so the cashier
+                can narrow "same product across warehouses" at a glance. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <div className="flex flex-wrap gap-1.5 min-w-0">
+                {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'other'] as const)
+                  // Hide chips whose bucket is empty unless it's the active tab
+                  // OR the "All" chip — the "All" tab must always be present.
+                  .filter(key => key === 'all' || categoryFilter === key || categoryCounts[key] > 0)
+                  .map(key => {
+                    const active = categoryFilter === key;
+                    const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setCategoryFilter(key)}
+                        className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
+                          active
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {label}
+                        <span className="ml-1 text-[10px] opacity-70">({categoryCounts[key]})</span>
+                      </button>
+                    );
+                  })}
+              </div>
+              {showWarehouseFilter && (
+                <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+                  <WarehouseIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                   <button
-                    key={key}
                     type="button"
-                    onClick={() => setCategoryFilter(key)}
+                    onClick={() => setWarehouseFilter('')}
                     className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
-                      active
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      warehouseFilter === ''
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
                         : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    {label}
-                    <span className="ml-1 text-[10px] opacity-70">({categoryCounts[key]})</span>
+                    All
+                    <span className="ml-1 text-[10px] opacity-70">({warehouseCounts.get('') ?? 0})</span>
                   </button>
-                );
-              })}
+                  {warehouses.map(w => {
+                    const count = warehouseCounts.get(w.id) ?? 0;
+                    const active = warehouseFilter === w.id;
+                    // Hide zero-count warehouses unless active — matches
+                    // the category-chip empty-bucket rule so the row
+                    // stays uncluttered on a POS that filed products
+                    // into only one of the warehouses.
+                    if (!active && count === 0) return null;
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => setWarehouseFilter(w.id)}
+                        className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
+                          active
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                        title={w.name}
+                      >
+                        {w.name}
+                        <span className="ml-1 text-[10px] opacity-70">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex-1 overflow-auto p-3">
@@ -2376,7 +2459,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: Rece
     // some browsers refuse a pop-up triggered mid-render.
     const t = setTimeout(() => {
       const ok = printPosReceipt({ order, settings, items });
-      if (!ok) toast.error('Pop-up blocked — allow pop-ups to print the receipt.');
+      if (!ok) toast.error('Could not open the print dialog.');
     }, 200);
     return () => clearTimeout(t);
   }, [order, settings, items]);
@@ -2404,7 +2487,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: Rece
         <DialogFooter>
           <Button variant="outline" onClick={() => {
             const ok = printPosReceipt({ order, settings, items });
-            if (!ok) toast.error('Pop-up blocked — allow pop-ups to print the receipt.');
+            if (!ok) toast.error('Could not open the print dialog.');
           }}>
             <Printer className="h-4 w-4 mr-1.5" /> Print
           </Button>

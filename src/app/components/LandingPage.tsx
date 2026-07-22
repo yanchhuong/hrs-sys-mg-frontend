@@ -42,8 +42,13 @@ interface LandingPageProps {
   /** v-landing-demo-dropdown — when provided, renders a "Try Demo"
    *  dropdown listing each vertical's demo tenant. The chosen email
    *  is passed back so the login form can pre-fill it (password is
-   *  fixed at `admin123` across all demo accounts). */
+   *  fixed at `admin123` across all demo accounts). Deliberately
+   *  omitted by the Tauri desktop shell to hide the button entirely. */
   onDemoClick?: (email: string) => void;
+  /** Optional slot rendered in the top nav (right of Sign in). Used
+   *  by the desktop shell to inject the Online/Offline API toggle
+   *  without LandingPage having to know about Tauri. */
+  navSlot?: React.ReactNode;
 }
 
 /** v-landing-demo-dropdown — demo account catalog for the "Try Demo"
@@ -452,8 +457,8 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 
 /** Top navigation: brand on the left, anchor links + language + Sign In on the right. */
 function LandingNav({
-  lang, setLang, onSignIn, onDemo,
-}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void; onDemo?: (email: string) => void }) {
+  lang, setLang, onSignIn, onDemo, navSlot,
+}: { lang: Lang; setLang: (l: Lang) => void; onSignIn: () => void; onDemo?: (email: string) => void; navSlot?: React.ReactNode }) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <Container className="flex h-16 items-center justify-between">
@@ -485,6 +490,7 @@ function LandingNav({
             <Languages className="h-3.5 w-3.5" />
             {lang === 'en' ? 'ខ្មែរ' : lang === 'km' ? '中文' : 'EN'}
           </button>
+          {navSlot}
           {onDemo && (
             <DemoDropdown
               lang={lang}
@@ -2486,7 +2492,7 @@ function PosShowcase({ lang }: { lang: Lang }) {
   );
 }
 
-export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
+export function LandingPage({ onSignInClick, onDemoClick, navSlot }: LandingPageProps) {
   // Drive the landing language off the global I18nContext so the toggle here
   // also flips the html.lang-km class (which triggers Khmer typography) and
   // persists into the post-login UI. I18nContext supports 'en' | 'km' | 'zh';
@@ -2503,7 +2509,7 @@ export function LandingPage({ onSignInClick, onDemoClick }: LandingPageProps) {
   useEffect(() => { trackLandingView(); }, []);
   return (
     <div className="landing-typography min-h-screen bg-white text-slate-900 antialiased">
-      <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} />
+      <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} navSlot={navSlot} />
       <Hero lang={lang} onSignIn={onSignInClick} onDemo={onDemoClick} />
       <MetricsStrip lang={lang} />
       {/* ZeroInstallStrip (orange gradient "Whether you run a factory

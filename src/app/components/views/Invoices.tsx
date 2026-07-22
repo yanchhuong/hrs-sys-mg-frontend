@@ -43,6 +43,7 @@ import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { printPosReceipt } from '../../utils/posReceipt';
+import { printHtmlViaIframe } from '../../utils/printHtml';
 import { PaymentReceiptCard } from '../common/PaymentReceiptCard';
 import * as posApi from '../../api/pos';
 import * as paywayApi from '../../api/payway';
@@ -2192,7 +2193,7 @@ function InvoiceDetailDialog({
         items: items.content,
         shopNameFallback: companyInfo?.name ?? undefined,
       });
-      if (!ok) toast.error('Pop-up blocked — allow pop-ups to print the receipt.');
+      if (!ok) toast.error('Could not open the print dialog.');
     } catch (e) {
       console.warn('POS receipt lookup failed, falling back to invoice print', e);
       await printWithKhmerFonts();
@@ -3487,7 +3488,12 @@ function PrintTaxInvoice({
                 Bank name sits above (with icon), account number +
                 account holder name below in uppercase, matching the
                 screenshot HR pinned in chat. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px' }}>
+            {/* KHQR row — right-aligned so the two-card block sits
+                under the Notes / Payment method label with negative
+                space on the LEFT, matching where the tenant expects
+                the "please pay here" panel. `banks` is already
+                capped at MAX_BANK_ACCOUNTS_ON_INVOICE (= 2). */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px', justifyContent: 'flex-end' }}>
               {banks.map(b => (
                 <div
                   key={b.id}
@@ -3685,20 +3691,14 @@ function PaymentReceiptDialog({
   const print = () => {
     const node = cardRef.current;
     if (!node) return;
-    const w = window.open('', '_blank', 'width=420,height=720');
-    if (!w) {
-      toast.error('Pop-up blocked — allow it to print receipts.');
-      return;
-    }
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Receipt ${payment.documentNo}</title>
+    const ok = printHtmlViaIframe(
+      `<!doctype html><html><head><meta charset="utf-8"/><title>Receipt ${payment.documentNo}</title>
       <style>
         @page { size: 80mm auto; margin: 4mm; }
         body { margin: 0; padding: 0; font-family: 'Inter', system-ui, sans-serif; }
-      </style></head><body>${node.outerHTML}</body></html>`);
-    w.document.close();
-    w.focus();
-    w.print();
-    setTimeout(() => { try { w.close(); } catch { /* user may have closed */ } }, 600);
+      </style></head><body>${node.outerHTML}</body></html>`
+    );
+    if (!ok) toast.error('Could not open the print dialog.');
   };
 
   return (

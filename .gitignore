@@ -26,6 +26,10 @@ pnpm-debug.log*
 # API). Loaded by `vite build --mode cloud`, ignored by `vite` dev.
 # The value is public — Vite bakes it into the JS bundle anyway.
 !.env.cloud
+# Desktop-mode build config for the Tauri Windows shell. Same public
+# URL story as .env.cloud — Vite bakes VITE_API_BASE into the shipped
+# exe, so committing it just makes reproducible builds possible.
+!.env.desktop
 
 # Editor
 .idea/
