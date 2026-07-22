@@ -291,7 +291,7 @@ export function Quotations() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+          <div className="filter-strip">
             <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
               <TabsList>
                 {STATUS_FILTERS.map(f => (

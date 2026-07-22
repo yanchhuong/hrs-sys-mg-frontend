@@ -169,7 +169,7 @@ export function PlatformDashboard() {
   return (
     <div className="space-y-6">
       {/* Headline stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="stat-strip stat-cols-4">
         <StatCard
           label="Active Companies"
           value={stats.active}
@@ -204,7 +204,7 @@ export function PlatformDashboard() {
           tenants running >1 Base. V181 / v-business-base-picker. */}
       <div>
         <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Industry Mix</div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="stat-strip stat-cols-4">
           <StatCard
             label="POS"
             value={stats.industryMix.pos}
@@ -239,7 +239,7 @@ export function PlatformDashboard() {
       {/* Engagement metrics — anonymous landing-page views + admin@demo.com logins.
           Backed by GET /platform/metrics (totals + today + 30-day daily series). */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="lg:col-span-2 stat-strip stat-cols-4">
           <StatCard
             label="Landing Views"
             value={(metrics?.landingViewsTotal ?? 0).toLocaleString()}

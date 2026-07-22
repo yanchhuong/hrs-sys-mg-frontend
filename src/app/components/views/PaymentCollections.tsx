@@ -108,7 +108,7 @@ export function PaymentCollections() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="stat-strip stat-cols-4">
         <BucketTile label="Total Overdue"  count={counts.all}     amount={sums.all}     tone="red" />
         <BucketTile label="0-30 days"      count={counts['0-30']} amount={sums['0-30']} tone="amber" />
         <BucketTile label="31-60 days"     count={counts['31-60']} amount={sums['31-60']} tone="amber" />

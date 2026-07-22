@@ -173,7 +173,7 @@ function CommissionReport() {
     <div className="space-y-4">
       {/* Totals strip — matches the shared StatCard pattern used by
           Sale Ledger / P&L / Purchase Ledger. */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="stat-strip stat-cols-5">
         <StatCard label="Sellers"       value={formatNumber(sellerGroups.length)} icon={Percent}      tone="purple" />
         <StatCard label="Invoices"      value={formatNumber(totals.invoiceCount)} icon={ReceiptText}  tone="blue" />
         <StatCard label="Total Sales"   value={formatUSD(totals.totalAmount)}     icon={DollarSign}   tone="green" />

@@ -189,7 +189,7 @@ export function Appointments() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+          <div className="filter-strip">
             <div className="flex items-center gap-1.5">
               {statusFilters.map(f => {
                 const active = statusFilter === f.value;

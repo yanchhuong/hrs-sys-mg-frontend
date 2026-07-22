@@ -266,7 +266,7 @@ export function Transactions() {
               pattern: compact, right-aligned, no stacked labels. The
               Clear button appears only when at least one filter is
               active so the row stays tidy in the default view. */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="filter-strip">
             <select
               value={refTypeFilter}
               onChange={e => setRefTypeFilter(e.target.value as typeof refTypeFilter)}

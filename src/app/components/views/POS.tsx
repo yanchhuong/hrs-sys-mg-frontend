@@ -1004,9 +1004,12 @@ export function POS() {
                 tapping a chip narrows the items grid to that bucket.
                 V149 — when the tenant has 2+ warehouses, a matching
                 warehouse-filter row renders on the right so the cashier
-                can narrow "same product across warehouses" at a glance. */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <div className="flex flex-wrap gap-1.5 min-w-0">
+                can narrow "same product across warehouses" at a glance.
+                Both rows use `chip-row` (styles/index.css) so they stay
+                on a single line and scroll horizontally on narrow screens
+                instead of wrapping into a tall block. */}
+            <div className="space-y-1.5">
+              <div className="chip-row">
                 {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'other'] as const)
                   // Hide chips whose bucket is empty unless it's the active tab
                   // OR the "All" chip — the "All" tab must always be present.
@@ -1032,7 +1035,7 @@ export function POS() {
                   })}
               </div>
               {showWarehouseFilter && (
-                <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+                <div className="chip-row">
                   <WarehouseIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                   <button
                     type="button"

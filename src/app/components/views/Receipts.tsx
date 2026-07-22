@@ -245,7 +245,7 @@ export function Receipts() {
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="filter-strip">
             <Input
               placeholder="Search by expense no, vendor, tax id…"
               value={search}

@@ -354,7 +354,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
   return (
     <div className="p-6 space-y-6 print:p-0 print:space-y-3">
-      <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible print:hidden">
+      <div className="filter-strip print:hidden">
         <div className="flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-gray-500" />
           <h1 className="text-2xl font-semibold">{labels.title}</h1>
@@ -370,7 +370,12 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           or both). Received splits per-currency so mixed-currency
           payments stay on their own rail. */}
       {report && (
-        <div className={`grid gap-3 ${['sm:grid-cols-3', 'sm:grid-cols-4', 'sm:grid-cols-5'][splitCols]} grid-cols-2`}>
+        // `.stat-strip` turns this row into a swipeable horizontal
+        // strip on mobile (cards keep a readable 260px width instead
+        // of cramping into a 2-col grid) and reverts to the desired
+        // column count on ≥md via the `.stat-cols-N` modifier. See
+        // styles/index.css for the responsive contract.
+        <div className={`stat-strip ${['stat-cols-3', 'stat-cols-4', 'stat-cols-5'][splitCols]}`}>
           <StatCard
             icon={FileText}
             tone="blue"

@@ -121,7 +121,7 @@ export function RequirementSurveys() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="stat-strip stat-cols-6">
         {summaryTiles.map(t => (
           <Card key={t.key}>
             <CardContent className="p-4">

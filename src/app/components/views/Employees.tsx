@@ -340,7 +340,7 @@ function EmployeeDocuments({
 
       {/* Type filter */}
       {docs.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 text-xs">
+        <div className="chip-row text-xs">
           <button
             onClick={() => setFilter('all')}
             className={`px-2 py-1 rounded-md border ${filter === 'all' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 hover:bg-gray-50'}`}
@@ -1412,9 +1412,10 @@ export function Employees() {
           </div>
           {/* Status filter chips — counts derived from the permission-scoped
               roster, so they always agree with what the user can see in the
-              table below. The Department dropdown stacks alongside on a wide
-              screen, wraps to a new line on narrow ones. */}
-          <div className="flex flex-wrap items-center gap-2">
+              table below. `.filter-strip` (styles/index.css) keeps the row
+              on a single horizontally-scrolling line on tablet/phone, and
+              reverts to the wrapping toolbar behaviour on ≥sm desktop. */}
+          <div className="filter-strip">
             {([
               { key: 'all',      label: 'All' },
               { key: 'active',   label: 'Active' },

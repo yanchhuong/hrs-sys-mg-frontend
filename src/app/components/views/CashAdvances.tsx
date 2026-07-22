@@ -191,8 +191,10 @@ export function CashAdvances() {
             </TabsList>
           </Tabs>
           {/* Search + date range strip — mirrors the Bills / Stock
-              pages so the filter UI feels the same across the app. */}
-          <div className="flex items-center gap-2 flex-wrap">
+              pages so the filter UI feels the same across the app.
+              `.filter-strip` gives the same POS-style single-line scroll
+              on tablet / phone. */}
+          <div className="filter-strip">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input

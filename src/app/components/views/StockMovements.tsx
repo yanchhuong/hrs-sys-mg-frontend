@@ -109,7 +109,7 @@ export function StockMovements() {
             <History className="h-4 w-4 text-blue-600" />
             History
           </CardTitle>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="filter-strip">
             <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
             <DateInput
               value={dateFrom || null}

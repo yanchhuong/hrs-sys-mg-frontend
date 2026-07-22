@@ -701,7 +701,7 @@ export function Invoices({
               horizontally; on sm: falls back to the original
               justify-between + flex-wrap. Same treatment across
               every list page (Bills, Quotations, Vendors, ...). */}
-          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+          <div className="filter-strip">
               {/* Kind tabs — hidden when a fixedKind is pinned (Encounter
                   lens narrows the list to a single kind, so the switcher
                   would be dead controls). */}

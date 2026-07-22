@@ -80,7 +80,7 @@ export function PaymentSchedules() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="stat-strip stat-cols-4">
         <SummaryTile label="Rows"          value={String(filtered.length)} />
         <SummaryTile label="Due total"     value={`$${formatMoney(totals.due)}`} />
         <SummaryTile label="Paid total"    value={`$${formatMoney(totals.paid)}`}    tone="green" />

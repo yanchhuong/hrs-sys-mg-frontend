@@ -210,7 +210,7 @@ export function PaymentPlans() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="filter-strip">
             <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
               <Input

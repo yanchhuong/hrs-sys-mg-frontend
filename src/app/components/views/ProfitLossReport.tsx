@@ -133,7 +133,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
 
   return (
     <div className="p-6 space-y-6 print:p-0 print:space-y-3">
-      <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible print:hidden">
+      <div className="filter-strip print:hidden">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-gray-500" />
           <h1 className="text-2xl font-semibold">{t('nav.reports.profit_loss')}</h1>
@@ -148,7 +148,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
           Report's StatCard). Colored icon + big number on top,
           muted label below with a supporting detail hint. */}
       {report && (
-        <div className="grid gap-3 sm:grid-cols-3 grid-cols-2 print:grid-cols-3">
+        <div className="stat-strip stat-cols-3 print:!grid print:grid-cols-3">
           <StatCard
             icon={TrendingUp}
             tone="green"

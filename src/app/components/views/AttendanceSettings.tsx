@@ -1127,7 +1127,7 @@ export function AttendanceSettings() {
               <CardTitle className="text-base flex items-center gap-2"><Info className="h-5 w-5" />OT Rules Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="stat-strip stat-cols-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /><p className="font-medium text-sm text-blue-800">Workday</p></div>
                   <div className="text-2xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>

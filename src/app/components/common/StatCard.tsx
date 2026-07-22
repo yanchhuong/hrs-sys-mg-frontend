@@ -38,13 +38,26 @@ export function StatCard({
 }) {
   const t = STAT_CARD_TONES[tone];
   return (
-    <Card>
+    // `@container` lets children query THIS card's width (not the
+    // viewport) so the value font scales when a 3- or 4-col grid
+    // squeezes each card narrow on tablet. Without it a $95,000.00
+    // rendered at text-2xl overflowed the card border on the Sale
+    // Ledger / Profit & Loss reports at ≤1024px.
+    <Card className="@container">
       <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className={`p-2 rounded-lg ${t.bg}`}>
+        {/* min-w-0 on both sides so the flex-basis can shrink and the
+            value's truncate takes effect instead of forcing the row
+            wider than the card. */}
+        <div className="flex items-center justify-between gap-2 mb-2 min-w-0">
+          <div className={`p-2 rounded-lg shrink-0 ${t.bg}`}>
             <Icon className={`h-4 w-4 ${t.text}`} />
           </div>
-          <span className={`text-2xl font-bold tabular-nums ${t.text}`}>{value}</span>
+          <span
+            className={`font-bold tabular-nums truncate min-w-0 text-right text-lg @xs:text-xl @sm:text-2xl ${t.text}`}
+            title={String(value)}
+          >
+            {value}
+          </span>
         </div>
         <p className="text-xs text-gray-500">{label}</p>
         {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}

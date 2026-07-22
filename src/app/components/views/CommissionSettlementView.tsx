@@ -101,7 +101,7 @@ export function CommissionSettlementView() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="stat-strip stat-cols-4">
         <StatCard label="Settlements"  value={formatNumber(totals.count)}  icon={ReceiptText} tone="blue" />
         <StatCard label="Total Sales"  value={formatUSD(totals.sales)}     icon={DollarSign}  tone="green" />
         <StatCard label="Total Commission" value={formatUSD(totals.comm)}  icon={Wallet}      tone="amber" />

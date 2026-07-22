@@ -159,7 +159,7 @@ export function Attendances() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="chip-row">
         {(['today', 'upcoming', 'history', 'reports'] as const).map(t => (
           <button
             key={t}
@@ -188,7 +188,7 @@ export function Attendances() {
       ) : (
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="filter-strip">
               <Label className="text-xs text-gray-500">From</Label>
               <DateInput
                 value={from || null}

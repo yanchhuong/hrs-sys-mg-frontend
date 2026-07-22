@@ -116,7 +116,7 @@ export function AgencySettingsUsersPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+          <div className="filter-strip">
             <CardTitle className="text-base flex items-center gap-2">
               <Users className="h-4 w-4 text-blue-600" />
               Members

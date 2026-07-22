@@ -374,7 +374,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               consistency: same select classes, From/To date range
               with muted labels, ghost Clear that only surfaces when
               a filter is active. */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="filter-strip">
             <div className="relative flex-1 min-w-[240px] max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
               <Input

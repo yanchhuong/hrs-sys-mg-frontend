@@ -277,7 +277,7 @@ export function SyncMonitor() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="stat-strip stat-cols-5">
         <HealthStat label="Total" value={summary.total} Icon={Link2} tone="gray" />
         <HealthStat label="Healthy" value={summary.healthy} Icon={CheckCircle} tone="green" />
         <HealthStat label="Degraded" value={summary.degraded} Icon={AlertTriangle} tone="amber" />

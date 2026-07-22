@@ -292,7 +292,7 @@ export function Vouchers() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-3 sm:justify-between sm:flex-wrap overflow-x-auto sm:overflow-visible">
+          <div className="filter-strip">
             <div className="flex items-center gap-3 flex-wrap">
               <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
                 <SelectTrigger className="h-8 w-44 text-sm"><SelectValue /></SelectTrigger>

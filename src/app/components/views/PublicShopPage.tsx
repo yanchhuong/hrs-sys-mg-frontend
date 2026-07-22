@@ -559,7 +559,7 @@ export function PublicShopPage() {
             className="pl-8 bg-white"
           />
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="chip-row">
           {CATEGORIES
             // Hide chips whose bucket has zero items — keeps the shop
             // menu clean for tenants that only sell drinks (no Snacks(0)
