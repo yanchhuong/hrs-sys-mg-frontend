@@ -33,7 +33,7 @@ import imgPosRetail   from '../../imports/pos-retail.jpg';
 // Wide format ("SMRT HRSM 360°"), rendered at its native aspect so
 // the taglined version below the mark stays legible on desktop and
 // crunches down cleanly on mobile.
-import imgBrandLogo   from '../../imports/smrt-web-logo.png';
+import imgBrandLogo   from '../../imports/smrt-web-logo1.png';
 
 export type Lang = 'en' | 'km' | 'zh';
 

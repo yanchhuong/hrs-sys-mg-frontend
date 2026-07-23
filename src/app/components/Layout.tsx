@@ -38,7 +38,7 @@ import { isTauri } from '../utils/runtime';
 // square app icon when collapsed. Same files that back the landing
 // nav and the Tauri desktop shell so the identity stays coherent
 // wherever the tenant lands.
-import imgBrandLogo from '../../imports/smrt-web-logo.png';
+import imgBrandLogo from '../../imports/smrt-web-logo1.png';
 import imgAppIcon   from '../../imports/smrt-app-icon.png';
 
 interface LayoutProps {

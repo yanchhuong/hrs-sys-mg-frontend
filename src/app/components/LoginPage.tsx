@@ -13,7 +13,7 @@ import { forgotPassword } from '../api/auth';
 import { toast } from 'sonner';
 // Wordmark shown at the top of the sign-in card. Matches the landing
 // nav; the CardTitle text below carries the tagline.
-import imgBrandLogo from '../../imports/smrt-web-logo.png';
+import imgBrandLogo from '../../imports/smrt-web-logo1.png';
 import { isTauri, getDesktopApiMode } from '../utils/runtime';
 
 /** localStorage keys for the "Remember me" pre-fill. Password is

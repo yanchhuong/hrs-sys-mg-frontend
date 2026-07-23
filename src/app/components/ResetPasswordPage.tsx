@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { resetPassword } from '../api/auth';
-import imgBrandLogo from '../../imports/smrt-web-logo.png';
+import imgBrandLogo from '../../imports/smrt-web-logo1.png';
 
 /** V271 — /reset-password?token=... — the destination of the emailed
  *  reset link. Standalone page: rendered by App.tsx before any auth
