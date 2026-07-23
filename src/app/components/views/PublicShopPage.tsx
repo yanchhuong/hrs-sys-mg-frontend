@@ -62,11 +62,14 @@ function composeLineNotes(mods: SelectedModifier[], note: string): string | unde
  * </ul>
  */
 
-const CATEGORIES = ['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'] as const;
-type Category = (typeof CATEGORIES)[number];
-
-const CATEGORY_LABEL: Record<Category, string> = {
-  all:      'All',
+// v-shop-dynamic-categories — chip list now mirrors the POS page:
+// known categories in their brand-defined order, then any custom
+// free-text labels the tenant has used alphabetically, then "Other"
+// pinned to the tail. Category is a plain string (was a strict enum)
+// so a tenant-typed "Pin" or "Hairpin" flows straight through.
+const KNOWN_POS_CATEGORIES: readonly string[] =
+  ['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'];
+const KNOWN_LABELS: Record<string, string> = {
   drink:    'Drinks',
   snack:    'Snacks',
   food:     'Food',
@@ -75,6 +78,10 @@ const CATEGORY_LABEL: Record<Category, string> = {
   jewelry:  'Jewelry',
   other:    'Other',
 };
+const normalCat = (raw: string | undefined | null): string =>
+  (raw ?? '').trim().toLowerCase() || 'other';
+const catLabel = (key: string): string =>
+  key === 'all' ? 'All' : (KNOWN_LABELS[key] ?? key[0].toUpperCase() + key.slice(1));
 
 /** Per-item line in the local cart state. The map key is a composite
  *  of {@code item.id} + modifier signature so the same item with two
@@ -110,7 +117,7 @@ export function PublicShopPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<Category>('all');
+  const [category, setCategory] = useState<string>('all');
 
   /** Cart keyed by stockItemId so a re-tap on the same item increments
    *  the qty without duplicating the row. Reset on a successful
@@ -224,24 +231,34 @@ export function PublicShopPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return inStockItems.filter(it => {
-      if (category !== 'all' && it.category !== category) return false;
+      if (category !== 'all' && normalCat(it.category) !== category) return false;
       if (!q) return true;
       return it.name.toLowerCase().includes(q)
           || (it.description ?? '').toLowerCase().includes(q);
     });
   }, [inStockItems, search, category]);
 
+  // Counts by normalized category string — every custom label the
+  // tenant has used gets its own entry. "All" is a synthetic bucket
+  // that just holds the total.
   const counts = useMemo(() => {
-    const c: Record<Category, number> = {
-      all: 0, drink: 0, snack: 0, food: 0, craft: 0, souvenir: 0, jewelry: 0, other: 0,
-    };
-    c.all = inStockItems.length;
+    const c = new Map<string, number>();
+    c.set('all', inStockItems.length);
     for (const it of inStockItems) {
-      const k = (CATEGORIES as readonly string[]).includes(it.category as Category)
-        ? (it.category as Category) : 'other';
-      c[k] += 1;
+      const k = normalCat(it.category);
+      c.set(k, (c.get(k) ?? 0) + 1);
     }
     return c;
+  }, [inStockItems]);
+
+  // Chip keys — 'all' first, then known categories (minus 'other'),
+  // then any custom labels alphabetically, then 'other' pinned last.
+  const chipKeys: readonly string[] = useMemo(() => {
+    const knownExclOther = KNOWN_POS_CATEGORIES.filter(k => k !== 'other');
+    const customs = Array.from(new Set(inStockItems.map(i => normalCat(i.category))))
+      .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
+      .sort();
+    return ['all', ...knownExclOther, ...customs, 'other'];
   }, [inStockItems]);
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
@@ -574,15 +591,16 @@ export function PublicShopPage() {
           />
         </div>
         <div className="chip-row">
-          {CATEGORIES
+          {chipKeys
             // Hide chips whose bucket has zero items — keeps the shop
             // menu clean for tenants that only sell drinks (no Snacks(0)
             // / Food(0) / Other(0) clutter next to Drinks). "All" is
             // always visible; the active chip stays visible even if a
             // filter change leaves its count at 0 mid-search.
-            .filter(key => key === 'all' || category === key || counts[key] > 0)
+            .filter(key => key === 'all' || category === key || (counts.get(key) ?? 0) > 0)
             .map(key => {
               const active = category === key;
+              const count = counts.get(key) ?? 0;
               return (
                 <button
                   key={key}
@@ -594,8 +612,8 @@ export function PublicShopPage() {
                       : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  {CATEGORY_LABEL[key]}
-                  <span className="ml-1 text-[11px] opacity-70">({counts[key]})</span>
+                  {catLabel(key)}
+                  <span className="ml-1 text-[11px] opacity-70">({count})</span>
                 </button>
               );
             })}
