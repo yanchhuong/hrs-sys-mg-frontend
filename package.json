@@ -6,10 +6,16 @@
   "scripts": {
     "build": "vite build --mode cloud",
     "build:desktop": "vite build --mode desktop",
+    "build:mobile": "vite build --mode mobile",
     "dev": "vite",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "cap": "cap",
+    "cap:sync": "npm run build:mobile && cap sync android",
+    "cap:open": "cap open android",
+    "apk:debug": "npm run build:mobile && cap sync android && cd android && gradlew.bat assembleDebug",
+    "apk:release": "npm run build:mobile && cap sync android && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -78,6 +84,9 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "@tailwindcss/vite": "4.1.12",
     "@tauri-apps/cli": "^2.1.0",
     "@types/react": "18.3.12",

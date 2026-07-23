@@ -1683,6 +1683,30 @@ function InvoiceFormDialog({
             </div>
             {items.map((it, idx) => {
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+              // v-invoice-line-stock-cap — mirror the POS cart rule:
+              // when the line is linked to a deduction-tracked stock
+              // item, the qty input maxes out at the current on-hand
+              // minus whatever sibling lines of the same SKU already
+              // reserve. Non-deduction items and free-text lines
+              // (no stockItemId) stay uncapped. The BE's V270 atomic
+              // decrement is the last-word gate at checkout time;
+              // this UI cap catches the mistake at data-entry time.
+              let stockCap = Infinity;
+              let stockRemaining = Infinity;
+              if (it.stockItemId) {
+                const src = stockCatalog.find(c => c.id === it.stockItemId);
+                if (src && src.deductionEnabled) {
+                  stockCap = Math.max(0, src.stockQty ?? 0);
+                  const others = items.reduce((sum, other, oi) => (
+                    oi === idx || other.stockItemId !== it.stockItemId
+                      ? sum
+                      : sum + (Number(other.quantity) || 0)
+                  ), 0);
+                  stockRemaining = Math.max(0, stockCap - others);
+                }
+              }
+              const overStock = Number.isFinite(stockRemaining)
+                && (Number(it.quantity) || 0) > stockRemaining;
               return (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-3 flex items-center gap-1">
@@ -1779,18 +1803,40 @@ function InvoiceFormDialog({
                     onChange={e => updateItem(idx, { unit: e.target.value })}
                     placeholder="pcs"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
-                    value={it.quantity}
-                    onChange={e => updateItem(idx, {
-                      quantity: e.target.value,
-                      // Changing qty invalidates a stale Total
-                      // override — fall back to the canonical
-                      // qty × unitPrice display.
-                      totalEditing: undefined,
-                    })}
-                  />
+                  <div className="col-span-1 flex flex-col gap-0.5">
+                    <Input
+                      className={`h-8 text-sm text-right ${overStock ? 'border-red-400 text-red-700' : ''}`}
+                      type="number" min={0} step="0.01"
+                      max={Number.isFinite(stockRemaining) ? stockRemaining : undefined}
+                      value={it.quantity}
+                      onChange={e => {
+                        const raw = e.target.value;
+                        // Clamp on the way in so the FE state never
+                        // holds an over-stock value the BE would
+                        // reject. Empty string / partial edits (e.g.
+                        // "1.") stay uncoerced so mid-typing doesn't
+                        // fight the user.
+                        let next = raw;
+                        const n = parseFloat(raw);
+                        if (Number.isFinite(n) && Number.isFinite(stockRemaining) && n > stockRemaining) {
+                          next = String(stockRemaining);
+                          toast.error(`Only ${stockCap} on hand for "${it.name || 'this item'}" — capped at ${stockRemaining}.`);
+                        }
+                        updateItem(idx, {
+                          quantity: next,
+                          // Changing qty invalidates a stale Total
+                          // override — fall back to the canonical
+                          // qty × unitPrice display.
+                          totalEditing: undefined,
+                        });
+                      }}
+                    />
+                    {Number.isFinite(stockRemaining) && (
+                      <span className={`text-[10px] text-right ${overStock ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                        {overStock ? `Only ${stockRemaining} left` : `Stock: ${stockRemaining}`}
+                      </span>
+                    )}
+                  </div>
                   <Input
                     className="col-span-2 h-8 text-sm text-right"
                     type="number" min={0} step="0.01"

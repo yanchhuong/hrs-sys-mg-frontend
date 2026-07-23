@@ -1281,6 +1281,34 @@ function QuotationDetailDialog({
     }
   };
 
+  /** v-quotation-stock-guard — walk each line that's linked to a
+   *  deduction-tracked catalog item and see whether the quoted
+   *  quantity still fits current on-hand. Returns one entry per
+   *  short-stock line so the UI can list them in a red remark
+   *  and disable Convert-to-Invoice until the operator either
+   *  restocks or trims the quantities. Free-text lines (no
+   *  stockItemId) and non-deduction items are ignored — same
+   *  rule the BE's V270 atomic decrement enforces at checkout. */
+  const stockShortages = useMemo(() => {
+    if (!quotation) return [];
+    // Merge sibling lines pointing at the same SKU so a customer
+    // ordering the same product on two lines doesn't get missed.
+    const requested = new Map<string, number>();
+    for (const l of quotation.items) {
+      if (!l.stockItemId) continue;
+      requested.set(l.stockItemId, (requested.get(l.stockItemId) ?? 0) + (l.quantity ?? 0));
+    }
+    const out: Array<{ name: string; requested: number; onHand: number }> = [];
+    for (const [sid, want] of requested) {
+      const src = stockCatalog.find(c => c.id === sid);
+      if (!src || !src.deductionEnabled) continue;
+      const onHand = src.stockQty ?? 0;
+      if (want > onHand) out.push({ name: src.name, requested: want, onHand });
+    }
+    return out;
+  }, [quotation, stockCatalog]);
+  const convertBlocked = stockShortages.length > 0;
+
   const doClose = async () => {
     if (!quotation) return;
     setBusy(true);
@@ -1388,7 +1416,14 @@ function QuotationDetailDialog({
                   </Button>
                 )}
                 {canConvert && quotation.status === 'progress' && (
-                  <Button size="sm" disabled={busy} onClick={doConvert}>
+                  <Button
+                    size="sm"
+                    disabled={busy || convertBlocked}
+                    onClick={doConvert}
+                    title={convertBlocked
+                      ? 'Insufficient stock on one or more lines — see the red remark below.'
+                      : undefined}
+                  >
                     <ArrowRightCircle className="h-3.5 w-3.5 mr-1" /> Convert to Invoice
                   </Button>
                 )}
@@ -1413,6 +1448,33 @@ function QuotationDetailDialog({
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm flex items-center gap-2">
                 <FileText className="h-4 w-4 text-emerald-700" />
                 <span>This quotation was converted to an invoice. Open Invoices to view the linked document.</span>
+              </div>
+            )}
+
+            {/* v-quotation-stock-guard — surfaced right above the customer
+                block so the operator sees WHY the Convert button is
+                greyed out. Lists every short-stocked line so they can
+                either restock or trim the quote first. */}
+            {convertBlocked && !quotation.convertedInvoiceId && (
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Ban className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium text-red-800">Not enough stock to convert.</p>
+                    <ul className="mt-1 space-y-0.5 text-red-700">
+                      {stockShortages.map(s => (
+                        <li key={s.name} className="text-xs">
+                          <span className="font-medium">{s.name}</span>
+                          — quote asks <span className="tabular-nums">{s.requested}</span>, on hand{' '}
+                          <span className="tabular-nums">{s.onHand}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-[11px] text-red-600">
+                      Restock the item or edit the quotation to reduce the quantity, then try again.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 

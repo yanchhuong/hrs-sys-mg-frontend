@@ -1,0 +1,8 @@
+{
+  "appId": "kh.kosign.hrms.mobile",
+  "appName": "SMRT HRMS",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

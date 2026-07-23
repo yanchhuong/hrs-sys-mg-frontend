@@ -1,0 +1,24 @@
+ext {
+    minSdkVersion = 24
+    // Pinned to 35 — the highest platform installed on the build machine
+    // (see android-sdk/platforms/). Bump to 36 once the SDK image is
+    // updated and licences accepted (`sdkmanager --licenses`).
+    compileSdkVersion = 35
+    targetSdkVersion = 35
+    // AndroidX library versions rolled back to the release train that
+    // still supports compileSdk 35. The Capacitor 8 defaults (core
+    // 1.17.0, activity 1.11.0, fragment 1.8.9, appcompat 1.7.1) each
+    // require compileSdk 36 which isn't installed on this machine.
+    // These matching versions compile against 35 cleanly.
+    androidxActivityVersion = '1.9.3'
+    androidxAppCompatVersion = '1.7.0'
+    androidxCoordinatorLayoutVersion = '1.2.0'
+    androidxCoreVersion = '1.15.0'
+    androidxFragmentVersion = '1.8.5'
+    coreSplashScreenVersion = '1.0.1'
+    androidxWebkitVersion = '1.12.1'
+    junitVersion = '4.13.2'
+    androidxJunitVersion = '1.2.1'
+    androidxEspressoCoreVersion = '3.6.1'
+    cordovaAndroidVersion = '14.0.1'
+}

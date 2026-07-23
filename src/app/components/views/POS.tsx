@@ -424,7 +424,46 @@ export function POS() {
   // modifier ("Sugar 50%, Size M"), subsequent taps on the same SKU
   // create a fresh note-less line — so two customisations of the
   // same drink stay on their own rows.
+  /** v-pos-cart-stock-cap — max total quantity the cart is allowed
+   *  to hold across ALL lines of a given stockItemId. Returns Infinity
+   *  when the item isn't deduction-tracked (services / drinks that
+   *  don't deplete inventory). Null when the item isn't in the loaded
+   *  catalog (ad-hoc line typed into an invoice — no cap). */
+  const stockCapFor = (stockItemId: string | null | undefined): number => {
+    if (!stockItemId) return Infinity;
+    const it = items.find(x => x.id === stockItemId);
+    if (!it || !it.deductionEnabled) return Infinity;
+    return Math.max(0, it.stockQty ?? 0);
+  };
+
+  /** Total quantity already committed for the given stockItemId across
+   *  every line EXCEPT the one at excludeIdx. Used to figure out how
+   *  much room is left on the target line before the merged sum hits
+   *  the stock cap. */
+  const cartQtyForItem = (
+    lines: PosOrderItem[], stockItemId: string | null | undefined, excludeIdx?: number,
+  ): number => {
+    if (!stockItemId) return 0;
+    let sum = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (i === excludeIdx) continue;
+      if (lines[i].stockItemId === stockItemId) sum += lines[i].quantity;
+    }
+    return sum;
+  };
+
   const addItem = (it: itemsApi.Item) => {
+    // Cap check up-front — refuse to add a unit if the cart already
+    // holds every unit the warehouse can ship for this SKU. Toasts
+    // once and returns so the cashier sees why nothing happened.
+    const cap = stockCapFor(it.id);
+    if (Number.isFinite(cap)) {
+      const already = cartQtyForItem(cart, it.id);
+      if (already >= cap) {
+        toast.error(`Only ${cap} ${it.unit ?? 'unit'}${cap === 1 ? '' : 's'} of "${it.name}" in stock — cart already has ${already}.`);
+        return;
+      }
+    }
     // First item of a fresh ticket — drop the customer-display
     // "Thank you" splash so the new cart starts rendering live.
     // Also cancel the auto-dismiss timer so a stale firing doesn't
@@ -500,8 +539,24 @@ export function POS() {
   const setLineQty = (idx: number, qty: number) => {
     if (qty <= 0) { removeLine(idx); return; }
     setCart(prev => {
+      const line = prev[idx];
+      const cap = stockCapFor(line?.stockItemId);
+      // Cap the target line's qty at the stock cap minus whatever
+      // sibling lines of the same SKU already reserve. If the
+      // requested value exceeds that, clamp it and toast so the
+      // cashier sees why the number they typed didn't stick.
+      let effective = qty;
+      if (Number.isFinite(cap)) {
+        const others = cartQtyForItem(prev, line?.stockItemId, idx);
+        const remaining = Math.max(0, cap - others);
+        if (qty > remaining) {
+          effective = remaining;
+          const it = items.find(x => x.id === line?.stockItemId);
+          toast.error(`Only ${cap} ${it?.unit ?? 'unit'}${cap === 1 ? '' : 's'} of "${it?.name ?? 'this item'}" in stock — capped at ${remaining}.`);
+        }
+      }
       const next = [...prev];
-      next[idx] = { ...next[idx], quantity: qty };
+      next[idx] = { ...next[idx], quantity: effective };
       return recomputeLines(next);
     });
   };
@@ -700,6 +755,14 @@ export function POS() {
     return KNOWN_POS_CATEGORIES.includes(c) ? c : 'other';
   };
   const filteredItems = items.filter(i => {
+    // v-pos-hide-oos-deduct — items with Stock IN/OUT ON and stock
+    // at 0 are unsellable (the checkout endpoint refuses them
+    // server-side). Hide them from the grid entirely so a cashier
+    // can't tap a tile that will 400 on ring-up. Service items
+    // (deductionEnabled=false) always show regardless of stockQty
+    // because they never deplete inventory. Matches the invoice
+    // StockItemPicker's own filter (StockItemPicker.tsx:87).
+    if (i.deductionEnabled && (i.stockQty ?? 0) <= 0) return false;
     if (categoryFilter !== 'all' && bucketOf(i.category) !== categoryFilter) return false;
     if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
@@ -720,26 +783,30 @@ export function POS() {
   // branch: N+1) → "Rendered more hooks than during the previous
   // render". Cost is trivial: capped at 200 items by the POS fetch.
   const showWarehouseFilter = warehouses.length >= 2;
+  // Chip counts operate on the same sellable-set the grid renders,
+  // so "Snack (3)" always matches what the cashier can actually tap.
+  // OOS deduction items excluded here just like they are in the grid.
+  const sellable = items.filter(i => !(i.deductionEnabled && (i.stockQty ?? 0) <= 0));
   const warehouseCounts = new Map<string, number>();
-  warehouseCounts.set('', items.length);
-  for (const it of items) {
+  warehouseCounts.set('', sellable.length);
+  for (const it of sellable) {
     if (!it.warehouseId) continue;
     warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
   }
   // Category counts drive the chip labels — "Drink (12)" etc. so the
   // cashier sees stock counts at a glance.
   const categoryCounts = {
-    all:      items.length,
-    drink:    items.filter(i => bucketOf(i.category) === 'drink').length,
-    snack:    items.filter(i => bucketOf(i.category) === 'snack').length,
-    food:     items.filter(i => bucketOf(i.category) === 'food').length,
-    craft:    items.filter(i => bucketOf(i.category) === 'craft').length,
-    souvenir: items.filter(i => bucketOf(i.category) === 'souvenir').length,
-    jewelry:  items.filter(i => bucketOf(i.category) === 'jewelry').length,
+    all:      sellable.length,
+    drink:    sellable.filter(i => bucketOf(i.category) === 'drink').length,
+    snack:    sellable.filter(i => bucketOf(i.category) === 'snack').length,
+    food:     sellable.filter(i => bucketOf(i.category) === 'food').length,
+    craft:    sellable.filter(i => bucketOf(i.category) === 'craft').length,
+    souvenir: sellable.filter(i => bucketOf(i.category) === 'souvenir').length,
+    jewelry:  sellable.filter(i => bucketOf(i.category) === 'jewelry').length,
     // 'other' now includes both explicit 'other' AND any unrecognised
     // custom label — a Store System tenant who imports "Ceramic" or
     // "Silverware" still sees those items under the Other chip.
-    other:    items.filter(i => bucketOf(i.category) === 'other').length,
+    other:    sellable.filter(i => bucketOf(i.category) === 'other').length,
   };
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
@@ -828,16 +895,28 @@ export function POS() {
           </div>
         ) : (
           <ul className="divide-y bg-white">
-            {cart.map((l, idx) => (
-              <CartLineRow
-                key={idx}
-                line={l}
-                imageUrl={(l.stockItemId && items.find(i => i.id === l.stockItemId)?.imageUrl) || null}
-                onQty={n => setLineQty(idx, n)}
-                onRemove={() => removeLine(idx)}
-                onPatch={patch => patchLine(idx, patch)}
-              />
-            ))}
+            {cart.map((l, idx) => {
+              // Per-line stock cap so the +/- controls can grey out
+              // once the merged sum (this line + siblings for the
+              // same SKU) hits the stock quantity. Infinity for
+              // non-deduction items → no cap enforced.
+              const cap = stockCapFor(l.stockItemId);
+              const otherLinesTotal = cartQtyForItem(cart, l.stockItemId, idx);
+              const maxQty = Number.isFinite(cap)
+                ? Math.max(0, cap - otherLinesTotal)
+                : Infinity;
+              return (
+                <CartLineRow
+                  key={idx}
+                  line={l}
+                  imageUrl={(l.stockItemId && items.find(i => i.id === l.stockItemId)?.imageUrl) || null}
+                  maxQty={maxQty}
+                  onQty={n => setLineQty(idx, n)}
+                  onRemove={() => removeLine(idx)}
+                  onPatch={patch => patchLine(idx, patch)}
+                />
+              );
+            })}
           </ul>
         )}
       </div>
@@ -1400,12 +1479,17 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
  * =================================================================== */
 
 function CartLineRow({
-  line, imageUrl, onQty, onRemove, onPatch,
+  line, imageUrl, maxQty, onQty, onRemove, onPatch,
 }: {
   line: PosOrderItem;
   /** Cover image resolved from the linked stock item, or null
    *  for ad-hoc lines / items without an image. */
   imageUrl: string | null;
+  /** v-pos-cart-stock-cap — highest total this line may reach given
+   *  the linked stock item's stock quantity + what siblings already
+   *  reserve. Infinity for non-deduction items (services, etc.) — no
+   *  cap enforced. */
+  maxQty: number;
   onQty: (n: number) => void;
   onRemove: () => void;
   onPatch: (patch: Partial<PosOrderItem>) => void;
@@ -1497,8 +1581,19 @@ function CartLineRow({
                 if (Number.isFinite(n) && n >= 0) onQty(n);
               }}
               className="h-7 w-14 text-center text-sm"
+              // Native attr also blocks the browser's built-in
+              // spinner from ticking past the cap on non-touch
+              // clients — belt-and-suspenders with the JS clamp.
+              max={Number.isFinite(maxQty) ? maxQty : undefined}
             />
-            <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => onQty(line.quantity + 1)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={() => onQty(line.quantity + 1)}
+              disabled={line.quantity >= maxQty}
+              title={line.quantity >= maxQty ? `Reached stock limit (${maxQty})` : undefined}
+            >
               <Plus className="h-3 w-3" />
             </Button>
             <button

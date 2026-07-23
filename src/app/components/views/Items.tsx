@@ -862,30 +862,49 @@ export function Items() {
                 so the cashier can configure Size / Sugar Level. */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Category</Label>
-              {/* Free-text since V269 — datalist shows the common
-                  categories as suggestions but the operator can type
-                  any label (e.g. "Handmade Jewelry"). BE trims +
-                  lowercases + caps at 64 chars. Values outside the
-                  known set still save cleanly; POS + shop chips
-                  bucket them under "Other" for filter purposes. */}
+              {/* v-item-category-free-text (V269) — one-tap chip picker
+                  for the common categories PLUS a text input for a
+                  custom label. Empty string is a valid state ("none");
+                  the BE defaults it to 'other' on save so the row still
+                  filters cleanly. Selecting a chip fills the input +
+                  visually marks the chip; typing clears the chip. */}
+              <div className="chip-row">
+                {[
+                  { value: '',         label: '(none)' },
+                  { value: 'drink',    label: 'Drink' },
+                  { value: 'snack',    label: 'Snack' },
+                  { value: 'food',     label: 'Food' },
+                  { value: 'craft',    label: 'Craft' },
+                  { value: 'souvenir', label: 'Souvenir' },
+                  { value: 'jewelry',  label: 'Jewelry' },
+                  { value: 'other',    label: 'Other' },
+                ].map(opt => {
+                  const active = form.category.trim().toLowerCase() === opt.value;
+                  return (
+                    <button
+                      key={opt.value || 'none'}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setForm({ ...form, category: opt.value })}
+                      className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
+                        active
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
               <input
-                list="pos-category-suggestions"
                 value={form.category}
                 onChange={e => setForm({ ...form, category: e.target.value })}
                 disabled={saving}
                 maxLength={64}
-                placeholder="drink, jewelry, or your own label…"
+                placeholder="Or type your own label — leave blank for none"
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
-              <datalist id="pos-category-suggestions">
-                <option value="drink" />
-                <option value="snack" />
-                <option value="food" />
-                <option value="craft" />
-                <option value="souvenir" />
-                <option value="jewelry" />
-                <option value="other" />
-              </datalist>
             </div>
 
             {/* V142 — modifier editor. Available for every category

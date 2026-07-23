@@ -30,6 +30,9 @@ pnpm-debug.log*
 # URL story as .env.cloud — Vite bakes VITE_API_BASE into the shipped
 # exe, so committing it just makes reproducible builds possible.
 !.env.desktop
+# Mobile-mode build config for the Capacitor Android APK. Same public
+# URL story — the value ends up baked into the shipped APK.
+!.env.mobile
 
 # Editor
 .idea/
