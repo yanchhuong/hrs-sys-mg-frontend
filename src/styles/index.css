@@ -6,7 +6,18 @@
    Body text uses Battambang — readable at small sizes, has full diacritic
    coverage. Titles use Moul, the traditional Khmer display script, which
    reads as a strong brand-style serif. Both are loaded from Google Fonts
-   in index.html; Noto Sans Khmer + Hanuman are wide-coverage fallbacks. */
+   in index.html; Noto Sans Khmer + Hanuman are wide-coverage fallbacks.
+
+   Battambang from Google Fonts ships with unicode-range=U+1780-17FF
+   (the Khmer block), so listing it in the DEFAULT font stack means
+   Latin characters keep rendering in system-ui / Inter while any
+   Khmer glyph mixed into an otherwise-Latin string (e.g. a product
+   name like "កន្លាស់ដួល25$") automatically picks Battambang. No cost
+   for pure-Latin text — the browser doesn't fetch the Khmer subset
+   until it encounters a Khmer glyph. */
+html {
+  font-family: 'Inter', 'Battambang', 'Noto Sans Khmer', 'Hanuman', 'Khmer OS', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
 html.lang-km {
   font-family: 'Battambang', 'Noto Sans Khmer', 'Hanuman', 'Khmer OS', system-ui, sans-serif;
   line-height: 1.65;
