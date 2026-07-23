@@ -544,9 +544,9 @@ export function Items() {
                   className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   aria-label="Filter by Stock IN/OUT"
                 >
-                  <option value="">Stock IN/OUT: any</option>
-                  <option value="on">Stock IN/OUT: on</option>
-                  <option value="off">Stock IN/OUT: off</option>
+                  <option value="">Stock : All</option>
+                  <option value="off">Stock : Off</option>
+                  <option value="on">Stock : On</option>
                 </select>
                 <div className="w-44">
                   <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
