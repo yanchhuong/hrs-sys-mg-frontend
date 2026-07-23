@@ -520,7 +520,80 @@ export function Items() {
       />
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-end space-y-0">
+        {/* One-row header: client-side filters on the LEFT, server-side
+            search form on the RIGHT. Both wrap gracefully on narrow
+            displays so nothing gets cut off. */}
+        <CardHeader className="flex flex-row flex-wrap items-end gap-x-6 gap-y-3 justify-between space-y-0">
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+            {rows.length > 0 && (
+              <>
+                <select
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by category"
+                >
+                  <option value="">All categories</option>
+                  {categoryOptions.map(c => (
+                    <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
+                  ))}
+                </select>
+                <select
+                  value={stockIoFilter}
+                  onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by Stock IN/OUT"
+                >
+                  <option value="">Stock IN/OUT: any</option>
+                  <option value="on">Stock IN/OUT: on</option>
+                  <option value="off">Stock IN/OUT: off</option>
+                </select>
+                <div className="w-44">
+                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                    <Label className="text-xs">Price</Label>
+                    <span className="tabular-nums text-gray-500">
+                      ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
+                    </span>
+                  </div>
+                  <Slider
+                    min={priceBounds[0]}
+                    max={priceBounds[1]}
+                    step={1}
+                    value={effPrice}
+                    onValueChange={(v) => {
+                      const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                      const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                      setPriceRange([a, b]);
+                    }}
+                  />
+                </div>
+                <div className="w-44">
+                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                    <Label className="text-xs">Stock</Label>
+                    <span className="tabular-nums text-gray-500">
+                      {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
+                    </span>
+                  </div>
+                  <Slider
+                    min={stockBounds[0]}
+                    max={stockBounds[1]}
+                    step={1}
+                    value={effStock}
+                    onValueChange={(v) => {
+                      const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                      const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                      setStockRange([a, b]);
+                    }}
+                  />
+                </div>
+                {filtersActive && (
+                  <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
           <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
             {/* Warehouse filter — shown only when the feature gate is
                 on. "All" = empty value, picks one warehouse otherwise.
@@ -556,82 +629,6 @@ export function Items() {
           </form>
         </CardHeader>
         <CardContent>
-          {/* Filter strip — everything on a single flex-wrap row so a
-              wide display keeps category + Stock IN/OUT + Price slider
-              + Stock slider + Clear all inline. Slider blocks are
-              vertical stacks (label above, track below) but each one
-              still fits inside the row via `items-end` alignment.
-              Sliders' bounds derive from the actual row values so a
-              tenant with $2 items gets a sensible track, not an
-              arbitrary 0-100. */}
-          {rows.length > 0 && (
-            <div className="flex flex-wrap items-end gap-x-6 gap-y-3 mb-4">
-              <select
-                value={categoryFilter}
-                onChange={e => setCategoryFilter(e.target.value)}
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Filter by category"
-              >
-                <option value="">All categories</option>
-                {categoryOptions.map(c => (
-                  <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
-                ))}
-              </select>
-              <select
-                value={stockIoFilter}
-                onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Filter by Stock IN/OUT"
-              >
-                <option value="">Stock IN/OUT: any</option>
-                <option value="on">Stock IN/OUT: on</option>
-                <option value="off">Stock IN/OUT: off</option>
-              </select>
-              <div className="w-56">
-                <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
-                  <Label className="text-xs">Price</Label>
-                  <span className="tabular-nums text-gray-500">
-                    ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
-                  </span>
-                </div>
-                <Slider
-                  min={priceBounds[0]}
-                  max={priceBounds[1]}
-                  step={1}
-                  value={effPrice}
-                  onValueChange={(v) => {
-                    const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                    const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                    setPriceRange([a, b]);
-                  }}
-                />
-              </div>
-              <div className="w-56">
-                <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
-                  <Label className="text-xs">Stock</Label>
-                  <span className="tabular-nums text-gray-500">
-                    {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
-                  </span>
-                </div>
-                <Slider
-                  min={stockBounds[0]}
-                  max={stockBounds[1]}
-                  step={1}
-                  value={effStock}
-                  onValueChange={(v) => {
-                    const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                    const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                    setStockRange([a, b]);
-                  }}
-                />
-              </div>
-              {filtersActive && (
-                <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
           {loading && rows.length === 0 ? (
             <div className="text-center py-10 text-sm text-gray-400">Loading items…</div>
           ) : rows.length === 0 ? (
