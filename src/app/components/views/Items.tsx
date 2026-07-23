@@ -251,14 +251,19 @@ export function Items() {
 
   // Distinct category options for the dropdown — derived from the
   // items currently on the page so a tenant's custom labels (e.g.
-  // "Pin", "Ceramic") show up automatically.
+  // "Pin", "Ceramic") show up automatically. "Other" always pinned
+  // to the tail so the catch-all bucket sits after every named
+  // category, matching the POS chip ordering.
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
       const c = (r.category ?? '').toString().trim().toLowerCase();
       if (c) set.add(c);
     }
-    return Array.from(set).sort();
+    const all = Array.from(set).sort();
+    const hasOther = all.includes('other');
+    const named = all.filter(c => c !== 'other');
+    return hasOther ? [...named, 'other'] : named;
   }, [rows]);
 
   const filtersActive =

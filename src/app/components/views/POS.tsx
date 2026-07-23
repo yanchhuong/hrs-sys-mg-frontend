@@ -803,12 +803,15 @@ export function POS() {
     const c = normalCat(it.category);
     categoryCounts.set(c, (categoryCounts.get(c) ?? 0) + 1);
   }
-  // Ordered chip key list — 'all' first, then known categories, then
-  // any custom labels the tenant has actually used, alphabetically.
+  // Ordered chip key list — 'all' first, then known categories
+  // (excluding 'other'), then any custom labels the tenant has
+  // actually used (alphabetical), then 'other' pinned LAST so the
+  // catch-all bucket never appears mid-list.
+  const KNOWN_EXCL_OTHER = KNOWN_POS_CATEGORIES.filter(k => k !== 'other');
   const customCatKeys = Array.from(new Set(sellable.map(i => normalCat(i.category))))
     .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
     .sort();
-  const chipKeys: readonly string[] = ['all', ...KNOWN_POS_CATEGORIES, ...customCatKeys];
+  const chipKeys: readonly string[] = ['all', ...KNOWN_EXCL_OTHER, ...customCatKeys, 'other'];
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
   // mobile bottom Sheet, so both surfaces stay in sync without a
