@@ -486,19 +486,7 @@ export function PublicShopPage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Header banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-violet-600 text-white relative">
-        {/* "Powered by SMRT HRMS" — right-aligned brand link on the
-            top-right of the banner. Absolute-positioned so it doesn't
-            elbow the shop-info row on narrow layouts; on mobile it
-            drops to the top-right corner and stays small + subtle. */}
-        <a
-          href="https://hr-share.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute top-2 right-3 sm:top-3 sm:right-6 text-[10px] sm:text-xs text-white/75 hover:text-white transition-colors"
-        >
-          Powered by <b className="text-white">SMRT HRMS</b>
-        </a>
+      <div className="bg-gradient-to-r from-blue-600 to-violet-600 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-start gap-4">
           <div className="h-14 w-14 rounded-xl bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
             {data.logoUrl
@@ -524,39 +512,52 @@ export function PublicShopPage() {
                 {data.code}
               </span>
             </div>
-            {/* V266 — company profile row (address / phone / email).
-                Renders only when the tenant has filled any of them.
-                Each chip is a link when the value is actionable
-                (tel: / mailto:) so a phone tap opens the dialer on
-                mobile. */}
-            {(data.address || data.phone || data.email) && (
-              <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-white/85 flex-wrap">
-                {data.address && (
-                  <span className="inline-flex items-center gap-1 max-w-full">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate" title={data.address}>{data.address}</span>
-                  </span>
-                )}
-                {data.phone && (
-                  <a
-                    href={`tel:${data.phone.replace(/\s+/g, '')}`}
-                    className="inline-flex items-center gap-1 hover:text-white"
-                  >
-                    <Phone className="h-3.5 w-3.5" />
-                    {data.phone}
-                  </a>
-                )}
-                {data.email && (
-                  <a
-                    href={`mailto:${data.email}`}
-                    className="inline-flex items-center gap-1 hover:text-white"
-                  >
-                    <Mail className="h-3.5 w-3.5" />
-                    {data.email}
-                  </a>
-                )}
-              </div>
-            )}
+            {/* V266 — company profile row (address / phone / email)
+                + trailing "Powered by SMRT HRMS" brand link on the
+                right. Always renders (even when no contact info is
+                set) so the powered-by attribution is visible on
+                every shop. Each contact chip is a link when the
+                value is actionable (tel: / mailto:) so a phone tap
+                opens the dialer on mobile. */}
+            <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-white/85 flex-wrap">
+              {data.address && (
+                <span className="inline-flex items-center gap-1 max-w-full">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate" title={data.address}>{data.address}</span>
+                </span>
+              )}
+              {data.phone && (
+                <a
+                  href={`tel:${data.phone.replace(/\s+/g, '')}`}
+                  className="inline-flex items-center gap-1 hover:text-white"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  {data.phone}
+                </a>
+              )}
+              {data.email && (
+                <a
+                  href={`mailto:${data.email}`}
+                  className="inline-flex items-center gap-1 hover:text-white"
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  {data.email}
+                </a>
+              )}
+            </div>
+            {/* Powered-by attribution on its own line, left-aligned
+                under the contact row so it never elbows the shop's
+                own metadata. */}
+            <div className="mt-2 text-xs sm:text-sm text-white/85">
+              <a
+                href="https://hr-share.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 hover:text-white"
+              >
+                Powered by <b className="text-white">SMRT HRMS</b>
+              </a>
+            </div>
           </div>
         </div>
       </div>
