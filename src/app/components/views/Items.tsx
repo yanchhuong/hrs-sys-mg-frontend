@@ -138,6 +138,16 @@ export function Items() {
   // Filter applied to the list query when the feature is on. Empty
   // string = "All" (no warehouse filter).
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
+  // v-items-filter-strip — client-side filters. Category is free-text
+  // (V269) so we derive the option list from the actual items on the
+  // page. Stock IN/OUT toggles the deductionEnabled flag. Price + stock
+  // ranges are inclusive on both ends; blank = unbounded.
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [stockIoFilter, setStockIoFilter] = useState<'' | 'on' | 'off'>('');
+  const [priceMin, setPriceMin] = useState<string>('');
+  const [priceMax, setPriceMax] = useState<string>('');
+  const [stockMin, setStockMin] = useState<string>('');
+  const [stockMax, setStockMax] = useState<string>('');
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -199,7 +209,48 @@ export function Items() {
     void load();
   };
 
-  const filtered = useMemo(() => rows, [rows]);
+  const filtered = useMemo(() => {
+    const pMin = priceMin.trim() !== '' ? Number(priceMin) : null;
+    const pMax = priceMax.trim() !== '' ? Number(priceMax) : null;
+    const sMin = stockMin.trim() !== '' ? Number(stockMin) : null;
+    const sMax = stockMax.trim() !== '' ? Number(stockMax) : null;
+    const cat = categoryFilter.trim().toLowerCase();
+    return rows.filter(r => {
+      if (cat && ((r.category ?? '') as string).toLowerCase() !== cat) return false;
+      if (stockIoFilter === 'on'  && !r.deductionEnabled) return false;
+      if (stockIoFilter === 'off' &&  r.deductionEnabled) return false;
+      const price = r.unitPrice ?? 0;
+      if (pMin != null && !Number.isNaN(pMin) && price < pMin) return false;
+      if (pMax != null && !Number.isNaN(pMax) && price > pMax) return false;
+      const stk = r.stockQty ?? 0;
+      if (sMin != null && !Number.isNaN(sMin) && stk < sMin) return false;
+      if (sMax != null && !Number.isNaN(sMax) && stk > sMax) return false;
+      return true;
+    });
+  }, [rows, categoryFilter, stockIoFilter, priceMin, priceMax, stockMin, stockMax]);
+
+  // Distinct category options for the dropdown — derived from the
+  // items currently on the page so a tenant's custom labels (e.g.
+  // "Pin", "Ceramic") show up automatically.
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const c = (r.category ?? '').toString().trim().toLowerCase();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filtersActive =
+    !!categoryFilter || !!stockIoFilter
+    || priceMin.trim() !== '' || priceMax.trim() !== ''
+    || stockMin.trim() !== '' || stockMax.trim() !== '';
+  const clearFilters = () => {
+    setCategoryFilter('');
+    setStockIoFilter('');
+    setPriceMin(''); setPriceMax('');
+    setStockMin(''); setStockMax('');
+  };
   const pagination = usePagination(filtered, 25);
 
   /** id → display label, so the table cell renders the warehouse name
@@ -491,6 +542,61 @@ export function Items() {
           </form>
         </CardHeader>
         <CardContent>
+          {/* Filter strip — category / Stock IN-OUT / price range / stock
+              range. Client-side only (fed by the same rows the table
+              renders) so it responds instantly, no extra list call. */}
+          {rows.length > 0 && (
+            <div className="filter-strip mb-3">
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Filter by category"
+              >
+                <option value="">All categories</option>
+                {categoryOptions.map(c => (
+                  <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
+                ))}
+              </select>
+              <select
+                value={stockIoFilter}
+                onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Filter by Stock IN/OUT"
+              >
+                <option value="">Stock IN/OUT: any</option>
+                <option value="on">Stock IN/OUT: on</option>
+                <option value="off">Stock IN/OUT: off</option>
+              </select>
+              <Label className="text-xs text-gray-500">Price</Label>
+              <Input
+                type="number" inputMode="decimal" placeholder="min"
+                value={priceMin} onChange={e => setPriceMin(e.target.value)}
+                className="h-9 w-20"
+              />
+              <Input
+                type="number" inputMode="decimal" placeholder="max"
+                value={priceMax} onChange={e => setPriceMax(e.target.value)}
+                className="h-9 w-20"
+              />
+              <Label className="text-xs text-gray-500">Stock</Label>
+              <Input
+                type="number" inputMode="numeric" placeholder="min"
+                value={stockMin} onChange={e => setStockMin(e.target.value)}
+                className="h-9 w-20"
+              />
+              <Input
+                type="number" inputMode="numeric" placeholder="max"
+                value={stockMax} onChange={e => setStockMax(e.target.value)}
+                className="h-9 w-20"
+              />
+              {filtersActive && (
+                <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
           {loading && rows.length === 0 ? (
             <div className="text-center py-10 text-sm text-gray-400">Loading items…</div>
           ) : rows.length === 0 ? (
