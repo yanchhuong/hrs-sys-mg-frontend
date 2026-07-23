@@ -100,6 +100,38 @@ interface CartLine {
   notes: string;
 }
 
+/** Set / update a document <meta> tag by name (or property when isProperty=true).
+ *  Creates the element if missing; overwrites the content if present. Used
+ *  for SEO + social preview crawlers on the public shop page. */
+function setMeta(name: string, content: string, isProperty = false) {
+  if (typeof document === 'undefined') return;
+  const attr = isProperty ? 'property' : 'name';
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${name}"]`);
+  if (!el) {
+    el = document.createElement('meta');
+    el.setAttribute(attr, name);
+    document.head.appendChild(el);
+  }
+  el.setAttribute('content', content);
+}
+
+/** Set / update a document <link rel="..."> tag. Used for canonical URL. */
+function setLink(rel: string, href: string) {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!el) {
+    el = document.createElement('link');
+    el.setAttribute('rel', rel);
+    document.head.appendChild(el);
+  }
+  el.setAttribute('href', href);
+}
+
+/** Page size for the shop's infinite-scroll grid. Tiles are cheap to
+ *  render but 200+ at once punishes low-end phones — 24 fills 4-5 rows
+ *  on desktop, ~8-12 rows on mobile. */
+const SHOP_PAGE_SIZE = 24;
+
 /** Per-line unit price = base + sum of selected modifier price deltas. */
 function lineUnitPrice(line: CartLine): number {
   return Number(line.item.unitPrice) + line.modifiers.reduce((s, m) => s + Number(m.priceAdj || 0), 0);
@@ -118,6 +150,13 @@ export function PublicShopPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
+  // Infinite-scroll pagination — current cap on how many filtered
+  // items are actually rendered. Bumped by SHOP_PAGE_SIZE when the
+  // sentinel div at the bottom of the grid intersects the viewport.
+  // Resets to SHOP_PAGE_SIZE whenever search or category changes so
+  // a fresh filter always starts from the top.
+  const [visibleCount, setVisibleCount] = useState<number>(SHOP_PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   /** Cart keyed by stockItemId so a re-tap on the same item increments
    *  the qty without duplicating the row. Reset on a successful
@@ -210,7 +249,31 @@ export function PublicShopPage() {
         const r = await shopApi.getPublicMenu(code);
         if (!cancelled) {
           setData(r);
-          document.title = `${r.shopName || 'Shop'} — Menu`;
+          // ── SEO metadata ────────────────────────────────────────
+          // Populate <title>, meta description, Open Graph + Twitter
+          // Card tags so Google (and social preview crawlers) can
+          // index the shop by its display name + address, and any
+          // shared link surfaces a rich card. Googlebot executes JS
+          // and reads these post-hydration values.
+          const shopName = r.shopName || 'Shop';
+          const desc = [
+            `${shopName} — online menu.`,
+            r.address ? `📍 ${r.address}` : null,
+            `${r.items.length} products available.`,
+          ].filter(Boolean).join(' ');
+          document.title = `${shopName} — Menu`;
+          setMeta('description', desc);
+          setMeta('og:title', `${shopName} — Menu`, true);
+          setMeta('og:description', desc, true);
+          setMeta('og:type', 'website', true);
+          setMeta('og:url', window.location.href, true);
+          if (r.logoUrl) setMeta('og:image', r.logoUrl, true);
+          setMeta('twitter:card', 'summary');
+          setMeta('twitter:title', `${shopName} — Menu`);
+          setMeta('twitter:description', desc);
+          // Canonical link so Google doesn't treat query-string
+          // variants (?utm=…) as duplicate pages.
+          setLink('canonical', window.location.origin + window.location.pathname);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Shop not found');
@@ -237,6 +300,40 @@ export function PublicShopPage() {
           || (it.description ?? '').toLowerCase().includes(q);
     });
   }, [inStockItems, search, category]);
+
+  // Reset the visible window whenever the filter shrinks / changes so
+  // "load more" starts fresh from the top on every search or category
+  // change (no orphan "no items" gap because the pagination was still
+  // pointing past the new result set).
+  useEffect(() => { setVisibleCount(SHOP_PAGE_SIZE); }, [search, category]);
+
+  // IntersectionObserver on the sentinel div at the bottom of the
+  // grid. When it enters the viewport (rootMargin=200px so it fires
+  // a bit before the user hits the bottom), bump the visible window
+  // by SHOP_PAGE_SIZE. Rebound every time `filtered` changes so the
+  // observer is always pointing at the CURRENT bottom.
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    if (visibleCount >= filtered.length) return;  // already rendered all
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisibleCount(c => Math.min(c + SHOP_PAGE_SIZE, filtered.length));
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [filtered.length, visibleCount]);
+
+  // Rendered slice — used by the grid below. Kept as its own memo so
+  // the paginated child list is memoized properly.
+  const visibleItems = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount],
+  );
 
   // Counts by normalized category string — every custom label the
   // tenant has used gets its own entry. "All" is a synthetic bucket
@@ -629,19 +726,35 @@ export function PublicShopPage() {
               : 'No items match your search.'}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {filtered.map(it => (
-              <PublicShopCard
-                key={it.id}
-                item={it}
-                qtyInCart={cartLines
-                  .filter(l => l.item.id === it.id)
-                  .reduce((s, l) => s + l.qty, 0)}
-                onOpen={() => setDetailTarget(it)}
-                onAdd={() => addOne(it)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {visibleItems.map(it => (
+                <PublicShopCard
+                  key={it.id}
+                  item={it}
+                  qtyInCart={cartLines
+                    .filter(l => l.item.id === it.id)
+                    .reduce((s, l) => s + l.qty, 0)}
+                  onOpen={() => setDetailTarget(it)}
+                  onAdd={() => addOne(it)}
+                />
+              ))}
+            </div>
+            {/* Sentinel + "loading more…" spinner. The IntersectionObserver
+                above watches this element — when it enters the viewport
+                the visible window grows by SHOP_PAGE_SIZE. Hides once
+                every filtered item is rendered. */}
+            {visibleCount < filtered.length && (
+              <div ref={loadMoreRef} className="mt-6 flex justify-center text-xs text-gray-500 py-4">
+                Loading more items…
+              </div>
+            )}
+            {visibleCount >= filtered.length && filtered.length > SHOP_PAGE_SIZE && (
+              <div className="mt-6 text-center text-xs text-gray-400 py-3">
+                All {filtered.length} items shown.
+              </div>
+            )}
+          </>
         )}
       </div>
 
