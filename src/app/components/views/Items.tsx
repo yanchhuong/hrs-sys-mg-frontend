@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Slider } from '../ui/slider';
 import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
@@ -141,13 +142,12 @@ export function Items() {
   // v-items-filter-strip — client-side filters. Category is free-text
   // (V269) so we derive the option list from the actual items on the
   // page. Stock IN/OUT toggles the deductionEnabled flag. Price + stock
-  // ranges are inclusive on both ends; blank = unbounded.
+  // are dual-handle range sliders — null = "user hasn't touched it yet"
+  // and we fall through to the full min/max derived from the rows.
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [stockIoFilter, setStockIoFilter] = useState<'' | 'on' | 'off'>('');
-  const [priceMin, setPriceMin] = useState<string>('');
-  const [priceMax, setPriceMax] = useState<string>('');
-  const [stockMin, setStockMin] = useState<string>('');
-  const [stockMax, setStockMax] = useState<string>('');
+  const [priceRange, setPriceRange] = useState<[number, number] | null>(null);
+  const [stockRange, setStockRange] = useState<[number, number] | null>(null);
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -209,25 +209,45 @@ export function Items() {
     void load();
   };
 
+  // Range bounds — derived from the loaded rows so a tenant with $2
+  // items and one $2000 outlier sees a sensible full-width slider.
+  // Ceil / floor by 1 so bounds always land on whole units.
+  const priceBounds = useMemo<[number, number]>(() => {
+    const prices = rows.map(r => r.unitPrice ?? 0);
+    const hi = prices.length ? Math.ceil(Math.max(...prices)) : 100;
+    return [0, Math.max(hi, 1)];
+  }, [rows]);
+  const stockBounds = useMemo<[number, number]>(() => {
+    const qtys = rows.map(r => r.stockQty ?? 0);
+    const lo = qtys.length ? Math.floor(Math.min(0, ...qtys)) : 0;
+    const hi = qtys.length ? Math.ceil(Math.max(0, ...qtys)) : 100;
+    return [lo, Math.max(hi, lo + 1)];
+  }, [rows]);
+
+  // Effective values — the slider ALWAYS renders with a value, but
+  // "not yet touched" means we don't filter on it. When touched the
+  // stored range is the source of truth (clamped to current bounds if
+  // the row set shifts).
+  const effPrice: [number, number] = priceRange ?? priceBounds;
+  const effStock: [number, number] = stockRange ?? stockBounds;
+
   const filtered = useMemo(() => {
-    const pMin = priceMin.trim() !== '' ? Number(priceMin) : null;
-    const pMax = priceMax.trim() !== '' ? Number(priceMax) : null;
-    const sMin = stockMin.trim() !== '' ? Number(stockMin) : null;
-    const sMax = stockMax.trim() !== '' ? Number(stockMax) : null;
     const cat = categoryFilter.trim().toLowerCase();
     return rows.filter(r => {
       if (cat && ((r.category ?? '') as string).toLowerCase() !== cat) return false;
       if (stockIoFilter === 'on'  && !r.deductionEnabled) return false;
       if (stockIoFilter === 'off' &&  r.deductionEnabled) return false;
-      const price = r.unitPrice ?? 0;
-      if (pMin != null && !Number.isNaN(pMin) && price < pMin) return false;
-      if (pMax != null && !Number.isNaN(pMax) && price > pMax) return false;
-      const stk = r.stockQty ?? 0;
-      if (sMin != null && !Number.isNaN(sMin) && stk < sMin) return false;
-      if (sMax != null && !Number.isNaN(sMax) && stk > sMax) return false;
+      if (priceRange) {
+        const price = r.unitPrice ?? 0;
+        if (price < priceRange[0] || price > priceRange[1]) return false;
+      }
+      if (stockRange) {
+        const stk = r.stockQty ?? 0;
+        if (stk < stockRange[0] || stk > stockRange[1]) return false;
+      }
       return true;
     });
-  }, [rows, categoryFilter, stockIoFilter, priceMin, priceMax, stockMin, stockMax]);
+  }, [rows, categoryFilter, stockIoFilter, priceRange, stockRange]);
 
   // Distinct category options for the dropdown — derived from the
   // items currently on the page so a tenant's custom labels (e.g.
@@ -242,14 +262,12 @@ export function Items() {
   }, [rows]);
 
   const filtersActive =
-    !!categoryFilter || !!stockIoFilter
-    || priceMin.trim() !== '' || priceMax.trim() !== ''
-    || stockMin.trim() !== '' || stockMax.trim() !== '';
+    !!categoryFilter || !!stockIoFilter || priceRange != null || stockRange != null;
   const clearFilters = () => {
     setCategoryFilter('');
     setStockIoFilter('');
-    setPriceMin(''); setPriceMax('');
-    setStockMin(''); setStockMax('');
+    setPriceRange(null);
+    setStockRange(null);
   };
   const pagination = usePagination(filtered, 25);
 
@@ -542,59 +560,87 @@ export function Items() {
           </form>
         </CardHeader>
         <CardContent>
-          {/* Filter strip — category / Stock IN-OUT / price range / stock
-              range. Client-side only (fed by the same rows the table
-              renders) so it responds instantly, no extra list call. */}
+          {/* Filter strip — category / Stock IN-OUT dropdowns on top,
+              price + stock range sliders below. Client-side only (fed
+              by the same rows the table renders) so it responds
+              instantly, no extra list call. Sliders' bounds derive
+              from the actual row values so a tenant with $2 items
+              gets a sensible track, not an arbitrary 0-100. */}
           {rows.length > 0 && (
-            <div className="filter-strip mb-3">
-              <select
-                value={categoryFilter}
-                onChange={e => setCategoryFilter(e.target.value)}
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Filter by category"
-              >
-                <option value="">All categories</option>
-                {categoryOptions.map(c => (
-                  <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
-                ))}
-              </select>
-              <select
-                value={stockIoFilter}
-                onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Filter by Stock IN/OUT"
-              >
-                <option value="">Stock IN/OUT: any</option>
-                <option value="on">Stock IN/OUT: on</option>
-                <option value="off">Stock IN/OUT: off</option>
-              </select>
-              <Label className="text-xs text-gray-500">Price</Label>
-              <Input
-                type="number" inputMode="decimal" placeholder="min"
-                value={priceMin} onChange={e => setPriceMin(e.target.value)}
-                className="h-9 w-20"
-              />
-              <Input
-                type="number" inputMode="decimal" placeholder="max"
-                value={priceMax} onChange={e => setPriceMax(e.target.value)}
-                className="h-9 w-20"
-              />
-              <Label className="text-xs text-gray-500">Stock</Label>
-              <Input
-                type="number" inputMode="numeric" placeholder="min"
-                value={stockMin} onChange={e => setStockMin(e.target.value)}
-                className="h-9 w-20"
-              />
-              <Input
-                type="number" inputMode="numeric" placeholder="max"
-                value={stockMax} onChange={e => setStockMax(e.target.value)}
-                className="h-9 w-20"
-              />
-              {filtersActive && (
-                <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
-                  Clear
-                </Button>
-              )}
+            <div className="mb-4 space-y-3">
+              {/* Row 1: dropdowns + Clear */}
+              <div className="filter-strip">
+                <select
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by category"
+                >
+                  <option value="">All categories</option>
+                  {categoryOptions.map(c => (
+                    <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
+                  ))}
+                </select>
+                <select
+                  value={stockIoFilter}
+                  onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by Stock IN/OUT"
+                >
+                  <option value="">Stock IN/OUT: any</option>
+                  <option value="on">Stock IN/OUT: on</option>
+                  <option value="off">Stock IN/OUT: off</option>
+                </select>
+                {filtersActive && (
+                  <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {/* Row 2: two range sliders side-by-side, each with its
+                  own inline label + current value. Fixed width per
+                  block so long tables don't stretch the sliders to
+                  full-page width. */}
+              <div className="flex flex-wrap gap-x-8 gap-y-3">
+                <div className="w-72">
+                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                    <Label className="text-xs">Price</Label>
+                    <span className="tabular-nums text-gray-500">
+                      ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
+                    </span>
+                  </div>
+                  <Slider
+                    min={priceBounds[0]}
+                    max={priceBounds[1]}
+                    step={1}
+                    value={effPrice}
+                    onValueChange={(v) => {
+                      const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                      const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                      setPriceRange([a, b]);
+                    }}
+                  />
+                </div>
+                <div className="w-72">
+                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                    <Label className="text-xs">Stock</Label>
+                    <span className="tabular-nums text-gray-500">
+                      {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
+                    </span>
+                  </div>
+                  <Slider
+                    min={stockBounds[0]}
+                    max={stockBounds[1]}
+                    step={1}
+                    value={effStock}
+                    onValueChange={(v) => {
+                      const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                      const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                      setStockRange([a, b]);
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           )}
           {loading && rows.length === 0 ? (
