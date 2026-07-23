@@ -3,7 +3,7 @@ import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
   ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
   Navigation, ExternalLink, Info, Truck, Hand, QrCode, Banknote,
-  Phone, Mail, ChevronLeft, ChevronRight,
+  Phone, Mail, ChevronLeft, ChevronRight, ArrowUp,
 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -157,6 +157,9 @@ export function PublicShopPage() {
   // a fresh filter always starts from the top.
   const [visibleCount, setVisibleCount] = useState<number>(SHOP_PAGE_SIZE);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  // "Back to top" FAB — appears once the customer has scrolled past
+  // ~one viewport so the button never shows on short menus.
+  const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
 
   /** Cart keyed by stockItemId so a re-tap on the same item increments
    *  the qty without duplicating the row. Reset on a successful
@@ -300,6 +303,16 @@ export function PublicShopPage() {
           || (it.description ?? '').toLowerCase().includes(q);
     });
   }, [inStockItems, search, category]);
+
+  // Track vertical scroll to toggle the "back to top" floating button.
+  // Threshold: 1 viewport height so it stays hidden on short menus
+  // where the customer can already see everything without scrolling.
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > window.innerHeight);
+    onScroll(); // seed on mount
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Reset the visible window whenever the filter shrinks / changes so
   // "load more" starts fresh from the top on every search or category
@@ -676,8 +689,13 @@ export function PublicShopPage() {
         </div>
       </div>
 
-      {/* Search + category chips */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-3">
+      {/* Search + category chips — sticky at the top of the viewport
+          once the customer scrolls past the banner. bg + backdrop-blur
+          so items scrolling under it stay legible. Border-bottom draws
+          a subtle separator when in sticky state (blends into the
+          slate-50 page bg when at the top). */}
+      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/60">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 space-y-2">
         <div className="relative max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
@@ -714,6 +732,7 @@ export function PublicShopPage() {
                 </button>
               );
             })}
+        </div>
         </div>
       </div>
 
@@ -757,6 +776,23 @@ export function PublicShopPage() {
           </>
         )}
       </div>
+
+      {/* "Back to top" floating action button — appears once the
+          customer has scrolled past one viewport. Sits above the
+          sticky cart bar on the right so neither obscures the other
+          on mobile (bottom-24 when cart is showing, bottom-6 when it
+          isn't). Smooth-scrolls to the top of the page. */}
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className={`fixed right-4 sm:right-6 z-30 h-11 w-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all
+            ${cartCount > 0 ? 'bottom-24' : 'bottom-6'}`}
+          aria-label="Back to top"
+        >
+          <ArrowUp className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Sticky cart bar — visible whenever the customer has any
           items selected. Tapping it opens the checkout sheet where
