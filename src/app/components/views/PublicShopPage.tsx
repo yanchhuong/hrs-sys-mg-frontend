@@ -486,7 +486,19 @@ export function PublicShopPage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Header banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-violet-600 text-white">
+      <div className="bg-gradient-to-r from-blue-600 to-violet-600 text-white relative">
+        {/* "Powered by SMRT HRMS" — right-aligned brand link on the
+            top-right of the banner. Absolute-positioned so it doesn't
+            elbow the shop-info row on narrow layouts; on mobile it
+            drops to the top-right corner and stays small + subtle. */}
+        <a
+          href="https://hr-share.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute top-2 right-3 sm:top-3 sm:right-6 text-[10px] sm:text-xs text-white/75 hover:text-white transition-colors"
+        >
+          Powered by <b className="text-white">SMRT HRMS</b>
+        </a>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-start gap-4">
           <div className="h-14 w-14 rounded-xl bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
             {data.logoUrl
