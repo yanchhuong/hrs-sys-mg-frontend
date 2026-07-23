@@ -75,7 +75,9 @@ export function POS() {
   const [search, setSearch] = useState('');
   // V142 — category filter tabs. 'all' is the default; selecting a
   // specific category narrows the items grid below the search bar.
-  const [categoryFilter, setCategoryFilter] = useState<itemsApi.ItemCategory | 'all'>('all');
+  // Kept as plain string so custom free-text categories (V269) that
+  // aren't in the known-chip set can still be selected/deselected.
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   // Warehouse filter (V149 feature-on). Empty string = All warehouses.
   // Rendered on the right side of the category chip row and only
   // appears when the tenant has ≥2 warehouses configured — a single-
@@ -745,15 +747,14 @@ export function POS() {
 
   /* ----- main UI ----- */
   // v-item-category-free-text (V269) — categories are free-text.
-  // The chip strip only shows the common set; anything else falls
-  // under the "other" bucket so a custom "Handmade Jewelry" import
-  // still lives somewhere the cashier can find it.
-  const KNOWN_POS_CATEGORIES: readonly itemsApi.ItemCategory[] =
+  // Chips now include the well-known set PLUS any custom label the
+  // tenant has actually saved on an item (e.g. "Pin", "Ceramic").
+  // Empty/missing categories bucket as "other" so nothing falls off
+  // the grid.
+  const KNOWN_POS_CATEGORIES: readonly string[] =
     ['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'];
-  const bucketOf = (raw: string | undefined | null): itemsApi.ItemCategory => {
-    const c = (raw ?? 'other') as itemsApi.ItemCategory;
-    return KNOWN_POS_CATEGORIES.includes(c) ? c : 'other';
-  };
+  const normalCat = (raw: string | undefined | null): string =>
+    (raw ?? '').trim().toLowerCase() || 'other';
   const filteredItems = items.filter(i => {
     // v-pos-hide-oos-deduct — items with Stock IN/OUT ON and stock
     // at 0 are unsellable (the checkout endpoint refuses them
@@ -763,7 +764,7 @@ export function POS() {
     // because they never deplete inventory. Matches the invoice
     // StockItemPicker's own filter (StockItemPicker.tsx:87).
     if (i.deductionEnabled && (i.stockQty ?? 0) <= 0) return false;
-    if (categoryFilter !== 'all' && bucketOf(i.category) !== categoryFilter) return false;
+    if (categoryFilter !== 'all' && normalCat(i.category) !== categoryFilter) return false;
     if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -794,20 +795,20 @@ export function POS() {
     warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
   }
   // Category counts drive the chip labels — "Drink (12)" etc. so the
-  // cashier sees stock counts at a glance.
-  const categoryCounts = {
-    all:      sellable.length,
-    drink:    sellable.filter(i => bucketOf(i.category) === 'drink').length,
-    snack:    sellable.filter(i => bucketOf(i.category) === 'snack').length,
-    food:     sellable.filter(i => bucketOf(i.category) === 'food').length,
-    craft:    sellable.filter(i => bucketOf(i.category) === 'craft').length,
-    souvenir: sellable.filter(i => bucketOf(i.category) === 'souvenir').length,
-    jewelry:  sellable.filter(i => bucketOf(i.category) === 'jewelry').length,
-    // 'other' now includes both explicit 'other' AND any unrecognised
-    // custom label — a Store System tenant who imports "Ceramic" or
-    // "Silverware" still sees those items under the Other chip.
-    other:    sellable.filter(i => bucketOf(i.category) === 'other').length,
-  };
+  // cashier sees stock counts at a glance. Keyed by the normalized
+  // category string so a custom "pin" label counts + filters correctly.
+  const categoryCounts = new Map<string, number>();
+  categoryCounts.set('all', sellable.length);
+  for (const it of sellable) {
+    const c = normalCat(it.category);
+    categoryCounts.set(c, (categoryCounts.get(c) ?? 0) + 1);
+  }
+  // Ordered chip key list — 'all' first, then known categories, then
+  // any custom labels the tenant has actually used, alphabetically.
+  const customCatKeys = Array.from(new Set(sellable.map(i => normalCat(i.category))))
+    .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
+    .sort();
+  const chipKeys: readonly string[] = ['all', ...KNOWN_POS_CATEGORIES, ...customCatKeys];
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
   // mobile bottom Sheet, so both surfaces stay in sync without a
@@ -1103,13 +1104,14 @@ export function POS() {
                 list doesn't push the warehouse filter off-screen. */}
             <div className="flex items-center gap-3 min-w-0">
               <div className="chip-row flex-1 min-w-0">
-                {(['all', 'drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'] as const)
+                {chipKeys
                   // Hide chips whose bucket is empty unless it's the active tab
                   // OR the "All" chip — the "All" tab must always be present.
-                  .filter(key => key === 'all' || categoryFilter === key || categoryCounts[key] > 0)
+                  .filter(key => key === 'all' || categoryFilter === key || (categoryCounts.get(key) ?? 0) > 0)
                   .map(key => {
                     const active = categoryFilter === key;
                     const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
+                    const count = categoryCounts.get(key) ?? 0;
                     return (
                       <button
                         key={key}
@@ -1122,7 +1124,7 @@ export function POS() {
                         }`}
                       >
                         {label}
-                        <span className="ml-1 text-[10px] opacity-70">({categoryCounts[key]})</span>
+                        <span className="ml-1 text-[10px] opacity-70">({count})</span>
                       </button>
                     );
                   })}
