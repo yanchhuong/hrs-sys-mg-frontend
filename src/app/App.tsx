@@ -23,6 +23,8 @@ import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { PublicShopPage } from './components/views/PublicShopPage';
 import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
 import { CambodiaLearnPage } from './components/CambodiaLearnPage';
+import { ResetPasswordPage } from './components/ResetPasswordPage';
+import { PublicInvoiceView } from './components/views/PublicInvoiceView';
 import { DesktopApiModeSwitch } from './components/DesktopApiModeSwitch';
 import { isTauri } from './utils/runtime';
 
@@ -65,6 +67,20 @@ const isCambodiaLearnPath = (): boolean =>
   typeof window !== 'undefined'
   && (window.location.pathname === '/cambodia'
       || window.location.pathname.startsWith('/cambodia/'));
+
+/** V271 — /reset-password?token=... — destination of the emailed reset
+ *  link. Anonymous; runs outside the auth flow because the whole point
+ *  is that the user CAN'T sign in yet. */
+const isResetPasswordPath = (): boolean =>
+  typeof window !== 'undefined'
+  && (window.location.pathname === '/reset-password'
+      || window.location.pathname.startsWith('/reset-password/'));
+
+/** V271 — /invoice/view/{id} — anonymous invoice view opened from the
+ *  emailed link. Same opt-out flavour as /shop. */
+const isPublicInvoicePath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/invoice/view/');
 
 function NotAuthorizedView() {
   // Pull the active role from AuthContext so we can name it on the
@@ -281,6 +297,26 @@ export default function App() {
         <CambodiaLearnPage />
         <Toaster />
       </I18nProvider>
+    );
+  }
+  // V271 — /reset-password — anonymous. No providers needed; the page
+  // POSTs directly to /api/v1/auth/reset-password with the URL token.
+  if (isResetPasswordPath()) {
+    return (
+      <>
+        <ResetPasswordPage />
+        <Toaster />
+      </>
+    );
+  }
+  // V271 — /invoice/view/{id} — anonymous invoice view opened from the
+  // emailed link. UUID in the URL is the whole capability; no auth.
+  if (isPublicInvoicePath()) {
+    return (
+      <>
+        <PublicInvoiceView />
+        <Toaster />
+      </>
     );
   }
   return (

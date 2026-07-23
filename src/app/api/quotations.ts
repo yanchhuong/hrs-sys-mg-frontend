@@ -160,3 +160,17 @@ export async function sendTelegram(
     json: imagePngBase64 ? { imagePngBase64 } : {},
   });
 }
+
+/** V271 — send the quotation to the customer by email with a PDF
+ *  attachment rendered client-side. Mirrors invoicesApi.sendEmail. */
+export interface EmailSendResult { delivered: boolean; to: string; }
+export interface EmailAttachment { filename: string; contentType: string; base64: string; }
+export async function sendEmail(
+  id: string,
+  body: { to?: string; message?: string; attachment?: EmailAttachment },
+): Promise<EmailSendResult> {
+  return apiJson(`/api/v1/quotations/${id}/email`, {
+    method: 'POST',
+    json: body,
+  });
+}

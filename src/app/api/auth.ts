@@ -112,6 +112,28 @@ export async function changePassword(req: { currentPassword: string; newPassword
   await apiJson('/api/v1/auth/change-password', { method: 'POST', json: req });
 }
 
+/** V271 — self-service password reset (kick-off). Always resolves —
+ *  the server returns 204 whether or not the email is registered so
+ *  we can't leak account existence. */
+export async function forgotPassword(email: string): Promise<void> {
+  await apiJson('/api/v1/auth/forgot-password', {
+    method: 'POST',
+    json: { email },
+    auth: false,
+  });
+}
+
+/** V271 — consume the emailed reset token and set a new password.
+ *  Throws when the token is expired/invalid or the new password is
+ *  too short. */
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await apiJson('/api/v1/auth/reset-password', {
+    method: 'POST',
+    json: { token, newPassword },
+    auth: false,
+  });
+}
+
 /** V199 — the Profile dialog now sends the display name plus the
  *  six personal fields. Backend routes them: name always lands on
  *  the User row (V140); the six personal fields land on the User

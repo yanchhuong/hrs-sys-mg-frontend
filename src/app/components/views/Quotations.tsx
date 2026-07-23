@@ -30,6 +30,7 @@ import {
   Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2, Info,
 } from 'lucide-react';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
+import { capturePrintPdf } from '../../utils/capturePrintPdf';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
@@ -1598,27 +1599,44 @@ function MailQuotationDialog({
     `Regards,${company?.name ? `\n${company.name}` : ''}`,
   ].join('\n');
 
-  const [to, setTo] = useState<string>(quotation.recipientEmail ?? '');
-  const [cc, setCc] = useState<string>('');
-  const [subject, setSubject] = useState<string>(defaultSubject);
+  // V271 — server-side SMTP send. Body is the "note above the PDF";
+  // the actual PDF attachment is captured client-side from the mounted
+  // .print-tax-invoice template so the recipient gets the same layout
+  // they'd get from browser Print.
+  const initialTo = quotation.recipientEmail ?? customer?.email ?? '';
+  const [to, setTo] = useState<string>(initialTo);
   const [body, setBody] = useState<string>(defaultBody);
+  const [busy, setBusy] = useState(false);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmed = to.trim();
     if (!trimmed) {
       toast.error('Recipient email is required');
       return;
     }
-    // Multiple addresses are accepted comma-separated; the mailto: spec
-    // allows that natively so we just pass the joined string through.
-    const params = new URLSearchParams();
-    params.set('subject', subject);
-    params.set('body', body);
-    if (cc.trim()) params.set('cc', cc.trim());
-    const href = `mailto:${encodeURIComponent(trimmed)}?${params.toString()}`;
-    window.location.href = href;
-    toast.success('Opened your mail client — review and send.');
-    onClose();
+    setBusy(true);
+    try {
+      const pdf = await capturePrintPdf(`quotation-${quotation.quotationNo}.pdf`).catch(() => null);
+      const attachment = pdf
+        ? { filename: pdf.filename, contentType: pdf.contentType, base64: pdf.base64 }
+        : undefined;
+      const res = await quotationsApi.sendEmail(quotation.id, { to: trimmed, message: body, attachment });
+      if (res.delivered) {
+        toast.success(`Quotation ${quotation.quotationNo} sent to ${res.to}`);
+        onClose();
+      } else {
+        toast.error('SMTP delivery failed — opening your mail client as a fallback.');
+        const params = new URLSearchParams();
+        params.set('subject', defaultSubject);
+        params.set('body', body);
+        const href = `mailto:${encodeURIComponent(trimmed)}?${params.toString()}`;
+        window.location.href = href;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not send email');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -1629,50 +1647,43 @@ function MailQuotationDialog({
             <Mail className="h-4 w-4" /> Send quotation by email
           </DialogTitle>
           <DialogDescription>
-            Opens your default mail client with the message pre-filled.
-            Print → Save as PDF first if you want to attach the quotation.
+            Sends the recipient a PDF of this quotation (rendered from the print
+            template) from your company's mail server. Leave "To" blank to use
+            the quotation's recipient ({initialTo || 'none'}).
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
             <Label>To <span className="text-red-500">*</span></Label>
             <Input
-              type="text"
+              type="email"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              placeholder="alice@example.com, bob@example.com"
+              placeholder={initialTo || 'customer@example.com'}
               autoFocus
-            />
-            <div className="text-[11px] text-gray-500">
-              Separate multiple addresses with commas.
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label>Cc</Label>
-            <Input
-              type="text"
-              value={cc}
-              onChange={(e) => setCc(e.target.value)}
-              placeholder="carol@example.com"
             />
           </div>
           <div className="space-y-1">
             <Label>Subject</Label>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <Input value={defaultSubject} readOnly className="text-slate-500" />
           </div>
           <div className="space-y-1">
-            <Label>Body</Label>
+            <Label>Message</Label>
             <Textarea
               rows={8}
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
+            <p className="text-xs text-slate-500">
+              A PDF of the quotation is attached automatically.
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSend}>
-            <Mail className="h-4 w-4 mr-1.5" /> Open mail client
+          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={handleSend} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Mail className="h-4 w-4 mr-1.5" />}
+            {busy ? 'Sending…' : 'Send email'}
           </Button>
         </DialogFooter>
       </DialogContent>

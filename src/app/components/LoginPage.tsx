@@ -6,8 +6,11 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Checkbox } from './ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { UserRole } from '../types/hrms';
 import { Shield, Users, User, Loader2, ArrowLeft } from 'lucide-react';
+import { forgotPassword } from '../api/auth';
+import { toast } from 'sonner';
 // Wordmark shown at the top of the sign-in card. Matches the landing
 // nav; the CardTitle text below carries the tagline.
 import imgBrandLogo from '../../imports/smrt-web-logo.png';
@@ -94,6 +97,10 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState<boolean>(!!rememberedEmail);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
   const { login, switchRole } = useAuth();
 
   // Reflect prefill updates from the parent — covers the case where the
@@ -200,15 +207,28 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
                 required
               />
             </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="remember-me"
-                checked={remember}
-                onCheckedChange={(v) => setRemember(v === true)}
-              />
-              <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer select-none">
-                Remember me
-              </Label>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="remember-me"
+                  checked={remember}
+                  onCheckedChange={(v) => setRemember(v === true)}
+                />
+                <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer select-none">
+                  Remember me
+                </Label>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotEmail(email && email.includes('@') ? email : '');
+                  setForgotSent(false);
+                  setForgotOpen(true);
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Forgot password?
+              </button>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>
@@ -285,6 +305,67 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
         </CardContent>
       </Card>
       </div>
+
+      {/* Forgot-password dialog. Server always returns 204 so we can't
+          leak account existence — the FE just shows the "check your
+          inbox" copy on every non-error path. */}
+      <Dialog open={forgotOpen} onOpenChange={(o) => { setForgotOpen(o); if (!o) setForgotSent(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reset your password</DialogTitle>
+            <DialogDescription>
+              {forgotSent
+                ? 'If an account exists for that email, a reset link has been sent. Check your inbox — the link expires in 30 minutes.'
+                : 'Enter your account email. We\'ll send you a link to set a new password.'}
+            </DialogDescription>
+          </DialogHeader>
+          {!forgotSent && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!forgotEmail.trim()) return;
+                setForgotBusy(true);
+                try {
+                  await forgotPassword(forgotEmail.trim());
+                  setForgotSent(true);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Could not send reset email');
+                } finally {
+                  setForgotBusy(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="forgot-email">Email</Label>
+                <Input
+                  id="forgot-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@company.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setForgotOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={forgotBusy || !forgotEmail.trim()}>
+                  {forgotBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Send reset link
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+          {forgotSent && (
+            <DialogFooter>
+              <Button onClick={() => setForgotOpen(false)}>Close</Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -42,6 +42,7 @@ import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineIt
 import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
+import { capturePrintPdf } from '../../utils/capturePrintPdf';
 import { printPosReceipt } from '../../utils/posReceipt';
 import { printHtmlViaIframe } from '../../utils/printHtml';
 import { PaymentReceiptCard } from '../common/PaymentReceiptCard';
@@ -3826,28 +3827,51 @@ function MailInvoiceDialog({
     `Regards,${company?.name ? `\n${company.name}` : ''}`,
   ].join('\n');
 
-  const [to, setTo] = useState<string>('');
-  const [cc, setCc] = useState<string>('');
-  const [subject, setSubject] = useState<string>(defaultSubject);
+  // V271 — dialog now drives an SMTP send from the server (see
+  // InvoiceEmailService). The body composed here is a "note above the
+  // link" — the actual email carries a public view URL the recipient
+  // clicks to see + print the rendered invoice.
+  const [to, setTo] = useState<string>(customer?.email ?? '');
   const [body, setBody] = useState<string>(defaultBody);
+  const [busy, setBusy] = useState(false);
 
-  const handleSend = () => {
-    if (!to.trim()) {
+  const handleSend = async () => {
+    const trimmed = to.trim();
+    if (!trimmed) {
       toast.error('Recipient email is required');
       return;
     }
-    // Encode each field separately so commas and Khmer characters
-    // survive the URL roundtrip on every mail client.
-    const params = new URLSearchParams();
-    params.set('subject', subject);
-    params.set('body', body);
-    if (cc.trim()) params.set('cc', cc.trim());
-    // mailto: needs the address before the query string — URLSearchParams
-    // doesn't encode '@', which mail clients want intact.
-    const href = `mailto:${encodeURIComponent(to.trim())}?${params.toString()}`;
-    window.location.href = href;
-    toast.success('Opened your mail client — review and send.');
-    onClose();
+    setBusy(true);
+    try {
+      // Capture the mounted print template as a PDF so the customer
+      // receives the same document they'd see if we hit browser Print.
+      // If html2canvas/jspdf trip up, we send without the attachment
+      // — the email body still carries the "View invoice" link so
+      // delivery is never blocked on a rendering hiccup.
+      const pdf = await capturePrintPdf(`invoice-${invoice.invoiceNo}.pdf`).catch(() => null);
+      const attachment = pdf
+        ? { filename: pdf.filename, contentType: pdf.contentType, base64: pdf.base64 }
+        : undefined;
+      const res = await invoicesApi.sendEmail(invoice.id, { to: trimmed, message: body, attachment });
+      if (res.delivered) {
+        toast.success(`Invoice ${invoice.invoiceNo} sent to ${res.to}`);
+        onClose();
+      } else {
+        // Server accepted the request but SMTP delivery failed. Fall
+        // back to a mailto: draft so the operator can hand-send from
+        // their own client rather than losing the compose state.
+        toast.error('SMTP delivery failed — opening your mail client as a fallback.');
+        const params = new URLSearchParams();
+        params.set('subject', defaultSubject);
+        params.set('body', body);
+        const href = `mailto:${encodeURIComponent(trimmed)}?${params.toString()}`;
+        window.location.href = href;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not send email');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -3858,9 +3882,9 @@ function MailInvoiceDialog({
             <Mail className="h-4 w-4" /> Send invoice by email
           </DialogTitle>
           <DialogDescription>
-            Opens your default mail client (Gmail / Outlook / Apple Mail) with
-            the message pre-filled. Print → Save as PDF first if you want to
-            attach the invoice itself.
+            Sends the customer a PDF of this invoice (rendered from the print
+            template) plus a link to view it in the browser. Leave "To" blank to
+            use the customer's on-file email ({customer?.email ?? 'none'}).
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -3870,36 +3894,31 @@ function MailInvoiceDialog({
               type="email"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              placeholder="customer@example.com"
+              placeholder={customer?.email ?? 'customer@example.com'}
               autoFocus
             />
           </div>
           <div className="space-y-1">
-            <Label>Cc</Label>
-            <Input
-              type="email"
-              value={cc}
-              onChange={(e) => setCc(e.target.value)}
-              placeholder="Optional"
-            />
-          </div>
-          <div className="space-y-1">
             <Label>Subject</Label>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <Input value={defaultSubject} readOnly className="text-slate-500" />
           </div>
           <div className="space-y-1">
-            <Label>Body</Label>
+            <Label>Message</Label>
             <Textarea
               rows={8}
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
+            <p className="text-xs text-slate-500">
+              A PDF of the invoice + a "View invoice" link are added automatically.
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSend}>
-            <Send className="h-4 w-4 mr-1.5" /> Open in mail client
+          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={handleSend} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
+            {busy ? 'Sending…' : 'Send email'}
           </Button>
         </DialogFooter>
       </DialogContent>

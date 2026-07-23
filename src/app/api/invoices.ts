@@ -254,3 +254,29 @@ export async function sendTelegram(
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/invoices/${id}`, { method: 'DELETE' });
 }
+
+/** V271 — send the invoice to the customer by email. Server picks the
+ *  customer's on-file email if {@code to} is blank; falls back to 400
+ *  if neither is available. Returns whether SMTP delivery succeeded.
+ *
+ *  <p>{@code attachment} carries an optional pre-rendered PDF (or PNG)
+ *  matching the on-screen print template. Server attaches it as a file
+ *  to the outgoing MimeMessage. Falls back to a link-only body when
+ *  omitted.</p> */
+export interface EmailSendResult { delivered: boolean; to: string; }
+export interface EmailAttachment {
+  filename: string;
+  /** MIME type, e.g. 'application/pdf'. */
+  contentType: string;
+  /** Base64 payload — data-URL prefix ('data:...,') is tolerated. */
+  base64: string;
+}
+export async function sendEmail(
+  id: string,
+  body: { to?: string; message?: string; attachment?: EmailAttachment },
+): Promise<EmailSendResult> {
+  return apiJson(`/api/v1/invoices/${id}/email`, {
+    method: 'POST',
+    json: body,
+  });
+}
