@@ -1616,13 +1616,26 @@ function MailQuotationDialog({
     }
     setBusy(true);
     try {
-      const pdf = await capturePrintPdf(`quotation-${quotation.quotationNo}.pdf`).catch(() => null);
+      const pdf = await capturePrintPdf(`quotation-${quotation.quotationNo}.pdf`).catch((err) => {
+        console.warn('[MailQuotationDialog] PDF capture threw:', err);
+        return null;
+      });
       const attachment = pdf
         ? { filename: pdf.filename, contentType: pdf.contentType, base64: pdf.base64 }
         : undefined;
+      if (!pdf) {
+        toast.warning('Could not render the quotation PDF — sending link only.');
+      } else {
+        const kb = Math.round((pdf.base64.length * 3 / 4) / 1024);
+        console.info(`[MailQuotationDialog] Attaching ${pdf.filename} (${kb} KB)`);
+      }
       const res = await quotationsApi.sendEmail(quotation.id, { to: trimmed, message: body, attachment });
       if (res.delivered) {
-        toast.success(`Quotation ${quotation.quotationNo} sent to ${res.to}`);
+        toast.success(
+          pdf
+            ? `Quotation ${quotation.quotationNo} sent to ${res.to} with PDF attachment`
+            : `Quotation ${quotation.quotationNo} sent to ${res.to} (link only)`
+        );
         onClose();
       } else {
         toast.error('SMTP delivery failed — opening your mail client as a fallback.');

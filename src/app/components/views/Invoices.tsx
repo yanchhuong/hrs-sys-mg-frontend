@@ -3848,13 +3848,28 @@ function MailInvoiceDialog({
       // If html2canvas/jspdf trip up, we send without the attachment
       // — the email body still carries the "View invoice" link so
       // delivery is never blocked on a rendering hiccup.
-      const pdf = await capturePrintPdf(`invoice-${invoice.invoiceNo}.pdf`).catch(() => null);
+      const pdf = await capturePrintPdf(`invoice-${invoice.invoiceNo}.pdf`).catch((err) => {
+        console.warn('[MailInvoiceDialog] PDF capture threw:', err);
+        return null;
+      });
       const attachment = pdf
         ? { filename: pdf.filename, contentType: pdf.contentType, base64: pdf.base64 }
         : undefined;
+      if (!pdf) {
+        // Surface the missing attachment so the operator knows the
+        // recipient will only get the link, not the printable PDF.
+        toast.warning('Could not render the invoice PDF — sending link only.');
+      } else {
+        const kb = Math.round((pdf.base64.length * 3 / 4) / 1024);
+        console.info(`[MailInvoiceDialog] Attaching ${pdf.filename} (${kb} KB)`);
+      }
       const res = await invoicesApi.sendEmail(invoice.id, { to: trimmed, message: body, attachment });
       if (res.delivered) {
-        toast.success(`Invoice ${invoice.invoiceNo} sent to ${res.to}`);
+        toast.success(
+          pdf
+            ? `Invoice ${invoice.invoiceNo} sent to ${res.to} with PDF attachment`
+            : `Invoice ${invoice.invoiceNo} sent to ${res.to} (link only)`
+        );
         onClose();
       } else {
         // Server accepted the request but SMTP delivery failed. Fall

@@ -26,7 +26,10 @@ export interface CapturedPdf {
 
 export async function capturePrintPdf(defaultFilename = 'document.pdf'): Promise<CapturedPdf | null> {
   const el = document.querySelector<HTMLElement>('.print-tax-invoice');
-  if (!el) return null;
+  if (!el) {
+    console.warn('[capturePrintPdf] .print-tax-invoice not in DOM — skipping attachment');
+    return null;
+  }
 
   const prev = {
     display: el.style.display,
