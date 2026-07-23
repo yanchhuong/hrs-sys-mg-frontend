@@ -146,6 +146,7 @@ export function Items() {
   // and we fall through to the full min/max derived from the rows.
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [stockIoFilter, setStockIoFilter] = useState<'' | 'on' | 'off'>('');
+  const [imageFilter, setImageFilter] = useState<'' | 'yes' | 'no'>('');
   const [priceRange, setPriceRange] = useState<[number, number] | null>(null);
   const [stockRange, setStockRange] = useState<[number, number] | null>(null);
 
@@ -237,6 +238,14 @@ export function Items() {
       if (cat && ((r.category ?? '') as string).toLowerCase() !== cat) return false;
       if (stockIoFilter === 'on'  && !r.deductionEnabled) return false;
       if (stockIoFilter === 'off' &&  r.deductionEnabled) return false;
+      if (imageFilter) {
+        // "Has image" is true when either the legacy single-image
+        // slot OR the multi-image list carries a non-empty entry.
+        const hasImage = !!(r.imageUrl && r.imageUrl.trim())
+          || !!(r.imageUrls && r.imageUrls.some(u => u && u.trim()));
+        if (imageFilter === 'yes' && !hasImage) return false;
+        if (imageFilter === 'no'  &&  hasImage) return false;
+      }
       if (priceRange) {
         const price = r.unitPrice ?? 0;
         if (price < priceRange[0] || price > priceRange[1]) return false;
@@ -247,7 +256,7 @@ export function Items() {
       }
       return true;
     });
-  }, [rows, categoryFilter, stockIoFilter, priceRange, stockRange]);
+  }, [rows, categoryFilter, stockIoFilter, imageFilter, priceRange, stockRange]);
 
   // Distinct category options for the dropdown — derived from the
   // items currently on the page so a tenant's custom labels (e.g.
@@ -267,10 +276,12 @@ export function Items() {
   }, [rows]);
 
   const filtersActive =
-    !!categoryFilter || !!stockIoFilter || priceRange != null || stockRange != null;
+    !!categoryFilter || !!stockIoFilter || !!imageFilter
+    || priceRange != null || stockRange != null;
   const clearFilters = () => {
     setCategoryFilter('');
     setStockIoFilter('');
+    setImageFilter('');
     setPriceRange(null);
     setStockRange(null);
   };
@@ -529,7 +540,7 @@ export function Items() {
             search form on the RIGHT. Both wrap gracefully on narrow
             displays so nothing gets cut off. */}
         <CardHeader className="flex flex-row flex-wrap items-end gap-x-6 gap-y-3 justify-between space-y-0">
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <div className="filter-strip flex-1 min-w-0">
             {rows.length > 0 && (
               <>
                 <select
@@ -552,6 +563,16 @@ export function Items() {
                   <option value="">Stock : All</option>
                   <option value="off">Stock : Off</option>
                   <option value="on">Stock : On</option>
+                </select>
+                <select
+                  value={imageFilter}
+                  onChange={e => setImageFilter(e.target.value as '' | 'yes' | 'no')}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by Image presence"
+                >
+                  <option value="">Image : All</option>
+                  <option value="yes">Image : Yes</option>
+                  <option value="no">Image : No</option>
                 </select>
                 <div className="w-44">
                   <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
