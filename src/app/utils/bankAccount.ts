@@ -35,7 +35,7 @@ export interface BankAccount {
 
 /** Hard cap on the number of bank cards that can render on the
  *  printed invoice — two side-by-side QRs fit; a third spills onto
- *  a second row and breaks the WABOOKS layout. Surfaced as a const
+ *  a second row and breaks the bilingual print layout. Surfaced as a const
  *  so the dialog + the print filter stay in lockstep. */
 export const MAX_BANK_ACCOUNTS_ON_INVOICE = 2;
 

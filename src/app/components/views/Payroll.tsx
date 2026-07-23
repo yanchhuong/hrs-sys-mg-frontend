@@ -780,7 +780,7 @@ export function Payroll() {
           // leads to "Total earnings mismatch" because the last few columns
           // get ignored when summing components.
           // Filter out codes the admin unchecked for this batch — those
-          // columns are not part of the WABOOKS layout we just generated,
+          // columns are not part of the bilingual print layout we just generated,
           // so any value the user pasted into them is intentionally ignored
           // (treated as 0).
           categories: templateCategories.filter(c => !excludedCodes.has(c.code)),

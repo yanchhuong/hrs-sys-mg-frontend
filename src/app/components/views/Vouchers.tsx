@@ -1643,7 +1643,7 @@ function MailVoucherDialog({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Print template — mirrors Invoice / Quotation WABOOKS layout, retitled.     */
+/* Print template — mirrors Invoice / Quotation bilingual layout, retitled.   */
 /* -------------------------------------------------------------------------- */
 
 function VBiLabel({ kh, en }: { kh: string; en: string }) {

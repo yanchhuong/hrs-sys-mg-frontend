@@ -1,6 +1,6 @@
 /**
  * Force-load the Khmer print fonts (Battambang body + Moul title)
- * before triggering window.print(). The print-only WABOOKS templates
+ * before triggering window.print(). The print-only Cambodian tax-invoice templates
  * are mounted with display: none and rendered via @media print, so
  * Google Fonts may not have requested the font files yet by the time
  * the print dialog snapshots the page — fallbacks (Hanuman / Khmer OS)

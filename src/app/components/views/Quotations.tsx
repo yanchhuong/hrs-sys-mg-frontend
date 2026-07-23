@@ -1237,7 +1237,7 @@ function QuotationDetailDialog({
 
   /** Manual "Send via Telegram" trigger. Captures the print template
    *  to a PNG via html2canvas before calling the API so the customer
-   *  receives the actual WABOOKS layout via sendPhoto. The
+   *  receives the actual bilingual print layout via sendPhoto. The
    *  {@code telegramBusy} flag blocks double-clicks until the
    *  round-trip completes. */
   const sendViaTelegram = async () => {
@@ -1328,7 +1328,7 @@ function QuotationDetailDialog({
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[1100px] w-[90vw] max-h-[90vh] overflow-y-auto">
-        {/* Same WABOOKS print layout as Invoice, just retitled — the
+        {/* Same bilingual print layout as Invoice, just retitled — the
             screen dashboard is hidden via @media print; only the
             body-level .print-tax-invoice portal renders on paper. */}
         <style>{`
@@ -1705,7 +1705,7 @@ function MailQuotationDialog({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Quotation print template — mirrors the Invoice WABOOKS layout. Only the    */
+/* Quotation print template — mirrors the Invoice bilingual layout. Only the  */
 /* document title (វិក្កយបត្រអាករ / TAX INVOICE → សំណើតម្លៃ / QUOTATION)        */
 /* and the meta block label (Invoice N° → Quotation N°, Payment Due Date →    */
 /* Expiry Date) change; everything else is identical so a sales operator       */

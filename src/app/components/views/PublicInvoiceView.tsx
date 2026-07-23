@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Loader2, Printer } from 'lucide-react';
 
 /** V271 — /invoice/view/:id — anonymous invoice view rendered from the
- *  same WABOOKS Cambodian tax invoice template that {@code
+ *  same Cambodian tax invoice template that {@code
  *  PrintTaxInvoice} uses inside the tenant app. Anyone with the
  *  invoice UUID can view + print; nobody without it can.
  *
@@ -126,7 +126,7 @@ export function PublicInvoiceView() {
           </Button>
         </div>
 
-        {/* Print sheet — mirrors PrintTaxInvoice (WABOOKS layout) */}
+        {/* Print sheet — mirrors PrintTaxInvoice (bilingual print layout) */}
         <div
           className="p-6 sm:p-10 relative"
           style={{

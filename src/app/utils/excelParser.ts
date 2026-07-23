@@ -78,7 +78,7 @@ export function parsePayrollExcel(
           : null;
         const seenEmpNos = new Map<string, number>(); // empNo -> first row number
 
-        // WABOOKS format: Row 0 title, Rows 1-2 headers, data from row 3.
+        // Bilingual Khmer template: Row 0 title, Rows 1-2 headers, data from row 3.
         // Each employee = 2 rows (earnings row then deductions row).
         const dataStartRow = 3;
 

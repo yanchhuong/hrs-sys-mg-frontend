@@ -2184,7 +2184,7 @@ function InvoiceDetailDialog({
    *
    *  <p>Captures the currently-mounted print template DOM as a PNG
    *  before calling the API so the customer receives the actual
-   *  WABOOKS layout via Telegram sendPhoto. Capture failures fall
+   *  Cambodian tax-invoice layout via Telegram sendPhoto. Capture failures fall
    *  back silently to a plain text message — never blocks the
    *  send.</p> */
   const sendViaTelegram = async () => {
@@ -2971,7 +2971,7 @@ function InvoiceDetailDialog({
               <Button variant="outline" onClick={onClose}>Close</Button>
             </DialogFooter>
 
-            {/* Print-only Cambodian Tax Invoice (WABOOKS layout).
+            {/* Print-only Cambodian Tax Invoice (bilingual print layout).
              *  Screen renders the editable dashboard above; window.print()
              *  swaps to the body-level portal below via @media print:
              *  display:none on everything else lets a long invoice flow
@@ -3043,7 +3043,7 @@ function InvoiceDetailDialog({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cambodian Tax Invoice print template (WABOOKS layout)                       */
+/* Cambodian Tax Invoice print template (bilingual print layout)              */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -3226,7 +3226,7 @@ function PrintTaxInvoice({
   const discountPct = invoice.discountType === 'percent'
     ? Math.round(Number(invoice.discountValue ?? 0))
     : (invoice.subtotal > 0 ? Math.round(((invoice.discountAmount ?? 0) / invoice.subtotal) * 100) : 0);
-  // Issue / due dates rendered as DD-MM-YYYY to match the WABOOKS sample.
+  // Issue / due dates rendered as DD-MM-YYYY to match the reference layout.
   const fmtDate = (iso?: string | null) => {
     if (!iso) return '';
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
