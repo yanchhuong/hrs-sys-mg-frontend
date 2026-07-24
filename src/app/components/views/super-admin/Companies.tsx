@@ -56,7 +56,11 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     employeeCount: t.employeeCount ?? 0,
     attendanceCount: t.attendanceCount ?? 0,
     payrollItemCount: t.payrollItemCount ?? 0,
-    storageMb: 0,
+    // Approximate MB — sum of file-upload sizes (attachments) plus the
+    // character length of inline base64 image blobs on stock_items.
+    // Backend returns bytes; divide by 1024×1024. Zero on create/update
+    // responses that don't compute it — the next list refresh fills in.
+    storageMb: Math.round(((t.storageBytes ?? 0) / (1024 * 1024)) * 10) / 10,
     monthlyCostUsd: PLAN_LIMITS[(t.planTier as PlanTier)]?.monthlyPriceUsd ?? 0,
     createdAt: t.createdAt,
     lastActiveAt: t.updatedAt ?? t.createdAt,
@@ -69,6 +73,9 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     // table can render the Schedule column for frozen tenants.
     frozenUntil:  t.frozenUntil  ?? null,
     frozenReason: t.frozenReason ?? null,
+    // V277 — deferred-freeze start date (nullable). When status is
+    // 'active' and this is set, a scheduled freeze is pending.
+    frozenFrom:   t.frozenFrom   ?? null,
   };
 }
 
@@ -181,6 +188,11 @@ export function Companies() {
     'indefinite' | '1m' | '3m' | '6m' | '1y' | 'custom'
   >('indefinite');
   const [freezeCustomDate, setFreezeCustomDate] = useState<string>('');
+  /** V277 — deferred freeze start date. Empty = freeze immediately
+   *  (legacy path). ISO date string means "flip to frozen on/after
+   *  this timestamp". Server-side nightly cron applies the flip; the
+   *  tenant stays fully usable until then. */
+  const [freezeStartDate, setFreezeStartDate] = useState<string>('');
   /** v-create-with-apps — per-app install picks applied AFTER the
    *  tenant is created via a bulk tenantModules.set. Empty on Edit
    *  (that path uses the Apps launcher / Tenant Modules page). */
@@ -502,10 +514,26 @@ export function Companies() {
 
   const handleFreezeToggle = async () => {
     if (!freezeTarget) return;
-    const willFreeze = freezeTarget.status !== 'frozen';
+    // V277 — three actions collapse into this handler:
+    //  1. status='frozen'                             → unfreeze
+    //  2. status='active' + frozenFrom set (pending)  → also unfreeze
+    //     (backend's unfreeze() clears frozen_from too)
+    //  3. status='active' + no schedule               → freeze/schedule
+    const willFreeze =
+      freezeTarget.status !== 'frozen' && !freezeTarget.frozenFrom;
     const frozenUntil = willFreeze ? computeFreezeUntil() : null;
+    // V277 — deferred freeze. Empty freezeStartDate = freeze immediately.
+    // A date in the future asks the server to hold the freeze until then.
+    // Past dates fall back to "freeze now" (server double-checks the
+    // rule at line 507 of PlatformTenantService.freeze).
+    const frozenFrom =
+      willFreeze && freezeStartDate ? new Date(freezeStartDate).toISOString() : null;
     if (willFreeze && freezeDuration === 'custom' && !frozenUntil) {
       toast.error('Pick a custom unfreeze date, or choose Indefinite.');
+      return;
+    }
+    if (frozenFrom && frozenUntil && new Date(frozenUntil) <= new Date(frozenFrom)) {
+      toast.error('Auto-thaw date must be after the freeze-start date.');
       return;
     }
     if (USE_MOCKS) {
@@ -515,7 +543,7 @@ export function Companies() {
       ));
       toast.success(willFreeze ? `Froze ${freezeTarget.name}` : `Unfroze ${freezeTarget.name}`);
       setFreezeTarget(null); setFreezeReason('');
-      setFreezeDuration('indefinite'); setFreezeCustomDate('');
+      setFreezeDuration('indefinite'); setFreezeCustomDate(''); setFreezeStartDate('');
       return;
     }
     setFreezing(true);
@@ -523,17 +551,22 @@ export function Companies() {
       if (willFreeze) {
         await platformApi.tenants.freeze(freezeTarget.id, {
           reason: freezeReason.trim() || null,
+          frozenFrom,
           frozenUntil,
         });
-        toast.success(frozenUntil
-          ? `Froze ${freezeTarget.name} — auto-unfreeze ${new Date(frozenUntil).toLocaleDateString()}`
-          : `Froze ${freezeTarget.name} — writes now blocked`);
+        const startBits = frozenFrom
+          ? ` — starts ${new Date(frozenFrom).toLocaleDateString()}`
+          : '';
+        const endBits = frozenUntil
+          ? ` — auto-unfreeze ${new Date(frozenUntil).toLocaleDateString()}`
+          : (frozenFrom ? '' : ' — orders paused now');
+        toast.success(`Scheduled freeze for ${freezeTarget.name}${startBits}${endBits}`);
       } else {
         await platformApi.tenants.unfreeze(freezeTarget.id);
         toast.success(`Unfroze ${freezeTarget.name}`);
       }
       setFreezeTarget(null); setFreezeReason('');
-      setFreezeDuration('indefinite'); setFreezeCustomDate('');
+      setFreezeDuration('indefinite'); setFreezeCustomDate(''); setFreezeStartDate('');
       await loadCompanies();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Action failed');
@@ -916,6 +949,7 @@ export function Companies() {
                 <TableHead>Status</TableHead>
                 <TableHead>Schedule</TableHead>
                 <TableHead className="min-w-[220px]">Usage</TableHead>
+                <TableHead className="w-[150px]">Storage</TableHead>
                 <TableHead className="text-right">MRR</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -923,11 +957,11 @@ export function Companies() {
             </TableHeader>
             <TableBody>
               {loading && pager.paginatedItems.length === 0 && (
-                <TableBodySkeletonRows rows={6} columns={9} />
+                <TableBodySkeletonRows rows={6} columns={10} />
               )}
               {!loading && pager.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={10} className="text-center text-sm text-gray-400 py-10">
                     No companies match these filters.
                   </TableCell>
                 </TableRow>
@@ -995,16 +1029,30 @@ export function Companies() {
                       Non-frozen tenants keep the cell empty (em-dash)
                       so the column doesn't disappear on data reshape. */}
                   <TableCell className="text-xs">
+                    {/* V277 — Schedule cell now handles three states:
+                        1. status='frozen' + frozen_until  → auto-thaw date
+                        2. status='frozen' + no until       → "Indefinite"
+                        3. status='active' + frozen_from    → "Freezes on X"
+                           (deferred schedule pending — cron flips at 00:05)
+                        4. neither                          → em-dash */}
                     {c.status === 'frozen'
                       ? (c.frozenUntil
                           ? (
                             <span className="inline-flex items-center gap-1 text-amber-800">
                               <Snowflake className="h-3 w-3" />
-                              {new Date(c.frozenUntil).toLocaleDateString()}
+                              Until {new Date(c.frozenUntil).toLocaleDateString()}
                             </span>
                           )
                           : <span className="text-gray-500 italic">Indefinite</span>)
-                      : <span className="text-gray-300">—</span>}
+                      : c.frozenFrom
+                        ? (
+                          <span className="inline-flex items-center gap-1 text-blue-700"
+                                title="Deferred freeze — nightly cron flips this tenant to frozen on/after the date shown.">
+                            <Snowflake className="h-3 w-3" />
+                            Freezes {new Date(c.frozenFrom).toLocaleDateString()}
+                          </span>
+                        )
+                        : <span className="text-gray-300">—</span>}
                   </TableCell>
                   <TableCell>
                     {/* Live counts from the backend, replacing the
@@ -1033,6 +1081,22 @@ export function Companies() {
                         </span>
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {/* v-companies-storage — attachments (file uploads)
+                        + inline base64 image bytes on stock_items, MB
+                        with one-decimal precision. Uses UsageRow so
+                        over-quota renders red like Employees. Plan cap
+                        comes from PLAN_LIMITS keyed by tier. */}
+                    <UsageRow
+                      icon={HardDrive}
+                      label="Storage"
+                      used={usage.storage.used}
+                      cap={usage.storage.cap}
+                      pct={usage.storage.pct}
+                      over={usage.storage.over}
+                      format={formatMb}
+                    />
                   </TableCell>
                   <TableCell className="text-right text-sm">
                     {/* v-companies-live-plans — read the price from
@@ -1063,15 +1127,34 @@ export function Companies() {
                       </Button>
                       {/* v-tenant-freeze — read-only lockout. Distinct
                           from Suspend (which blocks login entirely). */}
+                      {/* V277 — three states surface here:
+                          - frozen: sun icon "Unfreeze".
+                          - active w/ pending schedule: yellow snowflake
+                            "Cancel scheduled freeze".
+                          - active, no schedule: sky snowflake "Freeze". */}
                       <Button
                         variant="ghost"
                         size="sm"
-                        className={`h-7 w-7 p-0 ${c.status === 'frozen' ? 'text-yellow-600 hover:bg-yellow-50' : 'text-sky-700 hover:bg-sky-50'}`}
-                        onClick={() => { setFreezeTarget(c); setFreezeReason(''); }}
-                        title={c.status === 'frozen' ? 'Unfreeze (restore write access)' : 'Freeze (read-only)'}
+                        className={`h-7 w-7 p-0 ${
+                          c.status === 'frozen'
+                            ? 'text-yellow-600 hover:bg-yellow-50'
+                            : c.frozenFrom
+                              ? 'text-amber-600 hover:bg-amber-50'
+                              : 'text-sky-700 hover:bg-sky-50'
+                        }`}
+                        onClick={() => { setFreezeTarget(c); setFreezeReason(''); setFreezeStartDate(''); }}
+                        title={
+                          c.status === 'frozen'
+                            ? 'Unfreeze (resume orders)'
+                            : c.frozenFrom
+                              ? `Cancel scheduled freeze (${new Date(c.frozenFrom).toLocaleDateString()})`
+                              : 'Freeze (pause customer orders)'
+                        }
                         disabled={c.status === 'cancelled' || c.status === 'suspended'}
                       >
-                        {c.status === 'frozen' ? <Sun className="h-3.5 w-3.5" /> : <Snowflake className="h-3.5 w-3.5" />}
+                        {c.status === 'frozen'
+                          ? <Sun className="h-3.5 w-3.5" />
+                          : <Snowflake className="h-3.5 w-3.5" />}
                       </Button>
                       <Button
                         variant="ghost"
@@ -1122,20 +1205,27 @@ export function Companies() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* v-tenant-freeze — Freeze / Unfreeze confirmation */}
-      <AlertDialog open={!!freezeTarget} onOpenChange={(o) => { if (!o) { setFreezeTarget(null); setFreezeReason(''); } }}>
+      {/* v-tenant-freeze — Freeze / Unfreeze / Cancel-schedule confirmation */}
+      <AlertDialog open={!!freezeTarget} onOpenChange={(o) => { if (!o) { setFreezeTarget(null); setFreezeReason(''); setFreezeStartDate(''); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {freezeTarget?.status === 'frozen' ? 'Unfreeze' : 'Freeze'} {freezeTarget?.name}?
+              {(() => {
+                if (!freezeTarget) return '';
+                if (freezeTarget.status === 'frozen') return `Unfreeze ${freezeTarget.name}?`;
+                if (freezeTarget.frozenFrom) return `Cancel scheduled freeze on ${freezeTarget.name}?`;
+                return `Freeze ${freezeTarget.name}?`;
+              })()}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {freezeTarget?.status === 'frozen'
-                ? 'Users regain full write access — creates, updates, and deletes work again.'
-                : 'Every write (create / update / delete) will be blocked with 423 across the whole tenant until you unfreeze. Users can still log in and view.'}
+                ? 'The public shop resumes accepting orders. Menu stays visible either way; only the "orders paused" banner disappears.'
+                : freezeTarget?.frozenFrom
+                  ? `The pending freeze (scheduled for ${new Date(freezeTarget.frozenFrom).toLocaleDateString()}) will be cancelled. The tenant stays active and the schedule is cleared.`
+                  : 'Public shop orders will be paused. The menu itself stays visible; customers see a "not accepting orders" banner and the add-to-cart controls are disabled. Admin operations (editing items, minting shop links) are unaffected — you can broaden this later.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {freezeTarget?.status !== 'frozen' && (
+          {freezeTarget?.status !== 'frozen' && !freezeTarget?.frozenFrom && (
             <div className="space-y-3 py-2">
               <div className="space-y-1">
                 <Label htmlFor="freeze-duration" className="text-xs">Freeze for</Label>
@@ -1188,6 +1278,30 @@ export function Companies() {
                   </p>
                 )}
               </div>
+              {/* V277 — deferred-freeze start date. Empty = freeze
+                  right away. A future date defers: tenant stays fully
+                  usable until the nightly cron flips status on/after
+                  this date. Handy for "notify tenant now, actual
+                  freeze in 7 days" workflows. */}
+              <div className="space-y-1">
+                <Label htmlFor="freeze-start" className="text-xs">
+                  Freeze from <span className="text-gray-400">(optional — leave empty to freeze now)</span>
+                </Label>
+                <Input
+                  id="freeze-start"
+                  type="date"
+                  value={freezeStartDate}
+                  onChange={e => setFreezeStartDate(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)}
+                  className="h-8 w-40 text-sm"
+                />
+                {freezeStartDate && (
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    Tenant stays active until {new Date(freezeStartDate).toLocaleDateString()}, then flips to
+                    frozen automatically at 00:05.
+                  </p>
+                )}
+              </div>
               <div className="space-y-1">
                 <Label htmlFor="freeze-reason" className="text-xs">Reason (optional — audit note)</Label>
                 <Input
@@ -1203,7 +1317,11 @@ export function Companies() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={freezing}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleFreezeToggle} disabled={freezing}>
-              {freezeTarget?.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
+              {freezeTarget?.status === 'frozen'
+                ? 'Unfreeze'
+                : freezeTarget?.frozenFrom
+                  ? 'Cancel schedule'
+                  : 'Freeze'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

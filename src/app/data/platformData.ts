@@ -72,6 +72,11 @@ export interface Company {
    *  (SA lifts manually). */
   frozenUntil?: string | null;
   frozenReason?: string | null;
+  /** V277 — v-tenant-freeze-schedule (deferred). When set and status
+   *  is 'active', a scheduled freeze is pending; the nightly cron
+   *  flips status → 'frozen' at this timestamp. Null once the freeze
+   *  has fired or when no schedule is pending. */
+  frozenFrom?: string | null;
 }
 
 export interface LocalInstall {

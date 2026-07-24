@@ -34,6 +34,11 @@ export interface PlatformTenant {
   /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
    *  indefinite freeze (SA lifts manually). */
   frozenUntil: string | null;
+  /** V277 — v-tenant-freeze-schedule (deferred). When status='active'
+   *  and this is set, a nightly cron flips the tenant to 'frozen' at
+   *  this timestamp. Null once the freeze has fired (or when none is
+   *  pending). */
+  frozenFrom?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Live counts surfaced in the Super Admin Companies page Usage column.
@@ -42,6 +47,10 @@ export interface PlatformTenant {
   userCount?: number;
   attendanceCount?: number;
   payrollItemCount?: number;
+  /** Approx bytes stored — attachments (file uploads) + inline base64
+   *  image blobs on stock_items. Feeds the Companies page Storage
+   *  column. Zero on create/update responses where it isn't computed. */
+  storageBytes?: number;
   /** Derived Business Base(s) — subset of 'pos'/'school'/'hospital'.
    *  Populated on list + get + create + setBusinessBase responses.
    *  Empty array = "no industry" (rare but legal). V181. */
@@ -100,14 +109,23 @@ export const tenants = {
     apiJson(`/api/v1/platform/tenants/${id}/suspend`, { method: 'POST' }),
   reactivate: (id: string): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/reactivate`, { method: 'POST' }),
-  /** v-tenant-freeze — Super Admin flips tenant into read-only.
-   *  frozenUntil is an ISO-8601 string; null / omitted = indefinite
-   *  (SA lifts manually). See v-tenant-freeze-schedule. */
-  freeze: (id: string, opts?: { reason?: string | null; frozenUntil?: string | null }): Promise<PlatformTenant> =>
+  /** v-tenant-freeze — Super Admin flips tenant into "orders paused".
+   *  All times are ISO-8601 strings.
+   *  - {@code frozenFrom} — optional. Future = deferred schedule; the
+   *    tenant stays active until then and auto-flips to frozen on/after
+   *    that date. Null / omitted / past = freeze immediately.
+   *  - {@code frozenUntil} — optional. Auto-thaw deadline. Null =
+   *    indefinite (SA lifts manually). */
+  freeze: (id: string, opts?: {
+    reason?: string | null;
+    frozenFrom?: string | null;
+    frozenUntil?: string | null;
+  }): Promise<PlatformTenant> =>
     apiJson(`/api/v1/platform/tenants/${id}/freeze`, {
       method: 'POST',
       json: {
         ...(opts?.reason ? { reason: opts.reason } : {}),
+        ...(opts?.frozenFrom  ? { frozenFrom:  opts.frozenFrom  } : {}),
         ...(opts?.frozenUntil ? { frozenUntil: opts.frozenUntil } : {}),
       },
     }),

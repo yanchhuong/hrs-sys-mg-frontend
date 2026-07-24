@@ -63,6 +63,11 @@ export interface PublicShopPayload {
    *  FE skips the widget entirely — server-side rate-limit + honeypot
    *  are still enforced. */
   turnstile?: { enabled: boolean; siteKey: string } | null;
+  /** V277 — tenant is currently frozen. Menu still renders; the FE
+   *  shows a "not accepting orders" banner and disables the add-to-cart
+   *  / checkout controls. Absent (undefined) is treated as false on
+   *  legacy responses. */
+  frozen?: boolean;
 }
 
 export async function getMyShopLink(): Promise<ShopLinkInfo> {

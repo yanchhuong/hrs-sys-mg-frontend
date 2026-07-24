@@ -766,6 +766,12 @@ export function PublicShopPage() {
   //  the return. The old full-page return has been removed so the
   //  menu remains visible behind the popup.)
 
+  // V277 — frozen tenants keep the menu visible but stop taking
+  // orders. Every "add to cart" affordance is disabled, the sticky
+  // cart bar is hidden, and a banner explains the state to the
+  // customer. Undefined on legacy responses → treated as false.
+  const frozen = data.frozen === true;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Header banner */}
@@ -845,6 +851,26 @@ export function PublicShopPage() {
         </div>
       </div>
 
+      {/* V277 — orders-paused banner. Only when data.frozen === true.
+          Sits BELOW the header/hero but ABOVE the sticky search bar so
+          the customer sees it the moment they land, and it doesn't
+          disappear when they scroll past the header. Amber (not red)
+          because the shop is still browseable — a red alert would
+          overstate the severity. */}
+      {frozen && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" aria-hidden />
+            <div className="text-sm text-amber-900">
+              <p className="font-medium">This shop is not accepting orders right now.</p>
+              <p className="text-xs text-amber-800/80 mt-0.5">
+                You can still browse the menu. Please check back later.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search + category chips — sticky at the top of the viewport
           once the customer scrolls past the banner. bg + backdrop-blur
           so items scrolling under it stay legible. Border-bottom draws
@@ -912,6 +938,7 @@ export function PublicShopPage() {
                     .reduce((s, l) => s + l.qty, 0)}
                   onOpen={() => setDetailTarget(it)}
                   onAdd={() => addOne(it)}
+                  orderingDisabled={frozen}
                 />
               ))}
             </div>
@@ -952,8 +979,11 @@ export function PublicShopPage() {
 
       {/* Sticky cart bar — visible whenever the customer has any
           items selected. Tapping it opens the checkout sheet where
-          they can review / adjust quantities before submitting. */}
-      {cartCount > 0 && (
+          they can review / adjust quantities before submitting.
+          V277 — hidden entirely when the shop is frozen; the BE
+          would reject the order anyway and hiding the bar is a
+          clearer signal than a disabled button. */}
+      {cartCount > 0 && !frozen && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -1490,12 +1520,17 @@ function FullPageState({ children }: { children: React.ReactNode }) {
  *  The image-count badge (+N extra images) sits top-left so it's the
  *  first thing the eye lands on above the product name. */
 function PublicShopCard({
-  item, qtyInCart, onOpen, onAdd,
+  item, qtyInCart, onOpen, onAdd, orderingDisabled = false,
 }: {
   item: shopApi.PublicShopItem;
   qtyInCart: number;
   onOpen: () => void;
   onAdd: () => void;
+  /** V277 — shop is in frozen / orders-paused state. The card still
+   *  renders (menu stays browsable), but every add-to-cart affordance
+   *  is disabled so the customer can't queue up an order the BE would
+   *  refuse. */
+  orderingDisabled?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
   const cover = shopApi.itemImages(item)[0] ?? '';
@@ -1557,9 +1592,9 @@ function PublicShopCard({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            disabled={!item.inStock}
+            disabled={!item.inStock || orderingDisabled}
             aria-label={`Add ${item.name} to cart`}
-            title="Add to cart"
+            title={orderingDisabled ? 'Ordering is temporarily paused' : 'Add to cart'}
             className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
           >
             <Plus className="h-3.5 w-3.5" />
