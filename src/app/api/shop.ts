@@ -58,6 +58,11 @@ export interface PublicShopPayload {
   phone?: string | null;
   email?: string | null;
   items: PublicShopItem[];
+  /** Cloudflare Turnstile config the checkout sheet needs to render
+   *  the invisible captcha widget. When {@code enabled=false} the
+   *  FE skips the widget entirely — server-side rate-limit + honeypot
+   *  are still enforced. */
+  turnstile?: { enabled: boolean; siteKey: string } | null;
 }
 
 export async function getMyShopLink(): Promise<ShopLinkInfo> {
@@ -94,6 +99,16 @@ export interface PublicOrderRequest {
   contactPhone?: string;
   notes?: string;
   items: PublicOrderLine[];
+  /** One-shot token from the Cloudflare Turnstile widget's
+   *  onSuccess callback. Server verifies against Cloudflare's
+   *  siteverify endpoint. Ignored when the tenant hasn't enabled
+   *  the widget. */
+  turnstileToken?: string;
+  /** Honeypot — hidden form field bots typically fill in. Always
+   *  sent as empty from the FE. Server 400s on any non-empty
+   *  value. Name chosen to look like a legit field so scanners
+   *  target it. */
+  website?: string;
 }
 
 export interface PublicOrderResult {

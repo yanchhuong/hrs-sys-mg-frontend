@@ -180,6 +180,13 @@ export function PublicShopPage() {
   // "Back to top" FAB — appears once the customer has scrolled past
   // ~one viewport so the button never shows on short menus.
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
+  // Cloudflare Turnstile — invisible captcha shown in the checkout
+  // sheet. Token is emitted by the widget's onSuccess callback and
+  // sent with the order submit. Cleared after each successful submit
+  // + when the widget is reset (see effect below).
+  const [turnstileToken, setTurnstileToken] = useState<string>('');
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
 
   /** Cart keyed by stockItemId so a re-tap on the same item increments
    *  the qty without duplicating the row. Reset on a successful
@@ -349,6 +356,67 @@ export function PublicShopPage() {
           || (it.description ?? '').toLowerCase().includes(q);
     });
   }, [inStockItems, search, category]);
+
+  // Load Cloudflare's Turnstile script once per page. The onload
+  // callback is queued via cf-turnstile's implicit-loading contract
+  // (see api.js docs). We attach an onload listener so the mount
+  // effect below knows when the global `turnstile` object is ready.
+  useEffect(() => {
+    if (!data?.turnstile?.enabled) return;
+    if (typeof document === 'undefined') return;
+    const existing = document.querySelector<HTMLScriptElement>('script[data-cf-turnstile]');
+    if (existing) return;
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true;
+    s.defer = true;
+    s.setAttribute('data-cf-turnstile', 'true');
+    document.head.appendChild(s);
+  }, [data?.turnstile?.enabled]);
+
+  // Mount the widget when the checkout sheet opens; unmount when it
+  // closes. Cloudflare's global `turnstile` object exposes
+  // .render(container, opts) and .remove(widgetId).
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    if (!data?.turnstile?.enabled) return;
+    if (!data.turnstile.siteKey) return;
+    let cancelled = false;
+    const mount = () => {
+      const container = turnstileContainerRef.current;
+      const tsGlobal = (window as unknown as { turnstile?: {
+        render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+        remove: (id: string) => void;
+        reset: (id: string) => void;
+      } }).turnstile;
+      if (!container || !tsGlobal || cancelled) return false;
+      const id = tsGlobal.render(container, {
+        sitekey: data.turnstile!.siteKey,
+        theme: 'auto',
+        appearance: 'always',
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+      turnstileWidgetIdRef.current = id;
+      return true;
+    };
+    if (!mount()) {
+      // Script not ready yet — poll a few times until the global
+      // appears (fires after the async script completes).
+      const iv = window.setInterval(() => { if (mount()) window.clearInterval(iv); }, 250);
+      const to = window.setTimeout(() => window.clearInterval(iv), 8000);
+      return () => { cancelled = true; window.clearInterval(iv); window.clearTimeout(to); };
+    }
+    return () => {
+      cancelled = true;
+      const id = turnstileWidgetIdRef.current;
+      const tsGlobal = (window as unknown as { turnstile?: { remove: (id: string) => void } }).turnstile;
+      if (id && tsGlobal) tsGlobal.remove(id);
+      turnstileWidgetIdRef.current = null;
+      setTurnstileToken('');
+    };
+  }, [checkoutOpen, data?.turnstile?.enabled, data?.turnstile?.siteKey]);
 
   // Track vertical scroll to toggle the "back to top" floating button.
   // Threshold: 1 viewport height so it stays hidden on short menus
@@ -581,6 +649,15 @@ export function PublicShopPage() {
       }
       const composedOrderNote = noteParts.length ? noteParts.join('\n') : undefined;
 
+      // Bot-protection: require a fresh Turnstile token when the widget
+      // is enabled. The widget refreshes on submit success (see the
+      // ref-based reset in the checkout sheet) so the same token is
+      // never reused. Honeypot ("website") always ships as empty.
+      if (data?.turnstile?.enabled && !turnstileToken) {
+        toast.error('Please complete the bot-check challenge before submitting.');
+        setSubmitting(false);
+        return;
+      }
       const result = await shopApi.submitPublicOrder(code, {
         customerName: custName.trim() || undefined,
         contactPhone: custPhone.trim() || undefined,
@@ -594,6 +671,8 @@ export function PublicShopPage() {
           // internally for per-line modifier notes.
           notes: composeLineNotes(l.modifiers, l.notes),
         })),
+        turnstileToken: turnstileToken || undefined,
+        website: '',  // honeypot — humans never fill this
       });
       setConfirmed(result);
       setCheckoutOpen(false);
@@ -1216,6 +1295,27 @@ export function PublicShopPage() {
             )}
           </div>
 
+          {/* Bot-protection row — Turnstile widget mounted here by
+              the effect above when the tenant has captcha enabled.
+              Honeypot input is a hidden autocomplete-off text field
+              named "website" that legitimate humans never see or
+              type into; the submit handler ships it as empty. Bots
+              that fill every input based on name will populate it
+              and the server 400s. */}
+          {data?.turnstile?.enabled && (
+            <div className="px-5 pt-3">
+              <div ref={turnstileContainerRef} className="flex justify-center" />
+            </div>
+          )}
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{ position: 'absolute', left: '-10000px', width: '1px', height: '1px', opacity: 0 }}
+          />
+
           <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2 sm:gap-2">
             <div className="flex-1 text-left">
               <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
@@ -1230,7 +1330,8 @@ export function PublicShopPage() {
             </Button>
             <Button
               onClick={submit}
-              disabled={submitting || cart.size === 0}
+              disabled={submitting || cart.size === 0
+                || (!!data?.turnstile?.enabled && !turnstileToken)}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
