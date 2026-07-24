@@ -467,7 +467,7 @@ function LandingNav({
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
       <Container className="flex h-16 items-center justify-between">
-        <a href="#top" className="flex items-center gap-2.5">
+        <a href="#top" className="flex items-center gap-2.5 shrink-0">
           <img
             src={imgBrandLogo}
             alt="SMRT HRSM 360°"
@@ -486,7 +486,7 @@ function LandingNav({
           <a href="#faq"         className="hover:text-slate-900">{t(T.nav.faq, lang)}</a>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setLang(lang === 'en' ? 'km' : lang === 'km' ? 'zh' : 'en')}
@@ -519,6 +519,24 @@ function LandingNav({
             {t(T.nav.getStarted, lang)}
             <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
           </Button>
+        </div>
+      </Container>
+      {/* Mobile-only secondary nav — horizontal-scroll chip strip that
+          surfaces the Modules / How it works / Rules / FAQ / Contact
+          entries the desktop `nav` shows inline. Mirrors the Sale
+          Ledger / Items filter-strip pattern: swipe left/right to
+          reach whatever doesn't fit on screen. Hidden at md+ where
+          the inline nav already carries these. */}
+      <Container className="md:hidden">
+        <div className="chip-row py-2 -mx-1 px-1 text-sm text-slate-600 border-t border-slate-100">
+          <a href="#modules"                className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">{t(T.nav.modules, lang)}</a>
+          <a href="#how"                    className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">{t(T.nav.howItWorks, lang)}</a>
+          <a href="/cambodia"               className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">{t(T.nav.rules, lang)}</a>
+          <a href="#faq"                    className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">{t(T.nav.faq, lang)}</a>
+          <a href={REQUIREMENT_SURVEY_PATH} className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">{t(T.hero.contactUs, lang)}</a>
+          <button type="button" onClick={onSignIn} className="px-3 py-1.5 rounded-full hover:bg-slate-100 whitespace-nowrap">
+            {t(T.nav.signIn, lang)}
+          </button>
         </div>
       </Container>
     </header>
