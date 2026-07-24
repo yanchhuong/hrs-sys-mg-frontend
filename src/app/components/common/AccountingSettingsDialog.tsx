@@ -586,6 +586,16 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',
                   draft.showTax, v => setDraft({ ...draft, showTax: v }))}
+                {/* V273 — POS-only kitchen pipeline gate. On (default)
+                    keeps the Active Orders drawer + requested→done
+                    walk. Off collapses the flow to Order → Checkout →
+                    Done for retail counters that don't run a kitchen. */}
+                {scope === 'pos' && toggleRow(
+                  'Show Cooking Progress',
+                  'Kitchen pipeline: after checkout the order lands in Active Orders and moves requested → ready → done. Off = Order → Checkout → Done, no kitchen drawer.',
+                  draft.posShowCookingProgress,
+                  v => setDraft({ ...draft, posShowCookingProgress: v }),
+                )}
                 {/* Sale-only for now — Invoice is the only doc whose
                     form fires the Telegram send on save. Other
                     scopes carry the column but the UI doesn't

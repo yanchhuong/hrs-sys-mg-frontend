@@ -88,6 +88,14 @@ export interface AccountingSettings {
   posShowPaidStamp: boolean;
   /** POS receipt — auto-open the print dialog on checkout (V133). */
   posAutoPrint: boolean;
+  /** V273 — kitchen pipeline toggle. When true (default) a checkout
+   *  drops the order into fulfillmentStatus='requested' and the
+   *  cashier walks it through requested → accepted → in_progress →
+   *  ready → done via the Active Orders drawer. When false the FE
+   *  hides the Active Orders button and advances the order straight
+   *  to 'done' on checkout — matches a retail counter with no
+   *  kitchen behind it. */
+  posShowCookingProgress: boolean;
   /** POS receipt — show item SKU as a line prefix (V133). */
   posShowSku: boolean;
   /** POS receipt — paper size for the print window. (V133) */
@@ -247,6 +255,7 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     // thermal-80 paper, no shop name (FE falls back to tenant name).
     posShowPaidStamp: true,
     posAutoPrint: false,
+    posShowCookingProgress: true,
     posShowSku: true,
     posPaperSize: 'thermal_80',
     posShopName: null,

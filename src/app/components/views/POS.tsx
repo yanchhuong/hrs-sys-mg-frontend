@@ -656,7 +656,19 @@ export function POS() {
       // V165 — the just-paid order enters the kitchen pipeline at
       // 'requested'. Prepend it so the Active Orders drawer reflects
       // the new ticket without waiting for the polling tick.
-      setActiveOrders(prev => [checked, ...prev.filter(o => o.id !== checked.id)]);
+      //
+      // V273 — when the tenant has disabled the cooking-progress
+      // pipeline, skip enrolling into activeOrders entirely and
+      // advance the fulfilment status straight to 'done' on the
+      // backend. Failure is swallowed (best-effort) — the invoice is
+      // already paid regardless of the pipeline flip.
+      if (posSettings.posShowCookingProgress) {
+        setActiveOrders(prev => [checked, ...prev.filter(o => o.id !== checked.id)]);
+      } else {
+        posApi.setFulfillmentStatus(checked.id, 'done').catch(() => {
+          // Non-fatal — the order still shows as paid on receipts.
+        });
+      }
       setReceipt(checked);
       setCheckoutOpen(false);
       // Latch the paid splash on the customer display. The splash
@@ -1057,16 +1069,18 @@ export function POS() {
           {/* V165 — paid orders moving through the kitchen pipeline.
               Hidden when no active rows so the toolbar doesn't carry
               dead buttons on slow days. */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setActiveDrawerOpen(true)}
-            title="Paid orders moving through the kitchen — tap an order to advance its status."
-            className={activeOrders.length > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}
-          >
-            <ClipboardList className="h-4 w-4 mr-1.5" />
-            Active Orders ({activeOrders.length})
-          </Button>
+          {posSettings.posShowCookingProgress && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveDrawerOpen(true)}
+              title="Paid orders moving through the kitchen — tap an order to advance its status."
+              className={activeOrders.length > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : ''}
+            >
+              <ClipboardList className="h-4 w-4 mr-1.5" />
+              Active Orders ({activeOrders.length})
+            </Button>
+          )}
           <Button
             variant="outline" size="sm"
             onClick={() => {
