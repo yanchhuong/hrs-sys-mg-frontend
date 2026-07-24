@@ -2098,7 +2098,12 @@ export function Employees() {
                   <TabsContent value="employment" className="mt-0 space-y-6">
                     <SectionHeading>Position</SectionHeading>
                     <div className="grid grid-cols-2 gap-4">
-                      <FieldRow label="Position" required={isEditing} isEditing={isEditing}>
+                      {/* Position + Department are optional on save
+                          (handleSaveEmployee only enforces Name +
+                          Email). Dropped the red asterisk — the
+                          previous `required` prop was UI-only and
+                          contradicted the actual validator. */}
+                      <FieldRow label="Position" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <SearchablePicker
                             options={(() => {
@@ -2137,7 +2142,7 @@ export function Employees() {
                           <p>{selectedEmployee.position}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="Department" required={isEditing} isEditing={isEditing}>
+                      <FieldRow label="Department" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <SearchablePicker
                             options={(USE_MOCKS
