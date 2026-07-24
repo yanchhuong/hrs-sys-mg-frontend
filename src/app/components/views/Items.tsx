@@ -536,11 +536,14 @@ export function Items() {
       />
 
       <Card>
-        {/* One-row header: client-side filters on the LEFT, server-side
-            search form on the RIGHT. Both wrap gracefully on narrow
-            displays so nothing gets cut off. */}
-        <CardHeader className="flex flex-row flex-wrap items-end gap-x-6 gap-y-3 justify-between space-y-0">
-          <div className="filter-strip flex-1 min-w-0">
+        {/* Header layout: on mobile the search form stacks on TOP
+            (short, fixed) and the filter row sits BELOW as a
+            horizontal-scroll strip — matches the Sale Ledger UX
+            where a swipe left/right reveals the rest of the filters
+            without pushing anything off-screen. On sm+ they share
+            one row with filters LEFT + search form RIGHT. */}
+        <CardHeader className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-x-6 sm:gap-y-3 sm:justify-between space-y-0">
+          <div className="filter-strip order-2 sm:order-1 w-full sm:w-auto sm:flex-1 sm:min-w-0">
             {rows.length > 0 && (
               <>
                 <select
@@ -620,7 +623,7 @@ export function Items() {
               </>
             )}
           </div>
-          <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
+          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 order-1 sm:order-2 w-full sm:w-auto">
             {/* Warehouse filter — shown only when the feature gate is
                 on. "All" = empty value, picks one warehouse otherwise.
                 Re-runs the list call via the warehouseFilter useEffect. */}
