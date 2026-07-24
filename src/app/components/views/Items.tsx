@@ -542,7 +542,7 @@ export function Items() {
             container so a swipe left/right reaches whatever's off
             screen. Children use `shrink-0` so nothing gets squished
             into unreadable widths. */}
-        <CardHeader className="flex flex-row items-end justify-between gap-x-4 gap-y-3 overflow-x-auto space-y-0">
+        <CardHeader className="flex flex-row items-end justify-between gap-x-4 gap-y-3 overflow-x-auto hover-scroll-x space-y-0">
           <div className="flex items-end gap-x-4 gap-y-3 shrink-0">
             {rows.length > 0 && (
               <>

@@ -155,4 +155,34 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   .stat-strip.stat-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
+/* Hidden-until-hover horizontal scrollbar.
+   Used by rows that stay one-line + horizontal-scroll on narrow
+   viewports (e.g. Items filter strip, POS top action bar) — the
+   default overflow-x:auto scrollbar wastes vertical space, so
+   we hide it and only reveal a slim thumb when the pointer is
+   over the row. Touch devices (which don't hover) still get
+   momentum scrolling without any visible track.
 
+   Apply: `<div className="hover-scroll-x overflow-x-auto">…</div>` */
+.hover-scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hover-scroll-x::-webkit-scrollbar {
+  height: 0;
+  background: transparent;
+}
+@media (hover: hover) {
+  .hover-scroll-x:hover {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.35) transparent;
+  }
+  .hover-scroll-x:hover::-webkit-scrollbar {
+    height: 6px;
+  }
+  .hover-scroll-x:hover::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 3px;
+  }
+}
