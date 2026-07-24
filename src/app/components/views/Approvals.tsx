@@ -25,6 +25,7 @@ import * as vendorsApi from '../../api/vendors';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 type StatusFilter = 'active' | 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -194,7 +195,7 @@ export function Approvals() {
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm text-gray-400 py-8">Loading…</TableCell></TableRow>
+                <TableBodySkeletonRows rows={6} columns={7} />
               )}
               {!loading && filtered.length === 0 && (
                 <TableRow><TableCell colSpan={7} className="text-center text-sm text-gray-400 py-8">

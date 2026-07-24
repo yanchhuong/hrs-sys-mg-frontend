@@ -18,6 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import * as adjustmentsApi from '../../api/stockAdjustments';
 import * as itemsApi from '../../api/items';
 import { ClipboardEdit, Plus, Trash2, RefreshCw, Info } from 'lucide-react';
@@ -215,11 +216,7 @@ export function StockAdjustments() {
               {/* Header always mounted (Announcement pattern). Empty
                   + loading collapse into a single colSpan'd row. */}
               {loading && rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
-                    Loading…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={6} columns={canRemove ? 10 : 9} />
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>

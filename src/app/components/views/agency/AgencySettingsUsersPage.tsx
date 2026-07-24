@@ -16,6 +16,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { PageTitleTooltip } from './PageTitleTooltip';
 import { Checkbox } from '../../ui/checkbox';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
 
 const ROLE_LABEL: Record<AgencyRole, string> = {
   partner: 'Partner', manager: 'Manager', senior: 'Senior', staff: 'Staff',
@@ -137,9 +138,7 @@ export function AgencySettingsUsersPage() {
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={4} /></div>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 px-6 py-4">
               {rows.length === 0 ? 'No members yet.' : 'No members match this filter.'}

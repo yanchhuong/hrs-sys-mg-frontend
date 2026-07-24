@@ -23,6 +23,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { toast } from 'sonner';
 import * as telegramApi from '../../../api/telegram';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 
 /**
  * Super-Admin "Telegram Bots" page.
@@ -326,11 +327,7 @@ export function PlatformTelegram() {
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    Loading…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={5} columns={8} />
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>

@@ -17,6 +17,7 @@ import {
 import { Plus, Pencil, Trash2, Layers, Users, HardDrive, Server, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 
 /** Cents → $X.XX. Server stores prices in cents to avoid float drift; UI
  *  shows dollars for the admin. Free plans render as "Free". */
@@ -197,11 +198,7 @@ export function Plans() {
             </TableHeader>
             <TableBody>
               {loading && plans.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    Loading…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={5} columns={7} />
               )}
               {!loading && plans.length === 0 && (
                 <TableRow>

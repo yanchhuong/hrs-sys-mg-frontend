@@ -45,6 +45,7 @@ import {
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { BulkUploadBillsDialog } from '../common/BulkUploadBillsDialog';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -650,7 +651,7 @@ export function Bills() {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+            <TableRowsSkeleton rows={8} columns={7} />
           ) : groupedRows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               {rows.length === 0 ? 'No bills yet.' : 'No bills match your filters.'}

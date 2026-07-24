@@ -21,6 +21,7 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /**
  * "All Documents" tab on the Employees page. Tenant-wide listing of
@@ -215,11 +216,7 @@ export function AllDocumentsTab() {
               </TableHeader>
               <TableBody>
                 {loading && docs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
-                      Loading documents…
-                    </TableCell>
-                  </TableRow>
+                  <TableBodySkeletonRows rows={6} columns={6} />
                 ) : pagination.paginatedItems.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">

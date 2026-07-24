@@ -24,6 +24,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 import {
   platformSurveys, RequirementSurvey, SurveyStatus, SurveyPriority,
   SurveyStatusHistoryEntry, SURVEY_STATUSES, SURVEY_PRIORITIES,
@@ -186,10 +187,13 @@ export function RequirementSurveys() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pager.paginatedItems.length === 0 && (
+              {loading && pager.paginatedItems.length === 0 && (
+                <TableBodySkeletonRows rows={6} columns={8} />
+              )}
+              {!loading && pager.paginatedItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    {loading ? 'Loading…' : 'No surveys match these filters.'}
+                    No surveys match these filters.
                   </TableCell>
                 </TableRow>
               )}

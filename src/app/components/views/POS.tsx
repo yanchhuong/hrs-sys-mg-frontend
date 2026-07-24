@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Skeleton } from '../ui/skeleton';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -766,9 +767,24 @@ export function POS() {
 
   /* ----- gate states ----- */
   if (loading) {
+    // v-skeleton-loading — render placeholder tiles that match the
+    // real PosItemCard layout (square image + name + price row) so
+    // the operator sees the page shape immediately instead of a
+    // centered spinner. 12 tiles cover a typical 4-col × 3-row viewport.
     return (
-      <div className="flex items-center justify-center h-64 text-gray-500">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading POS…
+      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 p-3">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} className="rounded-lg border bg-white overflow-hidden">
+            <Skeleton className="aspect-square w-full rounded-none" />
+            <div className="p-2 space-y-2">
+              <Skeleton className="h-3.5 w-4/5" />
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-14" />
+                <Skeleton className="h-3 w-8" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

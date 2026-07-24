@@ -17,6 +17,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { DateInput } from '../common/DateInput';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 
 /**
  * V215 / v-attendance-module — the teacher's daily workspace.
@@ -208,7 +209,7 @@ export function Attendances() {
           </CardHeader>
           <CardContent>
             {loading && rows.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+              <TableRowsSkeleton rows={8} columns={6} />
             ) : rows.length === 0 ? (
               <p className="text-sm text-gray-500 py-6 text-center">
                 No sessions in this range. Adjust the date filters or add a Course Schedule with

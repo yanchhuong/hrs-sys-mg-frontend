@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import * as movementsApi from '../../api/stockMovements';
 import { History, RefreshCw, Info, X } from 'lucide-react';
 import { Input } from '../ui/input';
@@ -170,11 +171,7 @@ export function StockMovements() {
                   on the loading / empty paths. Match the Announcement
                   pattern. */}
               {loading && rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-8">
-                    Loading movements…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={6} columns={8} />
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>

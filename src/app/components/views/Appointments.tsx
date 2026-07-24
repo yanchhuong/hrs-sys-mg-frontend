@@ -26,6 +26,7 @@ import * as customersApi from '../../api/customers';
 import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /**
  * Healthcare > Appointment — the waiting-room queue (V194 /
@@ -259,11 +260,7 @@ export function Appointments() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-gray-500">
-                    Loading appointments…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={6} columns={7} />
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-gray-500">

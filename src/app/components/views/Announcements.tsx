@@ -40,6 +40,7 @@ import * as settingsApi from '../../api/settings';
 import * as systemHolidaysApi from '../../api/systemHolidays';
 import * as telegramApi from '../../api/telegram';
 import * as hrTelegramApi from '../../api/hrTelegramBots';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /**
  * Announcements (V122). Admin / manager publishes a broadcast to
@@ -557,7 +558,7 @@ export function Announcements() {
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">Loading…</TableCell></TableRow>
+                <TableBodySkeletonRows rows={6} columns={6} />
               )}
               {!loading && rows.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">

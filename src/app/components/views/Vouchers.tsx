@@ -40,6 +40,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import * as vouchersApi from '../../api/vouchers';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as usersApi from '../../api/users';
@@ -357,7 +358,7 @@ export function Vouchers() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+            <TableRowsSkeleton rows={8} columns={7} />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No vouchers yet.</p>
           ) : (

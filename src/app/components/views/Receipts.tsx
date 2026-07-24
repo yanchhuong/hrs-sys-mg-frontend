@@ -25,6 +25,7 @@ import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { usePagination } from '../../hooks/usePagination';
 import * as receiptsApi from '../../api/receipts';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
@@ -276,7 +277,7 @@ export function Receipts() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+            <TableRowsSkeleton rows={8} columns={7} />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No receipts yet.</p>
           ) : (

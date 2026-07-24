@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
+import { Skeleton } from '../ui/skeleton';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -714,11 +715,37 @@ export function PublicShopPage() {
   };
 
   if (loading) {
+    // v-skeleton-loading — customers land on this page cold (no
+    // service worker cache), so a menu-shaped skeleton makes the
+    // wait feel faster than a centered spinner. 10 tiles cover a
+    // typical 5-col × 2-row viewport; the shop header stays as a
+    // simple placeholder strip above the grid to avoid layout jump
+    // when the real header renders in.
     return (
-      <FullPageState>
-        <Loader2 className="h-6 w-6 animate-spin text-blue-600 mb-2" />
-        <p className="text-sm text-gray-600">Loading menu…</p>
-      </FullPageState>
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
+          <div className="rounded-lg bg-white border p-4 space-y-2">
+            <Skeleton className="h-6 w-1/3" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+          <div className="flex gap-2 overflow-hidden">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-20 rounded-full shrink-0" />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="rounded-lg border bg-white overflow-hidden">
+                <Skeleton className="aspect-square w-full rounded-none" />
+                <div className="p-2 space-y-2">
+                  <Skeleton className="h-3.5 w-4/5" />
+                  <Skeleton className="h-4 w-14" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     );
   }
   if (error || !data) {

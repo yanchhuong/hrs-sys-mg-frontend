@@ -20,6 +20,7 @@ import { Plus, Pencil, Trash2, MapPin, Loader2, QrCode } from 'lucide-react';
 import * as officesApi from '../../api/offices';
 import { QrDisplayDialog } from '../common/QrDisplayDialog';
 import { MapPicker } from '../common/MapPicker';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 
 interface FormState {
   id?: string;
@@ -194,10 +195,7 @@ export function Offices({ embedded = false }: Props = {}) {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center gap-2 justify-center py-10 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
-            </div>
+            <TableRowsSkeleton rows={6} columns={5} />
           ) : rows.length === 0 ? (
             <div className="text-center py-12 text-sm text-gray-400">
               No offices yet. Click <strong>Add Office</strong> to create the first one.

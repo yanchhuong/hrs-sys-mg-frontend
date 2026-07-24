@@ -24,6 +24,7 @@ import { USE_MOCKS } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 
 /** Compact "time ago" formatter for the Last Login column. Ladder:
  *   • < 45 sec         → "just now"
@@ -461,10 +462,13 @@ export function CrossTenantUsers() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pager.paginatedItems.length === 0 && (
+              {loading && pager.paginatedItems.length === 0 && (
+                <TableBodySkeletonRows rows={6} columns={8} />
+              )}
+              {!loading && pager.paginatedItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    {loading ? 'Loading…' : 'No users match these filters.'}
+                    No users match these filters.
                   </TableCell>
                 </TableRow>
               )}

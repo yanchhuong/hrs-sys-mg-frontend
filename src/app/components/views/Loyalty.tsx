@@ -16,6 +16,7 @@ import {
 import { loyalty } from '../../api/loyalty';
 import type { LoyaltyProgram, LoyaltyType, UpsertLoyaltyProgram } from '../../api/loyalty';
 import * as itemsApi from '../../api/items';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import type { Item } from '../../api/items';
 
 const TYPE_META: Record<LoyaltyType, { label: string; icon: React.ReactNode; hint: string; cls: string }> = {
@@ -133,9 +134,7 @@ export function Loyalty() {
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={5} /></div>
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-500 px-6 py-6">
               No loyalty programs yet. Click <b>New program</b> to create your first Point or Stamp card.

@@ -8,6 +8,7 @@ import * as declApi from '../../api/agencyTaxDecl';
 import type { TaxDeclStatus, TaxDeclarationDto } from '../../api/agencyTaxDecl';
 import { PageTitleTooltip } from './agency/PageTitleTooltip';
 import { AgencyAccessDialog } from '../common/AgencyAccessDialog';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_CLS: Record<TaxDeclStatus, string> = {
@@ -85,9 +86,7 @@ export function TaxDeclarationsView() {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <TableRowsSkeleton rows={6} columns={5} />
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               Nothing yet. Your agency's tax declarations will appear here as

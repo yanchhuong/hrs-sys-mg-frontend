@@ -25,6 +25,7 @@ import * as usersApi from '../../api/users';
 import * as paymentsApi from '../../api/payments';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /**
  * Healthcare > Encounters — first-class page (as of
@@ -244,11 +245,7 @@ export function Encounters() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-sm text-gray-500">
-                    Loading encounters…
-                  </TableCell>
-                </TableRow>
+                <TableBodySkeletonRows rows={6} columns={10} />
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={10} className="py-10 text-center text-sm text-gray-500">

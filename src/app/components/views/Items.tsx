@@ -7,6 +7,7 @@ import { Slider } from '../ui/slider';
 import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
+import { Skeleton } from '../ui/skeleton';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -662,7 +663,26 @@ export function Items() {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <div className="text-center py-10 text-sm text-gray-400">Loading items…</div>
+            // v-skeleton-loading — placeholder rows whose column layout
+            // mirrors the real table (code, thumbnail square, name,
+            // category, price, stock, status). 8 rows fill the first
+            // viewport without shifting when data arrives.
+            <div className="divide-y">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 py-3">
+                  <Skeleton className="h-4 w-20 shrink-0" />
+                  <Skeleton className="h-10 w-10 rounded-md shrink-0" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <Skeleton className="h-3.5 w-2/5" />
+                    <Skeleton className="h-3 w-1/4" />
+                  </div>
+                  <Skeleton className="h-4 w-20 shrink-0" />
+                  <Skeleton className="h-4 w-16 shrink-0" />
+                  <Skeleton className="h-4 w-14 shrink-0" />
+                  <Skeleton className="h-6 w-16 rounded-full shrink-0" />
+                </div>
+              ))}
+            </div>
           ) : rows.length === 0 ? (
             <div className="text-center py-12 text-sm text-gray-400">
               No items yet.{canAdd && <> Click <strong>Add Item</strong> to create the first one.</>}

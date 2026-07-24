@@ -13,6 +13,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { TaskDialog } from './TaskDialog';
 import { PageTitleTooltip } from './PageTitleTooltip';
 import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
 
 type Tab = 'all' | 'todo' | 'in_progress' | 'blocked' | 'done';
 
@@ -193,9 +194,7 @@ export function AgencyTasksPage() {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <TableRowsSkeleton rows={6} columns={6} />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               No tasks match this filter. {scope === 'mine' && 'Try switching to All portfolio.'}

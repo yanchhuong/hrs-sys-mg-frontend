@@ -34,6 +34,7 @@ import { StatusBadge } from './PlatformDashboard';
 import { SyncStatusBadge } from './SyncStatusBadge';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 
 // Adapter: PlatformTenant lacks usage/cost fields the JSX consumes (employeeCount,
 // storageMb, monthlyCostUsd, userCount, lastActiveAt). Fill with 0 / createdAt
@@ -921,10 +922,13 @@ export function Companies() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pager.paginatedItems.length === 0 && (
+              {loading && pager.paginatedItems.length === 0 && (
+                <TableBodySkeletonRows rows={6} columns={9} />
+              )}
+              {!loading && pager.paginatedItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-sm text-gray-400 py-10">
-                    {loading ? 'Loading companies…' : 'No companies match these filters.'}
+                    No companies match these filters.
                   </TableCell>
                 </TableRow>
               )}

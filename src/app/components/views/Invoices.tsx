@@ -58,6 +58,7 @@ import {
   Package, CheckCircle2, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -758,7 +759,7 @@ export function Invoices({
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+            <TableRowsSkeleton rows={8} columns={7} />
           ) : groupedRows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               {rows.length === 0 ? 'No invoices yet.' : 'No invoices match your filters.'}

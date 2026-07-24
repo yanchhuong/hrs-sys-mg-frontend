@@ -17,6 +17,7 @@ import type { AssignmentDto, AssignmentStatus, AllowedDataType } from '../../../
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { useAuth } from '../../../context/AuthContext';
 import { PageTitleTooltip } from './PageTitleTooltip';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
 
 type StatusTab = 'all' | AssignmentStatus;
 
@@ -179,9 +180,7 @@ export function AgencySettingsClientsPage() {
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={5} /></div>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 px-6 py-4">
               {rows.length === 0
