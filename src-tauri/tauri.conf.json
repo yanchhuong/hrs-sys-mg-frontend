@@ -36,9 +36,9 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "publisher": "Kosign",
-    "shortDescription": "HRMS by Kosign — Windows desktop shell.",
-    "longDescription": "Windows desktop client for the Kosign HRMS platform. Points at your hosted API (default configurable from the Settings screen).",
+    "publisher": "Dr.CHHUO-MAXJZ",
+    "shortDescription": "HRMS by Dr.CHHUO-MAXJZ — Windows desktop shell.",
+    "longDescription": "Windows desktop client for the SMRT HRMS platform. Points at your hosted API (default configurable from the Settings screen).",
     "windows": {
       "wix": {
         "language": "en-US"
