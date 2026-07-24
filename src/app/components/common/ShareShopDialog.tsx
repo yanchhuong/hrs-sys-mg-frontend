@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Copy, ExternalLink, RefreshCw, Loader2, Share2 } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info } from 'lucide-react';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
 
@@ -110,11 +111,23 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-4 w-4 text-blue-600" />
             Share your menu
+            {/* Moved from a full DialogDescription paragraph into a
+                hover-info tooltip so the dialog header stays compact.
+                Same copy — surfaces on hover / tap-focus over the (i) */}
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
+                    <Info className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                  Customers can scan this QR or visit the link to view your menu.
+                  Browse-only — no online ordering on this code.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </DialogTitle>
-          <DialogDescription>
-            Customers can scan this QR or visit the link to view your menu.
-            Browse-only — no online ordering on this code.
-          </DialogDescription>
         </DialogHeader>
 
         {loading ? (
