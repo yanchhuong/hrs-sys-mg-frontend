@@ -127,6 +127,26 @@ function setLink(rel: string, href: string) {
   el.setAttribute('href', href);
 }
 
+/** Inject / update a JSON-LD structured-data <script> in the document
+ *  head. `id` keys the element so re-mounts overwrite rather than
+ *  duplicate. Removes any {@code undefined} branches before
+ *  serialising so the resulting JSON doesn't ship stray "undefined"
+ *  literals that Google's parser rejects. */
+function setJsonLd(id: string, data: unknown) {
+  if (typeof document === 'undefined') return;
+  const attrId = `ld-${id}`;
+  let el = document.head.querySelector<HTMLScriptElement>(`script[data-ld-id="${attrId}"]`);
+  if (!el) {
+    el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.setAttribute('data-ld-id', attrId);
+    document.head.appendChild(el);
+  }
+  // Drop undefined leaves so JSON.stringify doesn't leave holes.
+  const clean = JSON.parse(JSON.stringify(data));
+  el.textContent = JSON.stringify(clean);
+}
+
 /** Page size for the shop's infinite-scroll grid. Tiles are cheap to
  *  render but 200+ at once punishes low-end phones — 24 fills 4-5 rows
  *  on desktop, ~8-12 rows on mobile. */
@@ -277,6 +297,32 @@ export function PublicShopPage() {
           // Canonical link so Google doesn't treat query-string
           // variants (?utm=…) as duplicate pages.
           setLink('canonical', window.location.origin + window.location.pathname);
+          // JSON-LD structured data — LocalBusiness schema. Tells
+          // Google this is a real business, not a generic web page.
+          // Unlocks rich results (map card, phone tap, address block)
+          // and improves ranking for name + address searches. Values
+          // are shallow-copied — no PII beyond what's already on the
+          // banner. Injected as a <script type="application/ld+json">
+          // in <head>.
+          setJsonLd('shop-localbusiness', {
+            '@context': 'https://schema.org',
+            '@type': 'Store',
+            name: shopName,
+            url: window.location.href,
+            image: r.logoUrl || undefined,
+            telephone: r.phone || undefined,
+            email: r.email || undefined,
+            address: r.address ? {
+              '@type': 'PostalAddress',
+              streetAddress: r.address,
+              addressCountry: r.country || undefined,
+            } : undefined,
+            hasOfferCatalog: {
+              '@type': 'OfferCatalog',
+              name: `${shopName} menu`,
+              numberOfItems: r.items.length,
+            },
+          });
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Shop not found');
