@@ -536,14 +536,14 @@ export function Items() {
       />
 
       <Card>
-        {/* Header layout: on mobile the search form stacks on TOP
-            (short, fixed) and the filter row sits BELOW as a
-            horizontal-scroll strip — matches the Sale Ledger UX
-            where a swipe left/right reveals the rest of the filters
-            without pushing anything off-screen. On sm+ they share
-            one row with filters LEFT + search form RIGHT. */}
-        <CardHeader className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-x-6 sm:gap-y-3 sm:justify-between space-y-0">
-          <div className="filter-strip order-2 sm:order-1 w-full sm:w-auto sm:flex-1 sm:min-w-0">
+        {/* One row, ALWAYS — matches the POS top action bar: filters
+            on the left, search form on the right, and on narrow
+            displays the whole strip becomes a horizontal-scroll
+            container so a swipe left/right reaches whatever's off
+            screen. Children use `shrink-0` so nothing gets squished
+            into unreadable widths. */}
+        <CardHeader className="flex flex-row items-end justify-between gap-x-4 gap-y-3 overflow-x-auto space-y-0">
+          <div className="flex items-end gap-x-4 gap-y-3 shrink-0">
             {rows.length > 0 && (
               <>
                 <select
@@ -577,7 +577,7 @@ export function Items() {
                   <option value="yes">Image : Yes</option>
                   <option value="no">Image : No</option>
                 </select>
-                <div className="w-44">
+                <div className="w-44 shrink-0">
                   <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
                     <Label className="text-xs">Price</Label>
                     <span className="tabular-nums text-gray-500">
@@ -596,7 +596,7 @@ export function Items() {
                     }}
                   />
                 </div>
-                <div className="w-44">
+                <div className="w-44 shrink-0">
                   <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
                     <Label className="text-xs">Stock</Label>
                     <span className="tabular-nums text-gray-500">
@@ -623,7 +623,7 @@ export function Items() {
               </>
             )}
           </div>
-          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 order-1 sm:order-2 w-full sm:w-auto">
+          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 shrink-0">
             {/* Warehouse filter — shown only when the feature gate is
                 on. "All" = empty value, picks one warehouse otherwise.
                 Re-runs the list call via the warehouseFilter useEffect. */}
