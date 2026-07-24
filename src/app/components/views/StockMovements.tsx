@@ -12,7 +12,6 @@ import { DateInput } from '../common/DateInput';
 import * as movementsApi from '../../api/stockMovements';
 import { History, RefreshCw, Info, X } from 'lucide-react';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -110,13 +109,17 @@ export function StockMovements() {
             History
           </CardTitle>
           <div className="filter-strip">
-            <Label htmlFor="mv-from" className="text-xs text-gray-500">From</Label>
+            {/* DateInput renders a popover trigger button (not a native
+                <input>), so there's no id to hang a <label htmlFor> off.
+                Chrome DevTools flags an orphan "for" as an a11y issue —
+                use a plain span for the visual annotation instead. */}
+            <span className="text-xs text-gray-500">From</span>
             <DateInput
               value={dateFrom || null}
               onChange={v => setDateFrom(v ?? '')}
               max={dateTo || undefined}
             />
-            <Label htmlFor="mv-to" className="text-xs text-gray-500">To</Label>
+            <span className="text-xs text-gray-500">To</span>
             <DateInput
               value={dateTo || null}
               onChange={v => setDateTo(v ?? '')}

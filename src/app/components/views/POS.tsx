@@ -84,6 +84,32 @@ export function POS() {
   // warehouse tenant gets zero clutter.
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
+
+  // v-pos-infinite-scroll — render the tile grid in batches so a 200-
+  // item tenant doesn't blow the initial DOM. First page is one screenful
+  // (~40 tiles on a laptop / xl grid); each time the sentinel below the
+  // grid crosses into view we bump the window by another batch. Reset
+  // to the first page whenever the visible filter set changes.
+  const POS_PAGE = 40;
+  const [visibleCount, setVisibleCount] = useState<number>(POS_PAGE);
+  useEffect(() => { setVisibleCount(POS_PAGE); }, [search, categoryFilter, warehouseFilter]);
+  // Callback ref: attaches an IntersectionObserver the moment the
+  // sentinel <div> mounts (which only happens once the loading/gate
+  // guards below have passed). Kept ref-callback rather than useEffect
+  // so we don't need to hoist the observer above the early-return
+  // gates that follow this block.
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const attachLoadMoreSentinel = (node: HTMLDivElement | null) => {
+    if (observerRef.current) { observerRef.current.disconnect(); observerRef.current = null; }
+    if (!node) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) {
+        setVisibleCount(c => c + POS_PAGE);
+      }
+    }, { rootMargin: '200px' });
+    io.observe(node);
+    observerRef.current = io;
+  };
   // Modifier picker (V142). When the cashier taps an item with
   // modifiers, this holds the item being configured; the picker
   // dialog reads it and commits the selection back into the cart.
@@ -1206,9 +1232,21 @@ export function POS() {
               // v-pos-mobile-drawer — 3-per-row on <sm matches the
               // mobile launcher tile aesthetic; step up progressively.
               <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 pb-24 lg:pb-3">
-                {filteredItems.map(it => (
+                {/* v-pos-infinite-scroll — slice the filtered list to
+                    the current window so a 200-item tenant paints the
+                    first screenful fast. The sentinel below expands
+                    the window as the cashier scrolls. */}
+                {filteredItems.slice(0, visibleCount).map(it => (
                   <PosItemCard key={it.id} item={it} onAdd={onItemTap} />
                 ))}
+                {visibleCount < filteredItems.length && (
+                  <div
+                    ref={attachLoadMoreSentinel}
+                    className="col-span-full h-10 flex items-center justify-center text-xs text-gray-400"
+                  >
+                    Loading more…
+                  </div>
+                )}
               </div>
             )}
           </div>

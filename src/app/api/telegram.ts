@@ -132,13 +132,16 @@ export async function deletePlatformBot(): Promise<void> {
 
 /** One row in the Super Admin's unified Telegram Bots table.
  *  Two filterable axes:
- *    - {@code kind}     — ownership (Public = platform / Private = tenant)
- *    - {@code audience} — who the bot talks to (customer or employee)
+ *    - {@code kind}     — ownership / role (Public = platform,
+ *                         Private = tenant, Error = platform error bot)
+ *    - {@code audience} — who the bot talks to (customer / employee / ops)
  *  Tenant rows carry {@code tenantId} + {@code tenantName} so the
- *  table can render the owning company alongside the bot username. */
+ *  table can render the owning company alongside the bot username.
+ *  V276 — {@code chatId} + {@code skipTypes} populated only for
+ *  {@code kind='error'} rows. */
 export interface PlatformBotListItem {
-  kind: 'platform' | 'tenant';
-  audience: 'customer' | 'employee';
+  kind: 'platform' | 'tenant' | 'error';
+  audience: 'customer' | 'employee' | 'ops';
   tenantId: string | null;
   tenantName: string | null;
   botUsername: string;
@@ -147,8 +150,51 @@ export interface PlatformBotListItem {
   description: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  chatId?: string | null;
+  skipTypes?: string | null;
 }
 
 export async function listAllBots(): Promise<PlatformBotListItem[]> {
   return apiJson('/api/v1/platform/telegram/all-bots');
+}
+
+/* --------- Error-tracking bot (V276) — Super-Admin surface -------- */
+
+export interface PlatformErrorBot {
+  id: string;
+  botUsername: string;
+  botTokenMask: string;
+  chatId: string;
+  enabled: boolean;
+  skipTypes: string;
+  description: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlatformErrorBotRequest {
+  botUsername: string;
+  botToken: string;
+  chatId: string;
+  enabled: boolean;
+  skipTypes?: string;
+  description?: string;
+}
+
+export async function getErrorBot(): Promise<PlatformErrorBot | null> {
+  return (await apiJson<PlatformErrorBot | null>('/api/v1/platform/telegram/error-bot')) ?? null;
+}
+
+export async function putErrorBot(
+  req: PlatformErrorBotRequest,
+): Promise<PlatformErrorBot> {
+  return apiJson('/api/v1/platform/telegram/error-bot', { method: 'PUT', json: req });
+}
+
+export async function deleteErrorBot(): Promise<void> {
+  return apiVoid('/api/v1/platform/telegram/error-bot', { method: 'DELETE' });
+}
+
+export async function testErrorBot(): Promise<{ ok: boolean; message: string }> {
+  return apiJson('/api/v1/platform/telegram/error-bot/test', { method: 'POST' });
 }

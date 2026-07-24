@@ -11,7 +11,7 @@ import * as departmentsApi from '../../api/departments';
 import * as leaveApi from '../../api/leave';
 import * as overtimeApi from '../../api/overtime';
 import * as settingsApi from '../../api/settings';
-import { USE_MOCKS } from '../../api/client';
+import { USE_MOCKS, isModuleDisabledError } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -172,7 +172,7 @@ interface Props {
 export function Attendance({ onNavigate }: Props = {}) {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
-  const { currentUser } = useAuth();
+  const { currentUser, isModuleEnabled, isModuleAvailable } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   // Default filter to TODAY so the page lands on a date that has data right
   // after a fingerprint sync. Hardcoding the seed date meant April 28's
@@ -511,6 +511,17 @@ export function Attendance({ onNavigate }: Props = {}) {
    */
   const loadOtRequests = async () => {
     if (USE_MOCKS) return;
+    // Overtime module isn't installed for this tenant (not in the
+    // Business Base catalog, or explicitly turned off in Super Admin
+    // → Tenant Modules). Skip the fetch entirely so we don't waste a
+    // round-trip on a call that would just come back 403 ModuleDisabled
+    // and litter the network tab. isModuleAvailable alone catches the
+    // "not in catalog" case; isModuleEnabled catches the "in catalog
+    // but disabled" case.
+    if (!isModuleAvailable('overtime') || !isModuleEnabled('overtime')) {
+      setOtRequestKeys(new Set());
+      return;
+    }
     try {
       const res = await overtimeApi.list({
         from: dateFrom || undefined,
@@ -524,6 +535,11 @@ export function Attendance({ onNavigate }: Props = {}) {
       }
       setOtRequestKeys(keys);
     } catch (err) {
+      // Belt-and-braces: enablement snapshot in AuthContext can be a
+      // few seconds stale after an install/uninstall toggle. Suppress
+      // the module-disabled case so the console stays clean; real
+      // errors still surface.
+      if (isModuleDisabledError(err)) return;
       console.warn('Could not load OT requests', err);
     }
   };

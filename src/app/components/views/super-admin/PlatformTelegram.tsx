@@ -18,7 +18,7 @@ import {
 } from '../../ui/alert-dialog';
 import {
   Bot, Save, Trash2, RefreshCw, ExternalLink, Plus, Pencil, Globe, Building2, Info,
-  Users, Briefcase,
+  Users, Briefcase, AlertTriangle, Send, Wrench,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { toast } from 'sonner';
@@ -58,6 +58,20 @@ export function PlatformTelegram() {
   const [enabled, setEnabled] = useState(true);
   const [description, setDescription] = useState('');
 
+  // V276 — error-bot dialog is a sibling of the Public dialog. Keeps
+  // its own state so the two forms don't stomp on each other when the
+  // Super Admin toggles between them.
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
+  const [errorConfirmRemove, setErrorConfirmRemove] = useState(false);
+  const [errorSaving, setErrorSaving] = useState(false);
+  const [errorTesting, setErrorTesting] = useState(false);
+  const [errUsername, setErrUsername] = useState('');
+  const [errToken, setErrToken] = useState('');
+  const [errChatId, setErrChatId] = useState('');
+  const [errEnabled, setErrEnabled] = useState(true);
+  const [errSkipTypes, setErrSkipTypes] = useState('');
+  const [errDescription, setErrDescription] = useState('');
+
   const load = async () => {
     setLoading(true);
     try {
@@ -80,6 +94,10 @@ export function PlatformTelegram() {
   );
   const tenantBots = useMemo(
     () => rows.filter(r => r.kind === 'tenant'),
+    [rows],
+  );
+  const errorBot = useMemo(
+    () => rows.find(r => r.kind === 'error') ?? null,
     [rows],
   );
 
@@ -142,6 +160,90 @@ export function PlatformTelegram() {
     }
   };
 
+  /* ---------------------- Error bot (V276) --------------------- */
+
+  const DEFAULT_SKIP =
+    'NotFoundException,BadRequestException,ValidationException,'
+    + 'MethodArgumentNotValidException,HttpMessageNotReadableException,'
+    + 'ResponseStatusException,MissingServletRequestParameterException,'
+    + 'MethodArgumentTypeMismatchException';
+
+  const openAddError = () => {
+    setErrUsername('');
+    setErrToken('');
+    setErrChatId('');
+    setErrEnabled(true);
+    setErrSkipTypes(DEFAULT_SKIP);
+    setErrDescription('');
+    setErrorDialogOpen(true);
+  };
+  const openEditError = () => {
+    if (!errorBot) { openAddError(); return; }
+    setErrUsername(errorBot.botUsername);
+    setErrToken('');
+    setErrChatId(errorBot.chatId ?? '');
+    setErrEnabled(errorBot.enabled);
+    setErrSkipTypes(errorBot.skipTypes ?? DEFAULT_SKIP);
+    setErrDescription(errorBot.description ?? '');
+    setErrorDialogOpen(true);
+  };
+
+  const saveError = async () => {
+    if (!errUsername.trim()) { toast.error('Bot username is required'); return; }
+    if (!errToken.trim()) {
+      toast.error(errorBot
+        ? 'Re-enter the bot token to confirm (tokens are write-only).'
+        : 'Bot token is required');
+      return;
+    }
+    if (!errChatId.trim()) { toast.error('Chat ID is required'); return; }
+    setErrorSaving(true);
+    try {
+      await telegramApi.putErrorBot({
+        botUsername: errUsername.trim(),
+        botToken: errToken.trim(),
+        chatId: errChatId.trim(),
+        enabled: errEnabled,
+        skipTypes: errSkipTypes.trim() || undefined,
+        description: errDescription.trim() || undefined,
+      });
+      toast.success(errorBot ? 'Error bot updated' : 'Error bot registered');
+      setErrorDialogOpen(false);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setErrorSaving(false);
+    }
+  };
+
+  const removeError = async () => {
+    setErrorSaving(true);
+    try {
+      await telegramApi.deleteErrorBot();
+      toast.success('Error bot removed');
+      setErrorConfirmRemove(false);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Remove failed');
+    } finally {
+      setErrorSaving(false);
+    }
+  };
+
+  const testError = async () => {
+    setErrorTesting(true);
+    try {
+      const res = await telegramApi.testErrorBot();
+      if (res.ok) toast.success(res.message ?? 'Test message sent.');
+      else toast.error(res.message ?? 'Test send failed.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Test send failed.');
+    } finally {
+      setErrorTesting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -174,7 +276,9 @@ export function PlatformTelegram() {
                     bot belongs to Super Admin and falls back for every tenant without
                     their own.{' '}
                     <span className="font-medium text-purple-700">Private</span> bots
-                    are owned by tenants and listed here for visibility.
+                    are owned by tenants and listed here for visibility.{' '}
+                    <span className="font-medium text-red-700">Error</span> bot receives
+                    unhandled server exceptions to a Super-Admin ops channel.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -190,6 +294,16 @@ export function PlatformTelegram() {
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add Public Bot
+            </Button>
+          )}
+          {!errorBot && (
+            <Button
+              onClick={openAddError}
+              variant="outline"
+              className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Error Bot
             </Button>
           )}
         </div>
@@ -221,17 +335,24 @@ export function PlatformTelegram() {
               {!loading && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    No bots registered yet. Click <strong>Add Public Bot</strong> to set up the shared fallback.
+                    No bots registered yet. Click <strong>Add Public Bot</strong> for the shared customer fallback,
+                    or <strong>Add Error Bot</strong> to receive unhandled server errors on Telegram.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((b) => {
                 const isPlatform = b.kind === 'platform';
+                const isError = b.kind === 'error';
                 const isEmployee = b.audience === 'employee';
+                const isOps = b.audience === 'ops';
                 return (
-                  <TableRow key={`${b.kind}:${b.audience}:${b.tenantId ?? 'platform'}`}>
+                  <TableRow key={`${b.kind}:${b.audience}:${b.tenantId ?? b.kind}`}>
                     <TableCell>
-                      {isPlatform ? (
+                      {isError ? (
+                        <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Error
+                        </Badge>
+                      ) : isPlatform ? (
                         <Badge className="bg-blue-100 text-blue-700 border-blue-200 gap-1">
                           <Globe className="h-3 w-3" /> Public
                         </Badge>
@@ -242,12 +363,16 @@ export function PlatformTelegram() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {/* Customer vs Employee audience — different
-                          worker, different commands, different chat
-                          identities. Operator should be able to scan
-                          the column at a glance to spot which side a
-                          tenant has wired up. */}
-                      {isEmployee ? (
+                      {/* Customer vs Employee vs Ops audience —
+                          different worker, different commands,
+                          different chat identities. Operator should
+                          be able to scan the column at a glance to
+                          spot which side a tenant has wired up. */}
+                      {isOps ? (
+                        <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
+                          <Wrench className="h-3 w-3" /> Ops
+                        </Badge>
+                      ) : isEmployee ? (
                         <Badge className="bg-amber-100 text-amber-800 border-amber-200 gap-1">
                           <Briefcase className="h-3 w-3" /> Employee
                         </Badge>
@@ -269,9 +394,11 @@ export function PlatformTelegram() {
                       </a>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {isPlatform
-                        ? <span className="text-gray-400">— (shared)</span>
-                        : <span className="text-gray-700">{b.tenantName ?? '(unknown)'}</span>}
+                      {isError
+                        ? <span className="text-gray-400">— (ops channel)</span>
+                        : isPlatform
+                          ? <span className="text-gray-400">— (shared)</span>
+                          : <span className="text-gray-700">{b.tenantName ?? '(unknown)'}</span>}
                     </TableCell>
                     <TableCell className="tabular-nums text-xs text-gray-500">
                       {b.tokenTail || '—'}
@@ -286,7 +413,32 @@ export function PlatformTelegram() {
                       {b.description || '—'}
                     </TableCell>
                     <TableCell className="text-right">
-                      {isPlatform ? (
+                      {isError ? (
+                        <div className="inline-flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7"
+                            onClick={() => void testError()}
+                            disabled={errorTesting}
+                            title="Send a test message to the ops channel"
+                          >
+                            <Send className="h-3.5 w-3.5 mr-1" />
+                            {errorTesting ? 'Sending…' : 'Test'}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7" onClick={openEditError}>
+                            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => setErrorConfirmRemove(true)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : isPlatform ? (
                         <div className="inline-flex gap-1">
                           <Button size="sm" variant="ghost" className="h-7" onClick={openEdit}>
                             <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -426,6 +578,163 @@ export function PlatformTelegram() {
               onClick={remove}
               className="bg-red-600 hover:bg-red-700"
               disabled={saving}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* V276 — Error-tracking bot dialog. Extra fields (Chat ID +
+          Skip Types) don't apply to the tenant/customer flavours, so
+          this lives as its own dialog rather than a conditional
+          branch inside the Public dialog above. */}
+      <Dialog open={errorDialogOpen} onOpenChange={setErrorDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              {errorBot ? 'Edit Error Bot' : 'Register Error Bot'}
+            </DialogTitle>
+            <DialogDescription>
+              Unhandled server errors will be posted to the chat below.
+              Create the bot via{' '}
+              <a href="https://t.me/BotFather" target="_blank" rel="noreferrer"
+                 className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
+                @BotFather <ExternalLink className="h-3 w-3" />
+              </a>{' '}
+              then paste the credentials. The Chat ID is the numeric id of the
+              destination user or group (start a chat with{' '}
+              <a href="https://t.me/getidsbot" target="_blank" rel="noreferrer"
+                 className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
+                @getidsbot <ExternalLink className="h-3 w-3" />
+              </a>{' '}
+              to grab it).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Bot username</Label>
+                <Input
+                  value={errUsername}
+                  onChange={e => setErrUsername(e.target.value)}
+                  placeholder="HRMS_Error_Bot"
+                  className="tabular-nums"
+                  disabled={errorSaving}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  Bot token {errorBot && (
+                    <span className="text-[10px] text-gray-400 ml-1">
+                      (current: <code>{errorBot.tokenTail}</code> — re-enter to update)
+                    </span>
+                  )}
+                </Label>
+                <Input
+                  type="password"
+                  value={errToken}
+                  onChange={e => setErrToken(e.target.value)}
+                  placeholder={errorBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
+                  className="tabular-nums"
+                  disabled={errorSaving}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[1fr_auto] gap-4 items-start">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Chat ID</Label>
+                <Input
+                  value={errChatId}
+                  onChange={e => setErrChatId(e.target.value)}
+                  placeholder="-1001234567890"
+                  className="tabular-nums"
+                  disabled={errorSaving}
+                />
+                <div className="text-[10px] text-gray-500">
+                  Numeric id (negative for groups / channels, positive for a direct user chat).
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Enabled</Label>
+                <div className="flex items-center gap-2 h-10">
+                  <Switch checked={errEnabled} onCheckedChange={setErrEnabled} disabled={errorSaving} />
+                  <span className="text-xs text-gray-500">
+                    {errEnabled ? 'Notifying on 500s' : 'Disabled — no messages sent'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Skip exception types</Label>
+              {/* v-error-bot-textarea-wrap — the default value is a
+                  long comma-separated token with no whitespace, which
+                  browsers don't soft-wrap; that pushed the whole
+                  dialog into horizontal overflow. break-all forces
+                  the wrap so the content stays inside the textarea. */}
+              <Textarea
+                rows={3}
+                value={errSkipTypes}
+                onChange={e => setErrSkipTypes(e.target.value)}
+                placeholder="NotFoundException,ValidationException,..."
+                disabled={errorSaving}
+                className="font-mono text-xs break-all"
+              />
+              <div className="text-[10px] text-gray-500">
+                Comma-separated exception <em>simple</em> names. These won't fire the bot
+                (e.g. user-input 400s stay off the ops channel).
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Description (optional)</Label>
+              <Textarea
+                rows={2}
+                value={errDescription}
+                onChange={e => setErrDescription(e.target.value)}
+                placeholder="Memo — visible only to Super Admin."
+                disabled={errorSaving}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setErrorDialogOpen(false)} disabled={errorSaving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={saveError}
+              disabled={errorSaving}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Save className="h-4 w-4 mr-1.5" />
+              {errorSaving ? 'Saving…' : (errorBot ? 'Update Bot' : 'Register Bot')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={errorConfirmRemove} onOpenChange={setErrorConfirmRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove error bot?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Unhandled server errors will no longer be posted to Telegram
+              until you register a new one. The application keeps running
+              — only the notifier is affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={errorSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={removeError}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={errorSaving}
             >
               Remove
             </AlertDialogAction>

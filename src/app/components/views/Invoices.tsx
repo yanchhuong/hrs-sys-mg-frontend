@@ -255,7 +255,7 @@ export function Invoices({
     exportSheet:    'Invoices',
   };
   const { t } = useI18n();
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canCreate, canUpdate, canDelete, canView } = useAuth();
   const { formatDate } = useDateFormat();
   const canAdd = canCreate('invoice');
   const canEdit = canUpdate('invoice');
@@ -340,11 +340,16 @@ export function Invoices({
       setCustomers(custRes.content ?? []);
       // Kick off the per-currency totals in the background — the table
       // renders the legacy total in the USD column while this resolves,
-      // then refines. Soft-fail so a 403 on the payment module doesn't
-      // wipe the visible list.
-      paymentsApi.totalsByCurrency(invoices.map(i => i.id))
-        .then(setReceivedByCurrency)
-        .catch(() => setReceivedByCurrency({}));
+      // then refines. Skip entirely for roles without payment:view (a
+      // typical employee) — the endpoint would return 403 anyway, so
+      // the empty legacy total renders and the network tab stays clean.
+      if (canView('payment')) {
+        paymentsApi.totalsByCurrency(invoices.map(i => i.id))
+          .then(setReceivedByCurrency)
+          .catch(() => setReceivedByCurrency({}));
+      } else {
+        setReceivedByCurrency({});
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load invoices');
     } finally {

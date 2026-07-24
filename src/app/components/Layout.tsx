@@ -380,8 +380,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navigation */}
         <div className="bg-white border-b shrink-0">
-          <div className="flex items-center justify-between px-4 h-16">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center px-4 h-16 gap-2 min-w-0">
+            <div className="flex items-center gap-4 shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -392,7 +392,15 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               </Button>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* v-topbar-scroll-x — action cluster overflowed the viewport
+                on mobile (attendance widget + bell + language + role
+                badge + avatar), clipping the avatar dropdown out of
+                reach. Same horizontal-scroll pattern the Items filter
+                strip uses: single row that slides left/right, hidden
+                scrollbar with hover-reveal on desktop, native momentum
+                scroll on touch. Every direct child needs shrink-0 so
+                the row grows past the container instead of squishing. */}
+            <div className="flex-1 min-w-0 flex items-center justify-end gap-3 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
               {/* Self check-in widget — asks for location once on
                   mount, then shows Check-In or Check-Out depending
                   on whether the employee is in-range + has punched

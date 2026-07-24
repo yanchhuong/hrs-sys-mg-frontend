@@ -285,7 +285,10 @@ export function Items() {
     setPriceRange(null);
     setStockRange(null);
   };
-  const pagination = usePagination(filtered, 25);
+  // v-items-pagesize-15 — 15 per page keeps the row height above the
+  // fold on a 1080p screen and shrinks the initial image payload (the
+  // <img loading="lazy"> tag below only helps for rows below the fold).
+  const pagination = usePagination(filtered, 15);
 
   /** id → display label, so the table cell renders the warehouse name
    *  (and short code, if set) without a per-row lookup pass. */
@@ -710,6 +713,8 @@ export function Items() {
                               src={it.imageUrl}
                               alt={it.name}
                               className="h-10 w-10 rounded-md object-cover border border-gray-200"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                             />
                           ) : (
@@ -1207,8 +1212,8 @@ function ModifiersEditor({
 
   return (
     <div className="space-y-2 border rounded-md p-3 bg-gray-50">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+      <div className="flex items-center gap-2 min-w-0">
+        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5 shrink-0">
           Modifier groups
           <TooltipProvider delayDuration={120}>
             <Tooltip>
@@ -1222,7 +1227,12 @@ function ModifiersEditor({
             </Tooltip>
           </TooltipProvider>
         </Label>
-        <div className="flex gap-1.5">
+        {/* v-modifier-actions-slide — the two action buttons ran off
+            the edge on narrow dialogs. Same slide-left-right pattern
+            the Items filter strip uses: flex-1 + min-w-0 lets the
+            container take the remaining width and scroll horizontally
+            when the buttons don't fit. */}
+        <div className="flex-1 min-w-0 flex justify-end gap-1.5 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
           {groups.length === 0 && (
             <Button type="button" variant="outline" size="sm" className="h-7 text-xs"
               onClick={() => onChange(DRINK_DEFAULT_MODIFIERS)} disabled={disabled}>

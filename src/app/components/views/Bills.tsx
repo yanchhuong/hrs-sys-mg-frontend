@@ -202,7 +202,7 @@ function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
 /* -------------------------------------------------------------------------- */
 export function Bills() {
   const { t } = useI18n();
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canCreate, canUpdate, canDelete, canView } = useAuth();
   const { formatDate } = useDateFormat();
   const canAdd = canCreate('bill');
   const canEdit = canUpdate('bill');
@@ -259,9 +259,16 @@ export function Bills() {
       const bills = invRes.content ?? [];
       setRows(bills);
       setVendors(custRes.content ?? []);
-      billPaymentsApi.totalsByCurrency(bills.map(b => b.id))
-        .then(setPaidByCurrency)
-        .catch(() => setPaidByCurrency({}));
+      // Skip for roles without bill:view (endpoint is behind the same
+      // gate as the Bills list on the BE) — the empty totals map is a
+      // fine fallback and the network tab stays clean.
+      if (canView('bill')) {
+        billPaymentsApi.totalsByCurrency(bills.map(b => b.id))
+          .then(setPaidByCurrency)
+          .catch(() => setPaidByCurrency({}));
+      } else {
+        setPaidByCurrency({});
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load bills');
     } finally {
