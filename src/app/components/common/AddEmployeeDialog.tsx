@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { User, Briefcase, CreditCard, UserPlus, Info } from 'lucide-react';
@@ -190,7 +190,6 @@ export function AddEmployeeDialog({
             <UserPlus className="h-5 w-5" />
             Add Employee
           </DialogTitle>
-          <DialogDescription>Create a single employee record. Use Upload Bulk for multiple at once.</DialogDescription>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="px-6 pt-4">
