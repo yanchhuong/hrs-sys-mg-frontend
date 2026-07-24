@@ -91,26 +91,44 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   display: flex;
   align-items: center;
   gap: 0.75rem;                 /* gap-3 */
-  flex-wrap: nowrap;
+  flex-wrap: nowrap;             /* NEVER wrap — every filter row is a
+                                    single horizontal line at every
+                                    breakpoint, per the consistency
+                                    rule (see feedback_filter_row_uxpattern). */
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
+  scrollbar-width: none;         /* Firefox — hidden by default */
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
 }
-.filter-strip::-webkit-scrollbar { display: none; }
+.filter-strip::-webkit-scrollbar {
+  height: 0;
+  background: transparent;
+}
 .filter-strip > * { flex-shrink: 0; }
-/* On ≥sm the strip returns to a normal wrapping toolbar so wide
-   screens render the multi-line grouping the pages were designed
-   around. Ordering: the sm reset comes AFTER the base so the
-   cascade wins the specificity tie. */
+/* Wide screens still spread the row edge-to-edge when content fits
+   (justify-between only distributes REMAINING space, so nothing
+   changes on overflow — the row just scrolls). */
 @media (min-width: 640px) {
   .filter-strip {
-    flex-wrap: wrap;
-    overflow: visible;
     justify-content: space-between;
   }
-  .filter-strip > * { flex-shrink: 1; }
+}
+/* Reveal a slim scrollbar on hover (desktop only). Touch devices
+   pass @media (hover: hover) as `none`, so a phone tap never
+   flashes a scrollbar. */
+@media (hover: hover) {
+  .filter-strip:hover {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.35) transparent;
+  }
+  .filter-strip:hover::-webkit-scrollbar {
+    height: 6px;
+  }
+  .filter-strip:hover::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 3px;
+  }
 }
 
 /* KPI card row that shifts to horizontal-scroll on small screens
