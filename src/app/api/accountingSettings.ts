@@ -255,7 +255,7 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     // thermal-80 paper, no shop name (FE falls back to tenant name).
     posShowPaidStamp: true,
     posAutoPrint: false,
-    posShowCookingProgress: true,
+    posShowCookingProgress: false,
     posShowSku: true,
     posPaperSize: 'thermal_80',
     posShopName: null,
