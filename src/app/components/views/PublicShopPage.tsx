@@ -196,6 +196,11 @@ export function PublicShopPage() {
   const [submitting, setSubmitting] = useState(false);
   /** Set after a successful submit — drives the receipt screen. */
   const [confirmed, setConfirmed] = useState<shopApi.PublicOrderResult | null>(null);
+  // Live countdown for the "Order received" popup — decrements once
+  // per second while the popup is open. When it hits 0 the popup
+  // closes and the customer sees the menu again, ready for another
+  // order.
+  const [confirmedCountdown, setConfirmedCountdown] = useState<number>(0);
 
   // Customer-typed fields. All optional; the server falls back to
   // "Walk-in (Online)" if name is blank.
@@ -417,6 +422,26 @@ export function PublicShopPage() {
       setTurnstileToken('');
     };
   }, [checkoutOpen, data?.turnstile?.enabled, data?.turnstile?.siteKey]);
+
+  // Auto-close the "Order received" popup after 8 s. Countdown ticks
+  // once per second and drives the small "closes in Ns" label so the
+  // customer knows the popup won't linger. Cleared if the customer
+  // dismisses the popup manually before the timer fires.
+  useEffect(() => {
+    if (!confirmed) return;
+    setConfirmedCountdown(8);
+    const iv = window.setInterval(() => {
+      setConfirmedCountdown(n => {
+        if (n <= 1) {
+          window.clearInterval(iv);
+          setConfirmed(null);
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(iv);
+  }, [confirmed]);
 
   // Track vertical scroll to toggle the "back to top" floating button.
   // Threshold: 1 viewport height so it stays hidden on short menus
@@ -709,31 +734,10 @@ export function PublicShopPage() {
     );
   }
 
-  // Post-submit success screen — supplants the menu so the customer
-  // sees their queue number prominently. "Place another order" resets
-  // back to the menu.
-  if (confirmed) {
-    return (
-      <FullPageState>
-        <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-3" />
-        <p className="text-xl font-semibold">Order received</p>
-        <p className="text-sm text-gray-500 mt-1">Show this to the counter:</p>
-        <p className="mt-4 text-4xl tabular-nums font-bold tracking-widest text-slate-900">
-          {confirmed.queueNo}
-        </p>
-        <p className="mt-2 text-sm text-gray-600">
-          Total: <span className="font-semibold text-emerald-700">${Number(confirmed.total).toFixed(2)}</span>
-        </p>
-        <Button
-          variant="outline"
-          className="mt-6"
-          onClick={() => setConfirmed(null)}
-        >
-          Place another order
-        </Button>
-      </FullPageState>
-    );
-  }
+  // (Post-submit success is now a popup rendered inline further
+  //  down — see the "Order received" Dialog block near the end of
+  //  the return. The old full-page return has been removed so the
+  //  menu remains visible behind the popup.)
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -1401,6 +1405,42 @@ export function PublicShopPage() {
               Use this location
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order received — success popup shown after a successful
+          submit. Auto-closes on an 8-second countdown so the menu
+          returns without a manual dismiss. Manual dismiss ("OK") is
+          available in the footer for customers who want to move on
+          faster. Menu stays mounted behind the popup so a "Place
+          another order" flow feels instant. */}
+      <Dialog open={!!confirmed} onOpenChange={(open) => { if (!open) setConfirmed(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader className="text-center">
+            <div className="flex justify-center mb-2">
+              <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+            </div>
+            <DialogTitle className="text-center">Order received</DialogTitle>
+            <DialogDescription className="text-center">
+              Show this to the counter:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-center py-2">
+            <p className="text-3xl sm:text-4xl tabular-nums font-bold tracking-widest text-slate-900">
+              {confirmed?.queueNo}
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              Total: <span className="font-semibold text-emerald-700">${Number(confirmed?.total ?? 0).toFixed(2)}</span>
+            </p>
+          </div>
+          <DialogFooter className="sm:justify-center gap-2">
+            <Button variant="outline" onClick={() => setConfirmed(null)}>
+              OK
+            </Button>
+          </DialogFooter>
+          <p className="text-center text-[11px] text-gray-400 -mt-2 pb-1">
+            Closes in {confirmedCountdown}s
+          </p>
         </DialogContent>
       </Dialog>
     </div>
