@@ -59,6 +59,7 @@ import * as hrBotApi from '../../api/hrTelegramBots';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
+import { EmployeeIdCardDialog } from '../common/EmployeeIdCardDialog';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
@@ -500,6 +501,8 @@ export function Employees() {
   // Underlined-button page-level tab state — mirrors the pattern
   // used by the agency's Sale & Expense page.
   const [pageTab, setPageTab] = useState<'roster' | 'cards' | 'documents'>('roster');
+  /** ID-card preview dialog — non-null = open for that employee. */
+  const [idCardEmployee, setIdCardEmployee] = useState<typeof mockEmployees[0] | null>(null);
   void isAdmin; void isManager;
   // Live-data visibility resolver. The mock-backed canViewEmployee can't
   // see live employee UUIDs, so a manager logging into a fresh DB sees
@@ -1713,6 +1716,7 @@ export function Employees() {
           <EmployeeCardsGrid
             employees={filteredEmployees}
             onView={emp => { setSelectedEmployee(emp); setSheetOpen(true); }}
+            onOpenIdCard={setIdCardEmployee}
           />
         </TabsContent>
 
@@ -2633,6 +2637,12 @@ export function Employees() {
         </SheetContent>
       </Sheet>
 
+      {/* ID-card preview + print — opened from the Cards tab. */}
+      <EmployeeIdCardDialog
+        employee={idCardEmployee}
+        onOpenChange={o => { if (!o) setIdCardEmployee(null); }}
+      />
+
       {/* Contract Add / Edit / Renew Dialog */}
       <Dialog open={contractDialogOpen} onOpenChange={setContractDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -3084,9 +3094,15 @@ function EmployeeTelegramCell({
 function EmployeeCardsGrid({
   employees,
   onView,
+  onOpenIdCard,
 }: {
   employees: import('../../types/hrms').Employee[];
   onView: (emp: import('../../types/hrms').Employee) => void;
+  /** Opens the printable ID-card preview. Called from a card tap
+   *  (the whole tile) and from the ⋯ button. Kept separate from
+   *  onView so managers can still open the edit sheet via View
+   *  Profile button. */
+  onOpenIdCard: (emp: import('../../types/hrms').Employee) => void;
 }) {
   const { formatDate } = useDateFormat();
 
@@ -3109,7 +3125,7 @@ function EmployeeCardsGrid({
           <Card
             key={emp.id}
             className="hover:shadow-md hover:border-blue-300 transition-shadow cursor-pointer"
-            onClick={() => onView(emp)}
+            onClick={() => onOpenIdCard(emp)}
           >
             <CardContent className="p-4 space-y-3">
               {/* Top row: photo + identity */}
@@ -3192,7 +3208,9 @@ function EmployeeCardsGrid({
                 </div>
               )}
 
-              {/* Footer actions */}
+              {/* Footer actions — View Profile opens the full edit
+                  sheet; the ⋯ button opens the printable ID-card
+                  preview. Card body click also opens the ID card. */}
               <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                 <Button
                   size="sm"
@@ -3205,9 +3223,9 @@ function EmployeeCardsGrid({
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8"
-                  onClick={e => { e.stopPropagation(); onView(emp); }}
-                  title="More"
-                  aria-label="More actions"
+                  onClick={e => { e.stopPropagation(); onOpenIdCard(emp); }}
+                  title="Show ID card"
+                  aria-label="Show ID card"
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>

@@ -245,3 +245,20 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   .page-header-strip { justify-content: space-between; }
   .page-header-strip > *:last-child { margin-left: 0; }
 }
+
+/* Employee ID card print. Setting body.printing-id-card and calling
+   window.print() strips every DOM branch that doesn't contain a
+   .emp-id-card, so the paper picks up only the card centered on
+   the sheet. Dialog chrome (header, footer, backdrop) is hidden. */
+@media print {
+  body.printing-id-card * { visibility: hidden !important; }
+  body.printing-id-card .emp-id-card,
+  body.printing-id-card .emp-id-card * { visibility: visible !important; }
+  body.printing-id-card .emp-id-card {
+    position: fixed !important;
+    top: 20px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    box-shadow: none !important;
+  }
+}
