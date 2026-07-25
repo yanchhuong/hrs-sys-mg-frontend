@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { DateInput } from '../common/DateInput';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
@@ -1867,51 +1868,49 @@ export function Attendance({ onNavigate }: Props = {}) {
             <CardHeader className="pb-3 min-w-0">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between min-w-0">
                 <div className="filter-strip flex-1 min-w-0">
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Label className="text-sm whitespace-nowrap">From:</Label>
-                    <Input
-                      type="date"
-                      value={dateFrom}
-                      onChange={e => setDateFrom(e.target.value)}
+                  {/* Match the Invoices / Bills / Receipts date filter
+                      shape: shared DateInput (hover-clearable ×),
+                      short 'From' / 'To' labels inline with the input,
+                      Clear button that only appears when a range is
+                      set. Consistent visual language across every
+                      list page. */}
+                  <Label className="text-xs text-gray-500 shrink-0">From</Label>
+                  <div className="shrink-0">
+                    <DateInput
+                      value={dateFrom || null}
+                      onChange={v => setDateFrom(v ?? '')}
                       max={dateTo || undefined}
-                      className="w-40 h-8"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm whitespace-nowrap">To:</Label>
-                    <Input
-                      type="date"
-                      value={dateTo}
-                      onChange={e => setDateTo(e.target.value)}
+                  <Label className="text-xs text-gray-500 shrink-0">To</Label>
+                  <div className="shrink-0">
+                    <DateInput
+                      value={dateTo || null}
+                      onChange={v => setDateTo(v ?? '')}
                       min={dateFrom || undefined}
-                      className="w-40 h-8"
                     />
                   </div>
                   {(dateFrom || dateTo) && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs text-gray-500"
+                      className="h-8 text-xs shrink-0"
                       onClick={() => { setDateFrom(''); setDateTo(''); }}
-                      title="Clear date range"
                     >
                       Clear
                     </Button>
                   )}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Label className="text-sm whitespace-nowrap">Dept:</Label>
-                    <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                      <SelectTrigger className="w-40 h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Departments</SelectItem>
-                        {departments.map(d => (
-                          <SelectItem key={d} value={d}>{d}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                    <SelectTrigger className="w-40 h-8 shrink-0" aria-label="Filter by department">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {departments.map(d => (
+                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <div className="relative w-60 shrink-0">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                     <Input
@@ -2319,9 +2318,8 @@ export function Attendance({ onNavigate }: Props = {}) {
               <ChevronRight className="h-4 w-4" />
             </Button>
             <div className="ml-auto flex items-center gap-2">
-              <Label className="text-sm">Dept:</Label>
               <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="w-40 h-8">
+                <SelectTrigger className="w-40 h-8" aria-label="Filter by department">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
