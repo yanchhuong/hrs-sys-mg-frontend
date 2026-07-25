@@ -206,7 +206,7 @@ export function parseEmployeesExcel(
           if (!parsed.name) rowErrors.push('Name is missing');
           if (!parsed.email) rowErrors.push('Email is missing');
           else if (!/^\S+@\S+\.\S+$/.test(parsed.email)) rowErrors.push('Email is not valid');
-          if (!parsed.position) rowErrors.push('Position is missing');
+          if (!parsed.position) rowWarnings.push('No position — can be assigned later');
           if (!parsed.joinDate) rowErrors.push('Join Date is missing');
           if (parsed.baseSalary == null) rowErrors.push('Base Salary is missing');
           if (!parsed.department) rowWarnings.push('No department — can be assigned later');

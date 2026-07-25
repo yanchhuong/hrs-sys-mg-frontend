@@ -327,13 +327,13 @@ export function BulkUploadEmployeesDialog({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-sm text-xs leading-relaxed">
-                  Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Join Date, Base Salary. Department is optional. Blank rows are skipped automatically.
+                  Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. Blank rows are skipped automatically.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Position, Join Date, Base Salary. Department is optional. Blank rows are skipped automatically.
+            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. Blank rows are skipped automatically.
           </DialogDescription>
         </DialogHeader>
 

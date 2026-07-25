@@ -14,6 +14,11 @@ interface Props {
   companyTagline?: string;
   companyLogo?: string | null;
   companyUrl?: string;
+  /** Resolve an employee.department (UUID in live mode) to the human
+   *  department name. Optional — falls through to the raw value when
+   *  omitted, which is fine for mock mode where department already
+   *  holds the name. */
+  deptName?: (idOrName: string | undefined) => string;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -28,7 +33,7 @@ interface Props {
  * card renders on paper, sized to a standard ~54x86mm ID card.
  */
 export function EmployeeIdCardDialog({
-  employee, companyName, companyTagline, companyLogo, companyUrl, onOpenChange,
+  employee, companyName, companyTagline, companyLogo, companyUrl, deptName, onOpenChange,
 }: Props): JSX.Element {
   const { formatDate } = useDateFormat();
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -129,7 +134,7 @@ export function EmployeeIdCardDialog({
               {employee.dateOfBirth && (
                 <Row label="DOB"      value={formatDate(employee.dateOfBirth)} />
               )}
-              <Row label="Dept"       value={employee.department || '—'} />
+              <Row label="Dept"       value={deptName ? deptName(employee.department) : (employee.department || '—')} />
               <Row label="Join Date"  value={employee.joinDate ? formatDate(employee.joinDate) : '—'} />
               {employee.email && <Row label="Email" value={employee.email} truncate />}
               {employee.contactNumber && <Row label="Phone" value={employee.contactNumber} />}

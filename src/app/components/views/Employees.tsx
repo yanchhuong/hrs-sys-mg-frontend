@@ -1716,6 +1716,7 @@ export function Employees() {
           <EmployeeCardsGrid
             employees={filteredEmployees}
             onOpenIdCard={setIdCardEmployee}
+            deptName={deptName}
           />
         </TabsContent>
 
@@ -2639,6 +2640,7 @@ export function Employees() {
       {/* ID-card preview + print — opened from the Cards tab. */}
       <EmployeeIdCardDialog
         employee={idCardEmployee}
+        deptName={deptName}
         onOpenChange={o => { if (!o) setIdCardEmployee(null); }}
       />
 
@@ -3093,11 +3095,15 @@ function EmployeeTelegramCell({
 function EmployeeCardsGrid({
   employees,
   onOpenIdCard,
+  deptName,
 }: {
   employees: import('../../types/hrms').Employee[];
   /** Opens the printable ID-card preview — driven by the card tap
    *  and the ⋯ button. */
   onOpenIdCard: (emp: import('../../types/hrms').Employee) => void;
+  /** Resolve emp.department (which is a UUID in live mode) to its
+   *  display name. See {@link import('../../utils/deptName').makeDeptName}. */
+  deptName: (idOrName: string | undefined) => string;
 }) {
   const { formatDate } = useDateFormat();
 
@@ -3155,7 +3161,7 @@ function EmployeeCardsGrid({
                 <div className="flex items-center gap-2 min-w-0">
                   <Building2 className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                   <span className="text-gray-500 shrink-0">Department:</span>
-                  <span className="truncate">{emp.department || '—'}</span>
+                  <span className="truncate">{deptName(emp.department)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
