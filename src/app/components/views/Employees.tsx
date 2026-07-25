@@ -155,6 +155,10 @@ function EmployeeDocuments({
   const [liveDocs, setLiveDocs] = useState<documentsApi.EmployeeDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** True while the operator is dragging OS files over the upload
+   *  panel — flips the dashed border to green so the drop target
+   *  is obvious. */
+  const [dragOver, setDragOver] = useState(false);
 
   // Backend keys documents by the employee UUID (apiId), not empNo.
   const employeeApiId = (employee as any).apiId ?? employee.id;
@@ -300,8 +304,31 @@ function EmployeeDocuments({
 
   return (
     <div className="space-y-4">
-      {/* Upload */}
-      <div className="p-4 rounded-md border-2 border-dashed border-gray-300 space-y-3">
+      {/* Upload — the whole dashed area accepts OS drag-drop.
+          Handlers guard on hasFiles so dragging a random DOM element
+          doesn't flip the visual state. */}
+      <div
+        className={`p-4 rounded-md border-2 border-dashed space-y-3 transition-colors ${
+          dragOver ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300'
+        }`}
+        onDragOver={e => {
+          if (uploading) return;
+          if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={e => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setDragOver(false);
+        }}
+        onDrop={e => {
+          if (uploading) return;
+          if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files?.length) void handleFiles(e.dataTransfer.files);
+        }}
+      >
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1.5">
             <Label className="text-xs text-gray-600">Document type</Label>
@@ -336,7 +363,7 @@ function EmployeeDocuments({
           </div>
         </div>
         <p className="text-[11px] text-gray-500">
-          PDF, images, or Office documents up to {DOC_LIMIT_MB} MB each. Drag-drop supported when you click Upload.
+          PDF, images, or Office documents up to {DOC_LIMIT_MB} MB each. Drop files anywhere in this box, or click Upload.
         </p>
       </div>
 
@@ -1774,8 +1801,8 @@ export function Employees() {
         <SheetContent className="w-full sm:max-w-3xl flex flex-col p-0 gap-0">
           <SheetHeader className="px-6 py-4 border-b shrink-0">
             <SheetTitle>Employee Details</SheetTitle>
-            <SheetDescription>
-              Complete information and contract history
+            <SheetDescription className="sr-only">
+              Employee profile — personal info, employment record, contracts, payout, and documents.
             </SheetDescription>
           </SheetHeader>
 
@@ -1783,7 +1810,24 @@ export function Employees() {
             <>
               {/* Identity strip */}
               <div className="px-6 py-4 border-b shrink-0 flex items-center gap-4">
-                <div className="relative shrink-0">
+                <div
+                  className="relative shrink-0"
+                  onDragOver={isEditing ? (e => {
+                    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+                    e.preventDefault();
+                    e.currentTarget.classList.add('ring-2', 'ring-emerald-500', 'ring-offset-2', 'rounded-lg');
+                  }) : undefined}
+                  onDragLeave={isEditing ? (e => {
+                    e.currentTarget.classList.remove('ring-2', 'ring-emerald-500', 'ring-offset-2', 'rounded-lg');
+                  }) : undefined}
+                  onDrop={isEditing ? (e => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('ring-2', 'ring-emerald-500', 'ring-offset-2', 'rounded-lg');
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) void handleProfileImageUpload(f);
+                  }) : undefined}
+                  title={isEditing ? 'Drop an image, or click the upload icon' : undefined}
+                >
                   <Avatar className="h-16 w-16 rounded-lg border border-gray-200">
                     <AvatarImage
                       src={avatarSrc}
