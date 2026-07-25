@@ -1,5 +1,7 @@
 import { ReactNode } from 'react';
+import { Info } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
 /**
  * Shared KPI card used across every report page (Attendance,
@@ -29,9 +31,9 @@ export function StatCard({
 }: {
   label: string;
   value: string | number;
-  /** Optional secondary line under the label (e.g. supporting
-   *  breakdown or short explanation). ReactNode so callers can
-   *  compose numbers + inline styling. */
+  /** Optional explanatory hint — surfaces as a hover tooltip on a
+   *  small info icon next to the label so the card body stays
+   *  clean. Falsy (null / undefined / empty) hides the icon. */
   hint?: ReactNode;
   icon: React.ComponentType<{ className?: string }>;
   tone: StatCardTone;
@@ -51,7 +53,26 @@ export function StatCard({
             naturally lands first, matching the KPI layout the ops
             team prefers. */}
         <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
-          <p className="text-xs text-gray-500 truncate">{label}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-xs text-gray-500 truncate">{label}</p>
+            {hint ? (
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help shrink-0"
+                      aria-label={`${label} details`}
+                    >
+                      <Info className="h-3 w-3" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                    {hint}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+          </div>
           <div className={`p-2 rounded-lg shrink-0 ${t.bg}`}>
             <Icon className={`h-4 w-4 ${t.text}`} />
           </div>
@@ -62,7 +83,6 @@ export function StatCard({
         >
           {value}
         </div>
-        {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
       </CardContent>
     </Card>
   );
