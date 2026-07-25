@@ -15,9 +15,13 @@
     "cap:sync": "npm run build:mobile && cap sync android",
     "cap:open": "cap open android",
     "apk:debug": "npm run build:mobile && cap sync android && cd android && gradlew.bat assembleDebug",
-    "apk:release": "npm run build:mobile && cap sync android && cd android && gradlew.bat assembleRelease"
+    "apk:release": "npm run build:mobile && cap sync android && cd android && gradlew.bat assembleRelease",
+    "cap:sync:ios": "npm run build:mobile && cap sync ios",
+    "cap:open:ios": "cap open ios",
+    "ipa:debug": "npm run build:mobile && cap sync ios && cap run ios --no-sync --scheme='SMRT HRMS' --target=simulator"
   },
   "dependencies": {
+    "@capacitor/ios": "^8.4.2",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/icons-material": "7.3.5",
