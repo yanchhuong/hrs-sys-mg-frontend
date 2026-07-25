@@ -1632,7 +1632,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       <OfficesDialog open={officesDialogOpen} onOpenChange={setOfficesDialogOpen} />
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold">{t('page.attendance.title')}</h1>
         </div>

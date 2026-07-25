@@ -850,7 +850,7 @@ function CloudConnectionCard() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="page-header-strip flex-wrap">
           <div>
             <CardTitle className="flex items-center gap-2">
               <Cloud className="h-5 w-5" />

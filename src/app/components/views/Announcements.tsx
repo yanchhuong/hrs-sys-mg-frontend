@@ -500,7 +500,7 @@ export function Announcements() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-header-strip">
         <div className="flex items-start gap-3">
           <div className="bg-blue-50 p-2 rounded-md">
             <Megaphone className="h-5 w-5 text-blue-600" />

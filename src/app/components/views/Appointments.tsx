@@ -156,7 +156,7 @@ export function Appointments() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-header-strip">
         <div className="flex items-center gap-2">
           <CalendarClock className="h-6 w-6 text-teal-600" />
           <h1 className="text-3xl font-bold">Appointments</h1>

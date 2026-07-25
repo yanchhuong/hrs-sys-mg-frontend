@@ -168,7 +168,7 @@ export function Vendors() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold">{t('nav.vendors')}</h1>
         </div>

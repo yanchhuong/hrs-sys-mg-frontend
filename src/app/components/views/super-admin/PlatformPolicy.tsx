@@ -330,7 +330,7 @@ function ToggleRow({ label, description, value, onChange }: {
   label: string; description?: string; value: boolean; onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 p-3 rounded-md border">
+    <div className="page-header-strip p-3 rounded-md border">
       <div className="space-y-0.5 flex-1 min-w-0">
         <p className="font-medium text-sm">{label}</p>
         {description && <p className="text-xs text-gray-500">{description}</p>}

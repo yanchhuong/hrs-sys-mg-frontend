@@ -1226,7 +1226,7 @@ export function Deduction() {
                   </div>
                 </div>
 
-                <div className="flex items-start justify-between gap-4 p-3 rounded-md border">
+                <div className="page-header-strip p-3 rounded-md border">
                   <div className="space-y-0.5">
                     <p className="font-medium text-sm">Recurring</p>
                     <p className="text-[11px] text-gray-500">

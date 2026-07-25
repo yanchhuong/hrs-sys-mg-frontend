@@ -430,7 +430,8 @@ export function Items() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      {/* Top toolbar — see .page-header-strip in styles/index.css. */}
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {t('nav.items') || 'Items'}

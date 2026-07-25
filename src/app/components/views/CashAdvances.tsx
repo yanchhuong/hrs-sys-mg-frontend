@@ -145,7 +145,7 @@ export function CashAdvances() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-header-strip">
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <Banknote className="h-7 w-7 text-slate-600" />
           {t('nav.cashflow.advance')}

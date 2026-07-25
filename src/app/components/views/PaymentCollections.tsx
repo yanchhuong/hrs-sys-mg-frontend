@@ -80,7 +80,7 @@ export function PaymentCollections() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold inline-flex items-center gap-2">
             <AlertTriangle className="h-7 w-7 text-red-600" />

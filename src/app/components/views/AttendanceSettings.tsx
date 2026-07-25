@@ -762,7 +762,7 @@ export function AttendanceSettings() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <div className="flex items-start justify-between gap-4 rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
+                  <div className="page-header-strip rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
                     <div>
                       <p className="text-sm font-medium text-indigo-900">Enable Night-Work Multiplier</p>
                       <p className="text-xs text-indigo-700/80">When off, OT during night hours uses only the day-type rate.</p>

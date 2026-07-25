@@ -72,7 +72,7 @@ export function StockMovements() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {t('nav.stock.movement') || 'Stock Movement'}

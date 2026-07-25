@@ -203,4 +203,22 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
     background: rgba(15, 23, 42, 0.35);
     border-radius: 3px;
   }
+
+  /* Shared page-header toolbar. One line always, scrolls horizontally
+     on narrow screens like .filter-strip so the trailing buttons
+     (Refresh / Settings / Export / Bulk Upload / Add) stay reachable
+     instead of clipping off the right edge on mobile. */
+  .page-header-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .page-header-strip::-webkit-scrollbar { display: none; }
+  .page-header-strip > * { flex-shrink: 0; min-width: 0; }
+  .page-header-strip h1 { white-space: nowrap; }
 }

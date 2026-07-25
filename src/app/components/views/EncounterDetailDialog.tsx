@@ -195,7 +195,7 @@ export function EncounterDetailDialog({
             letterhead + Encounter No. strip inside the body, so
             the on-screen title bar would be a duplicate on paper. */}
         <DialogHeader className="print:hidden">
-          <div className="flex items-start justify-between gap-4">
+          <div className="page-header-strip">
             <div>
               <DialogTitle className="tabular-nums">
                 {enc?.invoiceNo ?? 'Encounter'}
