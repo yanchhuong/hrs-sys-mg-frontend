@@ -1637,14 +1637,21 @@ function ItemDetailDialog({
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-5 py-3 border-b">
+      {/* Full-height flex column: header + footer are pinned, the
+          middle carousel + description scroll internally. Prevents
+          a portrait image from pushing the Close / Add-to-cart
+          buttons off the screen on phones. */}
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+        <DialogHeader className="px-5 py-3 border-b shrink-0">
           <DialogTitle className="pr-6">{item.name}</DialogTitle>
           <DialogDescription className="sr-only">Item details and images</DialogDescription>
         </DialogHeader>
 
-        {/* Carousel */}
-        <div className="relative bg-gray-100 aspect-square w-full flex items-center justify-center overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Carousel — capped at 55vh so a tall portrait image never
+            eats the whole viewport; the container still fills the
+            width and object-contain keeps the aspect. */}
+        <div className="relative bg-gray-100 w-full flex items-center justify-center overflow-hidden max-h-[55vh] aspect-square">
           {images.length === 0 ? (
             <Package className="h-14 w-14 text-gray-300" strokeWidth={1.25} />
           ) : (
@@ -1710,8 +1717,9 @@ function ItemDetailDialog({
             </div>
           )}
         </div>
+        </div>
 
-        <DialogFooter className="px-5 py-3 border-t">
+        <DialogFooter className="px-5 py-3 border-t shrink-0">
           <Button variant="outline" onClick={onClose}>Close</Button>
           <Button
             className="bg-blue-600 hover:bg-blue-700"
