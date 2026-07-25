@@ -34,6 +34,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
+import { ThumbnailImage } from '../common/ThumbnailImage';
 
 interface FormState {
   sku: string;
@@ -817,13 +818,11 @@ export function Items() {
                         </TableCell>
                         <TableCell>
                           {it.imageUrl ? (
-                            <img
+                            <ThumbnailImage
                               src={it.imageUrl}
                               alt={it.name}
                               className="h-10 w-10 rounded-md object-cover border border-gray-200"
-                              loading="lazy"
-                              decoding="async"
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              onError={() => { /* placeholder handled by parent CSS */ }}
                             />
                           ) : (
                             <div className="h-10 w-10 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400">

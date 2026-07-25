@@ -32,6 +32,7 @@ import * as settingsApi from '../../api/accountingSettings';
 import * as companyApi from '../../api/settings';
 import * as posDisplayApi from '../../api/posDisplay';
 import * as paywayApi from '../../api/payway';
+import { ThumbnailImage } from '../common/ThumbnailImage';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { ShareShopDialog } from '../common/ShareShopDialog';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
@@ -1516,11 +1517,10 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
     >
       <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
         {showImage ? (
-          <img
+          <ThumbnailImage
             src={item.imageUrl!}
             alt={item.name}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
-            loading="lazy"
             onError={() => setBroken(true)}
           />
         ) : (
@@ -1608,11 +1608,10 @@ function CartLineRow({
             the URL is missing or fails to load. */}
         <div className="h-10 w-10 shrink-0 rounded border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center mt-0.5">
           {showImage ? (
-            <img
+            <ThumbnailImage
               src={imageUrl!}
               alt=""
               className="h-full w-full object-cover"
-              loading="lazy"
               onError={() => setImgBroken(true)}
             />
           ) : (

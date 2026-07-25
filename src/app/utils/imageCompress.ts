@@ -20,12 +20,14 @@
  * not a storage cap — the OUTPUT is always small.
  */
 
-// v-image-shrink — items render at 40×40 in tables and ≤200×200 in the
-// POS grid; a 1024px longest edge at Q75 still looks crisp on retina
-// and cuts the base64 payload roughly in half vs. the old 1600/Q82.
-// Faster POS/Items initial paint, less database row bloat.
-const MAX_EDGE = 1024;
-const QUALITY  = 0.75;
+// v-image-shrink — items render at 40×40 in tables and ≤200×200 in
+// the POS grid (biggest surface: aspect-square in ≤224px card at 2×
+// DPR = ~448px). A 512px longest edge at Q70 covers every retina case
+// without shipping pixels that will never be seen. New uploads are
+// ~4× lighter than the old 1024/Q75 pipeline — big wins on Items list
+// + POS grid initial paint AND database row bloat.
+const MAX_EDGE = 512;
+const QUALITY  = 0.70;
 const HARD_MAX_BYTES = 25 * 1024 * 1024;
 
 /** File formats we refuse to compress because Canvas.toBlob can't
