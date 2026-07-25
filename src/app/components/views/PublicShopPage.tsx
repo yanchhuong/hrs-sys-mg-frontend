@@ -1646,11 +1646,12 @@ function ItemDetailDialog({
           middle carousel + description scroll internally. Prevents
           a portrait image from pushing the Close / Add-to-cart
           buttons off the screen on phones. */}
-      {/* [&>button]: style the Radix auto-close X so it stays legible
-          on top of the edge-to-edge image (white pill, subtle shadow).
-          DialogTitle stays as sr-only so screen readers still announce
-          which item is open. */}
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col [&>button]:top-3 [&>button]:right-3 [&>button]:h-8 [&>button]:w-8 [&>button]:rounded-full [&>button]:bg-white/85 [&>button]:shadow [&>button]:opacity-100 [&>button]:z-10">
+      {/* group + [&>button]: the Radix auto-close X is a direct
+          <button> child. Styled as a white pill and hidden until the
+          dialog is hovered — group-hover flips opacity from 0 → 100.
+          DialogTitle stays as sr-only so screen readers still
+          announce which item is open. */}
+      <DialogContent className="group sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col [&>button]:top-3 [&>button]:right-3 [&>button]:h-8 [&>button]:w-8 [&>button]:rounded-full [&>button]:bg-white/85 [&>button]:shadow [&>button]:z-10 [&>button]:opacity-0 [&>button]:transition-opacity group-hover:[&>button]:opacity-100 [&>button:focus-visible]:opacity-100">
         <DialogTitle className="sr-only">{item.name}</DialogTitle>
         <DialogDescription className="sr-only">Item details and images</DialogDescription>
 
@@ -1689,7 +1690,7 @@ function ItemDetailDialog({
                   key={i}
                   src={url}
                   alt=""
-                  className="w-full h-full flex-shrink-0 object-contain"
+                  className="w-full h-full flex-shrink-0 object-cover"
                   draggable={false}
                 />
               ))}
