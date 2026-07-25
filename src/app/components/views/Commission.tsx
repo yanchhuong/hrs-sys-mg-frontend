@@ -205,7 +205,7 @@ function CommissionReport() {
           {/* Date filter — matches Transactions verbatim (canonical
               style per feedback: From / To labels + DateInput, no
               calendar icon or arrow). */}
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <div className="filter-strip print:hidden">
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput value={from} onChange={setFrom} className="h-9 w-36 text-sm" title="From date" />
             <Label className="text-xs text-gray-500">To</Label>

@@ -173,7 +173,7 @@ export function AllDocumentsTab() {
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="filter-strip">
             <div className="relative flex-1 min-w-[260px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input

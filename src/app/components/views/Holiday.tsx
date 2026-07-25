@@ -657,8 +657,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
 
       <Card>
         <CardHeader className="space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
+          <div className="filter-strip items-end">
+            <div className="space-y-1 shrink-0">
               <Label className="text-xs">Year (YYYY)</Label>
               <Select value={yearFilter} onValueChange={setYearFilter}>
                 <SelectTrigger className="w-32 h-9">
@@ -672,7 +672,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1 w-56">
+            <div className="space-y-1 w-56 shrink-0">
               <Label className="text-xs">Search</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -697,7 +697,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 at the top of the page (V124+). Moving them here keeps
                 the table's controls in one row and reclaims the
                 vertical space the old toolbar took. */}
-            <div className="ml-auto flex items-end gap-2 flex-wrap">
+            <div className="ml-auto flex items-end gap-2 shrink-0">
               <div className="flex gap-1 bg-gray-100 rounded-md p-0.5 h-9 items-center">
                 <button
                   type="button"

@@ -319,9 +319,9 @@ function NewSettlementDialog({
 
           <div className="space-y-1">
             <Label>Period</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs text-gray-500">From</Label>
-              <DateInput value={from} onChange={setFrom} max={to || today} className="h-9 w-40 text-sm" title="From date" />
+            <div className="filter-strip">
+              <Label className="text-xs text-gray-500 shrink-0">From</Label>
+              <DateInput value={from} onChange={setFrom} max={to || today} className="h-9 w-40 text-sm shrink-0" title="From date" />
               <Label className="text-xs text-gray-500">To</Label>
               <DateInput value={to}   onChange={setTo}   min={from || undefined} max={today} className="h-9 w-40 text-sm" title="To date" />
               <Button size="sm" variant="outline"

@@ -1636,10 +1636,10 @@ export function Attendance({ onNavigate }: Props = {}) {
         <div>
           <h1 className="text-3xl font-bold">{t('page.attendance.title')}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
+        <div className="filter-strip">
+          {showScopePicker && <div className="shrink-0"><ScopePicker value={scopeMode} onChange={setScopeMode} /></div>}
           {/* View toggle */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex bg-gray-100 rounded-lg p-1 shrink-0">
             <Button
               variant={viewMode === 'daily' ? 'default' : 'ghost'}
               size="sm"
@@ -1820,8 +1820,8 @@ export function Attendance({ onNavigate }: Props = {}) {
           <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
+                <div className="filter-strip">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Label className="text-sm whitespace-nowrap">From:</Label>
                     <Input
                       type="date"
@@ -1852,7 +1852,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       Clear
                     </Button>
                   )}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Label className="text-sm whitespace-nowrap">Dept:</Label>
                     <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
                       <SelectTrigger className="w-40 h-8">
@@ -1866,7 +1866,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="relative w-60">
+                  <div className="relative w-60 shrink-0">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                     <Input
                       value={dailySearch}
@@ -1899,7 +1899,7 @@ export function Attendance({ onNavigate }: Props = {}) {
               </div>
 
               {/* Filter tabs + Hours filter + view-mode toggle */}
-              <div className="flex flex-wrap items-center gap-2 mt-3">
+              <div className="filter-strip mt-3">
                 {/* Hours fulfilment filter — independent of the chips
                     above. Slices to rows that did vs. didn't reach 8h
                     of scanned work, leaving everything else untouched. */}

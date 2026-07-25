@@ -420,11 +420,11 @@ export function Exception() {
         <div>
           <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="filter-strip">
           {showScopePicker && mode === 'day' && (
-            <ScopePicker value={scopeMode} onChange={setScopeMode} />
+            <div className="shrink-0"><ScopePicker value={scopeMode} onChange={setScopeMode} /></div>
           )}
-          {mode === 'day' && <DateRangeFilter onFilterChange={handleDateFilterChange} />}
+          {mode === 'day' && <div className="shrink-0"><DateRangeFilter onFilterChange={handleDateFilterChange} /></div>}
         </div>
       </div>
 

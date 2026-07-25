@@ -88,14 +88,18 @@ export function PaymentSchedules() {
       </div>
 
       <Card>
+        {/* Filter strip — see [[feedback_filter_row_uxpattern]] +
+            .filter-strip in styles/index.css. Single nowrap row that
+            scrolls horizontally on narrow screens, matching Items and
+            every other list page for cross-app consistency. */}
         <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[220px]">
+          <div className="filter-strip">
+            <div className="relative w-[240px] shrink-0">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
               <Input placeholder="Search installment #" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9" />
             </div>
             <Select value={statusFilter} onValueChange={v => setStatusFilter(v as any)}>
-              <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-40 h-9 shrink-0"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
@@ -104,7 +108,9 @@ export function PaymentSchedules() {
                 <SelectItem value="overdue">Overdue</SelectItem>
               </SelectContent>
             </Select>
-            <DateRangeFilter onFilterChange={setDateFilter} />
+            <div className="shrink-0">
+              <DateRangeFilter onFilterChange={setDateFilter} />
+            </div>
           </div>
         </CardHeader>
         <CardContent>

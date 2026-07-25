@@ -116,9 +116,12 @@ export function PaymentCollections() {
       </div>
 
       <Card>
+        {/* Aging bucket tabs — nowrap + horizontal-scroll on narrow
+            screens per [[feedback_filter_row_uxpattern]] so the four
+            pills never wrap onto two rows. */}
         <CardHeader className="pb-3">
           <Tabs value={filter} onValueChange={v => setFilter(v as any)}>
-            <TabsList>
+            <TabsList className="filter-strip w-max">
               <TabsTrigger value="all">All <Badge variant="secondary" className="ml-2">{counts.all}</Badge></TabsTrigger>
               <TabsTrigger value="0-30">0-30 days <Badge variant="secondary" className="ml-2">{counts['0-30']}</Badge></TabsTrigger>
               <TabsTrigger value="31-60">31-60 days <Badge variant="secondary" className="ml-2">{counts['31-60']}</Badge></TabsTrigger>
