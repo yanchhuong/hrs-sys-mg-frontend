@@ -252,8 +252,8 @@ export function TenantModules() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-end gap-4 justify-between">
-            <div className="flex-1 min-w-[260px]">
+          <div className="filter-strip items-end justify-between">
+            <div className="flex-1 min-w-[260px] shrink-0">
               <label className="text-xs font-medium text-gray-600 mb-1.5 block flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5" /> Company
               </label>
@@ -270,7 +270,7 @@ export function TenantModules() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">
                 {enabledCount} enabled
               </Badge>

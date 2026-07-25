@@ -233,8 +233,8 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
+          <div className="filter-strip items-end">
+            <div className="flex flex-col gap-1 shrink-0">
               <Label htmlFor="khrPerUsd" className="text-xs">KHR per 1 USD (NBC)</Label>
               <Input
                 id="khrPerUsd"
@@ -247,7 +247,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
                 className="w-40 h-9"
               />
             </div>
-            <p className="text-xs text-gray-500 max-w-md">
+            <p className="text-xs text-gray-500 max-w-md shrink-0">
               Update monthly when NBC publishes the new rate. All bracket
               comparisons happen in KHR — keep this in sync to avoid
               under/over-taxing on USD-paid employees.
@@ -397,8 +397,8 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
+          <div className="filter-strip items-end">
+            <div className="flex flex-col gap-1 shrink-0">
               <Label htmlFor="testSalary" className="text-xs">Monthly salary (USD)</Label>
               <Input
                 id="testSalary"
@@ -410,7 +410,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
                 className="w-40 h-9"
               />
             </div>
-            <div className="text-sm text-gray-700">
+            <div className="text-sm text-gray-700 shrink-0">
               {taxPreview ? (
                 <div className="flex flex-col gap-0.5">
                   <span>
