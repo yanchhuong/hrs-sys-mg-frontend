@@ -1646,18 +1646,20 @@ function ItemDetailDialog({
           middle carousel + description scroll internally. Prevents
           a portrait image from pushing the Close / Add-to-cart
           buttons off the screen on phones. */}
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
-        <DialogHeader className="px-5 py-3 border-b shrink-0">
-          <DialogTitle className="pr-6">{item.name}</DialogTitle>
-          <DialogDescription className="sr-only">Item details and images</DialogDescription>
-        </DialogHeader>
+      {/* [&>button]: style the Radix auto-close X so it stays legible
+          on top of the edge-to-edge image (white pill, subtle shadow).
+          DialogTitle stays as sr-only so screen readers still announce
+          which item is open. */}
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col [&>button]:top-3 [&>button]:right-3 [&>button]:h-8 [&>button]:w-8 [&>button]:rounded-full [&>button]:bg-white/85 [&>button]:shadow [&>button]:opacity-100 [&>button]:z-10">
+        <DialogTitle className="sr-only">{item.name}</DialogTitle>
+        <DialogDescription className="sr-only">Item details and images</DialogDescription>
 
         <div className="flex-1 min-h-0 overflow-y-auto">
         {/* Carousel — capped at 55vh so a tall portrait image never
             eats the whole viewport; the container still fills the
             width and object-contain keeps the aspect. */}
         <div
-          className="group relative bg-gray-100 w-full flex items-center justify-center overflow-hidden max-h-[55vh] aspect-square select-none"
+          className="group relative bg-gray-100 w-full overflow-hidden max-h-[55vh] aspect-square select-none"
           onTouchStart={hasMulti ? (e => { touchStartX.current = e.touches[0]?.clientX ?? null; }) : undefined}
           onTouchEnd={hasMulti ? (e => {
             const start = touchStartX.current;
@@ -1670,37 +1672,50 @@ function ItemDetailDialog({
           }) : undefined}
         >
           {images.length === 0 ? (
-            <Package className="h-14 w-14 text-gray-300" strokeWidth={1.25} />
+            <div className="w-full h-full flex items-center justify-center">
+              <Package className="h-14 w-14 text-gray-300" strokeWidth={1.25} />
+            </div>
           ) : (
-            <img
-              key={idx}
-              src={images[idx]}
-              alt=""
-              className="w-full h-full object-contain"
-              draggable={false}
-            />
+            /* Full-width horizontal strip. Each slide is w-full, the
+               strip translates by -idx * 100% so the active image sits
+               fully in view and the neighbours are staged just off
+               the left / right edge for the swipe animation. */
+            <div
+              className="flex h-full w-full transition-transform duration-300 ease-out"
+              style={{ transform: `translateX(-${idx * 100}%)` }}
+            >
+              {images.map((url, i) => (
+                <img
+                  key={i}
+                  src={url}
+                  alt=""
+                  className="w-full h-full flex-shrink-0 object-contain"
+                  draggable={false}
+                />
+              ))}
+            </div>
           )}
           {hasMulti && (
             <>
-              {/* Arrows — hidden by default, revealed while the carousel
-                  is hovered. Touch devices don't have hover, so they
-                  never trigger the reveal — they swipe instead (see
-                  onTouchStart / onTouchEnd above). */}
+              {/* Arrows sit flush against the left / right edges so
+                  the image reads as edge-to-edge. Hidden by default,
+                  fade in while the carousel is hovered. Touch devices
+                  don't match hover — they swipe instead. */}
               <button
                 type="button"
                 onClick={prev}
                 aria-label="Previous image"
-                className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute left-0 top-1/2 -translate-y-1/2 h-full w-12 flex items-center justify-center text-white bg-gradient-to-r from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className="h-6 w-6 drop-shadow" />
               </button>
               <button
                 type="button"
                 onClick={next}
                 aria-label="Next image"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute right-0 top-1/2 -translate-y-1/2 h-full w-12 flex items-center justify-center text-white bg-gradient-to-l from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <ChevronRight className="h-5 w-5" />
+                <ChevronRight className="h-6 w-6 drop-shadow" />
               </button>
               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-full">
                 {images.map((_, i) => (
@@ -1719,8 +1734,22 @@ function ItemDetailDialog({
           )}
         </div>
 
-        <div className="px-5 py-4 space-y-3">
-          <div className="flex items-baseline justify-between gap-3">
+        <div className="px-5 py-4 space-y-2">
+          {/* Item name (left) + category chip (right). Category shown
+              only when set — 'other' is treated as an unlabeled bucket
+              so we skip the chip in that case to keep the header
+              clean. */}
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-xl font-semibold text-gray-900 leading-tight">
+              {item.name}
+            </h2>
+            {item.category && item.category !== 'other' && (
+              <span className="shrink-0 text-[11px] uppercase tracking-wide text-gray-600 bg-gray-100 rounded-full px-2 py-1">
+                {item.category}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-3">
             <span className="text-2xl font-semibold text-emerald-700">
               ${Number(item.unitPrice).toFixed(2)}
             </span>
@@ -1729,7 +1758,7 @@ function ItemDetailDialog({
             )}
           </div>
           {item.description && (
-            <p className="text-sm text-gray-700 whitespace-pre-line">{item.description}</p>
+            <p className="text-sm text-gray-700 whitespace-pre-line pt-1">{item.description}</p>
           )}
           {qtyInCart > 0 && (
             <div className="text-xs text-blue-700 bg-blue-50 rounded px-2.5 py-1.5 inline-flex items-center gap-1.5">
