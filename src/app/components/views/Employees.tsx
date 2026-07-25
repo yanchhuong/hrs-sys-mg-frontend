@@ -1715,7 +1715,6 @@ export function Employees() {
         <TabsContent value="cards" className="mt-0">
           <EmployeeCardsGrid
             employees={filteredEmployees}
-            onView={emp => { setSelectedEmployee(emp); setSheetOpen(true); }}
             onOpenIdCard={setIdCardEmployee}
           />
         </TabsContent>
@@ -3093,15 +3092,11 @@ function EmployeeTelegramCell({
 // ---------------------------------------------------------------------------
 function EmployeeCardsGrid({
   employees,
-  onView,
   onOpenIdCard,
 }: {
   employees: import('../../types/hrms').Employee[];
-  onView: (emp: import('../../types/hrms').Employee) => void;
-  /** Opens the printable ID-card preview. Called from a card tap
-   *  (the whole tile) and from the ⋯ button. Kept separate from
-   *  onView so managers can still open the edit sheet via View
-   *  Profile button. */
+  /** Opens the printable ID-card preview — driven by the card tap
+   *  and the ⋯ button. */
   onOpenIdCard: (emp: import('../../types/hrms').Employee) => void;
 }) {
   const { formatDate } = useDateFormat();
@@ -3208,17 +3203,9 @@ function EmployeeCardsGrid({
                 </div>
               )}
 
-              {/* Footer actions — View Profile opens the full edit
-                  sheet; the ⋯ button opens the printable ID-card
-                  preview. Card body click also opens the ID card. */}
-              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={e => { e.stopPropagation(); onView(emp); }}
-                >
-                  View Profile
-                </Button>
+              {/* Footer — only the ⋯ button that opens the printable
+                  ID-card preview. Tapping the card body does the same. */}
+              <div className="flex items-center justify-end pt-2 border-t border-gray-100">
                 <Button
                   size="icon"
                   variant="ghost"
