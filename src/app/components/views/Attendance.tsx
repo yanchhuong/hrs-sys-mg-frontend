@@ -1677,6 +1677,24 @@ export function Attendance({ onNavigate }: Props = {}) {
               )}
               <FingerprintSyncPill status={fpSyncStatus} />
 
+              {/* Export moved up next to Upload Excel so the two Excel
+                  actions sit together. The parent page-header-strip
+                  handles horizontal scroll on narrow viewports so the
+                  button stays reachable via a swipe. */}
+              {viewMode === 'daily' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDailyExport}
+                  disabled={filteredRecords.length === 0}
+                  title="Excel workbook with a Summary sheet (range, filters, counts) + a Records sheet (one row per employee per day)"
+                  className="shrink-0"
+                >
+                  <Download className="mr-1.5 h-4 w-4" />
+                  Export ({filteredRecords.length})
+                </Button>
+              )}
+
               <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm">
@@ -1914,16 +1932,6 @@ export function Attendance({ onNavigate }: Props = {}) {
                     )}
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDailyExport}
-                  disabled={filteredRecords.length === 0}
-                  title="Excel workbook with a Summary sheet (range, filters, counts) + a Records sheet (one row per employee per day)"
-                >
-                  <Download className="mr-1.5 h-4 w-4" />
-                  Export ({filteredRecords.length})
-                </Button>
               </div>
 
               {/* Filter tabs + Hours filter + view-mode toggle */}
@@ -3321,7 +3329,7 @@ function FingerprintSyncPill({ status }: { status: attendanceApi.FingerprintSync
     tone === 'live'    ? 'Connected'
     : tone === 'stale' ? 'Stale'
     : tone === 'offline' ? 'Offline'
-    : 'Awaiting sync';
+    : 'Sync..';
 
   const dotColor =
     tone === 'live' ? 'bg-green-500'
