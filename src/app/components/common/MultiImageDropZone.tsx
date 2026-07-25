@@ -226,7 +226,7 @@ export function MultiImageDropZone({
       </div>
 
       <div className="text-[11px] text-gray-500">
-        {hint ?? `${value.length} / ${max} images${value.length ? ' · drag to reorder, first is the cover' : ''}. Big files are auto-compressed.`}
+        {hint || `${value.length} / ${max} images${value.length ? ' · drag to reorder, first is the cover' : ''}`}
       </div>
 
       <input

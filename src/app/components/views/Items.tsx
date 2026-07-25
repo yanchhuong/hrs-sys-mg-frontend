@@ -1029,14 +1029,26 @@ export function Items() {
                 quantity exceeds the available balance; purchase-side
                 documents (Bill) increment on-hand (IN). Off = picker
                 is autofill-only, no movements recorded either way. */}
-            <div className="flex items-start justify-between border rounded-md px-3 py-2 gap-3">
-              <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between border rounded-md px-3 py-2 gap-3">
+              <div className="flex-1 min-w-0 inline-flex items-center gap-1.5">
                 <Label className="text-sm">Stock (IN / OUT)</Label>
-                <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
-                  When on: Invoices &amp; POS decrement on-hand (OUT), Bills
-                  increment on-hand (IN). Sale is blocked if the line
-                  quantity exceeds available stock.
-                </div>
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                        aria-label="How Stock IN/OUT works"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                      When on: Invoices &amp; POS decrement on-hand (OUT),
+                      Bills increment on-hand (IN). Sale is blocked if
+                      the line quantity exceeds available stock.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               <Switch
                 checked={form.deductionEnabled}
@@ -1049,13 +1061,31 @@ export function Items() {
                 in the product detail carousel. Big source files are
                 auto-compressed client-side. */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Images (optional, up to 5)</Label>
+              <div className="inline-flex items-center gap-1.5">
+                <Label className="text-xs text-gray-600">Images (optional, up to 5)</Label>
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                        aria-label="Image upload rules"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                      PNG / JPG · first image is the product card cover.
+                      Big files are auto-compressed.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <MultiImageDropZone
                 value={form.imageUrls}
                 onChange={next => setForm({ ...form, imageUrls: next })}
                 max={5}
                 disabled={saving}
-                hint="PNG / JPG · first image is the product card cover. Big files are auto-compressed."
+                hint=""
               />
             </div>
 
