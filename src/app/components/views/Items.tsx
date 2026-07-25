@@ -466,31 +466,41 @@ export function Items() {
           )}
           <Button
             variant="outline"
-            onClick={() => exportListToExcel({
-              filename: 'Items',
-              sheetName: 'Items',
-              columns: [
-                { header: 'SKU',            value: it => it.sku ?? '',                                     width: 14 },
-                { header: 'Name',           value: it => it.name,                                          width: 32 },
-                { header: 'Description',    value: it => it.description ?? '',                            width: 40 },
-                { header: 'Category',       value: it => it.itemCategory ?? it.category ?? '',            width: 16 },
-                { header: 'Unit',           value: it => it.unit ?? '',                                   width: 10 },
-                { header: 'Cost Price',     value: it => Number(it.unitCost ?? 0),                        width: 12 },
-                { header: 'Selling Price',  value: it => Number(it.unitPrice ?? 0),                       width: 12 },
-                { header: 'Current Stock',  value: it => Number(it.stockQty ?? 0),                        width: 12 },
-                { header: 'Min Stock',      value: it => Number(it.minStock ?? 0),                        width: 10 },
-                { header: 'Warehouse',      value: it => it.warehouseId
-                                                        ? (warehouseLabelById.get(it.warehouseId) ?? '')
-                                                        : '',                                             width: 18 },
-                { header: 'Stock IN/OUT',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
-                { header: 'Active',         value: it => it.active ? 'Yes' : 'No',                        width: 10 },
-                { header: 'Image URL',      value: it => it.imageUrl ?? '',                              width: 40 },
-              ],
-              rows: filtered,
-            })}
-            disabled={filtered.length === 0}
+            onClick={() => {
+              try {
+                exportListToExcel({
+                  filename: 'Items',
+                  sheetName: 'Items',
+                  columns: [
+                    { header: 'SKU',            value: it => it.sku ?? '',                                     width: 14 },
+                    { header: 'Name',           value: it => it.name,                                          width: 32 },
+                    { header: 'Description',    value: it => it.description ?? '',                            width: 40 },
+                    { header: 'Category',       value: it => it.itemCategory ?? it.category ?? '',            width: 16 },
+                    { header: 'Unit',           value: it => it.unit ?? '',                                   width: 10 },
+                    { header: 'Cost Price',     value: it => Number(it.unitCost ?? 0),                        width: 12 },
+                    { header: 'Selling Price',  value: it => Number(it.unitPrice ?? 0),                       width: 12 },
+                    { header: 'Current Stock',  value: it => Number(it.stockQty ?? 0),                        width: 12 },
+                    { header: 'Min Stock',      value: it => Number(it.minStock ?? 0),                        width: 10 },
+                    { header: 'Warehouse',      value: it => it.warehouseId
+                                                            ? (warehouseLabelById.get(it.warehouseId) ?? '')
+                                                            : '',                                             width: 18 },
+                    { header: 'Stock IN/OUT',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
+                    { header: 'Active',         value: it => it.active ? 'Yes' : 'No',                        width: 10 },
+                    { header: 'Image URL',      value: it => it.imageUrl ?? (it.imageUrls?.[0] ?? ''),        width: 40 },
+                  ],
+                  rows: filtered,
+                });
+                toast.success(`Exported ${filtered.length} item${filtered.length === 1 ? '' : 's'}`);
+              } catch (err) {
+                console.error('[Items export]', err);
+                toast.error(err instanceof Error ? err.message : 'Excel export failed');
+              }
+            }}
+            disabled={rows.length === 0}
             size="icon"
-            title="Download the current item list as an Excel workbook"
+            title={filtered.length === rows.length
+              ? `Download all ${rows.length} items as an Excel workbook`
+              : `Download filtered ${filtered.length} of ${rows.length} items as an Excel workbook`}
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
