@@ -46,12 +46,12 @@ export function StatCard({
     // rendered at text-2xl overflowed the card border on the Sale
     // Ledger / Profit & Loss reports at ≤1024px.
     <Card className="@container">
-      <CardContent className="p-4">
-        {/* Layout: label + icon on the top row (label on the left,
-            icon chip on the right), then the big coloured value on
-            the row below. Puts the descriptive text where the eye
-            naturally lands first, matching the KPI layout the ops
-            team prefers. */}
+      {/* Layout: label + icon on the top row (label top-left, icon
+          chip top-right), then the big coloured value pinned to the
+          bottom-right so the amount aligns across cards of varying
+          heights and reads naturally right-to-left for numeric
+          scanning. */}
+      <CardContent className="p-4 flex-1 flex flex-col">
         <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <p className="text-xs text-gray-500 truncate">{label}</p>
@@ -78,7 +78,7 @@ export function StatCard({
           </div>
         </div>
         <div
-          className={`font-bold tabular-nums truncate min-w-0 text-lg @xs:text-xl @sm:text-2xl ${t.text}`}
+          className={`font-bold tabular-nums truncate min-w-0 text-lg @xs:text-xl @sm:text-2xl mt-auto text-right ${t.text}`}
           title={String(value)}
         >
           {value}

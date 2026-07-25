@@ -18,12 +18,38 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { toast } from 'sonner';
 
-const REF_TYPE_OPTIONS: { value: '' | NonNullable<txApi.ListParams['refType']>; label: string }[] = [
-  { value: '',         label: 'All sources' },
-  { value: 'invoice',  label: 'Invoice payments' },
-  { value: 'bill',     label: 'Bill payments' },
-  { value: 'receipt',  label: 'Expense payments' },
+/** Source dropdown values. `invoice` / `bill` capture the "plain"
+ *  documents; `credit_note` / `debit_note` capture the adjustment
+ *  notes (their number carries the CN / BCN / DN / BDN prefix even
+ *  though they still hit the sales/purchase ledger). Filter is
+ *  applied entirely client-side against the referenceType +
+ *  referenceNo prefix so the tenant's custom prefix override is
+ *  irrelevant — we still catch the default CN / DN / BCN / BDN. */
+type SourceFilter = '' | 'invoice' | 'bill' | 'credit_note' | 'debit_note';
+const REF_TYPE_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: '',            label: 'All sources' },
+  { value: 'invoice',     label: 'Invoice' },
+  { value: 'bill',        label: 'Bill' },
+  { value: 'credit_note', label: 'Credit Notes' },
+  { value: 'debit_note',  label: 'Debit Notes' },
 ];
+
+/** Match a Transaction row against the source-kind filter. Credit /
+ *  debit notes are detected by the {@code referenceNo} prefix: CN /
+ *  BCN → credit note, DN / BDN → debit note (default AccountingSettings
+ *  prefixes). Plain invoice/bill excludes those prefixed rows so the
+ *  category buckets don't double-count. */
+function matchesSourceFilter(row: txApi.Transaction, f: SourceFilter): boolean {
+  if (!f) return true;
+  const no = (row.referenceNo ?? '').toUpperCase();
+  const isCN = no.startsWith('CN') || no.startsWith('BCN');
+  const isDN = no.startsWith('DN') || no.startsWith('BDN');
+  if (f === 'credit_note') return isCN;
+  if (f === 'debit_note')  return isDN;
+  if (f === 'invoice')     return row.referenceType === 'invoice' && !isCN && !isDN;
+  if (f === 'bill')        return row.referenceType === 'bill'    && !isCN && !isDN;
+  return true;
+}
 
 const DIRECTION_OPTIONS: { value: '' | NonNullable<txApi.ListParams['direction']>; label: string }[] = [
   { value: '',    label: 'All' },
@@ -57,7 +83,7 @@ export function Transactions() {
   const { t } = useI18n();
   const [rows, setRows] = useState<txApi.Transaction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [refTypeFilter, setRefTypeFilter] = useState<'' | NonNullable<txApi.ListParams['refType']>>('');
+  const [refTypeFilter, setRefTypeFilter] = useState<SourceFilter>('');
   const [dirFilter, setDirFilter] = useState<'' | NonNullable<txApi.ListParams['direction']>>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -76,7 +102,6 @@ export function Transactions() {
     setLoading(true);
     try {
       const res = await txApi.list({
-        refType: refTypeFilter || undefined,
         direction: dirFilter || undefined,
         from: from || undefined,
         to: to || undefined,
@@ -90,14 +115,17 @@ export function Transactions() {
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [refTypeFilter, dirFilter, from, to]);
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [dirFilter, from, to]);
 
-  /** Rows after the currency tab is applied — what the table actually
-   *  renders. Pagination + footer totals both derive from this so
-   *  switching tabs updates both in lock-step. */
+  /** Rows after the currency + source-kind filters are applied —
+   *  what the table actually renders. Source filter runs client-side
+   *  (see {@link matchesSourceFilter}) so the CN/DN prefix check
+   *  doesn't need a backend round trip. */
   const visibleRows = useMemo(
-    () => currencyFilter ? rows.filter(r => r.currency === currencyFilter) : rows,
-    [rows, currencyFilter],
+    () => rows.filter(r =>
+      (!currencyFilter || r.currency === currencyFilter)
+      && matchesSourceFilter(r, refTypeFilter)),
+    [rows, currencyFilter, refTypeFilter],
   );
 
   /** A row belongs UNDER a disbursement parent when it shares the
