@@ -150,6 +150,12 @@ export function Items() {
   const [imageFilter, setImageFilter] = useState<'' | 'yes' | 'no'>('');
   const [priceRange, setPriceRange] = useState<[number, number] | null>(null);
   const [stockRange, setStockRange] = useState<[number, number] | null>(null);
+  /** Range sliders are hidden until the operator opts in — they take
+   *  up two extra columns in the filter strip and 90% of workflows
+   *  never touch them. Clicking the "Price" / "Stock" pill reveals
+   *  the slider; clearing filters snaps them back closed. */
+  const [priceOpen, setPriceOpen] = useState(false);
+  const [stockOpen, setStockOpen] = useState(false);
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -285,6 +291,8 @@ export function Items() {
     setImageFilter('');
     setPriceRange(null);
     setStockRange(null);
+    setPriceOpen(false);
+    setStockOpen(false);
   };
   // v-items-pagesize-15 — 15 per page keeps the row height above the
   // fold on a 1080p screen and shrinks the initial image payload (the
@@ -591,44 +599,84 @@ export function Items() {
                   <option value="yes">Image : Yes</option>
                   <option value="no">Image : No</option>
                 </select>
-                <div className="w-44 shrink-0">
-                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
-                    <Label className="text-xs">Price</Label>
-                    <span className="tabular-nums text-gray-500">
-                      ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
-                    </span>
+                {/* Range sliders are hidden until the operator clicks
+                    the pill AND while the list is still loading — the
+                    slider snaps between the bounds anyway, so showing
+                    it mid-load flashes 0-0 confusingly. */}
+                {!loading && (priceOpen || priceRange ? (
+                  <div className="w-44 shrink-0">
+                    <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { setPriceOpen(false); setPriceRange(null); }}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                        title="Hide price filter"
+                      >
+                        Price ×
+                      </button>
+                      <span className="tabular-nums text-gray-500">
+                        ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
+                      </span>
+                    </div>
+                    <Slider
+                      min={priceBounds[0]}
+                      max={priceBounds[1]}
+                      step={1}
+                      value={effPrice}
+                      onValueChange={(v) => {
+                        const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                        const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                        setPriceRange([a, b]);
+                      }}
+                    />
                   </div>
-                  <Slider
-                    min={priceBounds[0]}
-                    max={priceBounds[1]}
-                    step={1}
-                    value={effPrice}
-                    onValueChange={(v) => {
-                      const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                      const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                      setPriceRange([a, b]);
-                    }}
-                  />
-                </div>
-                <div className="w-44 shrink-0">
-                  <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
-                    <Label className="text-xs">Stock</Label>
-                    <span className="tabular-nums text-gray-500">
-                      {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
-                    </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPriceOpen(true)}
+                    className="h-9 rounded-md border border-dashed border-gray-300 bg-transparent px-3 text-xs text-gray-600 hover:bg-gray-50 shrink-0"
+                    title="Filter by price range"
+                  >
+                    + Price
+                  </button>
+                ))}
+                {!loading && (stockOpen || stockRange ? (
+                  <div className="w-44 shrink-0">
+                    <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { setStockOpen(false); setStockRange(null); }}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                        title="Hide stock filter"
+                      >
+                        Stock ×
+                      </button>
+                      <span className="tabular-nums text-gray-500">
+                        {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
+                      </span>
+                    </div>
+                    <Slider
+                      min={stockBounds[0]}
+                      max={stockBounds[1]}
+                      step={1}
+                      value={effStock}
+                      onValueChange={(v) => {
+                        const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                        const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                        setStockRange([a, b]);
+                      }}
+                    />
                   </div>
-                  <Slider
-                    min={stockBounds[0]}
-                    max={stockBounds[1]}
-                    step={1}
-                    value={effStock}
-                    onValueChange={(v) => {
-                      const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                      const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                      setStockRange([a, b]);
-                    }}
-                  />
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setStockOpen(true)}
+                    className="h-9 rounded-md border border-dashed border-gray-300 bg-transparent px-3 text-xs text-gray-600 hover:bg-gray-50 shrink-0"
+                    title="Filter by stock range"
+                  >
+                    + Stock
+                  </button>
+                ))}
                 {filtersActive && (
                   <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
                     Clear
