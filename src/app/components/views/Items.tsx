@@ -21,6 +21,7 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '../ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
@@ -599,84 +600,113 @@ export function Items() {
                   <option value="yes">Image : Yes</option>
                   <option value="no">Image : No</option>
                 </select>
-                {/* Range sliders are hidden until the operator clicks
-                    the pill AND while the list is still loading — the
-                    slider snaps between the bounds anyway, so showing
-                    it mid-load flashes 0-0 confusingly. */}
-                {!loading && (priceOpen || priceRange ? (
-                  <div className="w-44 shrink-0">
-                    <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                {/* Range filters — pill in the strip, slider floats
+                    above it in a Popover on click (iOS-style overlay).
+                    Hidden entirely during the initial load so the
+                    slider doesn't flash 0-0 before real bounds
+                    resolve. When an active range is set the pill
+                    turns solid + shows the current range and an ×
+                    to clear. */}
+                {!loading && (
+                  <Popover open={priceOpen} onOpenChange={setPriceOpen}>
+                    <PopoverTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => { setPriceOpen(false); setPriceRange(null); }}
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                        title="Hide price filter"
+                        className={`h-9 rounded-md border px-3 text-xs shrink-0 inline-flex items-center gap-1.5 ${
+                          priceRange
+                            ? 'border-solid border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : 'border-dashed border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                        title="Filter by price range"
                       >
-                        Price ×
+                        <span>
+                          {priceRange
+                            ? `Price: $${priceRange[0].toLocaleString()} – $${priceRange[1].toLocaleString()}`
+                            : '+ Price'}
+                        </span>
+                        {priceRange && (
+                          <span
+                            role="button"
+                            aria-label="Clear price filter"
+                            onClick={e => { e.stopPropagation(); setPriceRange(null); }}
+                            className="text-blue-700/70 hover:text-blue-900 leading-none"
+                          >
+                            ×
+                          </span>
+                        )}
                       </button>
-                      <span className="tabular-nums text-gray-500">
-                        ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
-                      </span>
-                    </div>
-                    <Slider
-                      min={priceBounds[0]}
-                      max={priceBounds[1]}
-                      step={1}
-                      value={effPrice}
-                      onValueChange={(v) => {
-                        const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                        const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
-                        setPriceRange([a, b]);
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setPriceOpen(true)}
-                    className="h-9 rounded-md border border-dashed border-gray-300 bg-transparent px-3 text-xs text-gray-600 hover:bg-gray-50 shrink-0"
-                    title="Filter by price range"
-                  >
-                    + Price
-                  </button>
-                ))}
-                {!loading && (stockOpen || stockRange ? (
-                  <div className="w-44 shrink-0">
-                    <div className="flex justify-between items-baseline text-xs text-gray-600 mb-1.5">
+                    </PopoverTrigger>
+                    <PopoverContent side="bottom" align="start" className="w-64 p-3">
+                      <div className="flex justify-between items-baseline text-xs text-gray-600 mb-2">
+                        <Label className="text-xs">Price range</Label>
+                        <span className="tabular-nums text-gray-500">
+                          ${effPrice[0].toLocaleString()} – ${effPrice[1].toLocaleString()}
+                        </span>
+                      </div>
+                      <Slider
+                        min={priceBounds[0]}
+                        max={priceBounds[1]}
+                        step={1}
+                        value={effPrice}
+                        onValueChange={(v) => {
+                          const a = Math.min(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                          const b = Math.max(v[0] ?? priceBounds[0], v[1] ?? priceBounds[1]);
+                          setPriceRange([a, b]);
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
+                {!loading && (
+                  <Popover open={stockOpen} onOpenChange={setStockOpen}>
+                    <PopoverTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => { setStockOpen(false); setStockRange(null); }}
-                        className="text-xs text-gray-600 hover:text-gray-900"
-                        title="Hide stock filter"
+                        className={`h-9 rounded-md border px-3 text-xs shrink-0 inline-flex items-center gap-1.5 ${
+                          stockRange
+                            ? 'border-solid border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : 'border-dashed border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                        title="Filter by stock range"
                       >
-                        Stock ×
+                        <span>
+                          {stockRange
+                            ? `Stock: ${stockRange[0].toLocaleString()} – ${stockRange[1].toLocaleString()}`
+                            : '+ Stock'}
+                        </span>
+                        {stockRange && (
+                          <span
+                            role="button"
+                            aria-label="Clear stock filter"
+                            onClick={e => { e.stopPropagation(); setStockRange(null); }}
+                            className="text-blue-700/70 hover:text-blue-900 leading-none"
+                          >
+                            ×
+                          </span>
+                        )}
                       </button>
-                      <span className="tabular-nums text-gray-500">
-                        {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
-                      </span>
-                    </div>
-                    <Slider
-                      min={stockBounds[0]}
-                      max={stockBounds[1]}
-                      step={1}
-                      value={effStock}
-                      onValueChange={(v) => {
-                        const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                        const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
-                        setStockRange([a, b]);
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setStockOpen(true)}
-                    className="h-9 rounded-md border border-dashed border-gray-300 bg-transparent px-3 text-xs text-gray-600 hover:bg-gray-50 shrink-0"
-                    title="Filter by stock range"
-                  >
-                    + Stock
-                  </button>
-                ))}
+                    </PopoverTrigger>
+                    <PopoverContent side="bottom" align="start" className="w-64 p-3">
+                      <div className="flex justify-between items-baseline text-xs text-gray-600 mb-2">
+                        <Label className="text-xs">Stock range</Label>
+                        <span className="tabular-nums text-gray-500">
+                          {effStock[0].toLocaleString()} – {effStock[1].toLocaleString()}
+                        </span>
+                      </div>
+                      <Slider
+                        min={stockBounds[0]}
+                        max={stockBounds[1]}
+                        step={1}
+                        value={effStock}
+                        onValueChange={(v) => {
+                          const a = Math.min(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                          const b = Math.max(v[0] ?? stockBounds[0], v[1] ?? stockBounds[1]);
+                          setStockRange([a, b]);
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
                 {filtersActive && (
                   <Button size="sm" variant="ghost" className="h-9" onClick={clearFilters}>
                     Clear
