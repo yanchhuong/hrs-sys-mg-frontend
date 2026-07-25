@@ -45,21 +45,23 @@ export function StatCard({
     // Ledger / Profit & Loss reports at ≤1024px.
     <Card className="@container">
       <CardContent className="p-4">
-        {/* min-w-0 on both sides so the flex-basis can shrink and the
-            value's truncate takes effect instead of forcing the row
-            wider than the card. */}
-        <div className="flex items-center justify-between gap-2 mb-2 min-w-0">
+        {/* Layout: label + icon on the top row (label on the left,
+            icon chip on the right), then the big coloured value on
+            the row below. Puts the descriptive text where the eye
+            naturally lands first, matching the KPI layout the ops
+            team prefers. */}
+        <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
+          <p className="text-xs text-gray-500 truncate">{label}</p>
           <div className={`p-2 rounded-lg shrink-0 ${t.bg}`}>
             <Icon className={`h-4 w-4 ${t.text}`} />
           </div>
-          <span
-            className={`font-bold tabular-nums truncate min-w-0 text-right text-lg @xs:text-xl @sm:text-2xl ${t.text}`}
-            title={String(value)}
-          >
-            {value}
-          </span>
         </div>
-        <p className="text-xs text-gray-500">{label}</p>
+        <div
+          className={`font-bold tabular-nums truncate min-w-0 text-lg @xs:text-xl @sm:text-2xl ${t.text}`}
+          title={String(value)}
+        >
+          {value}
+        </div>
         {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
       </CardContent>
     </Card>
