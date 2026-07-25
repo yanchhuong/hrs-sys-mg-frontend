@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { Upload, X as XIcon, ImageIcon, Star, GripVertical } from 'lucide-react';
+import { Upload, X as XIcon, Star, GripVertical, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { readImageAsDataUrl } from '../../utils/imageUpload';
 
@@ -216,10 +216,10 @@ export function MultiImageDropZone({
             }`}
           >
             {dragOverFile
-              ? <Upload className="h-5 w-5 text-emerald-600" />
-              : <ImageIcon className="h-5 w-5 text-gray-400" />}
-            <div className="text-[10px] text-gray-600 font-medium mt-0.5">
-              {dragOverFile ? 'Drop to add' : 'Add'}
+              ? <Upload className="h-6 w-6 text-emerald-600" />
+              : <UploadCloud className="h-6 w-6 text-gray-400" />}
+            <div className="text-[10px] text-gray-600 font-medium mt-0.5 leading-tight">
+              {dragOverFile ? 'Drop to add' : 'Drop or click'}
             </div>
           </div>
         )}
