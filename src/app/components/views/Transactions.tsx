@@ -7,7 +7,6 @@ import { Badge } from '../ui/badge';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
@@ -246,31 +245,18 @@ export function Transactions() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 flex-wrap">
-          {/* Currency tabs replace the "Ledger" title — All + one
-              tab per enabled currency from tenant settings. Single-
-              currency tenants get just an "All" tab (no split rails
-              to switch between). Filtering is client-side against
-              the already-loaded rows so the switch is instant. */}
-          {enabledCurrencies.length > 1 ? (
-            <Tabs value={currencyFilter} onValueChange={setCurrencyFilter}>
-              <TabsList>
-                <TabsTrigger value="">All</TabsTrigger>
-                {enabledCurrencies.map(c => (
-                  <TabsTrigger key={c} value={c}>{c}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          ) : <div />}
-          {/* Inline filter strip — matches the Bills + StockMovements
-              pattern: compact, right-aligned, no stacked labels. The
-              Clear button appears only when at least one filter is
-              active so the row stays tidy in the default view. */}
+        <CardHeader>
+          {/* All filters live in a single .filter-strip — source /
+              direction / currency / date range — so the header stays
+              one horizontally-scrolling row on narrow screens. The
+              currency dropdown replaces the old tabs strip; single-
+              currency tenants get the dropdown hidden. Clear button
+              appears only when at least one filter is active. */}
           <div className="filter-strip">
             <select
               value={refTypeFilter}
               onChange={e => setRefTypeFilter(e.target.value as typeof refTypeFilter)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
               aria-label="Filter by source"
             >
               {REF_TYPE_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
@@ -278,20 +264,33 @@ export function Transactions() {
             <select
               value={dirFilter}
               onChange={e => setDirFilter(e.target.value as typeof dirFilter)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
               aria-label="Filter by direction"
             >
               {DIRECTION_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
             </select>
-            <Label className="text-xs text-gray-500">From</Label>
-            <DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} />
-            <Label className="text-xs text-gray-500">To</Label>
-            <DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} />
-            {(from || to || refTypeFilter || dirFilter) && (
+            {enabledCurrencies.length > 1 && (
+              <select
+                value={currencyFilter}
+                onChange={e => setCurrencyFilter(e.target.value)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                aria-label="Filter by currency"
+              >
+                <option value="">Currency : All</option>
+                {enabledCurrencies.map(c => (
+                  <option key={c} value={c}>Currency : {c}</option>
+                ))}
+              </select>
+            )}
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} /></div>
+            {(from || to || refTypeFilter || dirFilter || currencyFilter) && (
               <Button
                 size="sm" variant="ghost"
-                className="h-9"
-                onClick={() => { setFrom(''); setTo(''); setRefTypeFilter(''); setDirFilter(''); }}
+                className="h-9 shrink-0"
+                onClick={() => { setFrom(''); setTo(''); setRefTypeFilter(''); setDirFilter(''); setCurrencyFilter(''); }}
               >
                 Clear
               </Button>

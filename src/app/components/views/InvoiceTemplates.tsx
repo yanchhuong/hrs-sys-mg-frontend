@@ -413,9 +413,21 @@ export function InvoiceTemplates() {
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600" />
             <CardTitle>Templates</CardTitle>
-            <span className="text-xs text-gray-500">
-              Custom invoice / receipt layouts — set one as the default per doc type.
-            </span>
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="What Templates are"
+                  >
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  Custom invoice / receipt layouts — set one as the default per doc type.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
