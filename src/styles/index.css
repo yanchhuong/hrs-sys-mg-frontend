@@ -216,14 +216,32 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
 .page-header-strip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;   /* justify-between splits children to
+                                    the row edges — on a wide screen
+                                    that hides the fact that Refresh
+                                    is right-aligned; keep everything
+                                    tight so the swipe target is
+                                    obvious when content overflows */
   gap: 1rem;
   flex-wrap: nowrap;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;           /* iOS Safari: without this, the
+                                    horizontal swipe on the strip
+                                    was being absorbed by the parent's
+                                    vertical scroll gesture */
 }
 .page-header-strip::-webkit-scrollbar { display: none; }
 .page-header-strip > * { flex-shrink: 0; min-width: 0; }
 .page-header-strip h1 { white-space: nowrap; }
+/* Right-aligned button cluster hugs the far end when content fits
+   the viewport — matches the old justify-between look on desktop
+   without breaking scroll on mobile. */
+.page-header-strip > *:last-child { margin-left: auto; }
+@media (min-width: 640px) {
+  .page-header-strip { justify-content: space-between; }
+  .page-header-strip > *:last-child { margin-left: 0; }
+}
