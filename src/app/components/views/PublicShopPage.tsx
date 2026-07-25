@@ -1629,6 +1629,11 @@ function ItemDetailDialog({
   const images = item ? shopApi.itemImages(item) : [];
   const [idx, setIdx] = useState(0);
   useEffect(() => { setIdx(0); }, [item?.id]);
+  /** Touch swipe: capture the finger's start-X on touchstart, compare
+   *  against the release-X in touchend, and treat >40px as a next/prev
+   *  swipe. Kept as a ref (not state) so a drag doesn't trigger a
+   *  re-render on every frame. */
+  const touchStartX = useRef<number | null>(null);
 
   if (!item) return null;
   const hasMulti = images.length > 1;
@@ -1651,7 +1656,19 @@ function ItemDetailDialog({
         {/* Carousel — capped at 55vh so a tall portrait image never
             eats the whole viewport; the container still fills the
             width and object-contain keeps the aspect. */}
-        <div className="relative bg-gray-100 w-full flex items-center justify-center overflow-hidden max-h-[55vh] aspect-square">
+        <div
+          className="group relative bg-gray-100 w-full flex items-center justify-center overflow-hidden max-h-[55vh] aspect-square select-none"
+          onTouchStart={hasMulti ? (e => { touchStartX.current = e.touches[0]?.clientX ?? null; }) : undefined}
+          onTouchEnd={hasMulti ? (e => {
+            const start = touchStartX.current;
+            const end = e.changedTouches[0]?.clientX ?? null;
+            touchStartX.current = null;
+            if (start == null || end == null) return;
+            const dx = end - start;
+            if (Math.abs(dx) < 40) return;   // ignore taps / micro-drags
+            if (dx > 0) prev(); else next();
+          }) : undefined}
+        >
           {images.length === 0 ? (
             <Package className="h-14 w-14 text-gray-300" strokeWidth={1.25} />
           ) : (
@@ -1665,11 +1682,15 @@ function ItemDetailDialog({
           )}
           {hasMulti && (
             <>
+              {/* Arrows — hidden by default, revealed while the carousel
+                  is hovered. Touch devices don't have hover, so they
+                  never trigger the reveal — they swipe instead (see
+                  onTouchStart / onTouchEnd above). */}
               <button
                 type="button"
                 onClick={prev}
                 aria-label="Previous image"
-                className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow"
+                className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -1677,7 +1698,7 @@ function ItemDetailDialog({
                 type="button"
                 onClick={next}
                 aria-label="Next image"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 hover:bg-white text-gray-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
