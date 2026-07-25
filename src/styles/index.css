@@ -97,6 +97,16 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
                                     rule (see feedback_filter_row_uxpattern). */
   overflow-x: auto;
   overflow-y: hidden;
+  min-width: 0;                  /* When nested inside another flex row
+                                    (e.g. Attendance's md:flex-row header)
+                                    a default min-width:auto = min-content
+                                    freezes the strip at its intrinsic
+                                    width and the internal overflow-x
+                                    never engages. Explicit 0 lets it
+                                    shrink so the scroll kicks in. */
+  touch-action: pan-x;           /* iOS Safari: without this, the parent's
+                                    vertical pan gesture absorbs the
+                                    horizontal drag on the strip */
   scrollbar-width: none;         /* Firefox — hidden by default */
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
