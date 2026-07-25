@@ -42,7 +42,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, MoreHorizontal } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -499,7 +499,7 @@ export function Employees() {
   const { currentUser } = useAuth();
   // Underlined-button page-level tab state — mirrors the pattern
   // used by the agency's Sale & Expense page.
-  const [pageTab, setPageTab] = useState<'roster' | 'documents'>('roster');
+  const [pageTab, setPageTab] = useState<'roster' | 'cards' | 'documents'>('roster');
   void isAdmin; void isManager;
   // Live-data visibility resolver. The mock-backed canViewEmployee can't
   // see live employee UUIDs, so a manager logging into a fresh DB sees
@@ -1380,14 +1380,19 @@ export function Employees() {
         existingEmails={USE_MOCKS ? employees.map(e => e.email) : rawEmployees.map(e => e.email)}
       />
 
-      {/* Two tabs — roster + tenant-wide documents. Uses shadcn
-          Tabs so the underline styling comes from the shared
-          {@code ui/tabs.tsx} theme (single source of truth). */}
-      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'documents')} className="space-y-4">
+      {/* Three tabs — table roster / business-card grid / tenant-wide
+          documents. Card layout is a scannable at-a-glance view that
+          Managers use to hand out contact info; the table stays for
+          bulk edits and Excel export. */}
+      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'cards' | 'documents')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="roster">
             <User className="h-3.5 w-3.5" />
             Employees
+          </TabsTrigger>
+          <TabsTrigger value="cards">
+            <IdCard className="h-3.5 w-3.5" />
+            Cards
           </TabsTrigger>
           <TabsTrigger value="documents">
             <FileText className="h-3.5 w-3.5" />
@@ -1702,6 +1707,13 @@ export function Employees() {
         </CardContent>
       </Card>
 
+        </TabsContent>
+
+        <TabsContent value="cards" className="mt-0">
+          <EmployeeCardsGrid
+            employees={filteredEmployees}
+            onView={emp => { setSelectedEmployee(emp); setSheetOpen(true); }}
+          />
         </TabsContent>
 
         <TabsContent value="documents" className="mt-0">
@@ -3060,5 +3072,150 @@ function EmployeeTelegramCell({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Business-card grid — a scannable at-a-glance view driven by the same
+// filtered employee list the roster table uses. Managers hand this
+// tab to reception or a floor lead who needs to look up a face + a
+// phone number without the density of the full table.
+// ---------------------------------------------------------------------------
+function EmployeeCardsGrid({
+  employees,
+  onView,
+}: {
+  employees: import('../../types/hrms').Employee[];
+  onView: (emp: import('../../types/hrms').Employee) => void;
+}) {
+  const { formatDate } = useDateFormat();
+
+  if (employees.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-16 text-center text-sm text-gray-500">
+          No employees match the current filter.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {employees.map(emp => {
+        const statusTone = emp.status === 'active' ? 'bg-emerald-500' : 'bg-gray-400';
+        const statusLabel = emp.status === 'active' ? 'Active' : 'Inactive';
+        return (
+          <Card
+            key={emp.id}
+            className="hover:shadow-md hover:border-blue-300 transition-shadow cursor-pointer"
+            onClick={() => onView(emp)}
+          >
+            <CardContent className="p-4 space-y-3">
+              {/* Top row: photo + identity */}
+              <div className="flex items-start gap-3">
+                {emp.profileImage ? (
+                  <img
+                    src={emp.profileImage}
+                    alt=""
+                    className="h-14 w-14 rounded-full object-cover border border-gray-200 shrink-0"
+                    draggable={false}
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
+                    <User className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-gray-900 truncate" title={emp.name}>
+                    {emp.name}
+                  </div>
+                  <div className="text-xs text-gray-500 font-mono">
+                    {emp.empNo || emp.id}
+                  </div>
+                  <div className="text-xs text-gray-700 truncate mt-0.5" title={emp.position}>
+                    {emp.position || '—'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Meta rows */}
+              <div className="space-y-1 text-xs text-gray-700">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Building2 className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  <span className="text-gray-500 shrink-0">Department:</span>
+                  <span className="truncate">{emp.department || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  <span className="text-gray-500 shrink-0">Join Date:</span>
+                  <span>{emp.joinDate ? formatDate(emp.joinDate) : '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                    <span className={`h-2 w-2 rounded-full ${statusTone}`} />
+                  </span>
+                  <span className="text-gray-500 shrink-0">Status:</span>
+                  <span>{statusLabel}</span>
+                </div>
+              </div>
+
+              {/* Contact rows — only shown when populated so a sparse
+                  card doesn't render a row of em-dashes. */}
+              {(emp.email || emp.contactNumber) && (
+                <div className="space-y-1 text-xs text-gray-700 pt-1 border-t border-gray-100">
+                  {emp.email && (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      <a
+                        href={`mailto:${emp.email}`}
+                        onClick={e => e.stopPropagation()}
+                        className="truncate text-blue-600 hover:underline"
+                        title={emp.email}
+                      >
+                        {emp.email}
+                      </a>
+                    </div>
+                  )}
+                  {emp.contactNumber && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      <a
+                        href={`tel:${emp.contactNumber}`}
+                        onClick={e => e.stopPropagation()}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {emp.contactNumber}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Footer actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={e => { e.stopPropagation(); onView(emp); }}
+                >
+                  View Profile
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  onClick={e => { e.stopPropagation(); onView(emp); }}
+                  title="More"
+                  aria-label="More actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
