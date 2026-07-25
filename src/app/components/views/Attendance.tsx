@@ -15,6 +15,7 @@ import { USE_MOCKS, isModuleDisabledError } from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
@@ -1790,30 +1791,57 @@ export function Attendance({ onNavigate }: Props = {}) {
 
       {viewMode === 'daily' ? (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-            {[
-              { label: 'Present', value: summary.present, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', filter: 'present' as FilterTab },
-              { label: 'Absent', value: summary.absent, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', filter: 'absent' as FilterTab },
-              { label: 'Late', value: summary.late, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-200', filter: 'late' as FilterTab },
-              { label: 'No Check-in', value: summary.noCheckin, icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', filter: 'no_checkin' as FilterTab },
-              { label: 'No Check-out', value: summary.noCheckout, icon: AlertCircle, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', filter: 'no_checkout' as FilterTab },
-              { label: 'On Leave', value: summary.leave, icon: CalendarIcon, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', filter: 'leave' as FilterTab },
-            ].map(card => (
-              <Card
-                key={card.label}
-                className={`cursor-pointer transition-all hover:shadow-md border ${activeFilter === card.filter ? `${card.border} ${card.bg} ring-2 ring-offset-1 ring-${card.color.replace('text-', '')}` : 'border-gray-200'}`}
-                onClick={() => setActiveFilter(activeFilter === card.filter ? 'all' : card.filter)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <card.icon className={`h-5 w-5 ${card.color}`} />
-                    <span className={`text-2xl font-bold ${card.color}`}>{card.value}</span>
-                  </div>
-                  <p className="text-xs text-gray-500">{card.label}</p>
-                </CardContent>
-              </Card>
-            ))}
+          {/* Status tabs — same layout the Payroll batch tab strip uses:
+              one row of TabsTrigger with a colored badge count on the
+              right. Reclaims the vertical space six chunky cards were
+              eating on the daily view without losing any info. */}
+          <div className="overflow-x-auto hover-scroll-x -mx-1 px-1">
+            <Tabs value={activeFilter} onValueChange={v => setActiveFilter(v as FilterTab)}>
+              <TabsList className="w-max">
+                <TabsTrigger value="all">
+                  All
+                  <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
+                    {summary.present + summary.absent + summary.late + summary.noCheckin + summary.noCheckout + summary.leave}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="present">
+                  Present
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">
+                    {summary.present}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="absent">
+                  Absent
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">
+                    {summary.absent}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="late">
+                  Late
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+                    {summary.late}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="no_checkin">
+                  No Check-in
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-orange-100 text-orange-800 hover:bg-orange-100">
+                    {summary.noCheckin}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="no_checkout">
+                  No Check-out
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-purple-100 text-purple-800 hover:bg-purple-100">
+                    {summary.noCheckout}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="leave">
+                  On Leave
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-800 hover:bg-blue-100">
+                    {summary.leave}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* Date picker + department filter + filter tabs */}
