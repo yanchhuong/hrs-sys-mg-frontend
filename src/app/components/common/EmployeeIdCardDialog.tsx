@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { Printer, User as UserIcon } from 'lucide-react';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -68,8 +68,22 @@ export function EmployeeIdCardDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-5 py-3 border-b print:hidden">
+        <DialogHeader className="px-5 py-3 border-b print:hidden flex flex-row items-center justify-between space-y-0">
           <DialogTitle>Employee ID Card</DialogTitle>
+          {/* Print icon-button sits next to the title so operators
+              can trigger the print without hunting for a footer.
+              The X close is added automatically by DialogContent
+              on the far right. */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={doPrint}
+            className="h-8 w-8 mr-6"
+            title="Print ID card"
+            aria-label="Print ID card"
+          >
+            <Printer className="h-4 w-4" />
+          </Button>
         </DialogHeader>
 
         <div className="flex justify-center bg-gray-100 py-6 px-4 print:p-0 print:bg-white">
@@ -160,12 +174,6 @@ export function EmployeeIdCardDialog({
           </div>
         </div>
 
-        <DialogFooter className="px-5 py-3 border-t print:hidden">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-          <Button onClick={doPrint}>
-            <Printer className="h-4 w-4 mr-1.5" /> Print
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -4,6 +4,7 @@ import { Contract, Employee } from '../../types/hrms';
 import * as employeesApi from '../../api/employees';
 import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
+import * as settingsApi from '../../api/settings';
 import * as positionsApi from '../../api/positions';
 import * as documentsApi from '../../api/documents';
 import { USE_MOCKS } from '../../api/client';
@@ -42,7 +43,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, MoreHorizontal } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -503,6 +504,13 @@ export function Employees() {
   const [pageTab, setPageTab] = useState<'roster' | 'cards' | 'documents'>('roster');
   /** ID-card preview dialog — non-null = open for that employee. */
   const [idCardEmployee, setIdCardEmployee] = useState<typeof mockEmployees[0] | null>(null);
+  /** Company profile — logo + name printed on the ID card header /
+   *  footer. Best-effort fetch; if it fails the dialog falls back
+   *  to a plain SMRT HRMS placeholder. */
+  const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  useEffect(() => {
+    settingsApi.getCompanyInfo().then(setCompanyInfo).catch(() => setCompanyInfo(null));
+  }, []);
   void isAdmin; void isManager;
   // Live-data visibility resolver. The mock-backed canViewEmployee can't
   // see live employee UUIDs, so a manager logging into a fresh DB sees
@@ -1712,7 +1720,27 @@ export function Employees() {
 
         </TabsContent>
 
-        <TabsContent value="cards" className="mt-0">
+        <TabsContent value="cards" className="mt-0 space-y-4">
+          {/* Cards tab search — shares the roster searchTerm so
+              switching tabs preserves the filter, and typing here
+              filters both views. Same tokenised match as roster
+              (see the token loop above). */}
+          <Card>
+            <CardContent className="pt-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search by name, Khmer name, ID, or phone…"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                Showing {filteredEmployees.length} of {visibleEmployees.length} employee{visibleEmployees.length === 1 ? '' : 's'}
+              </div>
+            </CardContent>
+          </Card>
           <EmployeeCardsGrid
             employees={filteredEmployees}
             onOpenIdCard={setIdCardEmployee}
@@ -2641,6 +2669,9 @@ export function Employees() {
       <EmployeeIdCardDialog
         employee={idCardEmployee}
         deptName={deptName}
+        companyName={companyInfo?.name || undefined}
+        companyLogo={companyInfo?.logoUrl || null}
+        companyUrl={companyInfo?.website || undefined}
         onOpenChange={o => { if (!o) setIdCardEmployee(null); }}
       />
 
@@ -3209,20 +3240,6 @@ function EmployeeCardsGrid({
                 </div>
               )}
 
-              {/* Footer — only the ⋯ button that opens the printable
-                  ID-card preview. Tapping the card body does the same. */}
-              <div className="flex items-center justify-end pt-2 border-t border-gray-100">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8"
-                  onClick={e => { e.stopPropagation(); onOpenIdCard(emp); }}
-                  title="Show ID card"
-                  aria-label="Show ID card"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </div>
             </CardContent>
           </Card>
         );
