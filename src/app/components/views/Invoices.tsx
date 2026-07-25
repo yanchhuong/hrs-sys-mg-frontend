@@ -19,7 +19,6 @@ import {
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
@@ -713,13 +712,16 @@ export function Invoices({
                   lens narrows the list to a single kind, so the switcher
                   would be dead controls). */}
               {!fixedKind && (
-                <Tabs value={kindFilter} onValueChange={v => setKindFilter(v as typeof kindFilter)}>
-                  <TabsList>
-                    {KIND_FILTERS.map(f => (
-                      <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+                <select
+                  value={kindFilter}
+                  onChange={e => setKindFilter(e.target.value as typeof kindFilter)}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                  aria-label="Filter by kind"
+                >
+                  {KIND_FILTERS.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
               )}
               <div className="flex items-center gap-2 shrink-0">
                 {/* Date range — inclusive, either end may be open. Backend
