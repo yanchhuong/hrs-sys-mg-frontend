@@ -27,15 +27,23 @@ export interface ListExportOptions<T> {
   rows: T[];
 }
 
+/** Excel enforces a hard per-cell cap of 32,767 characters — writeFile
+ *  throws "Text length must not exceed 32767 characters" if any cell
+ *  overshoots (long item descriptions, pasted HTML, etc.). Truncate
+ *  with an ellipsis so the export still succeeds. */
+const XLSX_CELL_MAX = 32767;
+const clampCell = (v: string | number | null | undefined): string | number => {
+  if (v == null) return '';
+  if (typeof v !== 'string') return v;
+  return v.length > XLSX_CELL_MAX ? v.slice(0, XLSX_CELL_MAX - 1) + '…' : v;
+};
+
 /** Drop the currently-loaded rows into a one-tab xlsx and trigger the
  *  browser download. */
 export function exportListToExcel<T>(opts: ListExportOptions<T>): void {
   const { filename, sheetName, columns, rows } = opts;
   const header = columns.map(c => c.header);
-  const data = rows.map(r => columns.map(c => {
-    const v = c.value(r);
-    return v == null ? '' : v;
-  }));
+  const data = rows.map(r => columns.map(c => clampCell(c.value(r))));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
   ws['!cols'] = columns.map(c => ({ wch: c.width ?? Math.max(c.header.length + 2, 12) }));
