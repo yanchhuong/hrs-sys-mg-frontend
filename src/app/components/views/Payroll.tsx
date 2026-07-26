@@ -155,6 +155,40 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
 // Codes whose dollar value comes from a formula, not from a fixed
 // number HR enters. We mark them with an info icon next to the label
 // so admins don't accidentally type an override into the spreadsheet.
+/**
+ * Standard working days in a payroll month (YYYY-MM), honouring the
+ * tenant's Weekend Configuration on Attendance Settings → General.
+ *
+ * Iterate every day of the month; drop full-weekend days, count
+ * half-weekend days as 0.5. Backend stores three-letter codes
+ * ('Sat', 'Sun', …) so we normalise the day-of-week to the same
+ * form before comparing. Legacy tenants with no config yet default
+ * to Sat + Sun off.
+ *
+ * Example (March 2026, Mon-Fri work week, no half days):
+ *   31 total days − 4 Saturdays − 5 Sundays = 22 working days.
+ */
+export function calcStandardWorkDays(
+  monthYear: string,
+  weekendDays: string[] = ['Sat', 'Sun'],
+  halfDayDays: string[] = [],
+): number {
+  const [y, m] = monthYear.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return 0;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const CODE = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weekendSet = new Set(weekendDays.map(d => d.slice(0, 3)));
+  const halfSet = new Set(halfDayDays.map(d => d.slice(0, 3)));
+  let total = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const code = CODE[new Date(y, m - 1, d).getDay()];
+    if (halfSet.has(code)) total += 0.5;
+    else if (weekendSet.has(code)) total += 0;
+    else total += 1;
+  }
+  return total;
+}
+
 const FORMULA_DEDUCTION_HINTS: Record<string, string> = {
   first_salary: 'Formula: (Basic Salary + Position Allowance + Evaluation Allowance) ÷ 2. The amount is computed per employee and auto-filled on the 2nd Salary payslip — not a fixed number.',
   nssf:         'Formula: contributoryKhr = min(gross × khrPerUsd, 1,200,000) ; nssfUsd = (contributoryKhr × 2%) ÷ khrPerUsd. Capped at 1.2M KHR contributory wage; manual non-zero override on a salary_deductions row wins.',
@@ -247,6 +281,22 @@ export function Payroll() {
   const [adjustBaseSalary, setAdjustBaseSalary] = useState<string>('');
   const [adjustSaving, setAdjustSaving] = useState(false);
   const [submitDraftPending, setSubmitDraftPending] = useState(false);
+  /** Weekend / half-day config from Attendance Settings → General.
+   *  Drives the standard-workdays calc for the Work Day column on the
+   *  batch details view. Fetched once on mount; falls back to Sat+Sun
+   *  off if the endpoint fails. */
+  const [attendanceGeneral, setAttendanceGeneral] = useState<{ weekendDays: string[]; halfDayDays: string[] }>(
+    { weekendDays: ['Sat', 'Sun'], halfDayDays: [] },
+  );
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    settingsApi.getGeneralAttendanceSettings()
+      .then(s => setAttendanceGeneral({
+        weekendDays: s.weekendDays ?? ['Sat', 'Sun'],
+        halfDayDays: s.halfDayDays ?? [],
+      }))
+      .catch(() => { /* keep defaults */ });
+  }, []);
   // Items belonging to the currently-opened batch — fetched on demand from
   // `/payroll/batches/{id}/items`. Adapted to the local PayrollItem shape so
   // the existing detail table + payslip dialog keep rendering as before.
@@ -1688,7 +1738,19 @@ export function Payroll() {
 
   const openAdjustPopup = (row: PayrollItem) => {
     setAdjustTarget(row);
-    setAdjustWorkDays(row.workDays != null ? String(row.workDays) : '');
+    // Pre-fill with the explicit value if set, else the standard days
+    // for the batch's month from Weekend Configuration — HR shouldn't
+    // have to look up the divisor every time.
+    if (row.workDays != null) {
+      setAdjustWorkDays(String(row.workDays));
+    } else {
+      const std = calcStandardWorkDays(
+        row.month ?? selectedBatch?.monthYear ?? '',
+        attendanceGeneral.weekendDays,
+        attendanceGeneral.halfDayDays,
+      );
+      setAdjustWorkDays(std ? String(std) : '');
+    }
     setAdjustBaseSalary(String(row.baseSalary ?? 0));
   };
 
@@ -3292,14 +3354,32 @@ export function Payroll() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
-                      {/* Work days — populated by the draft Adjust popup.
-                          Null on legacy items / batches created before
-                          V278 renders as em-dash. */}
-                      <TableCell className="text-center text-sm tabular-nums">
-                        {(record as PayrollItem).workDays != null
-                          ? String((record as PayrollItem).workDays)
-                          : <span className="text-gray-300">—</span>}
-                      </TableCell>
+                      {/* Work days — explicit override from the Adjust
+                          popup wins; otherwise fall through to the
+                          standard for the batch's month calculated
+                          from Attendance Settings → Weekend
+                          Configuration. Explicit values render bold,
+                          calculated defaults gray so HR can tell them
+                          apart. */}
+                      {(() => {
+                        const explicit = (record as PayrollItem).workDays;
+                        const standard = calcStandardWorkDays(
+                          record.month ?? selectedBatch?.monthYear ?? '',
+                          attendanceGeneral.weekendDays,
+                          attendanceGeneral.halfDayDays,
+                        );
+                        const value = explicit != null ? Number(explicit) : standard;
+                        return (
+                          <TableCell
+                            className={`text-center text-sm tabular-nums ${explicit != null ? 'font-medium' : 'text-gray-500'}`}
+                            title={explicit != null
+                              ? 'Set on this row via Adjust'
+                              : `Standard for ${record.month ?? selectedBatch?.monthYear} based on Weekend Configuration`}
+                          >
+                            {value}
+                          </TableCell>
+                        );
+                      })()}
                       <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
                       <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
