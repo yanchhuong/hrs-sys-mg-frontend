@@ -88,11 +88,12 @@ export function POS() {
   const [warehouseFilter, setWarehouseFilter] = useState<string>('');
 
   // v-pos-infinite-scroll — render the tile grid in batches so a 200-
-  // item tenant doesn't blow the initial DOM. First page is one screenful
-  // (~40 tiles on a laptop / xl grid); each time the sentinel below the
-  // grid crosses into view we bump the window by another batch. Reset
-  // to the first page whenever the visible filter set changes.
-  const POS_PAGE = 40;
+  // item tenant doesn't blow the initial DOM. First page is small
+  // (10 tiles) so heavy legacy 1024px item images don't drown the
+  // initial paint; each time the sentinel below the grid crosses
+  // into view we bump the window by another batch. Reset to the
+  // first page whenever the visible filter set changes.
+  const POS_PAGE = 10;
   const [visibleCount, setVisibleCount] = useState<number>(POS_PAGE);
   useEffect(() => { setVisibleCount(POS_PAGE); }, [search, categoryFilter, warehouseFilter]);
   // Callback ref: attaches an IntersectionObserver the moment the

@@ -151,7 +151,7 @@ function setJsonLd(id: string, data: unknown) {
 /** Page size for the shop's infinite-scroll grid. Tiles are cheap to
  *  render but 200+ at once punishes low-end phones — 24 fills 4-5 rows
  *  on desktop, ~8-12 rows on mobile. */
-const SHOP_PAGE_SIZE = 24;
+const SHOP_PAGE_SIZE = 10;
 
 /** Per-line unit price = base + sum of selected modifier price deltas. */
 function lineUnitPrice(line: CartLine): number {
