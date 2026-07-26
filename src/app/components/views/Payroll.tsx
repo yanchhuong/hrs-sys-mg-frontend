@@ -1789,26 +1789,15 @@ export function Payroll() {
         attendanceGeneral.halfDayDays,
       );
       if (std > 0) {
-        // Per-day proration factor. Apply to base + total-earnings +
-        // deductions so tax / NSSF / allowances scale in lock-step —
-        // otherwise a row with $392 of deductions on a $785 base
-        // ends up at Net = $341 − $392 = −$51 after the base drops.
-        //
-        // Reset step: if the row was already prorated by a prior
-        // Adjust (workDays != null on adjustTarget), first un-scale
-        // the current totalEarnings / deductions back to their
-        // monthly equivalents so the new factor doesn't compound
-        // with the old one.
-        const priorFactor = adjustTarget.workDays != null && adjustTarget.workDays > 0
-          ? Number(adjustTarget.workDays) / std
-          : 1;
-        const monthlyTotalEarnings = Number(adjustTarget.totalEarnings ?? monthlyBase) / (priorFactor || 1);
-        const monthlyDeductions = Number(adjustTarget.deductions ?? 0) / (priorFactor || 1);
-
+        // Per-day payment is a flat one-shot: pay = base × workDays /
+        // std, and that's the whole row. No allowances, no monthly
+        // tax / NSSF — those are monthly-payroll concepts that don't
+        // apply to a short-stint payout. Total earnings and net
+        // salary land at the prorated base; deductions go to zero.
         const factor = wdNum / std;
         base = Math.round(monthlyBase * factor * 100) / 100;
-        proratedTotalEarnings = Math.round(monthlyTotalEarnings * factor * 100) / 100;
-        proratedDeductions = Math.round(monthlyDeductions * factor * 100) / 100;
+        proratedTotalEarnings = base;
+        proratedDeductions = 0;
       }
     }
     setAdjustSaving(true);
@@ -3585,7 +3574,10 @@ export function Payroll() {
                         Daily rate: <span className="tabular-nums">${(std > 0 ? monthlyBase / std : 0).toFixed(2)}</span> · workDays: <span className="tabular-nums">{wdNum || 0}</span>
                       </div>
                       <div className="pt-1 border-t border-blue-200/60">
-                        Prorated base: <span className="tabular-nums font-semibold">${previewBase.toFixed(2)}</span>
+                        Net pay: <span className="tabular-nums font-semibold">${previewBase.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[10px] text-blue-700/80 pt-0.5">
+                        One-shot payout — no allowances, no monthly tax / NSSF applied.
                       </div>
                     </div>
                   </>
