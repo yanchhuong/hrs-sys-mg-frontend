@@ -179,18 +179,26 @@ export function Items() {
       warehouseId: warehouseFilter || undefined,
     };
     try {
-      // Two-stage fetch: first the top 15 rows for an instant paint
-      // (pagination widget shows one page immediately), then the full
-      // set in the background so page 2+ has data ready before the
-      // operator clicks Next. Second call fires and forgets — a
-      // failure just means the table shows the first 15 rows only,
-      // which is still functional.
-      const first = await itemsApi.list({ ...params, size: 15 });
+      // Two-stage fetch tuned for fastest possible paint:
+      //   1. size=15 + slim=true → description dropped, table +
+      //      pagination render immediately, loading spinner clears.
+      //   2. Background size=200 WITHOUT slim so pages 2+ have data
+      //      AND the edit dialog's description field re-hydrates
+      //      once the background call lands. If HR opens the edit
+      //      dialog on a row that's still on the slim slice, the
+      //      description shows blank momentarily — the background
+      //      fetch usually lands within a second, so this is rare.
+      const first = await itemsApi.list({ ...params, size: 15, slim: true });
       setRows(first.content ?? []);
       setLoading(false);
-      itemsApi.list({ ...params, size: 200 })
-        .then(full => setRows(full.content ?? []))
-        .catch(() => { /* keep the first-page slice on failure */ });
+      // Defer the full fetch one microtask so the browser gets to
+      // paint the first 15 rows before the second fetch's decode
+      // pass starts eating the main thread.
+      setTimeout(() => {
+        itemsApi.list({ ...params, size: 200 })
+          .then(full => setRows(full.content ?? []))
+          .catch(() => { /* keep the first-page slice on failure */ });
+      }, 0);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load items');
       setLoading(false);
