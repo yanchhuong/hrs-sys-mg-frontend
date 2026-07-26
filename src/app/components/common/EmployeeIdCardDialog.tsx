@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { Printer, User as UserIcon } from 'lucide-react';
+import { Printer } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { useDateFormat } from '../../context/DateFormatContext';
 import type { Employee } from '../../types/hrms';
+import { EmployeePhoto } from './EmployeePhoto';
 
 interface Props {
   employee: Employee | null;
@@ -120,20 +121,16 @@ export function EmployeeIdCardDialog({
               </div>
             </div>
 
-            {/* Photo */}
+            {/* Photo — uses EmployeePhoto so the auth-fetch path
+                (blob URL) is applied in live mode. */}
             <div className="flex justify-center -mt-8 relative z-10">
-              {employee.profileImage ? (
-                <img
-                  src={employee.profileImage}
-                  alt=""
-                  className="h-24 w-24 rounded-lg object-cover border-4 border-white shadow-md bg-gray-50"
-                  draggable={false}
-                />
-              ) : (
-                <div className="h-24 w-24 rounded-lg border-4 border-white shadow-md bg-gray-100 flex items-center justify-center text-gray-400">
-                  <UserIcon className="h-10 w-10" />
-                </div>
-              )}
+              <EmployeePhoto
+                employeeApiId={(employee as any).apiId ?? employee.id}
+                fallbackDataUrl={employee.profileImage}
+                alt=""
+                className="h-24 w-24 rounded-lg object-cover border-4 border-white shadow-md bg-gray-50"
+                iconClassName="h-10 w-10"
+              />
             </div>
 
             {/* Name + role */}

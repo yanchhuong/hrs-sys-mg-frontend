@@ -61,6 +61,7 @@ import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
 import { EmployeeIdCardDialog } from '../common/EmployeeIdCardDialog';
+import { EmployeePhoto } from '../common/EmployeePhoto';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
@@ -3206,18 +3207,13 @@ function EmployeeCardsGrid({
             <CardContent className="p-4 space-y-3">
               {/* Top row: photo + identity */}
               <div className="flex items-start gap-3">
-                {emp.profileImage ? (
-                  <img
-                    src={emp.profileImage}
-                    alt=""
-                    className="h-14 w-14 rounded-full object-cover border border-gray-200 shrink-0"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="h-14 w-14 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
-                    <User className="h-6 w-6" />
-                  </div>
-                )}
+                <EmployeePhoto
+                  employeeApiId={(emp as any).apiId ?? emp.id}
+                  fallbackDataUrl={emp.profileImage}
+                  alt=""
+                  className="h-14 w-14 rounded-full object-cover border border-gray-200 shrink-0"
+                  iconClassName="h-6 w-6"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold text-gray-900 truncate" title={emp.name}>
                     {emp.name}
