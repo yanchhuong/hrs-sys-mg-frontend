@@ -174,16 +174,25 @@ export function Items() {
 
   const load = async () => {
     setLoading(true);
+    const params = {
+      q: search.trim() || undefined,
+      warehouseId: warehouseFilter || undefined,
+    };
     try {
-      const res = await itemsApi.list({
-        q: search.trim() || undefined,
-        warehouseId: warehouseFilter || undefined,
-        size: 200,
-      });
-      setRows(res.content ?? []);
+      // Two-stage fetch: first the top 15 rows for an instant paint
+      // (pagination widget shows one page immediately), then the full
+      // set in the background so page 2+ has data ready before the
+      // operator clicks Next. Second call fires and forgets — a
+      // failure just means the table shows the first 15 rows only,
+      // which is still functional.
+      const first = await itemsApi.list({ ...params, size: 15 });
+      setRows(first.content ?? []);
+      setLoading(false);
+      itemsApi.list({ ...params, size: 200 })
+        .then(full => setRows(full.content ?? []))
+        .catch(() => { /* keep the first-page slice on failure */ });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load items');
-    } finally {
       setLoading(false);
     }
   };
