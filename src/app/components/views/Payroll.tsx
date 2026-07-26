@@ -279,6 +279,11 @@ export function Payroll() {
   const [adjustTarget, setAdjustTarget] = useState<PayrollItem | null>(null);
   const [adjustWorkDays, setAdjustWorkDays] = useState<string>('');
   const [adjustBaseSalary, setAdjustBaseSalary] = useState<string>('');
+  /** Payment type on the Adjust popup. 'month' = no proration, base
+   *  stays as generated. 'day' = prorate base = monthlyBase × workDays
+   *  / standardDays. Row is treated as 'day' whenever it has an
+   *  explicit workDays value; 'month' otherwise. */
+  const [adjustPayType, setAdjustPayType] = useState<'month' | 'day'>('month');
   const [adjustSaving, setAdjustSaving] = useState(false);
   const [submitDraftPending, setSubmitDraftPending] = useState(false);
   /** Weekend / half-day config from Attendance Settings → General.
@@ -1738,34 +1743,51 @@ export function Payroll() {
 
   const openAdjustPopup = (row: PayrollItem) => {
     setAdjustTarget(row);
-    // Pre-fill with the explicit value if set, else the standard days
-    // for the batch's month from Weekend Configuration — HR shouldn't
-    // have to look up the divisor every time.
-    if (row.workDays != null) {
-      setAdjustWorkDays(String(row.workDays));
-    } else {
-      const std = calcStandardWorkDays(
-        row.month ?? selectedBatch?.monthYear ?? '',
-        attendanceGeneral.weekendDays,
-        attendanceGeneral.halfDayDays,
-      );
-      setAdjustWorkDays(std ? String(std) : '');
-    }
+    // 'day' payment type when the row already carries an explicit
+    // workDays override; 'month' (no proration) otherwise. Pre-fill
+    // workDays with the standard for the month so HR doesn't have to
+    // look up the divisor.
+    const explicit = row.workDays;
+    setAdjustPayType(explicit != null ? 'day' : 'month');
+    const std = calcStandardWorkDays(
+      row.month ?? selectedBatch?.monthYear ?? '',
+      attendanceGeneral.weekendDays,
+      attendanceGeneral.halfDayDays,
+    );
+    setAdjustWorkDays(explicit != null ? String(explicit) : (std ? String(std) : ''));
     setAdjustBaseSalary(String(row.baseSalary ?? 0));
   };
 
   const handleSaveAdjust = async () => {
     if (!selectedBatch || !adjustTarget) return;
-    const base = Number(adjustBaseSalary);
+    let base = Number(adjustBaseSalary);
     if (!Number.isFinite(base) || base < 0) {
       toast.error('Base salary must be 0 or more.');
       return;
     }
-    const wdRaw = adjustWorkDays.trim();
-    const workDays = wdRaw === '' ? null : Number(wdRaw);
-    if (workDays != null && (!Number.isFinite(workDays) || workDays < 0 || workDays > 31)) {
-      toast.error('Work days must be between 0 and 31 (blank = not tracked).');
-      return;
+    let workDays: number | null = null;
+    if (adjustPayType === 'day') {
+      const wdNum = Number(adjustWorkDays.trim());
+      if (!Number.isFinite(wdNum) || wdNum <= 0 || wdNum > 31) {
+        toast.error('Work days must be between 0 and 31 when payment type is Per Day.');
+        return;
+      }
+      workDays = wdNum;
+      // Per-day payment: recompute the prorated base from the employee's
+      // monthly base × workDays / standardDays so HR's edit in the
+      // popup translates into a real salary change on the row.
+      const emp = employees.find(
+        e => e.id === adjustTarget.employeeId || (e as Employee).apiId === adjustTarget.employeeId,
+      );
+      const monthlyBase = emp?.baseSalary ?? adjustTarget.baseSalary ?? base;
+      const std = calcStandardWorkDays(
+        adjustTarget.month ?? selectedBatch.monthYear,
+        attendanceGeneral.weekendDays,
+        attendanceGeneral.halfDayDays,
+      );
+      if (std > 0) {
+        base = Math.round((Number(monthlyBase) * wdNum / std) * 100) / 100;
+      }
     }
     setAdjustSaving(true);
     try {
@@ -3445,44 +3467,95 @@ export function Payroll() {
         </Card>
       )}
 
-      {/* Draft row Adjust dialog (V278) — workDays + baseSalary. */}
+      {/* Draft row Adjust dialog (V278) — payment type toggle. Per
+          Month leaves the generated base salary alone. Per Day
+          prorates the monthly base against workDays / standardDays,
+          so an employee who worked 10 of 22 days lands at 10/22 of
+          their monthly base with no manual math. */}
       <Dialog open={!!adjustTarget} onOpenChange={(o) => { if (!o) setAdjustTarget(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Adjust workdays</DialogTitle>
             <DialogDescription>
-              Base salary is calculated per your Payroll Category settings.
-              Change the working days here when an employee didn't reach the
-              standard month (e.g. mid-month hire, unpaid leave). Optionally
-              override the base salary too — the batch totals recalculate on
-              save.
+              Switch to "Per Day" when an employee didn't reach the standard
+              month (mid-month hire, unpaid leave). Their base salary prorates
+              against Attendance Settings → Weekend Configuration; the batch
+              totals recalculate on save.
             </DialogDescription>
           </DialogHeader>
           {adjustTarget && (() => {
             const emp = employees.find(
               e => e.id === adjustTarget.employeeId || (e as Employee).apiId === adjustTarget.employeeId,
             );
+            const monthlyBase = Number(emp?.baseSalary ?? adjustTarget.baseSalary ?? 0);
+            const std = calcStandardWorkDays(
+              adjustTarget.month ?? selectedBatch?.monthYear ?? '',
+              attendanceGeneral.weekendDays,
+              attendanceGeneral.halfDayDays,
+            );
+            const wdNum = Number(adjustWorkDays);
+            const previewBase = adjustPayType === 'day' && std > 0 && Number.isFinite(wdNum) && wdNum > 0
+              ? Math.round((monthlyBase * wdNum / std) * 100) / 100
+              : monthlyBase;
             return (
               <div className="space-y-4">
                 <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm">
                   <div className="font-medium">{emp?.name ?? '—'}</div>
                   <div className="text-xs text-gray-500">{emp?.id ?? '—'} · {adjustTarget.month}</div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="adjust-workdays" className="text-xs">Work days</Label>
-                    <Input
-                      id="adjust-workdays"
-                      type="number"
-                      min={0}
-                      max={31}
-                      step={0.5}
-                      placeholder="e.g. 22"
-                      value={adjustWorkDays}
-                      onChange={e => setAdjustWorkDays(e.target.value)}
-                    />
-                    <p className="text-[11px] text-gray-500">Blank = not tracked</p>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Payment type</Label>
+                  <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setAdjustPayType('month'); setAdjustBaseSalary(String(monthlyBase)); }}
+                      className={`flex-1 px-3 py-1.5 text-xs rounded ${adjustPayType === 'month' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      Per Month
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustPayType('day')}
+                      className={`flex-1 px-3 py-1.5 text-xs rounded ${adjustPayType === 'day' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      Per Day
+                    </button>
                   </div>
+                </div>
+
+                {adjustPayType === 'day' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="adjust-workdays" className="text-xs">
+                        Work days {std > 0 && <span className="text-gray-400">(standard {std})</span>}
+                      </Label>
+                      <Input
+                        id="adjust-workdays"
+                        type="number"
+                        min={0}
+                        max={31}
+                        step={0.5}
+                        placeholder="e.g. 10"
+                        value={adjustWorkDays}
+                        onChange={e => setAdjustWorkDays(e.target.value)}
+                      />
+                    </div>
+                    <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
+                      <div>
+                        Monthly base: <span className="tabular-nums font-medium">${monthlyBase.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        Daily rate: <span className="tabular-nums">${(std > 0 ? monthlyBase / std : 0).toFixed(2)}</span> · workDays: <span className="tabular-nums">{wdNum || 0}</span>
+                      </div>
+                      <div className="pt-1 border-t border-blue-200/60">
+                        Prorated base: <span className="tabular-nums font-semibold">${previewBase.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {adjustPayType === 'month' && (
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-base" className="text-xs">Base salary (override)</Label>
                     <Input
@@ -3493,8 +3566,9 @@ export function Payroll() {
                       value={adjustBaseSalary}
                       onChange={e => setAdjustBaseSalary(e.target.value)}
                     />
+                    <p className="text-[11px] text-gray-500">Full-month payment. Leave the value as-generated unless you need a custom base.</p>
                   </div>
-                </div>
+                )}
               </div>
             );
           })()}
