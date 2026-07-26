@@ -3213,6 +3213,7 @@ export function Payroll() {
                         <TableHead className="text-center w-[110px]">Payout Ready</TableHead>
                         <TableHead>Position / Department</TableHead>
                         <TableHead>Payroll Account</TableHead>
+                        <TableHead className="text-center w-[80px]">Work Day</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Net Salary</TableHead>
                         <TableHead>Total Earnings</TableHead>
@@ -3226,13 +3227,13 @@ export function Payroll() {
                     <TableBody>
                       {batchItemsLoading ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 13 : 9} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 14 : 10} className="text-center py-8 text-gray-400">
                             Loading payroll items…
                           </TableCell>
                         </TableRow>
                       ) : detailRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 13 : 9} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 14 : 10} className="text-center py-8 text-gray-400">
                             No items in this batch
                           </TableCell>
                         </TableRow>
@@ -3291,6 +3292,14 @@ export function Payroll() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
+                      {/* Work days — populated by the draft Adjust popup.
+                          Null on legacy items / batches created before
+                          V278 renders as em-dash. */}
+                      <TableCell className="text-center text-sm tabular-nums">
+                        {(record as PayrollItem).workDays != null
+                          ? String((record as PayrollItem).workDays)
+                          : <span className="text-gray-300">—</span>}
+                      </TableCell>
                       <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
                       <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
@@ -3305,14 +3314,14 @@ export function Payroll() {
                             recompute server-side on save. */}
                         {selectedBatch?.status === 'draft' && (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="mr-2"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 mr-1 text-gray-600 hover:text-gray-900"
                             onClick={() => openAdjustPopup(record)}
                             title="Adjust workdays / base salary for this employee"
+                            aria-label="Adjust"
                           >
-                            <Pencil className="h-3.5 w-3.5 mr-1" />
-                            Adjust
+                            <Pencil className="h-4 w-4" />
                           </Button>
                         )}
                         <Dialog>
@@ -3322,7 +3331,7 @@ export function Payroll() {
                               size="sm"
                               onClick={() => setSelectedPayslip(record)}
                             >
-                              View Payslip
+                              View
                             </Button>
                           </DialogTrigger>
                           <DialogContent className="max-w-2xl">
