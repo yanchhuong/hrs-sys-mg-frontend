@@ -35,6 +35,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
+import { makeThumbnailFromUrl } from '../../utils/imageCompress';
 
 interface FormState {
   sku: string;
@@ -367,6 +368,16 @@ export function Items() {
 
     setSaving(true);
     try {
+      // V280 — regenerate the small thumbnail from the cover on
+      // every save so it stays in sync with imageUrls[0]. Empty
+      // list → clear the thumbnail column too. makeThumbnailFromUrl
+      // returns the source unchanged when the source is already
+      // smaller than the target edge (rare), so no extra bytes.
+      const coverForThumb = form.imageUrls[0] ?? '';
+      const imageThumbUrl = coverForThumb
+        ? await makeThumbnailFromUrl(coverForThumb).catch(() => '')
+        : '';
+
       const payload: itemsApi.ItemRequest = {
         sku: form.sku.trim() || undefined,
         name,
@@ -381,6 +392,7 @@ export function Items() {
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
         imageUrls: form.imageUrls,
+        imageThumbUrl,
         category: form.category,
         // Serialise the typed groups back to a JSON string. Empty
         // groups → '' so the server NULLs the column.
@@ -835,9 +847,9 @@ export function Items() {
                           {it.sku || <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell>
-                          {it.imageUrl ? (
+                          {(it.imageThumbUrl || it.imageUrl) ? (
                             <ThumbnailImage
-                              src={it.imageUrl}
+                              src={it.imageThumbUrl || it.imageUrl!}
                               alt={it.name}
                               className="h-10 w-10 rounded-md object-cover border border-gray-200"
                               onError={() => { /* placeholder handled by parent CSS */ }}

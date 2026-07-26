@@ -1509,7 +1509,11 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
   // Track load failure so a broken URL doesn't keep retrying — once
   // the browser errors out we swap to the placeholder permanently.
   const [broken, setBroken] = useState(false);
-  const showImage = !!item.imageUrl && !broken;
+  // V280 — prefer the small thumbnail (~15 KB) over the full cover
+  // (~200 KB) when the server supplied one. Legacy items still land
+  // here via imageUrl.
+  const coverSrc = item.imageThumbUrl || item.imageUrl;
+  const showImage = !!coverSrc && !broken;
   return (
     <button
       type="button"
@@ -1519,7 +1523,7 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
       <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
         {showImage ? (
           <ThumbnailImage
-            src={item.imageUrl!}
+            src={coverSrc!}
             alt={item.name}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
             onError={() => setBroken(true)}

@@ -1533,7 +1533,9 @@ function PublicShopCard({
   orderingDisabled?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
-  const cover = shopApi.itemImages(item)[0] ?? '';
+  // V280 — prefer the small thumbnail (~15 KB) over the full cover
+  // (~200 KB). Legacy items with no thumb fall back to imageUrls[0].
+  const cover = item.imageThumbUrl || shopApi.itemImages(item)[0] || '';
   const showImage = !!cover && !broken;
   const totalImages = shopApi.itemImages(item).length;
   return (

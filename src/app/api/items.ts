@@ -35,6 +35,12 @@ export interface Item {
    *  the single-image column populated; treat as `[imageUrl]` in that
    *  case (see {@link resolveImages}). */
   imageUrls?: string[] | null;
+  /** V280 — small (~15 KB, ~200 px) base64 thumbnail. Rendered on
+   *  every list surface (POS grid, Items table, Public Shop card)
+   *  so the list response can ship a tiny cover per row instead
+   *  of the full 200 KB image. Null on legacy items; readers fall
+   *  back to {@link imageUrl}. */
+  imageThumbUrl?: string | null;
   /** POS category — drives the filter tabs on the items grid. (V142) */
   category?: ItemCategory;
   /** Per-item modifier groups as a JSON string (V142). Parse with
@@ -139,6 +145,10 @@ export interface ItemRequest {
    *  update leaves existing images untouched (patch); an empty array
    *  clears every image. */
   imageUrls?: string[];
+  /** V280 — small base64 thumbnail. FE generates from imageUrls[0]
+   *  at save time and sends it here so list responses can ship a
+   *  tiny cover. Undefined leaves existing; empty string clears. */
+  imageThumbUrl?: string;
   /** POS category (V142). Undefined on update = leave as-is. */
   category?: ItemCategory;
   /** Modifiers JSON (V142). Empty string clears; undefined on update

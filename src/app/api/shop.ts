@@ -28,6 +28,9 @@ export interface PublicShopItem {
   /** V265 — full ordered image list. Null / omitted on legacy items;
    *  the FE falls back to [imageUrl] via {@link itemImages}. */
   imageUrls?: string[] | null;
+  /** V280 — small base64 thumbnail rendered on the storefront tiles.
+   *  Falls back to {@link imageUrl} on legacy items. */
+  imageThumbUrl?: string | null;
   category: 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'jewelry' | 'other' | string;
   inStock: boolean;
   /** Modifier groups JSON string (Size / Sugar Level / etc.). Same

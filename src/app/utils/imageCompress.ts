@@ -56,6 +56,51 @@ function edges(source: HTMLImageElement | ImageBitmap): { w: number; h: number }
   };
 }
 
+/**
+ * Downscale an existing data-URL (or http URL) image to a small
+ * base64 thumbnail. Used at save time to produce the tiny cover
+ * that list surfaces render — POS grid tile, Items table row,
+ * Public Shop card — so the item-list JSON doesn't have to ship
+ * the full-size cover per row.
+ *
+ * ~200 px longest edge at Q65 lands around 10-15 KB per photo.
+ * Callers pass the {@link imageUrls}[0] cover; legacy items that
+ * only have an http URL work too (browsers load it via <img>).
+ *
+ * Returns the original URL unchanged if it's already smaller than
+ * the thumbnail edge — no point re-encoding a 128 px icon.
+ */
+export async function makeThumbnailFromUrl(
+  src: string,
+  edge = 200,
+  quality = 0.65,
+): Promise<string> {
+  if (!src) return src;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = 'anonymous';
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('Could not decode image for thumbnail'));
+    el.src = src;
+  });
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const scale = Math.min(1, edge / Math.max(srcW, srcH));
+  if (scale >= 1) return src;   // already small enough — no thumbnail needed
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return src;
+  ctx.drawImage(img, 0, 0, w, h);
+  const blob: Blob | null = await new Promise(res =>
+    canvas.toBlob(res, 'image/jpeg', quality));
+  if (!blob) return src;
+  return await blobToDataUrl(blob);
+}
+
 /** Compress a picked File to a base64 data URL. Preserves PNG when
  *  the source is PNG (probably has alpha); otherwise emits JPEG. */
 export async function compressImageToDataUrl(file: File): Promise<string> {
