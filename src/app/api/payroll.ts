@@ -160,7 +160,16 @@ export async function submitBatch(id: string): Promise<PayrollBatch> {
 export async function updateDraftItem(
   batchId: string,
   itemId: string,
-  patch: { baseSalary?: number; workDays?: number | null },
+  patch: {
+    baseSalary?: number;
+    workDays?: number | null;
+    /** Send only for Per-Day proration so the server can reflect
+     *  every derivative field (Tax, NSSF, allowances) in lock-step
+     *  with the prorated base. Omit for a plain Per-Month base
+     *  override — the server falls back to delta-only math. */
+    totalEarnings?: number;
+    deductions?: number;
+  },
 ): Promise<PayrollItem> {
   return apiJson(`/api/v1/payroll/batches/${batchId}/items/${itemId}`, {
     method: 'PATCH',

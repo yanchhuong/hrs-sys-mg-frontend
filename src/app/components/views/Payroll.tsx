@@ -1770,6 +1770,8 @@ export function Payroll() {
       return;
     }
     let workDays: number | null = null;
+    let proratedTotalEarnings: number | undefined;
+    let proratedDeductions: number | undefined;
     if (adjustPayType === 'day') {
       const wdNum = Number(adjustWorkDays.trim());
       if (!Number.isFinite(wdNum) || wdNum <= 0 || wdNum > 31) {
@@ -1777,20 +1779,36 @@ export function Payroll() {
         return;
       }
       workDays = wdNum;
-      // Per-day payment: recompute the prorated base from the employee's
-      // monthly base × workDays / standardDays so HR's edit in the
-      // popup translates into a real salary change on the row.
       const emp = employees.find(
         e => e.id === adjustTarget.employeeId || (e as Employee).apiId === adjustTarget.employeeId,
       );
-      const monthlyBase = emp?.baseSalary ?? adjustTarget.baseSalary ?? base;
+      const monthlyBase = Number(emp?.baseSalary ?? adjustTarget.baseSalary ?? base);
       const std = calcStandardWorkDays(
         adjustTarget.month ?? selectedBatch.monthYear,
         attendanceGeneral.weekendDays,
         attendanceGeneral.halfDayDays,
       );
       if (std > 0) {
-        base = Math.round((Number(monthlyBase) * wdNum / std) * 100) / 100;
+        // Per-day proration factor. Apply to base + total-earnings +
+        // deductions so tax / NSSF / allowances scale in lock-step —
+        // otherwise a row with $392 of deductions on a $785 base
+        // ends up at Net = $341 − $392 = −$51 after the base drops.
+        //
+        // Reset step: if the row was already prorated by a prior
+        // Adjust (workDays != null on adjustTarget), first un-scale
+        // the current totalEarnings / deductions back to their
+        // monthly equivalents so the new factor doesn't compound
+        // with the old one.
+        const priorFactor = adjustTarget.workDays != null && adjustTarget.workDays > 0
+          ? Number(adjustTarget.workDays) / std
+          : 1;
+        const monthlyTotalEarnings = Number(adjustTarget.totalEarnings ?? monthlyBase) / (priorFactor || 1);
+        const monthlyDeductions = Number(adjustTarget.deductions ?? 0) / (priorFactor || 1);
+
+        const factor = wdNum / std;
+        base = Math.round(monthlyBase * factor * 100) / 100;
+        proratedTotalEarnings = Math.round(monthlyTotalEarnings * factor * 100) / 100;
+        proratedDeductions = Math.round(monthlyDeductions * factor * 100) / 100;
       }
     }
     setAdjustSaving(true);
@@ -1798,6 +1816,8 @@ export function Payroll() {
       const updated = await payrollApi.updateDraftItem(selectedBatch.id, adjustTarget.id, {
         baseSalary: base,
         workDays,
+        totalEarnings: proratedTotalEarnings,
+        deductions: proratedDeductions,
       });
       setBatchItems(prev => prev.map(it => it.id === updated.id ? { ...it, ...updated } as PayrollItem : it));
       toast.success('Row updated. Batch totals recalculated.');
