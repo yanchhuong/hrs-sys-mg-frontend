@@ -48,7 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit } from 'lucide-react';
 import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
@@ -239,6 +239,14 @@ export function Payroll() {
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<PayrollBatch | null>(null);
+  /** Draft workflow (V278) — row being edited in the Adjust popup, and
+   *  the local draft of the workDays / baseSalary numbers. Clearing
+   *  {@link adjustTarget} closes the popup. */
+  const [adjustTarget, setAdjustTarget] = useState<PayrollItem | null>(null);
+  const [adjustWorkDays, setAdjustWorkDays] = useState<string>('');
+  const [adjustBaseSalary, setAdjustBaseSalary] = useState<string>('');
+  const [adjustSaving, setAdjustSaving] = useState(false);
+  const [submitDraftPending, setSubmitDraftPending] = useState(false);
   // Items belonging to the currently-opened batch — fetched on demand from
   // `/payroll/batches/{id}/items`. Adapted to the local PayrollItem shape so
   // the existing detail table + payslip dialog keep rendering as before.
@@ -1178,7 +1186,7 @@ export function Payroll() {
    * directly-generated batch always carry identical numbers — Tax /
    * NSSF / 1st-Salary clawback / 2nd-Salary clawback etc.
    */
-  const handleComposeBatch = async (mode: 'download' | 'generate') => {
+  const handleComposeBatch = async (mode: 'download' | 'generate', asDraft = false) => {
     // Use the upload dialog MM/YYYY values, fall back to current month/year.
     const month = periodStart ? String(periodStart).padStart(2, '0') : format(new Date(), 'MM');
     const year = periodEnd || format(new Date(), 'yyyy');
@@ -1644,8 +1652,10 @@ export function Payroll() {
         currency: 'USD',
         approverIds: batchApproverIds.length > 0 ? batchApproverIds : undefined,
         items,
-      });
-      toast.success(`Payroll batch "${batchName}" generated for ${activeEmployees.length} employees`);
+      }, asDraft);
+      toast.success(asDraft
+        ? `Draft "${batchName}" saved — open it to adjust workdays before submitting.`
+        : `Payroll batch "${batchName}" generated for ${activeEmployees.length} employees`);
       resetUploadDialog();
       await loadBatches();
     } catch (err) {
@@ -1657,6 +1667,64 @@ export function Payroll() {
   // Generate-Payroll button (page header) opens the dialog; the dialog's
   // bottom Generate button then runs handleComposeBatch('generate').
   const handleDownloadTemplate = () => handleComposeBatch('download');
+
+  // Draft workflow (V278) --------------------------------------------------
+  // Flip a draft batch to pending / approved. Backend enforces uploader
+  // check + status guard; FE surfaces the resulting toast.
+  const handleSubmitDraft = async () => {
+    if (!selectedBatch || selectedBatch.status !== 'draft') return;
+    setSubmitDraftPending(true);
+    try {
+      const updated = await payrollApi.submitBatch(selectedBatch.id);
+      toast.success(`Submitted "${selectedBatch.subject}" — status is now ${updated.status}.`);
+      setSelectedBatch(adaptApiBatch(updated));
+      await loadBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit draft');
+    } finally {
+      setSubmitDraftPending(false);
+    }
+  };
+
+  const openAdjustPopup = (row: PayrollItem) => {
+    setAdjustTarget(row);
+    setAdjustWorkDays(row.workDays != null ? String(row.workDays) : '');
+    setAdjustBaseSalary(String(row.baseSalary ?? 0));
+  };
+
+  const handleSaveAdjust = async () => {
+    if (!selectedBatch || !adjustTarget) return;
+    const base = Number(adjustBaseSalary);
+    if (!Number.isFinite(base) || base < 0) {
+      toast.error('Base salary must be 0 or more.');
+      return;
+    }
+    const wdRaw = adjustWorkDays.trim();
+    const workDays = wdRaw === '' ? null : Number(wdRaw);
+    if (workDays != null && (!Number.isFinite(workDays) || workDays < 0 || workDays > 31)) {
+      toast.error('Work days must be between 0 and 31 (blank = not tracked).');
+      return;
+    }
+    setAdjustSaving(true);
+    try {
+      const updated = await payrollApi.updateDraftItem(selectedBatch.id, adjustTarget.id, {
+        baseSalary: base,
+        workDays,
+      });
+      setBatchItems(prev => prev.map(it => it.id === updated.id ? { ...it, ...updated } as PayrollItem : it));
+      toast.success('Row updated. Batch totals recalculated.');
+      setAdjustTarget(null);
+      // Refresh the batch header numbers (totalEarnings / net).
+      try {
+        const fresh = await payrollApi.getBatch(selectedBatch.id);
+        setSelectedBatch(adaptApiBatch(fresh));
+      } catch { /* soft — table already reflects the delta */ }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save row');
+    } finally {
+      setAdjustSaving(false);
+    }
+  };
 
   const calculateOTRate = (baseSalary: number) => {
     const hourlyRate = baseSalary / 160;
@@ -2223,16 +2291,31 @@ export function Payroll() {
                       Cancel
                     </Button>
                     {uploadDialogMode === 'generate' ? (
-                      <Button
-                        onClick={() => handleComposeBatch('generate')}
-                        disabled={!batchName.trim() || !periodStart || !periodEnd}
-                        title={!batchName.trim() || !periodStart || !periodEnd
-                          ? 'Subject + Period are required'
-                          : undefined}
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        Generate Payroll
-                      </Button>
+                      <>
+                        {/* Save as Draft — same composer, but the batch
+                            lands in status='draft'. HR opens the details
+                            view, adjusts workDays / baseSalary per
+                            employee, then hits Submit for Approval. */}
+                        <Button
+                          variant="outline"
+                          onClick={() => handleComposeBatch('generate', true)}
+                          disabled={!batchName.trim() || !periodStart || !periodEnd}
+                          title="Save the batch as a draft so you can review + adjust workdays per employee before submitting for approval"
+                        >
+                          <FileEdit className="mr-2 h-4 w-4" />
+                          Save as Draft
+                        </Button>
+                        <Button
+                          onClick={() => handleComposeBatch('generate')}
+                          disabled={!batchName.trim() || !periodStart || !periodEnd}
+                          title={!batchName.trim() || !periodStart || !periodEnd
+                            ? 'Subject + Period are required'
+                            : undefined}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Generate Payroll
+                        </Button>
+                      </>
                     ) : (
                       <Button
                         onClick={handleUploadPayroll}
@@ -2519,6 +2602,7 @@ export function Payroll() {
       {isAdminOrManager && !selectedBatch && (() => {
         const statusCounts: Record<'all' | PayrollBatchStatus, number> = {
           all: batches.length,
+          draft: batches.filter(b => b.status === 'draft').length,
           pending: batches.filter(b => b.status === 'pending').length,
           approved: batches.filter(b => b.status === 'approved').length,
           done: batches.filter(b => b.status === 'done').length,
@@ -2568,6 +2652,12 @@ export function Payroll() {
                     All
                     <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{statusCounts.all}</Badge>
                   </TabsTrigger>
+                  {statusCounts.draft > 0 && (
+                    <TabsTrigger value="draft">
+                      Draft
+                      <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-100">{statusCounts.draft}</Badge>
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="pending">
                     Pending
                     <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
@@ -2910,9 +3000,26 @@ export function Payroll() {
                     })}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {/* Submit for Approval — draft-only, uploader-only.
+                    Backend enforces both; FE just hides the button so
+                    the wrong operator doesn't see it. */}
+                {selectedBatch.status === 'draft' &&
+                  (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
+                  <Button
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={handleSubmitDraft}
+                    disabled={submitDraftPending}
+                  >
+                    <Send className="mr-1.5 h-4 w-4" />
+                    {submitDraftPending ? 'Submitting…' : 'Submit for Approval'}
+                  </Button>
+                )}
                 <Badge className={
                   selectedBatch.status === 'approved'
                     ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                    : selectedBatch.status === 'draft'
+                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-100'
                     : selectedBatch.status === 'processed'
                     ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
                     : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
@@ -3192,6 +3299,22 @@ export function Payroll() {
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>}
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>}
                       <TableCell>
+                        {/* Adjust — draft-only. Uploader edits workDays
+                            / baseSalary for this row in a small popup.
+                            Batch aggregates and total earnings/net
+                            recompute server-side on save. */}
+                        {selectedBatch?.status === 'draft' && (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mr-2"
+                            onClick={() => openAdjustPopup(record)}
+                            title="Adjust workdays / base salary for this employee"
+                          >
+                            <Pencil className="h-3.5 w-3.5 mr-1" />
+                            Adjust
+                          </Button>
+                        )}
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button
@@ -3232,6 +3355,70 @@ export function Payroll() {
           </CardContent>
         </Card>
       )}
+
+      {/* Draft row Adjust dialog (V278) — workDays + baseSalary. */}
+      <Dialog open={!!adjustTarget} onOpenChange={(o) => { if (!o) setAdjustTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adjust workdays</DialogTitle>
+            <DialogDescription>
+              Base salary is calculated per your Payroll Category settings.
+              Change the working days here when an employee didn't reach the
+              standard month (e.g. mid-month hire, unpaid leave). Optionally
+              override the base salary too — the batch totals recalculate on
+              save.
+            </DialogDescription>
+          </DialogHeader>
+          {adjustTarget && (() => {
+            const emp = employees.find(
+              e => e.id === adjustTarget.employeeId || (e as Employee).apiId === adjustTarget.employeeId,
+            );
+            return (
+              <div className="space-y-4">
+                <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm">
+                  <div className="font-medium">{emp?.name ?? '—'}</div>
+                  <div className="text-xs text-gray-500">{emp?.id ?? '—'} · {adjustTarget.month}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="adjust-workdays" className="text-xs">Work days</Label>
+                    <Input
+                      id="adjust-workdays"
+                      type="number"
+                      min={0}
+                      max={31}
+                      step={0.5}
+                      placeholder="e.g. 22"
+                      value={adjustWorkDays}
+                      onChange={e => setAdjustWorkDays(e.target.value)}
+                    />
+                    <p className="text-[11px] text-gray-500">Blank = not tracked</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="adjust-base" className="text-xs">Base salary (override)</Label>
+                    <Input
+                      id="adjust-base"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={adjustBaseSalary}
+                      onChange={e => setAdjustBaseSalary(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustTarget(null)} disabled={adjustSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveAdjust} disabled={adjustSaving}>
+              {adjustSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Approve batch — confirmation */}
       <AlertDialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>
@@ -3757,6 +3944,7 @@ function ApproverPicker({
 // ---------------------------------------------------------------------------
 function StatusBadge({ status }: { status: PayrollBatchStatus }) {
   const map: Record<PayrollBatchStatus, { label: string; cls: string; Icon: typeof Clock }> = {
+    draft:    { label: 'Draft',    cls: 'bg-slate-100 text-slate-700 hover:bg-slate-100',    Icon: FileEdit },
     pending:  { label: 'Pending',  cls: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100', Icon: Clock },
     approved: { label: 'Approved', cls: 'bg-blue-100 text-blue-800 hover:bg-blue-100',       Icon: Check },
     done:     { label: 'Done',     cls: 'bg-green-100 text-green-800 hover:bg-green-100',    Icon: Wallet },

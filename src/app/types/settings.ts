@@ -157,7 +157,7 @@ export interface PayrollCategory {
   applicableSalaryTypes?: PayrollSalaryTypeToken[];
 }
 
-export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';
+export type PayrollBatchStatus = 'draft' | 'pending' | 'approved' | 'done' | 'rejected';
 
 export interface PayrollBatch {
   id: string;

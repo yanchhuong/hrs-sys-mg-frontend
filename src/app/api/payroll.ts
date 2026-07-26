@@ -1,6 +1,6 @@
 import { apiJson, apiVoid } from './client';
 
-export type PayrollBatchStatus = 'pending' | 'approved' | 'done' | 'rejected';
+export type PayrollBatchStatus = 'draft' | 'pending' | 'approved' | 'done' | 'rejected';
 
 export interface PayrollBatch {
   id: string;
@@ -51,6 +51,9 @@ export interface PayrollItem {
   employeeName?: string;
   month: string;
   baseSalary: number;
+  /** Days worked in {@link month}. Null = not tracked (legacy items).
+   *  Editable while the owning batch is in 'draft'. */
+  workDays?: number | null;
   otHours?: number;
   otPay?: number;
   totalEarnings: number;
@@ -138,8 +141,31 @@ export async function getBatchItems(id: string, params: { size?: number } = {}):
   return res.data;
 }
 
-export async function createBatch(req: CreateBatchRequest): Promise<PayrollBatch> {
-  return apiJson('/api/v1/payroll/batches', { method: 'POST', json: req });
+export async function createBatch(req: CreateBatchRequest, draft = false): Promise<PayrollBatch> {
+  return apiJson('/api/v1/payroll/batches', {
+    method: 'POST',
+    json: req,
+    query: draft ? { draft: true } : undefined,
+  });
+}
+
+/** Promote a draft batch to pending / approved. */
+export async function submitBatch(id: string): Promise<PayrollBatch> {
+  return apiJson(`/api/v1/payroll/batches/${id}/submit`, { method: 'POST' });
+}
+
+/** Patch a single row on a draft batch — used by the "Adjust" popup on
+ *  the batch details view. Only the uploader may call this and only
+ *  while the batch is still in draft. */
+export async function updateDraftItem(
+  batchId: string,
+  itemId: string,
+  patch: { baseSalary?: number; workDays?: number | null },
+): Promise<PayrollItem> {
+  return apiJson(`/api/v1/payroll/batches/${batchId}/items/${itemId}`, {
+    method: 'PATCH',
+    json: patch,
+  });
 }
 
 export async function approveBatch(id: string): Promise<PayrollBatch> {
