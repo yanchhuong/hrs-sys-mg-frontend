@@ -781,6 +781,10 @@ export function Payroll() {
           employeeId: it.employeeId,
           month: it.month ?? selectedBatch.monthYear,
           baseSalary: Number(it.baseSalary ?? 0),
+          // V278 — carry workDays through so the Type column ('Daily'
+          // vs 'Monthly') survives a page reload and the Adjust popup
+          // pre-fills correctly on a second open.
+          workDays: it.workDays != null ? Number(it.workDays) : null,
           otHours: Number(it.otHours ?? 0),
           otPay: Number(it.otPay ?? 0),
           deductions: Number(it.deductions ?? 0),
@@ -3297,6 +3301,7 @@ export function Payroll() {
                         <TableHead className="text-center w-[110px]">Payout Ready</TableHead>
                         <TableHead>Position / Department</TableHead>
                         <TableHead>Payroll Account</TableHead>
+                        <TableHead className="text-center w-[90px]">Type</TableHead>
                         <TableHead className="text-center w-[80px]">Work Day</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Net Salary</TableHead>
@@ -3311,13 +3316,13 @@ export function Payroll() {
                     <TableBody>
                       {batchItemsLoading ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 14 : 10} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 15 : 11} className="text-center py-8 text-gray-400">
                             Loading payroll items…
                           </TableCell>
                         </TableRow>
                       ) : detailRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 14 : 10} className="text-center py-8 text-gray-400">
+                          <TableCell colSpan={dispatchEnabled ? 15 : 11} className="text-center py-8 text-gray-400">
                             No items in this batch
                           </TableCell>
                         </TableRow>
@@ -3376,6 +3381,17 @@ export function Payroll() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{record.payrollAccount || '-'}</TableCell>
+                      {/* Type — 'Daily' when the row has an explicit
+                          workDays override (set via Adjust → Per Day),
+                          'Monthly' otherwise. Drives how the base
+                          salary was computed on the server. */}
+                      <TableCell className="text-center">
+                        {(record as PayrollItem).workDays != null ? (
+                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px]">Daily</Badge>
+                        ) : (
+                          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-[10px]">Monthly</Badge>
+                        )}
+                      </TableCell>
                       {/* Work days — explicit override from the Adjust
                           popup wins; otherwise fall through to the
                           standard for the batch's month calculated
