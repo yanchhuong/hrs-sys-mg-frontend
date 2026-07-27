@@ -51,7 +51,15 @@ const HEADERS = [
   'Active',         // K — Yes / No, defaults Yes
   'Stock IN/OUT',   // L — Yes / No, defaults No. When Yes: Invoices & POS decrement (OUT), Bills increment (IN).
   'Warehouse',      // M — optional. Warehouse NAME (V149); the importer resolves it to the UUID at upload time.
+  'Image URL',      // N — optional. Data URL (data:image/…;base64,…) or http(s) URL. Header matches the exporter (Items.tsx export column) so round-trip works.
 ] as const;
+
+/** Excel's per-cell character limit — 32,767 chars in the .xlsx spec.
+ *  Long base64 data URLs get silently truncated by Excel at this point,
+ *  which corrupts the image. The compression pipeline (512 px / Q70)
+ *  lands typical photos around 15–25 KB, so this is a safety-net check
+ *  for out-of-band strings pasted by hand. */
+const EXCEL_CELL_MAX = 32_767;
 
 const ALLOWED_POS_CATEGORIES: ReadonlySet<string> =
   new Set<ItemCategory>(['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other']);
@@ -195,6 +203,18 @@ function parseRow(
     ? warehouseByName.get(warehouseName.toLowerCase())
     : undefined;
 
+  // V-bulk-image — read the Image URL cell. Accepts either a base64
+  // data URL (round-tripped from the exporter) or a public http(s)
+  // URL. Anything else is treated as garbage and warned on. Empty
+  // cell means "no image", which is the common case.
+  const imageCell = readString(row['Image URL']);
+  let parsedImage: string | undefined;
+  if (imageCell) {
+    if (imageCell.startsWith('data:image/') || /^https?:\/\//i.test(imageCell)) {
+      parsedImage = imageCell;
+    }
+  }
+
   const rec: ParsedItemRow = {
     rowNumber: excelRow,
     data: {
@@ -211,6 +231,10 @@ function parseRow(
       itemCategory: itemCategory || undefined,
       category: (posCategoryRaw as ItemCategory) || undefined,
       warehouseId: matchedWarehouse?.id ?? undefined,
+      // V265 — imageUrls is the ordered list; the first entry is the
+      // product-card cover. BE derives the legacy image_url column
+      // from imageUrls[0] so existing readers keep working.
+      imageUrls: parsedImage ? [parsedImage] : undefined,
     },
     errors: [],
     warnings: [],
@@ -218,6 +242,20 @@ function parseRow(
   if (warehouseName && !matchedWarehouse) {
     rec.warnings.push(
       `Warehouse "${warehouseName}" doesn't match any configured warehouse — row will import without a warehouse assignment.`,
+    );
+  }
+  if (imageCell && !parsedImage) {
+    rec.warnings.push(
+      'Image URL cell does not look like a data:image/… URL or http(s) link — row will import without an image.',
+    );
+  }
+  // Excel silently truncates cells over 32,767 chars, corrupting the
+  // base64. Warn (not error) so the row still imports if the operator
+  // is OK saving without the image; the toast at parse time also
+  // surfaces this so the fix is obvious.
+  if (imageCell && imageCell.length >= EXCEL_CELL_MAX - 8) {
+    rec.warnings.push(
+      `Image URL is near or at Excel's 32,767-character cell limit and may be truncated — the image could look corrupted. Use a smaller photo (the app compresses to ~15–25 KB; larger source images produce longer strings).`,
     );
   }
 
@@ -245,10 +283,15 @@ export function downloadItemTemplate(): void {
   const wb = XLSX.utils.book_new();
 
   const sample: (string | number)[][] = [
-    ['PR-001', 'Cappuccino',        'Classic Italian espresso with steamed milk', 'Coffee',    'drink', 'cup', 0.80, 1.50, 20, 5,  'Yes', 'No',  'Main Store'],
-    ['PR-002', 'Americano',         'Espresso topped with hot water',              'Coffee',    'drink', 'cup', 0.60, 1.50, 30, 5,  'Yes', 'No',  'Main Store'],
-    ['PR-003', 'Macha Latte',       'Matcha green tea whisked with steamed milk',  'Tea',       'drink', 'cup', 1.10, 1.50, 15, 5,  'Yes', 'No',  'Main Store'],
-    ['SNK-01', 'Chocolate Croissant', 'Buttery pastry with chocolate filling',     'Bakery',    'snack', 'pcs', 0.90, 2.00, 10, 3,  'Yes', 'Yes', 'Warehouse A'],
+    // Image URL column intentionally blank on the template. Populating
+    // it with a real base64 data URL would blow the template up to
+    // megabytes and swamp the Image cell (32 KB Excel cell limit).
+    // Operators fill it by round-tripping — download the existing
+    // catalog via the Export button, edit rows, re-upload here.
+    ['PR-001', 'Cappuccino',        'Classic Italian espresso with steamed milk', 'Coffee',    'drink', 'cup', 0.80, 1.50, 20, 5,  'Yes', 'No',  'Main Store',  ''],
+    ['PR-002', 'Americano',         'Espresso topped with hot water',              'Coffee',    'drink', 'cup', 0.60, 1.50, 30, 5,  'Yes', 'No',  'Main Store',  ''],
+    ['PR-003', 'Macha Latte',       'Matcha green tea whisked with steamed milk',  'Tea',       'drink', 'cup', 1.10, 1.50, 15, 5,  'Yes', 'No',  'Main Store',  ''],
+    ['SNK-01', 'Chocolate Croissant', 'Buttery pastry with chocolate filling',     'Bakery',    'snack', 'pcs', 0.90, 2.00, 10, 3,  'Yes', 'Yes', 'Warehouse A', ''],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
@@ -270,6 +313,7 @@ export function downloadItemTemplate(): void {
     ['Active',          'Optional. Yes / No (accepts Y/N, True/False, 1/0). Defaults Yes on the server.'],
     ['Stock IN/OUT',    'Optional. When Yes: Invoices & POS lines with this item decrement stock (OUT), Bills increment (IN). Defaults No.'],
     ['Warehouse',       'Optional. Warehouse NAME as configured under Stock → Warehouses (case-insensitive). Leave blank for no assignment. Unknown names skip the assignment with a warning — the row still imports.'],
+    ['Image URL',       'Optional. Either a data URL ("data:image/jpeg;base64,…") or an http(s) link. The easiest way to get it: click Export on the Items page, edit the rows in Excel, then re-upload here — data URLs travel round-trip. Excel caps a single cell at 32,767 characters; the app compresses uploads to ~15–25 KB per image which fits well inside. Larger source images may be truncated and produce a broken image.'],
   ];
   const gws = XLSX.utils.aoa_to_sheet(guide);
   gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
