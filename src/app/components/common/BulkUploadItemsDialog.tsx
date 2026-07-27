@@ -265,7 +265,7 @@ export function BulkUploadItemsDialog({
       }
       onOpenChange(o);
     }}>
-      <DialogContent className="max-w-4xl flex flex-col max-h-[90vh] p-0 gap-0">
+      <DialogContent className="max-w-[96vw] xl:max-w-6xl flex flex-col max-h-[95vh] p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
