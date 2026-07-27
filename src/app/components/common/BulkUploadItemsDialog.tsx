@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import { Progress } from '../ui/progress';
 import {
@@ -88,6 +88,14 @@ export function BulkUploadItemsDialog({
   // emit warnings — the operator sees why nothing landed and can
   // enable the feature under Items → Settings before re-uploading.
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+  // Reverse lookup for the preview table's Warehouse column — parser
+  // stores the UUID after resolving the name; the table shows the name
+  // back so operators recognise it at a glance.
+  const warehouseNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of warehouses) m.set(w.id, w.name);
+    return m;
+  }, [warehouses]);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -408,6 +416,7 @@ export function BulkUploadItemsDialog({
                     <th className="text-right px-3 py-2 font-medium w-20">Cost</th>
                     <th className="text-right px-3 py-2 font-medium w-20">Price</th>
                     <th className="text-right px-3 py-2 font-medium w-16">Stock</th>
+                    <th className="text-left px-3 py-2 font-medium w-28">Warehouse</th>
                     <th className="text-left px-3 py-2 font-medium">Issues</th>
                   </tr>
                 </thead>
@@ -471,6 +480,11 @@ export function BulkUploadItemsDialog({
                           ) : (
                             r.data.stockQty != null ? r.data.stockQty : ''
                           )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {r.data.warehouseId
+                            ? (warehouseNameById.get(r.data.warehouseId) ?? '—')
+                            : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2 max-w-[240px]">
                           {isFailed ? (
