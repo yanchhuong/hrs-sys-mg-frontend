@@ -2477,44 +2477,53 @@ function InvoiceDetailDialog({
                 <Button size="sm" variant="outline" onClick={() => { void printInvoiceOrReceipt(invoice); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="sm" variant="outline"
-                      disabled={invoice.status === 'draft' || telegramBusy}
-                      title={invoice.status === 'draft'
-                        ? 'Issue the invoice before sending'
-                        : 'Send invoice to the customer'}
-                    >
-                      {telegramBusy ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <Send className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      {telegramBusy ? 'Sending…' : 'Send'}
-                      <ChevronDown className="h-3 w-3 ml-1.5 opacity-70" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuItem onSelect={() => setMailDialogOpen(true)}>
-                      <Mail className="h-4 w-4 mr-2 text-blue-600" />
-                      Email
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        // Keep the menu's auto-close from firing the
-                        // handler twice, then drive the spinner
-                        // ourselves via telegramBusy.
-                        e.preventDefault();
-                        if (!telegramBusy) void sendViaTelegram();
-                      }}
-                      disabled={telegramBusy}
-                    >
-                      <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
-                      Telegram
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* v-invoice-void-hide-send — hide the entire Send
+                    dropdown for void invoices. A void invoice
+                    represents "this document is cancelled and no
+                    longer receivable"; emailing or Telegramming it
+                    to the customer would give them a broken link
+                    (BE public view refuses void invoices with 404)
+                    and a confusing message. */}
+                {invoice.status !== 'void' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm" variant="outline"
+                        disabled={invoice.status === 'draft' || telegramBusy}
+                        title={invoice.status === 'draft'
+                          ? 'Issue the invoice before sending'
+                          : 'Send invoice to the customer'}
+                      >
+                        {telegramBusy ? (
+                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        {telegramBusy ? 'Sending…' : 'Send'}
+                        <ChevronDown className="h-3 w-3 ml-1.5 opacity-70" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem onSelect={() => setMailDialogOpen(true)}>
+                        <Mail className="h-4 w-4 mr-2 text-blue-600" />
+                        Email
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          // Keep the menu's auto-close from firing the
+                          // handler twice, then drive the spinner
+                          // ourselves via telegramBusy.
+                          e.preventDefault();
+                          if (!telegramBusy) void sendViaTelegram();
+                        }}
+                        disabled={telegramBusy}
+                      >
+                        <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
+                        Telegram
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 {/* Edit available only on draft + progress per the
                     legal-document rule — paid / partially / overdue /
                     void rows must be adjusted via a credit or debit

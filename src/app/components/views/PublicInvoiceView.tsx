@@ -3,7 +3,8 @@ import { apiJson } from '../../api/client';
 import type { Invoice } from '../../api/invoices';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Loader2, Printer } from 'lucide-react';
+import { Input } from '../ui/input';
+import { Loader2, Printer, ShieldCheck } from 'lucide-react';
 
 /** V271 — /invoice/view/:id — anonymous invoice view rendered from the
  *  same Cambodian tax invoice template that {@code
@@ -51,43 +52,104 @@ export function PublicInvoiceView() {
   }, []);
 
   const [data, setData] = useState<PublicInvoiceBundle | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // V-invoice-code-gate — recipient types the invoice number ("Code")
+  // into this gate before the view unlocks. Prevents a forwarded link
+  // from being opened by anyone who doesn't also have the PDF / paper
+  // copy where the number appears.
+  const [code, setCode] = useState('');
+  const [gateErr, setGateErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Fatal errors — invoice missing / voided / expired. Separate from
+  // the gate error so a wrong code doesn't nuke the gate + show an
+  // ugly "not available" page instead of just letting the user retry.
+  const [fatalErr, setFatalErr] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      try {
-        const payload = await apiJson<PublicInvoiceBundle>(
-          `/api/v1/public/invoices/${encodeURIComponent(invoiceId)}`,
-          { auth: false },
-        );
-        if (alive) setData(payload);
-      } catch (e) {
-        if (alive) setErr(e instanceof Error ? e.message : 'Unable to load invoice');
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    if (invoiceId) load();
-    else { setErr('Missing invoice id in URL'); setLoading(false); }
-    return () => { alive = false; };
+    if (!invoiceId) setFatalErr('Missing invoice id in URL');
   }, [invoiceId]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-      </div>
-    );
-  }
-  if (err || !data) {
+  const submitCode = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setGateErr('Please enter the invoice number.');
+      return;
+    }
+    setBusy(true);
+    setGateErr(null);
+    try {
+      const payload = await apiJson<PublicInvoiceBundle>(
+        `/api/v1/public/invoices/${encodeURIComponent(invoiceId)}?code=${encodeURIComponent(trimmed)}`,
+        { auth: false },
+      );
+      setData(payload);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unable to load invoice';
+      // BE returns BadRequest with message "INVOICE_CODE_REQUIRED"
+      // for both missing + mismatched codes (uniform so an attacker
+      // can't distinguish "URL is valid" from "URL is invalid").
+      if (msg.includes('INVOICE_CODE_REQUIRED')) {
+        setGateErr('That invoice number doesn\'t match. Please check the number on your invoice / PDF and try again.');
+      } else {
+        // Genuine not-found / void / server error — no point letting
+        // the user retry the gate.
+        setFatalErr(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (fatalErr) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
         <Card className="max-w-md w-full">
           <CardHeader><CardTitle className="text-lg">Invoice not available</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
-            {err ?? 'The invoice link may have expired or been retracted. Please contact the sender for a fresh copy.'}
+            {fatalErr === 'Missing invoice id in URL'
+              ? fatalErr
+              : 'The invoice link may have expired or been retracted. Please contact the sender for a fresh copy.'}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // V-invoice-code-gate — full-screen blue gate. Renders BEFORE any
+  // invoice content so a forwarded link can't be viewed without the
+  // number. Once the code matches, we swap in the print template below.
+  if (!data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700 px-4 py-10">
+        <Card className="max-w-md w-full shadow-2xl">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-2 h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center">
+              <ShieldCheck className="h-6 w-6 text-blue-600" />
+            </div>
+            <CardTitle className="text-lg">Enter your invoice number</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-slate-600 mb-4 text-center">
+              For security, please type the invoice number shown on your emailed PDF
+              (e.g. <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">INV-001</code> or <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">POSQ-22072026-003</code>).
+            </p>
+            <form onSubmit={submitCode} className="space-y-3">
+              <Input
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="Invoice number"
+                className="text-center tracking-wider"
+                disabled={busy}
+              />
+              {gateErr && (
+                <p className="text-xs text-red-600 text-center">{gateErr}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : null}
+                {busy ? 'Checking…' : 'View invoice'}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>
