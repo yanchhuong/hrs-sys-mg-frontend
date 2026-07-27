@@ -34,8 +34,26 @@ export function StockMovements() {
   const [rows, setRows] = useState<movementsApi.StockMovement[]>([]);
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'' | movementsApi.StockMovement['type']>('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // v-movement-search — keyword filter applied client-side over the
+  // already-loaded rows so typing feels instant (no per-keystroke API
+  // roundtrip). Matches itemName / referenceNo / note case-insensitively.
+  const [search, setSearch] = useState('');
+  // v-movement-default-range — Movement rows accumulate quickly (every
+  // invoice, bill, adjustment, and receive-stock adds one), so an
+  // unbounded landing view scrolls forever. Default to the current
+  // calendar month so the page opens on something usable; the operator
+  // can clear or widen the range with the Clear button or by picking
+  // a From date.
+  const monthStart = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  })();
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const [dateFrom, setDateFrom] = useState(monthStart);
+  const [dateTo, setDateTo] = useState(todayIso);
 
   const load = async () => {
     setLoading(true);
@@ -59,10 +77,24 @@ export function StockMovements() {
   const clearDates = () => { setDateFrom(''); setDateTo(''); };
   const hasDateFilter = !!(dateFrom || dateTo);
 
+  // v-movement-search — narrow the loaded set by the search box
+  // before paginating. Case-insensitive substring match across the
+  // three human-readable columns; typing "invoice" finds every row
+  // whose reference is an invoice number, "adjust" finds notes that
+  // mention adjustments, and item name works for the common case.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(m =>
+      (m.itemName    ?? '').toLowerCase().includes(q)
+      || (m.referenceNo ?? '').toLowerCase().includes(q)
+      || (m.note        ?? '').toLowerCase().includes(q)
+    );
+  }, [rows, search]);
   // v-pagesize-15 — match the Items page (v-items-pagesize-15). One
   // page-size across every list surface keeps the fold position and
   // scroll rhythm consistent across the app.
-  const pagination = usePagination(useMemo(() => rows, [rows]), 15);
+  const pagination = usePagination(filtered, 15);
 
   const typeBadge = (tpe: movementsApi.StockMovement['type']) => {
     switch (tpe) {
@@ -113,6 +145,19 @@ export function StockMovements() {
             History
           </CardTitle>
           <div className="filter-strip">
+            {/* v-movement-search — keyword input at the head of the
+                filter strip, same visual weight the other list-pages
+                use. Client-side substring match over itemName /
+                referenceNo / note (see filtered useMemo). Width caps
+                at 220 px so the range / type controls to the right
+                stay reachable on a narrow viewport. */}
+            <Input
+              placeholder="Search item, reference, note…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-8 w-[220px] text-sm"
+              aria-label="Search movements"
+            />
             {/* DateInput renders a popover trigger button (not a native
                 <input>), so there's no id to hang a <label htmlFor> off.
                 Chrome DevTools flags an orphan "for" as an a11y issue —
@@ -175,6 +220,13 @@ export function StockMovements() {
                   pattern. */}
               {loading && rows.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={8} />
+              )}
+              {!loading && filtered.length === 0 && rows.length > 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-8">
+                    No movements match your filters.
+                  </TableCell>
+                </TableRow>
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>

@@ -18,10 +18,11 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DateInput } from '../common/DateInput';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import * as adjustmentsApi from '../../api/stockAdjustments';
 import * as itemsApi from '../../api/items';
-import { ClipboardEdit, Plus, Trash2, RefreshCw, Info } from 'lucide-react';
+import { ClipboardEdit, Plus, Trash2, RefreshCw, Info, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -58,6 +59,22 @@ export function StockAdjustments() {
 
   const [rows, setRows] = useState<adjustmentsApi.StockAdjustment[]>([]);
   const [loading, setLoading] = useState(false);
+  // v-adjust-filters — keyword + date range applied client-side over
+  // the loaded window. Same defaults + shape the Movement page uses so
+  // an operator hitting either surface sees the same landing view.
+  const [search, setSearch] = useState('');
+  const monthStart = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  })();
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const [dateFrom, setDateFrom] = useState(monthStart);
+  const [dateTo, setDateTo] = useState(todayIso);
+  const clearDates = () => { setDateFrom(''); setDateTo(''); };
+  const hasDateFilter = !!(dateFrom || dateTo);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -93,7 +110,26 @@ export function StockAdjustments() {
     void loadItems();
   }, []);
 
-  const pagination = usePagination(useMemo(() => rows, [rows]), 25);
+  // v-adjust-filters — narrow by keyword + date range before paginating.
+  // Search matches itemName / note / reason case-insensitively. Date
+  // range compares against createdAt (YYYY-MM-DD portion) so partial
+  // ISO strings work. Empty search / dates fall through to the full row set.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(a => {
+      if (dateFrom || dateTo) {
+        const day = (a.createdAt ?? '').slice(0, 10);
+        if (dateFrom && day < dateFrom) return false;
+        if (dateTo   && day > dateTo)   return false;
+      }
+      if (!q) return true;
+      return (a.itemName ?? '').toLowerCase().includes(q)
+          || (a.note     ?? '').toLowerCase().includes(q)
+          || (a.reason   ?? '').toLowerCase().includes(q);
+    });
+  }, [rows, search, dateFrom, dateTo]);
+  // v-pagesize-15 — one page-size across every list surface.
+  const pagination = usePagination(filtered, 15);
 
   /** Current system_qty for the selected item — drives the inline
    *  "System: X, Actual: Y → diff Z" hint below the actual_qty input. */
@@ -190,11 +226,48 @@ export function StockAdjustments() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base flex items-center gap-2">
             <ClipboardEdit className="h-4 w-4 text-amber-600" />
             Adjustments
           </CardTitle>
+          {/* v-adjust-filters — same filter-strip shape Movement uses:
+              search first, From/To date range with a Clear × when set.
+              Slides horizontally on narrow screens via the shared
+              .filter-strip utility (nowrap + overflow-x-auto). */}
+          <div className="filter-strip">
+            <Input
+              placeholder="Search item, reason, note…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-8 w-[220px] text-sm"
+              aria-label="Search adjustments"
+            />
+            <span className="text-xs text-gray-500">From</span>
+            <DateInput
+              value={dateFrom || null}
+              onChange={v => setDateFrom(v ?? '')}
+              max={dateTo || undefined}
+            />
+            <span className="text-xs text-gray-500">To</span>
+            <DateInput
+              value={dateTo || null}
+              onChange={v => setDateTo(v ?? '')}
+              min={dateFrom || undefined}
+            />
+            {hasDateFilter && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={clearDates}
+                title="Clear date filter"
+                aria-label="Clear date filter"
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -217,6 +290,13 @@ export function StockAdjustments() {
                   + loading collapse into a single colSpan'd row. */}
               {loading && rows.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={canRemove ? 10 : 9} />
+              )}
+              {!loading && filtered.length === 0 && rows.length > 0 && (
+                <TableRow>
+                  <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
+                    No adjustments match your filters.
+                  </TableCell>
+                </TableRow>
               )}
               {!loading && rows.length === 0 && (
                 <TableRow>

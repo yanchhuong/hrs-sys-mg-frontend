@@ -1748,13 +1748,13 @@ export function Employees() {
 
         </TabsContent>
 
-        <TabsContent value="cards" className="mt-0 space-y-4">
-          {/* Cards tab search — shares the roster searchTerm so
-              switching tabs preserves the filter, and typing here
-              filters both views. Same tokenised match as roster
-              (see the token loop above). */}
+        <TabsContent value="cards" className="mt-0">
+          {/* v-cards-tab-unified — search + grid + pagination live in
+              ONE Card. Reuses the roster employeePagination so page
+              index syncs across the Employees / Cards tabs, matching
+              the "one page-size across every list surface" rule. */}
           <Card>
-            <CardContent className="pt-4">
+            <CardContent className="pt-4 space-y-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
@@ -1764,16 +1764,25 @@ export function Employees() {
                   className="pl-10"
                 />
               </div>
-              <div className="mt-2 text-xs text-gray-500">
-                Showing {filteredEmployees.length} of {visibleEmployees.length} employee{visibleEmployees.length === 1 ? '' : 's'}
-              </div>
+              <EmployeeCardsGrid
+                employees={employeePagination.paginatedItems}
+                onOpenIdCard={setIdCardEmployee}
+                deptName={deptName}
+              />
             </CardContent>
+            {/* Pagination bar — same shared component every list page
+                uses. Slides horizontally on mobile, renders the
+                compact "1 to 10 / N" label. Auto-hides when the whole
+                filter fits on one page. */}
+            <Pagination
+              currentPage={employeePagination.currentPage}
+              totalPages={employeePagination.totalPages}
+              onPageChange={employeePagination.goToPage}
+              startIndex={employeePagination.startIndex}
+              endIndex={employeePagination.endIndex}
+              totalItems={employeePagination.totalItems}
+            />
           </Card>
-          <EmployeeCardsGrid
-            employees={filteredEmployees}
-            onOpenIdCard={setIdCardEmployee}
-            deptName={deptName}
-          />
         </TabsContent>
 
         <TabsContent value="documents" className="mt-0">
@@ -3184,12 +3193,13 @@ function EmployeeCardsGrid({
   const { formatDate } = useDateFormat();
 
   if (employees.length === 0) {
+    // v-cards-tab-unified — grid now renders inside the search Card,
+    // so the empty state is a plain centered line (the enclosing
+    // CardContent already supplies the border + padding).
     return (
-      <Card>
-        <CardContent className="py-16 text-center text-sm text-gray-500">
-          No employees match the current filter.
-        </CardContent>
-      </Card>
+      <div className="py-12 text-center text-sm text-gray-500">
+        No employees match the current filter.
+      </div>
     );
   }
 
