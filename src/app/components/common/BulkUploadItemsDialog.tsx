@@ -16,6 +16,7 @@ import {
   ParsedItemData, ParsedItemRow,
 } from '../../utils/itemBulkParser';
 import * as itemsApi from '../../api/items';
+import * as warehousesApi from '../../api/warehouses';
 
 interface Props {
   open: boolean;
@@ -81,6 +82,12 @@ export function BulkUploadItemsDialog({
   // full catalog on dialog open so SKU-lookup is authoritative across
   // every existing row, not just the on-screen page.
   const [fullCatalog, setFullCatalog] = useState<itemsApi.Item[]>(existingItems);
+  // V149 — resolve Warehouse cells (name → id) at parse time. Fetched
+  // when the dialog opens; a 403 (feature off) yields an empty list
+  // which makes the parser treat every Warehouse cell as unknown +
+  // emit warnings — the operator sees why nothing landed and can
+  // enable the feature under Items → Settings before re-uploading.
+  const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -91,6 +98,13 @@ export function BulkUploadItemsDialog({
       } catch {
         // Falls through to the prop-supplied list on failure. Worst
         // case: a duplicate SKU tries create() and fails visibly.
+      }
+      try {
+        const ws = await warehousesApi.list();
+        if (!cancelled) setWarehouses(ws ?? []);
+      } catch {
+        // Silent — feature may be off, or user lacks stock.view on
+        // warehouses. Parser tolerates an empty list.
       }
     })();
     return () => { cancelled = true; };
@@ -123,7 +137,7 @@ export function BulkUploadItemsDialog({
     setFinalResult(null);
     setProgress(new Map());
     try {
-      const result = await parseItemsExcel(f, fullCatalog);
+      const result = await parseItemsExcel(f, fullCatalog, warehouses);
       setParsed(result);
       const errorRows = result.items.filter(r => r.errors.length > 0).length;
       if (result.errors.length > 0) {
