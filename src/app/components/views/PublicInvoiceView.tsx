@@ -131,7 +131,12 @@ export function PublicInvoiceView() {
           <CardContent>
             <p className="text-sm text-slate-600 mb-4 text-center">
               For security, please type the invoice number shown on your emailed PDF
-              (e.g. <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">INV-001</code> or <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">POSQ-22072026-003</code>).
+              {/* Examples masked with asterisks — showing a real
+                  format (INV-001 / POSQ-22072026-003) would give an
+                  attacker hints about the numbering pattern. Masked
+                  templates just say "there's a prefix and some
+                  characters" without leaking either. */}
+              (e.g. <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">INV-***</code> or <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">INV-*******-***</code>).
             </p>
             <form onSubmit={submitCode} className="space-y-3">
               <Input
