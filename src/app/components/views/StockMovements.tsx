@@ -59,7 +59,10 @@ export function StockMovements() {
   const clearDates = () => { setDateFrom(''); setDateTo(''); };
   const hasDateFilter = !!(dateFrom || dateTo);
 
-  const pagination = usePagination(useMemo(() => rows, [rows]), 25);
+  // v-pagesize-15 — match the Items page (v-items-pagesize-15). One
+  // page-size across every list surface keeps the fold position and
+  // scroll rhythm consistent across the app.
+  const pagination = usePagination(useMemo(() => rows, [rows]), 15);
 
   const typeBadge = (tpe: movementsApi.StockMovement['type']) => {
     switch (tpe) {

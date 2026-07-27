@@ -56,15 +56,24 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t">
-      <div className="flex items-center gap-2 text-sm text-gray-600">
-        <span>
-          Showing <span className="font-medium">{startIndex}</span> to{' '}
-          <span className="font-medium">{endIndex}</span> of{' '}
-          <span className="font-medium">{totalItems}</span> results
-        </span>
+    <div className="flex items-center px-4 py-3 border-t gap-2 min-w-0">
+      {/* Compact result count — "1 to 15 / 191". Full "Showing … of …
+          results" phrasing was wasting horizontal space that the
+          page-number buttons need on narrow screens. shrink-0 pins
+          it to the left while the button cluster on the right takes
+          the remaining width and slides. */}
+      <div className="text-sm text-gray-600 shrink-0 whitespace-nowrap">
+        <span className="font-medium">{startIndex}</span>
+        <span className="text-gray-500"> to </span>
+        <span className="font-medium">{endIndex}</span>
+        <span className="text-gray-500"> / </span>
+        <span className="font-medium">{totalItems}</span>
       </div>
-      <div className="flex items-center gap-2">
+      {/* v-pagination-slide — same overflow-x-auto + hover-scroll-x
+          + shrink-0-child pattern the Items filter strip and Layout
+          top bar use. On mobile, the page-number row slides left/right
+          instead of clipping or wrapping to a second line. */}
+      <div className="flex-1 min-w-0 flex items-center justify-end gap-2 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
         <Button
           variant="outline"
           size="sm"
