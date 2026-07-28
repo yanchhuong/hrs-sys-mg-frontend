@@ -213,6 +213,37 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   }
 }
 
+/* Vertical sibling of hover-scroll-x. Used by dropdown / popover
+   content that can overflow tall (SearchablePicker option list,
+   suggestion popovers, receive-stock popover on a very small
+   screen). Same "hidden default, slim thumb on hover" contract so
+   pages don't ship a permanent chrome scrollbar eating the panel
+   width.
+
+   Apply: `<div className="hover-scroll-y overflow-y-auto">…</div>` */
+.hover-scroll-y {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hover-scroll-y::-webkit-scrollbar {
+  width: 0;
+  background: transparent;
+}
+@media (hover: hover) {
+  .hover-scroll-y:hover {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.35) transparent;
+  }
+  .hover-scroll-y:hover::-webkit-scrollbar {
+    width: 6px;
+  }
+  .hover-scroll-y:hover::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 3px;
+  }
+}
+
 /* Shared page-header toolbar. One line always, scrolls horizontally
    on narrow screens like .filter-strip so the trailing buttons
    (Refresh / Settings / Export / Bulk Upload / Add) stay reachable

@@ -610,6 +610,28 @@ export function Items() {
     return m;
   }, [warehouses]);
 
+  // v-items-inline-category — distinct itemCategory values across
+  // the loaded rows feed the inline row picker. Free-text field: no
+  // separate API endpoint, so the picker's onCreate just returns the
+  // typed label as-is and the update PUT persists it. Named
+  // `itemCategoryOptions` (not `categoryOptions`) because there's
+  // already a `categoryOptions: string[]` above wired to the POS
+  // taxonomy filter — different shape, different meaning.
+  const itemCategoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ value: string; label: string }> = [];
+    for (const r of rows) {
+      const c = (r.itemCategory ?? '').trim();
+      if (!c) continue;
+      const key = c.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ value: c, label: c });
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  }, [rows]);
+
   const openAdd = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
@@ -741,7 +763,7 @@ export function Items() {
    */
   const toggleItemFlag = async (
     it: itemsApi.Item,
-    patch: { active?: boolean; deductionEnabled?: boolean; warehouseId?: string | null; unit?: string },
+    patch: { active?: boolean; deductionEnabled?: boolean; warehouseId?: string | null; unit?: string; itemCategory?: string },
   ) => {
     const optimistic = { ...it, ...patch };
     setRows(prev => prev.map(r => r.id === it.id ? optimistic : r));
@@ -763,7 +785,7 @@ export function Items() {
       // existing value. Explicit hasOwnProperty check preserves the
       // "clear the warehouse" path.
       warehouseId: 'warehouseId' in patch ? patch.warehouseId ?? null : (it.warehouseId ?? null),
-      itemCategory: it.itemCategory ?? '',
+      itemCategory: patch.itemCategory ?? it.itemCategory ?? '',
       minStock: it.minStock ?? 0,
     };
     try {
@@ -1207,21 +1229,62 @@ export function Items() {
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-gray-700">
-                          {/* Prefer the free-text Stock category (V151)
-                              when set; fall back to the POS taxonomy
-                              (drink/snack/food/other) so items that only
-                              carry the POS classification aren't shown
-                              blank. POS-fallback is rendered as a subtle
-                              badge to signal it's the auto-derived
-                              label, not something the operator typed. */}
-                          {it.itemCategory ? (
-                            it.itemCategory
-                          ) : it.category ? (
-                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200 capitalize">
-                              {it.category}
-                            </span>
+                          {/* v-items-inline-category — SearchablePicker
+                              wired against the distinct itemCategory
+                              values across the loaded rows. Typing a
+                              new label shows "+ Create '<name>'" — the
+                              picker returns the label immediately (no
+                              API round-trip; itemCategory is free-text
+                              stored on the item itself) and the update
+                              PUT persists it. Same borderless styling
+                              the warehouse picker uses so the cell
+                              reads as plain text at rest.
+                              POS-fallback badge stays for rows that
+                              only carry the drink/snack/food/other
+                              classification — read-only, no picker. */}
+                          {canEdit ? (
+                            <SearchablePicker
+                              options={itemCategoryOptions}
+                              value={it.itemCategory ?? ''}
+                              onChange={(v) => { void toggleItemFlag(it, { itemCategory: v }); }}
+                              placeholder={it.category
+                                ? it.category[0].toUpperCase() + it.category.slice(1)
+                                : '—'}
+                              emptyLabel="—"
+                              searchPlaceholder="Search or type new…"
+                              allowClear
+                              /* Trigger cell is narrow → widen the
+                                 dropdown so option labels don't truncate. */
+                              contentClassName="min-w-56"
+                              /* Show selection via row highlight instead
+                                 of the leading check icon so short labels
+                                 don't waste the ~24 px column. */
+                              showCheck={false}
+                              onCreate={async (label) => {
+                                const trimmed = label.trim();
+                                return { value: trimmed, label: trimmed };
+                              }}
+                              className={
+                                'h-8 border-transparent bg-transparent shadow-none px-2 transition '
+                                + 'hover:border-input hover:bg-white '
+                                + 'focus-visible:border-input focus-visible:bg-white '
+                                + 'data-[state=open]:border-input data-[state=open]:bg-white '
+                                + '[&>svg]:opacity-0 '
+                                + 'hover:[&>svg]:opacity-50 '
+                                + 'focus-visible:[&>svg]:opacity-50 '
+                                + 'data-[state=open]:[&>svg]:opacity-50'
+                              }
+                            />
                           ) : (
-                            <span className="text-gray-300">—</span>
+                            it.itemCategory
+                              ? it.itemCategory
+                              : it.category
+                                ? (
+                                  <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200 capitalize">
+                                    {it.category}
+                                  </span>
+                                )
+                                : <span className="text-gray-300">—</span>
                           )}
                         </TableCell>
                         <TableCell className="p-1 text-center text-xs text-gray-600">
@@ -1289,10 +1352,24 @@ export function Items() {
                                   }))}
                                 value={it.warehouseId ?? ''}
                                 onChange={(v) => { void toggleItemWarehouse(it, v || null); }}
-                                placeholder="(none)"
+                                /* Blank cell when unassigned — the
+                                   Warehouse column reads cleaner on a
+                                   long list where most items don't
+                                   need a warehouse. The dropdown's
+                                   emptyLabel still surfaces "(none)"
+                                   so the operator can clear an
+                                   assignment. */
+                                placeholder=""
+                                triggerEmptyLabel=""
                                 emptyLabel="(none)"
                                 searchPlaceholder="Search warehouse…"
                                 allowClear
+                                /* Match the Category picker — hide the
+                                   leading check icon column so option
+                                   text left-aligns to the edge, and
+                                   show selection via a background
+                                   highlight instead. */
+                                showCheck={false}
                                 onCreate={async (label) => {
                                   const created = await warehousesApi.create({ name: label.trim() });
                                   setWarehouses(prev => [...prev, created]);

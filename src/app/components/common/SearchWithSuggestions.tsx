@@ -198,7 +198,7 @@ export function SearchWithSuggestions({
       {open && filtered.length > 0 && rect && typeof document !== 'undefined' && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[100] rounded-md border border-gray-200 bg-white shadow-lg max-h-[60vh] overflow-y-auto"
+          className="fixed z-[100] rounded-md border border-gray-200 bg-white shadow-lg max-h-[60vh] overflow-y-auto hover-scroll-y"
           style={{ top: rect.top, left: rect.left, width: rect.width }}
         >
           {filtered.map((s, i) => (

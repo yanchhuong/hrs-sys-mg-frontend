@@ -42,6 +42,25 @@ interface Props {
    * Defaults to true. Set to false for required fields.
    */
   allowClear?: boolean;
+  /** What the trigger shows when nothing is selected AND
+   *  {@code allowClear} is true. Defaults to {@link emptyLabel} for
+   *  back-compat with callers that relied on the clear affordance
+   *  reading through to the trigger label. Pass {@code ""} for row-
+   *  level pickers where the cell should read blank at rest — the
+   *  clear item in the dropdown still uses {@link emptyLabel} so the
+   *  affordance stays discoverable. */
+  triggerEmptyLabel?: string;
+  /** Extra classes on the PopoverContent — use this to widen the
+   *  dropdown ({@code contentClassName="min-w-56"}) or override its
+   *  default trigger-matching width when the trigger is very narrow
+   *  and would clip option labels. */
+  contentClassName?: string;
+  /** Hide the leading check-icon column and show selection via a
+   *  blue-tinted background on the selected row instead. Frees the
+   *  ~24 px the icon reserved even when hidden — useful for tight
+   *  cells (Items row Category picker) where every pixel matters.
+   *  Defaults to true for back-compat with every existing caller. */
+  showCheck?: boolean;
   /**
    * Inline-create callback. When provided, a "+ Create '{query}'"
    * item appears at the top of the dropdown whenever the search
@@ -98,6 +117,9 @@ export function SearchablePicker({
   disabled = false,
   emptyOptionsHint,
   allowClear = true,
+  triggerEmptyLabel,
+  contentClassName,
+  showCheck = true,
   onCreate,
   createLabel,
   onEdit,
@@ -115,7 +137,9 @@ export function SearchablePicker({
   const selected = options.find(o => o.value === value);
   const triggerLabel = selected
     ? (selected.secondary ? `${selected.label} (${selected.secondary})` : selected.label)
-    : (allowClear ? emptyLabel : placeholder);
+    : allowClear
+      ? (triggerEmptyLabel !== undefined ? triggerEmptyLabel : emptyLabel)
+      : placeholder;
   const trimmed = query.trim();
   const exactExists = !!trimmed && options.some(
     o => o.label.toLowerCase() === trimmed.toLowerCase(),
@@ -178,7 +202,7 @@ export function SearchablePicker({
           rendering narrower than the trigger. Using both `w-[var(…)]`
           and a matching min-w hardens against that. */}
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] p-0"
+        className={`w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] p-0 ${contentClassName ?? ''}`}
         align="start"
       >
         <Command>
@@ -187,7 +211,14 @@ export function SearchablePicker({
             value={query}
             onValueChange={setQuery}
           />
-          <CommandList>
+          {/* Cap the visible option area at ~4 rows so a long list
+              (categories that have grown to 20+, e.g.) doesn't push
+              the popover far taller than the trigger. The rest
+              scrolls with the hover-reveal thumb; cmdk keyboard
+              nav auto-scrolls into view. Row height ≈ 32 px + 4 px
+              gap → 176 px caps around 4 rows without clipping the
+              5th's first pixel. */}
+          <CommandList className="hover-scroll-y max-h-44">
             <CommandEmpty>{emptyResultsLabel}</CommandEmpty>
             {options.length === 0 && emptyOptionsHint && (
               <div className="px-3 py-4 text-xs text-gray-500">{emptyOptionsHint}</div>
@@ -221,8 +252,11 @@ export function SearchablePicker({
                 <CommandItem
                   value="__none__"
                   onSelect={() => { onChange(''); setOpen(false); }}
+                  className={!showCheck && !value ? 'bg-blue-50 text-blue-800 aria-selected:bg-blue-50' : undefined}
                 >
-                  <Check className={`mr-2 h-4 w-4 ${!value ? 'opacity-100' : 'opacity-0'}`} />
+                  {showCheck && (
+                    <Check className={`mr-2 h-4 w-4 ${!value ? 'opacity-100' : 'opacity-0'}`} />
+                  )}
                   <span className="text-gray-500 italic">{emptyLabel}</span>
                 </CommandItem>
               )}
@@ -266,14 +300,22 @@ export function SearchablePicker({
                     </div>
                   );
                 }
+                const isSelected = value === o.value;
                 return (
                   <CommandItem
                     key={o.value}
                     value={haystack}
                     onSelect={() => { onChange(o.value); setOpen(false); }}
-                    className="group"
+                    className={
+                      'group'
+                      + (!showCheck && isSelected
+                          ? ' bg-blue-50 text-blue-800 font-medium aria-selected:bg-blue-50'
+                          : '')
+                    }
                   >
-                    <Check className={`mr-2 h-4 w-4 ${value === o.value ? 'opacity-100' : 'opacity-0'}`} />
+                    {showCheck && (
+                      <Check className={`mr-2 h-4 w-4 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                    )}
                     <span className="flex-1 truncate">
                       {o.label}
                       {o.secondary ? <span className="text-gray-400"> · {o.secondary}</span> : null}

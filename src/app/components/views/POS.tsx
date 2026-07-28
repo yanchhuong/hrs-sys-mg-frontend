@@ -1247,7 +1247,7 @@ export function POS() {
                               +{overflowKeys.length} more
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto">
+                          <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto hover-scroll-y">
                             {overflowKeys.map(key => {
                               const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
                               const count = categoryCounts.get(key) ?? 0;
