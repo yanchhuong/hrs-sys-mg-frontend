@@ -21,6 +21,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
@@ -1162,31 +1164,56 @@ export function POS() {
       <div className="flex-1 flex min-h-0 flex-col lg:flex-row">
         {/* ---- Items grid ---- */}
         <section className="flex-1 flex flex-col lg:border-r min-w-0 min-h-0">
-          <div className="p-3 border-b bg-white space-y-2 shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search items…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-            {/* V142 — category filter pills. "All" is the default;
+          <div className="p-3 border-b bg-white shrink-0">
+            {/* v-pos-single-row-filter — search + categories +
+                warehouse all live on ONE row now. Search sits between
+                the category chips (left, flex-grow) and the warehouse
+                dropdown (right) so a cashier's hand stays in one
+                horizontal band. Categories still scroll independently
+                inside their .chip-row; search + warehouse keep their
+                natural widths.
+                V142 — category filter pills. "All" is the default;
                 tapping a chip narrows the items grid to that bucket.
-                V149 — when the tenant has 2+ warehouses, a matching
-                warehouse-filter row sits on the RIGHT of the same
-                physical row (category on left, warehouse on right).
-                Each side is its own `.chip-row` — each scrolls
-                independently on narrow screens so a long category
-                list doesn't push the warehouse filter off-screen. */}
+                V149 — the warehouse dropdown sits on the right,
+                gated on the tenant having 2+ warehouses. */}
             <div className="flex items-center gap-3 min-w-0">
               <div className="chip-row flex-1 min-w-0">
-                {chipKeys
-                  // Hide chips whose bucket is empty unless it's the active tab
-                  // OR the "All" chip — the "All" tab must always be present.
-                  .filter(key => key === 'all' || categoryFilter === key || (categoryCounts.get(key) ?? 0) > 0)
-                  .map(key => {
+                {/* v-pos-category-limit — cap the visible chip strip
+                    at CHIP_LIMIT (including "All") and roll the rest
+                    into a "+N more" popover. Prevents a tenant with
+                    20+ POS categories from pushing the warehouse
+                    filter off-screen while still keeping every
+                    category reachable one click away. If the active
+                    chip would otherwise land in overflow, we promote
+                    it into the last visible slot so the operator
+                    always sees which category is selected. */}
+                {(() => {
+                  const CHIP_LIMIT = 4;
+                  const filtered = chipKeys
+                    // Hide chips whose bucket is empty unless it's the active tab
+                    // OR the "All" chip — the "All" tab must always be present.
+                    .filter(key => key === 'all' || categoryFilter === key || (categoryCounts.get(key) ?? 0) > 0);
+                  const activeIndex = filtered.indexOf(categoryFilter);
+                  const overflowStart = CHIP_LIMIT - 1;
+                  let visibleKeys = filtered.slice(0, CHIP_LIMIT);
+                  let overflowKeys = filtered.slice(CHIP_LIMIT);
+                  if (activeIndex >= CHIP_LIMIT) {
+                    // Promote the active chip into the last visible
+                    // slot; the chip that got displaced falls into
+                    // the front of the overflow list.
+                    const displaced = filtered[overflowStart];
+                    visibleKeys = [
+                      ...filtered.slice(0, overflowStart),
+                      filtered[activeIndex],
+                    ];
+                    overflowKeys = filtered
+                      .slice(overflowStart)
+                      .filter((_, i) => (i + overflowStart) !== activeIndex);
+                    // Guaranteed: displaced is included in overflowKeys
+                    // (the .filter above only drops the active one).
+                    void displaced;
+                  }
+                  const chipButton = (key: string) => {
                     const active = categoryFilter === key;
                     const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
                     const count = categoryCounts.get(key) ?? 0;
@@ -1205,7 +1232,58 @@ export function POS() {
                         <span className="ml-1 text-[10px] opacity-70">({count})</span>
                       </button>
                     );
-                  })}
+                  };
+                  return (
+                    <>
+                      {visibleKeys.map(chipButton)}
+                      {overflowKeys.length > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="px-3 h-7 rounded-full border text-xs font-medium border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
+                              title={`Show ${overflowKeys.length} more categor${overflowKeys.length === 1 ? 'y' : 'ies'}`}
+                            >
+                              +{overflowKeys.length} more
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto">
+                            {overflowKeys.map(key => {
+                              const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
+                              const count = categoryCounts.get(key) ?? 0;
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => setCategoryFilter(key)}
+                                  className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs text-left hover:bg-gray-100"
+                                >
+                                  <span>{label}</span>
+                                  <span className="text-[10px] text-gray-500">({count})</span>
+                                </button>
+                              );
+                            })}
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              {/* v-pos-search-suggestions — typeahead with matched-
+                  substring highlighting. Sits between categories and
+                  warehouse on the same row; fixed width so it doesn't
+                  eat all the horizontal space the chips need. */}
+              <div className="shrink-0 w-56">
+                <SearchWithSuggestions
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search items…"
+                  suggestions={sellable.map(i => ({
+                    label: i.name,
+                    secondary: i.sku || undefined,
+                  }))}
+                />
               </div>
               {showWarehouseFilter && (
                 // v-pos-warehouse-dropdown — swapped the chip row for

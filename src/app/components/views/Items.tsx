@@ -36,6 +36,7 @@ import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDi
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
 
 interface FormState {
@@ -1098,15 +1099,23 @@ export function Items() {
                 </select>
               </div>
             )}
-            <div className="relative">
-              <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search name or SKU…"
-                className="pl-8 h-9 w-64"
-              />
-            </div>
+            {/* v-items-search-suggestions — typeahead over the loaded
+                rows; matched substring is highlighted in each row.
+                Source is `rows` (already loaded window) so the
+                dropdown doesn't need an extra fetch. Picking a
+                suggestion drops the name into the search box and the
+                table narrows to that row. */}
+            <SearchWithSuggestions
+              value={search}
+              onChange={setSearch}
+              placeholder="Search name or SKU…"
+              wrapperClassName="w-64"
+              className="h-9"
+              suggestions={rows.map(r => ({
+                label: r.name,
+                secondary: r.sku || undefined,
+              }))}
+            />
             <Button type="submit" variant="outline" size="sm">Search</Button>
           </form>
         </CardHeader>
