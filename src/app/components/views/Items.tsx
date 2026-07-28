@@ -368,15 +368,21 @@ export function Items() {
 
     setSaving(true);
     try {
-      // V280 — regenerate the small thumbnail from the cover on
-      // every save so it stays in sync with imageUrls[0]. Empty
-      // list → clear the thumbnail column too. makeThumbnailFromUrl
-      // returns the source unchanged when the source is already
-      // smaller than the target edge (rare), so no extra bytes.
+      // V280 — small thumbnail stays in sync with imageUrls[0]. Only
+      // regenerate when the cover ACTUALLY changed; a Name / Price /
+      // Stock edit shouldn't pay the 500ms-2s canvas + base64 round-
+      // trip that regenerating a full-size cover to a 200 px thumb
+      // costs. This was the perceived-slowness on Edit Save.
       const coverForThumb = form.imageUrls[0] ?? '';
-      const imageThumbUrl = coverForThumb
-        ? await makeThumbnailFromUrl(coverForThumb).catch(() => '')
-        : '';
+      const previousCover = editing ? (itemsApi.resolveImages(editing)[0] ?? '') : '';
+      const coverChanged  = coverForThumb !== previousCover;
+      const imageThumbUrl = coverChanged
+        ? (coverForThumb
+            ? await makeThumbnailFromUrl(coverForThumb).catch(() => '')
+            : '')
+        // Unchanged cover — carry the existing thumbnail through so
+        // the update() payload doesn't null it out on the server.
+        : (editing?.imageThumbUrl ?? '');
 
       const payload: itemsApi.ItemRequest = {
         sku: form.sku.trim() || undefined,
@@ -404,11 +410,21 @@ export function Items() {
         itemCategory: form.itemCategory.trim(),
         minStock: Number(form.minStock) || 0,
       };
-      if (editing) await itemsApi.update(editing.id, payload);
-      else         await itemsApi.create(payload);
+      // v-items-optimistic-save — splice the returned row into the
+      // existing rows[] instead of refetching the whole list. Full
+      // refetch flashed the table (setRows replaces the array so
+      // the DOM churns even though the skeleton is skipped when
+      // rows.length > 0). Now the edited row updates in place, the
+      // created row prepends, and only one API round-trip is spent.
+      if (editing) {
+        const updated = await itemsApi.update(editing.id, payload);
+        setRows(prev => prev.map(r => r.id === editing.id ? updated : r));
+      } else {
+        const created = await itemsApi.create(payload);
+        setRows(prev => [created, ...prev]);
+      }
       toast.success(editing ? 'Item updated' : 'Item created');
       setDialogOpen(false);
-      await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
