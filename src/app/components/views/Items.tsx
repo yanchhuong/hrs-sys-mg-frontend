@@ -1413,11 +1413,7 @@ function ModifiersEditor({
         </div>
       </div>
 
-      {groups.length === 0 ? (
-        <p className="text-xs text-gray-500">
-          No modifiers yet — tapping this item on POS adds it directly with the base price.
-        </p>
-      ) : (
+      {groups.length === 0 ? null : (
         groups.map((g, gi) => (
           <div key={gi} className="rounded border bg-white p-2 space-y-1.5">
             <div className="flex items-center gap-2">
