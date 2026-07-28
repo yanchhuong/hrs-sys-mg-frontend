@@ -18,6 +18,7 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
+import { InlineTextCell } from '../common/InlineTextCell';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
 import * as invoicesApi from '../../api/invoices';
@@ -302,6 +303,57 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     }
     setDialogOpen(true);
   };
+  /**
+   * v-customers-inline-cell — save one field from a row-level input
+   * without opening the full Edit dialog. Optimistic: splice the
+   * patch into rows[] first so the cell reflects the change instantly,
+   * fire the PUT, then reconcile with the server response. On error
+   * revert and toast. Matches the pattern the Items page uses for
+   * flag toggles + Unit / Category / Warehouse row edits.
+   *
+   * Full payload is sent (not a bare patch) because customersApi
+   * update accepts `CustomerRequest` and unspecified fields have BE-
+   * defined defaults; re-emitting every known field preserves the
+   * row's current shape.
+   */
+  const patchCustomer = async (
+    c: customersApi.Customer,
+    patch: Partial<Pick<customersApi.Customer, 'phone' | 'tin' | 'representative' | 'site'>>,
+  ) => {
+    const optimistic = { ...c, ...patch };
+    setRows(prev => prev.map(r => r.id === c.id ? optimistic : r));
+    const payload: customersApi.CustomerRequest = {
+      type: c.type,
+      kind: c.kind,
+      name: c.name,
+      phone: patch.phone ?? c.phone ?? undefined,
+      address: c.address ?? undefined,
+      cid: c.cid ?? undefined,
+      email: c.email ?? undefined,
+      tin: patch.tin ?? c.tin ?? undefined,
+      representative: patch.representative ?? c.representative ?? undefined,
+      site: patch.site ?? c.site ?? undefined,
+      businessType: c.businessType ?? undefined,
+      birthDate: c.birthDate ?? null,
+      sex: c.sex ?? null,
+      insurance: c.insurance ?? null,
+      heightCm: c.heightCm ?? null,
+      weightKg: c.weightKg ?? null,
+      studentNo: c.studentNo ?? null,
+      guardianName: c.guardianName ?? null,
+      guardianPhone: c.guardianPhone ?? null,
+      guardianEmail: c.guardianEmail ?? null,
+      remark: c.remark ?? null,
+    };
+    try {
+      const updated = await customersApi.update(c.id, payload);
+      setRows(prev => prev.map(r => r.id === c.id ? updated : r));
+    } catch (e) {
+      setRows(prev => prev.map(r => r.id === c.id ? c : r));
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
   const openEdit = (c: customersApi.Customer) => {
     setEditing(c);
     setForm({
@@ -668,18 +720,54 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                           )}
                         </div>
                       </TableCell>
+                      {/* v-customers-inline-cell — Phone / TIN /
+                          Representative / Site edit in-place. Click
+                          → type → Enter or blur to save; Escape
+                          reverts. Individual rows render the SAME
+                          input in disabled mode so row heights and
+                          dash alignment stay consistent (server
+                          strips TIN / Rep / Site for individuals —
+                          see CustomerService.applyTypeRules). */}
                       {!isStudent && (
-                        <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
+                        <TableCell className="p-1 text-sm text-gray-600">
+                          <InlineTextCell
+                            value={c.phone ?? ''}
+                            disabled={!canEdit}
+                            inputType="tel"
+                            ariaLabel={`Phone for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { phone: next }); }}
+                          />
+                        </TableCell>
                       )}
                       {!isPatient && !isStudent && (
-                        <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
+                        <TableCell className="p-1 text-sm text-gray-600">
+                          <InlineTextCell
+                            value={c.tin ?? ''}
+                            disabled={!canEdit || c.type !== 'business'}
+                            ariaLabel={`TIN for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { tin: next }); }}
+                          />
+                        </TableCell>
                       )}
                       {!isPatient && !isStudent && (
-                        <TableCell className="text-sm text-gray-600">{c.representative || '—'}</TableCell>
+                        <TableCell className="p-1 text-sm text-gray-600">
+                          <InlineTextCell
+                            value={c.representative ?? ''}
+                            disabled={!canEdit || c.type !== 'business'}
+                            ariaLabel={`Representative for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { representative: next }); }}
+                          />
+                        </TableCell>
                       )}
                       {!isPatient && !isStudent && (
-                        <TableCell className="text-sm text-gray-600 max-w-[200px] truncate" title={c.site || ''}>
-                          {c.site || '—'}
+                        <TableCell className="p-1 text-sm text-gray-600 max-w-[200px]" title={c.site || ''}>
+                          <InlineTextCell
+                            value={c.site ?? ''}
+                            disabled={!canEdit || c.type !== 'business'}
+                            inputType="url"
+                            ariaLabel={`Site for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { site: next }); }}
+                          />
                         </TableCell>
                       )}
                       {isStudent && (

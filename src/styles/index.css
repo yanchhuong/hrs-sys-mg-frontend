@@ -244,6 +244,55 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   }
 }
 
+/* v-scrollbar-consistency — every Tailwind overflow-*-auto surface
+   in the app hides its scrollbar chrome until the pointer enters,
+   then reveals a slim 6 px thumb. Applies globally to <Table>
+   wrappers, dialog / popover content, filter strips that already
+   scroll, and any future surface — no per-file className changes
+   needed to opt in.
+
+   Touch devices (which don't match `hover: hover`) get momentum
+   scroll with zero visible chrome — same behaviour we already
+   ship for .hover-scroll-x / .hover-scroll-y, now blanket-applied.
+
+   Existing `.hover-scroll-x` / `.hover-scroll-y` utility classes
+   stay in place — they're now duplicative but harmless (identical
+   styles), and callers keep working without a rename. */
+.overflow-auto,
+.overflow-x-auto,
+.overflow-y-auto {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.overflow-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+@media (hover: hover) {
+  .overflow-auto:hover,
+  .overflow-x-auto:hover,
+  .overflow-y-auto:hover {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.35) transparent;
+  }
+  .overflow-auto:hover::-webkit-scrollbar,
+  .overflow-x-auto:hover::-webkit-scrollbar,
+  .overflow-y-auto:hover::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .overflow-auto:hover::-webkit-scrollbar-thumb,
+  .overflow-x-auto:hover::-webkit-scrollbar-thumb,
+  .overflow-y-auto:hover::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.35);
+    border-radius: 3px;
+  }
+}
+
 /* Shared page-header toolbar. One line always, scrolls horizontally
    on narrow screens like .filter-strip so the trailing buttons
    (Refresh / Settings / Export / Bulk Upload / Add) stay reachable

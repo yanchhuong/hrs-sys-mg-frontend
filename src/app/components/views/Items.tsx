@@ -127,25 +127,28 @@ function ReceiveStockPopover({
   onReceived,
 }: {
   item: itemsApi.Item;
-  /** Called with the fresh Item returned by itemsApi.stockIn so the
-   *  parent can splice-in-place (matches the same optimistic pattern
-   *  the flag toggles + edit save use). */
+  /** Called with the fresh Item returned by itemsApi.stockIn (or the
+   *  follow-up update when the operator also changed the Selling
+   *  Price) so the parent can splice-in-place. Matches the same
+   *  optimistic pattern the flag toggles + edit save use. */
   onReceived: (updated: itemsApi.Item) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState<string>('');
   const [cost, setCost] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
-  // Reset the form every time the popover opens so a previous partial
-  // entry doesn't carry over. Pre-fill unitCost with the item's
-  // current cost so the operator can leave it as-is or bump it.
+  // Reset every time the popover opens so a previous partial entry
+  // doesn't carry over. Pre-fill Cost / Selling Price with the item's
+  // current values so the operator can leave them as-is or bump them.
   useEffect(() => {
     if (open) {
       setQty('');
       setCost(String(item.unitCost ?? 0));
+      setPrice(String(item.unitPrice ?? 0));
     }
-  }, [open, item.unitCost]);
+  }, [open, item.unitCost, item.unitPrice]);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -156,21 +159,57 @@ function ReceiveStockPopover({
     }
     const c = cost.trim() === '' ? undefined : Number(cost);
     if (c !== undefined && (!Number.isFinite(c) || c < 0)) {
-      toast.error('Unit cost must be 0 or more');
+      toast.error('Cost must be 0 or more');
+      return;
+    }
+    const p = price.trim() === '' ? undefined : Number(price);
+    if (p !== undefined && (!Number.isFinite(p) || p < 0)) {
+      toast.error('Selling Price must be 0 or more');
       return;
     }
     setBusy(true);
     try {
-      const updated = await itemsApi.stockIn(item.id, { qty: q, unitCost: c });
-      toast.success(`Received ${q} × ${item.name}`);
-      onReceived(updated);
+      // Step 1 — bump the on-hand balance (and cost basis when set).
+      // stockIn returns the fresh Item with the new stockQty already
+      // applied, which we then use as the base for step 2.
+      const stocked = await itemsApi.stockIn(item.id, { qty: q, unitCost: c });
+      // Step 2 — only issue an update() when the Selling Price
+      // actually changed. `unitPrice` isn't part of StockInRequest,
+      // so it needs a separate PUT with a full payload (same shape
+      // toggleItemFlag builds so unrelated fields don't wipe out).
+      const priceChanged = p !== undefined && p !== (stocked.unitPrice ?? 0);
+      const finalItem: itemsApi.Item = priceChanged
+        ? await itemsApi.update(stocked.id, {
+            sku: stocked.sku ?? undefined,
+            name: stocked.name,
+            description: stocked.description ?? undefined,
+            unit: stocked.unit ?? undefined,
+            unitPrice: p,
+            unitCost: stocked.unitCost,
+            stockQty: stocked.stockQty,
+            active: stocked.active,
+            deductionEnabled: stocked.deductionEnabled,
+            imageUrls: itemsApi.resolveImages(stocked),
+            category: stocked.category,
+            modifiers: stocked.modifiers ?? '',
+            warehouseId: stocked.warehouseId ?? null,
+            itemCategory: stocked.itemCategory ?? '',
+            minStock: stocked.minStock ?? 0,
+          })
+        : stocked;
+      toast.success(`Stock increased +${q} · ${item.name}`);
+      onReceived(finalItem);
       setOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Stock-in failed');
+      toast.error(err instanceof Error ? err.message : 'Stock update failed');
     } finally {
       setBusy(false);
     }
   };
+
+  const currentStockLabel = Number(item.stockQty ?? 0)
+    .toLocaleString('en-US', { maximumFractionDigits: 2 })
+    + (item.unit ? ` ${item.unit}` : '');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -179,49 +218,76 @@ function ReceiveStockPopover({
           size="sm"
           variant="ghost"
           className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
-          title="Receive stock"
-          aria-label="Receive stock"
+          title="Increase stock"
+          aria-label="Increase stock"
         >
           <PackagePlus className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-3">
+      <PopoverContent align="end" className="w-80 p-3">
         <form onSubmit={submit} className="space-y-3">
-          <div className="text-xs text-gray-600">
-            <div className="flex items-center gap-1.5 font-medium text-gray-900 text-sm mb-1">
-              <PackagePlus className="h-3.5 w-3.5 text-emerald-600" />
-              Receive Stock
+          {/* Title row — "Increase Stock — {item name}" so the operator
+              knows which row this popover is affecting even after their
+              cursor drifts off the trigger. Truncate long names so a
+              50-char product doesn't blow out the popover width. */}
+          <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+            <PackagePlus className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+            <span className="shrink-0">Increase Stock —</span>
+            <span className="truncate" title={item.name}>{item.name}</span>
+          </div>
+          {/* Row 1 — Current (read-only) beside Increase Stock (qty
+              input). Two columns so the operator sees at a glance
+              "current N, adding M". */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Current</Label>
+              <Input
+                readOnly
+                value={currentStockLabel}
+                className="h-8 text-sm bg-gray-50 text-gray-600 tabular-nums"
+                tabIndex={-1}
+              />
             </div>
-            Add to <span className="font-medium text-gray-900">{item.name}</span>. Current:{' '}
-            <span className="tabular-nums font-medium">
-              {Number(item.stockQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
-            </span>
-            {item.unit ? ` ${item.unit}` : ''}.
+            <div className="space-y-1">
+              <Label className="text-xs">
+                + Stock <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                type="number" step="0.01" min="0.01"
+                autoFocus
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                placeholder="e.g. 50"
+                className="h-8 text-sm tabular-nums"
+                disabled={busy}
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Quantity received <span className="text-red-500">*</span></Label>
-            <Input
-              type="number" step="0.01" min="0.01"
-              autoFocus
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="e.g. 50"
-              className="h-8 text-sm"
-              disabled={busy}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">
-              New unit cost <span className="text-gray-400">(leave blank to keep current)</span>
-            </Label>
-            <Input
-              type="number" step="0.01" min="0"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              placeholder={`Current: ${Number(item.unitCost ?? 0).toFixed(2)}`}
-              className="h-8 text-sm"
-              disabled={busy}
-            />
+          {/* Row 2 — New Cost beside Selling Price. Both prefilled
+              with the item's current values; leave as-is to skip. */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">New Cost</Label>
+              <Input
+                type="number" step="0.01" min="0"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder="0.00"
+                className="h-8 text-sm tabular-nums"
+                disabled={busy}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Selling Price</Label>
+              <Input
+                type="number" step="0.01" min="0"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="0.00"
+                className="h-8 text-sm tabular-nums"
+                disabled={busy}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" size="sm"
@@ -229,7 +295,7 @@ function ReceiveStockPopover({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={busy}>
-              {busy ? 'Receiving…' : 'Receive'}
+              {busy ? 'Saving…' : 'Increase'}
             </Button>
           </div>
         </form>

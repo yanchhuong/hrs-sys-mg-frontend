@@ -8,6 +8,8 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
+      // Horizontal scrollbar chrome is hidden until hover by the
+      // global .overflow-x-auto rule in styles/index.css.
       className="relative w-full overflow-x-auto"
     >
       <table
