@@ -102,8 +102,23 @@ export function BulkUploadItemsDialog({
     let cancelled = false;
     (async () => {
       try {
-        const res = await itemsApi.list({ size: 10000 });
-        if (!cancelled) setFullCatalog(res.content ?? []);
+        // v-bulk-full-catalog — the BE clamps size to 200 (see
+        // StockItemService.java:36), so a naive size=10000 request
+        // silently returns only page 0. That would leave every SKU
+        // past #200 marked "New" by the parser → duplicate-key
+        // errors at import time. Paginate through until we've
+        // collected every row (safety-capped at 50 pages / 10k items
+        // to avoid runaway loops if the BE ever returns totalPages
+        // wrong).
+        const pageSize = 200;
+        const collected: itemsApi.Item[] = [];
+        for (let page = 0; page < 50; page++) {
+          const res = await itemsApi.list({ page, size: pageSize });
+          const chunk = res.content ?? [];
+          collected.push(...chunk);
+          if (chunk.length < pageSize || page + 1 >= res.totalPages) break;
+        }
+        if (!cancelled) setFullCatalog(collected);
       } catch {
         // Falls through to the prop-supplied list on failure. Worst
         // case: a duplicate SKU tries create() and fails visibly.
@@ -246,7 +261,25 @@ export function BulkUploadItemsDialog({
         if (row.existingItemId) {
           return itemsApi.update(row.existingItemId, req);
         }
-        return itemsApi.create(req);
+        try {
+          return await itemsApi.create(req);
+        } catch (e) {
+          // v-bulk-dupe-fallback — the pre-import catalog fetch tries
+          // to see every existing item, but a huge catalog / a race
+          // with another operator can still leave the parser thinking
+          // this SKU is new. When the create returns 409 / duplicate
+          // key, look the SKU up by name and retry as an UPDATE so
+          // the row lands as an edit instead of a failed insert.
+          const msg = e instanceof Error ? e.message.toLowerCase() : '';
+          const looksDupe = msg.includes('duplicate') || msg.includes('unique')
+                         || msg.includes('already exists') || msg.includes('sku');
+          const sku = (req.sku ?? '').trim();
+          if (!looksDupe || !sku) throw e;
+          const search = await itemsApi.list({ q: sku, size: 25 }).catch(() => null);
+          const hit = search?.content?.find(it => (it.sku ?? '').toLowerCase() === sku.toLowerCase());
+          if (!hit) throw e;
+          return itemsApi.update(hit.id, req);
+        }
       },
       // 5 concurrent creates — items are single-transaction rows so
       // we can push the pool a bit higher than the multi-item
