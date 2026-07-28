@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import {
   parseItemsExcel, downloadItemTemplate, toItemRequest,
+  normalizeWarehouseKey,
   ParsedItemData, ParsedItemRow,
 } from '../../utils/itemBulkParser';
 import * as itemsApi from '../../api/items';
@@ -181,6 +182,45 @@ export function BulkUploadItemsDialog({
     setProgress(initial);
     setImporting(true);
 
+    // V149 — resolve every pending warehouse name to an id BEFORE the
+    // concurrent item-import loop. Two concurrent rows for a new
+    // warehouse "AEON" would otherwise race and create two rows;
+    // pre-resolving serialises the creates so each unique name maps
+    // to exactly one id. Existing warehouses are already keyed;
+    // creates land inline and expand the map for later rows.
+    const warehouseKeyToId = new Map<string, string>();
+    for (const w of warehouses) {
+      const k = normalizeWarehouseKey(w.name ?? '');
+      if (k) warehouseKeyToId.set(k, w.id);
+    }
+    const pendingNames = new Map<string, string>();  // normalizedKey → original display name
+    for (const row of rowsToImport) {
+      const name = row.warehouseName?.trim();
+      if (!name) continue;
+      const key = normalizeWarehouseKey(name);
+      if (!key || warehouseKeyToId.has(key) || pendingNames.has(key)) continue;
+      pendingNames.set(key, name);
+    }
+    for (const [key, displayName] of pendingNames) {
+      try {
+        const created = await warehousesApi.create({ name: displayName });
+        warehouseKeyToId.set(key, created.id);
+      } catch (err) {
+        console.warn(`[BulkUpload] Could not create warehouse "${displayName}"`, err);
+        // Fall through — every row that referenced this name will
+        // import without a warehouse. Not fatal.
+      }
+    }
+    // Push any freshly-created warehouses back into the dialog's
+    // warehouses state so the preview reverse-lookup and the id→name
+    // memo pick up the new rows.
+    if (pendingNames.size > 0) {
+      try {
+        const refreshed = await warehousesApi.list();
+        setWarehouses(refreshed ?? []);
+      } catch { /* silent — state stays with pre-import warehouses */ }
+    }
+
     let okCount = 0;
     let failCount = 0;
 
@@ -192,13 +232,21 @@ export function BulkUploadItemsDialog({
           next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'creating' });
           return next;
         });
+        // v-bulk-warehouse-autocreate — enrich the request with the
+        // resolved warehouseId when the parser couldn't match earlier
+        // but a warehouse name was supplied on the row.
+        const req = toItemRequest(row);
+        if (!req.warehouseId && row.warehouseName) {
+          const id = warehouseKeyToId.get(normalizeWarehouseKey(row.warehouseName));
+          if (id) req.warehouseId = id;
+        }
         // Existing SKU → UPDATE (backend also emits an ADJUSTMENT
         // movement for any stockQty delta). New SKU → CREATE (backend
         // emits an opening-balance IN movement when stockQty > 0).
         if (row.existingItemId) {
-          return itemsApi.update(row.existingItemId, toItemRequest(row));
+          return itemsApi.update(row.existingItemId, req);
         }
-        return itemsApi.create(toItemRequest(row));
+        return itemsApi.create(req);
       },
       // 5 concurrent creates — items are single-transaction rows so
       // we can push the pool a bit higher than the multi-item
@@ -482,9 +530,26 @@ export function BulkUploadItemsDialog({
                           )}
                         </td>
                         <td className="px-3 py-2 text-gray-700">
+                          {/* Three display states:
+                              1. warehouseId matched an existing row → show the
+                                 canonical warehouse name from the tenant config.
+                              2. Raw warehouse name from Excel but no match → show
+                                 the name with a "New" badge so the operator knows
+                                 the importer will create a fresh warehouse.
+                              3. Nothing → soft em-dash. */}
                           {r.data.warehouseId
                             ? (warehouseNameById.get(r.data.warehouseId) ?? '—')
-                            : <span className="text-gray-300">—</span>}
+                            : r.warehouseName
+                              ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span>{r.warehouseName}</span>
+                                  <span className="text-[10px] font-medium px-1 py-px rounded bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                        title="Will be created on import">
+                                    New
+                                  </span>
+                                </span>
+                              )
+                              : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2 max-w-[240px]">
                           {isFailed ? (

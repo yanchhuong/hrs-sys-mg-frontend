@@ -22,8 +22,23 @@ export interface ParsedItemRow {
   /** Snapshot of the existing item's current stock at parse time so
    *  the dialog can show "10 → 25" style delta previews. */
   existingStockQty?: number;
+  /** V149 — original Warehouse cell content, trimmed (case preserved
+   *  for display). When the parser found no matching warehouse the
+   *  {@code data.warehouseId} above stays null and the importer creates
+   *  one with this name at import time. Both the preview and the
+   *  import path key on the normalised form (trim + collapse-ws +
+   *  lowercase) so "AEON" / "Aeon" / "  aeon  " all resolve to the
+   *  same warehouse. */
+  warehouseName?: string;
   errors: string[];
   warnings: string[];
+}
+
+/** Case-insensitive + whitespace-tolerant key for warehouse-name
+ *  matching. Collapses internal runs of whitespace to a single space
+ *  so "AEON  Central" and "Aeon Central" resolve identically. */
+export function normalizeWarehouseKey(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 export interface ParsedItemData {
@@ -139,12 +154,14 @@ function buildItems(rows: Record<string, unknown>[], existing: Item[], warehouse
     const k = (it.sku ?? '').toLowerCase().trim();
     if (k) existingBySku.set(k, it);
   }
-  // V149 — case-insensitive warehouse name → id lookup. Built once
-  // per parse so a 500-row upload doesn't rebuild the map on every
-  // parseRow call.
+  // V149 — case-insensitive + whitespace-tolerant warehouse-name → id
+  // lookup. Built once per parse so a 500-row upload doesn't rebuild
+  // the map on every parseRow call. Shares normaliseWarehouseKey with
+  // the importer so the parser's "matched vs will-create" decision
+  // and the importer's dedupe cache agree perfectly.
   const warehouseByName = new Map<string, Warehouse>();
   for (const w of warehouses) {
-    const k = (w.name ?? '').toLowerCase().trim();
+    const k = normalizeWarehouseKey(w.name ?? '');
     if (k) warehouseByName.set(k, w);
   }
 
@@ -196,11 +213,15 @@ function parseRow(
   const deduct = readBool(row['Stock IN/OUT'] ?? row['Deduct on Sale']);
   const description = readString(row['Description']);
   // V149 — Warehouse column is optional. Empty cell → no assignment.
-  // Non-empty name that doesn't match any configured warehouse →
-  // warning + skip assignment (row still imports without a warehouse).
+  // Non-empty name that matches an existing warehouse → warehouseId
+  // set for immediate assignment. No match → the parser preserves
+  // the raw name on warehouseName and the importer auto-creates a
+  // fresh warehouse under that name at import time (dedup within a
+  // batch keeps a spreadsheet full of "AEON" rows from spawning N
+  // warehouses).
   const warehouseName = readString(row['Warehouse']);
   const matchedWarehouse = warehouseName
-    ? warehouseByName.get(warehouseName.toLowerCase())
+    ? warehouseByName.get(normalizeWarehouseKey(warehouseName))
     : undefined;
 
   // V-bulk-image — read the Image URL cell. Accepts either a base64
@@ -236,14 +257,13 @@ function parseRow(
       // from imageUrls[0] so existing readers keep working.
       imageUrls: parsedImage ? [parsedImage] : undefined,
     },
+    // V149 — preserve the raw Excel warehouse name (trimmed, case
+    // preserved) so the preview can show it and the importer can
+    // create-if-missing at import time.
+    warehouseName: warehouseName || undefined,
     errors: [],
     warnings: [],
   };
-  if (warehouseName && !matchedWarehouse) {
-    rec.warnings.push(
-      `Warehouse "${warehouseName}" doesn't match any configured warehouse — row will import without a warehouse assignment.`,
-    );
-  }
   if (imageCell && !parsedImage) {
     rec.warnings.push(
       'Image URL cell does not look like a data:image/… URL or http(s) link — row will import without an image.',
