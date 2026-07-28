@@ -541,7 +541,7 @@ export function BulkUploadItemsDialog({
                     <th className="text-left px-3 py-2 font-medium w-16">Unit</th>
                     <th className="text-right px-3 py-2 font-medium w-20">Cost</th>
                     <th className="text-right px-3 py-2 font-medium w-20">Price</th>
-                    <th className="text-right px-3 py-2 font-medium w-16">Stock</th>
+                    <th className="text-right px-3 py-2 font-medium w-20">Current Stock</th>
                     <th className="text-left px-3 py-2 font-medium w-28">Warehouse</th>
                     <th className="text-left px-3 py-2 font-medium">Issues</th>
                   </tr>

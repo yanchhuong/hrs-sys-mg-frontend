@@ -116,14 +116,12 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   background: transparent;
 }
 .filter-strip > * { flex-shrink: 0; }
-/* Wide screens still spread the row edge-to-edge when content fits
-   (justify-between only distributes REMAINING space, so nothing
-   changes on overflow — the row just scrolls). */
-@media (min-width: 640px) {
-  .filter-strip {
-    justify-content: space-between;
-  }
-}
+/* v-filter-strip-left-align — previously spread edge-to-edge at
+   ≥640 px via `justify-content: space-between`. That looked scattered
+   on sparse rows (2-3 controls with huge gaps between them) and
+   forced per-page one-off overrides to pack them left. Pack items
+   left everywhere by default; wide-screen surfaces that legitimately
+   want to spread controls can add `justify-between` inline. */
 /* Reveal a slim scrollbar on hover (desktop only). Touch devices
    pass @media (hover: hover) as `none`, so a phone tap never
    flashes a scrollbar. */

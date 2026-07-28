@@ -1046,13 +1046,13 @@ export function Items() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
-                  Stock On Hand
+                  Current Stock
                   <TooltipProvider delayDuration={120}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span
                           className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
-                          aria-label="About Stock On Hand"
+                          aria-label="About Current Stock"
                         >
                           <Info className="h-3.5 w-3.5" />
                         </span>

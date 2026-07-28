@@ -214,22 +214,22 @@ async function buildItems(rows: Record<string, unknown>[], existing: Item[], war
   }
 
   // v-bulk-image-validate — try to decode every parsed image URL.
-  // Broken data URLs (Excel-truncated base64, malformed prefix,
-  // wrong charset) get erroed on the ROW so the importer refuses
-  // to store them. Previously the parser accepted any string that
-  // started with data:image/ or http(s):, meaning a truncated
-  // base64 landed in stock_items.image_url and rendered as a
-  // broken tile forever after. Validation runs in parallel — a
-  // 500-row upload with images finishes in a couple of seconds.
+  // Broken data URLs (Excel-truncated base64, malformed prefix, wrong
+  // charset) get a row-level WARNING (not error) and imageUrls is
+  // cleared so the row still imports — just without an image. That
+  // way the operator gets the item catalog updated even when a stray
+  // corrupt cell would otherwise block hundreds of rows, and the
+  // catalog never ends up storing a base64 that renders as a broken
+  // tile. Validation runs in parallel — a 500-row upload with images
+  // finishes in a couple of seconds.
   await Promise.all(out.map(async (rec) => {
     const url = rec.data.imageUrls?.[0];
     if (!url) return;
     const ok = await validateImage(url);
     if (!ok) {
-      rec.errors.push('Image URL failed to decode — the row will not import. Fix or clear the Image URL cell and re-upload.');
-      // Strip the bad image so a downstream toItemRequest doesn't
-      // relay it if the operator ticks the row anyway (belt-and-
-      // braces; errors already exclude the row from Import).
+      rec.warnings.push('Image URL could not be decoded — the row will import without an image. Re-upload later with a valid Image URL if you want the cover restored.');
+      // Strip the bad image so the row imports with a null cover
+      // rather than saving a broken base64.
       rec.data.imageUrls = undefined;
     }
   }));
