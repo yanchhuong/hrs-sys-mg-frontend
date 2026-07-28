@@ -22,6 +22,12 @@ export interface ParsedItemRow {
   /** Snapshot of the existing item's current stock at parse time so
    *  the dialog can show "10 → 25" style delta previews. */
   existingStockQty?: number;
+  /** Full snapshot of the existing item at parse time. Drives the
+   *  "before → after" diff preview: every cell that differs between
+   *  the existing catalog row and the new spreadsheet row renders
+   *  as `old → new` so the operator knows exactly what's changing.
+   *  Undefined for New rows (no existing to diff against). */
+  existing?: Item;
   /** V149 — original Warehouse cell content, trimmed (case preserved
    *  for display). When the parser found no matching warehouse the
    *  {@code data.warehouseId} above stays null and the importer creates
@@ -205,6 +211,7 @@ async function buildItems(rows: Record<string, unknown>[], existing: Item[], war
     if (hit) {
       rec.existingItemId = hit.id;
       rec.existingStockQty = hit.stockQty ?? 0;
+      rec.existing = hit;
     }
     if (seenSku.has(sku)) {
       rec.errors.push(`Code "${rec.data.sku}" is used by row ${seenSku.get(sku)} in this file.`);

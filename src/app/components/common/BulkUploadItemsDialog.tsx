@@ -614,50 +614,104 @@ export function BulkUploadItemsDialog({
                             <div className="h-9 w-9 rounded bg-gray-50 border border-dashed border-gray-200" />
                           )}
                         </td>
-                        <td className="px-3 py-2 font-medium">{r.data.name}</td>
-                        <td className="px-3 py-2 text-gray-700">{r.data.itemCategory ?? ''}</td>
-                        <td className="px-3 py-2 text-gray-600 capitalize">{r.data.category ?? ''}</td>
-                        <td className="px-3 py-2 text-gray-600">{r.data.unit ?? ''}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.data.unitCost != null ? r.data.unitCost.toFixed(2) : ''}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.data.unitPrice != null ? r.data.unitPrice.toFixed(2) : ''}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {r.existingItemId && r.data.stockQty != null && r.existingStockQty != null && r.data.stockQty !== r.existingStockQty ? (
-                            <span title={`Delta: ${(r.data.stockQty - r.existingStockQty > 0 ? '+' : '')}${(r.data.stockQty - r.existingStockQty).toFixed(2)}`}>
-                              <span className="text-gray-400">{r.existingStockQty}</span>
-                              <span className="text-gray-400 mx-0.5">→</span>
-                              <span className={r.data.stockQty > r.existingStockQty ? 'text-emerald-700 font-medium' : 'text-rose-700 font-medium'}>
-                                {r.data.stockQty}
-                              </span>
-                            </span>
-                          ) : (
-                            r.data.stockQty != null ? r.data.stockQty : ''
-                          )}
+                        {/* v-bulk-update-diff — Update rows now show
+                            "old → new" per cell so the operator sees
+                            exactly what will change. New rows keep the
+                            single-value display. Cells that don't
+                            change on an Update row also stay single-
+                            value (no visual noise). Long text is
+                            truncated with an ellipsis; a native
+                            tooltip carries the full before → after. */}
+                        <td className="px-3 py-2 font-medium">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.name}
+                                    after={r.data.name}
+                                    max={28} />
                         </td>
                         <td className="px-3 py-2 text-gray-700">
-                          {/* Three display states:
-                              1. warehouseId matched an existing row → show the
-                                 canonical warehouse name from the tenant config.
-                              2. Raw warehouse name from Excel but no match → show
-                                 the name with a "New" badge so the operator knows
-                                 the importer will create a fresh warehouse.
-                              3. Nothing → soft em-dash. */}
-                          {r.data.warehouseId
-                            ? (warehouseNameById.get(r.data.warehouseId) ?? '—')
-                            : r.warehouseName
-                              ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span>{r.warehouseName}</span>
-                                  <span className="text-[10px] font-medium px-1 py-px rounded bg-emerald-100 text-emerald-700 border border-emerald-200"
-                                        title="Will be created on import">
-                                    New
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.itemCategory}
+                                    after={r.data.itemCategory ?? ''}
+                                    max={20} />
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 capitalize">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.category}
+                                    after={r.data.category ?? ''}
+                                    max={14} />
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.unit}
+                                    after={r.data.unit ?? ''}
+                                    max={10} />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.unitCost}
+                                    after={r.data.unitCost}
+                                    format={(v) => Number(v).toFixed(2)}
+                                    align="right" />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existing?.unitPrice}
+                                    after={r.data.unitPrice}
+                                    format={(v) => Number(v).toFixed(2)}
+                                    align="right" />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <DiffCell isUpdate={!!r.existingItemId}
+                                    before={r.existingStockQty}
+                                    after={r.data.stockQty}
+                                    format={(v) => String(v)}
+                                    align="right" />
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {/* Warehouse diff — resolves both existing
+                              and new warehouseId to display names, or
+                              uses r.warehouseName (with "New" badge)
+                              when the parser couldn't match and the
+                              importer will auto-create. */}
+                          {(() => {
+                            const existingWhName = r.existing?.warehouseId
+                              ? (warehouseNameById.get(r.existing.warehouseId) ?? '')
+                              : '';
+                            const newWhName = r.data.warehouseId
+                              ? (warehouseNameById.get(r.data.warehouseId) ?? '')
+                              : (r.warehouseName ?? '');
+                            const willCreate = !r.data.warehouseId && !!r.warehouseName;
+                            if (r.existingItemId && existingWhName !== newWhName) {
+                              return (
+                                <span className="inline-flex items-baseline gap-1 flex-wrap"
+                                      title={`${existingWhName || '—'} → ${newWhName || '—'}`}>
+                                  <span className="text-gray-400 line-through">
+                                    {truncateText(existingWhName, 14) || '—'}
                                   </span>
+                                  <span className="text-gray-400">→</span>
+                                  <span className="font-medium text-emerald-700">
+                                    {truncateText(newWhName, 14) || '—'}
+                                  </span>
+                                  {willCreate && (
+                                    <span className="text-[10px] font-medium px-1 py-px rounded bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                          title="Will be created on import">New</span>
+                                  )}
                                 </span>
-                              )
-                              : <span className="text-gray-300">—</span>}
+                              );
+                            }
+                            if (newWhName) {
+                              return (
+                                <span className="inline-flex items-center gap-1" title={newWhName}>
+                                  <span>{truncateText(newWhName, 14)}</span>
+                                  {willCreate && (
+                                    <span className="text-[10px] font-medium px-1 py-px rounded bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                          title="Will be created on import">New</span>
+                                  )}
+                                </span>
+                              );
+                            }
+                            return <span className="text-gray-300">—</span>;
+                          })()}
                         </td>
                         <td className="px-3 py-2 max-w-[240px]">
                           {isFailed ? (
@@ -736,5 +790,59 @@ export function BulkUploadItemsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Diff cell helper — shows "old → new" for Update rows when the value        */
+/* actually changes; falls through to the new value when unchanged or when    */
+/* the row is a fresh Insert (no existing snapshot to compare against).       */
+/* -------------------------------------------------------------------------- */
+
+function truncateText(v: string | null | undefined, max: number = 24): string {
+  const s = String(v ?? '');
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function DiffCell({
+  isUpdate,
+  before,
+  after,
+  format,
+  align,
+  max = 24,
+}: {
+  /** Only show the "before → after" split for Update rows. */
+  isUpdate: boolean;
+  before: unknown;
+  after: unknown;
+  /** Optional formatter — used for numeric cells (e.g. .toFixed(2)). */
+  format?: (v: unknown) => string;
+  align?: 'left' | 'right';
+  max?: number;
+}) {
+  const fmt = (v: unknown): string => {
+    if (v == null || v === '') return '';
+    if (format) return format(v);
+    return String(v);
+  };
+  const oldStr = fmt(before);
+  const newStr = fmt(after);
+  const changed = isUpdate && oldStr !== newStr && (oldStr !== '' || newStr !== '');
+  const wrap = align === 'right' ? 'justify-end text-right' : '';
+  if (!changed) {
+    return (
+      <span className={align === 'right' ? 'tabular-nums' : ''} title={newStr}>
+        {truncateText(newStr, max) || <span className="text-gray-300">—</span>}
+      </span>
+    );
+  }
+  return (
+    <span className={`inline-flex items-baseline gap-1 flex-wrap ${wrap}`}
+          title={`${oldStr || '—'} → ${newStr || '—'}`}>
+      <span className="text-gray-400 line-through">{truncateText(oldStr, max) || '—'}</span>
+      <span className="text-gray-400">→</span>
+      <span className="font-medium text-emerald-700">{truncateText(newStr, max) || '—'}</span>
+    </span>
   );
 }
