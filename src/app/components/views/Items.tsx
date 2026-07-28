@@ -1745,15 +1745,16 @@ export function Items() {
                         </TableCell>
                         <TableCell className="text-right">
                           {/* v-items-hover-actions — Edit + Delete
-                              icons hide by default and fade in on row
-                              hover (or when a child button gains
-                              focus, so keyboard users still get to
-                              them). Row got a `group` class above so
-                              this cell can react via group-hover.
-                              focus-within keeps them visible while a
-                              popover / dialog opened from the buttons
-                              is still active. */}
-                          <div className="inline-flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+                              icons are always present (so operators
+                              on touch devices without a hover state
+                              can still find them), but rendered at
+                              ~40% opacity in the resting state. On
+                              row hover / any child focus they lift
+                              to full opacity. focus-within keeps
+                              them lit while a popover / dialog
+                              opened from the buttons is still
+                              active. */}
+                          <div className="inline-flex gap-1 opacity-40 group-hover:opacity-100 focus-within:opacity-100 transition">
                             {canEdit && (
                               <Button size="sm" variant="ghost" className="h-7"
                                 onClick={() => openEdit(it)} title="Edit" aria-label="Edit item">
