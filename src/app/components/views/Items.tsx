@@ -465,7 +465,7 @@ export function Items() {
    */
   const toggleItemFlag = async (
     it: itemsApi.Item,
-    patch: { active?: boolean; deductionEnabled?: boolean },
+    patch: { active?: boolean; deductionEnabled?: boolean; warehouseId?: string | null },
   ) => {
     const optimistic = { ...it, ...patch };
     setRows(prev => prev.map(r => r.id === it.id ? optimistic : r));
@@ -482,7 +482,11 @@ export function Items() {
       imageUrls: itemsApi.resolveImages(it),
       category: it.category,
       modifiers: it.modifiers ?? '',
-      warehouseId: it.warehouseId ?? null,
+      // `warehouseId` in patch may legitimately be null (clearing the
+      // FK), so we can't use ?? here — it would coerce null into the
+      // existing value. Explicit hasOwnProperty check preserves the
+      // "clear the warehouse" path.
+      warehouseId: 'warehouseId' in patch ? patch.warehouseId ?? null : (it.warehouseId ?? null),
       itemCategory: it.itemCategory ?? '',
       minStock: it.minStock ?? 0,
     };
@@ -495,6 +499,12 @@ export function Items() {
       toast.error(e instanceof Error ? e.message : 'Update failed');
     }
   };
+
+  /** Convenience wrapper for the inline warehouse picker in the row.
+   *  Empty string coming out of SearchablePicker means "cleared" →
+   *  send null so the FK drops. */
+  const toggleItemWarehouse = (it: itemsApi.Item, warehouseId: string | null) =>
+    toggleItemFlag(it, { warehouseId });
 
   const confirmStockIn = async () => {
     if (!stockIn) return;
@@ -510,10 +520,15 @@ export function Items() {
     }
     setReceiving(true);
     try {
-      await itemsApi.stockIn(stockIn.item.id, { qty, unitCost: cost });
+      // v-items-optimistic-stockin — matches the Edit save pattern.
+      // stockIn returns the fresh Item; splice it into rows[] instead
+      // of firing a full-page load(). No skeleton flash, no wasted
+      // list refetch — the on-hand column just ticks up on the row
+      // that changed.
+      const updated = await itemsApi.stockIn(stockIn.item.id, { qty, unitCost: cost });
+      setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
       toast.success(`Received ${qty} × ${stockIn.item.name}`);
       setStockIn(null);
-      await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Stock-in failed');
     } finally {
@@ -988,9 +1003,47 @@ export function Items() {
                         </TableCell>
                         {warehouseFeatureOn && (
                           <TableCell className="text-sm text-gray-700">
-                            {it.warehouseId
-                              ? warehouseLabelById.get(it.warehouseId) ?? <span className="text-gray-300">—</span>
-                              : <span className="text-gray-300">—</span>}
+                            {/* v-items-inline-warehouse — inline
+                                SearchablePicker matches the Department
+                                dropdown on the Employee edit form.
+                                Type-ahead + "(none)" clear + inline
+                                create ("+ Create '<name>'"). Change
+                                fires toggleItemFlag → optimistic swap
+                                + PUT, so the operator can re-assign
+                                warehouses without opening the Edit
+                                dialog. Disabled when the user lacks
+                                stock.update — read-only text falls
+                                back to the plain name / em-dash. */}
+                            {canEdit ? (
+                              <SearchablePicker
+                                options={warehouses
+                                  .filter(w => w.enabled || w.id === it.warehouseId)
+                                  .map(w => ({
+                                    value: w.id,
+                                    label: w.name + (w.enabled ? '' : ' (disabled)'),
+                                    secondary: w.code ?? undefined,
+                                  }))}
+                                value={it.warehouseId ?? ''}
+                                onChange={(v) => { void toggleItemWarehouse(it, v || null); }}
+                                placeholder="(none)"
+                                emptyLabel="(none)"
+                                searchPlaceholder="Search warehouse…"
+                                allowClear
+                                onCreate={async (label) => {
+                                  const created = await warehousesApi.create({ name: label.trim() });
+                                  setWarehouses(prev => [...prev, created]);
+                                  return {
+                                    value: created.id,
+                                    label: created.name,
+                                    secondary: created.code ?? undefined,
+                                  };
+                                }}
+                              />
+                            ) : (
+                              it.warehouseId
+                                ? warehouseLabelById.get(it.warehouseId) ?? <span className="text-gray-300">—</span>
+                                : <span className="text-gray-300">—</span>
+                            )}
                           </TableCell>
                         )}
                         <TableCell className="text-center">
