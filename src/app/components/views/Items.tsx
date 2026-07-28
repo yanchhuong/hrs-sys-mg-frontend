@@ -35,6 +35,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
+import { SearchablePicker } from '../common/SearchablePicker';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
 
 interface FormState {
@@ -446,6 +447,53 @@ export function Items() {
 
   const openStockIn = (it: itemsApi.Item) => {
     setStockIn({ item: it, qty: '', unitCost: String(it.unitCost ?? 0) });
+  };
+
+  /**
+   * v-items-inline-toggle — flip the Active or Stock IN/OUT flag
+   * directly from the row without opening the Edit dialog.
+   *
+   * Optimistic: swap the row in-place first so the toggle feels
+   * instant, fire the PUT, then reconcile on success (splice the
+   * server response back — picks up any BE-side normalisation).
+   * On failure, revert the local row and toast.
+   *
+   * Full payload is sent (not a bare patch) because ItemRequest
+   * treats {@code warehouseId=undefined} as a NULL-out signal per
+   * the API doc — we always re-emit every "safe" field to preserve
+   * the current shape.
+   */
+  const toggleItemFlag = async (
+    it: itemsApi.Item,
+    patch: { active?: boolean; deductionEnabled?: boolean },
+  ) => {
+    const optimistic = { ...it, ...patch };
+    setRows(prev => prev.map(r => r.id === it.id ? optimistic : r));
+    const payload: itemsApi.ItemRequest = {
+      sku: it.sku ?? undefined,
+      name: it.name,
+      description: it.description ?? undefined,
+      unit: it.unit ?? undefined,
+      unitPrice: it.unitPrice,
+      unitCost: it.unitCost,
+      stockQty: it.stockQty ?? 0,
+      active: patch.active ?? it.active,
+      deductionEnabled: patch.deductionEnabled ?? it.deductionEnabled,
+      imageUrls: itemsApi.resolveImages(it),
+      category: it.category,
+      modifiers: it.modifiers ?? '',
+      warehouseId: it.warehouseId ?? null,
+      itemCategory: it.itemCategory ?? '',
+      minStock: it.minStock ?? 0,
+    };
+    try {
+      const updated = await itemsApi.update(it.id, payload);
+      setRows(prev => prev.map(r => r.id === it.id ? updated : r));
+    } catch (e) {
+      // Revert the optimistic flip and surface the error.
+      setRows(prev => prev.map(r => r.id === it.id ? it : r));
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
   };
 
   const confirmStockIn = async () => {
@@ -910,7 +958,27 @@ export function Items() {
                           {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
-                          {onHand.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                          {/* v-items-receive-inline — Receive-stock
+                              action now lives here (right of the
+                              number) instead of down in the Actions
+                              cell. Same permission gate (canReceive =
+                              stock:update). Compact size so the
+                              column doesn't grow. */}
+                          <span className="inline-flex items-center gap-1.5 justify-end">
+                            <span>{onHand.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+                            {canReceive && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => openStockIn(it)}
+                                title="Receive stock"
+                                aria-label="Receive stock"
+                              >
+                                <PackagePlus className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </span>
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-500">
                           {minStock > 0 ? minStock.toLocaleString('en-US', { maximumFractionDigits: 2 }) : <span className="text-gray-300">—</span>}
@@ -926,28 +994,34 @@ export function Items() {
                           </TableCell>
                         )}
                         <TableCell className="text-center">
-                          {/* V121 — when on, the invoice save flow
+                          {/* v-items-inline-toggle — flip Stock IN/OUT
+                              in-place without opening the Edit dialog.
+                              V121 — when on, the invoice save flow
                               decrements stock and refuses to save
                               when qty > on-hand. Off = autofill only. */}
-                          {it.deductionEnabled ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">On</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-gray-500">Off</Badge>
-                          )}
+                          <Switch
+                            checked={it.deductionEnabled}
+                            onCheckedChange={(v) => { void toggleItemFlag(it, { deductionEnabled: v }); }}
+                            disabled={!canEdit}
+                            aria-label={`Toggle Stock IN/OUT for ${it.name}`}
+                          />
                         </TableCell>
                         <TableCell className="text-center">
-                          <Badge variant={it.active ? 'default' : 'outline'}>
-                            {it.active ? 'Yes' : 'No'}
-                          </Badge>
+                          {/* v-items-inline-toggle — flip Active
+                              directly from the row. */}
+                          <Switch
+                            checked={it.active}
+                            onCheckedChange={(v) => { void toggleItemFlag(it, { active: v }); }}
+                            disabled={!canEdit}
+                            aria-label={`Toggle Active for ${it.name}`}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex gap-1">
-                            {canReceive && (
-                              <Button size="sm" variant="ghost" className="h-7 text-emerald-700 hover:bg-emerald-50"
-                                onClick={() => openStockIn(it)} title="Receive stock" aria-label="Receive stock">
-                                <PackagePlus className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
+                            {/* v-items-receive-inline — Receive stock
+                                button was here; moved into the Current
+                                Stock cell above so operators have it
+                                next to the number they'd act on. */}
                             {canEdit && (
                               <Button size="sm" variant="ghost" className="h-7"
                                 onClick={() => openEdit(it)} title="Edit" aria-label="Edit item">
@@ -1129,20 +1203,43 @@ export function Items() {
                   <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
                   Warehouse
                 </Label>
-                <select
+                {/* v-warehouse-searchable — matches the Position picker
+                    on the Employee edit form. Typeahead + secondary
+                    line (Code) + clear-to-(none) affordance. Disabled
+                    warehouses stay pickable only if the current item
+                    is already assigned to one, so a legacy assignment
+                    isn't nulled just by opening the dialog. */}
+                <SearchablePicker
+                  options={warehouses
+                    .filter(w => w.enabled || w.id === form.warehouseId)
+                    .map(w => ({
+                      value: w.id,
+                      label: w.name + (w.enabled ? '' : ' (disabled)'),
+                      secondary: w.code ?? undefined,
+                    }))}
                   value={form.warehouseId}
-                  onChange={e => setForm({ ...form, warehouseId: e.target.value })}
+                  onChange={v => setForm({ ...form, warehouseId: v })}
+                  placeholder="(none)"
+                  emptyLabel="(none)"
+                  searchPlaceholder="Search warehouse…"
+                  emptyOptionsHint={
+                    <>No warehouses yet — type a name above and click "+ Create" to add one inline, or manage them under <span className="font-medium">Stock → Warehouses</span>.</>
+                  }
                   disabled={saving}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">(none)</option>
-                  {warehouses.filter(w => w.enabled || w.id === form.warehouseId).map(w => (
-                    <option key={w.id} value={w.id}>
-                      {w.code ? `${w.code} — ${w.name}` : w.name}
-                      {!w.enabled ? ' (disabled)' : ''}
-                    </option>
-                  ))}
-                </select>
+                  allowClear
+                  onCreate={async (label) => {
+                    const created = await warehousesApi.create({ name: label.trim() });
+                    // Keep the local warehouses cache in sync so the
+                    // picker + preview reverse-lookup pick up the new
+                    // row without a page refresh.
+                    setWarehouses(prev => [...prev, created]);
+                    return {
+                      value: created.id,
+                      label: created.name,
+                      secondary: created.code ?? undefined,
+                    };
+                  }}
+                />
               </div>
             )}
 
