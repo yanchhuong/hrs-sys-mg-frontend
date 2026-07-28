@@ -457,6 +457,7 @@ export function BulkUploadItemsDialog({
                     <th className="px-2 py-2 w-8 text-center"></th>
                     <th className="px-2 py-2 w-8 text-center">Status</th>
                     <th className="text-left px-3 py-2 font-medium w-24">Code</th>
+                    <th className="text-left px-3 py-2 font-medium w-14">Image</th>
                     <th className="text-left px-3 py-2 font-medium">Item</th>
                     <th className="text-left px-3 py-2 font-medium">Category</th>
                     <th className="text-left px-3 py-2 font-medium w-16">POS</th>
@@ -505,6 +506,25 @@ export function BulkUploadItemsDialog({
                           {!hasErr && (r.existingItemId
                             ? <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">Update</span>
                             : <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">New</span>)}
+                        </td>
+                        <td className="px-3 py-2">
+                          {/* v-bulk-image-thumb — 36px square preview.
+                              Broken images never reach this point (the
+                              parser errors those rows and clears the
+                              URL), so this <img> renders the actual
+                              image or a gray placeholder for rows with
+                              no Image URL cell. */}
+                          {r.data.imageUrls?.[0] ? (
+                            <img
+                              src={r.data.imageUrls[0]}
+                              alt=""
+                              className="h-9 w-9 object-cover rounded border border-gray-200"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          ) : (
+                            <div className="h-9 w-9 rounded bg-gray-50 border border-dashed border-gray-200" />
+                          )}
                         </td>
                         <td className="px-3 py-2 font-medium">{r.data.name}</td>
                         <td className="px-3 py-2 text-gray-700">{r.data.itemCategory ?? ''}</td>

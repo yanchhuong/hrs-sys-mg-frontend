@@ -132,7 +132,7 @@ export function parseItemsExcel(
           return;
         }
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
-        resolve(buildItems(rows, existingItems, warehouses));
+        buildItems(rows, existingItems, warehouses).then(resolve).catch(reject);
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
@@ -142,7 +142,32 @@ export function parseItemsExcel(
   });
 }
 
-function buildItems(rows: Record<string, unknown>[], existing: Item[], warehouses: Warehouse[]): ParsedItemData {
+/** Attempt to decode the given image URL via <img>. Resolves true when
+ *  the browser can render it (both data URLs and http(s) URLs), false
+ *  when onerror fires. Used at parse time so a truncated or malformed
+ *  base64 blob is caught before it lands in the DB — the fallback
+ *  path when this returns false is to error the row so the operator
+ *  fixes the source. */
+function validateImage(url: string): Promise<boolean> {
+  return new Promise(resolve => {
+    // Very short-circuit: obviously wrong shapes never load, spare
+    // the round-trip through <img>.
+    if (!url.startsWith('data:image/') && !/^https?:\/\//i.test(url)) {
+      resolve(false);
+      return;
+    }
+    const img = new Image();
+    // Give the browser 5s to finish decoding. Data URLs decode almost
+    // instantly; the timeout mostly guards against http(s) URLs whose
+    // host doesn't respond.
+    const t = window.setTimeout(() => { img.onload = null; img.onerror = null; resolve(false); }, 5000);
+    img.onload = () => { window.clearTimeout(t); resolve(true); };
+    img.onerror = () => { window.clearTimeout(t); resolve(false); };
+    img.src = url;
+  });
+}
+
+async function buildItems(rows: Record<string, unknown>[], existing: Item[], warehouses: Warehouse[]): Promise<ParsedItemData> {
   const out: ParsedItemRow[] = [];
   // Case-insensitive SKU → Item lookup. A collision no longer blocks
   // the row — the importer flips into UPDATE mode for that SKU and
@@ -187,6 +212,27 @@ function buildItems(rows: Record<string, unknown>[], existing: Item[], warehouse
       seenSku.set(sku, rec.rowNumber);
     }
   }
+
+  // v-bulk-image-validate — try to decode every parsed image URL.
+  // Broken data URLs (Excel-truncated base64, malformed prefix,
+  // wrong charset) get erroed on the ROW so the importer refuses
+  // to store them. Previously the parser accepted any string that
+  // started with data:image/ or http(s):, meaning a truncated
+  // base64 landed in stock_items.image_url and rendered as a
+  // broken tile forever after. Validation runs in parallel — a
+  // 500-row upload with images finishes in a couple of seconds.
+  await Promise.all(out.map(async (rec) => {
+    const url = rec.data.imageUrls?.[0];
+    if (!url) return;
+    const ok = await validateImage(url);
+    if (!ok) {
+      rec.errors.push('Image URL failed to decode — the row will not import. Fix or clear the Image URL cell and re-upload.');
+      // Strip the bad image so a downstream toItemRequest doesn't
+      // relay it if the operator ticks the row anyway (belt-and-
+      // braces; errors already exclude the row from Import).
+      rec.data.imageUrls = undefined;
+    }
+  }));
 
   const validItems = out.filter(r => r.errors.length === 0).length;
   return { items: out, errors: [], totalItems: out.length, validItems };
