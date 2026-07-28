@@ -9,8 +9,9 @@ import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
 import { Skeleton } from '../ui/skeleton';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
+import { useIsMobile } from '../ui/use-mobile';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -211,95 +212,121 @@ function ReceiveStockPopover({
     .toLocaleString('en-US', { maximumFractionDigits: 2 })
     + (item.unit ? ` ${item.unit}` : '');
 
+  const isMobile = useIsMobile();
+
+  /* Trigger + form body are the same across both surfaces — only the
+     container (Popover on desktop, Dialog on mobile) changes so the
+     form centers in the viewport on small screens instead of getting
+     clipped alongside the row's + button. Extracting these avoids
+     duplicating the JSX between the two branches. */
+  const trigger = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
+      title="Increase stock"
+      aria-label="Increase stock"
+    >
+      <PackagePlus className="h-3.5 w-3.5" />
+    </Button>
+  );
+
+  const body = (
+    <form onSubmit={submit} className="space-y-3">
+      {/* Title row — "Increase Stock — {item name}" so the operator
+          knows which row this popover is affecting even after their
+          cursor drifts off the trigger. Truncate long names so a
+          50-char product doesn't blow out the popover width. */}
+      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+        <PackagePlus className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+        <span className="shrink-0">Increase Stock —</span>
+        <span className="truncate" title={item.name}>{item.name}</span>
+      </div>
+      {/* Row 1 — Current Stock (read-only) beside + Stock (qty input).
+          Two columns so the operator sees at a glance "current N,
+          adding M". */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Current Stock</Label>
+          <Input
+            readOnly
+            value={currentStockLabel}
+            className="h-8 text-sm bg-gray-50 text-gray-600 tabular-nums"
+            tabIndex={-1}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">
+            + Stock <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            type="number" step="0.01" min="0.01"
+            autoFocus
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="e.g. 50"
+            className="h-8 text-sm tabular-nums"
+            disabled={busy}
+          />
+        </div>
+      </div>
+      {/* Row 2 — New Cost beside Selling Price. Both prefilled with
+          the item's current values; leave as-is to skip. */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">New Cost</Label>
+          <Input
+            type="number" step="0.01" min="0"
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+            placeholder="0.00"
+            className="h-8 text-sm tabular-nums"
+            disabled={busy}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Selling Price</Label>
+          <Input
+            type="number" step="0.01" min="0"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="0.00"
+            className="h-8 text-sm tabular-nums"
+            disabled={busy}
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <Button type="button" variant="outline" size="sm"
+                onClick={() => setOpen(false)} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? 'Saving…' : 'Increase'}
+        </Button>
+      </div>
+    </form>
+  );
+
+  // Mobile — center-of-screen Dialog so the form isn't clipped or
+  // pinned to the row's edge on a narrow viewport. Dialog handles
+  // focus trap + backdrop + escape close for us. Desktop keeps the
+  // anchored Popover for quicker one-off entries next to the trigger.
+  if (isMobile) {
+    return (
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+        <DialogContent className="w-[92vw] max-w-sm p-4 gap-0">
+          {body}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
-          title="Increase stock"
-          aria-label="Increase stock"
-        >
-          <PackagePlus className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-3">
-        <form onSubmit={submit} className="space-y-3">
-          {/* Title row — "Increase Stock — {item name}" so the operator
-              knows which row this popover is affecting even after their
-              cursor drifts off the trigger. Truncate long names so a
-              50-char product doesn't blow out the popover width. */}
-          <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-            <PackagePlus className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-            <span className="shrink-0">Increase Stock —</span>
-            <span className="truncate" title={item.name}>{item.name}</span>
-          </div>
-          {/* Row 1 — Current (read-only) beside Increase Stock (qty
-              input). Two columns so the operator sees at a glance
-              "current N, adding M". */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs text-gray-500">Current</Label>
-              <Input
-                readOnly
-                value={currentStockLabel}
-                className="h-8 text-sm bg-gray-50 text-gray-600 tabular-nums"
-                tabIndex={-1}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                + Stock <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="number" step="0.01" min="0.01"
-                autoFocus
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="e.g. 50"
-                className="h-8 text-sm tabular-nums"
-                disabled={busy}
-              />
-            </div>
-          </div>
-          {/* Row 2 — New Cost beside Selling Price. Both prefilled
-              with the item's current values; leave as-is to skip. */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Cost</Label>
-              <Input
-                type="number" step="0.01" min="0"
-                value={cost}
-                onChange={(e) => setCost(e.target.value)}
-                placeholder="0.00"
-                className="h-8 text-sm tabular-nums"
-                disabled={busy}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Selling Price</Label>
-              <Input
-                type="number" step="0.01" min="0"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="0.00"
-                className="h-8 text-sm tabular-nums"
-                disabled={busy}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" size="sm"
-                    onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="submit" size="sm" disabled={busy}>
-              {busy ? 'Saving…' : 'Increase'}
-            </Button>
-          </div>
-        </form>
-      </PopoverContent>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-3">{body}</PopoverContent>
     </Popover>
   );
 }
