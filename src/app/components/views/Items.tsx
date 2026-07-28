@@ -350,10 +350,13 @@ function RowImageCell({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Camera className="h-4 w-4 text-blue-600" />
-              {cover ? 'Change image' : 'Upload image'}
+              {cover ? 'Change image' : 'Upload image'} — {item.name}
             </DialogTitle>
-            <DialogDescription>
-              {item.name}. Big files are auto-compressed to a small JPEG on save.
+            {/* Keep DialogDescription mounted (Radix a11y expects one
+                per DialogContent). sr-only makes it accessible-only
+                so the visual header stays clean. */}
+            <DialogDescription className="sr-only">
+              Upload or change the cover image for {item.name}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1169,7 +1172,7 @@ export function Items() {
                         ? { label: 'Low',    cls: 'bg-amber-100 text-amber-700 border-amber-200' }
                         : { label: 'Normal', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
                     return (
-                      <TableRow key={it.id}>
+                      <TableRow key={it.id} className="group">
                         <TableCell className="tabular-nums text-xs text-gray-600">
                           {it.sku || <span className="text-gray-300">—</span>}
                         </TableCell>
@@ -1338,11 +1341,16 @@ export function Items() {
                           />
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="inline-flex gap-1">
-                            {/* v-items-receive-inline — Receive stock
-                                button was here; moved into the Current
-                                Stock cell above so operators have it
-                                next to the number they'd act on. */}
+                          {/* v-items-hover-actions — Edit + Delete
+                              icons hide by default and fade in on row
+                              hover (or when a child button gains
+                              focus, so keyboard users still get to
+                              them). Row got a `group` class above so
+                              this cell can react via group-hover.
+                              focus-within keeps them visible while a
+                              popover / dialog opened from the buttons
+                              is still active. */}
+                          <div className="inline-flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
                             {canEdit && (
                               <Button size="sm" variant="ghost" className="h-7"
                                 onClick={() => openEdit(it)} title="Edit" aria-label="Edit item">
