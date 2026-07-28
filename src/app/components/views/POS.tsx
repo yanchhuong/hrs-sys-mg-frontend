@@ -5,6 +5,7 @@ import {
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -182,6 +183,22 @@ export function POS() {
   useEffect(() => { if (checkoutOpen) setCheckoutMethod('cash'); }, [checkoutOpen]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [receipt, setReceipt] = useState<PosOrder | null>(null);
+
+  // v-pos-cart-collapsible — desktop-only fold on the right cart
+  // aside. Collapsed → the 380 px panel disappears, a narrow 40 px
+  // rail with a chevron + running item count stays pinned to the
+  // right edge so the operator can bring it back with one click and
+  // never loses "there's a cart here" context. State persists
+  // in localStorage so a tab reload keeps the operator's layout.
+  const CART_COLLAPSED_KEY = 'hrms:pos:cartCollapsed';
+  const [cartCollapsed, setCartCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(CART_COLLAPSED_KEY) === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(CART_COLLAPSED_KEY, cartCollapsed ? '1' : '0'); }
+    catch { /* private-mode / disabled storage — silent no-op. */ }
+  }, [cartCollapsed]);
 
   // Customer-display "mirror screen" plumbing. We keep a single
   // BroadcastChannel open for the page's lifetime; every relevant
@@ -1191,50 +1208,41 @@ export function POS() {
                   })}
               </div>
               {showWarehouseFilter && (
-                // Right side of the same row. `max-w-[45%]` caps its
-                // share on wide screens so the category chips keep
-                // their scroll headroom; both sides then compete for
-                // the remaining width but their internal scroll keeps
-                // them reachable.
-                <div className="chip-row shrink-0 max-w-[45%] pl-3 border-l border-gray-200">
-                  <WarehouseIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <button
-                    type="button"
-                    onClick={() => setWarehouseFilter('')}
-                    className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
-                      warehouseFilter === ''
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                    }`}
+                // v-pos-warehouse-dropdown — swapped the chip row for
+                // a single Select. Chips were eating horizontal space
+                // that the category row + product grid need more; the
+                // dropdown collapses to one control that carries the
+                // count inline and holds every warehouse (including
+                // zero-count ones — the operator picks by name, not
+                // by "is it non-empty").
+                <div className="shrink-0 pl-3 border-l border-gray-200 flex items-center gap-1.5">
+                  <WarehouseIcon
+                    className="h-3.5 w-3.5 text-gray-400 shrink-0 cursor-help"
+                    aria-label="Choose Warehouse"
                   >
-                    All
-                    <span className="ml-1 text-[10px] opacity-70">({warehouseCounts.get('') ?? 0})</span>
-                  </button>
-                  {warehouses.map(w => {
-                    const count = warehouseCounts.get(w.id) ?? 0;
-                    const active = warehouseFilter === w.id;
-                    // Hide zero-count warehouses unless active — matches
-                    // the category-chip empty-bucket rule so the row
-                    // stays uncluttered on a POS that filed products
-                    // into only one of the warehouses.
-                    if (!active && count === 0) return null;
-                    return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => setWarehouseFilter(w.id)}
-                        className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
-                          active
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                        }`}
-                        title={w.name}
-                      >
-                        {w.name}
-                        <span className="ml-1 text-[10px] opacity-70">({count})</span>
-                      </button>
-                    );
-                  })}
+                    <title>Choose Warehouse</title>
+                  </WarehouseIcon>
+                  <Select
+                    value={warehouseFilter === '' ? '__all' : warehouseFilter}
+                    onValueChange={(v) => setWarehouseFilter(v === '__all' ? '' : v)}
+                  >
+                    <SelectTrigger className="h-8 w-44 text-xs" aria-label="Filter by warehouse">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all">
+                        All ({warehouseCounts.get('') ?? 0})
+                      </SelectItem>
+                      {warehouses.map(w => {
+                        const count = warehouseCounts.get(w.id) ?? 0;
+                        return (
+                          <SelectItem key={w.id} value={w.id}>
+                            {w.name} ({count})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
@@ -1275,10 +1283,28 @@ export function POS() {
             aside on the right. Mobile (<lg) hides the aside entirely;
             the cart opens as a bottom Sheet triggered by the FAB
             rendered outside the flex row. cartBody below is shared
-            between the two so we don't fork the JSX. */}
-        <aside className="hidden lg:flex w-[380px] flex-col bg-gray-50 min-h-0">
-          {cartBody}
-        </aside>
+            between the two so we don't fork the JSX.
+            v-pos-cart-collapsible — the aside can be folded to a
+            narrow rail so the items grid gets more room. Collapsed
+            state persists per-user via localStorage. */}
+        {/* Only render the aside when NOT collapsed. Collapsed state
+            gives the items grid the full width; the operator brings
+            the cart back via the floating FAB below (same shape as
+            the mobile one, just gated on lg+ and cartCollapsed). */}
+        {!cartCollapsed && (
+          <aside className="hidden lg:flex w-[380px] flex-col bg-gray-50 min-h-0 relative">
+            <button
+              type="button"
+              onClick={() => setCartCollapsed(true)}
+              className="absolute top-3 -left-3 z-10 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-emerald-700 hover:border-emerald-300 flex items-center justify-center"
+              title="Collapse cart"
+              aria-label="Collapse cart"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            {cartBody}
+          </aside>
+        )}
       </div>
 
       {/* Mobile-only FAB — hidden on lg+. Shows item count + running
@@ -1293,6 +1319,25 @@ export function POS() {
           {cart.reduce((n, l) => n + l.quantity, 0)} · ${total.toFixed(2)}
         </span>
       </Button>
+
+      {/* v-pos-cart-collapsible — desktop counterpart of the mobile
+          FAB. Same visual shape (bottom-right green pill), but
+          clicking it expands the aside back in place rather than
+          opening a bottom-sheet. Only rendered when cartCollapsed
+          is true AND we're on lg+ so it never fights the mobile FAB. */}
+      {cartCollapsed && (
+        <Button
+          type="button"
+          onClick={() => setCartCollapsed(false)}
+          className="hidden lg:flex fixed bottom-4 right-4 z-30 h-14 rounded-full pl-4 pr-5 shadow-lg bg-emerald-600 hover:bg-emerald-700 text-white"
+          title="Expand cart"
+        >
+          <ShoppingCart className="h-5 w-5 mr-2" />
+          <span className="text-sm font-semibold">
+            {cart.reduce((n, l) => n + l.quantity, 0)} · ${total.toFixed(2)}
+          </span>
+        </Button>
+      )}
 
       {/* Mobile cart drawer — same content as the desktop aside. */}
       <Sheet open={mobileCartOpen} onOpenChange={setMobileCartOpen}>

@@ -26,7 +26,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -109,10 +109,285 @@ const DRINK_DEFAULT_MODIFIERS: itemsApi.ModifierGroup[] = [
   },
 ];
 
-interface StockInState {
+
+/* -------------------------------------------------------------------------- */
+/* Inline "Receive Stock" popover — anchored to the + button in each row's    */
+/* Current Stock cell. Declared BEFORE Items() (not below) because Vite's     */
+/* React Fast Refresh has a stale-module edge case when a helper referenced   */
+/* inside the exported component's JSX is declared after it — plain function  */
+/* hoisting is fine at runtime, but HMR sometimes serves the exported         */
+/* component from cache before the helper's declaration has been re-evaluated */
+/* and the browser reports "ReceiveStockPopover is not defined". Declaring    */
+/* first sidesteps the whole class of issues.                                 */
+/* -------------------------------------------------------------------------- */
+
+function ReceiveStockPopover({
+  item,
+  onReceived,
+}: {
   item: itemsApi.Item;
-  qty: string;
-  unitCost: string;
+  /** Called with the fresh Item returned by itemsApi.stockIn so the
+   *  parent can splice-in-place (matches the same optimistic pattern
+   *  the flag toggles + edit save use). */
+  onReceived: (updated: itemsApi.Item) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [qty, setQty] = useState<string>('');
+  const [cost, setCost] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+
+  // Reset the form every time the popover opens so a previous partial
+  // entry doesn't carry over. Pre-fill unitCost with the item's
+  // current cost so the operator can leave it as-is or bump it.
+  useEffect(() => {
+    if (open) {
+      setQty('');
+      setCost(String(item.unitCost ?? 0));
+    }
+  }, [open, item.unitCost]);
+
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const q = Number(qty);
+    if (!Number.isFinite(q) || q <= 0) {
+      toast.error('Quantity must be positive');
+      return;
+    }
+    const c = cost.trim() === '' ? undefined : Number(cost);
+    if (c !== undefined && (!Number.isFinite(c) || c < 0)) {
+      toast.error('Unit cost must be 0 or more');
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await itemsApi.stockIn(item.id, { qty: q, unitCost: c });
+      toast.success(`Received ${q} × ${item.name}`);
+      onReceived(updated);
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Stock-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
+          title="Receive stock"
+          aria-label="Receive stock"
+        >
+          <PackagePlus className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-3">
+        <form onSubmit={submit} className="space-y-3">
+          <div className="text-xs text-gray-600">
+            <div className="flex items-center gap-1.5 font-medium text-gray-900 text-sm mb-1">
+              <PackagePlus className="h-3.5 w-3.5 text-emerald-600" />
+              Receive Stock
+            </div>
+            Add to <span className="font-medium text-gray-900">{item.name}</span>. Current:{' '}
+            <span className="tabular-nums font-medium">
+              {Number(item.stockQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+            </span>
+            {item.unit ? ` ${item.unit}` : ''}.
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Quantity received <span className="text-red-500">*</span></Label>
+            <Input
+              type="number" step="0.01" min="0.01"
+              autoFocus
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              placeholder="e.g. 50"
+              className="h-8 text-sm"
+              disabled={busy}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">
+              New unit cost <span className="text-gray-400">(leave blank to keep current)</span>
+            </Label>
+            <Input
+              type="number" step="0.01" min="0"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              placeholder={`Current: ${Number(item.unitCost ?? 0).toFixed(2)}`}
+              className="h-8 text-sm"
+              disabled={busy}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm"
+                    onClick={() => setOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={busy}>
+              {busy ? 'Receiving…' : 'Receive'}
+            </Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Inline image cell — click the thumbnail (or placeholder) to open a small   */
+/* dialog that lets the operator upload / replace / remove the cover without  */
+/* opening the full Edit dialog. Hover reveals a camera-icon overlay as the   */
+/* discoverability cue. Read-only fallback when the user lacks stock.update.  */
+/* Declared BEFORE Items() to sidestep the Vite Fast Refresh                  */
+/* "helper-defined-after-caller" edge case (same reason ReceiveStockPopover   */
+/* is up here).                                                               */
+/* -------------------------------------------------------------------------- */
+
+function RowImageCell({
+  item,
+  disabled,
+  onSaved,
+}: {
+  item: itemsApi.Item;
+  disabled: boolean;
+  /** Called with the fresh Item returned by itemsApi.update so the
+   *  parent can splice-in-place (matches ReceiveStockPopover). */
+  onSaved: (updated: itemsApi.Item) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [imageUrls, setImageUrls] = useState<string[]>(() => itemsApi.resolveImages(item));
+  const [busy, setBusy] = useState(false);
+
+  // Reset the transient buffer to the current row every time the
+  // dialog opens — a rejected save or an external row change (from
+  // an unrelated toggle) shouldn't leave stale state behind.
+  useEffect(() => {
+    if (open) setImageUrls(itemsApi.resolveImages(item));
+  }, [open, item]);
+
+  const cover = item.imageThumbUrl || item.imageUrl || itemsApi.resolveImages(item)[0] || '';
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      // Regenerate the small thumbnail from the first image (cover).
+      // Empty list → clear both the thumb and cover columns.
+      const first = imageUrls[0] ?? '';
+      const imageThumbUrl = first
+        ? await makeThumbnailFromUrl(first).catch(() => '')
+        : '';
+      const payload: itemsApi.ItemRequest = {
+        sku: item.sku ?? undefined,
+        name: item.name,
+        description: item.description ?? undefined,
+        unit: item.unit ?? undefined,
+        unitPrice: item.unitPrice,
+        unitCost: item.unitCost,
+        stockQty: item.stockQty ?? 0,
+        active: item.active,
+        deductionEnabled: item.deductionEnabled,
+        imageUrls,
+        imageThumbUrl,
+        category: item.category,
+        modifiers: item.modifiers ?? '',
+        warehouseId: item.warehouseId ?? null,
+        itemCategory: item.itemCategory ?? '',
+        minStock: item.minStock ?? 0,
+      };
+      const updated = await itemsApi.update(item.id, payload);
+      onSaved(updated);
+      toast.success('Image updated');
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = () => setImageUrls([]);
+
+  const trigger = (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => setOpen(true)}
+      className="group relative h-10 w-10 rounded-md overflow-hidden border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-default"
+      title={disabled ? undefined : (cover ? 'Change image' : 'Upload image')}
+      aria-label={disabled ? 'Item image' : (cover ? 'Change image' : 'Upload image')}
+    >
+      {cover ? (
+        <ThumbnailImage
+          src={cover}
+          alt={item.name}
+          className="h-full w-full object-cover"
+          onError={() => { /* placeholder handled by parent CSS */ }}
+        />
+      ) : (
+        <div className="h-full w-full bg-gray-100 flex items-center justify-center text-gray-400">
+          <ImageIcon className="h-4 w-4" />
+        </div>
+      )}
+      {!disabled && (
+        <span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/40 text-white transition">
+          <Camera className="h-4 w-4" />
+        </span>
+      )}
+    </button>
+  );
+
+  if (disabled) return trigger;
+
+  return (
+    <>
+      {trigger}
+      <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="h-4 w-4 text-blue-600" />
+              {cover ? 'Change image' : 'Upload image'}
+            </DialogTitle>
+            <DialogDescription>
+              {item.name}. Big files are auto-compressed to a small JPEG on save.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <MultiImageDropZone
+              value={imageUrls}
+              onChange={setImageUrls}
+              max={5}
+              disabled={busy}
+              hint="First image is the product card cover. Drop or click to add."
+            />
+          </div>
+          <DialogFooter className="flex justify-between sm:justify-between gap-2">
+            <Button
+              variant="ghost"
+              className="text-red-600 hover:bg-red-50"
+              onClick={clear}
+              disabled={busy || imageUrls.length === 0}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Clear all
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button onClick={save} disabled={busy}>
+                {busy ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 /**
@@ -171,8 +446,9 @@ export function Items() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<itemsApi.Item | null>(null);
 
-  const [stockIn, setStockIn] = useState<StockInState | null>(null);
-  const [receiving, setReceiving] = useState(false);
+  // v-items-receive-popover — stockIn state + receiving flag moved
+  // into the ReceiveStockPopover component (each row's + button
+  // owns its own transient form state now).
 
   const load = async () => {
     setLoading(true);
@@ -445,10 +721,6 @@ export function Items() {
     }
   };
 
-  const openStockIn = (it: itemsApi.Item) => {
-    setStockIn({ item: it, qty: '', unitCost: String(it.unitCost ?? 0) });
-  };
-
   /**
    * v-items-inline-toggle — flip the Active or Stock IN/OUT flag
    * directly from the row without opening the Edit dialog.
@@ -506,35 +778,11 @@ export function Items() {
   const toggleItemWarehouse = (it: itemsApi.Item, warehouseId: string | null) =>
     toggleItemFlag(it, { warehouseId });
 
-  const confirmStockIn = async () => {
-    if (!stockIn) return;
-    const qty = Number(stockIn.qty);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error('Quantity must be positive');
-      return;
-    }
-    const cost = stockIn.unitCost.trim() === '' ? undefined : Number(stockIn.unitCost);
-    if (cost !== undefined && (!Number.isFinite(cost) || cost < 0)) {
-      toast.error('Unit cost must be 0 or more');
-      return;
-    }
-    setReceiving(true);
-    try {
-      // v-items-optimistic-stockin — matches the Edit save pattern.
-      // stockIn returns the fresh Item; splice it into rows[] instead
-      // of firing a full-page load(). No skeleton flash, no wasted
-      // list refetch — the on-hand column just ticks up on the row
-      // that changed.
-      const updated = await itemsApi.stockIn(stockIn.item.id, { qty, unitCost: cost });
-      setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
-      toast.success(`Received ${qty} × ${stockIn.item.name}`);
-      setStockIn(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Stock-in failed');
-    } finally {
-      setReceiving(false);
-    }
-  };
+  // v-items-receive-popover — confirmStockIn moved into the
+  // ReceiveStockPopover component. Each row's + button now runs its
+  // own submit + toast loop against itemsApi.stockIn, calling back
+  // via onReceived so this parent still owns the optimistic splice
+  // into rows[].
 
   return (
     <div className="space-y-6">
@@ -926,18 +1174,19 @@ export function Items() {
                           {it.sku || <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell>
-                          {(it.imageThumbUrl || it.imageUrl) ? (
-                            <ThumbnailImage
-                              src={it.imageThumbUrl || it.imageUrl!}
-                              alt={it.name}
-                              className="h-10 w-10 rounded-md object-cover border border-gray-200"
-                              onError={() => { /* placeholder handled by parent CSS */ }}
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400">
-                              <ImageIcon className="h-4 w-4" />
-                            </div>
-                          )}
+                          {/* v-items-row-image-upload — click the
+                              thumbnail (or empty placeholder) to open a
+                              small dialog for uploading / replacing the
+                              cover without going through the full Edit
+                              dialog. Hover reveals a camera-icon overlay
+                              as the affordance. Read-only fallback when
+                              the user lacks stock.update. */}
+                          <RowImageCell
+                            item={it}
+                            disabled={!canEdit}
+                            onSaved={(updated) =>
+                              setRows(prev => prev.map(r => r.id === updated.id ? updated : r))}
+                          />
                         </TableCell>
                         <TableCell className="font-medium">
                           {it.name}
@@ -990,16 +1239,11 @@ export function Items() {
                           <span className="inline-flex items-center gap-1.5 justify-end">
                             <span>{onHand.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
                             {canReceive && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
-                                onClick={() => openStockIn(it)}
-                                title="Receive stock"
-                                aria-label="Receive stock"
-                              >
-                                <PackagePlus className="h-3.5 w-3.5" />
-                              </Button>
+                              <ReceiveStockPopover
+                                item={it}
+                                onReceived={(updated) =>
+                                  setRows(prev => prev.map(r => r.id === updated.id ? updated : r))}
+                              />
                             )}
                           </span>
                         </TableCell>
@@ -1046,6 +1290,22 @@ export function Items() {
                                     secondary: created.code ?? undefined,
                                   };
                                 }}
+                                /* v-items-warehouse-borderless — trigger
+                                   reads as plain text at rest. Border
+                                   + chevron only show on hover / focus
+                                   / open. Same "cell looks static until
+                                   you interact" affordance the
+                                   InlineUnitCell uses. */
+                                className={
+                                  'h-8 border-transparent bg-transparent shadow-none px-2 transition '
+                                  + 'hover:border-input hover:bg-white '
+                                  + 'focus-visible:border-input focus-visible:bg-white '
+                                  + 'data-[state=open]:border-input data-[state=open]:bg-white '
+                                  + '[&>svg]:opacity-0 '
+                                  + 'hover:[&>svg]:opacity-50 '
+                                  + 'focus-visible:[&>svg]:opacity-50 '
+                                  + 'data-[state=open]:[&>svg]:opacity-50'
+                                }
                               />
                             ) : (
                               it.warehouseId
@@ -1446,54 +1706,10 @@ export function Items() {
       </Dialog>
 
       {/* Receive stock dialog */}
-      <Dialog open={!!stockIn} onOpenChange={o => !o && setStockIn(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PackagePlus className="h-4 w-4 text-emerald-600" />
-              Receive Stock
-            </DialogTitle>
-            <DialogDescription>
-              Add to <strong>{stockIn?.item.name}</strong>. Current on-hand:{' '}
-              <span className="tabular-nums">{Number(stockIn?.item.stockQty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
-              {stockIn?.item.unit ? ` ${stockIn.item.unit}` : ''}.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Quantity received <span className="text-red-500">*</span></Label>
-              <Input
-                type="number" step="0.01" min="0.01"
-                autoFocus
-                value={stockIn?.qty ?? ''}
-                onChange={e => stockIn && setStockIn({ ...stockIn, qty: e.target.value })}
-                placeholder="e.g. 50"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">
-                New unit cost <span className="text-gray-400">(leave blank to keep current)</span>
-              </Label>
-              <Input
-                type="number" step="0.01" min="0"
-                value={stockIn?.unitCost ?? ''}
-                onChange={e => stockIn && setStockIn({ ...stockIn, unitCost: e.target.value })}
-                placeholder={`Current: ${Number(stockIn?.item.unitCost ?? 0).toFixed(2)}`}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStockIn(null)} disabled={receiving}>
-              Cancel
-            </Button>
-            <Button onClick={confirmStockIn} disabled={receiving}>
-              {receiving ? 'Receiving…' : 'Receive'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* v-items-receive-popover — old modal Dialog for Receive Stock
+          was replaced by an inline Popover anchored to the + button
+          in each row's Current Stock cell. See ReceiveStockPopover
+          at the bottom of this file. */}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>
@@ -1704,3 +1920,4 @@ function InlineUnitCell({
     />
   );
 }
+

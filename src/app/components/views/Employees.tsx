@@ -1654,6 +1654,20 @@ export function Employees() {
                         placeholder="Set position…"
                         searchPlaceholder="Search position…"
                         allowClear={false}
+                        /* v-employees-picker-borderless — trigger reads
+                           as plain text at rest; border + chevron only
+                           show on hover / focus / open (matches the
+                           row-level warehouse picker on Items). */
+                        className={
+                          'h-8 border-transparent bg-transparent shadow-none px-2 transition '
+                          + 'hover:border-input hover:bg-white '
+                          + 'focus-visible:border-input focus-visible:bg-white '
+                          + 'data-[state=open]:border-input data-[state=open]:bg-white '
+                          + '[&>svg]:opacity-0 '
+                          + 'hover:[&>svg]:opacity-50 '
+                          + 'focus-visible:[&>svg]:opacity-50 '
+                          + 'data-[state=open]:[&>svg]:opacity-50'
+                        }
                       />
                     ) : (
                       employee.position
@@ -1675,6 +1689,16 @@ export function Employees() {
                         placeholder="Set department…"
                         searchPlaceholder="Search department…"
                         allowClear
+                        className={
+                          'h-8 border-transparent bg-transparent shadow-none px-2 transition '
+                          + 'hover:border-input hover:bg-white '
+                          + 'focus-visible:border-input focus-visible:bg-white '
+                          + 'data-[state=open]:border-input data-[state=open]:bg-white '
+                          + '[&>svg]:opacity-0 '
+                          + 'hover:[&>svg]:opacity-50 '
+                          + 'focus-visible:[&>svg]:opacity-50 '
+                          + 'data-[state=open]:[&>svg]:opacity-50'
+                        }
                       />
                     ) : (
                       deptName(employee.department)
