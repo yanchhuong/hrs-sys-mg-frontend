@@ -465,7 +465,7 @@ export function Items() {
    */
   const toggleItemFlag = async (
     it: itemsApi.Item,
-    patch: { active?: boolean; deductionEnabled?: boolean; warehouseId?: string | null },
+    patch: { active?: boolean; deductionEnabled?: boolean; warehouseId?: string | null; unit?: string },
   ) => {
     const optimistic = { ...it, ...patch };
     setRows(prev => prev.map(r => r.id === it.id ? optimistic : r));
@@ -473,7 +473,7 @@ export function Items() {
       sku: it.sku ?? undefined,
       name: it.name,
       description: it.description ?? undefined,
-      unit: it.unit ?? undefined,
+      unit: patch.unit ?? it.unit ?? undefined,
       unitPrice: it.unitPrice,
       unitCost: it.unitCost,
       stockQty: it.stockQty ?? 0,
@@ -963,8 +963,16 @@ export function Items() {
                             <span className="text-gray-300">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-center text-xs text-gray-600">
-                          {it.unit || <span className="text-gray-300">—</span>}
+                        <TableCell className="p-1 text-center text-xs text-gray-600">
+                          {/* v-items-inline-unit — click to focus,
+                              type, blur to save. Enter commits + blur;
+                              Escape reverts. Empty save clears the
+                              unit on the server. */}
+                          <InlineUnitCell
+                            value={it.unit ?? ''}
+                            disabled={!canEdit}
+                            onSave={(next) => { void toggleItemFlag(it, { unit: next }); }}
+                          />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-600">
                           {Number(it.unitCost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1641,5 +1649,58 @@ function ModifiersEditor({
         ))
       )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Inline-editable Unit cell for the Items row.                               */
+/*   • Click / focus → the transparent input reads as regular text.           */
+/*   • Type → local state buffers the value.                                  */
+/*   • Blur → if changed, fire onSave (which drives toggleItemFlag PUT).      */
+/*   • Enter commits (blurs); Escape reverts to the last saved value.         */
+/* Same optimistic-then-reconcile pattern the flag toggles use, so the row    */
+/* updates instantly and the server reconciles on the next render.            */
+/* -------------------------------------------------------------------------- */
+
+function InlineUnitCell({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  disabled: boolean;
+  onSave: (next: string) => void;
+}) {
+  const [text, setText] = useState<string>(value);
+  const [focused, setFocused] = useState<boolean>(false);
+  // Keep the local buffer in sync when the parent's optimistic /
+  // reconciled row swap lands a fresh value while we're NOT editing.
+  // Skipping the sync during focus preserves in-progress typing.
+  useEffect(() => {
+    if (!focused) setText(value);
+  }, [value, focused]);
+  return (
+    <input
+      type="text"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        const trimmed = text.trim();
+        if (trimmed !== (value ?? '')) onSave(trimmed);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.currentTarget.blur(); }
+        else if (e.key === 'Escape') { setText(value); e.currentTarget.blur(); }
+      }}
+      disabled={disabled}
+      placeholder={disabled ? '' : '—'}
+      className={`w-full text-center text-xs bg-transparent px-1.5 py-1 rounded border transition ${
+        focused
+          ? 'border-blue-400 bg-white outline-none'
+          : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
+      } disabled:opacity-60 disabled:cursor-not-allowed`}
+    />
   );
 }
