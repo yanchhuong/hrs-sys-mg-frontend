@@ -1930,48 +1930,30 @@ export function Attendance({ onNavigate }: Props = {}) {
                       </button>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {/* Filter tabs + Hours filter + view-mode toggle */}
-              <div className="filter-strip mt-3 min-w-0">
-                {/* Hours fulfilment filter — independent of the chips
-                    above. Slices to rows that did vs. didn't reach 8h
-                    of scanned work, leaving everything else untouched. */}
-                <Select value={hoursFilter} onValueChange={v => setHoursFilter(v as typeof hoursFilter)}>
-                  <SelectTrigger className="h-8 w-44 text-xs">
-                    <SelectValue placeholder="Hours" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Hours: all</SelectItem>
-                    <SelectItem value="fulfilled">Fulfilled (≥ 8h)</SelectItem>
-                    <SelectItem value="short">Short (&lt; 8h)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {/* Roster ↔ Scan History toggle. Roster aggregates one
-                    row per (employee, date) with the four punches.
-                    Scan History flattens those punches into a per-event
-                    log so admins can see exactly who tapped which
-                    device when, sorted newest-first. */}
-                <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setDailyViewMode('roster')}
-                    className={`px-3 py-1.5 text-xs rounded ${
-                      dailyViewMode === 'roster' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Roster
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDailyViewMode('history')}
-                    className={`px-3 py-1.5 text-xs rounded ${
-                      dailyViewMode === 'history' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Scan History
-                  </button>
+                  {/* v-attendance-filter-single-row — Hours fulfilment
+                      filter + Roster/History toggle now sit on the same
+                      row as From/To/Clear/Dept/Search so operators don't
+                      have to scan two rows. All slide together as a
+                      single .filter-strip line on narrow screens. */}
+                  <Select value={hoursFilter} onValueChange={v => setHoursFilter(v as typeof hoursFilter)}>
+                    <SelectTrigger className="h-8 w-40 text-xs shrink-0">
+                      <SelectValue placeholder="Hours" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">None</SelectItem>
+                      <SelectItem value="fulfilled">Fulfilled (≥ 8h)</SelectItem>
+                      <SelectItem value="short">Short (&lt; 8h)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {/* v-attendance-history-hidden — Roster / History
+                      view-mode toggle is parked. The History view
+                      shipped but the operator flow doesn't need it
+                      routinely, and its presence next to the search
+                      confused users into thinking it was a filter.
+                      Leaving the state + branches intact so the toggle
+                      can come back when the future workflow (device-
+                      tap audit) needs it — just wrap the JSX in
+                      {false && (…)} for now. */}
                 </div>
               </div>
             </CardHeader>
