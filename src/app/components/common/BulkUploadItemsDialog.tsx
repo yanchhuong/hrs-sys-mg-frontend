@@ -89,6 +89,12 @@ export function BulkUploadItemsDialog({
   // emit warnings — the operator sees why nothing landed and can
   // enable the feature under Items → Settings before re-uploading.
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+  // v-bulk-row-filter — filter the preview table by status so an
+  // operator scanning a big spreadsheet can jump to just the New /
+  // Update / Failed rows. Default 'all' preserves the previous
+  // behaviour. Reset on every fresh parse so a stale chip doesn't
+  // hide new rows.
+  const [rowFilter, setRowFilter] = useState<'all' | 'new' | 'update' | 'error'>('all');
   // Reverse lookup for the preview table's Warehouse column — parser
   // stores the UUID after resolving the name; the table shows the name
   // back so operators recognise it at a glance.
@@ -150,6 +156,7 @@ export function BulkUploadItemsDialog({
     setProgress(new Map());
     setFinalResult(null);
     setSelectedRows(new Set());
+    setRowFilter('all');
   };
 
   const handleSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -482,6 +489,43 @@ export function BulkUploadItemsDialog({
             </div>
           )}
 
+          {/* v-bulk-row-filter — chip row above the preview table.
+              Same filter-strip contract every other list page uses
+              (nowrap + hover-scroll on narrow), and the counts
+              already computed for the summary banners feed the chip
+              labels so an operator sees "how many will fail" at a
+              glance without scanning the whole spreadsheet. */}
+          {parsed && parsed.items.length > 0 && summary && (
+            <div className="filter-strip">
+              {([
+                { key: 'all',    label: 'All',    count: summary.total },
+                { key: 'new',    label: 'New',    count: summary.toInsert },
+                { key: 'update', label: 'Update', count: summary.toUpdate },
+                { key: 'error',  label: 'Failed', count: summary.errorRows },
+              ] as const).map(chip => {
+                const active = rowFilter === chip.key;
+                const tone = chip.key === 'new'    ? 'text-emerald-700 border-emerald-200 bg-emerald-50'
+                          : chip.key === 'update' ? 'text-amber-700 border-amber-200 bg-amber-50'
+                          : chip.key === 'error'  ? 'text-red-700 border-red-200 bg-red-50'
+                          :                          'text-gray-700 border-gray-200 bg-gray-50';
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => setRowFilter(chip.key)}
+                    className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition
+                      ${active ? 'bg-blue-600 border-blue-600 text-white' : tone + ' hover:bg-white'}`}
+                  >
+                    {chip.label}
+                    <span className={`text-[10px] font-semibold rounded-full px-1.5 py-px ${active ? 'bg-white/20' : 'bg-white'}`}>
+                      {chip.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {parsed && parsed.items.length > 0 && (
             <div className="rounded-md border overflow-auto max-h-[420px]">
               <table className="w-full text-xs">
@@ -503,7 +547,18 @@ export function BulkUploadItemsDialog({
                   </tr>
                 </thead>
                 <tbody>
-                  {parsed.items.map(r => {
+                  {parsed.items.filter(r => {
+                    // v-bulk-row-filter — client-side status filter.
+                    // Selection state is unaffected — hidden rows keep
+                    // their tick, so Import still includes ticked rows
+                    // even when the operator has narrowed the view to
+                    // just "New" or "Update".
+                    if (rowFilter === 'all')    return true;
+                    if (rowFilter === 'error')  return r.errors.length > 0;
+                    if (rowFilter === 'new')    return r.errors.length === 0 && !r.existingItemId;
+                    if (rowFilter === 'update') return r.errors.length === 0 && !!r.existingItemId;
+                    return true;
+                  }).map(r => {
                     const prog = progress.get(r.rowNumber);
                     const hasErr = r.errors.length > 0;
                     const isCreated = prog?.status === 'created';
