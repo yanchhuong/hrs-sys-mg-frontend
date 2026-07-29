@@ -318,7 +318,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
    */
   const patchCustomer = async (
     c: customersApi.Customer,
-    patch: Partial<Pick<customersApi.Customer, 'phone' | 'tin' | 'representative' | 'site'>>,
+    patch: Partial<Pick<customersApi.Customer, 'phone' | 'tin' | 'representative' | 'site' | 'email' | 'address'>>,
   ) => {
     const optimistic = { ...c, ...patch };
     setRows(prev => prev.map(r => r.id === c.id ? optimistic : r));
@@ -327,9 +327,9 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
       kind: c.kind,
       name: c.name,
       phone: patch.phone ?? c.phone ?? undefined,
-      address: c.address ?? undefined,
+      address: patch.address ?? c.address ?? undefined,
       cid: c.cid ?? undefined,
-      email: c.email ?? undefined,
+      email: patch.email ?? c.email ?? undefined,
       tin: patch.tin ?? c.tin ?? undefined,
       representative: patch.representative ?? c.representative ?? undefined,
       site: patch.site ?? c.site ?? undefined,
@@ -652,6 +652,14 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     {!isPatient && !isStudent && <TableHead>TIN</TableHead>}
                     {!isPatient && !isStudent && <TableHead>Representative</TableHead>}
                     {!isPatient && !isStudent && <TableHead>Site</TableHead>}
+                    {/* v-customer-columns-contact — Email + Address at
+                        the tail of the identity columns so the tenant
+                        can scan them without opening the row's Edit
+                        dialog. Only on the Customers lens (Patients +
+                        Students already surface contact fields via
+                        Contact / Guardian columns). */}
+                    {!isPatient && !isStudent && <TableHead>Email</TableHead>}
+                    {!isPatient && !isStudent && <TableHead className="max-w-[220px]">Address</TableHead>}
                     {isStudent && <TableHead className="w-[120px]">Birth date</TableHead>}
                     {isStudent && <TableHead className="w-[70px] text-right">Age</TableHead>}
                     {isStudent && <TableHead className="w-[80px]">Sex</TableHead>}
@@ -767,6 +775,31 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                             inputType="url"
                             ariaLabel={`Site for ${c.name}`}
                             onSave={(next) => { void patchCustomer(c, { site: next }); }}
+                          />
+                        </TableCell>
+                      )}
+                      {/* v-customer-columns-contact — Email + Address
+                          inline-editable via the same InlineTextCell
+                          used by the earlier fields, so the whole
+                          contact strip reads as one uniform surface. */}
+                      {!isPatient && !isStudent && (
+                        <TableCell className="p-1 text-sm text-gray-600 max-w-[200px]" title={c.email || ''}>
+                          <InlineTextCell
+                            value={c.email ?? ''}
+                            disabled={!canEdit}
+                            inputType="email"
+                            ariaLabel={`Email for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { email: next }); }}
+                          />
+                        </TableCell>
+                      )}
+                      {!isPatient && !isStudent && (
+                        <TableCell className="p-1 text-sm text-gray-600 max-w-[220px]" title={c.address || ''}>
+                          <InlineTextCell
+                            value={c.address ?? ''}
+                            disabled={!canEdit}
+                            ariaLabel={`Address for ${c.name}`}
+                            onSave={(next) => { void patchCustomer(c, { address: next }); }}
                           />
                         </TableCell>
                       )}
