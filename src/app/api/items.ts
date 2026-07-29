@@ -180,35 +180,34 @@ export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[
 }
 
 /**
- * v-item-sellable-align — is this item sellable right now?
+ * v-item-sellable-strict — is this item sellable right now?
  *
- * <p>Mirrors the backend's {@code inStock} formula in
- * {@code ShopLinkService.publicMenu} verbatim so the POS grid and
- * the Public Shop grid never diverge on what "in-stock" means for
- * the same row.</p>
+ * <p>Single source of truth for "in-stock" across POS + StockItemPicker
+ * + Public Shop card. BE mirrors this in
+ * {@code ShopLinkService.publicMenu#inStock}.</p>
  *
- * <p>Rule:</p>
+ * <p>Rule (restrictive — null stockQty is treated as OOS):</p>
  * <ul>
  *   <li>{@code !deductionEnabled} — service / prep items never
  *       track inventory; always sellable regardless of stockQty.</li>
- *   <li>{@code stockQty == null} — legacy row where opening balance
- *       was never entered. Treated as in-stock so a tenant with
- *       thousands of unset legacy rows doesn't see them vanish
- *       from POS.</li>
- *   <li>{@code stockQty > 0} — normal in-stock.</li>
+ *   <li>{@code deductionEnabled && stockQty > 0} — real on-hand.</li>
+ *   <li>{@code deductionEnabled && (stockQty == null || <= 0)} — OOS.</li>
  * </ul>
  *
- * <p>Prior POS filter used {@code (stockQty ?? 0) <= 0} which
- * treated null as 0 → excluded the item, while the BE treated null
- * as in-stock → included it. That gap caused Shop=82 vs POS=8 on a
- * tenant with 74 null-qty deduction rows.</p>
+ * <p>Prior permissive draft treated {@code stockQty == null} as
+ * in-stock (matching the BE at the time). Operators reported the
+ * public shop then surfaced legacy rows they'd never actually
+ * inventoried — customers could see and (attempt to) order items
+ * with no real stock. Restrictive matches operator intuition ("if I
+ * haven't entered stock, I don't have any yet") and matches the
+ * checkout endpoint's own refusal to sell null-qty rows.</p>
  */
 export function isItemSellable(
   it: Pick<Item, 'deductionEnabled' | 'stockQty'>,
 ): boolean {
   if (!it.deductionEnabled) return true;
   const q = it.stockQty;
-  return q == null || q > 0;
+  return q != null && q > 0;
 }
 
 export interface StockInRequest {
