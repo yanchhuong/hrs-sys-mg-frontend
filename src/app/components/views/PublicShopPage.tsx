@@ -1603,17 +1603,31 @@ function PublicShopCard({
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
-        {/* v-shop-card-stock-line — surface remaining on-hand for
-            inventoried items so the customer can see the cap the
-            cart enforces. Service rows (deductionEnabled=false) get
-            no line because their stockQty is meaningless. */}
-        {item.deductionEnabled && typeof item.stockQty === 'number' && (
-          <div className={`text-[11px] mt-0.5 tabular-nums ${
-            item.stockQty <= 0 ? 'text-red-600' : 'text-gray-500'
-          }`}>
-            Stock: {item.stockQty}
+        {/* v-shop-card-stock-line + v-shop-warehouse-badge — stock
+            remaining + which warehouse this SKU ships from. Both
+            surface only when meaningful — the stock line hides on
+            service items (deductionEnabled=false); the warehouse
+            chip hides when the item has no warehouseId or the
+            tenant hasn't enabled warehouses. */}
+        {(item.deductionEnabled && typeof item.stockQty === 'number') || item.warehouseName ? (
+          <div className="mt-0.5 flex items-center justify-between gap-1.5 min-w-0">
+            {item.deductionEnabled && typeof item.stockQty === 'number' ? (
+              <span className={`text-[11px] tabular-nums shrink-0 ${
+                item.stockQty <= 0 ? 'text-red-600' : 'text-gray-500'
+              }`}>
+                Stock: {item.stockQty}
+              </span>
+            ) : <span />}
+            {item.warehouseName && (
+              <span
+                className="inline-flex items-center rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-medium px-1.5 py-0.5 truncate max-w-[60%]"
+                title={item.warehouseName}
+              >
+                {item.warehouseName}
+              </span>
+            )}
           </div>
-        )}
+        ) : null}
       </div>
       {qtyInCart > 0 && (
         <div className="absolute top-1.5 right-1.5 bg-blue-600 text-white text-[11px] font-bold rounded-full h-6 min-w-[1.5rem] px-1.5 flex items-center justify-center shadow-md">

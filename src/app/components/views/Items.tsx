@@ -642,6 +642,11 @@ export function Items() {
   const canReceive = canEdit;
 
   const [rows, setRows] = useState<itemsApi.Item[]>([]);
+  // v-items-cap-guard — mirror of the paged response's totalElements
+  // so Add can refuse when the tenant is at the 1000-item ceiling
+  // even if the loaded slice already contains those 1000 rows.
+  const [totalRows, setTotalRows] = useState<number>(0);
+  const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   // V149 — warehouse feature. The gate comes from the same per-tenant
@@ -707,13 +712,17 @@ export function Items() {
       //      raised the BE cap in tandem).
       const first = await itemsApi.list({ ...params, size: 15, slim: true });
       setRows(first.content ?? []);
+      setTotalRows(first.totalElements ?? 0);
       setLoading(false);
       // Defer the full fetch one microtask so the browser gets to
       // paint the first 15 rows before the second fetch's decode
       // pass starts eating the main thread.
       setTimeout(() => {
         itemsApi.list({ ...params, size: 1000 })
-          .then(full => setRows(full.content ?? []))
+          .then(full => {
+            setRows(full.content ?? []);
+            setTotalRows(full.totalElements ?? 0);
+          })
           .catch(() => { /* keep the first-page slice on failure */ });
       }, 0);
     } catch (e) {
@@ -896,6 +905,17 @@ export function Items() {
   }, [rows]);
 
   const openAdd = () => {
+    // v-items-cap-guard — refuse to open the create dialog when the
+    // tenant is at the catalogue ceiling. The BE list endpoint only
+    // paginates the first CATALOG_MAX rows and every catalog
+    // snapshot elsewhere (POS, doc forms) shares the same page cap
+    // — creating a 1001st row would silently vanish from most
+    // surfaces. Bump the cap centrally when this ships to more
+    // tenants.
+    if (totalRows >= CATALOG_MAX) {
+      toast.error(`Max ${CATALOG_MAX} items in stock. Please contact Technician to help.`);
+      return;
+    }
     setEditing(null);
     setForm(EMPTY_FORM);
     setDialogOpen(true);

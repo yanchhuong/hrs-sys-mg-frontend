@@ -49,6 +49,10 @@ export interface PublicShopItem {
   /** v-shop-cart-stock-cap — Stock+/- toggle. When false the FE
    *  should NOT cap the cart qty at stockQty (service item). */
   deductionEnabled?: boolean;
+  /** v-shop-warehouse-badge — human-readable warehouse name the item
+   *  is assigned to. Null when the item has no warehouse FK or the
+   *  tenant hasn't enabled warehouses. FE hides the chip on null. */
+  warehouseName?: string | null;
   /** Modifier groups JSON string (Size / Sugar Level / etc.). Same
    *  shape as the cashier-side Items.modifiers — parsed via
    *  itemsApi.parseModifiers. Null when the item has no modifiers
