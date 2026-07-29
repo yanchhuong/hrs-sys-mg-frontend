@@ -579,7 +579,7 @@ function QuotationFormDialog({
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
-      const res = await itemsApi.list({ size: 200 });
+      const res = await itemsApi.list({ size: 1000 });
       setStockCatalog(res.content ?? []);
     } catch {
       // Silent fail — a 403 (no stock perm) just leaves the picker
@@ -1246,7 +1246,7 @@ function QuotationDetailDialog({
   // shortages" default while the request is in flight.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   useEffect(() => {
-    itemsApi.list({ size: 500, slim: true })
+    itemsApi.list({ size: 1000, slim: true })
       .then(r => setStockCatalog(r.content ?? []))
       .catch(() => setStockCatalog([]));
   }, []);

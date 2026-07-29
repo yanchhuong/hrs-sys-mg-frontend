@@ -1250,7 +1250,7 @@ function InvoiceFormDialog({
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
-      const res = await itemsApi.list({ size: 200 });
+      const res = await itemsApi.list({ size: 1000 });
       setStockCatalog(res.content ?? []);
     } catch {
       // Silent fail: a 403 (no stock perm) just leaves the picker empty —

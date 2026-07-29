@@ -698,12 +698,13 @@ export function Items() {
       // Two-stage fetch tuned for fastest possible paint:
       //   1. size=15 + slim=true → description dropped, table +
       //      pagination render immediately, loading spinner clears.
-      //   2. Background size=200 WITHOUT slim so pages 2+ have data
+      //   2. Background size=1000 WITHOUT slim so pages 2+ have data
       //      AND the edit dialog's description field re-hydrates
-      //      once the background call lands. If HR opens the edit
-      //      dialog on a row that's still on the slim slice, the
-      //      description shows blank momentarily — the background
-      //      fetch usually lands within a second, so this is rare.
+      //      once the background call lands. Bumped from 200 so a
+      //      tenant with 500+ items doesn't have rows silently
+      //      missing from the filter row / summary cards until the
+      //      operator types a search term (v-items-list-page-cap-1000
+      //      raised the BE cap in tandem).
       const first = await itemsApi.list({ ...params, size: 15, slim: true });
       setRows(first.content ?? []);
       setLoading(false);
@@ -711,7 +712,7 @@ export function Items() {
       // paint the first 15 rows before the second fetch's decode
       // pass starts eating the main thread.
       setTimeout(() => {
-        itemsApi.list({ ...params, size: 200 })
+        itemsApi.list({ ...params, size: 1000 })
           .then(full => setRows(full.content ?? []))
           .catch(() => { /* keep the first-page slice on failure */ });
       }, 0);

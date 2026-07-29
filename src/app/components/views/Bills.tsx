@@ -1034,7 +1034,7 @@ function BillFormDialog({
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
-      const res = await itemsApi.list({ size: 200 });
+      const res = await itemsApi.list({ size: 1000 });
       setStockCatalog(res.content ?? []);
     } catch {
       // Silent fail — free-text still works.
