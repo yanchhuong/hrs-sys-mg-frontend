@@ -26,7 +26,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -235,12 +235,13 @@ function ReceiveStockPopover({
     <>
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader>
-            {/* pr-6 reserves space for the Dialog's absolute X close
-                button so long item names don't run under it. min-w-0
-                on the flex row unblocks the item-name span truncate. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+            {/* No X close button on row-level dialogs (hideClose above)
+                — footer's Cancel button is the explicit dismiss. Long
+                Khmer / Chinese names still truncate via min-w-0 +
+                truncate; icon + action label stay shrink-0. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0">
               <PackagePlus className="h-4 w-4 text-emerald-600 shrink-0" />
               <span className="shrink-0">Increase Stock —</span>
               <span className="truncate min-w-0" title={item.name}>{item.name}</span>
@@ -429,11 +430,12 @@ function RowImageCell({
     <>
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader>
-            {/* pr-6 reserves space for the Dialog's absolute X close
-                button; min-w-0 lets the item-name span truncate. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+            {/* No X close button on row-level dialogs — footer's Cancel
+                is the explicit dismiss. min-w-0 + truncate handle long
+                item names without overlapping the header. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0">
               <Camera className="h-4 w-4 text-blue-600 shrink-0" />
               <span className="shrink-0">{cover ? 'Change image' : 'Upload image'} —</span>
               <span className="truncate min-w-0" title={item.name}>{item.name}</span>
@@ -585,13 +587,12 @@ function RowModifiersPopover({
     <>
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader>
-            {/* pr-6 reserves space for the Dialog's absolute X close
-                button (top-4 right-4) so long Khmer / Chinese item
-                names don't run under it. min-w-0 on the flex row
-                unblocks the item-name span's truncate. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+            {/* No X close button on row-level dialogs — footer's
+                Cancel is the explicit dismiss. min-w-0 + truncate
+                keep long Khmer / Chinese names inside the header. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0">
               <SlidersHorizontal className="h-4 w-4 text-purple-600 shrink-0" />
               <span className="shrink-0">Modifier Groups —</span>
               <span className="truncate min-w-0" title={item.name}>{item.name}</span>
@@ -660,6 +661,10 @@ export function Items() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [stockIoFilter, setStockIoFilter] = useState<'' | 'on' | 'off'>('');
   const [imageFilter, setImageFilter] = useState<'' | 'yes' | 'no'>('');
+  // v-items-active-filter — Active Yes/No filter chip. Sits next to
+  // Stock I/O so operators can flip between "everything shoppable"
+  // and "inactive shelf" with two selects.
+  const [activeFilter, setActiveFilter] = useState<'' | 'yes' | 'no'>('');
   const [priceRange, setPriceRange] = useState<[number, number] | null>(null);
   const [stockRange, setStockRange] = useState<[number, number] | null>(null);
   /** Range sliders are hidden until the operator opts in — they take
@@ -775,6 +780,8 @@ export function Items() {
       if (cat && ((r.category ?? '') as string).toLowerCase() !== cat) return false;
       if (stockIoFilter === 'on'  && !r.deductionEnabled) return false;
       if (stockIoFilter === 'off' &&  r.deductionEnabled) return false;
+      if (activeFilter === 'yes' && !r.active) return false;
+      if (activeFilter === 'no'  &&  r.active) return false;
       if (imageFilter) {
         // "Has image" is true when either the legacy single-image
         // slot OR the multi-image list carries a non-empty entry.
@@ -793,7 +800,7 @@ export function Items() {
       }
       return true;
     });
-  }, [rows, categoryFilter, stockIoFilter, imageFilter, priceRange, stockRange]);
+  }, [rows, categoryFilter, stockIoFilter, activeFilter, imageFilter, priceRange, stockRange]);
 
   // Distinct category options for the dropdown — derived from the
   // items currently on the page so a tenant's custom labels (e.g.
@@ -813,17 +820,35 @@ export function Items() {
   }, [rows]);
 
   const filtersActive =
-    !!categoryFilter || !!stockIoFilter || !!imageFilter
+    !!categoryFilter || !!stockIoFilter || !!activeFilter || !!imageFilter
     || priceRange != null || stockRange != null;
   const clearFilters = () => {
     setCategoryFilter('');
     setStockIoFilter('');
+    setActiveFilter('');
     setImageFilter('');
     setPriceRange(null);
     setStockRange(null);
     setPriceOpen(false);
     setStockOpen(false);
   };
+
+  // v-items-summary-cards — inventory totals across the currently
+  // filtered row set. Updates live as the operator narrows the list
+  // (Category / Active / Stock I/O / Image / Price / Stock range),
+  // so "Total Cost / Price / Stock" always answer "what is the
+  // shelf I'm looking at right now worth?". Reads unitCost /
+  // unitPrice / stockQty — same fields the row cells render.
+  const totals = useMemo(() => {
+    let cost = 0, price = 0, qty = 0;
+    for (const r of filtered) {
+      const q = Number(r.stockQty ?? 0);
+      cost  += q * Number(r.unitCost  ?? 0);
+      price += q * Number(r.unitPrice ?? 0);
+      qty   += q;
+    }
+    return { cost, price, qty };
+  }, [filtered]);
   // v-items-pagesize-15 — 15 per page keeps the row height above the
   // fold on a 1080p screen and shrinks the initial image payload (the
   // <img loading="lazy"> tag below only helps for rows below the fold).
@@ -1171,6 +1196,51 @@ export function Items() {
         }}
       />
 
+      {/* v-items-summary-cards — inventory totals for the currently
+          filtered row set. Three stat pills on ONE horizontal-scroll
+          strip so the row stays coherent on narrow screens: Total
+          Cost (inventory value at cost), Total Price (inventory value
+          at selling price), Total Stock (units on hand). Numbers
+          update live as filters change. Hidden while the initial load
+          is still spinning so the numbers don't flash 0 → real. */}
+      {!loading && rows.length > 0 && (
+        <div className="mb-3 flex gap-3 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
+          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Coins className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Cost</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                ${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <Tag className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Price</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                ${totals.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <Package className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                {totals.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card>
         {/* One row, ALWAYS — matches the POS top action bar: filters
             on the left, search form on the right, and on narrow
@@ -1202,6 +1272,19 @@ export function Items() {
                   <option value="">Stock : All</option>
                   <option value="off">Stock : Off</option>
                   <option value="on">Stock : On</option>
+                </select>
+                {/* v-items-active-filter — Active Yes/No matches the
+                    Stock I/O select shape so both flags read as a
+                    pair in the strip. */}
+                <select
+                  value={activeFilter}
+                  onChange={e => setActiveFilter(e.target.value as '' | 'yes' | 'no')}
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Filter by Active"
+                >
+                  <option value="">Active : All</option>
+                  <option value="yes">Active : Yes</option>
+                  <option value="no">Active : No</option>
                 </select>
                 <select
                   value={imageFilter}
@@ -1414,7 +1497,7 @@ export function Items() {
                     {warehouseFeatureOn && (
                       <TableHead className="w-[160px]">Warehouse</TableHead>
                     )}
-                    <TableHead className="text-center w-[110px]">Stock IN/OUT</TableHead>
+                    <TableHead className="text-center w-[110px]">Stock +/-</TableHead>
                     <TableHead className="text-center w-[80px]">Active</TableHead>
                     <TableHead className="text-right w-[140px]">Actions</TableHead>
                   </TableRow>
@@ -1910,7 +1993,7 @@ export function Items() {
                 is autofill-only, no movements recorded either way. */}
             <div className="flex items-center justify-between border rounded-md px-3 py-2 gap-3">
               <div className="flex-1 min-w-0 inline-flex items-center gap-1.5">
-                <Label className="text-sm">Stock (IN / OUT)</Label>
+                <Label className="text-sm">Stock +/-</Label>
                 <TooltipProvider delayDuration={120}>
                   <Tooltip>
                     <TooltipTrigger asChild>

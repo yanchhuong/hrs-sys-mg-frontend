@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
+import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
 import { MapPicker } from '../common/MapPicker';
 
 /** Customer's pick inside one modifier group. The cashier sees these
@@ -68,21 +69,13 @@ function composeLineNotes(mods: SelectedModifier[], note: string): string | unde
 // free-text labels the tenant has used alphabetically, then "Other"
 // pinned to the tail. Category is a plain string (was a strict enum)
 // so a tenant-typed "Pin" or "Hairpin" flows straight through.
-const KNOWN_POS_CATEGORIES: readonly string[] =
-  ['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'];
-const KNOWN_LABELS: Record<string, string> = {
-  drink:    'Drinks',
-  snack:    'Snacks',
-  food:     'Food',
-  craft:    'Craft',
-  souvenir: 'Souvenir',
-  jewelry:  'Jewelry',
-  other:    'Other',
-};
-const normalCat = (raw: string | undefined | null): string =>
-  (raw ?? '').trim().toLowerCase() || 'other';
-const catLabel = (key: string): string =>
-  key === 'all' ? 'All' : (KNOWN_LABELS[key] ?? key[0].toUpperCase() + key.slice(1));
+// v-shared-category-chips — the well-known set, normalisation, label
+// lookup, and chip-derivation moved to utils/categoryChips so POS and
+// the Public Shop page share exactly one implementation. Importing
+// here so a tenant's custom "Hairpin" / "Ring" category shows on
+// both surfaces with the same order + label.
+// Direct imports below (KNOWN_POS_CATEGORIES, normalCat, catLabel,
+// deriveCategoryChips). No local re-declarations.
 
 /** Per-item line in the local cart state. The map key is a composite
  *  of {@code item.id} + modifier signature so the same item with two
@@ -488,28 +481,14 @@ export function PublicShopPage() {
     [filtered, visibleCount],
   );
 
-  // Counts by normalized category string — every custom label the
-  // tenant has used gets its own entry. "All" is a synthetic bucket
-  // that just holds the total.
-  const counts = useMemo(() => {
-    const c = new Map<string, number>();
-    c.set('all', inStockItems.length);
-    for (const it of inStockItems) {
-      const k = normalCat(it.category);
-      c.set(k, (c.get(k) ?? 0) + 1);
-    }
-    return c;
-  }, [inStockItems]);
-
-  // Chip keys — 'all' first, then known categories (minus 'other'),
-  // then any custom labels alphabetically, then 'other' pinned last.
-  const chipKeys: readonly string[] = useMemo(() => {
-    const knownExclOther = KNOWN_POS_CATEGORIES.filter(k => k !== 'other');
-    const customs = Array.from(new Set(inStockItems.map(i => normalCat(i.category))))
-      .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
-      .sort();
-    return ['all', ...knownExclOther, ...customs, 'other'];
-  }, [inStockItems]);
+  // v-shared-category-chips — chip strip + counts derived by the
+  // shared helper so POS and this page can never drift on order,
+  // normalisation, or empty-hiding rules. Same input shape (item
+  // slice with .category); both surfaces feed their in-stock list.
+  const { chipKeys, counts } = useMemo(
+    () => deriveCategoryChips(inStockItems),
+    [inStockItems],
+  );
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
   const cartCount = useMemo(() => cartLines.reduce((s, l) => s + l.qty, 0), [cartLines]);

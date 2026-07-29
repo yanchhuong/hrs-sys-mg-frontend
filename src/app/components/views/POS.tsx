@@ -41,6 +41,7 @@ import { ShareShopDialog } from '../common/ShareShopDialog';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
 import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
 import { printPosReceipt } from '../../utils/posReceipt';
+import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
   POS_DISPLAY_CHANNEL, POS_DISPLAY_PATH, emptyState,
@@ -822,14 +823,13 @@ export function POS() {
 
   /* ----- main UI ----- */
   // v-item-category-free-text (V269) — categories are free-text.
-  // Chips now include the well-known set PLUS any custom label the
-  // tenant has actually saved on an item (e.g. "Pin", "Ceramic").
-  // Empty/missing categories bucket as "other" so nothing falls off
-  // the grid.
-  const KNOWN_POS_CATEGORIES: readonly string[] =
-    ['drink', 'snack', 'food', 'craft', 'souvenir', 'jewelry', 'other'];
-  const normalCat = (raw: string | undefined | null): string =>
-    (raw ?? '').trim().toLowerCase() || 'other';
+  // v-shared-category-chips — chip derivation moved to
+  // utils/categoryChips so POS and the Public Shop page share the
+  // same ordering / normalisation / label lookup. Only `normalCat`
+  // stays imported here because the OOS-hide filter below needs it
+  // to compare item.category against the current chip key. Chip
+  // labels come from `catLabel` at the render site (see the strip
+  // below in this component).
   const filteredItems = items.filter(i => {
     // v-pos-hide-oos-deduct — items with Stock IN/OUT ON and stock
     // at 0 are unsellable (the checkout endpoint refuses them
@@ -869,24 +869,11 @@ export function POS() {
     if (!it.warehouseId) continue;
     warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
   }
-  // Category counts drive the chip labels — "Drink (12)" etc. so the
-  // cashier sees stock counts at a glance. Keyed by the normalized
-  // category string so a custom "pin" label counts + filters correctly.
-  const categoryCounts = new Map<string, number>();
-  categoryCounts.set('all', sellable.length);
-  for (const it of sellable) {
-    const c = normalCat(it.category);
-    categoryCounts.set(c, (categoryCounts.get(c) ?? 0) + 1);
-  }
-  // Ordered chip key list — 'all' first, then known categories
-  // (excluding 'other'), then any custom labels the tenant has
-  // actually used (alphabetical), then 'other' pinned LAST so the
-  // catch-all bucket never appears mid-list.
-  const KNOWN_EXCL_OTHER = KNOWN_POS_CATEGORIES.filter(k => k !== 'other');
-  const customCatKeys = Array.from(new Set(sellable.map(i => normalCat(i.category))))
-    .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
-    .sort();
-  const chipKeys: readonly string[] = ['all', ...KNOWN_EXCL_OTHER, ...customCatKeys, 'other'];
+  // Category chips + counts — shared derivation with the Public
+  // Shop page (utils/categoryChips.ts). Same ordering / normalisation
+  // so a tenant that customises "Pin" or "Hairpin" sees the same
+  // strip in both surfaces.
+  const { chipKeys, counts: categoryCounts } = deriveCategoryChips(sellable);
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
   // mobile bottom Sheet, so both surfaces stay in sync without a
@@ -1215,7 +1202,7 @@ export function POS() {
                   }
                   const chipButton = (key: string) => {
                     const active = categoryFilter === key;
-                    const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
+                    const label = catLabel(key);
                     const count = categoryCounts.get(key) ?? 0;
                     return (
                       <button
@@ -1249,7 +1236,7 @@ export function POS() {
                           </PopoverTrigger>
                           <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto hover-scroll-y">
                             {overflowKeys.map(key => {
-                              const label = key === 'all' ? 'All' : key[0].toUpperCase() + key.slice(1);
+                              const label = catLabel(key);
                               const count = categoryCounts.get(key) ?? 0;
                               return (
                                 <button
