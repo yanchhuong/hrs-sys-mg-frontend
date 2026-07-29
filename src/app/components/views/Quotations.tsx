@@ -43,6 +43,7 @@ import * as quotationsApi from '../../api/quotations';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as settingsApi from '../../api/settings';
@@ -423,6 +424,7 @@ export function Quotations() {
         onOpenChange={(o) => { setFormOpen(o); if (!o) setEditing(null); }}
         editing={editing}
         customers={customers}
+        setCustomers={setCustomers}
         settings={settings}
         onSaved={async () => { setFormOpen(false); setEditing(null); await load(); }}
       />
@@ -496,12 +498,16 @@ function newLine(): FormLine {
 }
 
 function QuotationFormDialog({
-  open, onOpenChange, editing, customers, settings, onSaved,
+  open, onOpenChange, editing, customers, setCustomers, settings, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   editing: quotationsApi.Quotation | null;
   customers: customersApi.Customer[];
+  /** Passed through to {@link useCustomerQuickAdd} so the inline
+   *  "Add customer" flow can extend the parent's cached list on
+   *  create (v-customer-quickadd). */
+  setCustomers: React.Dispatch<React.SetStateAction<customersApi.Customer[]>>;
   /** Sale-scope Accountant settings — gates Notes / Terms /
    *  Discount / Tax just like the Invoice form. */
   settings: accountingSettingsApi.AccountingSettings;
@@ -510,6 +516,14 @@ function QuotationFormDialog({
   const isEdit = !!editing;
   const [quotationNo, setQuotationNo] = useState('');
   const [customerId, setCustomerId] = useState('');
+  // v-customer-quickadd — inline "Add customer" flow for the picker.
+  // Same shape POS uses; adds the created row to the parent's
+  // customers list and pins it as the current selection.
+  const quickAdd = useCustomerQuickAdd({
+    customers,
+    setCustomers,
+    onSelect: id => setCustomerId(id),
+  });
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [expiryDate, setExpiryDate] = useState('');
   const [recipientName, setRecipientName] = useState('');
@@ -800,6 +814,9 @@ function QuotationFormDialog({
                 value={customerId}
                 onChange={setCustomerId}
                 placeholder="Pick a customer"
+                emptyResultsLabel="No customer matches — type a name to create."
+                createLabel={q => `Add "${q}" as a new customer`}
+                onCreate={quickAdd.onCreate}
                 options={customers.map(c => ({
                   value: c.id,
                   label: c.name,
@@ -906,6 +923,11 @@ function QuotationFormDialog({
                                 loaded={catalogLoaded}
                                 onOpen={ensureCatalog}
                                 selectedId={l.stockItemId ?? ''}
+                                // v-picker-stock-scope — quotations are
+                                // offers, not fulfilment. Include any
+                                // active item regardless of current
+                                // on-hand stock.
+                                requireStock={false}
                                 onPick={si => updateLine(l.localId, {
                                   stockItemId: si.id,
                                   name: si.name,
@@ -1185,6 +1207,7 @@ function QuotationFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {quickAdd.dialog}
     </Dialog>
   );
 }

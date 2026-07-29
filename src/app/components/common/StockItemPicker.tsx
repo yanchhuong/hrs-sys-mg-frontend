@@ -40,6 +40,16 @@ interface Props {
    *  name / unit / unit price + records the stockItemId for the
    *  server-side stock decrement on save. */
   onPick: (it: itemsApi.Item) => void;
+  /**
+   * v-picker-stock-scope — when true (default), only items that pass
+   * {@link itemsApi.isItemSellable} are offered — i.e. Invoices show
+   * only rows with real on-hand stock because the save decrements
+   * inventory. When false, only the {@code active} flag matters —
+   * Quotations / Vouchers / Bills need to reference items regardless
+   * of current stock (they're offers, internal transfers, or
+   * incoming purchases).
+   */
+  requireStock?: boolean;
 }
 
 /**
@@ -53,7 +63,9 @@ interface Props {
  * unitPrice and records the FK so the server can decrement stock
  * (Invoices) or wire the link in reports (Quotations / Vouchers).</p>
  */
-export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }: Props) {
+export function StockItemPicker({
+  catalog, loaded, onOpen, selectedId, onPick, requireStock = true,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
@@ -79,23 +91,23 @@ export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }:
   const showWarehouses = warehouseName.size > 0
     && catalog.some(c => c.warehouseId);
 
-  // Filter to active + in-stock items. Disabled items are hidden
-  // (operator hides them when they stop selling a SKU but want to
-  // keep the history). Out-of-stock deduction items are also hidden
-  // so an operator can't cut an invoice for a SKU the warehouse
-  // can't ship — matches the POS grid's disabled-tile rule.
+  // Base filter is always {@code active} — inactive items don't belong
+  // in any picker. `requireStock` layers the extra sellable check on
+  // top: Invoices need real on-hand (BE decrements at save), while
+  // Quotations / Vouchers / Bills should offer active items regardless
+  // of current stock — an offer can be quoted before you've received
+  // the physical inventory, and a Bill IS the incoming stock.
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    // v-item-sellable-align — same isItemSellable used by POS + BE
-    // inStock so the picker never offers items the shop hides (or
-    // vice versa).
-    const inStock = catalog.filter(c => c.active && itemsApi.isItemSellable(c));
-    if (!term) return inStock;
-    return inStock.filter(c =>
+    const base = catalog.filter(c =>
+      c.active && (!requireStock || itemsApi.isItemSellable(c)),
+    );
+    if (!term) return base;
+    return base.filter(c =>
       c.name.toLowerCase().includes(term)
       || (c.sku ?? '').toLowerCase().includes(term),
     );
-  }, [catalog, q]);
+  }, [catalog, q, requireStock]);
 
   return (
     <Popover

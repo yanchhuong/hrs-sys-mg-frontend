@@ -1467,6 +1467,12 @@ function BillFormDialog({
                         loaded={catalogLoaded}
                         onOpen={ensureCatalog}
                         selectedId={it.stockItemId ?? ''}
+                        // v-picker-stock-scope — bills are INCOMING
+                        // purchases; the line increments stock on save
+                        // (deductionEnabled rows), so we don't require
+                        // existing on-hand. Any active item is a valid
+                        // "we bought X of these" line.
+                        requireStock={false}
                         onPick={si => updateItem(idx, {
                           stockItemId: si.id,
                           name: si.name,

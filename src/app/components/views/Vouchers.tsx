@@ -41,6 +41,7 @@ import * as vouchersApi from '../../api/vouchers';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
 import * as usersApi from '../../api/users';
@@ -462,6 +463,7 @@ export function Vouchers() {
         editing={editing}
         initialPurpose={initialPurpose}
         customers={customers}
+        setCustomers={setCustomers}
         users={vUsers}
         settings={settings}
         onSaved={async () => { setFormOpen(false); setEditing(null); await load(); }}
@@ -530,7 +532,7 @@ function newLine(): FormLine {
 }
 
 function VoucherFormDialog({
-  open, onOpenChange, editing, initialPurpose, customers, users, settings, onSaved,
+  open, onOpenChange, editing, initialPurpose, customers, setCustomers, users, settings, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -539,6 +541,9 @@ function VoucherFormDialog({
    *  user's pick from the New Voucher dropdown). Ignored on edit. */
   initialPurpose: vouchersApi.VoucherPurpose;
   customers: customersApi.Customer[];
+  /** v-customer-quickadd — extended by the inline "Add customer"
+   *  flow after a successful create. */
+  setCustomers: React.Dispatch<React.SetStateAction<customersApi.Customer[]>>;
   /** Tenant users — populates the Approver picker. */
   users: usersApi.User[];
   /** Sale-scope settings — gates Notes / Terms / Discount / Tax. */
@@ -548,6 +553,12 @@ function VoucherFormDialog({
   const isEdit = !!editing;
   const [voucherNo, setVoucherNo] = useState('');
   const [customerId, setCustomerId] = useState('');
+  // v-customer-quickadd — inline "Add customer" flow, same shape POS uses.
+  const quickAdd = useCustomerQuickAdd({
+    customers,
+    setCustomers,
+    onSelect: id => setCustomerId(id),
+  });
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
@@ -786,6 +797,9 @@ function VoucherFormDialog({
                 value={customerId}
                 onChange={setCustomerId}
                 placeholder="Pick a customer"
+                emptyResultsLabel="No customer matches — type a name to create."
+                createLabel={q => `Add "${q}" as a new customer`}
+                onCreate={quickAdd.onCreate}
                 options={customers.map(c => ({
                   value: c.id,
                   label: c.name,
@@ -913,6 +927,11 @@ function VoucherFormDialog({
                       loaded={catalogLoaded}
                       onOpen={ensureCatalog}
                       selectedId={l.stockItemId ?? ''}
+                      // v-picker-stock-scope — vouchers reference items
+                      // for record-keeping / internal transfer; they
+                      // don't decrement inventory on save, so any
+                      // active row is valid regardless of stock.
+                      requireStock={false}
                       onPick={si => updateLine(l.localId, {
                         stockItemId: si.id,
                         name: si.name,
@@ -1201,6 +1220,7 @@ function VoucherFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {quickAdd.dialog}
     </Dialog>
   );
 }

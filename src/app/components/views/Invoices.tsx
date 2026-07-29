@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -1048,6 +1049,7 @@ export function Invoices({
         onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
         kind={formKind}
         customers={customers}
+        setCustomers={setCustomers}
         invoices={rows}
         editing={formEditing}
         parentPrefill={formParentPrefill}
@@ -1158,12 +1160,15 @@ const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1'
 // popover + search logic.
 
 function InvoiceFormDialog({
-  open, onOpenChange, kind, customers, invoices, editing, parentPrefill, settings, onCreated,
+  open, onOpenChange, kind, customers, setCustomers, invoices, editing, parentPrefill, settings, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   kind: invoicesApi.InvoiceKind;
   customers: customersApi.Customer[];
+  /** v-customer-quickadd — passed through so the inline
+   *  "Add customer" flow can extend the parent's cached list. */
+  setCustomers: React.Dispatch<React.SetStateAction<customersApi.Customer[]>>;
   invoices: invoicesApi.Invoice[];
   /** When set, the dialog runs in edit mode against this invoice
    *  instead of creating a new one. Submit calls PUT /invoices/{id}
@@ -1189,6 +1194,13 @@ function InvoiceFormDialog({
   const isEdit = !!editing;
 
   const [customerId, setCustomerId] = useState('');
+  // v-customer-quickadd — inline "Add customer" flow for the picker,
+  // same shape POS uses.
+  const quickAdd = useCustomerQuickAdd({
+    customers,
+    setCustomers,
+    onSelect: id => setCustomerId(id),
+  });
   const [parentInvoiceId, setParentInvoiceId] = useState('');
   /** Document number — pre-filled from /invoices/next-number on open
    *  for fresh creates and from the row on edit. Free-form input so
@@ -1593,6 +1605,9 @@ function InvoiceFormDialog({
                 onChange={setCustomerId}
                 placeholder="Pick customer"
                 searchPlaceholder="Search by name, phone, or TIN…"
+                emptyResultsLabel="No customer matches — type a name to create."
+                createLabel={q => `Add "${q}" as a new customer`}
+                onCreate={quickAdd.onCreate}
                 allowClear={false}
                 options={customers.map(c => ({
                   value: c.id,
@@ -2098,6 +2113,7 @@ function InvoiceFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {quickAdd.dialog}
     </Dialog>
   );
 }

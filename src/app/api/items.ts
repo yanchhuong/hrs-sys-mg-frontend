@@ -180,27 +180,29 @@ export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[
 }
 
 /**
- * v-item-sellable-strict — is this item sellable right now?
+ * v-item-sellable-strict — is this item sellable at the POS counter?
  *
- * <p>Single source of truth for "in-stock" across POS + StockItemPicker
- * + Public Shop card. BE mirrors this in
- * {@code ShopLinkService.publicMenu#inStock}.</p>
+ * <p>Lenient rule for cashier-side surfaces (POS grid,
+ * StockItemPicker inside invoices/receipts). Service items
+ * ({@code deductionEnabled=false}) always surface because a
+ * cashier can ring up a "Coffee" prep with no inventory tracking.
+ * Inventoried items need a non-null, positive stockQty.</p>
  *
- * <p>Rule (restrictive — null stockQty is treated as OOS):</p>
+ * <p>Rule:</p>
  * <ul>
- *   <li>{@code !deductionEnabled} — service / prep items never
- *       track inventory; always sellable regardless of stockQty.</li>
+ *   <li>{@code !deductionEnabled} — always sellable (service).</li>
  *   <li>{@code deductionEnabled && stockQty > 0} — real on-hand.</li>
- *   <li>{@code deductionEnabled && (stockQty == null || <= 0)} — OOS.</li>
+ *   <li>{@code deductionEnabled && (null || <= 0)} — OOS.</li>
  * </ul>
  *
- * <p>Prior permissive draft treated {@code stockQty == null} as
- * in-stock (matching the BE at the time). Operators reported the
- * public shop then surfaced legacy rows they'd never actually
- * inventoried — customers could see and (attempt to) order items
- * with no real stock. Restrictive matches operator intuition ("if I
- * haven't entered stock, I don't have any yet") and matches the
- * checkout endpoint's own refusal to sell null-qty rows.</p>
+ * <p>NOTE: The Public Shop (/shop/{code}) uses a STRICTER rule —
+ * services are also hidden. See
+ * {@code ShopLinkService.publicMenu#inStock}: {@code stockQty !=
+ * null && stockQty > 0} regardless of deductionEnabled. Rationale:
+ * a public customer picking from a QR menu can't get a made-to-
+ * order coffee out of nothing, so the shop only advertises items
+ * with real physical inventory. Two rules, two contexts —
+ * intentional divergence.</p>
  */
 export function isItemSellable(
   it: Pick<Item, 'deductionEnabled' | 'stockQty'>,
