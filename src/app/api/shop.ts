@@ -41,6 +41,14 @@ export interface PublicShopItem {
   imageThumbUrl?: string | null;
   category: 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'jewelry' | 'other' | string;
   inStock: boolean;
+  /** v-shop-cart-stock-cap — raw on-hand quantity. Only meaningful
+   *  when {@link deductionEnabled} is true; ignore on service rows
+   *  because those don't cap. Null on legacy items where the BE
+   *  didn't populate it. */
+  stockQty?: number | null;
+  /** v-shop-cart-stock-cap — Stock+/- toggle. When false the FE
+   *  should NOT cap the cart qty at stockQty (service item). */
+  deductionEnabled?: boolean;
   /** Modifier groups JSON string (Size / Sugar Level / etc.). Same
    *  shape as the cashier-side Items.modifiers — parsed via
    *  itemsApi.parseModifiers. Null when the item has no modifiers

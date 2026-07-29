@@ -575,19 +575,36 @@ export function PublicShopPage() {
     addLine(item, [], '');
   };
 
+  /** v-shop-cart-stock-cap — max qty a single line can carry. When
+   *  the item tracks inventory (`deductionEnabled=true`) the cart
+   *  can't hold more than the current on-hand stock — matches the
+   *  POS per-line cap so a customer can't queue an order the
+   *  checkout endpoint would refuse anyway. Service items
+   *  (`deductionEnabled=false`) keep the 99-per-line cap. */
+  const cartCapFor = (item: shopApi.PublicShopItem): number => {
+    if (!item.deductionEnabled) return 99;
+    const q = item.stockQty;
+    if (typeof q !== 'number' || !Number.isFinite(q)) return 99;
+    return Math.max(0, Math.floor(q));
+  };
+
   /** Land a finalised line on the cart with the picked modifiers +
    *  empty note. If a matching (item, modifier-set) row already
    *  exists we increment its qty; otherwise we open a new row. */
   const addLine = (item: shopApi.PublicShopItem, modifiers: SelectedModifier[], notes: string) => {
     const key = `${item.id}|${modifierKey(modifiers)}`;
+    const cap = cartCapFor(item);
     setCart(prev => {
       const next = new Map(prev);
       const cur = next.get(key);
-      if (cur) {
-        next.set(key, { ...cur, qty: Math.min(99, cur.qty + 1) });
-      } else {
-        next.set(key, { key, item, qty: 1, modifiers, notes });
+      const target = cur ? cur.qty + 1 : 1;
+      if (target > cap) {
+        toast.error(`Only ${cap} on hand for "${item.name}".`);
+        if (!cur) return prev;
+        return next;
       }
+      if (cur) next.set(key, { ...cur, qty: target });
+      else     next.set(key, { key, item, qty: 1, modifiers, notes });
       return next;
     });
   };
@@ -597,8 +614,13 @@ export function PublicShopPage() {
       const next = new Map(prev);
       const cur = next.get(key);
       if (!cur) return prev;
-      if (qty <= 0) next.delete(key);
-      else next.set(key, { ...cur, qty: Math.min(99, qty) });
+      if (qty <= 0) { next.delete(key); return next; }
+      const cap = cartCapFor(cur.item);
+      const capped = Math.min(99, cap, qty);
+      if (capped < qty) {
+        toast.error(`Only ${cap} on hand for "${cur.item.name}".`);
+      }
+      next.set(key, { ...cur, qty: capped });
       return next;
     });
   };
@@ -1581,6 +1603,17 @@ function PublicShopCard({
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+        {/* v-shop-card-stock-line — surface remaining on-hand for
+            inventoried items so the customer can see the cap the
+            cart enforces. Service rows (deductionEnabled=false) get
+            no line because their stockQty is meaningless. */}
+        {item.deductionEnabled && typeof item.stockQty === 'number' && (
+          <div className={`text-[11px] mt-0.5 tabular-nums ${
+            item.stockQty <= 0 ? 'text-red-600' : 'text-gray-500'
+          }`}>
+            Stock: {item.stockQty}
+          </div>
+        )}
       </div>
       {qtyInCart > 0 && (
         <div className="absolute top-1.5 right-1.5 bg-blue-600 text-white text-[11px] font-bold rounded-full h-6 min-w-[1.5rem] px-1.5 flex items-center justify-center shadow-md">
