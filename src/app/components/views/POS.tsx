@@ -831,14 +831,14 @@ export function POS() {
   // labels come from `catLabel` at the render site (see the strip
   // below in this component).
   const filteredItems = items.filter(i => {
-    // v-pos-hide-oos-deduct — items with Stock IN/OUT ON and stock
-    // at 0 are unsellable (the checkout endpoint refuses them
-    // server-side). Hide them from the grid entirely so a cashier
-    // can't tap a tile that will 400 on ring-up. Service items
-    // (deductionEnabled=false) always show regardless of stockQty
-    // because they never deplete inventory. Matches the invoice
-    // StockItemPicker's own filter (StockItemPicker.tsx:87).
-    if (i.deductionEnabled && (i.stockQty ?? 0) <= 0) return false;
+    // v-item-sellable-align — shared isItemSellable() mirrors the
+    // BE's inStock formula in ShopLinkService.publicMenu so POS and
+    // the Public Shop show the same "in-stock" set for the same
+    // tenant. Prior `(stockQty ?? 0) <= 0` treated null as 0 →
+    // excluded, while the BE treats null as in-stock → included;
+    // that gap caused Shop=82 vs POS=8 on tenants with legacy null-
+    // qty rows.
+    if (!itemsApi.isItemSellable(i)) return false;
     if (categoryFilter !== 'all' && normalCat(i.category) !== categoryFilter) return false;
     if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
@@ -862,7 +862,7 @@ export function POS() {
   // Chip counts operate on the same sellable-set the grid renders,
   // so "Snack (3)" always matches what the cashier can actually tap.
   // OOS deduction items excluded here just like they are in the grid.
-  const sellable = items.filter(i => !(i.deductionEnabled && (i.stockQty ?? 0) <= 0));
+  const sellable = items.filter(itemsApi.isItemSellable);
   const warehouseCounts = new Map<string, number>();
   warehouseCounts.set('', sellable.length);
   for (const it of sellable) {
@@ -1632,9 +1632,18 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
     >
       <div className="aspect-square w-full bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
         {showImage ? (
-          <ThumbnailImage
+          // v-pos-cover-sharpness — plain <img> like the Public Shop
+          // card. Prior ThumbnailImage wrapper was built for legacy
+          // 1024 px covers; today's pipeline pre-thumbnails on save
+          // (v-image-sharpen — 768 / Q78 cover + 200 / Q65 thumb),
+          // so the extra client-side canvas pass added noise without
+          // saving bytes. Native <img> lets the browser paint the
+          // base64 thumbnail as-is, matching the shop tile verbatim.
+          <img
             src={coverSrc!}
             alt={item.name}
+            loading="lazy"
+            draggable={false}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
             onError={() => setBroken(true)}
           />

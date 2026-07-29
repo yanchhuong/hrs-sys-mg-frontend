@@ -179,6 +179,38 @@ export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[
   return it.imageUrl ? [it.imageUrl] : [];
 }
 
+/**
+ * v-item-sellable-align — is this item sellable right now?
+ *
+ * <p>Mirrors the backend's {@code inStock} formula in
+ * {@code ShopLinkService.publicMenu} verbatim so the POS grid and
+ * the Public Shop grid never diverge on what "in-stock" means for
+ * the same row.</p>
+ *
+ * <p>Rule:</p>
+ * <ul>
+ *   <li>{@code !deductionEnabled} — service / prep items never
+ *       track inventory; always sellable regardless of stockQty.</li>
+ *   <li>{@code stockQty == null} — legacy row where opening balance
+ *       was never entered. Treated as in-stock so a tenant with
+ *       thousands of unset legacy rows doesn't see them vanish
+ *       from POS.</li>
+ *   <li>{@code stockQty > 0} — normal in-stock.</li>
+ * </ul>
+ *
+ * <p>Prior POS filter used {@code (stockQty ?? 0) <= 0} which
+ * treated null as 0 → excluded the item, while the BE treated null
+ * as in-stock → included it. That gap caused Shop=82 vs POS=8 on a
+ * tenant with 74 null-qty deduction rows.</p>
+ */
+export function isItemSellable(
+  it: Pick<Item, 'deductionEnabled' | 'stockQty'>,
+): boolean {
+  if (!it.deductionEnabled) return true;
+  const q = it.stockQty;
+  return q == null || q > 0;
+}
+
 export interface StockInRequest {
   /** Positive quantity to add to {@code stockQty}. Backend rejects ≤ 0. */
   qty: number;

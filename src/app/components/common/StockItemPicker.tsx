@@ -86,10 +86,10 @@ export function StockItemPicker({ catalog, loaded, onOpen, selectedId, onPick }:
   // can't ship — matches the POS grid's disabled-tile rule.
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const inStock = catalog.filter(c =>
-      c.active
-      && !(c.deductionEnabled === true && (c.stockQty ?? 0) <= 0),
-    );
+    // v-item-sellable-align — same isItemSellable used by POS + BE
+    // inStock so the picker never offers items the shop hides (or
+    // vice versa).
+    const inStock = catalog.filter(c => c.active && itemsApi.isItemSellable(c));
     if (!term) return inStock;
     return inStock.filter(c =>
       c.name.toLowerCase().includes(term)
