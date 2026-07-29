@@ -164,6 +164,11 @@ export function PublicShopPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
+  // v-shop-warehouse-filter — filter by warehouse name. Empty string
+  // means "All warehouses"; matches the shape POS uses so the two
+  // surfaces read as one system. Only surfaces on the UI when the
+  // tenant has ≥ 2 distinct warehouse names in the loaded menu.
+  const [warehouse, setWarehouse] = useState<string>('');
   // Infinite-scroll pagination — current cap on how many filtered
   // items are actually rendered. Bumped by SHOP_PAGE_SIZE when the
   // sentinel div at the bottom of the grid intersects the viewport.
@@ -350,11 +355,26 @@ export function PublicShopPage() {
     const q = search.trim().toLowerCase();
     return inStockItems.filter(it => {
       if (category !== 'all' && normalCat(it.category) !== category) return false;
+      if (warehouse && (it.warehouseName ?? '') !== warehouse) return false;
       if (!q) return true;
       return it.name.toLowerCase().includes(q)
           || (it.description ?? '').toLowerCase().includes(q);
     });
-  }, [inStockItems, search, category]);
+  }, [inStockItems, search, category, warehouse]);
+
+  // v-shop-warehouse-filter — distinct warehouse names present in the
+  // loaded menu, sorted for a stable dropdown order. Only rendered
+  // when the tenant has ≥ 2; a single-warehouse tenant sees no
+  // filter (matches the POS single-warehouse behaviour).
+  const warehouseOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of inStockItems) {
+      const w = (it.warehouseName ?? '').trim();
+      if (w) set.add(w);
+    }
+    return Array.from(set).sort();
+  }, [inStockItems]);
+  const showWarehouseFilter = warehouseOptions.length >= 2;
 
   // Load Cloudflare's Turnstile script once per page. The onload
   // callback is queued via cf-turnstile's implicit-loading contract
@@ -879,14 +899,34 @@ export function PublicShopPage() {
           slate-50 page bg when at the top). */}
       <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/60">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 space-y-2">
-        <div className="relative max-w-md">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search the menu…"
-            className="pl-8 bg-white"
-          />
+        {/* v-shop-warehouse-filter — search on the left, warehouse
+            picker on the right (mirrors POS's single-row search +
+            warehouse strip). The warehouse select only surfaces on
+            multi-warehouse tenants so single-warehouse shops stay
+            uncluttered. */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="relative flex-1 min-w-0 max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search the menu…"
+              className="pl-8 bg-white"
+            />
+          </div>
+          {showWarehouseFilter && (
+            <select
+              value={warehouse}
+              onChange={e => setWarehouse(e.target.value)}
+              className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 shrink-0 max-w-[180px] truncate"
+              aria-label="Filter by warehouse"
+            >
+              <option value="">All warehouses</option>
+              {warehouseOptions.map(w => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="chip-row">
           {chipKeys
