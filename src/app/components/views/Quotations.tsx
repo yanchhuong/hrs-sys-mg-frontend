@@ -1235,6 +1235,19 @@ function QuotationDetailDialog({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
+  // v-quotation-stock-guard-fix — stockShortages below needs the
+  // current catalog to compare quoted-vs-onhand for each linked SKU.
+  // Was referenced but never defined here (regression from commit
+  // 1740384); on prod the useMemo blew up with `stockCatalog is not
+  // defined` the moment the detail dialog rendered. Fetch on mount
+  // so the guard has a real list; empty array is a safe "no
+  // shortages" default while the request is in flight.
+  const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
+  useEffect(() => {
+    itemsApi.list({ size: 500, slim: true })
+      .then(r => setStockCatalog(r.content ?? []))
+      .catch(() => setStockCatalog([]));
+  }, []);
   // Separate from `busy` so the Send dropdown can show a spinner +
   // disable itself while a Telegram dispatch is in flight, without
   // also locking out Convert/Close (which use `busy`). Prevents
