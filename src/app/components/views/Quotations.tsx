@@ -47,6 +47,7 @@ import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
+import * as telegramApi from '../../api/telegram';
 import * as settingsApi from '../../api/settings';
 import * as currencyApi from '../../api/currencySettings';
 import * as usersApi from '../../api/users';
@@ -1249,6 +1250,18 @@ function QuotationDetailDialog({
       .then(r => setStockCatalog(r.content ?? []))
       .catch(() => setStockCatalog([]));
   }, []);
+  // v-send-menu-bot-link-gate — hide the "Bot Link" send option when
+  // neither the tenant's own bot nor the platform fallback is
+  // configured. Nothing else works either way; letting the operator
+  // click it just yields a "Telegram delivery isn't configured on
+  // this server" toast. Fetch once per dialog open; treat any error
+  // as "no bot" so a network hiccup doesn't stall the dropdown.
+  const [botAvailable, setBotAvailable] = useState<boolean>(false);
+  useEffect(() => {
+    telegramApi.getStatus()
+      .then(s => setBotAvailable(s.source !== 'none'))
+      .catch(() => setBotAvailable(false));
+  }, []);
   // Separate from `busy` so the Send dropdown can show a spinner +
   // disable itself while a Telegram dispatch is in flight, without
   // also locking out Convert/Close (which use `busy`). Prevents
@@ -1454,19 +1467,21 @@ function QuotationDetailDialog({
                       <Mail className="h-4 w-4 mr-2 text-blue-600" />
                       Email
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        // Stop the auto-close so we can drive the
-                        // busy state ourselves; the menu still
-                        // closes via the dropdown's own focus loss.
-                        e.preventDefault();
-                        if (!telegramBusy) void sendViaTelegram();
-                      }}
-                      disabled={telegramBusy}
-                    >
-                      <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
-                      Bot Link
-                    </DropdownMenuItem>
+                    {botAvailable && (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          // Stop the auto-close so we can drive the
+                          // busy state ourselves; the menu still
+                          // closes via the dropdown's own focus loss.
+                          e.preventDefault();
+                          if (!telegramBusy) void sendViaTelegram();
+                        }}
+                        disabled={telegramBusy}
+                      >
+                        <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
+                        Bot Link
+                      </DropdownMenuItem>
+                    )}
                     {/* v-forward-share — shared "Forward to" chooser.
                         Same UX + capture flow on Invoice. */}
                     <DropdownMenuItem onSelect={(e) => {

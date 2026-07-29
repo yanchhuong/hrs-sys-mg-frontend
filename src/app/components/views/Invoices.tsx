@@ -60,6 +60,7 @@ import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
+import * as telegramApi from '../../api/telegram';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -2201,6 +2202,15 @@ function InvoiceDetailDialog({
   // can show a spinner + block double-clicks without also locking
   // out the Edit / Void / Record-payment actions that share `busy`.
   const [telegramBusy, setTelegramBusy] = useState(false);
+  // v-send-menu-bot-link-gate — hide "Bot Link" from the Send menu
+  // when neither the tenant's own bot nor the platform fallback is
+  // configured. Same guard the Quotation dialog uses.
+  const [botAvailable, setBotAvailable] = useState<boolean>(false);
+  useEffect(() => {
+    telegramApi.getStatus()
+      .then(s => setBotAvailable(s.source !== 'none'))
+      .catch(() => setBotAvailable(false));
+  }, []);
 
   /** Manual "Send via Telegram" trigger. Hits the synchronous
    *  send endpoint so the operator sees an immediate toast for the
@@ -2547,19 +2557,21 @@ function InvoiceDetailDialog({
                         <Mail className="h-4 w-4 mr-2 text-blue-600" />
                         Email
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Keep the menu's auto-close from firing the
-                          // handler twice, then drive the spinner
-                          // ourselves via telegramBusy.
-                          e.preventDefault();
-                          if (!telegramBusy) void sendViaTelegram();
-                        }}
-                        disabled={telegramBusy}
-                      >
-                        <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
-                        Bot Link
-                      </DropdownMenuItem>
+                      {botAvailable && (
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            // Keep the menu's auto-close from firing the
+                            // handler twice, then drive the spinner
+                            // ourselves via telegramBusy.
+                            e.preventDefault();
+                            if (!telegramBusy) void sendViaTelegram();
+                          }}
+                          disabled={telegramBusy}
+                        >
+                          <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
+                          Bot Link
+                        </DropdownMenuItem>
+                      )}
                       {/* v-forward-share — shared "Forward to" chooser. */}
                       <DropdownMenuItem onSelect={(e) => {
                         e.preventDefault();

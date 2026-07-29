@@ -26,7 +26,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -840,14 +840,22 @@ export function Items() {
   // shelf I'm looking at right now worth?". Reads unitCost /
   // unitPrice / stockQty — same fields the row cells render.
   const totals = useMemo(() => {
-    let cost = 0, price = 0, qty = 0;
+    let cost = 0, price = 0, qty = 0, active = 0, outOfStock = 0;
     for (const r of filtered) {
       const q = Number(r.stockQty ?? 0);
       cost  += q * Number(r.unitCost  ?? 0);
       price += q * Number(r.unitPrice ?? 0);
       qty   += q;
+      if (r.active) active += 1;
+      // Out-of-stock definition mirrors isItemSellable's negation on
+      // deduction-tracked rows: null / <= 0 counts as out. Service
+      // items (deductionEnabled=false) never track inventory so
+      // they're excluded from this bucket.
+      if (r.deductionEnabled && (r.stockQty == null || Number(r.stockQty) <= 0)) {
+        outOfStock += 1;
+      }
     }
-    return { cost, price, qty };
+    return { cost, price, qty, active, outOfStock };
   }, [filtered]);
   // v-items-pagesize-15 — 15 per page keeps the row height above the
   // fold on a 1080p screen and shrinks the initial image payload (the
@@ -1197,15 +1205,47 @@ export function Items() {
       />
 
       {/* v-items-summary-cards — inventory totals for the currently
-          filtered row set. Three stat pills on ONE horizontal-scroll
-          strip so the row stays coherent on narrow screens: Total
-          Cost (inventory value at cost), Total Price (inventory value
-          at selling price), Total Stock (units on hand). Numbers
-          update live as filters change. Hidden while the initial load
-          is still spinning so the numbers don't flash 0 → real. */}
+          filtered row set. Six read-only stat pills on ONE horizontal-
+          scroll strip. Cards were briefly clickable filters but
+          reverted — the numbers already move as the operator narrows
+          via the filter strip, so a second click surface added noise
+          without a real workflow benefit. */}
       {!loading && rows.length > 0 && (
         <div className="mb-3 flex gap-3 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
-          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <Boxes className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Items</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                {filtered.length.toLocaleString('en-US')}
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-green-50 text-green-600 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Active</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                {totals.active.toLocaleString('en-US')}
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
+            <div className="h-9 w-9 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+              <PackageX className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Out of Stock</div>
+              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
+                {totals.outOfStock.toLocaleString('en-US')}
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
             <div className="h-9 w-9 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
               <Coins className="h-4 w-4" />
             </div>
@@ -1216,7 +1256,7 @@ export function Items() {
               </div>
             </div>
           </div>
-          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
             <div className="h-9 w-9 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
               <Tag className="h-4 w-4" />
             </div>
@@ -1227,12 +1267,12 @@ export function Items() {
               </div>
             </div>
           </div>
-          <div className="flex-1 min-w-[180px] rounded-lg border bg-white p-3 flex items-center gap-3">
+          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
             <div className="h-9 w-9 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
               <Package className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock</div>
+              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock (QTY)</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
                 {totals.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}
               </div>
