@@ -1244,7 +1244,12 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           <div style={{ textAlign: 'center' }}>
             <div style={{
               fontSize: 18, fontWeight: 400, lineHeight: 1.15,
-              fontFamily: "'Moul','Battambang','Noto Sans Khmer',serif",
+              // v-print-company-title-muol-light — prefer the lighter
+              // Khmer OS Muol Light for the company name so the header
+              // reads elegant instead of dominant. Google's 'Moul'
+              // stays as the web fallback for machines without the
+              // system font (still the same script style, just heavier).
+              fontFamily: "'Khmer OS Muol Light','Moul','Battambang','Noto Sans Khmer',serif",
             }}>ហាងគំរូ</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>Store-Demo</div>
             <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.4 }}>

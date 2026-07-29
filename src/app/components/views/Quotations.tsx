@@ -27,7 +27,7 @@ import {
 } from '../ui/dropdown-menu';
 import {
   Plus, RefreshCw, Eye, Pencil, Trash2, Ban, FileText, ArrowRightCircle, Printer,
-  Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2, Info,
+  Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2, Info, Share2,
 } from 'lucide-react';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { capturePrintPdf } from '../../utils/capturePrintPdf';
@@ -1253,6 +1253,12 @@ function QuotationDetailDialog({
   // also locking out Convert/Close (which use `busy`). Prevents
   // double-clicks from firing two sends.
   const [telegramBusy, setTelegramBusy] = useState(false);
+  // v-quotation-forward-picker — one "Forward to" dropdown item opens
+  // this chooser so the operator taps a logo (no text label needed;
+  // the coloured brand disc is instantly recognisable). Kept as a
+  // simple state flag rather than a nested Radix Dialog so the
+  // parent DropdownMenu's own close behaviour doesn't fight it.
+  const [forwardChooserOpen, setForwardChooserOpen] = useState(false);
 
   const customer = quotation ? customers.find(c => c.id === quotation.customerId) : undefined;
 
@@ -1303,6 +1309,88 @@ function QuotationDetailDialog({
       setTelegramBusy(false);
     }
   };
+
+  /**
+   * v-quotation-forward — capture the same print-layout PNG the Bot
+   * Link path already produces and hand it off to the operator's
+   * chosen chat app. Web Share API with a file surfaces Telegram /
+   * Messenger / WhatsApp / Line in the OS share sheet on modern
+   * mobile + desktop Chromium. On browsers without file-share
+   * support we download the PNG and open the chat platform so the
+   * operator can attach the just-downloaded file (one drag, no
+   * copy-paste dance).
+   */
+  const forwardText = (q: quotationsApi.Quotation): string => {
+    const c = customers.find(x => x.id === q.customerId);
+    const lines: string[] = [];
+    lines.push(`Quotation ${q.quotationNo}`);
+    if (c?.name) lines.push(`Customer: ${c.name}`);
+    if (q.issueDate) lines.push(`Issue date: ${formatDate(q.issueDate)}`);
+    if (q.expiryDate) lines.push(`Expiry: ${formatDate(q.expiryDate)}`);
+    lines.push(`Total: ${fmtMoney(q.total, q.currency)}`);
+    return lines.join('\n');
+  };
+
+  /** Convert the print-image data URL into a File `navigator.share`
+   *  can accept. Returns null if the template isn't mounted (empty
+   *  detail view / capture failure) so the caller can fall through
+   *  to text-only sharing. */
+  const capturePrintFile = async (q: quotationsApi.Quotation): Promise<File | null> => {
+    const dataUrl = await capturePrintImage();
+    if (!dataUrl) return null;
+    const bin = await (await fetch(dataUrl)).blob();
+    const safeNo = q.quotationNo.replace(/[^A-Za-z0-9._-]+/g, '-');
+    return new File([bin], `${safeNo}.png`, { type: bin.type || 'image/png' });
+  };
+
+  /** Download a File to disk with the browser's Save dialog. Used as
+   *  a graceful fallback when Web Share API is missing — the operator
+   *  can then drag the saved PNG into any chat. */
+  const downloadFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  /** Shared forward path — captures the PNG, hands it directly to the
+   *  operator-picked chat platform. Skips `navigator.share` because
+   *  the Windows Share sheet only lists UWP apps (Telegram Desktop
+   *  and Messenger Desktop don't register), so the OS sheet was a
+   *  confusing dead-end for those users. Now: download the file
+   *  first, then open the specific platform in a new tab so the
+   *  operator's next action is "attach this file". */
+  const forwardWithImage = async (
+    q: quotationsApi.Quotation,
+    platform: 'telegram' | 'messenger',
+  ) => {
+    if (telegramBusy) return;
+    setTelegramBusy(true);
+    try {
+      const file = await capturePrintFile(q);
+      const text = forwardText(q);
+      if (file) downloadFile(file);
+      const openUrl = platform === 'telegram'
+        ? `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodeURIComponent(text)}`
+        : 'https://www.messenger.com/';
+      window.open(openUrl, '_blank', 'noopener,noreferrer');
+      const platformLabel = platform === 'telegram' ? 'Telegram' : 'Messenger';
+      toast.success(file
+        ? `Image saved — attach ${file.name} in ${platformLabel}.`
+        : `Opened ${platformLabel} — image capture failed, paste the text summary.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Forward failed');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const forwardToTelegram  = (q: quotationsApi.Quotation) => forwardWithImage(q, 'telegram');
+  const forwardToMessenger = (q: quotationsApi.Quotation) => forwardWithImage(q, 'messenger');
 
   const doConvert = async () => {
     if (!quotation) return;
@@ -1380,7 +1468,7 @@ function QuotationDetailDialog({
               font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
             }
             .print-tax-invoice .kh-title {
-              font-family: 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
+              font-family: 'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
               font-weight: 400 !important;
               letter-spacing: 0.5px;
             }
@@ -1443,7 +1531,17 @@ function QuotationDetailDialog({
                       disabled={telegramBusy}
                     >
                       <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
-                      Telegram
+                      Bot Link
+                    </DropdownMenuItem>
+                    {/* v-quotation-forward-picker — single "Forward to"
+                        item opens the chooser dialog below where the
+                        operator taps a Telegram or Messenger logo. */}
+                    <DropdownMenuItem onSelect={(e) => {
+                      e.preventDefault();
+                      setForwardChooserOpen(true);
+                    }}>
+                      <Share2 className="h-4 w-4 mr-2 text-blue-600" />
+                      Forward to
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1602,6 +1700,61 @@ function QuotationDetailDialog({
           />
         )}
       </DialogContent>
+      {/* v-quotation-forward-picker — two logo-only buttons the
+          operator taps to route the print PNG into a chat app.
+          No labels — the coloured brand disc is the entire cue.
+          Both buttons close the picker before firing so the
+          telegramBusy spinner is visible on the Send button. */}
+      <Dialog open={forwardChooserOpen} onOpenChange={setForwardChooserOpen}>
+        <DialogContent className="sm:max-w-xs" hideClose>
+          <DialogHeader>
+            <DialogTitle className="text-center">Forward to</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center gap-6 py-4">
+            <button
+              type="button"
+              onClick={() => {
+                setForwardChooserOpen(false);
+                if (quotation) void forwardToTelegram(quotation);
+              }}
+              disabled={telegramBusy || !quotation}
+              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-lg p-2 disabled:opacity-50"
+              aria-label="Forward to Telegram"
+              title="Telegram"
+            >
+              {/* Telegram paper-plane on a brand-blue disc. Inline
+                  SVG so we don't pull a third-party asset. */}
+              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
+                    style={{ background: '#229ED9' }}>
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
+                  <path d="M9.417 15.181l-.397 5.584c.568 0 .814-.244 1.109-.537l2.663-2.545 5.518 4.041c1.012.564 1.725.267 1.998-.931l3.622-16.972.001-.001c.321-1.496-.541-2.081-1.527-1.714L1.34 9.712C-.099 10.276-.077 11.077 1.096 11.44l5.484 1.714 12.741-8.021c.599-.396 1.145-.177.696.219z"
+                        fill="#fff" />
+                </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setForwardChooserOpen(false);
+                if (quotation) void forwardToMessenger(quotation);
+              }}
+              disabled={telegramBusy || !quotation}
+              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-lg p-2 disabled:opacity-50"
+              aria-label="Forward to Messenger"
+              title="Messenger"
+            >
+              {/* Facebook Messenger lightning-in-speech-bubble on the
+                  brand purple-blue gradient. */}
+              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
+                    style={{ background: 'linear-gradient(135deg,#00B2FF 0%,#006AFF 45%,#8000FF 100%)' }}>
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="#fff">
+                  <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.34.27.56l.05 1.78c.02.57.6.94 1.12.71l1.99-.88c.17-.07.36-.09.54-.04.91.25 1.88.39 2.89.39 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6.01 7.61l-2.94 4.66c-.47.74-1.47.93-2.18.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.39c-.42.32-.97-.18-.69-.63l2.94-4.66c.47-.74 1.47-.93 2.18-.4l2.34 1.75c.21.16.51.16.72 0l3.16-2.39c.42-.32.97.18.69.63z" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
@@ -1750,19 +1903,35 @@ function MailQuotationDialog({
 /* -------------------------------------------------------------------------- */
 
 function QBiLabel({ kh, en }: { kh: string; en: string }) {
+  // v-print-bilabel-shift-fix — html2canvas compresses line-height for
+  // Khmer complex glyphs (subscript stacks + coeng) so the English row
+  // below crept up into the Khmer baseline in the captured PNG.
+  // Give each line explicit block display + a floor line-height that
+  // html2canvas honours, and add a small gap so the two rows never
+  // collide even when Khmer's rendered box shrinks below its expected
+  // metrics. Purely visual — CSS-print output stays identical because
+  // it never depended on the tighter default.
   return (
-    <div style={{ lineHeight: 1.15 }}>
-      <div style={{ fontSize: '11px' }}>{kh}</div>
-      <div style={{ fontSize: '9px', color: '#555' }}>{en}</div>
+    <div style={{ lineHeight: 1.35 }}>
+      <div style={{
+        fontSize: '11px', display: 'block', lineHeight: '15px',
+        whiteSpace: 'nowrap',
+      }}>{kh}</div>
+      <div style={{
+        fontSize: '9px', color: '#555', display: 'block',
+        lineHeight: '12px', marginTop: '1px', whiteSpace: 'nowrap',
+      }}>{en}</div>
     </div>
   );
 }
 
 function QVatTinBoxes({ tin }: { tin: string }) {
   const chars = tin.trim().split('');
-  // See Invoices.tsx VatTinBoxes for why this uses flex + flex-shrink
-  // instead of inline-block — html2canvas rendered the previous shape
-  // with one digit per line.
+  // v-print-tinbox-align-fix — mirrors Invoices.tsx VatTinBoxes: flex
+  // with tabular-nums + Arial for uniform digit advance widths under
+  // html2canvas + line-height 1 so the digit sits on the cell
+  // midline. Previous version rendered each digit stacked or
+  // slightly offset in the captured PNG on some tenants' TINs.
   return (
     <span style={{
       display: 'inline-flex', flexWrap: 'nowrap', gap: '2px',
@@ -1771,7 +1940,11 @@ function QVatTinBoxes({ tin }: { tin: string }) {
       {chars.map((c, i) => (
         <span key={i} style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          flex: '0 0 auto', width: '14px', height: '16px', fontSize: '11px',
+          flex: '0 0 auto', width: '16px', height: '18px',
+          fontSize: '11px', lineHeight: 1,
+          fontFamily: 'Arial, sans-serif',
+          fontVariantNumeric: 'tabular-nums',
+          textAlign: 'center',
           border: c === '-' ? 'none' : '1px solid #000',
           boxSizing: 'border-box',
         }}>{c}</span>
@@ -1847,7 +2020,7 @@ function PrintQuotation({
         <div style={{ textAlign: 'center' }}>
           <div className="kh-title" style={{
             fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+            fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
           }}>{companyKh}</div>
           {companyEn && companyEn !== companyKh && (
             <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
@@ -1879,7 +2052,7 @@ function PrintQuotation({
         <div style={{ textAlign: 'center' }}>
           <div className="kh-title" style={{
             fontSize: '20px', fontWeight: 400,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+            fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
           }}>សំណើតម្លៃ</div>
           <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>QUOTATION</div>
         </div>

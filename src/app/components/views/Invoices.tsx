@@ -53,7 +53,7 @@ import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
-  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark,
+  Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
   Package, CheckCircle2, Upload, FileSpreadsheet,
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
@@ -2200,6 +2200,10 @@ function InvoiceDetailDialog({
   // can show a spinner + block double-clicks without also locking
   // out the Edit / Void / Record-payment actions that share `busy`.
   const [telegramBusy, setTelegramBusy] = useState(false);
+  // v-invoice-forward-picker — same "Forward to" chooser Quotations
+  // uses. One dropdown item opens a small dialog with two brand-
+  // logo buttons (Telegram / Messenger) — no text, just the discs.
+  const [forwardChooserOpen, setForwardChooserOpen] = useState(false);
 
   /** Manual "Send via Telegram" trigger. Hits the synchronous
    *  send endpoint so the operator sees an immediate toast for the
@@ -2237,6 +2241,66 @@ function InvoiceDetailDialog({
       setTelegramBusy(false);
     }
   };
+
+  /* v-invoice-forward — mirror the Quotation forward flow: capture
+     the same print PNG the Bot Link uses, download it, then open
+     the operator-picked chat platform in a new tab so the next
+     action is "attach this file". Skipping navigator.share because
+     Telegram Desktop + Messenger Desktop on Windows don't register
+     with the OS share sheet. */
+  const forwardCustomer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
+  const forwardText = (inv: invoicesApi.Invoice): string => {
+    const lines: string[] = [];
+    lines.push(`Invoice ${inv.invoiceNo}`);
+    if (forwardCustomer?.name) lines.push(`Customer: ${forwardCustomer.name}`);
+    if (inv.issueDate) lines.push(`Issue date: ${formatDate(inv.issueDate)}`);
+    if (inv.dueDate) lines.push(`Due: ${formatDate(inv.dueDate)}`);
+    lines.push(`Total: ${fmtMoney(inv.total, inv.currency)}`);
+    return lines.join('\n');
+  };
+  const capturePrintFile = async (inv: invoicesApi.Invoice): Promise<File | null> => {
+    const dataUrl = await capturePrintImage();
+    if (!dataUrl) return null;
+    const bin = await (await fetch(dataUrl)).blob();
+    const safeNo = inv.invoiceNo.replace(/[^A-Za-z0-9._-]+/g, '-');
+    return new File([bin], `${safeNo}.png`, { type: bin.type || 'image/png' });
+  };
+  const downloadFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+  const forwardWithImage = async (
+    inv: invoicesApi.Invoice,
+    platform: 'telegram' | 'messenger',
+  ) => {
+    if (telegramBusy) return;
+    setTelegramBusy(true);
+    try {
+      const file = await capturePrintFile(inv);
+      const text = forwardText(inv);
+      if (file) downloadFile(file);
+      const openUrl = platform === 'telegram'
+        ? `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodeURIComponent(text)}`
+        : 'https://www.messenger.com/';
+      window.open(openUrl, '_blank', 'noopener,noreferrer');
+      const platformLabel = platform === 'telegram' ? 'Telegram' : 'Messenger';
+      toast.success(file
+        ? `Image saved — attach ${file.name} in ${platformLabel}.`
+        : `Opened ${platformLabel} — image capture failed, paste the text summary.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Forward failed');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+  const forwardToTelegram  = (inv: invoicesApi.Invoice) => forwardWithImage(inv, 'telegram');
+  const forwardToMessenger = (inv: invoicesApi.Invoice) => forwardWithImage(inv, 'messenger');
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
 
@@ -2535,7 +2599,16 @@ function InvoiceDetailDialog({
                         disabled={telegramBusy}
                       >
                         <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
-                        Telegram
+                        Bot Link
+                      </DropdownMenuItem>
+                      {/* v-invoice-forward-picker — one item, opens
+                          the two-logo chooser mounted below. */}
+                      <DropdownMenuItem onSelect={(e) => {
+                        e.preventDefault();
+                        setForwardChooserOpen(true);
+                      }}>
+                        <Share2 className="h-4 w-4 mr-2 text-blue-600" />
+                        Forward to
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -3024,7 +3097,7 @@ function InvoiceDetailDialog({
                   font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
                 }
                 .print-tax-invoice .kh-title {
-                  font-family: 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
+                  font-family: 'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
                   font-weight: 400 !important;
                   letter-spacing: 0.5px;
                 }
@@ -3071,6 +3144,55 @@ function InvoiceDetailDialog({
           />
         )}
       </DialogContent>
+      {/* v-invoice-forward-picker — two logo-only brand buttons the
+          operator taps to route the print PNG into a chat app.
+          Mirrors Quotation's chooser verbatim. */}
+      <Dialog open={forwardChooserOpen} onOpenChange={setForwardChooserOpen}>
+        <DialogContent className="sm:max-w-xs" hideClose>
+          <DialogHeader>
+            <DialogTitle className="text-center">Forward to</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center gap-6 py-4">
+            <button
+              type="button"
+              onClick={() => {
+                setForwardChooserOpen(false);
+                if (invoice) void forwardToTelegram(invoice);
+              }}
+              disabled={telegramBusy || !invoice}
+              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-lg p-2 disabled:opacity-50"
+              aria-label="Forward to Telegram"
+              title="Telegram"
+            >
+              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
+                    style={{ background: '#229ED9' }}>
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
+                  <path d="M9.417 15.181l-.397 5.584c.568 0 .814-.244 1.109-.537l2.663-2.545 5.518 4.041c1.012.564 1.725.267 1.998-.931l3.622-16.972.001-.001c.321-1.496-.541-2.081-1.527-1.714L1.34 9.712C-.099 10.276-.077 11.077 1.096 11.44l5.484 1.714 12.741-8.021c.599-.396 1.145-.177.696.219z"
+                        fill="#fff" />
+                </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setForwardChooserOpen(false);
+                if (invoice) void forwardToMessenger(invoice);
+              }}
+              disabled={telegramBusy || !invoice}
+              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-lg p-2 disabled:opacity-50"
+              aria-label="Forward to Messenger"
+              title="Messenger"
+            >
+              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
+                    style={{ background: 'linear-gradient(135deg,#00B2FF 0%,#006AFF 45%,#8000FF 100%)' }}>
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="#fff">
+                  <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.34.27.56l.05 1.78c.02.57.6.94 1.12.71l1.99-.88c.17-.07.36-.09.54-.04.91.25 1.88.39 2.89.39 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6.01 7.61l-2.94 4.66c-.47.74-1.47.93-2.18.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.39c-.42.32-.97-.18-.69-.63l2.94-4.66c.47-.74 1.47-.93 2.18-.4l2.34 1.75c.21.16.51.16.72 0l3.16-2.39c.42-.32.97.18.69.63z" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
@@ -3191,12 +3313,24 @@ function VatTinBoxes({ tin }: { tin: string }) {
   );
 }
 
-/** Compact bilingual label cell — Khmer above, smaller English under. */
+/** Compact bilingual label cell — Khmer above, smaller English under.
+ *  v-print-bilabel-shift-fix — html2canvas compresses line-height for
+ *  Khmer complex glyphs (subscript stacks + coeng) so the English
+ *  line crept up into the Khmer baseline in the captured PNG. Give
+ *  each line an explicit block display + a floor line-height + a
+ *  1px marginTop on the English row so the two never collide even
+ *  when Khmer's rendered box shrinks below its expected metrics. */
 function BiLabel({ kh, en }: { kh: string; en: string }) {
   return (
-    <div style={{ lineHeight: 1.15 }}>
-      <div style={{ fontSize: '11px' }}>{kh}</div>
-      <div style={{ fontSize: '9px', color: '#555' }}>{en}</div>
+    <div style={{ lineHeight: 1.35 }}>
+      <div style={{
+        fontSize: '11px', display: 'block', lineHeight: '15px',
+        whiteSpace: 'nowrap',
+      }}>{kh}</div>
+      <div style={{
+        fontSize: '9px', color: '#555', display: 'block',
+        lineHeight: '12px', marginTop: '1px', whiteSpace: 'nowrap',
+      }}>{en}</div>
     </div>
   );
 }
@@ -3331,7 +3465,7 @@ function PrintTaxInvoice({
           <div style={{ textAlign: 'center' }}>
             <div className="kh-title" style={{
               fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
-              fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+              fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
             }}>{companyKh}</div>
             {companyEn && companyEn !== companyKh && (
               <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
@@ -3404,7 +3538,7 @@ function PrintTaxInvoice({
               <div className="kh-title" style={{
                 fontSize: '20px',
                 fontWeight: 400,
-                fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+                fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
               }}>{kindTitle.kh}</div>
               <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>{kindTitle.en}</div>
             </div>

@@ -1340,7 +1340,7 @@ function VoucherDetailDialog({
               font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
             }
             .print-tax-invoice .kh-title {
-              font-family: 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
+              font-family: 'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
               font-weight: 400 !important;
               letter-spacing: 0.5px;
             }
@@ -1763,7 +1763,7 @@ function PrintVoucher({
         <div style={{ textAlign: 'center' }}>
           <div className="kh-title" style={{
             fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+            fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
           }}>{companyKh}</div>
           {companyEn && companyEn !== companyKh && (
             <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
@@ -1797,7 +1797,7 @@ function PrintVoucher({
         <div style={{ textAlign: 'center' }}>
           <div className="kh-title" style={{
             fontSize: '20px', fontWeight: 400,
-            fontFamily: "'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+            fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
           }}>{PRINT_TITLES[voucher.purpose].kh}</div>
           <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '0.5px' }}>
             {PRINT_TITLES[voucher.purpose].en}
