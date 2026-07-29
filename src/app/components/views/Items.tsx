@@ -237,9 +237,13 @@ function ReceiveStockPopover({
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PackagePlus className="h-4 w-4 text-emerald-600" />
-              Increase Stock — <span className="truncate" title={item.name}>{item.name}</span>
+            {/* pr-6 reserves space for the Dialog's absolute X close
+                button so long item names don't run under it. min-w-0
+                on the flex row unblocks the item-name span truncate. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+              <PackagePlus className="h-4 w-4 text-emerald-600 shrink-0" />
+              <span className="shrink-0">Increase Stock —</span>
+              <span className="truncate min-w-0" title={item.name}>{item.name}</span>
             </DialogTitle>
             <DialogDescription className="sr-only">
               Add on-hand quantity and optionally adjust cost or selling price for {item.name}.
@@ -427,9 +431,12 @@ function RowImageCell({
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Camera className="h-4 w-4 text-blue-600" />
-              {cover ? 'Change image' : 'Upload image'} — {item.name}
+            {/* pr-6 reserves space for the Dialog's absolute X close
+                button; min-w-0 lets the item-name span truncate. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+              <Camera className="h-4 w-4 text-blue-600 shrink-0" />
+              <span className="shrink-0">{cover ? 'Change image' : 'Upload image'} —</span>
+              <span className="truncate min-w-0" title={item.name}>{item.name}</span>
             </DialogTitle>
             {/* Keep DialogDescription mounted (Radix a11y expects one
                 per DialogContent). sr-only makes it accessible-only
@@ -580,9 +587,14 @@ function RowModifiersPopover({
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-purple-600" />
-              Modifier Groups — <span className="truncate" title={item.name}>{item.name}</span>
+            {/* pr-6 reserves space for the Dialog's absolute X close
+                button (top-4 right-4) so long Khmer / Chinese item
+                names don't run under it. min-w-0 on the flex row
+                unblocks the item-name span's truncate. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 pr-6">
+              <SlidersHorizontal className="h-4 w-4 text-purple-600 shrink-0" />
+              <span className="shrink-0">Modifier Groups —</span>
+              <span className="truncate min-w-0" title={item.name}>{item.name}</span>
             </DialogTitle>
             {/* Keep DialogDescription mounted — Radix a11y expects one
                 per DialogContent. sr-only keeps the visual header clean. */}
