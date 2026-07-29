@@ -16,6 +16,14 @@ export interface ShopLinkInfo {
   url: string;
   enabled: boolean;
   updatedAt: string | null;
+  /** V282 — running total of times the customer-facing /shop/{code}
+   *  page has loaded the menu. Increments on every successful anonymous
+   *  resolve; not de-duplicated per visitor. Zero on newly-minted or
+   *  never-scanned codes. */
+  viewCount: number;
+  /** V282 — ISO timestamp of the most recent /shop/{code} resolve.
+   *  Null until the first view lands. */
+  lastViewedAt: string | null;
 }
 
 export interface PublicShopItem {

@@ -7,7 +7,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye } from 'lucide-react';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
 
@@ -146,6 +146,28 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
                   {info.code}
                 </div>
               </div>
+              {/* v-shop-link-view-count — customer-facing views on the
+                  /shop/{code} page. Muted eye + tabular-nums count so
+                  the row scans at a glance. Hover reveals when the
+                  last view landed. */}
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="mt-1 inline-flex items-center gap-1.5 text-xs text-gray-500 cursor-default">
+                      <Eye className="h-3.5 w-3.5" />
+                      <span className="tabular-nums font-medium text-gray-700">
+                        {Number(info.viewCount ?? 0).toLocaleString()}
+                      </span>
+                      <span>{(info.viewCount ?? 0) === 1 ? 'view' : 'views'}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {info.lastViewedAt
+                      ? `Last viewed ${new Date(info.lastViewedAt).toLocaleString()}`
+                      : 'No one has scanned this code yet'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
 
             {/* URL row */}

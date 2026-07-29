@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,9 +9,8 @@ import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
 import { Skeleton } from '../ui/skeleton';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import { useIsMobile } from '../ui/use-mobile';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -212,14 +211,13 @@ function ReceiveStockPopover({
     .toLocaleString('en-US', { maximumFractionDigits: 2 })
     + (item.unit ? ` ${item.unit}` : '');
 
-  const isMobile = useIsMobile();
-  const { dragStyle, dragHandleProps, resetDrag } = useDialogDrag();
-
-  /* Trigger + form body are the same across both surfaces — only the
-     container (Popover on desktop, Dialog on mobile) changes so the
-     form centers in the viewport on small screens instead of getting
-     clipped alongside the row's + button. Extracting these avoids
-     duplicating the JSX between the two branches. */
+  // v-items-increase-stock-dialog-shape — matches the row-image upload
+  // and Modifier Groups dialogs verbatim: always a centered <Dialog>,
+  // never a Popover, with the shared DialogHeader / DialogTitle /
+  // DialogFooter chrome. Responsive width via `sm:max-w-md` — the
+  // dialog fills the viewport on narrow screens and caps at `md`
+  // above the sm breakpoint. Draggable-title behaviour dropped so all
+  // three row-level dialogs read as one system.
   const trigger = (
     <Button
       size="sm"
@@ -227,115 +225,94 @@ function ReceiveStockPopover({
       className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
       title="Increase stock"
       aria-label="Increase stock"
+      onClick={() => setOpen(true)}
     >
       <PackagePlus className="h-3.5 w-3.5" />
     </Button>
   );
 
-  const body = (
-    <form onSubmit={submit} className="space-y-3">
-      {/* Title row — "Increase Stock — {item name}" so the operator
-          knows which row this popover is affecting even after their
-          cursor drifts off the trigger. Truncate long names so a
-          50-char product doesn't blow out the popover width.
-          Mobile-only: doubles as a drag handle so the Dialog can be
-          moved to peek at the row underneath. */}
-      <div
-        className={`flex items-center gap-1.5 text-sm font-medium text-gray-900 ${
-          isMobile ? 'cursor-grab active:cursor-grabbing select-none touch-none' : ''
-        }`}
-        {...(isMobile ? dragHandleProps : {})}
-      >
-        <PackagePlus className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-        <span className="shrink-0">Increase Stock —</span>
-        <span className="truncate" title={item.name}>{item.name}</span>
-      </div>
-      {/* Row 1 — Current Stock (read-only) beside + Stock (qty input).
-          Two columns so the operator sees at a glance "current N,
-          adding M". */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs text-gray-500">Current Stock</Label>
-          <Input
-            readOnly
-            value={currentStockLabel}
-            className="h-8 text-sm bg-gray-50 text-gray-600 tabular-nums"
-            tabIndex={-1}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">
-            + Stock <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            type="number" step="0.01" min="0.01"
-            autoFocus
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            placeholder="e.g. 50"
-            className="h-8 text-sm tabular-nums"
-            disabled={busy}
-          />
-        </div>
-      </div>
-      {/* Row 2 — New Cost beside Selling Price. Both prefilled with
-          the item's current values; leave as-is to skip. */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">New Cost</Label>
-          <Input
-            type="number" step="0.01" min="0"
-            value={cost}
-            onChange={(e) => setCost(e.target.value)}
-            placeholder="0.00"
-            className="h-8 text-sm tabular-nums"
-            disabled={busy}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Selling Price</Label>
-          <Input
-            type="number" step="0.01" min="0"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="0.00"
-            className="h-8 text-sm tabular-nums"
-            disabled={busy}
-          />
-        </div>
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
-        <Button type="button" variant="outline" size="sm"
-                onClick={() => setOpen(false)} disabled={busy}>
-          Cancel
-        </Button>
-        <Button type="submit" size="sm" disabled={busy}>
-          {busy ? 'Saving…' : 'Increase'}
-        </Button>
-      </div>
-    </form>
-  );
-
-  // Mobile — center-of-screen Dialog so the form isn't clipped or
-  // pinned to the row's edge on a narrow viewport. Dialog handles
-  // focus trap + backdrop + escape close for us. Desktop keeps the
-  // anchored Popover for quicker one-off entries next to the trigger.
-  if (isMobile) {
-    return (
-      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetDrag(); }}>
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className="w-[92vw] max-w-sm p-4 gap-0" style={dragStyle}>
-          {body}
+  return (
+    <>
+      {trigger}
+      <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackagePlus className="h-4 w-4 text-emerald-600" />
+              Increase Stock — <span className="truncate" title={item.name}>{item.name}</span>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Add on-hand quantity and optionally adjust cost or selling price for {item.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submit} className="space-y-3">
+            {/* Row 1 — Current Stock (read-only) beside + Stock (qty
+                input). Grid so both cells share the width equally
+                even when the dialog stretches to `sm:max-w-md`. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">Current Stock</Label>
+                <Input
+                  readOnly
+                  value={currentStockLabel}
+                  className="h-8 text-sm bg-gray-50 text-gray-600 tabular-nums"
+                  tabIndex={-1}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">
+                  + Stock <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number" step="0.01" min="0.01"
+                  autoFocus
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  placeholder="e.g. 50"
+                  className="h-8 text-sm tabular-nums"
+                  disabled={busy}
+                />
+              </div>
+            </div>
+            {/* Row 2 — New Cost beside Selling Price. Both prefilled
+                with the item's current values; leave as-is to skip. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">New Cost</Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  value={cost}
+                  onChange={(e) => setCost(e.target.value)}
+                  placeholder="0.00"
+                  className="h-8 text-sm tabular-nums"
+                  disabled={busy}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Selling Price</Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="0.00"
+                  className="h-8 text-sm tabular-nums"
+                  disabled={busy}
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline"
+                      onClick={() => setOpen(false)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Saving…' : 'Increase'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-3">{body}</PopoverContent>
-    </Popover>
+    </>
   );
 }
 
@@ -496,76 +473,20 @@ function RowImageCell({
 }
 
 /* -------------------------------------------------------------------------- */
-/* v-items-draggable-mobile-dialog — mouse/touch drag on the title row of the */
-/* row-level Dialogs (Increase Stock, Modifier Groups) so the operator can    */
-/* nudge the panel off the row they're editing to peek at what's underneath.  */
-/* Applies only when the panel is mounted as a Dialog (mobile path) — desktop */
-/* Popover is anchored and doesn't need it.                                   */
-/*                                                                            */
-/* Returns an object with:                                                    */
-/*   - `dragStyle`: transform that preserves Radix's -50%/-50% centering AND  */
-/*     adds the user's cumulative drag delta, so the panel starts centered    */
-/*     and moves from there.                                                  */
-/*   - `dragHandleProps`: spread onto the title element to make it a handle;  */
-/*     supports both mouse and touch (passive:false on touchmove so the drag  */
-/*     doesn't fight the browser's scroll).                                   */
-/*   - `resetDrag`: call in the Dialog `onOpenChange` close branch so a       */
-/*     re-open re-centers the panel instead of restoring the last position.   */
-/* -------------------------------------------------------------------------- */
-function useDialogDrag() {
-  const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const offsetRef = useRef({ x: 0, y: 0 });
-  useEffect(() => { offsetRef.current = offset; }, [offset]);
-
-  const resetDrag = useCallback(() => setOffset({ x: 0, y: 0 }), []);
-
-  const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    const isTouch = 'touches' in e;
-    const startX = isTouch ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const startY = isTouch ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    const startOff = offsetRef.current;
-    const move = (ev: MouseEvent | TouchEvent) => {
-      const t = 'touches' in ev;
-      const ex = t ? ev.touches[0].clientX : (ev as MouseEvent).clientX;
-      const ey = t ? ev.touches[0].clientY : (ev as MouseEvent).clientY;
-      const next = { x: startOff.x + (ex - startX), y: startOff.y + (ey - startY) };
-      offsetRef.current = next;
-      setOffset(next);
-      if (t) (ev as TouchEvent).preventDefault();
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move as EventListener);
-      window.removeEventListener('mouseup', up);
-      window.removeEventListener('touchmove', move as EventListener);
-      window.removeEventListener('touchend', up);
-      document.body.style.userSelect = '';
-    };
-    document.body.style.userSelect = 'none';
-    window.addEventListener('mousemove', move as EventListener);
-    window.addEventListener('mouseup', up);
-    window.addEventListener('touchmove', move as EventListener, { passive: false });
-    window.addEventListener('touchend', up);
-  }, []);
-
-  return {
-    dragStyle: {
-      transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
-    } as React.CSSProperties,
-    dragHandleProps: { onMouseDown: onDragStart, onTouchStart: onDragStart },
-    resetDrag,
-  };
-}
-
-/* -------------------------------------------------------------------------- */
 /* v-items-row-modifiers — small SlidersHorizontal icon in the Item Name cell */
 /* opens a per-row Modifier-groups editor without opening the full Edit dialog.*/
 /* Uses the same `ModifiersEditor` shipped in the Edit dialog so options /    */
 /* required flag / price adjustment behave identically. On save, sends a full */
 /* ItemRequest with only `modifiers` swapped so unrelated fields (SKU,        */
 /* price, warehouseId, etc) round-trip untouched. Splices the response into   */
-/* rows[] via onSaved so the parent doesn't refetch. Uses Popover on desktop  */
-/* and Dialog on mobile — same responsive pattern the Increase Stock popover  */
-/* adopted so narrow viewports get a centered form instead of a clipped one.  */
+/* rows[] via onSaved so the parent doesn't refetch.                          */
+/*                                                                            */
+/* v-items-modifiers-dialog-shape — matches the row-image upload dialog       */
+/* shape: always a centered <Dialog> (never a Popover), with the shared       */
+/* DialogHeader/DialogTitle/DialogFooter chrome the image dialog uses. This   */
+/* keeps the two row-level "open a form for this row" surfaces visually       */
+/* identical so operators build one muscle memory. Draggable-title behaviour  */
+/* dropped for consistency with the image dialog (which isn't draggable).     */
 /* Hoisted above Items() to sidestep the Vite Fast Refresh HMR edge case      */
 /* (same reason ReceiveStockPopover + RowImageCell are up here).              */
 /* -------------------------------------------------------------------------- */
@@ -583,8 +504,6 @@ function RowModifiersPopover({
     itemsApi.parseModifiers(item.modifiers)?.groups ?? [],
   );
   const [busy, setBusy] = useState(false);
-  const isMobile = useIsMobile();
-  const { dragStyle, dragHandleProps, resetDrag } = useDialogDrag();
 
   useEffect(() => {
     if (open) {
@@ -623,77 +542,72 @@ function RowModifiersPopover({
     }
   };
 
-  // Trigger — a small SlidersHorizontal beside the item name. Purple
-  // tint separates it from the emerald Increase Stock trigger in the
-  // stock column so operators don't mistake one for the other.
+  // Trigger — small SlidersHorizontal beside the item name. Purple
+  // when the item already has at least one modifier group so the
+  // icon reads as "has customisations"; muted gray otherwise so
+  // operators can scan the column and see which items still need
+  // groups configured. Emerald is reserved for the Increase Stock
+  // trigger so the two never collide.
+  //
+  // Read from `item.modifiers` (the persisted prop) rather than the
+  // local `groups` state so the trigger colour reflects what's saved
+  // — not the operator's in-flight edits while the dialog is open.
+  const hasGroups = (itemsApi.parseModifiers(item.modifiers)?.groups.length ?? 0) > 0;
   const trigger = (
     <Button
       type="button"
       size="sm"
       variant="ghost"
-      className="h-5 w-5 p-0 text-purple-600 hover:bg-purple-50 shrink-0"
-      title="Modifier groups"
-      aria-label={`Modifier groups for ${item.name}`}
+      className={`h-5 w-5 p-0 shrink-0 ${
+        hasGroups
+          ? 'text-purple-600 hover:bg-purple-50'
+          : 'text-gray-400 hover:bg-gray-100'
+      }`}
+      title={hasGroups ? 'Modifier groups' : 'Add modifier groups'}
+      aria-label={`${hasGroups ? 'Edit' : 'Add'} modifier groups for ${item.name}`}
       disabled={disabled}
+      onClick={() => setOpen(true)}
     >
       <SlidersHorizontal className="h-3 w-3" />
     </Button>
   );
 
-  // Mobile-only: title row doubles as a drag handle so the operator
-  // can move the centered Dialog aside to see the row underneath.
-  // Desktop Popover is anchored — no drag needed there.
-  const titleRow = (
-    <div
-      className={`flex items-center gap-1.5 text-sm font-medium text-gray-900 ${
-        isMobile ? 'cursor-grab active:cursor-grabbing select-none touch-none' : ''
-      }`}
-      {...(isMobile ? dragHandleProps : {})}
-    >
-      <SlidersHorizontal className="h-3.5 w-3.5 text-purple-600 shrink-0" />
-      <span className="shrink-0">Modifier Groups —</span>
-      <span className="truncate" title={item.name}>{item.name}</span>
-    </div>
-  );
-
-  const body = (
-    <div className="space-y-3">
-      {titleRow}
-      <ModifiersEditor
-        groups={groups}
-        onChange={setGroups}
-        disabled={busy || disabled}
-      />
-      <div className="flex justify-end gap-2 pt-1">
-        <Button type="button" variant="outline" size="sm"
-                onClick={() => setOpen(false)} disabled={busy}>
-          Cancel
-        </Button>
-        <Button type="button" size="sm" onClick={submit} disabled={busy || disabled}>
-          {busy ? 'Saving…' : 'Save'}
-        </Button>
-      </div>
-    </div>
-  );
-
-  if (isMobile) {
-    return (
-      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetDrag(); }}>
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className="w-[92vw] max-w-md p-4 gap-0" style={dragStyle}>
-          {body}
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  if (disabled) return trigger;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-96 p-3">
-        {body}
-      </PopoverContent>
-    </Popover>
+    <>
+      {trigger}
+      <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-purple-600" />
+              Modifier Groups — <span className="truncate" title={item.name}>{item.name}</span>
+            </DialogTitle>
+            {/* Keep DialogDescription mounted — Radix a11y expects one
+                per DialogContent. sr-only keeps the visual header clean. */}
+            <DialogDescription className="sr-only">
+              Add or edit modifier groups for {item.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <ModifiersEditor
+              groups={groups}
+              onChange={setGroups}
+              disabled={busy}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

@@ -20,14 +20,17 @@
  * not a storage cap — the OUTPUT is always small.
  */
 
-// v-image-shrink — items render at 40×40 in tables and ≤200×200 in
-// the POS grid (biggest surface: aspect-square in ≤224px card at 2×
-// DPR = ~448px). A 512px longest edge at Q70 covers every retina case
-// without shipping pixels that will never be seen. New uploads are
-// ~4× lighter than the old 1024/Q75 pipeline — big wins on Items list
-// + POS grid initial paint AND database row bloat.
-const MAX_EDGE = 512;
-const QUALITY  = 0.70;
+// v-image-sharpen — bumped from 512/Q70 to 768/Q78 after operators
+// reported soft covers on the POS grid (a 224 px tile at 2× DPR is
+// ~448 px, which the old 512 pipeline barely covered; anything past
+// 1× DPR — desktop zooms, product-detail overlays — visibly blurred).
+// New pipeline ships ~1.5× the pixels at slightly higher quality, so
+// covers land around 60–150 KB base64 versus the prior 40–110 KB.
+// Thumbnails (`makeThumbnailFromUrl` below) stay at 200/Q65 — those
+// are only ever rendered at row-thumbnail size so higher fidelity
+// there is wasted bytes on the list-JSON path.
+const MAX_EDGE = 768;
+const QUALITY  = 0.78;
 const HARD_MAX_BYTES = 25 * 1024 * 1024;
 
 /** File formats we refuse to compress because Canvas.toBlob can't
