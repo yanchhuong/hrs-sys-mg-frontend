@@ -1,9 +1,23 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 export function usePagination<T>(items: T[], itemsPerPage: number = 10) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const totalPages = Math.ceil(items.length / itemsPerPage);
+
+  // v-pagination-clamp — when a filter narrows the list below the
+  // page the operator was on, snap back to the last valid page.
+  // Without this, the table renders an empty slice (items.slice
+  // starts past the array end) while the totals still show the
+  // filtered count — the paradox operators reported as "cards say
+  // 1 item but the row is invisible".
+  useEffect(() => {
+    if (totalPages === 0 && currentPage !== 1) {
+      setCurrentPage(1);
+    } else if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
