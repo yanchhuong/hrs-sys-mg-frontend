@@ -182,37 +182,30 @@ export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[
 /**
  * v-item-sellable-unified — is this item sellable right now?
  *
- * <p>Single strict rule for POS + Public Shop + invoice
+ * <p>Single rule shared by POS + Public Shop + invoice
  * StockItemPicker (when its {@code requireStock} prop is true).
  * Matches the BE {@code ShopLinkService.publicMenu#inStock}
- * verbatim so the two surfaces always show identical counts for
- * the same tenant catalogue.</p>
+ * verbatim so the two surfaces show identical counts on the same
+ * catalogue.</p>
  *
- * <p>Rule — ALL three must hold:</p>
- * <ul>
- *   <li>{@code deductionEnabled} — Stock+/- toggle is ON (the item
- *       actually tracks inventory; service items with the toggle
- *       off are hidden from the storefront + POS grid).</li>
- *   <li>{@code stockQty != null} — an opening balance was entered.</li>
- *   <li>{@code stockQty > 0} — there's real on-hand to sell.</li>
- * </ul>
+ * <p>Two cases return true:</p>
+ * <ol>
+ *   <li><b>Tracked item</b> — {@code deductionEnabled} true AND
+ *       {@code stockQty != null} AND {@code stockQty > 0}. Real
+ *       on-hand inventory.</li>
+ *   <li><b>Service / non-tracked</b> — {@code deductionEnabled}
+ *       false. Menu items like "Coffee" that the cashier can ring
+ *       up without checking inventory. `stockQty` is ignored.</li>
+ * </ol>
  *
  * <p>The `active` flag is filtered UPSTREAM (POS reads
  * `.filter(i =&gt; i.active)`; Shop's BE fetches only active rows)
  * so this helper doesn't re-check it.</p>
- *
- * <p>Business rationale: operators reported POS surfacing "Coffee"
- * service items with 0 stock alongside real inventory, and the
- * public shop hiding them — the mismatch confused stock reconciles.
- * Aligning both to the strict rule fixes the mismatch and matches
- * the checkout endpoint's own refusal to sell null / zero-qty rows.
- * Service-based businesses should turn Stock+/- ON on their menu
- * items and set a large opening balance.</p>
  */
 export function isItemSellable(
   it: Pick<Item, 'deductionEnabled' | 'stockQty'>,
 ): boolean {
-  if (!it.deductionEnabled) return false;
+  if (!it.deductionEnabled) return true;
   const q = it.stockQty;
   return q != null && q > 0;
 }
