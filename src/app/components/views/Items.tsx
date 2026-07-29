@@ -1307,11 +1307,16 @@ export function Items() {
                   value={stockIoFilter}
                   onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
                   className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  aria-label="Filter by Stock IN/OUT"
+                  aria-label="Filter by Stock +/-"
                 >
-                  <option value="">Stock : All</option>
-                  <option value="off">Stock : Off</option>
-                  <option value="on">Stock : On</option>
+                  {/* Labels match the column header "Stock +/-" so
+                      the operator sees this filter narrows by the
+                      Stock+/- toggle — not by whether the item is
+                      out of stock. "On" = tracking; "Off" = not
+                      tracking (service). */}
+                  <option value="">Stock +/- : All</option>
+                  <option value="on">Stock +/- : On</option>
+                  <option value="off">Stock +/- : Off</option>
                 </select>
                 {/* v-items-active-filter — Active Yes/No matches the
                     Stock I/O select shape so both flags read as a
