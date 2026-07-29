@@ -59,6 +59,7 @@ import {
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
+import { useForwardShare } from '../common/ForwardShareDialog';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -2200,10 +2201,6 @@ function InvoiceDetailDialog({
   // can show a spinner + block double-clicks without also locking
   // out the Edit / Void / Record-payment actions that share `busy`.
   const [telegramBusy, setTelegramBusy] = useState(false);
-  // v-invoice-forward-picker — same "Forward to" chooser Quotations
-  // uses. One dropdown item opens a small dialog with two brand-
-  // logo buttons (Telegram / Messenger) — no text, just the discs.
-  const [forwardChooserOpen, setForwardChooserOpen] = useState(false);
 
   /** Manual "Send via Telegram" trigger. Hits the synchronous
    *  send endpoint so the operator sees an immediate toast for the
@@ -2242,65 +2239,24 @@ function InvoiceDetailDialog({
     }
   };
 
-  /* v-invoice-forward — mirror the Quotation forward flow: capture
-     the same print PNG the Bot Link uses, download it, then open
-     the operator-picked chat platform in a new tab so the next
-     action is "attach this file". Skipping navigator.share because
-     Telegram Desktop + Messenger Desktop on Windows don't register
-     with the OS share sheet. */
+  // v-forward-share — shared hook packages the forward flow. Only
+  // the per-doc summary + filename differ from Quotation.
   const forwardCustomer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
-  const forwardText = (inv: invoicesApi.Invoice): string => {
-    const lines: string[] = [];
-    lines.push(`Invoice ${inv.invoiceNo}`);
-    if (forwardCustomer?.name) lines.push(`Customer: ${forwardCustomer.name}`);
-    if (inv.issueDate) lines.push(`Issue date: ${formatDate(inv.issueDate)}`);
-    if (inv.dueDate) lines.push(`Due: ${formatDate(inv.dueDate)}`);
-    lines.push(`Total: ${fmtMoney(inv.total, inv.currency)}`);
-    return lines.join('\n');
-  };
-  const capturePrintFile = async (inv: invoicesApi.Invoice): Promise<File | null> => {
-    const dataUrl = await capturePrintImage();
-    if (!dataUrl) return null;
-    const bin = await (await fetch(dataUrl)).blob();
-    const safeNo = inv.invoiceNo.replace(/[^A-Za-z0-9._-]+/g, '-');
-    return new File([bin], `${safeNo}.png`, { type: bin.type || 'image/png' });
-  };
-  const downloadFile = (file: File) => {
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  };
-  const forwardWithImage = async (
-    inv: invoicesApi.Invoice,
-    platform: 'telegram' | 'messenger',
-  ) => {
-    if (telegramBusy) return;
-    setTelegramBusy(true);
-    try {
-      const file = await capturePrintFile(inv);
-      const text = forwardText(inv);
-      if (file) downloadFile(file);
-      const openUrl = platform === 'telegram'
-        ? `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodeURIComponent(text)}`
-        : 'https://www.messenger.com/';
-      window.open(openUrl, '_blank', 'noopener,noreferrer');
-      const platformLabel = platform === 'telegram' ? 'Telegram' : 'Messenger';
-      toast.success(file
-        ? `Image saved — attach ${file.name} in ${platformLabel}.`
-        : `Opened ${platformLabel} — image capture failed, paste the text summary.`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Forward failed');
-    } finally {
-      setTelegramBusy(false);
-    }
-  };
-  const forwardToTelegram  = (inv: invoicesApi.Invoice) => forwardWithImage(inv, 'telegram');
-  const forwardToMessenger = (inv: invoicesApi.Invoice) => forwardWithImage(inv, 'messenger');
+  const forwardShare = useForwardShare({
+    buildConfig: () => invoice ? {
+      title: `Invoice ${invoice.invoiceNo}`,
+      summary: [
+        `Invoice ${invoice.invoiceNo}`,
+        forwardCustomer?.name && `Customer: ${forwardCustomer.name}`,
+        invoice.issueDate && `Issue date: ${formatDate(invoice.issueDate)}`,
+        invoice.dueDate && `Due: ${formatDate(invoice.dueDate)}`,
+        `Total: ${fmtMoney(invoice.total, invoice.currency)}`,
+      ].filter((s): s is string => typeof s === 'string').join('\n'),
+      fileNameStem: invoice.invoiceNo,
+    } : null,
+    busy: telegramBusy,
+    setBusy: setTelegramBusy,
+  });
 
   const customer = invoice ? customers.find(c => c.id === invoice.customerId) : undefined;
 
@@ -2506,7 +2462,10 @@ function InvoiceDetailDialog({
           below the page flow. The stamp's absolute positioning
           anchors to DialogContent because `fixed` is already a
           positioned ancestor — no extra `relative` needed. */}
-      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
+      {/* hideClose — on narrow mobile viewports the Radix X collided
+          with the Send dropdown chevron in the header. Footer Close
+          button is the primary dismiss anyway. */}
+      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto" hideClose>
         {/* Stamp lives at DialogContent root so it overlays the whole
             preview area regardless of where the user scrolls inside.
             Only shown for non-draft/void invoices with AR ≈ 0. */}
@@ -2601,11 +2560,10 @@ function InvoiceDetailDialog({
                         <MessageCircle className="h-4 w-4 mr-2 text-sky-600" />
                         Bot Link
                       </DropdownMenuItem>
-                      {/* v-invoice-forward-picker — one item, opens
-                          the two-logo chooser mounted below. */}
+                      {/* v-forward-share — shared "Forward to" chooser. */}
                       <DropdownMenuItem onSelect={(e) => {
                         e.preventDefault();
-                        setForwardChooserOpen(true);
+                        forwardShare.open();
                       }}>
                         <Share2 className="h-4 w-4 mr-2 text-blue-600" />
                         Forward to
@@ -3144,55 +3102,7 @@ function InvoiceDetailDialog({
           />
         )}
       </DialogContent>
-      {/* v-invoice-forward-picker — two logo-only brand buttons the
-          operator taps to route the print PNG into a chat app.
-          Mirrors Quotation's chooser verbatim. */}
-      <Dialog open={forwardChooserOpen} onOpenChange={setForwardChooserOpen}>
-        <DialogContent className="sm:max-w-xs" hideClose>
-          <DialogHeader>
-            <DialogTitle className="text-center">Forward to</DialogTitle>
-          </DialogHeader>
-          <div className="flex justify-center gap-6 py-4">
-            <button
-              type="button"
-              onClick={() => {
-                setForwardChooserOpen(false);
-                if (invoice) void forwardToTelegram(invoice);
-              }}
-              disabled={telegramBusy || !invoice}
-              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded-lg p-2 disabled:opacity-50"
-              aria-label="Forward to Telegram"
-              title="Telegram"
-            >
-              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
-                    style={{ background: '#229ED9' }}>
-                <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
-                  <path d="M9.417 15.181l-.397 5.584c.568 0 .814-.244 1.109-.537l2.663-2.545 5.518 4.041c1.012.564 1.725.267 1.998-.931l3.622-16.972.001-.001c.321-1.496-.541-2.081-1.527-1.714L1.34 9.712C-.099 10.276-.077 11.077 1.096 11.44l5.484 1.714 12.741-8.021c.599-.396 1.145-.177.696.219z"
-                        fill="#fff" />
-                </svg>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setForwardChooserOpen(false);
-                if (invoice) void forwardToMessenger(invoice);
-              }}
-              disabled={telegramBusy || !invoice}
-              className="group flex flex-col items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-lg p-2 disabled:opacity-50"
-              aria-label="Forward to Messenger"
-              title="Messenger"
-            >
-              <span className="h-14 w-14 rounded-full flex items-center justify-center transition group-hover:scale-105"
-                    style={{ background: 'linear-gradient(135deg,#00B2FF 0%,#006AFF 45%,#8000FF 100%)' }}>
-                <svg viewBox="0 0 24 24" width="30" height="30" fill="#fff">
-                  <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.17.16.14.26.34.27.56l.05 1.78c.02.57.6.94 1.12.71l1.99-.88c.17-.07.36-.09.54-.04.91.25 1.88.39 2.89.39 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm6.01 7.61l-2.94 4.66c-.47.74-1.47.93-2.18.4l-2.34-1.75a.6.6 0 0 0-.72 0l-3.16 2.39c-.42.32-.97-.18-.69-.63l2.94-4.66c.47-.74 1.47-.93 2.18-.4l2.34 1.75c.21.16.51.16.72 0l3.16-2.39c.42-.32.97.18.69.63z" />
-                </svg>
-              </span>
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {forwardShare.dialog}
     </Dialog>
   );
 }
