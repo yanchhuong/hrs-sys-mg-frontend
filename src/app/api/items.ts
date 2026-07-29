@@ -180,34 +180,39 @@ export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[
 }
 
 /**
- * v-item-sellable-strict — is this item sellable at the POS counter?
+ * v-item-sellable-unified — is this item sellable right now?
  *
- * <p>Lenient rule for cashier-side surfaces (POS grid,
- * StockItemPicker inside invoices/receipts). Service items
- * ({@code deductionEnabled=false}) always surface because a
- * cashier can ring up a "Coffee" prep with no inventory tracking.
- * Inventoried items need a non-null, positive stockQty.</p>
+ * <p>Single strict rule for POS + Public Shop + invoice
+ * StockItemPicker (when its {@code requireStock} prop is true).
+ * Matches the BE {@code ShopLinkService.publicMenu#inStock}
+ * verbatim so the two surfaces always show identical counts for
+ * the same tenant catalogue.</p>
  *
- * <p>Rule:</p>
+ * <p>Rule — ALL three must hold:</p>
  * <ul>
- *   <li>{@code !deductionEnabled} — always sellable (service).</li>
- *   <li>{@code deductionEnabled && stockQty > 0} — real on-hand.</li>
- *   <li>{@code deductionEnabled && (null || <= 0)} — OOS.</li>
+ *   <li>{@code deductionEnabled} — Stock+/- toggle is ON (the item
+ *       actually tracks inventory; service items with the toggle
+ *       off are hidden from the storefront + POS grid).</li>
+ *   <li>{@code stockQty != null} — an opening balance was entered.</li>
+ *   <li>{@code stockQty > 0} — there's real on-hand to sell.</li>
  * </ul>
  *
- * <p>NOTE: The Public Shop (/shop/{code}) uses a STRICTER rule —
- * services are also hidden. See
- * {@code ShopLinkService.publicMenu#inStock}: {@code stockQty !=
- * null && stockQty > 0} regardless of deductionEnabled. Rationale:
- * a public customer picking from a QR menu can't get a made-to-
- * order coffee out of nothing, so the shop only advertises items
- * with real physical inventory. Two rules, two contexts —
- * intentional divergence.</p>
+ * <p>The `active` flag is filtered UPSTREAM (POS reads
+ * `.filter(i =&gt; i.active)`; Shop's BE fetches only active rows)
+ * so this helper doesn't re-check it.</p>
+ *
+ * <p>Business rationale: operators reported POS surfacing "Coffee"
+ * service items with 0 stock alongside real inventory, and the
+ * public shop hiding them — the mismatch confused stock reconciles.
+ * Aligning both to the strict rule fixes the mismatch and matches
+ * the checkout endpoint's own refusal to sell null / zero-qty rows.
+ * Service-based businesses should turn Stock+/- ON on their menu
+ * items and set a large opening balance.</p>
  */
 export function isItemSellable(
   it: Pick<Item, 'deductionEnabled' | 'stockQty'>,
 ): boolean {
-  if (!it.deductionEnabled) return true;
+  if (!it.deductionEnabled) return false;
   const q = it.stockQty;
   return q != null && q > 0;
 }
