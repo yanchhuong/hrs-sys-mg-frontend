@@ -898,37 +898,15 @@ export function PublicShopPage() {
           a subtle separator when in sticky state (blends into the
           slate-50 page bg when at the top). */}
       <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/60">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 space-y-2">
-        {/* v-shop-warehouse-filter — search on the left, warehouse
-            picker on the right (mirrors POS's single-row search +
-            warehouse strip). The warehouse select only surfaces on
-            multi-warehouse tenants so single-warehouse shops stay
-            uncluttered. */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+        {/* v-shop-single-row-filter — chips on the left (flex-grow,
+            horizontal-scroll on narrow screens), search + warehouse
+            pinned to the right. Mirrors POS's one-row strip so both
+            surfaces read as one system. shrink-0 keeps the right-
+            side inputs from squeezing; the chip-row scrolls
+            independently when it overflows. */}
         <div className="flex items-center gap-2 min-w-0">
-          <div className="relative flex-1 min-w-0 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search the menu…"
-              className="pl-8 bg-white"
-            />
-          </div>
-          {showWarehouseFilter && (
-            <select
-              value={warehouse}
-              onChange={e => setWarehouse(e.target.value)}
-              className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 shrink-0 max-w-[180px] truncate"
-              aria-label="Filter by warehouse"
-            >
-              <option value="">All warehouses</option>
-              {warehouseOptions.map(w => (
-                <option key={w} value={w}>{w}</option>
-              ))}
-            </select>
-          )}
-        </div>
-        <div className="chip-row">
+          <div className="chip-row flex-1 min-w-0">
           {chipKeys
             // Hide chips whose bucket has zero items — keeps the shop
             // menu clean for tenants that only sell drinks (no Snacks(0)
@@ -955,6 +933,31 @@ export function PublicShopPage() {
                 </button>
               );
             })}
+          </div>
+          {/* Search input pinned right. shrink-0 so the chip row
+              (flex-1) absorbs the remaining width. */}
+          <div className="relative w-40 sm:w-56 shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search the menu…"
+              className="pl-8 bg-white h-9"
+            />
+          </div>
+          {showWarehouseFilter && (
+            <select
+              value={warehouse}
+              onChange={e => setWarehouse(e.target.value)}
+              className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 shrink-0 max-w-[160px] truncate"
+              aria-label="Filter by warehouse"
+            >
+              <option value="">All warehouses</option>
+              {warehouseOptions.map(w => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          )}
         </div>
         </div>
       </div>
