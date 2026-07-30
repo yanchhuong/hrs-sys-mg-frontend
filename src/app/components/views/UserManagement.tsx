@@ -171,7 +171,9 @@ const MODULES: ModuleDef[] = [
   // doesn't need to expose a separate toggle.
 
   { key: 'receivables-group', label: 'Receivables',       description: '',                                                            header: true },
-  { key: 'payment_plan',        label: 'Payment Plans',      description: 'Installment / rental / loan / tuition — one plan holds many expected payments', parent: 'receivables-group' },
+  // v-receivables-order — row order mirrors the sidebar leaves
+  // (Plans → Booking → Property → Collections). See nav.ts +
+  // AppLauncher for the two other surfaces that share this order.
   // v-payment-schedule-retirement: `payment_schedule` module retired.
   // The standalone Schedules page duplicated the Payment Plan detail
   // dialog, so the sidebar leaf, apps tile, and this matrix row all
@@ -181,15 +183,19 @@ const MODULES: ModuleDef[] = [
   // internal concept inside a plan; anyone who can update the plan
   // can log a payment against it. See BE V253 migration for the
   // matching module_assignments / role_permissions cleanup.
-  { key: 'payment_collection',  label: 'Collections',        description: 'Aging report — overdue installments bucketed by days past due', parent: 'receivables-group' },
-  // v-property-move (V287) — Property is the picker catalogue behind
-  // Payment Plans (houses, rooms, cars). Own module key so tenants
-  // can grant "manage catalogue" without touching plan writes.
-  { key: 'property',            label: 'Property',           description: 'Catalogue of subjects a plan / invoice can be written against — houses, rooms, cars, land, and their child options',  parent: 'receivables-group' },
+  { key: 'payment_plan',        label: 'Payment Plans',      description: 'Installment / rental / loan / tuition — one plan holds many expected payments', parent: 'receivables-group' },
   // v-booking-mvp (V288) — one-time purchase against the Property
   // catalogue. Own module key so a role can be granted "sell a
   // ticket" without also being able to create long-running plans.
   { key: 'booking',             label: 'Booking',            description: 'One-time purchase against the Property catalogue — buy a ticket, book a room, reserve a seat. Draft → Confirmed → Paid → Refunded.',  parent: 'receivables-group' },
+  // v-property-move (V287) — Property is the picker catalogue behind
+  // Payment Plans (houses, rooms, cars). Own module key so tenants
+  // can grant "manage catalogue" without touching plan writes.
+  { key: 'property',            label: 'Property',           description: 'Catalogue of subjects a plan / invoice can be written against — houses, rooms, cars, land, and their child options',  parent: 'receivables-group' },
+  // v-collections-income — receipts ledger (plan payments + paid
+  // bookings). Description updated from the old "aging report" text
+  // to match the redesigned Collections page.
+  { key: 'payment_collection',  label: 'Collections',        description: 'Unified income ledger — every cash receipt across Payment Plan payments + paid Bookings, filtered by date + type', parent: 'receivables-group' },
 
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
   { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
