@@ -1477,38 +1477,54 @@ function TelegramCell({
     }
   };
 
-  // Connected — show the actual person who clicked /start. Display
-  // name is what Telegram returned for first_name+last_name, falling
-  // back to @username; we keep both visible so the operator can tell
-  // "Mr Dara (@dara_tg)" from a different Dara with a different chat.
+  // Connected — show a compact "Connected" pill; hover / tap-focus
+  // reveals the actual Telegram identity (display name + @handle +
+  // chat id) as a tooltip. Display name is what Telegram returned
+  // for first_name+last_name, falling back to @username; both are
+  // shown in the tooltip so the operator can tell "Mr Dara
+  // (@dara_tg)" from another Dara with a different chat.
   if (linked) {
     const display =
       linked.displayName?.trim()
       || (linked.telegramUsername ? `@${linked.telegramUsername}` : `Chat #${linked.chatId}`);
-    const handle = linked.telegramUsername && linked.displayName
-      ? `@${linked.telegramUsername}`
-      : null;
+    const handle = linked.telegramUsername ? `@${linked.telegramUsername}` : null;
     return (
       <div className="flex items-center gap-1.5">
-        <div className="flex flex-col leading-tight">
-          <div className="inline-flex items-center gap-1 text-xs">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="font-medium text-emerald-700">{display}</span>
-          </div>
-          {handle && (
-            <span className="tabular-nums text-[10px] text-gray-500">{handle}</span>
-          )}
-        </div>
+        {/* v-telegram-linked-tooltip — inline stacked "Name / @handle"
+            replaced with a single-badge + tooltip so the Link column
+            width doesn't wobble with the longest name in view.
+            Radix Tooltip mounts via portal so the row's overflow
+            doesn't clip it. */}
+        <TooltipProvider delayDuration={120}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 cursor-help"
+                aria-label={`Connected as ${display}${handle ? ' ' + handle : ''}`}
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Connected
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+              <div className="font-medium">{display}</div>
+              {handle && <div className="tabular-nums text-gray-300">{handle}</div>}
+              <div className="tabular-nums text-gray-300">Chat #{linked.chatId}</div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {canUnlink && (
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
             onClick={() => setConfirmUnlinkOpen(true)}
             disabled={busy}
             title="Unlink this Telegram chat"
+            aria-label="Unlink this Telegram chat"
           >
-            <Link2Off className="h-3 w-3 mr-1" /> Unlink
+            <Link2Off className="h-3.5 w-3.5" />
           </Button>
         )}
         {/* Confirm-before-destructive — the chat binding is per-bot,

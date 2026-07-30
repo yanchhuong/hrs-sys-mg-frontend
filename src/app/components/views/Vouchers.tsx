@@ -1415,6 +1415,29 @@ function VoucherDetailDialog({
                     </Button>
                   </>
                 )}
+                {/* v-voucher-readonly-tooltip — when the voucher isn't
+                    in a state that allows Approve / Reject (already
+                    approved / rejected / marked done / voided, OR the
+                    current user isn't the assigned approver), the
+                    action buttons above are hidden entirely. Surface
+                    a small info tooltip so the operator understands
+                    why the buttons aren't there. */}
+                {voucher.status !== 'progress' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        tabIndex={0}
+                        className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                        aria-label="Read-only info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      Read-only view. Approve / Reject is only available while pending.
+                    </TooltipContent>
+                  </Tooltip>
+                )}
                 {canEdit && voucher.status !== 'void' && (
                   <Button size="sm" variant="outline" disabled={busy}
                           className="text-red-600 border-red-200 hover:bg-red-50"

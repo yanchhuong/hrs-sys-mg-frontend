@@ -47,7 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload } from 'lucide-react';
+import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
 import { useAuth } from '../../context/AuthContext';
@@ -1369,8 +1369,31 @@ export function Overtime() {
       <Dialog open={!!editingOt} onOpenChange={(o) => { if (!o) setEditingOt(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit OT Row</DialogTitle>
-            <DialogDescription>
+            {/* v-overtime-edit-tooltip — description moved from a
+                full paragraph into a hover-info tooltip beside the
+                title so the dialog header stays compact. Same copy,
+                just gated on hover / tap-focus. sr-only
+                DialogDescription still mounts for a11y — Radix
+                warns if a DialogContent has no accessible
+                description. */}
+            <DialogTitle className="flex items-center gap-2">
+              Edit OT Row
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={0}
+                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                    aria-label="Edit OT row info"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  Adjust the start / end hour, force a day-type bucket, or pin a custom rate. Empty rate falls back to the OT settings.
+                </TooltipContent>
+              </Tooltip>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
               Adjust the start / end hour, force a day-type bucket, or pin a custom rate. Empty rate falls back to the OT settings.
             </DialogDescription>
           </DialogHeader>

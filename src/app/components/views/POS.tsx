@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
-  Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle,
+  Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Skeleton } from '../ui/skeleton';
 import {
@@ -2131,6 +2132,21 @@ function PosCheckoutDialog({
   const [paywaySession, setPaywaySession] = useState<paywayApi.PurchaseSession | null>(null);
   const [paywayBusy, setPaywayBusy] = useState(false);
   const [paywayError, setPaywayError] = useState<string | null>(null);
+  // v-pos-khqr-mark-gate — resolve whether the tenant has active
+  // PayWay credentials so the checkout dialog can show the RIGHT
+  // KHQR variant: auto (green, PayWay session + bank callback) when
+  // configured & enabled; manual mark (grey, cashier just marks the
+  // sale paid) otherwise. Only ONE button ever renders, so the
+  // cashier never has to reason about "which QR do I pick".
+  const [paywayReady, setPaywayReady] = useState<boolean>(false);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    paywayApi.getCredentials()
+      .then(c => { if (!cancelled) setPaywayReady(!!c.configured && !!c.enabled); })
+      .catch(() => { if (!cancelled) setPaywayReady(false); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   // Re-sync the "received" default to the order total whenever the
   // dialog re-opens — non-cash methods always equal the total, and a
@@ -2214,10 +2230,19 @@ function PosCheckoutDialog({
   const change = Math.max(0, received - total);
   const short  = received < total;
 
-  // POS supports two payment methods: cash + KHQR scan-to-pay.
-  // Card / bank-transfer were dropped — counter sales here are
-  // either physical cash or QR. Keep the type wider for back-compat
-  // with parked orders persisted before the trim.
+  // v-pos-checkout-methods — six payment methods:
+  //   Cash (Banknote)  · Transfer (Landmark bank wire)
+  //   KHQR (QrCode — auto, spins the PayWay QR + waits for the
+  //                  bank callback)
+  //   KHQR (Mark) (StampIcon — customer paid via their own bank
+  //                  app off-band; cashier just marks the sale
+  //                  paid, no callback required. Same ledger
+  //                  bucket as KHQR — the split matters only for
+  //                  reconcile audits)
+  //   Credit (CreditCard) · Cheque (ScrollText)
+  // Only the auto KHQR button opens the QR panel below; the other
+  // five just mark the sale paid with the picked method on the
+  // receipt.
   const methodButton = (m: PosPaymentMethod, icon: React.ReactNode, label: string) => (
     <button
       type="button"
@@ -2256,9 +2281,18 @@ function PosCheckoutDialog({
 
           <div>
             <Label className="text-xs text-gray-500">Payment method</Label>
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              {methodButton('cash', <Banknote className="h-5 w-5" />, 'Cash')}
-              {methodButton('khqr', <QrCode    className="h-5 w-5" />, 'KHQR')}
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {methodButton('cash',      <Banknote   className="h-5 w-5" />, 'Cash')}
+              {methodButton('bank',      <Landmark   className="h-5 w-5" />, 'Transfer')}
+              {/* v-pos-khqr-mark-gate — auto or manual, never both.
+                  Inline colour on the icon (emerald for auto, gray
+                  for manual) survives the button's own text-color
+                  swap on active/inactive. */}
+              {paywayReady
+                ? methodButton('khqr',      <QrCode className="h-5 w-5" style={{ color: '#059669' }} />, 'KHQR')
+                : methodButton('khqr_mark', <QrCode className="h-5 w-5" style={{ color: '#9CA3AF' }} />, 'KHQR')}
+              {methodButton('card',      <CreditCard className="h-5 w-5" />, 'Credit')}
+              {methodButton('cheque',    <ScrollText className="h-5 w-5" />, 'Cheque')}
             </div>
           </div>
 
@@ -2516,11 +2550,16 @@ function PosCheckoutDialog({
             {showNotes && (
               <div className="space-y-1">
                 <span className="text-gray-600 text-xs">Notes</span>
-                <Input
+                {/* v-pos-notes-multiline — Textarea instead of Input
+                    so cashiers can add multi-line context (Enter
+                    inserts a newline; the note flows through to the
+                    invoice + receipt exactly as typed). */}
+                <Textarea
                   value={notes}
                   onChange={e => onNotesChange(e.target.value)}
                   placeholder="Order note (optional)"
-                  className="h-7 text-sm"
+                  rows={2}
+                  className="text-sm min-h-[3rem]"
                 />
               </div>
             )}

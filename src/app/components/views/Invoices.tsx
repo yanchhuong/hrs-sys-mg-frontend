@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { LinkifiedText } from '../common/LinkifiedText';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
 import * as telegramApi from '../../api/telegram';
@@ -2750,7 +2751,7 @@ function InvoiceDetailDialog({
               <div className="bg-slate-50 rounded-md p-3 text-sm">
                 <div className="text-xs text-gray-500 mb-1">Notes</div>
                 {invoice.notes ? (
-                  <div className="whitespace-pre-wrap">{invoice.notes}</div>
+                  <LinkifiedText text={invoice.notes} className="whitespace-pre-wrap block" />
                 ) : (
                   <div className="text-gray-400 italic text-xs">No notes recorded for this invoice.</div>
                 )}

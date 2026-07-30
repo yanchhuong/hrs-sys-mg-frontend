@@ -11,7 +11,7 @@ import { apiJson } from './client';
  * parsing the prefix off the string.
  */
 export type PosOrderStatus = 'open' | 'checked_out' | 'voided';
-export type PosPaymentMethod = 'cash' | 'card' | 'khqr' | 'bank';
+export type PosPaymentMethod = 'cash' | 'card' | 'khqr' | 'khqr_mark' | 'bank' | 'cheque';
 
 /** V165 — kitchen-side fulfillment lifecycle. Independent of the
  *  payment-side {@link PosOrderStatus}. Starts at 'requested' the

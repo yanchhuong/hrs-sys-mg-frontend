@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Loader2, Printer, ShieldCheck } from 'lucide-react';
+import { LinkifiedText } from '../common/LinkifiedText';
 
 /** V271 — /invoice/view/:id — anonymous invoice view rendered from the
  *  same Cambodian tax invoice template that {@code
@@ -328,7 +329,9 @@ export function PublicInvoiceView() {
               </div>
             )}
             {inv.notes && (
-              <div style={{ marginTop: '6px', whiteSpace: 'pre-wrap' }}>{inv.notes}</div>
+              <div style={{ marginTop: '6px' }}>
+                <LinkifiedText text={inv.notes} className="whitespace-pre-wrap block" />
+              </div>
             )}
             {!inv.notes && (
               <div style={{ marginTop: '6px', fontWeight: 600 }}>Thank you for your business!</div>
