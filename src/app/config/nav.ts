@@ -25,7 +25,7 @@ import {
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
   GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
-  CreditCard, AlertTriangle,
+  CreditCard, Home, Ticket, ArrowDownLeft,
   type LucideIcon,
 } from 'lucide-react';
 import { Dashboard } from '../components/views/Dashboard';
@@ -59,6 +59,8 @@ import { Bills } from '../components/views/Bills';
 import { Receipts } from '../components/views/Receipts';
 import { PaymentPlans } from '../components/views/PaymentPlans';
 import { PaymentCollections } from '../components/views/PaymentCollections';
+import { Property } from '../components/views/Property';
+import { Bookings } from '../components/views/Bookings';
 import { Items } from '../components/views/Items';
 import { StockMovements } from '../components/views/StockMovements';
 import { Transactions } from '../components/views/Transactions';
@@ -220,12 +222,24 @@ export const NAV_LEAVES: NavLeaf[] = [
   // its own module key so Super Admin can promote them independently
   // (see V251 migration). Auto-hides for tenants without any of the
   // four keys enabled, matching the Stock / Cashflow behaviour.
+  // v-receivables-order — Plans → Booking → Property → Collections
+  // mirrors the operational flow: sign up a recurring plan OR take a
+  // one-shot booking, both drawing from the Property catalogue, with
+  // Collections as the receipts ledger at the end.
   { id: 'payment-plans',       labelKey: 'nav.receivables.plans',        icon: CreditCard,     module: 'payment_plan',         component: PaymentPlans,       group: 'receivables-group' },
-  // v-payment-schedule-retirement: the standalone Schedules page was
-  // redundant with the Payment Plan detail dialog (same rows, same
-  // pay-against actions). Nav leaf, permission matrix row, apps-
-  // launcher tile, and module registration all retired together.
-  { id: 'payment-collections', labelKey: 'nav.receivables.collections',  icon: AlertTriangle,  module: 'payment_collection',   component: PaymentCollections, group: 'receivables-group' },
+  // v-booking-mvp (V288) — one-time purchase against the Property
+  // catalogue. Own module key so Super Admin can gate it separately.
+  { id: 'booking',             labelKey: 'nav.receivables.booking',      icon: Ticket,         module: 'booking',              component: Bookings,           group: 'receivables-group' },
+  // v-property-move — Property catalogue (V287). Was the "Items"
+  // tab of the Payment Plans settings dialog; promoted to its own
+  // page under Receivables so operators can curate the picker
+  // outside the Plans flow and Super Admin can gate it separately.
+  { id: 'property',            labelKey: 'nav.receivables.property',     icon: Home,           module: 'property',             component: Property,           group: 'receivables-group' },
+  // v-collections-income — receipts ledger (Plan payments + paid
+  // Bookings). Icon matches the in-page header (ArrowDownLeft
+  // conveys "cash coming in"); previously AlertTriangle, a
+  // holdover from when this page was the aging/overdue report.
+  { id: 'payment-collections', labelKey: 'nav.receivables.collections',  icon: ArrowDownLeft,  module: 'payment_collection',   component: PaymentCollections, group: 'receivables-group' },
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },

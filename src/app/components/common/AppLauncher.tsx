@@ -58,7 +58,7 @@ const CATEGORIES: CategoryDef[] = [
     // sidebar leaf + apps tile was pure duplication.
     key: 'receivables', labelKey: 'apps.category.receivables',
     installedBadge: 'bg-indigo-100 text-indigo-700',
-    ids: ['payment-plans', 'payment-collections'],
+    ids: ['payment-plans', 'booking', 'property', 'payment-collections'],
   },
   {
     key: 'cashflow', labelKey: 'apps.category.cashflow',

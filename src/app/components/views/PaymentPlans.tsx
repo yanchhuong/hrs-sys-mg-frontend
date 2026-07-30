@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { format, addDays, addWeeks, addMonths, addYears } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { formatMoney } from '../../utils/format';
 import * as paymentPlansApi from '../../api/paymentPlans';
 import * as customersApi from '../../api/customers';
@@ -51,6 +52,9 @@ const PLAN_TYPE_BADGE: Record<string, string> = {
 export function PaymentPlans() {
   const { canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
+  // v-page-title-i18n — header follows the sidebar leaf label so
+  // switching language updates both simultaneously.
+  const { t } = useI18n();
   const canAdd    = canCreate('payment_plan');
   const canModify = canUpdate('payment_plan');
   const canRemove = canDelete('payment_plan');
@@ -162,7 +166,7 @@ export function PaymentPlans() {
       <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold inline-flex items-center gap-2">
-            Payment Plans
+            {t('nav.receivables.plans')}
             <TooltipProvider delayDuration={120}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -178,13 +182,14 @@ export function PaymentPlans() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Settings gear — opens the Payment Plan Items catalogue.
-              Sits left of New Plan so the operator can curate the
-              picker options BEFORE writing a plan against them. */}
+          {/* Settings gear — Telegram reminder cadence for this plan
+              family. Property catalogue moved to its own page
+              (Receivables → Property) in V287; this gear stays for
+              the reminder settings only. */}
           <Button
             variant="outline"
             size="icon"
-            title="Payment Plan settings — items catalogue + Telegram reminders"
+            title="Payment Plan reminders — Telegram cadence + template"
             onClick={() => setItemsSettingsOpen(true)}
           >
             <Settings className="h-4 w-4" />
@@ -415,6 +420,11 @@ function CreatePlanDialogContent({
   const [interestRateMode, setInterestRateMode] = useState<paymentPlansApi.InterestRateMode>('annual');
   const [itemId, setItemId] = useState('');
   const [items, setItems] = useState<paymentPlanItemsApi.PaymentPlanItem[]>([]);
+  /** V286 — picked option ids under the currently-selected parent
+   *  item. `single`-mode items keep a single id in the Set at most;
+   *  `multi`-mode items accumulate. Cleared on itemId change so
+   *  stale picks from a previously-selected parent don't survive. */
+  const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(new Set());
   const [frequency, setFrequency] = useState<paymentPlansApi.PlanFrequency>('monthly');
   const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [remarks, setRemarks] = useState('');
@@ -447,32 +457,201 @@ function CreatePlanDialogContent({
     return () => { cancelled = true; };
   }, []);
 
+  /** V286 — currently-selected parent item + its child options. */
+  const pickedItem = useMemo(
+    () => (itemId ? items.find(i => i.id === itemId) ?? null : null),
+    [itemId, items],
+  );
+  const pickedItemOptions = useMemo(
+    () => (pickedItem?.options ?? []).filter(o => o.active),
+    [pickedItem],
+  );
+  const pickedOptionsList = useMemo(
+    () => pickedItemOptions.filter(o => selectedOptionIds.has(o.id)),
+    [pickedItemOptions, selectedOptionIds],
+  );
+
   const financed = useMemo(() => {
     const t = Number(totalAmount) || 0;
     const d = Number(downPayment) || 0;
     return Math.max(0, t - d);
   }, [totalAmount, downPayment]);
 
-  const perTermPreview = useMemo(() => {
+  /** v-regular-pay — bidirectional between Total Amount and per-term
+   *  payment. Total is the canonical value on the plan; Regular Pay
+   *  is a derived twin the operator can edit to reverse-solve Total.
+   *  Whichever the operator touched last "wins" — every other
+   *  dependency (Terms / interest / frequency / down payment / plan
+   *  type) recomputes the other side of the pair based on that
+   *  master.
+   *
+   *  `regularPay` is a string mirroring `totalAmount`'s type so the
+   *  Input controls stay uncontrolled-string-friendly (avoids the
+   *  parse-round-trip flicker on partial input like "1.").
+   */
+  const [regularPay, setRegularPay] = useState('');
+  const [amountMaster, setAmountMaster] = useState<'total' | 'regular'>('total');
+
+  /** Periods per year for the currently-selected Frequency —
+   *  factored out so both the forward (Total → Regular) and reverse
+   *  (Regular → Total) calculations share one source of truth. */
+  const periodsPerYear = useMemo(() => (
+    frequency === 'weekly'    ? 52 :
+    frequency === 'biweekly'  ? 26 :
+    frequency === 'quarterly' ?  4 :
+    frequency === 'yearly'    ?  1 :
+                                 12
+  ), [frequency]);
+
+  /** Given the financed principal, per-period rate params, and term
+   *  count, produce the per-term amount. Amortised on loan+rate,
+   *  simple division otherwise. Returns 0 for invalid inputs so the
+   *  Regular Pay field renders empty instead of NaN / Infinity. */
+  const computePerTerm = (financedAmount: number): number => {
     const n = Number(numberOfTerms) || 0;
-    if (n <= 0 || financed <= 0) return 0;
-    if (planType === 'loan' && Number(interestRate) > 0) {
-      const periodsPerYear = frequency === 'weekly' ? 52
-                          : frequency === 'biweekly' ? 26
-                          : frequency === 'quarterly' ? 4
-                          : frequency === 'yearly' ? 1 : 12;
-      // Mirror the BE: monthly-mode rate gets annualised (× 12)
-      // before being spread across the payment frequency.
-      const annualised = interestRateMode === 'monthly'
-        ? Number(interestRate) * 12
-        : Number(interestRate);
+    if (n <= 0 || financedAmount <= 0) return 0;
+    const rate = Number(interestRate) || 0;
+    if (planType === 'loan' && rate > 0) {
+      const annualised = interestRateMode === 'monthly' ? rate * 12 : rate;
       const r = annualised / 100 / periodsPerYear;
       const denom = Math.pow(1 + r, n) - 1;
       if (denom <= 0) return 0;
-      return (financed * r * Math.pow(1 + r, n)) / denom;
+      return (financedAmount * r * Math.pow(1 + r, n)) / denom;
     }
-    return financed / n;
-  }, [financed, numberOfTerms, planType, interestRate, interestRateMode, frequency]);
+    return financedAmount / n;
+  };
+
+  /** Reverse of computePerTerm — given a target per-term payment,
+   *  solve for the principal that would yield it under the current
+   *  rate + term settings. Simple multiplication when no interest;
+   *  present-value-of-annuity formula for amortised loans. */
+  const computeFinancedFromPerTerm = (perTerm: number): number => {
+    const n = Number(numberOfTerms) || 0;
+    if (n <= 0 || perTerm <= 0) return 0;
+    const rate = Number(interestRate) || 0;
+    if (planType === 'loan' && rate > 0) {
+      const annualised = interestRateMode === 'monthly' ? rate * 12 : rate;
+      const r = annualised / 100 / periodsPerYear;
+      const denom = r * Math.pow(1 + r, n);
+      const numer = Math.pow(1 + r, n) - 1;
+      if (denom <= 0) return 0;
+      return (perTerm * numer) / denom;
+    }
+    return perTerm * n;
+  };
+
+  const perTermPreview = useMemo(() => computePerTerm(financed), [
+    financed, numberOfTerms, planType, interestRate, interestRateMode, frequency,
+  ]);
+
+  /** v-rental-option-pricing — plan-type-aware auto-fill when
+   *  options get picked / cleared.
+   *  - Rental + picks   → option price IS the recurring rent, so
+   *                       Regular Pay = sum(option.price) and Total
+   *                       falls out as Regular × Terms via the
+   *                       master='regular' path.
+   *  - Any other type   → option price is a lump-sum contribution,
+   *                       so Total = sum(option.price) and Regular
+   *                       Pay = Total / Terms via master='total'.
+   *  - No picks         → fall back to the parent item's own price
+   *                       as Total (master='total'). */
+  const applyOptionPricing = useCallback((
+    picks: paymentPlanItemsApi.PaymentPlanItemOption[],
+    parent: paymentPlanItemsApi.PaymentPlanItem | null,
+    planTypeArg: paymentPlansApi.PlanType,
+  ) => {
+    const sum = picks.reduce((s, x) => s + (Number(x.price) || 0), 0);
+    if (picks.length === 0) {
+      setAmountMaster('total');
+      setTotalAmount(parent?.price != null ? String(parent.price) : '');
+      return;
+    }
+    if (planTypeArg === 'rental') {
+      // Rental: option = monthly rent. Anchor Regular Pay to sum,
+      // let master='regular' path drive Total = Regular × Terms.
+      setAmountMaster('regular');
+      setRegularPay(String(sum));
+      const n = Number(numberOfTerms) || 0;
+      setTotalAmount(n > 0 ? (sum * n).toFixed(2) : '');
+    } else {
+      // Installment / loan / tuition / custom: option = one-shot
+      // contribution. Total sums the picks, Regular derives from it.
+      setAmountMaster('total');
+      setTotalAmount(String(sum));
+    }
+  }, [numberOfTerms]);
+
+  /** Direct handlers — the sync between Total and Regular Pay
+   *  happens INSIDE the onChange, not via useEffect, so every
+   *  keystroke resolves immediately without needing the sibling in
+   *  the effect deps (which would fight the effect itself). */
+  const setTotalAmountFromUser = (v: string) => {
+    setAmountMaster('total');
+    setTotalAmount(v);
+    const t = Number(v) || 0;
+    const d = Number(downPayment) || 0;
+    const per = computePerTerm(Math.max(0, t - d));
+    setRegularPay(per > 0 ? per.toFixed(2) : '');
+  };
+  const setRegularPayFromUser = (v: string) => {
+    setAmountMaster('regular');
+    setRegularPay(v);
+    const p = Number(v) || 0;
+    const principal = computeFinancedFromPerTerm(p);
+    const d = Number(downPayment) || 0;
+    setTotalAmount(principal > 0 ? (principal + d).toFixed(2) : '');
+  };
+  const setDownPaymentFromUser = (v: string) => {
+    setDownPayment(v);
+    // Whichever field is master, the other side re-derives against
+    // the new financed base (Total − Down).
+    if (amountMaster === 'total') {
+      const t = Number(totalAmount) || 0;
+      const per = computePerTerm(Math.max(0, t - (Number(v) || 0)));
+      setRegularPay(per > 0 ? per.toFixed(2) : '');
+    } else {
+      const p = Number(regularPay) || 0;
+      const principal = computeFinancedFromPerTerm(p);
+      setTotalAmount(principal > 0 ? (principal + (Number(v) || 0)).toFixed(2) : '');
+    }
+  };
+
+  /** v-rental-option-pricing — if the operator flips Plan Type
+   *  while options are already picked, re-apply the plan-type-aware
+   *  pricing so Rental switches to "option = monthly rent" (and
+   *  back). Runs BEFORE the master-based re-sync effect below so
+   *  amountMaster is already the correct one when that fires. */
+  useEffect(() => {
+    if (!pickedItem || pickedOptionsList.length === 0) return;
+    applyOptionPricing(pickedOptionsList, pickedItem, planType);
+    // pickedOptionsList intentionally omitted — it changes when
+    // setSelectedOptionIds runs, which we handle from the toggle
+    // handler directly. Watching it here would double-fire on every
+    // tick and step on the master-based re-sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planType]);
+
+  /** Re-sync the non-master field whenever Terms / interest / mode
+   *  / frequency / planType change. Purely dependency-driven — no
+   *  regularPay or totalAmount in the deps, so the effect only
+   *  fires when those knobs change (not on every keystroke). */
+  useEffect(() => {
+    if (amountMaster === 'total') {
+      const per = computePerTerm(financed);
+      setRegularPay(per > 0 ? per.toFixed(2) : '');
+    } else {
+      const p = Number(regularPay) || 0;
+      const principal = computeFinancedFromPerTerm(p);
+      const d = Number(downPayment) || 0;
+      setTotalAmount(principal > 0 ? (principal + d).toFixed(2) : '');
+    }
+    // regularPay + totalAmount + financed are intentionally OUT of the
+    // deps — they'd cause the effect to run on every keystroke, and
+    // the direct handlers above already keep the pair in sync when
+    // the operator types. This effect only fires on the "structural"
+    // knobs (Terms / interest / plan-type / frequency).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numberOfTerms, planType, interestRate, interestRateMode, frequency]);
 
   /** Maturity date = last installment's due date. Mirrors the BE
    *  schedule generator: row 1 lands on startDate, row N lands on
@@ -513,6 +692,16 @@ function CreatePlanDialogContent({
     }
     if (!canSave) return;
     setSaving(true);
+    // V286 — persist the picked option labels alongside Remarks so
+    // the plan carries them (there's no dedicated column yet — this
+    // keeps the schema untouched and still lets operators/receipts
+    // see "House B2 · Rooms 101, 103" wherever remarks render).
+    // Prefix over freeform text so the operator's own note stays
+    // readable; skipped entirely when no options were picked.
+    const optionsLine = pickedOptionsList.length > 0
+      ? `Options: ${pickedOptionsList.map(o => o.name).join(', ')}`
+      : '';
+    const remarksToSave = [optionsLine, remarks.trim()].filter(Boolean).join('\n') || undefined;
     try {
       await paymentPlansApi.create({
         invoiceId: invoiceId || undefined,
@@ -526,7 +715,7 @@ function CreatePlanDialogContent({
         itemId: itemId || null,
         frequency,
         startDate,
-        remarks: remarks || undefined,
+        remarks: remarksToSave,
         activateImmediately: active,
       });
       toast.success(`Plan created — ${active ? 'active' : 'draft'}`);
@@ -624,8 +813,14 @@ function CreatePlanDialogContent({
             value={itemId}
             onChange={(id) => {
               setItemId(id);
+              // Reset picks under the previously-selected parent so stale
+              // options don't contribute to Total after switching item.
+              setSelectedOptionIds(new Set());
               if (!id) return;
               const picked = items.find(i => i.id === id);
+              // Auto-fill Total from the parent's price when it has one.
+              // Once the operator picks child options below, the effect
+              // in the Options block overrides this with the sum.
               if (picked?.price != null) setTotalAmount(String(picked.price));
             }}
             options={items.map(i => ({
@@ -633,29 +828,158 @@ function CreatePlanDialogContent({
               label: i.name,
               secondary: [
                 i.price != null ? `$${Number(i.price).toFixed(2)}` : null,
+                (i.options?.filter(o => o.active).length ?? 0) > 0
+                  ? `${i.options.filter(o => o.active).length} option${i.options.filter(o => o.active).length === 1 ? '' : 's'}`
+                  : null,
                 i.description ?? null,
               ].filter(Boolean).join(' · ') || undefined,
             }))}
             placeholder={items.length === 0
-              ? 'No items yet — add some via the ⚙ Settings button on the Payment Plans page.'
+              ? 'No items yet — add some via the Property page (Receivables → Property).'
               : itemRequired ? 'Pick an item' : 'Pick an item — optional'}
             searchPlaceholder="Search items…"
             allowClear={!itemRequired}
             disabled={items.length === 0}
           />
         </div>
+        {/* V286 — child options picker. Only rendered when the
+            selected parent item has active options; input type
+            follows the parent's selectMode (radio = pick exactly
+            one, checkbox = pick one-or-more). Total Amount is the
+            sum of picked option prices, so ticking a room instantly
+            drives the schedule preview below. */}
+        {pickedItem && pickedItemOptions.length > 0 && (
+          <div className="col-span-2 space-y-2 rounded-md border p-3 bg-gray-50/40">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                Options for {pickedItem.name}
+                <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
+                  ({pickedItem.selectMode === 'multi' ? 'pick one or more' : 'pick one'})
+                </span>
+              </Label>
+              {selectedOptionIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedOptionIds(new Set());
+                    applyOptionPricing([], pickedItem, planType);
+                  }}
+                  className="text-[11px] text-gray-500 hover:text-gray-800 underline"
+                >
+                  Clear picks
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+              {pickedItemOptions.map(o => {
+                const checked = selectedOptionIds.has(o.id);
+                const toggle = () => {
+                  const next = new Set(selectedOptionIds);
+                  if (pickedItem.selectMode === 'single') {
+                    next.clear();
+                    if (!checked) next.add(o.id);
+                  } else if (checked) {
+                    next.delete(o.id);
+                  } else {
+                    next.add(o.id);
+                  }
+                  setSelectedOptionIds(next);
+                  // v-rental-option-pricing — plan-type-aware pricing.
+                  // Rental: Regular Pay ← sum(option.price), Total = R × Terms.
+                  // Others: Total ← sum(option.price), Regular Pay = T / Terms.
+                  const picks = pickedItemOptions.filter(x => next.has(x.id));
+                  applyOptionPricing(picks, pickedItem, planType);
+                };
+                return (
+                  <label
+                    key={o.id}
+                    className={`flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded border cursor-pointer transition ${
+                      checked ? 'bg-blue-50 border-blue-300' : 'bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <input
+                        type={pickedItem.selectMode === 'multi' ? 'checkbox' : 'radio'}
+                        name={`opts-${pickedItem.id}`}
+                        checked={checked}
+                        onChange={toggle}
+                        className="shrink-0"
+                      />
+                      <span className="truncate">{o.name}</span>
+                    </span>
+                    <span className="tabular-nums text-gray-700 shrink-0">
+                      {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            {selectedOptionIds.size > 0 && (
+              <div className="text-[11px] text-gray-500">
+                Picked: <span className="font-medium text-gray-700">{pickedOptionsList.map(o => o.name).join(', ')}</span>
+                {' · '}
+                {planType === 'rental'
+                  ? <>Regular Pay auto-set to <span className="tabular-nums">${regularPay || '0'}</span> · Total = Regular × Terms</>
+                  : <>Total auto-set to <span className="tabular-nums">${totalAmount || '0'}</span></>}
+              </div>
+            )}
+          </div>
+        )}
         {/* Number fields right-align their value — matches the
             common accounting convention (text left, numbers right)
             and lets the totals block below the form line up
             visually with these inputs. */}
         <div className="space-y-1">
-          <Label>Total Amount <span className="text-red-500">*</span></Label>
-          <Input type="number" step="0.01" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} className="text-right tabular-nums" />
+          <Label>
+            Total Amount <span className="text-red-500">*</span>
+            {amountMaster === 'regular' && (
+              <span className="ml-2 text-[10px] font-normal text-gray-500 italic">
+                auto from Regular Pay
+              </span>
+            )}
+          </Label>
+          <Input
+            type="number" step="0.01" min="0"
+            value={totalAmount}
+            onChange={e => setTotalAmountFromUser(e.target.value)}
+            className="text-right tabular-nums"
+          />
         </div>
         <div className="space-y-1">
           <Label>Down Payment</Label>
-          <Input type="number" step="0.01" min="0" value={downPayment} onChange={e => setDownPayment(e.target.value)} className="text-right tabular-nums" />
+          <Input
+            type="number" step="0.01" min="0"
+            value={downPayment}
+            onChange={e => setDownPaymentFromUser(e.target.value)}
+            className="text-right tabular-nums"
+          />
         </div>
+        {/* v-regular-pay — bidirectional twin of Total Amount.
+            Editing here reverse-solves Total against the current
+            # of Terms + interest settings. Structural changes
+            (Terms / interest / frequency) re-derive whichever field
+            isn't the master. */}
+        <div className="space-y-1">
+          <Label>
+            Regular Pay <span className="text-gray-400 font-normal">(per term)</span>
+            {amountMaster === 'total' && (
+              <span className="ml-2 text-[10px] font-normal text-gray-500 italic">
+                auto from Total Amount ÷ Terms
+              </span>
+            )}
+          </Label>
+          <Input
+            type="number" step="0.01" min="0"
+            value={regularPay}
+            onChange={e => setRegularPayFromUser(e.target.value)}
+            className="text-right tabular-nums"
+          />
+        </div>
+        {/* Spacer to keep the two-column grid alignment stable —
+            Regular Pay sits alone on this row so Down Payment
+            doesn't get squeezed. */}
+        <div />
+
         <div className="space-y-1">
           <Label># of Terms <span className="text-red-500">*</span></Label>
           <Input type="number" min="1" max="360" value={numberOfTerms} onChange={e => setNumberOfTerms(e.target.value)} className="text-right tabular-nums" />

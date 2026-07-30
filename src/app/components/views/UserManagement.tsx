@@ -182,6 +182,14 @@ const MODULES: ModuleDef[] = [
   // can log a payment against it. See BE V253 migration for the
   // matching module_assignments / role_permissions cleanup.
   { key: 'payment_collection',  label: 'Collections',        description: 'Aging report — overdue installments bucketed by days past due', parent: 'receivables-group' },
+  // v-property-move (V287) — Property is the picker catalogue behind
+  // Payment Plans (houses, rooms, cars). Own module key so tenants
+  // can grant "manage catalogue" without touching plan writes.
+  { key: 'property',            label: 'Property',           description: 'Catalogue of subjects a plan / invoice can be written against — houses, rooms, cars, land, and their child options',  parent: 'receivables-group' },
+  // v-booking-mvp (V288) — one-time purchase against the Property
+  // catalogue. Own module key so a role can be granted "sell a
+  // ticket" without also being able to create long-running plans.
+  { key: 'booking',             label: 'Booking',            description: 'One-time purchase against the Property catalogue — buy a ticket, book a room, reserve a seat. Draft → Confirmed → Paid → Refunded.',  parent: 'receivables-group' },
 
   { key: 'expenses',          label: 'Purchases',         description: '',                                                            header: true },
   { key: 'vendor',            label: 'Vendors',           description: 'Individual + business vendors (TIN, representative, site)',  parent: 'expenses' },
@@ -329,6 +337,13 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       case 'payment_plan':
       case 'payment_collection':
                             return action === 'view';
+      // Property catalogue — Manager can browse the picker library
+      // but only Admin creates / deletes properties (matches how
+      // Payment Plans are gated).
+      case 'property':      return action === 'view';
+      // Booking — Manager can browse the register and create/mark
+      // paid; delete stays admin-only (matches how Plans are gated).
+      case 'booking':       return action === 'view' || action === 'create' || action === 'update';
       default:           return false;
     }
   }
