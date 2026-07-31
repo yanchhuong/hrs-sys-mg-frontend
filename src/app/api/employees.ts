@@ -31,6 +31,11 @@ export interface Employee {
   currentAddress?: string | null;
   nffNo?: string | null;
   tid?: string | null;
+  /** V300 — 'national_id' (default) | 'passport'. */
+  nationalityType?: 'national_id' | 'passport' | null;
+  /** V300 — Work-visa expiry (ISO date). Only relevant when
+   *  nationalityType = 'passport'. */
+  visaExpireDate?: string | null;
   contractExpireDate?: string | null;
   /** Resign / termination date. null = still employed. */
   resignDate?: string | null;

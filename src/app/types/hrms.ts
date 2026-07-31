@@ -101,6 +101,13 @@ export interface Employee {
   currentAddress?: string;
   nffNo?: string;
   tid?: string;
+  /** V300 — ID document type. Foreign employees on a work visa
+   *  flip this to 'passport' so {@link visaExpireDate} becomes the
+   *  authoritative renewal deadline. */
+  nationalityType?: 'national_id' | 'passport';
+  /** V300 — Work-visa expiry (ISO date). Only meaningful when
+   *  {@link nationalityType} = 'passport'. */
+  visaExpireDate?: string;
   contractExpireDate?: string;
   /** Resign / termination date. Empty = still employed. */
   resignDate?: string;

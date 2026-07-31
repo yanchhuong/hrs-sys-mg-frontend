@@ -469,6 +469,8 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     currentAddress: e.currentAddress ?? undefined,
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
+    nationalityType: (e.nationalityType ?? undefined) as 'national_id' | 'passport' | undefined,
+    visaExpireDate: e.visaExpireDate ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
     resignDate: e.resignDate ?? undefined,
     // Default true when the backend hasn't sent the field (older rows
@@ -954,6 +956,12 @@ export function Employees() {
         currentAddress: raw.currentAddress ?? null,
         nffNo: raw.nffNo ?? null,
         tid: raw.tid ?? null,
+        // V300 — clear visaExpireDate when nationalityType flips back
+        // to national_id so we don't send a stale passport-only
+        // date. Server also accepts null explicitly, matching the
+        // partial-patch semantics of the rest of this payload.
+        nationalityType: raw.nationalityType ?? null,
+        visaExpireDate: raw.nationalityType === 'passport' ? (raw.visaExpireDate ?? null) : null,
         contractExpireDate: raw.contractExpireDate ?? null,
         resignDate: raw.resignDate ?? null,
         attendanceYn: raw.attendanceYn,
@@ -2175,6 +2183,58 @@ export function Employees() {
                           <p>{selectedEmployee.tid || '—'}</p>
                         )}
                       </FieldRow>
+                      {/* V300 — nationality type + optional visa expiry.
+                          Default (null / national_id) reads as
+                          "National ID" for local employees; flipping to
+                          Passport reveals the Visa Expire Date input. */}
+                      <FieldRow label="ID Type" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.nationalityType ?? 'national_id'}
+                            onChange={(e) => {
+                              const next = e.target.value as 'national_id' | 'passport';
+                              setEditedEmployee({
+                                ...editedEmployee,
+                                nationalityType: next,
+                                // Clear visaExpireDate when switching
+                                // away from passport so a stale date
+                                // doesn't linger on the row.
+                                visaExpireDate: next === 'passport'
+                                  ? editedEmployee.visaExpireDate
+                                  : undefined,
+                              });
+                            }}
+                            className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                          >
+                            <option value="national_id">National ID</option>
+                            <option value="passport">Passport</option>
+                          </select>
+                        ) : (
+                          <p>
+                            {selectedEmployee.nationalityType === 'passport'
+                              ? 'Passport'
+                              : 'National ID'}
+                          </p>
+                        )}
+                      </FieldRow>
+                      {((isEditing ? editedEmployee?.nationalityType : selectedEmployee.nationalityType) === 'passport') && (
+                        <FieldRow label="Visa Expire" isEditing={isEditing}>
+                          {isEditing && editedEmployee ? (
+                            <Input
+                              type="date"
+                              value={editedEmployee.visaExpireDate || ''}
+                              onChange={(e) => setEditedEmployee({ ...editedEmployee, visaExpireDate: e.target.value })}
+                              className="h-9"
+                            />
+                          ) : (
+                            <p>
+                              {selectedEmployee.visaExpireDate
+                                ? formatDate(selectedEmployee.visaExpireDate)
+                                : '—'}
+                            </p>
+                          )}
+                        </FieldRow>
+                      )}
                     </div>
 
                     <SectionHeading>Contact</SectionHeading>
