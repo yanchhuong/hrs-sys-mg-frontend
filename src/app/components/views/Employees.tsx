@@ -2172,21 +2172,12 @@ export function Employees() {
                           <p>{selectedEmployee.nffNo || '—'}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="TID" isEditing={isEditing}>
-                        {isEditing && editedEmployee ? (
-                          <Input
-                            value={editedEmployee.tid || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
-                            className="h-9"
-                          />
-                        ) : (
-                          <p>{selectedEmployee.tid || '—'}</p>
-                        )}
-                      </FieldRow>
                       {/* V300 — nationality type + optional visa expiry.
-                          Default (null / national_id) reads as
-                          "National ID" for local employees; flipping to
-                          Passport reveals the Visa Expire Date input. */}
+                          Order: ID Type → TID → Visa Expire (only when
+                          Passport). Default (null / national_id) reads
+                          as "National ID" for local employees; flipping
+                          to Passport reveals the date input right below
+                          the TID row. */}
                       <FieldRow label="ID Type" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <select
@@ -2215,6 +2206,17 @@ export function Employees() {
                               ? 'Passport'
                               : 'National ID'}
                           </p>
+                        )}
+                      </FieldRow>
+                      <FieldRow label="TID" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <Input
+                            value={editedEmployee.tid || ''}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
+                            className="h-9"
+                          />
+                        ) : (
+                          <p>{selectedEmployee.tid || '—'}</p>
                         )}
                       </FieldRow>
                       {((isEditing ? editedEmployee?.nationalityType : selectedEmployee.nationalityType) === 'passport') && (
