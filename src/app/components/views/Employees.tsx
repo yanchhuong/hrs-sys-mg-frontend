@@ -1546,11 +1546,11 @@ export function Employees() {
                 <TableHead>Department</TableHead>
                 <TableHead>Experience</TableHead>
                 <TableHead>Contact</TableHead>
-                <TableHead>NFF No</TableHead>
+                <TableHead>NSSF No</TableHead>
                 <TableHead>TID</TableHead>
+                <TableHead>Visa Expire</TableHead>
                 <TableHead>Contract Expire</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Author</TableHead>
                 <TableHead>Modifier</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -1717,7 +1717,26 @@ export function Employees() {
                   <TableCell>{calculateExperience(employee.joinDate)}</TableCell>
                   <TableCell>{employee.contactNumber}</TableCell>
                   <TableCell>{employee.nffNo || '-'}</TableCell>
-                  <TableCell>{employee.tid || '-'}</TableCell>
+                  <TableCell>
+                    {employee.tid
+                      ? `${employee.tidType ?? 'TID'} ${employee.tid}`
+                      : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {employee.nationalityType === 'passport' && employee.visaExpireDate
+                      ? (() => {
+                          // Same red/orange staleness logic the Contract
+                          // Expire cell uses so HR spots expiring visas
+                          // at a glance without opening the sheet.
+                          const cls = new Date(employee.visaExpireDate) < new Date()
+                            ? 'text-red-600 font-medium'
+                            : new Date(employee.visaExpireDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                            ? 'text-orange-600 font-medium'
+                            : '';
+                          return <span className={cls}>{formatDate(employee.visaExpireDate)}</span>;
+                        })()
+                      : '-'}
+                  </TableCell>
                   <TableCell>
                     {(() => {
                       const expire = getLatestContractEnd(employee);
@@ -1740,12 +1759,6 @@ export function Employees() {
                     >
                       {employee.status}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <AuditCell
-                      name={(employee as any).createdByName}
-                      at={(employee as any).createdAt}
-                    />
                   </TableCell>
                   <TableCell>
                     <AuditCell
@@ -2163,7 +2176,7 @@ export function Employees() {
                           <p>{selectedEmployee.placeOfBirth || '—'}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="NFF No" isEditing={isEditing}>
+                      <FieldRow label="NSSF No" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <Input
                             value={editedEmployee.nffNo || ''}
