@@ -983,12 +983,27 @@ function SeatMapPanel({
               })();
               const future = tripsForSchedule.filter(t => t.tripDate >= todayIso);
               const past   = tripsForSchedule.filter(t => t.tripDate <  todayIso);
+              // v-session-picker-trigger — render the picked trip's
+              // trigger label ourselves so the ACTIVE / PAST badge
+              // that lives inside each SelectItem doesn't leak into
+              // the trigger's SelectValue (Radix clones the item's
+              // children by default). Falls back to SelectValue for
+              // the '— Any session —' placeholder path.
+              const pickedTrip = tripsForSchedule.find(t => t.id === tripId);
               return (
                 <div className="flex items-center justify-between gap-3">
                   <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Session</Label>
                   <div className="flex-1">
                     <Select value={tripId || 'none'} onValueChange={v => onTripChange(v === 'none' ? '' : v)}>
-                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="— Any —" /></SelectTrigger>
+                      <SelectTrigger className="h-9 text-sm">
+                        {pickedTrip ? (
+                          <span className="tabular-nums">
+                            {formatDate(pickedTrip.tripDate)} · {pickedTrip.departureTime.slice(0, 5)}
+                          </span>
+                        ) : (
+                          <SelectValue placeholder="— Any —" />
+                        )}
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">— Any session —</SelectItem>
                         {future.map(t => (
