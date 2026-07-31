@@ -469,6 +469,7 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     currentAddress: e.currentAddress ?? undefined,
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
+    tidType: (e.tidType ?? undefined) as 'PA' | 'TID' | undefined,
     nationalityType: (e.nationalityType ?? undefined) as 'national_id' | 'passport' | undefined,
     visaExpireDate: e.visaExpireDate ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
@@ -956,6 +957,7 @@ export function Employees() {
         currentAddress: raw.currentAddress ?? null,
         nffNo: raw.nffNo ?? null,
         tid: raw.tid ?? null,
+        tidType: raw.tidType ?? null,
         // V300 — clear visaExpireDate when nationalityType flips back
         // to national_id so we don't send a stale passport-only
         // date. Server also accepts null explicitly, matching the
@@ -2208,15 +2210,39 @@ export function Employees() {
                           </p>
                         )}
                       </FieldRow>
+                      {/* V301 — TID row now has a PA/TID prefix
+                          dropdown next to the number input. Read-only
+                          view renders the prefix inline with the
+                          value ('PA 12345' / 'TID 12345'). */}
                       <FieldRow label="TID" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            value={editedEmployee.tid || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
-                            className="h-9"
-                          />
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={editedEmployee.tidType ?? 'TID'}
+                              onChange={(e) =>
+                                setEditedEmployee({
+                                  ...editedEmployee,
+                                  tidType: e.target.value as 'PA' | 'TID',
+                                })
+                              }
+                              className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm"
+                              aria-label="TID prefix"
+                            >
+                              <option value="PA">PA</option>
+                              <option value="TID">TID</option>
+                            </select>
+                            <Input
+                              value={editedEmployee.tid || ''}
+                              onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
+                              className="h-9"
+                            />
+                          </div>
                         ) : (
-                          <p>{selectedEmployee.tid || '—'}</p>
+                          <p>
+                            {selectedEmployee.tid
+                              ? `${selectedEmployee.tidType ?? 'TID'} ${selectedEmployee.tid}`
+                              : '—'}
+                          </p>
                         )}
                       </FieldRow>
                       {((isEditing ? editedEmployee?.nationalityType : selectedEmployee.nationalityType) === 'passport') && (

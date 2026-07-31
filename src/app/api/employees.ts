@@ -31,6 +31,8 @@ export interface Employee {
   currentAddress?: string | null;
   nffNo?: string | null;
   tid?: string | null;
+  /** V301 — 'PA' (personal account) | 'TID' (tax id) | null. */
+  tidType?: 'PA' | 'TID' | null;
   /** V300 — 'national_id' (default) | 'passport'. */
   nationalityType?: 'national_id' | 'passport' | null;
   /** V300 — Work-visa expiry (ISO date). Only relevant when

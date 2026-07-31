@@ -101,6 +101,9 @@ export interface Employee {
   currentAddress?: string;
   nffNo?: string;
   tid?: string;
+  /** V301 — Prefix rendered alongside {@link tid}: 'PA' (personal
+   *  account) or 'TID' (tax id). Null = unset (legacy). */
+  tidType?: 'PA' | 'TID';
   /** V300 — ID document type. Foreign employees on a work visa
    *  flip this to 'passport' so {@link visaExpireDate} becomes the
    *  authoritative renewal deadline. */
