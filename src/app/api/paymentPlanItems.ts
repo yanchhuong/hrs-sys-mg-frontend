@@ -49,6 +49,11 @@ export interface PaymentPlanItemOption {
   imageUrl?: string | null;
   active: boolean;
   sortOrder: number;
+  /** V299 — 0-indexed grid position for the cinema seat-map editor.
+   *  Both null means "unplaced" and the renderer falls back to
+   *  name-parsing. Both non-null pins the seat to that cell. */
+  gridRow?: number | null;
+  gridCol?: number | null;
 }
 
 export interface UpsertPaymentPlanItemOption {
@@ -61,6 +66,34 @@ export interface UpsertPaymentPlanItemOption {
   imageUrl?: string | null;
   active?: boolean;
   sortOrder?: number;
+  /** V299 — grid position pair. Send both to place a seat, both null
+   *  to leave it unplaced. */
+  gridRow?: number | null;
+  gridCol?: number | null;
+}
+
+/** V298 — optional group layer between a Property and its options.
+ *  A property can hold many groups, each with its own child options.
+ *  Options may also stay UNGROUPED (they render above the groups
+ *  on the picker), so introducing groups is fully backward-compatible. */
+export interface PaymentPlanItemOptionGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  sortOrder: number;
+  options: PaymentPlanItemOption[];
+}
+
+export interface UpsertPaymentPlanItemOptionGroup {
+  id?: string;
+  name: string;
+  description?: string | null;
+  active?: boolean;
+  sortOrder?: number;
+  /** Group's child options. The BE infers each nested option's
+   *  groupId from its enclosing group, so callers don't set it. */
+  options?: UpsertPaymentPlanItemOption[];
 }
 
 export interface PaymentPlanItem {
@@ -78,8 +111,13 @@ export interface PaymentPlanItem {
   category: PaymentPlanItemCategory;
   /** V286: how child options are surfaced (radio vs checkbox). */
   selectMode: PaymentPlanItemSelectMode;
-  /** V286: child options. Empty means the parent is a plain leaf. */
+  /** UNGROUPED child options only (V286 + V298). Options that belong
+   *  to a group ride inside {@link optionGroups}. Empty on both means
+   *  the parent is a plain leaf. */
   options: PaymentPlanItemOption[];
+  /** V298 — property groups, each with its own children. Empty when
+   *  the property has no groups. */
+  optionGroups: PaymentPlanItemOptionGroup[];
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -98,9 +136,15 @@ export interface UpsertPaymentPlanItem {
   category?: PaymentPlanItemCategory;
   /** V286: defaults to 'single' server-side when omitted. */
   selectMode?: PaymentPlanItemSelectMode;
-  /** V286: full replacement list. Omit to leave options unchanged
-   *  on a PATCH; send an empty array to clear them. */
+  /** V286: full replacement list of UNGROUPED options. Omit to leave
+   *  ungrouped options unchanged on a PATCH; send an empty array to
+   *  clear them. */
   options?: UpsertPaymentPlanItemOption[];
+  /** V298: full replacement list of groups (each with its nested
+   *  option children). Omit to leave groups unchanged on a PATCH;
+   *  send an empty array to remove every group (their children are
+   *  deleted unless re-listed under `options` as ungrouped). */
+  optionGroups?: UpsertPaymentPlanItemOptionGroup[];
   active?: boolean;
 }
 

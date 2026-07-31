@@ -379,3 +379,267 @@ function LuggageCell() {
     </div>
   );
 }
+
+/* ─────────── CinemaSeatMap (V298 category=entertainment) ───────────
+ *
+ * Cinema-style layout used when a Property's category is
+ * `entertainment`. Shape mirrors a screening room, not a vehicle:
+ *
+ *   ┌──────────────── SCREEN ────────────────┐
+ *
+ *   VIP RECLINERS
+ *   A  [1][2][3][4]   [5][6][7][8]
+ *   B  [1][2][3][4]   [5][6][7][8]
+ *
+ *   STANDARD SEATING
+ *   C  [1][2][3][4][5][6]   [7][8][9][10][11][12]
+ *   …
+ *
+ * Each Group on the property renders as one titled section. Rows come
+ * from the same regex parser as the van layout (`<letters><digits>`),
+ * so operators can bulk-generate seats via the group's own bulk tool.
+ * A vertical aisle appears near the middle of a section when the max
+ * column count is ≥ 6, matching the screening-room mental model.
+ * Ungrouped options (legacy rows) render as one implicit section.
+ */
+
+export function CinemaSeatMap({
+  property, selectedIds, occupiedIds, onToggle, showLegend = true,
+}: {
+  property: paymentPlanItemsApi.PaymentPlanItem;
+  selectedIds: Set<string>;
+  occupiedIds: Set<string>;
+  onToggle?: (opt: paymentPlanItemsApi.PaymentPlanItemOption) => void;
+  showLegend?: boolean;
+}) {
+  const readOnly = !onToggle;
+  const trigger = (opt: paymentPlanItemsApi.PaymentPlanItemOption) => {
+    if (!readOnly) onToggle!(opt);
+  };
+
+  // Section list = each active group + (if any) an implicit
+  // "Seating" section for ungrouped options. Sections with no
+  // active options are dropped so the SCREEN block doesn't have
+  // a titled but empty slab below it.
+  const sections: Array<{ id: string; label: string; options: paymentPlanItemsApi.PaymentPlanItemOption[] }> = [];
+  const ungrouped = (property.options ?? []).filter(o => o.active);
+  if (ungrouped.length > 0) sections.push({ id: '__ungrouped', label: 'Seating', options: ungrouped });
+  for (const g of property.optionGroups ?? []) {
+    if (!g.active) continue;
+    const opts = (g.options ?? []).filter(o => o.active);
+    if (opts.length > 0) sections.push({ id: g.id, label: g.name, options: opts });
+  }
+
+  return (
+    <div className="space-y-4">
+      {showLegend && (
+        <div className="rounded-xl border bg-white px-4 py-3 flex items-center gap-4 flex-wrap text-[11px] tracking-wide uppercase text-gray-600">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-4 w-4 rounded bg-indigo-100 border border-indigo-200" /> Available
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-4 w-4 rounded bg-indigo-600" /> Selected
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-4 w-4 rounded bg-gray-300" /> Occupied
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Accessibility className="h-4 w-4 text-gray-700" /> Accessible
+          </span>
+        </div>
+      )}
+
+      <div className="rounded-2xl bg-gray-50/60 p-5 space-y-6">
+        {/* SCREEN banner — curved gradient bar mimics the audience-
+            facing edge of a projection screen. Kept subtle so the
+            seat grid stays the primary read. */}
+        <div className="mx-auto max-w-md">
+          <div className="h-2 rounded-t-full bg-gradient-to-r from-indigo-300 via-indigo-500 to-indigo-300" />
+          <div className="text-center text-[10px] font-semibold tracking-[0.3em] text-gray-500 pt-2">
+            SCREEN
+          </div>
+        </div>
+
+        {sections.map(s => (
+          <CinemaSection
+            key={s.id}
+            label={s.label}
+            options={s.options}
+            selectedIds={selectedIds}
+            occupiedIds={occupiedIds}
+            readOnly={readOnly}
+            onToggle={trigger}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CinemaSection({
+  label, options, selectedIds, occupiedIds, readOnly, onToggle,
+}: {
+  label: string;
+  options: paymentPlanItemsApi.PaymentPlanItemOption[];
+  selectedIds: Set<string>;
+  occupiedIds: Set<string>;
+  readOnly: boolean;
+  onToggle: (opt: paymentPlanItemsApi.PaymentPlanItemOption) => void;
+}) {
+  // V299 — prefer explicit (gridRow, gridCol) when set; fall back to
+  // parsing the seat's name (`A1`, `Seat-01`) for legacy rows. Both
+  // branches produce the same `rows: Map<label, Array<opt|null>>`
+  // shape so the render loop stays uniform.
+  const rows: Map<string, Array<paymentPlanItemsApi.PaymentPlanItemOption | null>> = new Map();
+  const misfits: paymentPlanItemsApi.PaymentPlanItemOption[] = [];
+  let maxCol = 0;
+  const seatRe = /^([A-Za-z]+)[\s\-_.]*(\d+)$/;
+  const anyPlaced = options.some(o => o.gridRow != null && o.gridCol != null);
+  for (const o of options) {
+    if (anyPlaced) {
+      // Grid-coord path — respect exactly what the editor stored.
+      if (o.gridRow == null || o.gridCol == null) { misfits.push(o); continue; }
+      // Row labels are letters A..Z... starting at 65; wraps past
+      // Z as AA/BB but the editor caps at MAX_ROWS = 30 so single
+      // letters cover every case in practice.
+      const row = String.fromCharCode(65 + o.gridRow);
+      const col = o.gridCol + 1;   // 1-indexed for display parity with names
+      if (col > maxCol) maxCol = col;
+      if (!rows.has(row)) rows.set(row, []);
+      const arr = rows.get(row)!;
+      while (arr.length < col) arr.push(null);
+      arr[col - 1] = o;
+    } else {
+      const m = seatRe.exec((o.name ?? '').trim());
+      if (!m) { misfits.push(o); continue; }
+      const row = m[1].toUpperCase();
+      const col = Number(m[2]);
+      if (col > maxCol) maxCol = col;
+      if (!rows.has(row)) rows.set(row, []);
+      const arr = rows.get(row)!;
+      while (arr.length < col) arr.push(null);
+      arr[col - 1] = o;
+    }
+  }
+  // Normalise every row to the section's maxCol so aisle alignment
+  // is consistent across rows.
+  for (const [k, arr] of rows) {
+    while (arr.length < maxCol) arr.push(null);
+    rows.set(k, arr);
+  }
+  const rowLetters = Array.from(rows.keys()).sort();
+  // Aisle position: centred split when ≥ 6 seats wide, otherwise
+  // no aisle (small sections look better solid).
+  const aisleAt = maxCol >= 6 ? Math.ceil(maxCol / 2) : 0;
+  // CSS template — one column per seat plus a narrow aisle column
+  // inserted at `aisleAt` when set. Small size-fit units keep the
+  // grid readable on mobile.
+  const cols: string[] = [];
+  for (let c = 0; c < maxCol; c++) {
+    if (aisleAt > 0 && c === aisleAt) cols.push('0.4fr');
+    cols.push('minmax(0, 1fr)');
+  }
+  const gridTemplate = cols.join(' ');
+
+  return (
+    <div className="space-y-2">
+      {label && (
+        <div className="text-center text-[11px] font-semibold tracking-widest text-gray-500 uppercase">
+          {label}
+        </div>
+      )}
+      <div className="w-fit max-w-full mx-auto">
+        {rowLetters.length === 0 ? (
+          <div className="text-[11px] italic text-gray-400 text-center py-2">
+            No seats parsed in this section.
+          </div>
+        ) : (
+          rowLetters.map(rl => {
+            const arr = rows.get(rl)!;
+            return (
+              <div key={rl} className="flex items-center gap-2 py-1">
+                <div className="w-4 text-[10px] font-semibold text-gray-400 text-center">{rl}</div>
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: gridTemplate }}>
+                  {arr.map((opt, colIdx) => {
+                    const cells: JSX.Element[] = [];
+                    if (aisleAt > 0 && colIdx === aisleAt) {
+                      cells.push(<div key={`aisle-${rl}-${colIdx}`} />);
+                    }
+                    cells.push(
+                      <CinemaSeat
+                        key={`${rl}-${colIdx}`}
+                        opt={opt}
+                        colLabel={colIdx + 1}
+                        selectedIds={selectedIds}
+                        occupiedIds={occupiedIds}
+                        readOnly={readOnly}
+                        onToggle={onToggle}
+                      />
+                    );
+                    return cells;
+                  })}
+                </div>
+              </div>
+            );
+          })
+        )}
+        {misfits.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
+            {misfits.map(o => (
+              <CinemaSeat
+                key={o.id}
+                opt={o}
+                colLabel={o.name}
+                selectedIds={selectedIds}
+                occupiedIds={occupiedIds}
+                readOnly={readOnly}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CinemaSeat({
+  opt, colLabel, selectedIds, occupiedIds, readOnly, onToggle,
+}: {
+  opt: paymentPlanItemsApi.PaymentPlanItemOption | null;
+  colLabel: number | string;
+  selectedIds: Set<string>;
+  occupiedIds: Set<string>;
+  readOnly: boolean;
+  onToggle: (opt: paymentPlanItemsApi.PaymentPlanItemOption) => void;
+}) {
+  if (!opt) {
+    return <div className="h-8 w-8 rounded-md" aria-hidden="true" />;
+  }
+  const isSelected = selectedIds.has(opt.id);
+  const isOccupied = occupiedIds.has(opt.id);
+  const isAccessible = /(accessible|wheelchair|handicap)/i.test(
+    (opt.description ?? '') + ' ' + (opt.name ?? '')
+  );
+  const cls = isOccupied
+    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+    : isSelected
+      ? 'bg-indigo-600 text-white'
+      : readOnly
+        ? 'bg-indigo-100 text-indigo-700 cursor-default'
+        : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200';
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(opt)}
+      disabled={isOccupied || readOnly}
+      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${isOccupied ? ' (occupied)' : ''}${isAccessible ? ' · accessible' : ''}`}
+      className={`relative h-8 w-8 rounded-md text-[10px] font-semibold tabular-nums transition flex items-center justify-center ${cls}`}
+    >
+      {typeof colLabel === 'number' ? colLabel : opt.name}
+      {isAccessible && (
+        <Accessibility className="absolute -bottom-0.5 -right-0.5 h-3 w-3 opacity-80" />
+      )}
+    </button>
+  );
+}

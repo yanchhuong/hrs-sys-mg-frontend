@@ -24,7 +24,7 @@ import {
   Image as ImageIconLucide,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import { SeatMapDisplay, parseSeatLayout, type SeatLayout } from '../common/SeatMap';
+import { SeatMapDisplay, CinemaSeatMap, parseSeatLayout, type SeatLayout } from '../common/SeatMap';
 import { BookingSchedulesDialog } from '../common/BookingSchedulesDialog';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
 import * as bookingTripsApi from '../../api/bookingTrips';
@@ -49,6 +49,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatMoney } from '../../utils/format';
 import * as bookingsApi from '../../api/bookings';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import * as customersApi from '../../api/customers';
@@ -68,6 +69,10 @@ import * as paymentPlanItemsApi from '../../api/paymentPlanItems';
  */
 export function Bookings() {
   const { canCreate, canUpdate, canDelete } = useAuth();
+  // v-session-picker-date-format — user-preferred date format for
+  // the Session column in the Bookings table (matches the Date
+  // input on the New Booking dialog).
+  const { formatDate } = useDateFormat();
   const canWrite  = canCreate('booking') || canUpdate('booking');
   const canRemove = canDelete('booking');
   // v-page-title-i18n — header follows the sidebar leaf label.
@@ -296,7 +301,7 @@ export function Bookings() {
                         {trip ? (
                           <>
                             <div className="tabular-nums">
-                              {trip.tripDate} · {trip.departureTime.slice(0, 5)}
+                              {formatDate(trip.tripDate)} · {trip.departureTime.slice(0, 5)}
                               {trip.endTime ? `–${trip.endTime.slice(0, 5)}` : ''}
                             </div>
                             {(sch || typeLabel) && (
@@ -390,10 +395,33 @@ function CreateBookingDialogContent({
     () => (itemId ? schedules.filter(s => s.itemId === itemId && s.active) : []),
     [itemId, schedules],
   );
+
+  /** v-new-booking-default-schedule — auto-pick the first active
+   *  schedule when the dialog mounts so the operator lands on a
+   *  usable state instead of an empty picker. Only fires while
+   *  scheduleId is empty; won't overwrite operator changes. */
+  useEffect(() => {
+    if (scheduleId || schedules.length === 0) return;
+    const first = schedules.find(s => s.active) ?? schedules[0];
+    if (!first) return;
+    setScheduleId(first.id);
+    setItemId(first.itemId);
+  }, [schedules, scheduleId]);
   /** Trips under the currently-picked schedule. Only surfaces when
-   *  a schedule is chosen — trips aren't meaningful without one. */
+   *  a schedule is chosen — trips aren't meaningful without one.
+   *  v-session-picker-sort — sorted ascending by (tripDate, then
+   *  departureTime) so the dropdown reads earliest-first regardless
+   *  of the order the BE returned. */
   const tripsForSchedule = useMemo(
-    () => (scheduleId ? trips.filter(t => t.scheduleId === scheduleId && t.active) : []),
+    () => (scheduleId
+      ? trips
+          .filter(t => t.scheduleId === scheduleId && t.active)
+          .slice()
+          .sort((a, b) => {
+            if (a.tripDate !== b.tripDate) return a.tripDate < b.tripDate ? -1 : 1;
+            return a.departureTime < b.departureTime ? -1 : a.departureTime > b.departureTime ? 1 : 0;
+          })
+      : []),
     [scheduleId, trips],
   );
 
@@ -401,10 +429,30 @@ function CreateBookingDialogContent({
     () => (itemId ? items.find(i => i.id === itemId) ?? null : null),
     [itemId, items],
   );
-  const pickedItemOptions = useMemo(
-    () => (pickedItem?.options ?? []).filter(o => o.active),
-    [pickedItem],
-  );
+  // V298 — flat option list across ungrouped + all groups. Used for
+  // occupancy set-lookup, selection state, seat layout parsing, and
+  // Total calculation. Group structure is preserved separately in
+  // `pickedItemOptionsByGroup` for the grouped render.
+  const pickedItemOptions = useMemo(() => {
+    if (!pickedItem) return [];
+    const out = [...(pickedItem.options ?? [])];
+    for (const g of pickedItem.optionGroups ?? []) {
+      for (const o of g.options ?? []) out.push(o);
+    }
+    return out.filter(o => o.active);
+  }, [pickedItem]);
+  /** V298 — {@link pickedItemOptions} sliced into (ungrouped, groups)
+   *  for the grouped picker render. Groups whose active options are
+   *  all inactive are dropped from the list. */
+  const pickedItemOptionsByGroup = useMemo(() => {
+    if (!pickedItem) return { ungrouped: [] as itemsApi.PaymentPlanItemOption[], groups: [] as { group: itemsApi.PaymentPlanItemOptionGroup; options: itemsApi.PaymentPlanItemOption[] }[] };
+    const ungrouped = (pickedItem.options ?? []).filter(o => o.active);
+    const groups = (pickedItem.optionGroups ?? [])
+      .filter(g => g.active)
+      .map(g => ({ group: g, options: (g.options ?? []).filter(o => o.active) }))
+      .filter(entry => entry.options.length > 0);
+    return { ungrouped, groups };
+  }, [pickedItem]);
   const pickedOptionsList = useMemo(
     () => pickedItemOptions.filter(o => selectedOptionIds.has(o.id)),
     [pickedItemOptions, selectedOptionIds],
@@ -436,23 +484,64 @@ function CreateBookingDialogContent({
     () => parseSeatLayout(pickedItemOptions),
     [pickedItemOptions],
   );
+  // v-property-cinema-map — mirrors the Property view popup: when the
+  // picked property is category=entertainment AND has at least one
+  // parseable seat, we render the cinema (SCREEN + group sections)
+  // layout instead of the vehicle layout.
+  const isCinema = pickedItem?.category === 'entertainment';
+  const useSeatSurface = isCinema
+    ? pickedItemOptions.some(o => /^[A-Za-z]+[\s\-_.]*\d+$/.test((o.name ?? '').trim()))
+    : Boolean(seatLayout);
 
-  /** Auto-fill Amount from the picks (or parent price fallback).
-   *  Amount stays editable so the operator can apply a discount /
-   *  surcharge — this only fires when the pick set changes. */
-  const applyPricing = (picks: paymentPlanItemsApi.PaymentPlanItemOption[], parent: paymentPlanItemsApi.PaymentPlanItem | null) => {
+  /** Auto-fill Amount from the picks. Amount stays editable so the
+   *  operator can apply a discount / surcharge — this only fires
+   *  when the pick set changes.
+   *  v-booking-total-zero-default — no picks = $0.00 (was: parent's
+   *  price). The parent price was misleading when the property has
+   *  option-priced seats — total would spike to the parent's fallback
+   *  before any seat was picked. Total now reads cleanly as 0 until
+   *  the operator actually picks something.
+   */
+  const applyPricing = (picks: paymentPlanItemsApi.PaymentPlanItemOption[], _parent: paymentPlanItemsApi.PaymentPlanItem | null) => {
     if (picks.length === 0) {
-      setAmount(parent?.price != null ? String(parent.price) : '');
+      setAmount('0');
     } else {
       const sum = picks.reduce((s, x) => s + (Number(x.price) || 0), 0);
       setAmount(String(sum));
     }
   };
 
-  const canSave = customerId && Number(amount) >= 0 && bookingDate;
+  // v-session-picker-past — a past session may be SELECTED so the
+  // operator can inspect its seat map / who booked what (history
+  // view), but Continue to Payment stays disabled so no new
+  // booking lands against a session that already happened.
+  const isPastTripSelected = ((): boolean => {
+    if (!tripId) return false;
+    const t = trips.find(x => x.id === tripId);
+    if (!t) return false;
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return t.tripDate < iso;
+  })();
+  const canSave = Boolean(customerId) && Number(amount) >= 0 && Boolean(bookingDate) && !isPastTripSelected;
 
   const handleSave = async () => {
     if (!canSave) return;
+    // v-session-picker-past — refuse to save when the selected
+    // session is in the past. The dropdown already disables past
+    // rows; this covers the edge case of a stale tripId set before
+    // it became past.
+    if (tripId) {
+      const t = trips.find(x => x.id === tripId);
+      const todayIso = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })();
+      if (t && t.tripDate < todayIso) {
+        toast.error('That session is in the past — pick a future one or clear the Session field.');
+        return;
+      }
+    }
     setSaving(true);
     // Prepend picked option names to Notes so the booking record
     // carries them wherever notes render, matching the v-plan-
@@ -633,10 +722,13 @@ function CreateBookingDialogContent({
               placeholder="Optional — any special conditions or a reference." />
           </div>
         </div>
-      ) : seatLayout ? (
+      ) : useSeatSurface ? (
         // Seat-mapped property — full view-property-style layout.
+        // Van variant uses the parsed layout; cinema variant reads
+        // groups directly and renders the SCREEN-shape map.
         <SeatMapPanel
           layout={seatLayout}
+          isCinema={isCinema}
           property={pickedItem}
           selectedIds={selectedOptionIds}
           occupiedIds={occupiedIds}
@@ -657,48 +749,63 @@ function CreateBookingDialogContent({
           onSubmit={handleSave}
           saving={saving}
           canSave={Boolean(canSave)}
+          isPastTripSelected={isPastTripSelected}
         />
       ) : (
         // Non-seat property with options (Rooms/Trims): keep the
         // flat card grid but wrap in a two-column with summary on
         // the right so the shape still mirrors View Property.
+        // V298 — options render as ungrouped grid first, then each
+        // group as a titled section. Selection + occupancy still
+        // work off the flat `pickedItemOptions` set.
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
               Options for {pickedItem.name}
               <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
                 ({pickedItem.selectMode === 'multi' ? 'pick one or more' : 'pick one'})
               </span>
             </Label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {pickedItemOptions.map(o => {
-                const checked = selectedOptionIds.has(o.id);
-                const isOccupied = occupiedIds.has(o.id);
-                return (
-                  <label key={o.id}
-                    className={`flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded border transition ${
-                      isOccupied ? 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'
-                        : checked ? 'bg-blue-50 border-blue-300 cursor-pointer'
-                          : 'bg-white hover:bg-gray-50 cursor-pointer'
-                    }`}>
-                    <span className="flex items-center gap-2 min-w-0">
-                      <input
-                        type={pickedItem.selectMode === 'multi' ? 'checkbox' : 'radio'}
-                        name={`opts-${pickedItem.id}`}
-                        checked={checked}
-                        disabled={isOccupied}
-                        onChange={() => toggleOption(o)}
-                        className="shrink-0"
-                      />
-                      <span className={`truncate ${isOccupied ? 'line-through text-gray-400' : ''}`}>{o.name}</span>
+            {pickedItemOptionsByGroup.ungrouped.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {pickedItemOptionsByGroup.ungrouped.map(o => (
+                  <OptionPickRow
+                    key={o.id}
+                    o={o}
+                    checked={selectedOptionIds.has(o.id)}
+                    disabled={occupiedIds.has(o.id)}
+                    mode={pickedItem.selectMode}
+                    itemId={pickedItem.id}
+                    onToggle={() => toggleOption(o)}
+                  />
+                ))}
+              </div>
+            )}
+            {pickedItemOptionsByGroup.groups.map(({ group, options }) => (
+              <div key={group.id} className="space-y-1.5">
+                <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                  {group.name}
+                  {group.description && (
+                    <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
+                      — {group.description}
                     </span>
-                    <span className="tabular-nums text-gray-700 shrink-0">
-                      {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {options.map(o => (
+                    <OptionPickRow
+                      key={o.id}
+                      o={o}
+                      checked={selectedOptionIds.has(o.id)}
+                      disabled={occupiedIds.has(o.id)}
+                      mode={pickedItem.selectMode}
+                      itemId={pickedItem.id}
+                      onToggle={() => toggleOption(o)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
           <div className="space-y-3">
             <div className="rounded-xl border bg-white p-3 space-y-3">
@@ -769,14 +876,20 @@ function CreateBookingDialogContent({
 /* -------------------------------------------------------------------------- */
 
 function SeatMapPanel({
-  layout, property, selectedIds, occupiedIds, pickedList, amount,
+  layout, isCinema, property, selectedIds, occupiedIds, pickedList, amount,
   bookingDate, onDateChange,
   schedules, tripsForSchedule, scheduleId, onScheduleChange, tripId, onTripChange,
   customers, customerId, onCustomerChange,
   onToggle,
-  onSubmit, saving, canSave,
+  onSubmit, saving, canSave, isPastTripSelected,
 }: {
-  layout: SeatLayout;
+  /** v-property-cinema-map — parsed van layout. May be null when the
+   *  property is a cinema and options don't fit the van parser but
+   *  still parse row+col in CinemaSeatMap's own regex. */
+  layout: SeatLayout | null;
+  /** True when the property's category is `entertainment` — swaps
+   *  the seat renderer for the SCREEN-shape variant. */
+  isCinema: boolean;
   property: paymentPlanItemsApi.PaymentPlanItem;
   selectedIds: Set<string>;
   occupiedIds: Set<string>;
@@ -797,15 +910,32 @@ function SeatMapPanel({
   onSubmit: () => void;
   saving: boolean;
   canSave: boolean;
+  /** v-session-picker-past — true when the picked session is
+   *  historical (view-only). Renders the "not bookable" hint
+   *  above Continue to Payment. */
+  isPastTripSelected: boolean;
 }) {
+  // v-session-picker-date-format — Session dropdown formats trip
+  // dates using the app-wide user format (matches the Date field
+  // above it) instead of the raw ISO string.
+  const { formatDate } = useDateFormat();
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
-      <SeatMapDisplay
-        layout={layout}
-        selectedIds={selectedIds}
-        occupiedIds={occupiedIds}
-        onToggle={onToggle}
-      />
+      {isCinema ? (
+        <CinemaSeatMap
+          property={property}
+          selectedIds={selectedIds}
+          occupiedIds={occupiedIds}
+          onToggle={onToggle}
+        />
+      ) : (
+        <SeatMapDisplay
+          layout={layout!}
+          selectedIds={selectedIds}
+          occupiedIds={occupiedIds}
+          onToggle={onToggle}
+        />
+      )}
 
       {/* Right column — property card + date + session + selected
        *  seats + total + customer + submit. Mirrors the layout of
@@ -842,24 +972,59 @@ function SeatMapPanel({
             {/* Schedule row removed — the top-level picker on the
                 dialog already carries this. Session picker below
                 still surfaces here since it's schedule-scoped. */}
-            {scheduleId && tripsForSchedule.length > 0 && (
-              <div className="flex items-center justify-between gap-3">
-                <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Session</Label>
-                <div className="flex-1">
-                  <Select value={tripId || 'none'} onValueChange={v => onTripChange(v === 'none' ? '' : v)}>
-                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="— Any —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— Any session —</SelectItem>
-                      {tripsForSchedule.map(t => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.tripDate} · {t.departureTime.slice(0, 5)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {scheduleId && tripsForSchedule.length > 0 && (() => {
+              // v-session-picker-past — annotate + block past
+              // sessions. Split future vs past so the operator sees
+              // both but can only pick future. Past rows carry a
+              // small badge so they remain traceable without hiding.
+              const todayIso = (() => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              })();
+              const future = tripsForSchedule.filter(t => t.tripDate >= todayIso);
+              const past   = tripsForSchedule.filter(t => t.tripDate <  todayIso);
+              return (
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Session</Label>
+                  <div className="flex-1">
+                    <Select value={tripId || 'none'} onValueChange={v => onTripChange(v === 'none' ? '' : v)}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="— Any —" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— Any session —</SelectItem>
+                        {future.map(t => (
+                          <SelectItem key={t.id} value={t.id}>
+                            <span className="tabular-nums">{formatDate(t.tripDate)} · {t.departureTime.slice(0, 5)}</span>
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5">
+                              Active
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {past.length > 0 && (
+                          <div className="mt-1 pt-1 border-t border-gray-100">
+                            <div className="px-2 py-1 text-[10px] text-gray-400 uppercase tracking-wider">
+                              Past — view only, cannot book
+                            </div>
+                            {/* v-session-picker-past — selectable so
+                                the operator can inspect who booked
+                                what (seat map still hydrates for a
+                                past tripId). Continue to Payment is
+                                gated separately via canSave. */}
+                            {past.map(t => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <span className="tabular-nums">{formatDate(t.tripDate)} · {t.departureTime.slice(0, 5)}</span>
+                                <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 text-gray-500 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5">
+                                  Past
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
@@ -897,6 +1062,11 @@ function SeatMapPanel({
               allowClear={false}
             />
           </div>
+          {isPastTripSelected && (
+            <div className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              This session is in the past — view-only. Pick a future session (or clear it) to book.
+            </div>
+          )}
           <Button
             className="w-full mt-3 h-11 bg-indigo-600 hover:bg-indigo-700"
             disabled={saving || !canSave}
@@ -1019,5 +1189,45 @@ function BookingDetailDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** V298 — one row inside the non-seat picker. Shared by the
+ *  ungrouped grid and each group's grid so the two rendering paths
+ *  stay pixel-identical (single-select radio vs multi checkbox,
+ *  occupied styling, price alignment). */
+function OptionPickRow({
+  o, checked, disabled, mode, itemId, onToggle,
+}: {
+  o: itemsApi.PaymentPlanItemOption;
+  checked: boolean;
+  disabled: boolean;
+  mode: itemsApi.PaymentPlanItemSelectMode;
+  itemId: string;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className={`flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded border transition ${
+        disabled ? 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed'
+          : checked ? 'bg-blue-50 border-blue-300 cursor-pointer'
+            : 'bg-white hover:bg-gray-50 cursor-pointer'
+      }`}
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        <input
+          type={mode === 'multi' ? 'checkbox' : 'radio'}
+          name={`opts-${itemId}`}
+          checked={checked}
+          disabled={disabled}
+          onChange={onToggle}
+          className="shrink-0"
+        />
+        <span className={`truncate ${disabled ? 'line-through text-gray-400' : ''}`}>{o.name}</span>
+      </span>
+      <span className="tabular-nums text-gray-700 shrink-0">
+        {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+      </span>
+    </label>
   );
 }

@@ -374,6 +374,25 @@ export function BookingSchedulesDialog({
                         const typeLabel = bookingTripsApi.SESSION_TYPE_LABELS.find(
                           o => o.value === (r.sessionType ?? 'trip'),
                         )?.label ?? 'Trip';
+                        // v-session-derived-status — Once a session's
+                        // date is in the past, "Active" is misleading.
+                        // Derive:
+                        //   • past + booked > 0 → Done   (indigo)
+                        //   • past + booked = 0 → Missed (amber)
+                        //   • future/today     → Active  (emerald)
+                        //   • r.active = false → Off     (gray)
+                        // Purely display-side; the DB active flag
+                        // stays untouched. When ops flip the toggle
+                        // off manually, "Off" wins over Done/Missed.
+                        const todayIso = (() => {
+                          const d = new Date();
+                          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        })();
+                        const isPast = r.tripDate < todayIso;
+                        const derived: 'active' | 'off' | 'done' | 'missed' =
+                          !r.active ? 'off'
+                          : isPast ? (booked > 0 ? 'done' : 'missed')
+                          : 'active';
                         return (
                           <TableRow key={r.id}>
                             <TableCell className="text-sm">
@@ -402,9 +421,13 @@ export function BookingSchedulesDialog({
                               )}
                             </TableCell>
                             <TableCell className="text-center">
-                              {r.active
+                              {derived === 'active'
                                 ? <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
-                                : <Badge variant="outline" className="text-gray-500">Off</Badge>}
+                                : derived === 'done'
+                                  ? <Badge className="bg-indigo-100 text-indigo-700" title="Session date is past and had at least one booking.">Done</Badge>
+                                  : derived === 'missed'
+                                    ? <Badge className="bg-amber-100 text-amber-700" title="Session date is past with zero bookings.">Missed</Badge>
+                                    : <Badge variant="outline" className="text-gray-500">Off</Badge>}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="inline-flex gap-1">

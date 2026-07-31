@@ -17,22 +17,19 @@ import {
 } from '../ui/dialog';
 import {
   Plus, Pencil, Trash2, Loader2, X, ImageIcon, Search,
-  ChevronDown, ChevronRight, Home, Eye, ArrowRight,
+  ChevronDown, ChevronRight, Home, Eye,
 } from 'lucide-react';
 import * as itemsApi from '../../api/paymentPlanItems';
-import * as bookingsApi from '../../api/bookings';
-import * as bookingSchedulesApi from '../../api/bookingSchedules';
-import * as bookingTripsApi from '../../api/bookingTrips';
-import * as customersApi from '../../api/customers';
+// v-property-view-as-editor — booking + customer / schedule / trip
+// imports removed. This popup no longer creates bookings; that flow
+// lives in the Booking page's New Booking dialog.
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
-import { SeatMapDisplay, parseSeatLayout } from '../common/SeatMap';
-import { SearchablePicker } from '../common/SearchablePicker';
+import { CinemaSeatMapEditor } from '../common/CinemaSeatMapEditor';
+import { AccommodationLayoutEditor } from '../common/AccommodationLayoutEditor';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
-import { DateInput } from '../common/DateInput';
-import { format as fmtDate, parseISO } from 'date-fns';
 
 /**
  * Property catalogue (V287). Formerly the "Items" pane inside the
@@ -68,16 +65,18 @@ export function Property() {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [category, setCategory] = useState<itemsApi.PaymentPlanItemCategory>('others');
   const [selectMode, setSelectMode] = useState<itemsApi.PaymentPlanItemSelectMode>('single');
+  /** v-property-groups-only — options are always children of a
+   *  group post-V298; this stays null-ish in the editor state
+   *  because the top-level ungrouped bucket is retired from the UI.
+   *  Kept so `handleSave` can send `options: []` (clears any legacy
+   *  ungrouped rows on save) without a special-case. */
   const [options, setOptions] = useState<itemsApi.UpsertPaymentPlanItemOption[]>([]);
+  /** V298 — group layer holding every option. Each group has a name
+   *  + its own nested options + its own bulk generator inside the
+   *  GroupEditor sub-component. */
+  const [optionGroups, setOptionGroups] = useState<itemsApi.UpsertPaymentPlanItemOptionGroup[]>([]);
   const [saving, setSaving]     = useState(false);
   const [formOpen, setFormOpen] = useState(false);
-  /** v-property-bulk-options — quick "generate N options at $X"
-   *  input row inside the options editor. Prefix defaults to
-   *  "Seat"; starting number auto-follows the highest existing
-   *  number with the same prefix (so a second run appends). */
-  const [bulkCount, setBulkCount]   = useState('12');
-  const [bulkPrice, setBulkPrice]   = useState('');
-  const [bulkPrefix, setBulkPrefix] = useState('Seat');
   /** v-property-view-popup — read-only detail popup shown on the
    *  eye-icon row action. Holds the row currently being previewed
    *  (null = closed). */
@@ -97,6 +96,10 @@ export function Property() {
     setCategory('others');
     setSelectMode('single');
     setOptions([]);
+    // v-property-groups-only — seed one empty group so the operator
+    // has somewhere to add options immediately (matches the Items
+    // page's modifier-groups pattern).
+    setOptionGroups([{ name: '', description: null, active: true, sortOrder: 0, options: [] }]);
   };
   const openCreate = () => { resetForm(); setFormOpen(true); };
   const openEdit = (r: itemsApi.PaymentPlanItem) => { startEdit(r); setFormOpen(true); };
@@ -146,21 +149,25 @@ export function Property() {
     // when the property has no options. When options exist, each
     // option carries its own price and the parent Price becomes
     // optional (a default for legacy fallbacks; the picker sums
-    // ticked options for Total instead).
-    const nonBlankOptionCount = options.filter(o => (o.name ?? '').trim()).length;
+    // ticked options for Total instead). V298: also count options
+    // nested inside groups so a group-only property doesn't demand
+    // a parent Price either.
+    const nonBlankOptionCount =
+        options.filter(o => (o.name ?? '').trim()).length
+        + optionGroups.reduce((sum, g) => sum + (g.options ?? []).filter(o => (o.name ?? '').trim()).length, 0);
     const trimmedPrice = price.trim();
-    const numericPrice = trimmedPrice === '' ? null : Number(trimmedPrice);
+    // v-property-price-vs-options — when options exist the Price
+    // field is hidden entirely; force-null so a stale earlier
+    // value in the input state can't leak into the payload.
+    const numericPrice = nonBlankOptionCount > 0
+      ? null
+      : (trimmedPrice === '' ? null : Number(trimmedPrice));
     if (nonBlankOptionCount === 0) {
       // Leaf property (no options): Price required, same as before.
       if (numericPrice === null || !(numericPrice >= 0)) {
         toast.error('Price is required');
         return;
       }
-    } else if (numericPrice !== null && !(numericPrice >= 0)) {
-      // Options present + parent Price provided: still must be a
-      // valid non-negative number if given.
-      toast.error('Price must be zero or higher');
-      return;
     }
     setSaving(true);
     try {
@@ -198,6 +205,73 @@ export function Property() {
         });
       }
 
+      // V298 — groups: clean each group + its nested options.
+      // Same rules as ungrouped options: strip blanks, dedupe by
+      // lower-case name PER group, require price on named options.
+      const seenGroupName = new Set<string>();
+      const cleanedGroups: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
+      for (let gi = 0; gi < optionGroups.length; gi++) {
+        const g = optionGroups[gi];
+        const gname = (g.name ?? '').trim();
+        if (!gname) {
+          // v-property-groups-only — silent skip if the whole group
+          // is empty (an operator-added row they didn't fill in).
+          // But if named options exist under a nameless group,
+          // surface the error so the operator doesn't lose data.
+          const hasNamedChildren = (g.options ?? []).some(o => (o.name ?? '').trim().length > 0);
+          if (hasNamedChildren) {
+            toast.error('A group has options but no name — enter a group name or remove it.');
+            setSaving(false);
+            return;
+          }
+          continue;
+        }
+        const gkey = gname.toLowerCase();
+        if (seenGroupName.has(gkey)) {
+          toast.error(`Duplicate group name: ${gname}`);
+          setSaving(false);
+          return;
+        }
+        seenGroupName.add(gkey);
+        const seenInGroup = new Set<string>();
+        const groupOpts: itemsApi.UpsertPaymentPlanItemOption[] = [];
+        for (let i = 0; i < (g.options ?? []).length; i++) {
+          const o = g.options![i];
+          const n = (o.name ?? '').trim();
+          if (!n) continue;
+          const key = n.toLowerCase();
+          if (seenInGroup.has(key)) {
+            toast.error(`Duplicate option name in group "${gname}": ${n}`);
+            setSaving(false);
+            return;
+          }
+          seenInGroup.add(key);
+          const optPrice = o.price;
+          if (optPrice == null || !(Number(optPrice) >= 0)) {
+            toast.error(`Price is required on option "${n}" in group "${gname}"`);
+            setSaving(false);
+            return;
+          }
+          groupOpts.push({
+            ...(o.id ? { id: o.id } : {}),
+            name: n,
+            description: o.description?.trim() || null,
+            price: Number(optPrice),
+            imageUrl: o.imageUrl || null,
+            active: o.active ?? true,
+            sortOrder: i,
+          });
+        }
+        cleanedGroups.push({
+          ...(g.id ? { id: g.id } : {}),
+          name: gname,
+          description: g.description?.trim() || null,
+          active: g.active ?? true,
+          sortOrder: gi,
+          options: groupOpts,
+        });
+      }
+
       const req: itemsApi.UpsertPaymentPlanItem = {
         name: name.trim(),
         // planType stays on the row (V259 NOT NULL check) but is no
@@ -210,7 +284,12 @@ export function Property() {
         imageUrl: imageUrls[0] ?? '',
         category,
         selectMode,
+        // v-property-edit-groups-only — groups + options are edited
+        // here (tabular). Cinema screen positions (gridRow/gridCol)
+        // live on the options themselves so they round-trip whether
+        // they were set in Manage Layout or here.
         options: cleanedOptions,
+        optionGroups: cleanedGroups,
         active,
       };
       if (editing) {
@@ -237,7 +316,13 @@ export function Property() {
     setImageUrls(r.imageUrl ? [r.imageUrl] : []);
     setCategory(r.category ?? 'others');
     setSelectMode(r.selectMode ?? 'single');
-    setOptions((r.options ?? []).map(o => ({
+    // v-property-groups-only — ungrouped options are no longer edited
+    // as a standalone panel. On save we'll send `options: []` to
+    // clear any legacy rows; here we migrate legacy ungrouped
+    // options into a first group named "Options" so the operator
+    // keeps them (they can rename the group afterwards).
+    setOptions([]);
+    const mapOpt = (o: itemsApi.PaymentPlanItemOption) => ({
       id: o.id,
       name: o.name,
       description: o.description ?? null,
@@ -245,7 +330,36 @@ export function Property() {
       imageUrl: o.imageUrl ?? null,
       active: o.active,
       sortOrder: o.sortOrder,
-    })));
+    });
+    const groups: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
+    if ((r.options ?? []).length > 0) {
+      // Legacy ungrouped bucket → auto-migrate into a first group.
+      // No id so the BE inserts a new group row on next save; the
+      // ungrouped rows still carry their ids and stay attached to
+      // the same property (their `groupId` gets set by the BE
+      // upsert pass).
+      groups.push({
+        name: 'Options',
+        description: null,
+        active: true,
+        sortOrder: 0,
+        options: (r.options ?? []).map(mapOpt),
+      });
+    }
+    for (const g of r.optionGroups ?? []) {
+      groups.push({
+        id: g.id,
+        name: g.name,
+        description: g.description ?? null,
+        active: g.active,
+        sortOrder: g.sortOrder,
+        options: (g.options ?? []).map(mapOpt),
+      });
+    }
+    // If a fresh row has neither ungrouped options nor groups yet,
+    // seed an empty group so the editor isn't blank.
+    setOptionGroups(groups.length > 0 ? groups
+      : [{ name: '', description: null, active: true, sortOrder: 0, options: [] }]);
   };
 
   const handleDelete = async (r: itemsApi.PaymentPlanItem) => {
@@ -354,7 +468,17 @@ export function Property() {
                   </TableRow>
                 ) : pagination.paginatedItems.flatMap(r => {
                   const isExpanded = expanded.has(r.id);
-                  const optCount = r.options?.length ?? 0;
+                  // v-property-list-options-count — count options
+                  // across BOTH the ungrouped bucket (legacy rows)
+                  // AND every group. Group-only properties (Cinema
+                  // in the screenshot) were showing "—" before this
+                  // because r.options is empty when everything sits
+                  // under groups.
+                  const ungroupedCount = r.options?.length ?? 0;
+                  const groupCount = r.optionGroups?.length ?? 0;
+                  const groupedCount = (r.optionGroups ?? [])
+                    .reduce((s, g) => s + (g.options?.length ?? 0), 0);
+                  const optCount = ungroupedCount + groupedCount;
                   const rowsForR: JSX.Element[] = [];
                   rowsForR.push(
                     <TableRow key={r.id}>
@@ -397,17 +521,44 @@ export function Property() {
                       </TableCell>
                       <TableCell className="text-xs text-gray-600">
                         {optCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleExpand(r.id)}
-                            className="inline-flex items-center gap-1 hover:text-blue-600"
-                            title={r.options.map(o => o.name).join(', ')}
-                          >
-                            {isExpanded
-                              ? <ChevronDown className="h-3.5 w-3.5" />
-                              : <ChevronRight className="h-3.5 w-3.5" />}
-                            {optCount} · {r.selectMode === 'multi' ? 'Multi' : 'Single'}
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(r.id)}
+                              className="inline-flex items-center gap-1 hover:text-blue-600"
+                              title={[
+                                ...(r.options ?? []).map(o => o.name),
+                                ...(r.optionGroups ?? []).flatMap(g =>
+                                  (g.options ?? []).map(o => `${g.name}/${o.name}`)),
+                              ].join(', ')}
+                            >
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                              {/* v-property-list-options-count — show
+                                  "Ng · Mo · Multi" when the property
+                                  has groups; falls back to the flat
+                                  "N · Multi" for legacy ungrouped
+                                  rows. Group count sits first because
+                                  it's the operator's mental container. */}
+                              {groupCount > 0
+                                ? `${groupCount}g · ${optCount}o · ${r.selectMode === 'multi' ? 'Multi' : 'Single'}`
+                                : `${optCount} · ${r.selectMode === 'multi' ? 'Multi' : 'Single'}`}
+                            </button>
+                            {/* v-property-view-icon-in-options — the View eye
+                                lives next to the Options text so operators
+                                see it right where the options are described,
+                                not lumped in with the Edit / Delete
+                                housekeeping in the Actions column. */}
+                            <button
+                              type="button"
+                              onClick={() => setViewingRow(r)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="View options"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
@@ -422,17 +573,9 @@ export function Property() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1">
-                          {/* v-property-view-icon-conditional — only
-                              show the View eye when the row has at
-                              least one option. Options are the only
-                              thing the popup adds over the row
-                              itself; hiding the icon on plain rows
-                              saves the operator a wasted click. */}
-                          {optCount > 0 && (
-                            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => setViewingRow(r)} title="View options">
-                              <Eye className="h-3.5 w-3.5 text-blue-600" />
-                            </Button>
-                          )}
+                          {/* View eye moved to the Options column
+                              (v-property-view-icon-in-options) — Actions
+                              now only carries the write ops. */}
                           {canWrite && (
                             <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => openEdit(r)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
@@ -451,20 +594,49 @@ export function Property() {
                     rowsForR.push(
                       <TableRow key={`${r.id}-opts`} className="bg-gray-50/60">
                         <TableCell colSpan={7} className="py-2">
-                          <div className="pl-14 space-y-1">
+                          <div className="pl-14 space-y-2">
                             <div className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide">
                               Options ({r.selectMode === 'multi' ? 'multi-select' : 'single-select'})
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-                              {r.options.map(o => (
-                                <div key={o.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 bg-white rounded border">
-                                  <span className={o.active ? '' : 'text-gray-400 line-through'}>{o.name}</span>
-                                  <span className="tabular-nums text-gray-700">
-                                    {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                            {/* v-property-list-expand — ungrouped
+                                bucket first (legacy compat), then
+                                each group as its own titled section.
+                                Group name renders as a small caption
+                                so the shape mirrors ViewPropertyDialog. */}
+                            {(r.options ?? []).length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                {r.options.map(o => (
+                                  <div key={o.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 bg-white rounded border">
+                                    <span className={o.active ? '' : 'text-gray-400 line-through'}>{o.name}</span>
+                                    <span className="tabular-nums text-gray-700">
+                                      {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {(r.optionGroups ?? []).map(g => (
+                              <div key={g.id} className="space-y-1">
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+                                  {g.name}
+                                  <span className="ml-1 text-gray-400 normal-case tracking-normal">
+                                    ({(g.options ?? []).length})
                                   </span>
                                 </div>
-                              ))}
-                            </div>
+                                {(g.options ?? []).length > 0 && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                    {g.options.map(o => (
+                                      <div key={o.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 bg-white rounded border">
+                                        <span className={o.active ? '' : 'text-gray-400 line-through'}>{o.name}</span>
+                                        <span className="tabular-nums text-gray-700">
+                                          {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -515,23 +687,24 @@ export function Property() {
                 </SelectContent>
               </Select>
             </div>
-            {/* v-property-price-vs-options — asterisk drops when the
-                property has at least one named option; each option
-                carries its own required price and the parent Price
-                becomes an optional fallback. Hint text updates in
-                lock-step so the operator knows which side is
-                driving Total. */}
+            {/* v-property-price-vs-options — Price field only shows
+                when the property has NO named options anywhere
+                (ungrouped or in any group). Once an option exists,
+                each option carries its own required price and the
+                parent Price becomes meaningless, so the field hides
+                entirely. See handleSave — numericPrice is force-null
+                when options exist regardless of the input's stale
+                state. */}
             {(() => {
-              const optCount = options.filter(o => (o.name ?? '').trim()).length;
-              const parentPriceRequired = optCount === 0;
+              const optCount = options.filter(o => (o.name ?? '').trim()).length
+                + optionGroups.reduce((sum, g) => sum + (g.options ?? []).filter(o => (o.name ?? '').trim()).length, 0);
+              if (optCount > 0) return null;
               return (
                 <div className="space-y-1">
                   <Label className="text-xs">
-                    Price {parentPriceRequired && <span className="text-red-500">*</span>}
+                    Price <span className="text-red-500">*</span>
                     <span className="text-gray-400 font-normal ml-1">
-                      {parentPriceRequired
-                        ? '(auto-fills Total Amount)'
-                        : '(optional — each option below carries its own price)'}
+                      (auto-fills Total Amount)
                     </span>
                   </Label>
                   <Input
@@ -565,190 +738,74 @@ export function Property() {
                 hint="Optional cover photo — Room, House, Car, etc."
               />
             </div>
-            <div className="sm:col-span-2 rounded-md border p-3 space-y-2 bg-gray-50/40">
+            {/* v-property-edit-groups-only — groups + options edited
+                here (tabular). The Cinema screen canvas lives only
+                on the Manage Layout popup, not this dialog. */}
+            <div className="sm:col-span-2 rounded-md border p-3 space-y-3 bg-gray-50/40">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   Options
                   <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
-                    (e.g. rooms of a house)
+                    (organised into one or more groups
+                    {category === 'entertainment' ? ' — Cinema screen layout is edited in Manage Layout' : ''})
                   </span>
                 </Label>
-                <label className="inline-flex items-center gap-2 text-xs cursor-pointer">
-                  <Switch
-                    checked={selectMode === 'multi'}
-                    onCheckedChange={v => setSelectMode(v ? 'multi' : 'single')}
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-2 text-xs cursor-pointer">
+                    <Switch
+                      checked={selectMode === 'multi'}
+                      onCheckedChange={v => setSelectMode(v ? 'multi' : 'single')}
+                      disabled={saving}
+                    />
+                    Allow multi-select
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => setOptionGroups(list => [...list, {
+                      name: '',
+                      description: null,
+                      active: true,
+                      sortOrder: list.length,
+                      options: [],
+                    }])}
                     disabled={saving}
-                  />
-                  Allow multi-select
-                </label>
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add group
+                  </Button>
+                </div>
               </div>
-              {/* v-property-bulk-options — one-shot generator. Pick a
-                  count + a price + a prefix, hit Generate and it
-                  appends N new option rows named `<prefix>-<3-digit-N>`.
-                  Starting number follows the highest existing suffix
-                  that shares the prefix, so re-runs append instead of
-                  colliding. Disabled when count/price aren't sane. */}
-              <div className="flex items-end gap-2 flex-wrap rounded-md border border-dashed border-gray-300 bg-white p-2">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wide">Count</span>
-                  <Input
-                    type="number" min="1" max="500"
-                    value={bulkCount}
-                    onChange={e => setBulkCount(e.target.value)}
-                    className="h-8 w-16 text-sm text-right tabular-nums"
-                    disabled={saving}
-                  />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wide">Price each</span>
-                  <Input
-                    type="number" step="0.01" min="0"
-                    value={bulkPrice}
-                    onChange={e => setBulkPrice(e.target.value)}
-                    placeholder="0.00"
-                    className="h-8 w-24 text-sm text-right tabular-nums"
-                    disabled={saving}
-                  />
-                </div>
-                <div className="flex flex-col gap-0.5 flex-1 min-w-[100px]">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wide">Prefix</span>
-                  <Input
-                    value={bulkPrefix}
-                    onChange={e => setBulkPrefix(e.target.value)}
-                    placeholder="Seat"
-                    maxLength={40}
-                    className="h-8 text-sm"
-                    disabled={saving}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  disabled={
-                    saving
-                    || !bulkPrefix.trim()
-                    || !(Number(bulkCount) >= 1)
-                    || bulkPrice === ''
-                    || !(Number(bulkPrice) >= 0)
-                  }
-                  onClick={() => {
-                    const count = Math.floor(Number(bulkCount) || 0);
-                    if (count < 1) { toast.error('Count must be at least 1'); return; }
-                    if (count > 500) { toast.error('Cap is 500 options at a time'); return; }
-                    const priceNum = Number(bulkPrice);
-                    if (!(priceNum >= 0)) { toast.error('Enter a valid price'); return; }
-                    const prefix = bulkPrefix.trim();
-                    if (!prefix) { toast.error('Prefix is required'); return; }
-                    // Highest existing "<prefix>-###" suffix so the
-                    // generator picks up where the operator left off.
-                    // Case-insensitive prefix match matches how the
-                    // seat parser normalises names later.
-                    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const re = new RegExp(`^${escape(prefix)}[\\s\\-_.]*(\\d+)$`, 'i');
-                    let startNum = 1;
-                    for (const o of options) {
-                      const m = re.exec((o.name ?? '').trim());
-                      if (m) startNum = Math.max(startNum, Number(m[1]) + 1);
-                    }
-                    setOptions(list => {
-                      const next = [...list];
-                      for (let i = 0; i < count; i++) {
-                        const n = startNum + i;
-                        next.push({
-                          name: `${prefix}-${String(n).padStart(3, '0')}`,
-                          price: priceNum,
-                          description: null,
-                          active: true,
-                          sortOrder: next.length,
-                        });
-                      }
-                      return next;
-                    });
-                    toast.success(`Added ${count} option${count === 1 ? '' : 's'}`);
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </div>
-              {options.length === 0 ? (
-                <div className="text-[11px] text-gray-500 italic px-1 py-2">
-                  No options yet — add rooms, trims, or variants below, or use the bulk generator above. Leave empty for a plain single-line property.
+              {optionGroups.length === 0 ? (
+                <div className="text-[11px] text-gray-500 italic px-1 py-3">
+                  No groups yet — click <b>+ Add group</b> to start. Each group houses its own options (rooms, trims, seats).
                 </div>
               ) : (
-                <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                  {options.map((o, idx) => {
-                    // v-property-price-vs-options — a named option
-                    // MUST carry a non-negative price on save. Ring
-                    // the input red when Name is filled but Price
-                    // is blank / negative so the operator sees the
-                    // missing field before hitting Save.
-                    const named = (o.name ?? '').trim().length > 0;
-                    const priceMissing = named && (o.price == null || !(Number(o.price) >= 0));
-                    return (
-                      <div key={o.id ?? `new-${idx}`} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                        <Input
-                          value={o.name}
-                          onChange={e => setOptions(list => list.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
-                          placeholder="Name — e.g. Room 101"
-                          maxLength={160}
-                          className="h-8 text-sm flex-1 min-w-0"
-                          disabled={saving}
-                        />
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={o.price == null ? '' : String(o.price)}
-                          onChange={e => setOptions(list => list.map((x, i) => i === idx ? {
-                            ...x,
-                            price: e.target.value === '' ? null : Number(e.target.value),
-                          } : x))}
-                          placeholder="Price *"
-                          className={`h-8 text-sm w-24 text-right tabular-nums ${
-                            priceMissing ? 'border-red-400 focus-visible:ring-red-400' : ''
-                          }`}
-                          disabled={saving}
-                          title={priceMissing ? 'Price is required on this option' : undefined}
-                        />
-                        <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer shrink-0">
-                          <Switch
-                            checked={o.active ?? true}
-                            onCheckedChange={v => setOptions(list => list.map((x, i) => i === idx ? { ...x, active: v } : x))}
-                            disabled={saving}
-                          />
-                          Active
-                        </label>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 w-8 p-0 shrink-0"
-                          onClick={() => setOptions(list => list.filter((_, i) => i !== idx))}
-                          disabled={saving}
-                          title="Remove option"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                        </Button>
-                      </div>
-                    );
-                  })}
+                <div className="space-y-3">
+                  {optionGroups.map((g, gIdx) => (
+                    <GroupEditor
+                      key={g.id ?? `newg-${gIdx}`}
+                      group={g}
+                      category={category}
+                      otherOccupiedCells={new Set(
+                        optionGroups.flatMap((og, ogi) => ogi === gIdx ? [] :
+                          (og.options ?? []).flatMap(o =>
+                            (o.gridRow != null && o.gridCol != null) ? [`${o.gridRow},${o.gridCol}`] : []))
+                      )}
+                      disabled={saving}
+                      onChange={next => setOptionGroups(list => list.map((x, i) => i === gIdx ? next : x))}
+                      onRemove={() => setOptionGroups(list => list.filter((_, i) => i !== gIdx))}
+                    />
+                  ))}
                 </div>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                onClick={() => setOptions(list => [...list, {
-                  name: '',
-                  price: null,
-                  description: null,
-                  active: true,
-                  sortOrder: list.length,
-                }])}
-                disabled={saving}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Add option
-              </Button>
+              {/* Cinema-specific hint pointing operators to Manage
+                  Layout when they want to arrange seats visually. */}
+              {category === 'entertainment' && (
+                <div className="text-[11px] text-gray-500 border-t border-gray-200 pt-2">
+                  Screen layout (seat positions on the cinema canvas) is edited in the <b>Manage Layout</b> popup — click the <span className="text-blue-600">👁</span> icon on this row after saving.
+                </div>
+              )}
             </div>
             <label className="inline-flex items-center gap-2 text-sm cursor-pointer sm:col-span-2">
               <Switch checked={active} onCheckedChange={setActive} />
@@ -780,6 +837,10 @@ export function Property() {
           onClose={() => setViewingRow(null)}
           canEdit={canWrite}
           onEdit={() => { const r = viewingRow; setViewingRow(null); openEdit(r); }}
+          onSaved={updated => {
+            setRows(list => list.map(x => x.id === updated.id ? updated : x));
+            setViewingRow(updated);
+          }}
         />
       )}
     </div>
@@ -787,155 +848,168 @@ export function Property() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* View dialog. For seat-mapped properties this is a POS-style booking        */
-/* surface: seat map on the left (interactive), booking summary card on the   */
-/* right (image, route/date/schedule, selected seats, total, Continue to      */
-/* Payment). Non-seat properties keep the compact flat-card view.             */
+/* View dialog. v-property-view-as-editor — repurposed from a quasi-booking    */
+/* surface (Date/Session/Seat cart/Continue to Payment) to a focused group +   */
+/* seat-layout editor. Bookings are made in the dedicated Booking dialog       */
+/* (New Booking on Bookings page) — this popup just manages groups + option    */
+/* placement so operators can tweak the layout without opening full Edit.      */
 /* -------------------------------------------------------------------------- */
 function ViewPropertyDialog({
-  row, onClose, canEdit, onEdit,
+  row, onClose, canEdit, onEdit, onSaved,
 }: {
   row: itemsApi.PaymentPlanItem;
   onClose: () => void;
   canEdit: boolean;
+  /** Opens the full Edit dialog for name / category / price / image
+   *  edits that don't belong in this narrower layout editor. */
   onEdit: () => void;
+  /** Fires after Save with the fresh property row so the list can
+   *  refresh in place and this popup can re-hydrate from the server
+   *  copy (picks up server-assigned option ids on new rows). */
+  onSaved: (updated: itemsApi.PaymentPlanItem) => void;
 }) {
-  const options = row.options ?? [];
-  const activeCount = options.filter(o => o.active).length;
   const catLabel = itemsApi.PAYMENT_PLAN_ITEM_CATEGORIES.find(c => c.value === row.category)?.label
     ?? row.category ?? 'Others';
-  const seatLayout = parseSeatLayout(options);
+  const isCinema = row.category === 'entertainment';
+  // v-transport-canvas — Transportation also uses the shared seat
+  // canvas (variant='transport'); the tabular group cards below are
+  // suppressed for both cinema and transport in this popup.
+  const isTransport = row.category === 'transportation';
+  // v-accommodation-layout — Hotels/apartments render as floor-list
+  // tile groups (rooms as small cards). No canvas, no grid coords —
+  // just click-to-edit tiles.
+  const isAccommodation = row.category === 'accommodation';
+  const useCanvas = isCinema || isTransport;
+  const useAccommodationLayout = isAccommodation;
+  const suppressTabular = useCanvas || useAccommodationLayout;
+  const canvasVariant: 'cinema' | 'transport' = isTransport ? 'transport' : 'cinema';
 
-  /** v-property-view-book — interactive seat selection state.
-   *  When the property is seat-mapped, the popup acts as a
-   *  POS-style booking surface: seats click into a "cart" shown
-   *  on the right, Continue to Payment posts the booking. When
-   *  not seat-mapped, none of this state matters (flat cards
-   *  render read-only). */
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bookingDate, setBookingDate] = useState(fmtDate(new Date(), 'yyyy-MM-dd'));
-  const [scheduleId, setScheduleId] = useState('');
-  const [tripId, setTripId] = useState('');
-  const [schedules, setSchedules] = useState<bookingSchedulesApi.BookingSchedule[]>([]);
-  const [trips, setTrips] = useState<bookingTripsApi.BookingTrip[]>([]);
-  const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set());
-  const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
-  const [customerId, setCustomerId] = useState('');
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // v-property-view-as-editor — local editable copy of groups.
+  // Legacy ungrouped options (row.options) get migrated into a
+  // first group named "Options" on open, matching startEdit in
+  // the parent form so both surfaces feel identical. Save wipes
+  // the ungrouped list (sending options: []) once the operator
+  // confirms.
+  const [editGroups, setEditGroups] = useState<itemsApi.UpsertPaymentPlanItemOptionGroup[]>(() => {
+    const mapOpt = (o: itemsApi.PaymentPlanItemOption): itemsApi.UpsertPaymentPlanItemOption => ({
+      id: o.id,
+      name: o.name,
+      description: o.description ?? null,
+      price: o.price ?? null,
+      imageUrl: o.imageUrl ?? null,
+      active: o.active,
+      sortOrder: o.sortOrder,
+      gridRow: o.gridRow ?? null,
+      gridCol: o.gridCol ?? null,
+    });
+    const out: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
+    if ((row.options ?? []).length > 0) {
+      out.push({
+        name: 'Options',
+        description: null,
+        active: true,
+        sortOrder: 0,
+        options: (row.options ?? []).map(mapOpt),
+      });
+    }
+    for (const g of row.optionGroups ?? []) {
+      out.push({
+        id: g.id,
+        name: g.name,
+        description: g.description ?? null,
+        active: g.active,
+        sortOrder: g.sortOrder,
+        options: (g.options ?? []).map(mapOpt),
+      });
+    }
+    return out;
+  });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!seatLayout) return;
-    let cancelled = false;
-    // Three parallel fetches on open — schedules for parent lookup
-    // (each trip belongs to a schedule of this property), trips
-    // for the picker, and customers for the compact checkout flow.
-    bookingSchedulesApi.list(row.id)
-      .then(ss => { if (!cancelled) setSchedules(ss.filter(s => s.active)); })
-      .catch(() => { if (!cancelled) setSchedules([]); });
-    bookingTripsApi.list()
-      .then(ts => { if (!cancelled) setTrips(ts); })
-      .catch(() => { if (!cancelled) setTrips([]); });
-    // v-customers-kind-separation — Booking quick-checkout picker
-    // must show real customers only (not patients / students).
-    customersApi.list({ kind: 'customer', size: 1000 })
-      .then(res => { if (!cancelled) setCustomers(res.content ?? []); })
-      .catch(() => { if (!cancelled) setCustomers([]); });
-    return () => { cancelled = true; };
-  }, [seatLayout, row.id]);
+  // Dirty check — Save button disables when nothing has changed to
+  // avoid a spurious PATCH. Cheap deep-equality via JSON stringify;
+  // the payload is small (a handful of groups × a few dozen seats
+  // each at most).
+  const dirty = useMemo(() => JSON.stringify(editGroups) !== JSON.stringify(row.optionGroups ?? []) || (row.options ?? []).length > 0, [editGroups, row]);
 
-  // Trips filtered to this property (via their schedule's itemId)
-  // and, when the operator sets a specific Date, that day only.
-  // Falls back to all trips on the property when Date is empty.
-  const scheduleIds = useMemo(() => new Set(schedules.map(s => s.id)), [schedules]);
-  const tripsForProperty = useMemo(
-    () => trips.filter(t => t.active && scheduleIds.has(t.scheduleId) &&
-      (!bookingDate || t.tripDate === bookingDate)),
-    [trips, scheduleIds, bookingDate],
-  );
-
-  // Keep tripId in sync with the current property + date filter.
-  // If the picked trip no longer belongs to this property (edge
-  // case; property never changes here) or falls outside the picked
-  // date, clear the selection so occupancy stops scoping to a
-  // stale trip.
-  useEffect(() => {
-    if (tripId && !tripsForProperty.some(t => t.id === tripId)) setTripId('');
-  }, [tripId, tripsForProperty]);
-
-  useEffect(() => {
-    if (!seatLayout) { setOccupiedIds(new Set()); return; }
-    let cancelled = false;
-    // Trip scope wins over schedule scope — finest inventory. Fall
-    // back to schedule-scoped when only a schedule is picked (no
-    // trip yet), else property-wide.
-    const opts = tripId ? { tripId } : (scheduleId ? { scheduleId } : undefined);
-    bookingsApi.occupiedOptions(row.id, opts)
-      .then(res => { if (!cancelled) setOccupiedIds(new Set(res.occupiedOptionIds ?? [])); })
-      .catch(() => { if (!cancelled) setOccupiedIds(new Set()); });
-    return () => { cancelled = true; };
-  }, [seatLayout, row.id, scheduleId, tripId]);
-
-  const pickedOptions = useMemo(
-    () => options.filter(o => selectedIds.has(o.id)),
-    [options, selectedIds],
-  );
-  const total = pickedOptions.reduce((s, o) => s + (Number(o.price) || 0), 0);
-
-  const toggleSeat = (opt: itemsApi.PaymentPlanItemOption) => {
-    if (occupiedIds.has(opt.id)) return;
-    const next = new Set(selectedIds);
-    if (row.selectMode === 'single') {
-      next.clear();
-      if (!selectedIds.has(opt.id)) next.add(opt.id);
-    } else if (next.has(opt.id)) {
-      next.delete(opt.id);
-    } else {
-      next.add(opt.id);
-    }
-    setSelectedIds(next);
-  };
-
-  const submitBooking = async () => {
-    if (!customerId) { toast.error('Pick a customer'); return; }
-    if (pickedOptions.length === 0) { toast.error('Pick at least one seat'); return; }
+  const handleSave = async () => {
     setSaving(true);
-    // Prepend seat names to Notes so the booking record surfaces
-    // them wherever notes render — same convention the Booking
-    // Create dialog uses via v-plan-options-picker.
-    const notes = `Seats: ${pickedOptions.map(o => o.name).join(', ')}`;
     try {
-      await bookingsApi.create({
-        customerId,
-        itemId: row.id,
-        scheduleId: scheduleId || null,
-        // v-property-view-trip — Trip is the primary attach point.
-        // Occupancy scopes to this Trip (finer than schedule).
-        tripId: tripId || null,
-        selectedOptionIds: Array.from(selectedIds),
-        amount: total,
-        // If a trip is picked, prefer its date so the booking's
-        // bookingDate lines up with the trip; falls back to the
-        // date input otherwise.
-        bookingDate: tripId
-          ? (trips.find(t => t.id === tripId)?.tripDate ?? bookingDate)
-          : bookingDate,
-        notes,
+      // Reuse the same validation the full Edit dialog uses.
+      // Skips blank groups; error surfaces if a named group has
+      // no name, or an option has a name but no price.
+      const seenGroup = new Set<string>();
+      const cleaned: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
+      for (let gi = 0; gi < editGroups.length; gi++) {
+        const g = editGroups[gi];
+        const gname = (g.name ?? '').trim();
+        if (!gname) {
+          const hasNamedChildren = (g.options ?? []).some(o => (o.name ?? '').trim().length > 0);
+          if (hasNamedChildren) { toast.error('A group has options but no name.'); setSaving(false); return; }
+          continue;
+        }
+        const key = gname.toLowerCase();
+        if (seenGroup.has(key)) { toast.error(`Duplicate group name: ${gname}`); setSaving(false); return; }
+        seenGroup.add(key);
+        const seenOpt = new Set<string>();
+        const opts: itemsApi.UpsertPaymentPlanItemOption[] = [];
+        for (let oi = 0; oi < (g.options ?? []).length; oi++) {
+          const o = g.options![oi];
+          const n = (o.name ?? '').trim();
+          if (!n) continue;
+          const okey = n.toLowerCase();
+          if (seenOpt.has(okey)) { toast.error(`Duplicate option in "${gname}": ${n}`); setSaving(false); return; }
+          seenOpt.add(okey);
+          if (o.price == null || !(Number(o.price) >= 0)) {
+            toast.error(`Price is required on "${n}" in "${gname}"`); setSaving(false); return;
+          }
+          opts.push({
+            ...(o.id ? { id: o.id } : {}),
+            name: n,
+            description: o.description?.trim() || null,
+            price: Number(o.price),
+            imageUrl: o.imageUrl || null,
+            active: o.active ?? true,
+            sortOrder: oi,
+            gridRow: o.gridRow ?? null,
+            gridCol: o.gridCol ?? null,
+          });
+        }
+        cleaned.push({
+          ...(g.id ? { id: g.id } : {}),
+          name: gname,
+          description: g.description?.trim() || null,
+          active: g.active ?? true,
+          sortOrder: gi,
+          options: opts,
+        });
+      }
+      const updated = await itemsApi.update(row.id, {
+        name: row.name,
+        planType: row.planType,
+        // Send `options: []` to clear the legacy ungrouped bucket —
+        // everything now lives inside groups.
+        options: [],
+        optionGroups: cleaned,
       });
-      toast.success('Booking created');
-      onClose();
+      toast.success('Layout saved');
+      onSaved(updated);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally { setSaving(false); }
   };
 
-  // Property description often carries the route ("Downtown → Airport"),
-  // plate number, driver name — show it under the property name in the
-  // right-side card as the informational subtitle.
+  // v-property-view-as-editor — cross-group cell set for bulk
+  // Generate collision-avoidance, keyed by "row,col".
+  const otherOccupied = (gIdx: number): Set<string> => new Set(
+    editGroups.flatMap((og, ogi) => ogi === gIdx ? [] :
+      (og.options ?? []).flatMap(o =>
+        o.gridRow != null && o.gridCol != null ? [`${o.gridRow},${o.gridCol}`] : [])),
+  );
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
-      <DialogContent className={`${seatLayout ? 'max-w-6xl sm:max-w-6xl' : 'max-w-2xl sm:max-w-2xl'} w-[97vw] max-h-[92vh] overflow-y-auto`}>
+      <DialogContent className="max-w-4xl sm:max-w-4xl w-[97vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 min-w-0">
             <div className="h-12 w-12 rounded-md border border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center shrink-0">
@@ -960,213 +1034,406 @@ function ViewPropertyDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {row.description && !seatLayout && (
-          <div className="text-xs text-gray-600 whitespace-pre-wrap border-l-2 border-gray-200 pl-3 mt-1">
-            {row.description}
+        <div className="mt-3 space-y-3">
+          {/* Header row for the editor pane. `+ Add group` mirrors the
+              Add-property dialog so the operator recognises the shape. */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+              Manage Layout
+              <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
+                — edit groups + seat placement. Bookings live on the Booking page.
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => setEditGroups(list => [...list, {
+                name: '',
+                description: null,
+                active: true,
+                sortOrder: list.length,
+                options: [],
+              }])}
+              disabled={saving || !canEdit}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add group
+            </Button>
           </div>
-        )}
 
-        <div className="mt-2 space-y-2">
-          {options.length === 0 ? (
+          {/* v-property-view-groupstack-hidden + v-transport-canvas
+              + v-accommodation-layout — cinema/transport use the
+              seat canvas below, accommodation uses the tile editor
+              below. Every other category (House / Land / Vehicle /
+              etc.) still gets the tabular group cards here. */}
+          {editGroups.length === 0 ? (
             <div className="text-[11px] text-gray-500 italic py-4 text-center border rounded">
-              No options — this property is a plain single-line item.
+              No groups yet — click <b>+ Add group</b> above to start.
             </div>
-          ) : seatLayout ? (
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
-              {/* Left — legend + seat map. Cart-style label above so
-                  the operator sees "N active · N occupied" at a glance. */}
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                  Seat Layout
-                  <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
-                    ({activeCount} active · {row.selectMode === 'multi' ? 'multi-select' : 'single-select'}{occupiedIds.size > 0 ? ` · ${occupiedIds.size} occupied` : ''})
-                  </span>
-                </div>
-                <SeatMapDisplay
-                  layout={seatLayout}
-                  selectedIds={selectedIds}
-                  occupiedIds={occupiedIds}
-                  onToggle={toggleSeat}
+          ) : !suppressTabular && (
+            <div className="space-y-3">
+              {editGroups.map((g, gIdx) => (
+                <GroupEditor
+                  key={g.id ?? `viewg-${gIdx}`}
+                  group={g}
+                  category={row.category}
+                  otherOccupiedCells={otherOccupied(gIdx)}
+                  disabled={saving || !canEdit}
+                  onChange={next => setEditGroups(list => list.map((x, i) => i === gIdx ? next : x))}
+                  onRemove={() => setEditGroups(list => list.filter((_, i) => i !== gIdx))}
                 />
-              </div>
-
-              {/* Right — booking summary card matching the mockup:
-                  property image + name + description (as route),
-                  date, schedule (departure time), selected seats,
-                  total, Continue to Payment. */}
-              <div className="space-y-3">
-                <div className="rounded-xl border bg-white p-3 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="h-12 w-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
-                      {row.imageUrl ? (
-                        <img src={row.imageUrl} alt={row.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <ImageIcon className="h-5 w-5 text-gray-300" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-gray-800 truncate">{row.name}</div>
-                      {(() => {
-                        // v-property-desc-strip — drop the legacy
-                        // "- Schedule - 7:00 AM Departure" suffix
-                        // now that Schedule is its own entity.
-                        const cleaned = (row.description ?? '')
-                          .replace(/\s*[-–—]\s*Schedule\s*[-–—].*$/i, '')
-                          .trim();
-                        return cleaned ? (
-                          <div className="text-[11px] text-gray-500 line-clamp-2" title={row.description ?? ''}>
-                            {cleaned}
-                          </div>
-                        ) : null;
-                      })()}
-                    </div>
-                  </div>
-                  <div className="border-t pt-2 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Date</Label>
-                      <div className="flex-1"><DateInput value={bookingDate} onChange={setBookingDate} /></div>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Session</Label>
-                      <div className="flex-1">
-                        {/* v-property-view-trip — Booking should attach
-                            to a Trip (the concrete date-instance),
-                            not the recurring Schedule. Trip picker
-                            filters by the Date field above; empty
-                            date shows every trip on this property. */}
-                        <Select value={tripId || 'none'} onValueChange={v => {
-                          const next = v === 'none' ? '' : v;
-                          setTripId(next);
-                          // Snap Schedule to the session's parent so the
-                          // occupancy fallback (when Session is cleared)
-                          // still scopes correctly.
-                          if (next) {
-                            const t = trips.find(x => x.id === next);
-                            if (t) setScheduleId(t.scheduleId);
-                          }
-                        }}>
-                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="— Any session —" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">— Any session —</SelectItem>
-                            {tripsForProperty.length === 0 && (
-                              <div className="text-[11px] text-gray-500 italic px-2 py-1.5">
-                                No sessions on this property{bookingDate ? ` for ${bookingDate}` : ''} — add one via the Booking page ⚙.
-                              </div>
-                            )}
-                            {tripsForProperty.map(t => (
-                              // Label kept short (date · time) so the
-                              // SelectTrigger's single-line render doesn't
-                              // spill past the right edge. Schedule name
-                              // already shown in the property card header
-                              // above.
-                              <SelectItem key={t.id} value={t.id}>
-                                {t.tripDate} · {t.departureTime.slice(0, 5)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 mb-2">Selected Seats</div>
-                  {pickedOptions.length === 0 ? (
-                    <div className="text-xs italic text-gray-400 py-2 text-center">No seats selected yet</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {pickedOptions.map(o => (
-                        <span key={o.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 text-xs font-medium tabular-nums">
-                          {o.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="border-t pt-2 mt-2 flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Total Amount</span>
-                    <span className="tabular-nums font-semibold text-2xl text-indigo-700">
-                      ${total.toFixed(2)}
-                    </span>
-                  </div>
-                  {!checkoutOpen ? (
-                    <Button
-                      className="w-full mt-3 h-11 bg-indigo-600 hover:bg-indigo-700"
-                      disabled={pickedOptions.length === 0}
-                      onClick={() => setCheckoutOpen(true)}
-                    >
-                      Continue to Payment
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </Button>
-                  ) : (
-                    <div className="space-y-2 mt-3 border-t pt-3">
-                      <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500">Customer</Label>
-                      <SearchablePicker
-                        value={customerId}
-                        onChange={setCustomerId}
-                        options={customers.map(c => ({
-                          value: c.id,
-                          label: c.name,
-                          secondary: c.phone ?? undefined,
-                        }))}
-                        placeholder="Pick a customer"
-                        searchPlaceholder="Search customers…"
-                        allowClear={false}
-                      />
-                      <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1" onClick={() => setCheckoutOpen(false)} disabled={saving}>Back</Button>
-                        <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={submitBooking} disabled={saving || !customerId}>
-                          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-                          Confirm
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {options.map(o => (
-                <div
-                  key={o.id}
-                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded border ${
-                    o.active ? 'bg-white' : 'bg-gray-50 opacity-70'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className={`text-sm ${o.active ? 'text-gray-800' : 'text-gray-500 line-through'}`}>
-                      {o.name}
-                    </div>
-                    {o.description && (
-                      <div className="text-[11px] text-gray-500 truncate" title={o.description}>
-                        {o.description}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="tabular-nums font-medium text-gray-800">
-                      {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
-                    </div>
-                    {!o.active && (
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide">Inactive</div>
-                    )}
-                  </div>
-                </div>
               ))}
+            </div>
+          )}
+
+          {/* Shared canvas — one screen for every group. Only for
+              cinema (entertainment) properties + when at least one
+              group exists to draw on. */}
+          {useCanvas && editGroups.length > 0 && (
+            <div className="pt-3 border-t border-gray-100 space-y-1.5">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                {isTransport ? 'Vehicle Layout' : 'Cinema Screen'}
+                <span className="ml-1 text-gray-400 normal-case tracking-normal">
+                  — one canvas for every group; drag to rearrange, click empty cells to add to the active group
+                </span>
+              </div>
+              <CinemaSeatMapEditor
+                groups={editGroups}
+                onChange={setEditGroups}
+                disabled={saving || !canEdit}
+                variant={canvasVariant}
+              />
+            </div>
+          )}
+
+          {/* v-accommodation-layout — floor-list tile editor for
+              accommodation properties (hotels, condos, apartments).
+              Renders when at least one group exists, mirroring the
+              gate the cinema/transport canvas uses above. */}
+          {useAccommodationLayout && editGroups.length > 0 && (
+            <div className="pt-3 border-t border-gray-100 space-y-1.5">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                Floor Layout
+                <span className="ml-1 text-gray-400 normal-case tracking-normal">
+                  — group rooms by floor / tier; click a tile to rename, right-click to edit price
+                </span>
+              </div>
+              <AccommodationLayoutEditor
+                groups={editGroups}
+                onChange={setEditGroups}
+                disabled={saving || !canEdit}
+              />
             </div>
           )}
         </div>
 
         <DialogFooter className="mt-3">
           {canEdit && (
-            <Button variant="outline" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+            <Button variant="outline" onClick={onEdit} disabled={saving}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Full edit
             </Button>
           )}
-          <Button onClick={onClose}>Close</Button>
+          {canEdit && (
+            <Button onClick={handleSave} disabled={saving || !dirty}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              Save layout
+            </Button>
+          )}
+          <Button variant={canEdit ? 'outline' : 'default'} onClick={onClose} disabled={saving}>
+            Close
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+/** V298 — one Group card in the Property editor. Bundles name field,
+ *  active toggle, remove-group button, per-group bulk generator, and
+ *  the options row-editor into a self-contained unit so the parent
+ *  form only needs to render one of these per group. Local state
+ *  (bulk count/price/prefix) stays local — each group has its own
+ *  generator inputs. */
+function GroupEditor({
+  group, category, otherOccupiedCells, disabled, compact = false, onChange, onRemove,
+}: {
+  group: itemsApi.UpsertPaymentPlanItemOptionGroup;
+  /** V299 — passed through so the editor can toggle the cinema
+   *  canvas below the row-editor for entertainment properties. */
+  category: itemsApi.PaymentPlanItemCategory;
+  /** v-cinema-shared-canvas — "r,c" cells claimed by other groups
+   *  on the shared canvas so bulk-Generate steers around them. */
+  otherOccupiedCells: Set<string>;
+  disabled: boolean;
+  /** v-property-view-compact — when true, hide the per-option row
+   *  list and the "Add option" button. Used by the Manage Layout
+   *  popup where the shared canvas below is the primary way to
+   *  add / edit / place individual seats. Bulk generator + group
+   *  header stay visible so the operator can still add batches. */
+  compact?: boolean;
+  onChange: (next: itemsApi.UpsertPaymentPlanItemOptionGroup) => void;
+  onRemove: () => void;
+}) {
+  const isCinema = category === 'entertainment';
+  // v-transport-driver-cell — transport also auto-places on the
+  // canvas, but must skip (0, 0) which is reserved as the DRIVER
+  // chrome cell.
+  const isTransport = category === 'transportation';
+  const useAutoPlace = isCinema || isTransport;
+  const [bulkCount, setBulkCount] = useState('12');
+  const [bulkPrice, setBulkPrice] = useState('');
+  const [bulkPrefix, setBulkPrefix] = useState('Seat');
+
+  const setOptions = (mapper: (list: itemsApi.UpsertPaymentPlanItemOption[]) => itemsApi.UpsertPaymentPlanItemOption[]) => {
+    onChange({ ...group, options: mapper(group.options ?? []) });
+  };
+
+  const generateBulk = () => {
+    const count = Math.floor(Number(bulkCount) || 0);
+    if (count < 1) { toast.error('Count must be at least 1'); return; }
+    if (count > 500) { toast.error('Cap is 500 options at a time'); return; }
+    const priceNum = Number(bulkPrice);
+    if (!(priceNum >= 0)) { toast.error('Enter a valid price'); return; }
+    const prefix = bulkPrefix.trim();
+    if (!prefix) { toast.error('Prefix is required'); return; }
+    // Highest existing "<prefix>-###" suffix so re-runs append
+    // instead of colliding.
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${escape(prefix)}[\\s\\-_.]*(\\d+)$`, 'i');
+    let startNum = 1;
+    for (const o of group.options ?? []) {
+      const m = re.exec((o.name ?? '').trim());
+      if (m) startNum = Math.max(startNum, Number(m[1]) + 1);
+    }
+    setOptions(list => {
+      const next = [...list];
+      // v-cinema-editor-autoplace — on cinema (entertainment)
+      // properties, drop each generated seat into the next free
+      // grid cell so it shows up on the canvas immediately instead
+      // of piling up in the Unplaced strip. Non-cinema properties
+      // keep the old behaviour (no coords — they don't use the
+      // canvas). Auto-placement fills row-major, wrapping at 12
+      // cols (matches the editor's default column count).
+      // v-cinema-shared-canvas — also skips cells claimed by other
+      // groups on the shared canvas so we don't stamp on top of a
+      // sibling's placements.
+      // v-transport-col-cap — transport auto-places at 5-col wrap
+      // (van/bus width); cinema keeps the 12-col wrap.
+      const AUTOPLACE_COLS = isTransport ? 5 : 12;
+      const occupied = new Set<string>(otherOccupiedCells);
+      for (const o of next) {
+        if (o.gridRow != null && o.gridCol != null) occupied.add(`${o.gridRow},${o.gridCol}`);
+      }
+      // v-transport-driver-cell — reserve (0, 0) for transport so
+      // the DRIVER chrome cell is never overwritten by auto-place.
+      if (isTransport) occupied.add('0,0');
+      let cursorR = 0;
+      let cursorC = 0;
+      const nextFreeCell = (): [number, number] | null => {
+        // Scan row-major from the current cursor; walk forever
+        // (unbounded rows) so a large Count still finds slots
+        // even if the top rows are full.
+        while (true) {
+          if (!occupied.has(`${cursorR},${cursorC}`)) {
+            const cell: [number, number] = [cursorR, cursorC];
+            occupied.add(`${cursorR},${cursorC}`);
+            // Advance one for the next call.
+            cursorC++;
+            if (cursorC >= AUTOPLACE_COLS) { cursorC = 0; cursorR++; }
+            return cell;
+          }
+          cursorC++;
+          if (cursorC >= AUTOPLACE_COLS) { cursorC = 0; cursorR++; }
+          if (cursorR > 200) return null;  // safety — unreachable in practice
+        }
+      };
+      for (let i = 0; i < count; i++) {
+        const n = startNum + i;
+        const cell = useAutoPlace ? nextFreeCell() : null;
+        next.push({
+          name: `${prefix}-${String(n).padStart(2, '0')}`,
+          price: priceNum,
+          description: null,
+          active: true,
+          sortOrder: next.length,
+          gridRow: cell ? cell[0] : undefined,
+          gridCol: cell ? cell[1] : undefined,
+        });
+      }
+      return next;
+    });
+    toast.success(`Added ${count} option${count === 1 ? '' : 's'}`);
+  };
+
+  return (
+    <div className="rounded-md border bg-white p-2.5 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <Input
+          value={group.name ?? ''}
+          onChange={e => onChange({ ...group, name: e.target.value })}
+          placeholder="Group name — e.g. Standard rooms"
+          maxLength={160}
+          className="h-8 text-sm font-medium flex-1 min-w-0"
+          disabled={disabled}
+        />
+        <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer shrink-0">
+          <Switch
+            checked={group.active ?? true}
+            onCheckedChange={v => onChange({ ...group, active: v })}
+            disabled={disabled}
+          />
+          Active
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 w-8 p-0 shrink-0"
+          onClick={onRemove}
+          disabled={disabled}
+          title="Remove group"
+        >
+          <Trash2 className="h-3.5 w-3.5 text-red-600" />
+        </Button>
+      </div>
+      {/* v-property-bulk-options (per-group, V298) — same generator
+          as before but scoped to this group's options list only. */}
+      <div className="flex items-end gap-2 flex-wrap rounded-md border border-dashed border-gray-300 bg-gray-50/60 p-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Count</span>
+          <Input
+            type="number" min="1" max="500"
+            value={bulkCount}
+            onChange={e => setBulkCount(e.target.value)}
+            className="h-8 w-16 text-sm text-right tabular-nums"
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Price each</span>
+          <Input
+            type="number" step="0.01" min="0"
+            value={bulkPrice}
+            onChange={e => setBulkPrice(e.target.value)}
+            placeholder="0.00"
+            className="h-8 w-24 text-sm text-right tabular-nums"
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[100px]">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Prefix</span>
+          <Input
+            value={bulkPrefix}
+            onChange={e => setBulkPrefix(e.target.value)}
+            placeholder="Seat"
+            maxLength={40}
+            className="h-8 text-sm"
+            disabled={disabled}
+          />
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8"
+          disabled={
+            disabled
+            || !bulkPrefix.trim()
+            || !(Number(bulkCount) >= 1)
+            || bulkPrice === ''
+            || !(Number(bulkPrice) >= 0)
+          }
+          onClick={generateBulk}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" /> Generate
+        </Button>
+      </div>
+      {/* v-property-view-compact — option rows + Add option are
+          hidden when `compact` is set (Manage Layout popup uses the
+          shared canvas below instead). Bulk generator above stays
+          visible so operators can still spawn batches. Full Edit
+          dialog leaves compact=false so tabular editing works. */}
+      {!compact && ((group.options ?? []).length === 0 ? (
+        <div className="text-[11px] text-gray-500 italic px-1">
+          No options in this group yet — add one below or use the bulk generator above.
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+          {(group.options ?? []).map((o, idx) => {
+            const named = (o.name ?? '').trim().length > 0;
+            const priceMissing = named && (o.price == null || !(Number(o.price) >= 0));
+            return (
+              <div key={o.id ?? `newgo-${idx}`} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <Input
+                  value={o.name}
+                  onChange={e => setOptions(list => list.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                  placeholder="Name"
+                  maxLength={160}
+                  className="h-8 text-sm flex-1 min-w-0"
+                  disabled={disabled}
+                />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={o.price == null ? '' : String(o.price)}
+                  onChange={e => setOptions(list => list.map((x, i) => i === idx ? {
+                    ...x,
+                    price: e.target.value === '' ? null : Number(e.target.value),
+                  } : x))}
+                  placeholder="Price *"
+                  className={`h-8 text-sm w-24 text-right tabular-nums ${priceMissing ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                  disabled={disabled}
+                  title={priceMissing ? 'Price is required on this option' : undefined}
+                />
+                <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer shrink-0">
+                  <Switch
+                    checked={o.active ?? true}
+                    onCheckedChange={v => setOptions(list => list.map((x, i) => i === idx ? { ...x, active: v } : x))}
+                    disabled={disabled}
+                  />
+                  Active
+                </label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-8 p-0 shrink-0"
+                  onClick={() => setOptions(list => list.filter((_, i) => i !== idx))}
+                  disabled={disabled}
+                  title="Remove option"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      {!compact && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8"
+          onClick={() => setOptions(list => [...list, {
+            name: '',
+            price: null,
+            description: null,
+            active: true,
+            sortOrder: list.length,
+          }])}
+          disabled={disabled}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add option
+        </Button>
+      )}
+      {compact && (
+        <div className="text-[11px] text-gray-500 italic px-1">
+          {(group.options ?? []).length} option{(group.options ?? []).length === 1 ? '' : 's'} — placement lives on the Cinema Screen canvas below.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* v-property-view-as-editor — legacy OptionCard removed. The View
+ * popup no longer renders read-only option cards; the group +
+ * layout editor (GroupEditor + CinemaSeatMapEditor) is the only
+ * option surface. */
