@@ -1962,7 +1962,25 @@ export function Items() {
                 scanners can overwrite either freshly. */}
             {barcodeFeatureOn && (
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Barcode</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-gray-600">Barcode</Label>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Barcode field help"
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        Optional. Leave blank if the item has none — the field only appears when Barcode is enabled in Item Settings.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="flex items-center gap-2">
                   <Input
                     value={form.barcode}
@@ -2002,9 +2020,6 @@ export function Items() {
                     <ScanBarcode className="h-4 w-4" />
                   </Button>
                 </div>
-                <p className="text-[11px] text-gray-500">
-                  Optional. Leave blank if the item has none — the field only appears when Barcode is enabled in Item Settings.
-                </p>
               </div>
             )}
 
