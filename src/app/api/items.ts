@@ -41,6 +41,8 @@ export interface Item {
    *  of the full 200 KB image. Null on legacy items; readers fall
    *  back to {@link imageUrl}. */
   imageThumbUrl?: string | null;
+  /** Optional barcode (V302). Unique per tenant when set. */
+  barcode?: string | null;
   /** POS category — drives the filter tabs on the items grid. (V142) */
   category?: ItemCategory;
   /** Per-item modifier groups as a JSON string (V142). Parse with
@@ -149,6 +151,9 @@ export interface ItemRequest {
    *  at save time and sends it here so list responses can ship a
    *  tiny cover. Undefined leaves existing; empty string clears. */
   imageThumbUrl?: string;
+  /** V302 — optional barcode. Undefined on update leaves the field
+   *  unchanged; empty string clears it. */
+  barcode?: string;
   /** POS category (V142). Undefined on update = leave as-is. */
   category?: ItemCategory;
   /** Modifiers JSON (V142). Empty string clears; undefined on update
@@ -258,6 +263,13 @@ export async function get(id: string): Promise<Item> {
   return apiJson(`/api/v1/stock-items/${id}`);
 }
 
+/** V302 — scanner lookup. Returns 404 when nothing matches; callers
+ *  wrap in try/catch to surface a "not found" toast. Route uses the
+ *  raw barcode verbatim — encodeURIComponent to survive '/' or ' '. */
+export async function getByBarcode(code: string): Promise<Item> {
+  return apiJson(`/api/v1/stock-items/by-barcode/${encodeURIComponent(code)}`);
+}
+
 export async function create(req: ItemRequest): Promise<Item> {
   return apiJson('/api/v1/stock-items', { method: 'POST', json: req });
 }
@@ -294,6 +306,10 @@ export interface UsageSettings {
    *  to a warehouse and the Items page surfaces a Warehouse column +
    *  filter. */
   enabledForWarehouse: boolean;
+  /** Barcode feature gate (V302). When on, the Items form surfaces a
+   *  Barcode input + Generate button and the table shows a Barcode
+   *  column. */
+  enabledForBarcode: boolean;
   /** null when no row exists yet (returning baked-in defaults). */
   updatedAt: string | null;
 }

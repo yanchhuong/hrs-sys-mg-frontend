@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, FileSignature, Receipt, ShoppingBag, ShoppingCart, Save, Info,
-  Warehouse as WarehouseIcon, Eye, Plus, Pencil, Trash2, Loader2,
+  Warehouse as WarehouseIcon, Eye, Plus, Pencil, Trash2, Loader2, ScanBarcode,
 } from 'lucide-react';
 
 import {
@@ -28,7 +28,7 @@ interface Props {
   onSaved?: (next: itemsApi.UsageSettings) => void;
 }
 
-type Section = 'usage' | 'warehouse';
+type Section = 'usage' | 'warehouse' | 'barcode';
 
 /**
  * Items Settings popup — same left-menu + body layout as
@@ -54,6 +54,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
     enabledForBill: false,
     enabledForPos: false,
     enabledForWarehouse: false,
+    enabledForBarcode: false,
     updatedAt: null,
   });
 
@@ -157,6 +158,7 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
   const menu: { key: Section; label: string; hint: string; icon: React.ReactNode }[] = [
     { key: 'usage',     label: 'Usage',     hint: 'Where the picker appears',  icon: <Eye className="h-4 w-4" /> },
     { key: 'warehouse', label: 'Warehouse', hint: 'Storage locations',         icon: <WarehouseIcon className="h-4 w-4" /> },
+    { key: 'barcode',   label: 'Barcode',   hint: 'Scan / generate codes',     icon: <ScanBarcode className="h-4 w-4" /> },
   ];
 
   /* ------------------- warehouse CRUD ------------------- */
@@ -380,6 +382,22 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* v-item-barcode (V302) — single toggle. When on, the
+                  Items form + list surface the barcode field. No sub-
+                  settings yet; scanner integration on POS / purchase
+                  forms lands in a follow-up. */}
+              {section === 'barcode' && (
+                <div className="space-y-3">
+                  <ToggleRow
+                    icon={<ScanBarcode className="h-4 w-4" />}
+                    label="Use barcodes"
+                    hint="When on, the Items form shows a Barcode input + Generate button, and the Items table surfaces a Barcode column."
+                    value={form.enabledForBarcode}
+                    onChange={v => setForm(f => ({ ...f, enabledForBarcode: v }))}
+                  />
                 </div>
               )}
             </div>

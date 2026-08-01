@@ -65,6 +65,8 @@ interface FormState {
   itemCategory: string;
   /** Reorder threshold (V151). */
   minStock: string;
+  /** V302 — optional barcode. Empty string clears on save. */
+  barcode: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -83,6 +85,7 @@ const EMPTY_FORM: FormState = {
   warehouseId: '',
   itemCategory: '',
   minStock: '0',
+  barcode: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -654,6 +657,9 @@ export function Items() {
   // the settings dialog updates the gate here on the parent's onSaved
   // callback (no second fetch).
   const [warehouseFeatureOn, setWarehouseFeatureOn] = useState(false);
+  /** V302 — barcode feature toggle. Off by default; the form's
+   *  Barcode field + the table column render only when this is on. */
+  const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   // Filter applied to the list query when the feature is on. Empty
   // string = "All" (no warehouse filter).
@@ -738,6 +744,7 @@ export function Items() {
     try {
       const usage = await itemsApi.getUsageSettings();
       setWarehouseFeatureOn(usage.enabledForWarehouse);
+      setBarcodeFeatureOn(usage.enabledForBarcode);
       if (usage.enabledForWarehouse) {
         try {
           setWarehouses(await warehousesApi.list());
@@ -938,6 +945,7 @@ export function Items() {
       warehouseId: it.warehouseId ?? '',
       itemCategory: it.itemCategory ?? '',
       minStock: String(it.minStock ?? 0),
+      barcode: it.barcode ?? '',
     });
     setDialogOpen(true);
   };
@@ -995,6 +1003,10 @@ export function Items() {
         warehouseId: form.warehouseId || null,
         itemCategory: form.itemCategory.trim(),
         minStock: Number(form.minStock) || 0,
+        // V302 — always send the field so an intentional clear (edit
+        // to blank) round-trips. Empty string tells the BE to null
+        // the column; a non-empty value is stored verbatim.
+        barcode: form.barcode.trim(),
       };
       // v-items-optimistic-save — splice the returned row into the
       // existing rows[] instead of refetching the whole list. Full
@@ -1217,6 +1229,7 @@ export function Items() {
           // warehouses list too because the operator may have just
           // created some.
           setWarehouseFeatureOn(next.enabledForWarehouse);
+          setBarcodeFeatureOn(next.enabledForBarcode);
           if (next.enabledForWarehouse) {
             warehousesApi.list().then(setWarehouses).catch(() => {/* soft */});
           } else {
@@ -1551,6 +1564,9 @@ export function Items() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
+                    {barcodeFeatureOn && (
+                      <TableHead className="w-[140px]">Barcode</TableHead>
+                    )}
                     <TableHead className="w-[64px]">Photo</TableHead>
                     <TableHead>Item Name</TableHead>
                     <TableHead className="w-[140px]">Category</TableHead>
@@ -1585,6 +1601,11 @@ export function Items() {
                         <TableCell className="tabular-nums text-xs text-gray-600">
                           {it.sku || <span className="text-gray-300">—</span>}
                         </TableCell>
+                        {barcodeFeatureOn && (
+                          <TableCell className="tabular-nums text-xs text-gray-600">
+                            {it.barcode || <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        )}
                         <TableCell>
                           {/* v-items-row-image-upload — click the
                               thumbnail (or empty placeholder) to open a
@@ -1901,6 +1922,45 @@ export function Items() {
                 />
               </div>
             </div>
+
+            {/* V302 — barcode input + Generate button. Rendered only
+                when the tenant has the barcode feature on (Items →
+                Settings → Barcode). The Generate button synthesises
+                a 12-digit numeric code — a lightweight placeholder
+                for tenants that don't source barcodes from
+                packaging (e.g. jewelry, hand-crafted goods). Real
+                scanners can overwrite either freshly. */}
+            {barcodeFeatureOn && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Barcode</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={form.barcode}
+                    onChange={e => setForm({ ...form, barcode: e.target.value })}
+                    placeholder="Scan or type"
+                    maxLength={64}
+                    className="tabular-nums flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      // 12-digit numeric — long enough to avoid
+                      // collisions on any realistic catalogue.
+                      const gen = String(Math.floor(100000000000 + Math.random() * 899999999999));
+                      setForm(f => ({ ...f, barcode: gen }));
+                    }}
+                  >
+                    Generate
+                  </Button>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Optional. Leave blank if the item has none — the field only appears when Barcode is enabled in Item Settings.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Description</Label>
