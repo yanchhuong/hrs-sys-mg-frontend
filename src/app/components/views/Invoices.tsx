@@ -39,6 +39,7 @@ import * as itemsApi from '../../api/items';
 import { loadBankAccounts, MAX_BANK_ACCOUNTS_ON_INVOICE } from '../../utils/bankAccount';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
+import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { capturePrintPdf } from '../../utils/capturePrintPdf';
@@ -1236,10 +1237,17 @@ function InvoiceFormDialog({
   // the free-text Item column. Soft-fail to false on 403 so a tenant
   // without stock permissions doesn't see a broken picker.
   const [pickerEnabled, setPickerEnabled] = useState(false);
+  /** V302 phase 2 — barcode feature gate. When on, a scan input
+   *  appears above the line-items table so a physical scanner adds
+   *  matching items straight into the invoice. */
+  const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
   useEffect(() => {
     itemsApi.getUsageSettings()
-      .then(s => setPickerEnabled(s.enabledForInvoice))
-      .catch(() => setPickerEnabled(false));
+      .then(s => {
+        setPickerEnabled(s.enabledForInvoice);
+        setBarcodeFeatureOn(s.enabledForBarcode);
+      })
+      .catch(() => { setPickerEnabled(false); setBarcodeFeatureOn(false); });
   }, []);
   // Recent-line-items dropdown — surfaces the last 5 names HR typed
   // across all three doc forms (invoice / quotation / voucher).
@@ -1367,6 +1375,27 @@ function InvoiceFormDialog({
   };
   const addItem = () => setItems(prev => [...prev, { ...blankItem }]);
   const removeItem = (idx: number) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+
+  /** V302 phase 2 — barcode scan handler. If the last line is blank
+   *  (no name, no stockItemId), overwrite it with the matched item;
+   *  otherwise append a fresh line. Matches the mental model of "the
+   *  scanner replaces the first empty row I would have typed into". */
+  const addLineFromScan = (si: itemsApi.Item) => {
+    setItems(prev => {
+      const empty = (r: FormItem) => !r.name && !r.stockItemId;
+      const filled: FormItem = {
+        ...blankItem,
+        stockItemId: si.id,
+        name: si.name,
+        unit: si.unit ?? '',
+        unitPrice: String(si.unitPrice ?? 0),
+      };
+      if (prev.length > 0 && empty(prev[prev.length - 1])) {
+        return prev.slice(0, -1).concat(filled);
+      }
+      return [...prev, filled];
+    });
+  };
 
   /** Build the request payload from the current form state. Used by
    *  every save flow (create / update / save & add new). */
@@ -1693,11 +1722,21 @@ function InvoiceFormDialog({
               is the unit it's sold in. Both feed the printed invoice
               line and stay snapshotted on the row at issue time. */}
           <div className="space-y-2 border rounded-md p-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold">Line items</Label>
-              <Button size="sm" variant="outline" onClick={addItem}>
-                <Plus className="h-3 w-3 mr-1" /> Add line
-              </Button>
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-xs font-semibold shrink-0">Line items</Label>
+              <div className="flex items-center gap-2 flex-1 justify-end">
+                {barcodeFeatureOn && (
+                  <div className="w-56">
+                    <BarcodeScanInput
+                      onScan={addLineFromScan}
+                      placeholder="Scan barcode…"
+                    />
+                  </div>
+                )}
+                <Button size="sm" variant="outline" onClick={addItem} className="shrink-0">
+                  <Plus className="h-3 w-3 mr-1" /> Add line
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>

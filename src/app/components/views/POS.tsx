@@ -24,6 +24,7 @@ import {
 } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
+import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
@@ -70,6 +71,8 @@ import type { PosOrder, PosOrderItem, PosPaymentMethod } from '../../api/pos';
  */
 export function POS() {
   const [usageOk, setUsageOk] = useState<boolean | null>(null);
+  /** V302 phase 2 — barcode feature gate. Off = scan input hides. */
+  const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
@@ -265,6 +268,7 @@ export function POS() {
       try {
         const usage = await itemsApi.getUsageSettings();
         setUsageOk(usage.enabledForPos);
+        setBarcodeFeatureOn(usage.enabledForBarcode);
         if (!usage.enabledForPos) {
           setLoading(false);
           return;
@@ -1273,6 +1277,21 @@ export function POS() {
                   }))}
                 />
               </div>
+              {/* V302 phase 2 — barcode scanner input. Physical
+                  scanners tail their input with a newline; the
+                  BarcodeScanInput debounces + fires the lookup on
+                  Enter and adds the matched item straight into the
+                  cart via onItemTap so items with modifiers still
+                  open the picker. Feature-gated so tenants without
+                  barcodes keep the shorter POS toolbar. */}
+              {barcodeFeatureOn && (
+                <div className="shrink-0 w-56">
+                  <BarcodeScanInput
+                    onScan={onItemTap}
+                    placeholder="Scan barcode…"
+                  />
+                </div>
+              )}
               {showWarehouseFilter && (
                 // v-pos-warehouse-dropdown — swapped the chip row for
                 // a single Select. Chips were eating horizontal space

@@ -40,6 +40,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import * as vouchersApi from '../../api/vouchers';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
+import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import * as itemsApi from '../../api/items';
@@ -597,10 +598,15 @@ function VoucherFormDialog({
     currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, [open]);
   const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
+  /** V302 phase 2 — barcode scan input gate. */
+  const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
   useEffect(() => {
     itemsApi.getUsageSettings()
-      .then(s => setPickerEnabled(s.enabledForVoucher))
-      .catch(() => setPickerEnabled(false));
+      .then(s => {
+        setPickerEnabled(s.enabledForVoucher);
+        setBarcodeFeatureOn(s.enabledForBarcode);
+      })
+      .catch(() => { setPickerEnabled(false); setBarcodeFeatureOn(false); });
   }, []);
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
@@ -690,6 +696,25 @@ function VoucherFormDialog({
     setLines(prev => prev.length === 1 ? prev : prev.filter(l => l.localId !== id));
   const updateLine = (id: string, patch: Partial<FormLine>) =>
     setLines(prev => prev.map(l => l.localId === id ? { ...l, ...patch } : l));
+
+  /** V302 phase 2 — barcode scan handler. Same overwrite-empty-or-
+   *  append pattern the other doc forms use. */
+  const addLineFromScan = (si: itemsApi.Item) => {
+    setLines(prev => {
+      const empty = (l: FormLine) => !l.name && !l.stockItemId;
+      const filled: FormLine = {
+        ...newLine(),
+        stockItemId: si.id,
+        name: si.name,
+        unit: si.unit ?? '',
+        unitPrice: String(si.unitPrice ?? 0),
+      };
+      if (prev.length > 0 && empty(prev[prev.length - 1])) {
+        return prev.slice(0, -1).concat(filled);
+      }
+      return [...prev, filled];
+    });
+  };
 
   const validate = (): boolean => {
     if (!customerId) { toast.error('Customer is required'); return false; }
@@ -897,11 +922,21 @@ function VoucherFormDialog({
               form so the visual rhythm (header strip + h-8 input rows +
               Trash icon at the end) is identical. */}
           <div className="space-y-2 border rounded-md p-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold">Line items</Label>
-              <Button size="sm" variant="outline" onClick={addLine}>
-                <Plus className="h-3 w-3 mr-1" /> Add line
-              </Button>
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-xs font-semibold shrink-0">Line items</Label>
+              <div className="flex items-center gap-2 flex-1 justify-end">
+                {barcodeFeatureOn && (
+                  <div className="w-56">
+                    <BarcodeScanInput
+                      onScan={addLineFromScan}
+                      placeholder="Scan barcode…"
+                    />
+                  </div>
+                )}
+                <Button size="sm" variant="outline" onClick={addLine} className="shrink-0">
+                  <Plus className="h-3 w-3 mr-1" /> Add line
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
