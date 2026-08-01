@@ -75,34 +75,72 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
 
     (async () => {
       try {
-        const list = await reader.listVideoInputDevices();
-        if (cancelled) return;
-        setDevices(list);
-        // Rear camera is usually the last enumerated device on mobile;
-        // keep whatever the parent picked, otherwise default to that.
-        const pickedId = deviceId ?? list.at(-1)?.deviceId ?? null;
-        setDeviceId(pickedId);
-        if (!pickedId) {
-          setError('No camera found on this device.');
+        // Cheap up-front sanity check — no cameras on desktop without
+        // a webcam should surface a helpful error rather than opening
+        // a permission prompt that resolves to nothing.
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+          setError('Camera API not available in this browser. iOS + Android need HTTPS.');
           return;
         }
+
+        // decodeFromConstraints triggers the browser permission prompt
+        // via getUserMedia, so the user is asked once and the stream
+        // starts as soon as they allow. Rear camera is picked via the
+        // facingMode hint when a deviceId isn't explicitly chosen.
+        const constraints: MediaStreamConstraints = deviceId
+          ? { video: { deviceId: { exact: deviceId } } }
+          : { video: { facingMode: { ideal: 'environment' } } };
+
         const video = videoRef.current;
         if (!video) return;
-        await reader.decodeFromVideoDevice(pickedId, video, (result, err) => {
+
+        await reader.decodeFromConstraints(constraints, video, (result, err) => {
           if (result) {
             onDecoded(result.getText());
           } else if (err && !(err instanceof NotFoundException)) {
             // NotFoundException fires every frame that doesn't contain
-            // a barcode — that's expected while the user is aligning
-            // the code. Swallow it. Anything else is a real problem.
+            // a barcode — expected while the user is aligning the
+            // code. Swallow it. Anything else is a real problem.
             // eslint-disable-next-line no-console
             console.warn('[CameraBarcodeScanner] decode error', err);
           }
         });
+
+        // After the stream is live the permission prompt has been
+        // resolved, so labels + deviceIds are now populated. Pull the
+        // device list at that point so "Switch camera" has real data.
+        try {
+          const list = await navigator.mediaDevices.enumerateDevices();
+          if (cancelled) return;
+          const videoInputs = list.filter(d => d.kind === 'videoinput');
+          setDevices(videoInputs);
+          if (!deviceId) {
+            // Pin the deviceId to whatever the stream ended up on so
+            // switch-camera can compute the "next" device relative to
+            // the one currently rendering.
+            const track = video.srcObject instanceof MediaStream
+              ? video.srcObject.getVideoTracks()[0]
+              : null;
+            const currentId = track?.getSettings().deviceId ?? null;
+            if (currentId) setDeviceId(currentId);
+          }
+        } catch { /* device enum failure is non-fatal */ }
       } catch (e) {
         if (cancelled) return;
-        const msg = e instanceof Error ? e.message : 'Camera unavailable';
-        setError(msg);
+        const raw = e instanceof Error ? e.message : String(e);
+        // NotAllowedError = user denied permission; NotFoundError =
+        // no camera hardware; NotReadableError = OS-level lock. Give
+        // targeted copy for each.
+        const name = (e as { name?: string })?.name;
+        if (name === 'NotAllowedError') {
+          setError('Camera access denied. Grant permission in your browser settings.');
+        } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+          setError('No camera found on this device.');
+        } else if (name === 'NotReadableError') {
+          setError('Camera is in use by another app. Close it and try again.');
+        } else {
+          setError(raw);
+        }
       }
     })();
 
