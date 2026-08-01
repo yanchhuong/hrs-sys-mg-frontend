@@ -45,6 +45,12 @@ interface Props {
   /** Wrapper class — apply width / min-width here so both the input
    *  and the dropdown match. */
   wrapperClassName?: string;
+  /** V302 — fires when the user presses Enter with a non-empty value
+   *  AND no suggestion is currently highlighted. POS + doc forms
+   *  use this to trigger a barcode / SKU lookup so a physical
+   *  scanner (which types the code + a newline) adds the item
+   *  straight into the cart without a mouse click. */
+  onEnter?: (value: string) => void;
 }
 
 /** Render a label with the matching substring in bold. Case-insensitive
@@ -75,6 +81,7 @@ export function SearchWithSuggestions({
   maxItems = 8,
   ariaLabel,
   wrapperClassName,
+  onEnter,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -157,6 +164,17 @@ export function SearchWithSuggestions({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Enter with a live value and no highlighted suggestion falls
+    // through to onEnter — that's the "physical scanner just typed a
+    // full barcode + newline" path. Handled before the `if (!open)`
+    // guard so it also fires when the dropdown never opened (fast
+    // scanners can outrun the setOpen render).
+    if (e.key === 'Enter' && value.trim() && (activeIndex < 0 || !filtered[activeIndex]) && onEnter) {
+      e.preventDefault();
+      onEnter(value.trim());
+      setOpen(false);
+      return;
+    }
     if (!open) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();

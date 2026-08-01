@@ -5,7 +5,7 @@ import {
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ScanBarcode,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -24,7 +24,7 @@ import {
 } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
-import { BarcodeScanInput } from '../common/BarcodeScanInput';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
@@ -71,8 +71,11 @@ import type { PosOrder, PosOrderItem, PosPaymentMethod } from '../../api/pos';
  */
 export function POS() {
   const [usageOk, setUsageOk] = useState<boolean | null>(null);
-  /** V302 phase 2 — barcode feature gate. Off = scan input hides. */
+  /** V302 phase 2 — barcode feature gate. Off = camera button + all
+   *  barcode/SKU search behaviour hide. */
   const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
+  /** V302 phase 2 — camera-scan dialog open state. */
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
@@ -557,6 +560,39 @@ export function POS() {
     else addItem(it);
   };
 
+  /**
+   * V302 phase 2 — resolve a raw code (from the search input on
+   * Enter, or the camera scan dialog) into a cart line.
+   *
+   *   1. Try the loaded catalog first — exact match on barcode, then
+   *      exact match on SKU. Zero network for the common case.
+   *   2. Fall back to the backend {@link itemsApi.getByBarcode} in
+   *      case the code belongs to an item outside the loaded slice.
+   *   3. If nothing matches either place, toast + leave the search
+   *      value alone so the cashier can retype / retry.
+   */
+  const handleScannedCode = async (code: string) => {
+    const norm = code.trim();
+    if (!norm) return;
+    const bc = norm.toLowerCase();
+    const local = items.find(i =>
+      (i.barcode ?? '').toLowerCase() === bc
+      || (i.sku ?? '').toLowerCase() === bc,
+    );
+    if (local) {
+      onItemTap(local);
+      setSearch('');
+      return;
+    }
+    try {
+      const remote = await itemsApi.getByBarcode(norm);
+      onItemTap(remote);
+      setSearch('');
+    } catch {
+      toast.error(`No item matches "${norm}"`);
+    }
+  };
+
   /** Commit a modifier-configured selection as its own cart line.
    *  Always creates a new row (no merge) so two customisations of
    *  the same drink stay distinct — the price delta + note string
@@ -848,11 +884,13 @@ export function POS() {
     if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    // Match either the display name OR the item code (SKU) so a
-    // cashier scanning / typing a barcode-like code hits the item
-    // without having to remember the name.
+    // Match display name OR SKU OR barcode (V302). A physical scanner
+    // types the code straight into the same input, so widening the
+    // match here means the tile lights up as the digits come in — no
+    // separate scan field needed.
     return i.name.toLowerCase().includes(q)
-        || (i.sku ?? '').toLowerCase().includes(q);
+        || (i.sku ?? '').toLowerCase().includes(q)
+        || (i.barcode ?? '').toLowerCase().includes(q);
   });
   // V149 — warehouse counts drive the chip labels ("A (7)"). Only
   // computed / rendered when the tenant has 2+ warehouses; a single-
@@ -1266,31 +1304,39 @@ export function POS() {
                   substring highlighting. Sits between categories and
                   warehouse on the same row; fixed width so it doesn't
                   eat all the horizontal space the chips need. */}
+              {/* V302 phase 2 — one search that matches name / SKU /
+                  barcode. Enter with a non-empty query resolves via
+                  handleScannedCode: local barcode/SKU exact hit
+                  wins, else backend lookup. Physical scanners land
+                  keystrokes here + tail a newline, so the item drops
+                  straight into the cart without a mouse click. */}
               <div className="shrink-0 w-56">
                 <SearchWithSuggestions
                   value={search}
                   onChange={setSearch}
-                  placeholder="Search items…"
+                  onEnter={barcodeFeatureOn ? handleScannedCode : undefined}
+                  placeholder={barcodeFeatureOn ? 'Search / scan barcode…' : 'Search items…'}
                   suggestions={sellable.map(i => ({
                     label: i.name,
-                    secondary: i.sku || undefined,
+                    secondary: i.barcode || i.sku || undefined,
                   }))}
                 />
               </div>
-              {/* V302 phase 2 — barcode scanner input. Physical
-                  scanners tail their input with a newline; the
-                  BarcodeScanInput debounces + fires the lookup on
-                  Enter and adds the matched item straight into the
-                  cart via onItemTap so items with modifiers still
-                  open the picker. Feature-gated so tenants without
-                  barcodes keep the shorter POS toolbar. */}
+              {/* Camera-scan button — opens a full-frame video decode
+                  dialog. Physical readers don't need this at all; it's
+                  the fallback for kiosks / tablets without a wired
+                  scanner. Hidden when the barcode feature is off. */}
               {barcodeFeatureOn && (
-                <div className="shrink-0 w-56">
-                  <BarcodeScanInput
-                    onScan={onItemTap}
-                    placeholder="Scan barcode…"
-                  />
-                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setScannerOpen(true)}
+                  title="Scan barcode with camera"
+                  aria-label="Scan barcode with camera"
+                  className="shrink-0"
+                >
+                  <ScanBarcode className="h-4 w-4" />
+                </Button>
               )}
               {showWarehouseFilter && (
                 // v-pos-warehouse-dropdown — swapped the chip row for
@@ -1625,6 +1671,18 @@ export function POS() {
         currentCode={pairedDisplayCode}
         onPaired={setPairedDisplayCode}
         onUnpaired={() => setPairedDisplayCode(null)}
+      />
+
+      {/* V302 phase 2 — camera-scan dialog. Feeds decoded codes
+          straight into the same handleScannedCode used by Enter on
+          the search input, so the two paths add items identically. */}
+      <CameraBarcodeScanner
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDecoded={code => {
+          setScannerOpen(false);
+          void handleScannedCode(code);
+        }}
       />
     </div>
   );

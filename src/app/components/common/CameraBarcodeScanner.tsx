@@ -1,0 +1,179 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  BrowserMultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+  NotFoundException,
+} from '@zxing/library';
+import { X, Camera, AlertCircle } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '../ui/dialog';
+import { Button } from '../ui/button';
+
+/**
+ * Camera-based barcode scan dialog for the POS search + any doc
+ * form's line-items row. Uses @zxing/library's
+ * BrowserMultiFormatReader which handles CODE_128 / EAN_13 / UPC_A /
+ * QR + friends — the codes we typically see printed on retail goods
+ * plus generated internal codes.
+ *
+ * <p>Enumerates video-input devices and picks the last one (usually
+ * the rear camera on phones / tablets, which is what a cashier
+ * wants). Users on multi-camera setups (external USB camera on a
+ * kiosk) can flip via the "Switch camera" button.</p>
+ *
+ * <p>Decode fires once per open — the parent {@link Props.onDecoded}
+ * handler is expected to close the dialog to prevent duplicate
+ * scans. Errors that aren't "no barcode in this frame" (which
+ * happens dozens of times per second while the user is aligning
+ * the code) are surfaced in the dialog body.</p>
+ */
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Called with the decoded barcode text. Parent should perform
+   *  its lookup and close the dialog. */
+  onDecoded: (code: string) => void;
+}
+
+export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): JSX.Element {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Boot the reader on open, tear down on close so the camera light
+  // isn't stuck on. Runs whenever open flips OR the selected device
+  // changes so "Switch camera" swaps the video stream.
+  useEffect(() => {
+    if (!open) {
+      readerRef.current?.reset();
+      readerRef.current = null;
+      setError(null);
+      return;
+    }
+    // Narrow the decoder to the 1D + 2D formats real-world items use.
+    // Skipping formats we don't need speeds up decode + cuts CPU on
+    // low-spec tablets.
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.ITF,
+    ]);
+    const reader = new BrowserMultiFormatReader(hints);
+    readerRef.current = reader;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const list = await reader.listVideoInputDevices();
+        if (cancelled) return;
+        setDevices(list);
+        // Rear camera is usually the last enumerated device on mobile;
+        // keep whatever the parent picked, otherwise default to that.
+        const pickedId = deviceId ?? list.at(-1)?.deviceId ?? null;
+        setDeviceId(pickedId);
+        if (!pickedId) {
+          setError('No camera found on this device.');
+          return;
+        }
+        const video = videoRef.current;
+        if (!video) return;
+        await reader.decodeFromVideoDevice(pickedId, video, (result, err) => {
+          if (result) {
+            onDecoded(result.getText());
+          } else if (err && !(err instanceof NotFoundException)) {
+            // NotFoundException fires every frame that doesn't contain
+            // a barcode — that's expected while the user is aligning
+            // the code. Swallow it. Anything else is a real problem.
+            // eslint-disable-next-line no-console
+            console.warn('[CameraBarcodeScanner] decode error', err);
+          }
+        });
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : 'Camera unavailable';
+        setError(msg);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      reader.reset();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, deviceId]);
+
+  const switchCamera = () => {
+    if (devices.length < 2) return;
+    const idx = devices.findIndex(d => d.deviceId === deviceId);
+    const next = devices[(idx + 1) % devices.length];
+    setDeviceId(next.deviceId);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-0 overflow-hidden">
+        <DialogHeader className="px-4 py-3 border-b flex flex-row items-center justify-between space-y-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Camera className="h-4 w-4 text-blue-600" />
+            Scan barcode
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="relative bg-black aspect-video">
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover"
+            playsInline
+            muted
+          />
+          {/* Alignment reticle — subtle rounded rectangle centered on
+              the video so the operator knows roughly where to hold
+              the code. Kept semi-transparent so it doesn't fight the
+              live preview. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="border-2 border-white/60 rounded-lg w-4/5 h-24" />
+          </div>
+        </div>
+
+        {error && (
+          <div className="px-4 py-3 flex items-start gap-2 text-xs text-red-700 bg-red-50 border-t border-red-200">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              {error}
+              <div className="text-red-600/80 mt-0.5">
+                Grant camera access in your browser settings, or use a physical scanner instead.
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="px-4 py-3 border-t flex items-center justify-between gap-2">
+          <p className="text-[11px] text-gray-500">
+            Hold the barcode inside the box — decoding happens automatically.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            {devices.length > 1 && (
+              <Button variant="outline" size="sm" onClick={switchCamera}>
+                Switch camera
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              <X className="h-3.5 w-3.5 mr-1" /> Close
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
