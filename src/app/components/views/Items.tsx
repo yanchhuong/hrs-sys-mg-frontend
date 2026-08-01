@@ -26,7 +26,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX, ScanBarcode } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -35,6 +35,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
@@ -672,6 +673,9 @@ export function Items() {
   /** V302 — barcode feature toggle. Off by default; the form's
    *  Barcode field + the table column render only when this is on. */
   const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
+  /** V302 — camera-scan dialog open state for the Item edit form.
+   *  Decoded value drops into form.barcode. */
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   // Filter applied to the list query when the feature is on. Empty
   // string = "All" (no warehouse filter).
@@ -1230,6 +1234,19 @@ export function Items() {
         onOpenChange={setBulkUploadOpen}
         existingItems={rows}
         onImported={() => { void load(); }}
+      />
+
+      {/* V302 — camera-scan dialog for the Item edit form. Decoded
+          value fills form.barcode, then closes. Mounted at the top
+          level (not inside the edit Dialog) so it can portal above
+          the item dialog's overlay without z-index gymnastics. */}
+      <CameraBarcodeScanner
+        open={barcodeScannerOpen}
+        onOpenChange={setBarcodeScannerOpen}
+        onDecoded={code => {
+          setForm(f => ({ ...f, barcode: code.trim() }));
+          setBarcodeScannerOpen(false);
+        }}
       />
 
       <StockItemUsageSettingsDialog
@@ -1967,6 +1984,22 @@ export function Items() {
                     }}
                   >
                     Generate
+                  </Button>
+                  {/* V302 — camera scan into the input. Opens the same
+                      CameraBarcodeScanner used on POS; decoded value
+                      fills the barcode field instead of adding to a
+                      cart, so HR can capture a code straight off the
+                      packaging without leaving the Item edit dialog. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => setBarcodeScannerOpen(true)}
+                    title="Scan barcode with camera"
+                    aria-label="Scan barcode with camera"
+                  >
+                    <ScanBarcode className="h-4 w-4" />
                   </Button>
                 </div>
                 <p className="text-[11px] text-gray-500">
