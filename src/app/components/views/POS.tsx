@@ -3,7 +3,7 @@ import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
-  ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon,
+  ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon, Trash2,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
   ChevronLeft, ChevronRight, ScanBarcode,
 } from 'lucide-react';
@@ -831,6 +831,28 @@ export function POS() {
     setTaxType(o.taxType);
     setNotes(o.notes ?? '');
     setDrawerOpen(false);
+  };
+
+  /** Discard an unpaid parked ticket. Cashiers use this to clean up
+   *  mistaken opens or stuck rows that show a queueNo colliding with
+   *  a paid invoice's number. Backend voids soft-cancel-style, so the
+   *  row is retained for audit but drops off the Open Sale list. */
+  const discardOrder = async (o: PosOrder) => {
+    if (!confirm(`Remove open ticket ${o.queueNo}?`)) return;
+    try {
+      await posApi.voidOrder(o.id);
+      setOpenOrders(prev => prev.filter(x => x.id !== o.id));
+      // If the operator was actively editing the ticket being
+      // discarded, clear the cart back to a fresh state so the next
+      // sale doesn't accidentally re-save the voided cart.
+      if (currentOrder?.id === o.id) {
+        setCurrentOrder(null);
+        setCart([]);
+      }
+      toast.success(`Removed ${o.queueNo}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to remove ticket.');
+    }
   };
 
   /* ----- gate states ----- */
@@ -1664,6 +1686,7 @@ export function POS() {
         onOpenChange={setDrawerOpen}
         orders={openOrders}
         onResume={resumeOrder}
+        onDiscard={discardOrder}
       />
       <PosActiveOrdersDrawer
         open={activeDrawerOpen}
@@ -2739,13 +2762,14 @@ function PosCheckoutDialog({
  * =================================================================== */
 
 interface DrawerProps {
+  onDiscard: (o: PosOrder) => void;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   orders: PosOrder[];
   onResume: (o: PosOrder) => void;
 }
 
-function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume }: DrawerProps) {
+function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }: DrawerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -2760,17 +2784,30 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume }: DrawerPro
         ) : (
           <ul className="divide-y border rounded-md max-h-80 overflow-auto">
             {orders.map(o => (
-              <li key={o.id}>
+              <li key={o.id} className="flex items-stretch">
                 <button
                   onClick={() => onResume(o)}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3"
+                  className="flex-1 text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3 min-w-0"
                 >
-                  <ArrowLeft className="h-4 w-4 text-gray-400" />
+                  <ArrowLeft className="h-4 w-4 text-gray-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="tabular-nums text-sm">{o.queueNo}</div>
                     <div className="text-xs text-gray-500 truncate">{o.customerName ?? 'Walk-in'} · {o.items.length} item(s)</div>
                   </div>
-                  <div className="text-sm font-semibold">${o.total.toFixed(2)}</div>
+                  <div className="text-sm font-semibold shrink-0">${o.total.toFixed(2)}</div>
+                </button>
+                {/* Discard the parked ticket. Void-only — the row stays
+                    in the DB for audit but drops off Open Sale. Kept
+                    outside the resume button so a click on the trash
+                    doesn't also resume the cart. */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDiscard(o); }}
+                  className="px-3 text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center shrink-0"
+                  title="Remove open ticket (only unpaid)"
+                  aria-label="Remove open ticket"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </li>
             ))}
