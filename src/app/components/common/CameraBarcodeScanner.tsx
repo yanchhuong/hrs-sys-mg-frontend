@@ -90,10 +90,23 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
         // rear preference throws OverconstrainedError (Macs with only
         // a front camera, some strict Safari builds), retry without
         // any facingMode so the browser hands back whatever it's got.
-        const video = videoRef.current;
-        if (!video) return;
-        const startDecode = (constraints: MediaStreamConstraints) =>
-          reader.decodeFromConstraints(constraints, video, (result, err) => {
+        // Radix Dialog portals its content on the same tick this
+        // effect runs, so the <video> ref may not be populated on the
+        // very first read. Wait up to ~500 ms for it to appear before
+        // giving up — the alternative is a blank preview because
+        // decodeFromConstraints bails silently when it can't attach.
+        let video = videoRef.current;
+        for (let attempts = 0; !video && attempts < 20; attempts++) {
+          await new Promise(r => setTimeout(r, 25));
+          if (cancelled) return;
+          video = videoRef.current;
+        }
+        if (!video) {
+          setError('Video element failed to mount. Close + reopen the scanner.');
+          return;
+        }
+        const startDecode = async (constraints: MediaStreamConstraints) => {
+          await reader.decodeFromConstraints(constraints, video!, (result, err) => {
             if (result) {
               onDecoded(result.getText());
             } else if (err && !(err instanceof NotFoundException)) {
@@ -103,6 +116,11 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
               console.warn('[CameraBarcodeScanner] decode error', err);
             }
           });
+          // Belt-and-braces: some browsers (Safari + macOS) don't
+          // auto-play the attached MediaStream reliably. Explicit
+          // play() forces the preview to light up.
+          try { await video!.play(); } catch { /* autoplay policy — ignore */ }
+        };
 
         try {
           const primary: MediaStreamConstraints = deviceId
@@ -188,6 +206,7 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
             className="w-full h-full object-cover"
             playsInline
             muted
+            autoPlay
           />
           {/* Alignment reticle — subtle rounded rectangle centered on
               the video so the operator knows roughly where to hold
