@@ -2789,12 +2789,12 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
                   onClick={() => onResume(o)}
                   className="flex-1 text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3 min-w-0"
                 >
-                  <ArrowLeft className="h-4 w-4 text-gray-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="tabular-nums text-sm">{o.queueNo}</div>
                     <div className="text-xs text-gray-500 truncate">{o.customerName ?? 'Walk-in'} · {o.items.length} item(s)</div>
                   </div>
                   <div className="text-sm font-semibold shrink-0">${o.total.toFixed(2)}</div>
+                  <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
                 </button>
                 {/* Discard the parked ticket. Void-only — the row stays
                     in the DB for audit but drops off Open Sale. Kept
