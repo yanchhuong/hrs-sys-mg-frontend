@@ -76,6 +76,11 @@ export function POS() {
   const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
   /** V302 phase 2 — camera-scan dialog open state. */
   const [scannerOpen, setScannerOpen] = useState(false);
+  /** Responsive collapse — on narrow screens the search input is
+   *  hidden behind an icon so the category chips + warehouse dropdown
+   *  keep breathing room. Tapping the icon reveals the input and
+   *  autofocuses it; blur-with-empty or Escape collapses it back. */
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
@@ -1310,11 +1315,42 @@ export function POS() {
                   wins, else backend lookup. Physical scanners land
                   keystrokes here + tail a newline, so the item drops
                   straight into the cart without a mouse click. */}
-              <div className="shrink-0 w-56">
+              {/* Responsive search — below sm, collapse to a single
+                  icon-button so the category chips + warehouse dropdown
+                  keep their space. Icon-only carries a tooltip
+                  (feedback_icon_after_title_tooltip). Tapping the icon
+                  expands into the full input with autoFocus; blur-with
+                  -empty and Escape collapse back. On sm+ the input is
+                  always visible. */}
+              {!searchExpanded && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setSearchExpanded(true)}
+                  title="Search items"
+                  aria-label="Search items"
+                  className="shrink-0 sm:hidden"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+              )}
+              <div
+                className={`shrink-0 w-full sm:w-56 ${searchExpanded ? '' : 'hidden sm:block'}`}
+              >
                 <SearchWithSuggestions
                   value={search}
                   onChange={setSearch}
                   onEnter={barcodeFeatureOn ? handleScannedCode : undefined}
+                  autoFocus={searchExpanded}
+                  onBlur={() => {
+                    // Give any suggestion click 150 ms to land before
+                    // we collapse; otherwise the mousedown on a row
+                    // fires *after* the blur has already unmounted us.
+                    setTimeout(() => {
+                      setSearchExpanded(prev => (prev && !search.trim() ? false : prev));
+                    }, 150);
+                  }}
+                  onEscape={() => { setSearch(''); setSearchExpanded(false); }}
                   placeholder={barcodeFeatureOn ? 'Search / scan barcode…' : 'Search items…'}
                   suggestions={sellable.map(i => ({
                     label: i.name,

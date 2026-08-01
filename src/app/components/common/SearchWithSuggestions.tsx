@@ -51,6 +51,17 @@ interface Props {
    *  scanner (which types the code + a newline) adds the item
    *  straight into the cart without a mouse click. */
   onEnter?: (value: string) => void;
+  /** Auto-focus the input on mount. Used by the responsive
+   *  collapse-to-icon flow on the POS: tapping the icon mounts the
+   *  input with autoFocus so the on-screen keyboard opens instantly. */
+  autoFocus?: boolean;
+  /** Callback fired on blur. Not passed the event because the only
+   *  consumer (POS collapse) doesn't need it. */
+  onBlur?: () => void;
+  /** Callback fired when Escape is pressed. Lets the parent collapse
+   *  the input on the mobile icon-toggle flow. Escape still closes
+   *  the suggestion dropdown internally as well. */
+  onEscape?: () => void;
 }
 
 /** Render a label with the matching substring in bold. Case-insensitive
@@ -82,6 +93,9 @@ export function SearchWithSuggestions({
   ariaLabel,
   wrapperClassName,
   onEnter,
+  autoFocus,
+  onBlur,
+  onEscape,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -187,6 +201,7 @@ export function SearchWithSuggestions({
       pick(filtered[activeIndex]);
     } else if (e.key === 'Escape') {
       setOpen(false);
+      onEscape?.();
     }
   };
 
@@ -197,9 +212,11 @@ export function SearchWithSuggestions({
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true); setActiveIndex(-1); }}
         onFocus={() => value && setOpen(true)}
+        onBlur={onBlur}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        autoFocus={autoFocus}
         className={`pl-8 pr-8 ${className ?? ''}`}
       />
       {value && (
