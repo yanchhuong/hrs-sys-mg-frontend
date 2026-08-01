@@ -850,13 +850,19 @@ export function POS() {
    *  this triggers the dialog; the actual void runs on confirmDiscard.
    *  Kept as the whole PosOrder so the dialog can render the queueNo. */
   const [discardTarget, setDiscardTarget] = useState<PosOrder | null>(null);
-  const discardOrder = (o: PosOrder) => setDiscardTarget(o);
+  /** Reason typed into the confirm dialog. Cleared each time the
+   *  dialog opens so a previous reason doesn't leak onto the next
+   *  removal. Backend stores this on pos_orders.voided_reason and
+   *  attaches it to the fan-out admin notification. */
+  const [discardReason, setDiscardReason] = useState('');
+  const discardOrder = (o: PosOrder) => { setDiscardReason(''); setDiscardTarget(o); };
   const confirmDiscard = async () => {
     const o = discardTarget;
     if (!o) return;
+    const reason = discardReason.trim();
     setDiscardTarget(null);
     try {
-      await posApi.voidOrder(o.id);
+      await posApi.voidOrder(o.id, reason || undefined);
       setOpenOrders(prev => prev.filter(x => x.id !== o.id));
       // If the operator was actively editing the ticket being
       // discarded, clear the cart back to a fresh state so the next
@@ -1724,6 +1730,20 @@ export function POS() {
               audit log but drops off Open Sale.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* Optional reason field. Saved to pos_orders.voided_reason
+              and included in the fan-out notification sent to every
+              tenant admin, so managers can spot recurring patterns
+              (e.g. "wrong item" vs "customer left"). */}
+          <div className="space-y-1.5 py-1">
+            <Label className="text-xs text-gray-600">Reason (optional)</Label>
+            <Textarea
+              value={discardReason}
+              onChange={e => setDiscardReason(e.target.value)}
+              placeholder="e.g. Wrong item, customer changed mind"
+              rows={2}
+              maxLength={500}
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDiscard} className="bg-red-600 text-white hover:bg-red-700">
