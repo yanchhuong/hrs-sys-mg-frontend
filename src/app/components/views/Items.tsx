@@ -649,6 +649,18 @@ export function Items() {
   // so Add can refuse when the tenant is at the 1000-item ceiling
   // even if the loaded slice already contains those 1000 rows.
   const [totalRows, setTotalRows] = useState<number>(0);
+  /** V302 phase 3 — server-computed summary totals returned by the
+   *  first fetch alongside the initial 15-row slice. Fed to the
+   *  stat cards so they paint the correct catalogue-wide numbers
+   *  immediately without waiting on the background full-fetch to
+   *  land. Null before the first response. */
+  const [serverTotals, setServerTotals] = useState<{
+    totalElements: number;
+    totalOutOfStock: number;
+    totalActive: number;
+    totalStock: number;
+    totalPrice: number;
+  } | null>(null);
   const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -706,23 +718,24 @@ export function Items() {
       warehouseId: warehouseFilter || undefined,
     };
     try {
-      // Two-stage fetch tuned for fastest possible paint:
-      //   1. size=15 + slim=true → description dropped, table +
-      //      pagination render immediately, loading spinner clears.
-      //   2. Background size=1000 WITHOUT slim so pages 2+ have data
-      //      AND the edit dialog's description field re-hydrates
-      //      once the background call lands. Bumped from 200 so a
-      //      tenant with 500+ items doesn't have rows silently
-      //      missing from the filter row / summary cards until the
-      //      operator types a search term (v-items-list-page-cap-1000
-      //      raised the BE cap in tandem).
-      const first = await itemsApi.list({ ...params, size: 15, slim: true });
+      // V302 phase 3 — first fetch pulls 15 rows + summary totals
+      // for the WHOLE filtered set in one round-trip. Stat cards
+      // read from those totals so the tiles paint correct catalogue
+      // numbers immediately, not after the background full-fetch
+      // lands. Background size=1000 still runs so client-side
+      // category / range filters + pagination past page 1 keep
+      // working — dropped from a blocking gate to a nice-to-have.
+      const first = await itemsApi.listWithTotals({ ...params, size: 15, slim: true });
       setRows(first.content ?? []);
       setTotalRows(first.totalElements ?? 0);
+      setServerTotals({
+        totalElements:   first.totalElements   ?? 0,
+        totalOutOfStock: first.totalOutOfStock ?? 0,
+        totalActive:     first.totalActive     ?? 0,
+        totalStock:      Number(first.totalStock ?? 0),
+        totalPrice:      Number(first.totalPrice ?? 0),
+      });
       setLoading(false);
-      // Defer the full fetch one microtask so the browser gets to
-      // paint the first 15 rows before the second fetch's decode
-      // pass starts eating the main thread.
       setTimeout(() => {
         itemsApi.list({ ...params, size: 1000 })
           .then(full => {
@@ -1253,7 +1266,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Items</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {filtered.length.toLocaleString('en-US')}
+                {(serverTotals?.totalElements ?? filtered.length).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1264,7 +1277,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Active</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {totals.active.toLocaleString('en-US')}
+                {(serverTotals?.totalActive ?? totals.active).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1275,7 +1288,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Out of Stock</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {totals.outOfStock.toLocaleString('en-US')}
+                {(serverTotals?.totalOutOfStock ?? totals.outOfStock).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1297,7 +1310,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Price</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                ${totals.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                ${(serverTotals?.totalPrice ?? totals.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
@@ -1308,7 +1321,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock (QTY)</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {totals.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                {(serverTotals?.totalStock ?? totals.qty).toLocaleString('en-US', { maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>

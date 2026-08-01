@@ -259,6 +259,38 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Item>
   return apiJson('/api/v1/stock-items', { query: q });
 }
 
+/**
+ * V302 phase 3 — paged Items response with summary totals baked in.
+ * Same filters as {@link list}, one round-trip, so the Items page
+ * can paint its stat tiles from the same call that renders the
+ * first-page slice.
+ *
+ * The totals are computed across the FULL filtered set, not just
+ * the current page — switching pages doesn't shift the tiles.
+ */
+export interface ItemsListWithTotals {
+  content: Item[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  totalOutOfStock: number;
+  totalActive: number;
+  totalStock: number;
+  totalPrice: number;
+}
+
+export async function listWithTotals(params: ListParams = {}): Promise<ItemsListWithTotals> {
+  const q: Record<string, string | number | boolean> = {};
+  if (params.q) q.q = params.q;
+  if (params.warehouseId) q.warehouseId = params.warehouseId;
+  if (params.type) q.type = params.type;
+  if (params.page !== undefined) q.page = params.page;
+  if (params.size !== undefined) q.size = params.size;
+  if (params.slim) q.slim = true;
+  return apiJson('/api/v1/stock-items/with-totals', { query: q });
+}
+
 export async function get(id: string): Promise<Item> {
   return apiJson(`/api/v1/stock-items/${id}`);
 }
