@@ -2812,7 +2812,12 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
           <p className="text-sm text-gray-500 text-center py-6">No parked tickets.</p>
         ) : (
           <ul className="divide-y border rounded-md max-h-80 overflow-auto">
-            {orders.map(o => {
+            {[...orders]
+              // First order at the top, most-recent at the bottom.
+              // Backend returns DESC by createdAt for other consumers;
+              // we resort a local copy so the drawer reads chronologically.
+              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+              .map(o => {
               const dropping = droppingId === o.id;
               return (
               <li
@@ -2827,7 +2832,18 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
                   className="flex-1 text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3 min-w-0 disabled:cursor-default"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="tabular-nums text-sm">{o.queueNo}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="tabular-nums text-sm">{o.queueNo}</span>
+                      {/* Ticket open-time. Kept next to the queueNo so
+                          the operator can spot old / stuck tickets at
+                          a glance when the list is sorted oldest-first. */}
+                      <span className="text-[11px] text-gray-500 tabular-nums">
+                        {new Date(o.createdAt).toLocaleString(undefined, {
+                          month: 'short', day: 'numeric',
+                          hour: 'numeric', minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
                     <div className="text-xs text-gray-500 truncate">{o.customerName ?? 'Walk-in'} · {o.items.length} item(s)</div>
                   </div>
                   <div className="text-sm font-semibold shrink-0">${o.total.toFixed(2)}</div>
