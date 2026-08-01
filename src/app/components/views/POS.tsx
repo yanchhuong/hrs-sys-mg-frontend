@@ -2791,7 +2791,14 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
   // drawer closes. onResume is deferred until the transform finishes
   // (~260 ms) — matches the CSS duration below.
   const [droppingId, setDroppingId] = useState<string | null>(null);
-  useEffect(() => { if (!open) setDroppingId(null); }, [open]);
+  // Collapse-by-default so the drawer stays compact even when a
+  // busy day has piled up 20+ parked tickets. First 5 render;
+  // "Show N more" reveals the rest. Reset to collapsed each time
+  // the drawer reopens.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!open) { setDroppingId(null); setExpanded(false); }
+  }, [open]);
 
   const handleResume = (o: PosOrder) => {
     if (droppingId) return;
@@ -2810,14 +2817,17 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
         </DialogHeader>
         {orders.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-6">No parked tickets.</p>
-        ) : (
+        ) : (() => {
+          // Sort a local copy oldest-first, then trim to the first 5
+          // unless the user has expanded the list. Everything below
+          // uses `visible`; `hidden` drives the "Show N more" pill.
+          const sorted = [...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          const visible = expanded ? sorted : sorted.slice(0, 5);
+          const hiddenCount = sorted.length - visible.length;
+          return (
+          <>
           <ul className="divide-y border rounded-md max-h-80 overflow-auto">
-            {[...orders]
-              // First order at the top, most-recent at the bottom.
-              // Backend returns DESC by createdAt for other consumers;
-              // we resort a local copy so the drawer reads chronologically.
-              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-              .map(o => {
+            {visible.map(o => {
               const dropping = droppingId === o.id;
               return (
               <li
@@ -2866,7 +2876,22 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
               );
             })}
           </ul>
-        )}
+          {/* Reveal-more / collapse control. Shown only when the
+              full list is longer than the visible window. Kept as a
+              plain button so it inherits the app-wide focus ring
+              and stays keyboard-navigable. */}
+          {(hiddenCount > 0 || expanded) && sorted.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setExpanded(v => !v)}
+              className="mt-2 w-full text-center text-xs text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 py-1.5 rounded"
+            >
+              {expanded ? 'Show less' : `Show ${hiddenCount} more`}
+            </button>
+          )}
+          </>
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
