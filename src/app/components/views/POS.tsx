@@ -81,6 +81,10 @@ export function POS() {
    *  keep breathing room. Tapping the icon reveals the input and
    *  autofocuses it; blur-with-empty or Escape collapses it back. */
   const [searchExpanded, setSearchExpanded] = useState(false);
+  /** Set for ~450 ms right after a parked ticket is resumed into the
+   *  cart. Triggers a one-shot scale pulse on the queueNo badge so
+   *  the ticket "lands" visibly instead of just appearing. */
+  const [cartJustLoaded, setCartJustLoaded] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
@@ -831,6 +835,11 @@ export function POS() {
     setTaxType(o.taxType);
     setNotes(o.notes ?? '');
     setDrawerOpen(false);
+    // Two-frame pulse on the queueNo badge — pop up briefly then
+    // settle. Pair with the drawer row's fly-right exit for a
+    // "ticket dropped into cart" feel.
+    setCartJustLoaded(true);
+    window.setTimeout(() => setCartJustLoaded(false), 450);
   };
 
   /** Discard an unpaid parked ticket. Cashiers use this to clean up
@@ -1130,7 +1139,13 @@ export function POS() {
             <SettingsIcon className="h-4 w-4" />
           </button>
           {currentOrder && (
-            <span className="ml-2 text-sm tabular-nums px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span
+              className={`ml-2 text-sm tabular-nums px-2 py-0.5 rounded border transition-all duration-300 ease-out ${
+                cartJustLoaded
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 scale-125 shadow-sm'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 scale-100'
+              }`}
+            >
               {currentOrder.queueNo}
             </span>
           )}
@@ -2770,6 +2785,20 @@ interface DrawerProps {
 }
 
 function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }: DrawerProps) {
+  // Row-exit animation state. Tapping a row triggers a brief "fly
+  // to the right + fade + shrink" transform on that row so the ticket
+  // visually leaves the drawer toward the cart panel before the
+  // drawer closes. onResume is deferred until the transform finishes
+  // (~260 ms) — matches the CSS duration below.
+  const [droppingId, setDroppingId] = useState<string | null>(null);
+  useEffect(() => { if (!open) setDroppingId(null); }, [open]);
+
+  const handleResume = (o: PosOrder) => {
+    if (droppingId) return;
+    setDroppingId(o.id);
+    setTimeout(() => { onResume(o); }, 260);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -2783,11 +2812,19 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
           <p className="text-sm text-gray-500 text-center py-6">No parked tickets.</p>
         ) : (
           <ul className="divide-y border rounded-md max-h-80 overflow-auto">
-            {orders.map(o => (
-              <li key={o.id} className="flex items-stretch">
+            {orders.map(o => {
+              const dropping = droppingId === o.id;
+              return (
+              <li
+                key={o.id}
+                className={`flex items-stretch transition-all duration-[260ms] ease-out ${
+                  dropping ? 'opacity-0 translate-x-10 scale-95' : 'opacity-100'
+                }`}
+              >
                 <button
-                  onClick={() => onResume(o)}
-                  className="flex-1 text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3 min-w-0"
+                  onClick={() => handleResume(o)}
+                  disabled={dropping}
+                  className="flex-1 text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-3 min-w-0 disabled:cursor-default"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="tabular-nums text-sm">{o.queueNo}</div>
@@ -2810,7 +2847,8 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
                   <Trash2 className="h-4 w-4" />
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </DialogContent>
