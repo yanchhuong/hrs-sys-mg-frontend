@@ -85,26 +85,40 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
 
         // decodeFromConstraints triggers the browser permission prompt
         // via getUserMedia, so the user is asked once and the stream
-        // starts as soon as they allow. Rear camera is picked via the
-        // facingMode hint when a deviceId isn't explicitly chosen.
-        const constraints: MediaStreamConstraints = deviceId
-          ? { video: { deviceId: { exact: deviceId } } }
-          : { video: { facingMode: { ideal: 'environment' } } };
-
+        // starts as soon as they allow. Rear camera preferred via
+        // facingMode when a deviceId isn't explicitly chosen. If the
+        // rear preference throws OverconstrainedError (Macs with only
+        // a front camera, some strict Safari builds), retry without
+        // any facingMode so the browser hands back whatever it's got.
         const video = videoRef.current;
         if (!video) return;
+        const startDecode = (constraints: MediaStreamConstraints) =>
+          reader.decodeFromConstraints(constraints, video, (result, err) => {
+            if (result) {
+              onDecoded(result.getText());
+            } else if (err && !(err instanceof NotFoundException)) {
+              // NotFoundException fires every frame that doesn't
+              // contain a barcode — expected while aligning. Swallow.
+              // eslint-disable-next-line no-console
+              console.warn('[CameraBarcodeScanner] decode error', err);
+            }
+          });
 
-        await reader.decodeFromConstraints(constraints, video, (result, err) => {
-          if (result) {
-            onDecoded(result.getText());
-          } else if (err && !(err instanceof NotFoundException)) {
-            // NotFoundException fires every frame that doesn't contain
-            // a barcode — expected while the user is aligning the
-            // code. Swallow it. Anything else is a real problem.
-            // eslint-disable-next-line no-console
-            console.warn('[CameraBarcodeScanner] decode error', err);
+        try {
+          const primary: MediaStreamConstraints = deviceId
+            ? { video: { deviceId: { exact: deviceId } } }
+            : { video: { facingMode: { ideal: 'environment' } } };
+          await startDecode(primary);
+        } catch (e) {
+          const name = (e as { name?: string })?.name;
+          if (name === 'OverconstrainedError' || name === 'NotFoundError') {
+            // Fall through to a plain "any camera" request so laptops
+            // with only a front camera still work.
+            await startDecode({ video: true });
+          } else {
+            throw e;
           }
-        });
+        }
 
         // After the stream is live the permission prompt has been
         // resolved, so labels + deviceIds are now populated. Pull the
