@@ -23,6 +23,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import * as posApi from '../../api/pos';
@@ -842,12 +846,15 @@ export function POS() {
     window.setTimeout(() => setCartJustLoaded(false), 450);
   };
 
-  /** Discard an unpaid parked ticket. Cashiers use this to clean up
-   *  mistaken opens or stuck rows that show a queueNo colliding with
-   *  a paid invoice's number. Backend voids soft-cancel-style, so the
-   *  row is retained for audit but drops off the Open Sale list. */
-  const discardOrder = async (o: PosOrder) => {
-    if (!confirm(`Remove open ticket ${o.queueNo}?`)) return;
+  /** Discard-target state for the AlertDialog confirmation. Setting
+   *  this triggers the dialog; the actual void runs on confirmDiscard.
+   *  Kept as the whole PosOrder so the dialog can render the queueNo. */
+  const [discardTarget, setDiscardTarget] = useState<PosOrder | null>(null);
+  const discardOrder = (o: PosOrder) => setDiscardTarget(o);
+  const confirmDiscard = async () => {
+    const o = discardTarget;
+    if (!o) return;
+    setDiscardTarget(null);
     try {
       await posApi.voidOrder(o.id);
       setOpenOrders(prev => prev.filter(x => x.id !== o.id));
@@ -1703,6 +1710,28 @@ export function POS() {
         onResume={resumeOrder}
         onDiscard={discardOrder}
       />
+      {/* Confirm-remove for a parked ticket. Shared AlertDialog
+          pattern (matches Items/Employees/etc.) instead of the
+          browser confirm() so the copy stays on-brand and the
+          drawer's own Dialog isn't stolen by the native modal. */}
+      <AlertDialog open={!!discardTarget} onOpenChange={o => !o && setDiscardTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this open ticket?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {discardTarget?.queueNo} will be voided. Only unpaid
+              tickets can be removed here — the row stays in the
+              audit log but drops off Open Sale.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDiscard} className="bg-red-600 text-white hover:bg-red-700">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <PosActiveOrdersDrawer
         open={activeDrawerOpen}
         onOpenChange={setActiveDrawerOpen}
