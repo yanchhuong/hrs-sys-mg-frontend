@@ -172,11 +172,42 @@ export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<R
   if (activeClientTenantId && !path.startsWith('/api/v1/agency/')) {
     merged['X-Client-Tenant'] = activeClientTenantId;
   }
-  return fetch(url, {
-    ...rest,
-    headers: merged,
-    body: json !== undefined ? JSON.stringify(json) : (rest as { body?: BodyInit }).body,
-  });
+  try {
+    return await fetch(url, {
+      ...rest,
+      headers: merged,
+      body: json !== undefined ? JSON.stringify(json) : (rest as { body?: BodyInit }).body,
+    });
+  } catch (err) {
+    // v-api-unreachable-redirect — network-layer failure ("Failed to
+    // fetch") — DNS, CORS, offline, or the server is down. fetch()
+    // throws a TypeError; the request never reached the API.
+    //
+    // If the user is authenticated (auth flag on + token present),
+    // clear their token and dispatch a page-scoped event so
+    // AuthContext can drop currentUser and route back to
+    // LandingPage. Without this, the operator sat on a protected
+    // page while every subsequent request quietly threw and every
+    // list rendered its error state — no obvious cue that the
+    // problem was "the API is down."
+    //
+    // Anonymous / public callers are left to handle the error at
+    // their own call site so they don't get bounced off a page they
+    // were legitimately allowed to see:
+    //   • auth === false (LoginPage before sign-in, /auth/login itself)
+    //   • no stored token (never logged in — customer on /shop/{code})
+    //   • the path is a /public/** endpoint (a tenant admin previewing
+    //     their own shop still hits public endpoints; redirecting
+    //     them to login when a customer-facing page fails is jarring)
+    const isNetworkError = err instanceof TypeError;
+    const isPublicPath = path.startsWith('/api/v1/public/');
+    const wasAuthed = auth !== false && !!getToken() && !isPublicPath;
+    if (isNetworkError && wasAuthed && typeof window !== 'undefined') {
+      setToken(null);
+      window.dispatchEvent(new CustomEvent('auth:api-unreachable'));
+    }
+    throw err;
+  }
 }
 
 /**

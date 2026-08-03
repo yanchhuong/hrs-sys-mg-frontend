@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { toast } from 'sonner';
 import { User, UserRole } from '../types/hrms';
 import { mockUsers, mockEmployees } from '../data/mockData';
 import * as authApi from '../api/auth';
@@ -547,10 +548,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Reacting here drops currentUser so the App root renders
   // LandingPage / LoginPage instead of stranding the operator on a
   // protected page whose calls all silently fail.
+  //
+  // v-api-unreachable-redirect — same treatment when the API is
+  // unreachable ("Failed to fetch" — DNS, CORS, server down,
+  // offline). Client dispatches 'auth:api-unreachable' only when
+  // the user was authenticated (public / anon callers are left to
+  // handle their own error state). We fire a toast BEFORE the
+  // logout so the operator understands why they landed back on the
+  // login screen instead of assuming their session expired.
   useEffect(() => {
     const onExpired = () => { logout(); };
+    const onUnreachable = () => {
+      toast.error('Cannot reach the server. Please sign in again once the connection is restored.');
+      logout();
+    };
     window.addEventListener('auth:expired', onExpired);
-    return () => window.removeEventListener('auth:expired', onExpired);
+    window.addEventListener('auth:api-unreachable', onUnreachable);
+    return () => {
+      window.removeEventListener('auth:expired', onExpired);
+      window.removeEventListener('auth:api-unreachable', onUnreachable);
+    };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 

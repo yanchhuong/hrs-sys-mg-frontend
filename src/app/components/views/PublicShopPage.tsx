@@ -345,7 +345,22 @@ export function PublicShopPage() {
           });
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Shop not found');
+        if (cancelled) return;
+        // v-api-unreachable-redirect — network-layer failure ("Failed
+        // to fetch") means the backend is down or the customer's
+        // connection dropped. Show a friendly maintenance toast + a
+        // matching full-page banner instead of the raw error string —
+        // a customer sitting on someone's menu shouldn't see the
+        // scary "TypeError: Failed to fetch" default. Other errors
+        // (404 shop-not-found, 5xx from a live server, etc.) keep
+        // their original message so real bugs still surface.
+        const isNetworkError = e instanceof TypeError;
+        if (isNetworkError) {
+          toast.error("Sorry, we're on maintenance! We'll be back soon.");
+          setError("We're on maintenance right now. Please come back in a few minutes.");
+        } else {
+          setError(e instanceof Error ? e.message : 'Shop not found');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
