@@ -15,6 +15,10 @@ export interface ShopLinkInfo {
    *  browser origin when the API returned a relative path. */
   url: string;
   enabled: boolean;
+  /** V303 — public-page ordering toggle. When false the public
+   *  /shop/{code} page renders items read-only (no cart / no
+   *  checkout). Independent of {@link enabled}. */
+  orderingEnabled: boolean;
   updatedAt: string | null;
   /** V282 — running total of times the customer-facing /shop/{code}
    *  page has loaded the menu. Increments on every successful anonymous
@@ -91,6 +95,14 @@ export interface PublicShopPayload {
    *  / checkout controls. Absent (undefined) is treated as false on
    *  legacy responses. */
   frozen?: boolean;
+  /** V303 — tenant-controlled "Order Available" toggle. When false
+   *  the FE hides add-to-cart / cart / checkout so the page reads as
+   *  a menu preview only. Absent (undefined) treated as true. */
+  orderingEnabled?: boolean;
+  /** V303 — true when the tenant has PayWay (KHQR) credentials on
+   *  file. When false the FE hides the KHRQR payment button because
+   *  the mint call would fail. */
+  khqrEnabled?: boolean;
 }
 
 export async function getMyShopLink(): Promise<ShopLinkInfo> {
@@ -103,6 +115,12 @@ export async function rotateShopLink(): Promise<ShopLinkInfo> {
 
 export async function setShopLinkEnabled(enabled: boolean): Promise<ShopLinkInfo> {
   return apiJson(`/api/v1/pos/shop-link/enabled?value=${enabled}`, { method: 'POST' });
+}
+
+/** V303 — toggle the per-shop Order Available flag. Off = the
+ *  public menu renders read-only (no cart, no checkout). */
+export async function setShopLinkOrderingEnabled(enabled: boolean): Promise<ShopLinkInfo> {
+  return apiJson(`/api/v1/pos/shop-link/ordering-enabled?value=${enabled}`, { method: 'POST' });
 }
 
 /** Anonymous. Sends no Authorization header so a guest browser

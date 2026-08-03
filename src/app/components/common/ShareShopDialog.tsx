@@ -7,7 +7,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye, ShoppingCart } from 'lucide-react';
+import { Switch } from '../ui/switch';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
 
@@ -31,6 +32,10 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
   const [info, setInfo] = useState<shopApi.ShopLinkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [rotating, setRotating] = useState(false);
+  /** v-shop-ordering-toggle — busy flag for the Order Available
+   *  switch so the operator can't spam-flip while the request is
+   *  in flight. */
+  const [orderingBusy, setOrderingBusy] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Compose the full URL the customer will hit. The API returns either
@@ -190,6 +195,46 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
                   This shop link is disabled. The public page will 404 until you re-enable it.
                 </p>
               )}
+            </div>
+
+            {/* v-shop-ordering-toggle — Order Available switch.
+                When off the public /shop/{code} page still renders
+                items but hides add-to-cart / cart / checkout. When
+                on the current ordering flow keeps working. Flipped
+                via a small POST; local state updates optimistically
+                and reverts on failure. */}
+            <div className="rounded-md border bg-white p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-800 inline-flex items-center gap-1.5">
+                  <ShoppingCart className="h-3.5 w-3.5 text-blue-600" />
+                  Order Available
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {info.orderingEnabled
+                    ? 'Customers can add items to cart and place orders.'
+                    : 'Menu is view-only — no cart, no checkout on the public page.'}
+                </div>
+              </div>
+              <Switch
+                checked={info.orderingEnabled}
+                disabled={orderingBusy || rotating || loading}
+                onCheckedChange={async (next) => {
+                  if (!info) return;
+                  const prev = info.orderingEnabled;
+                  setInfo({ ...info, orderingEnabled: next });
+                  setOrderingBusy(true);
+                  try {
+                    const fresh = await shopApi.setShopLinkOrderingEnabled(next);
+                    setInfo(fresh);
+                    toast.success(next ? 'Ordering turned on' : 'Ordering turned off');
+                  } catch (e) {
+                    setInfo({ ...info, orderingEnabled: prev });
+                    toast.error(e instanceof Error ? e.message : 'Failed to update');
+                  } finally {
+                    setOrderingBusy(false);
+                  }
+                }}
+              />
             </div>
           </div>
         ) : null}

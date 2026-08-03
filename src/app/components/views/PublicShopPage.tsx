@@ -810,6 +810,21 @@ export function PublicShopPage() {
   // cart bar is hidden, and a banner explains the state to the
   // customer. Undefined on legacy responses → treated as false.
   const frozen = data.frozen === true;
+  // V303 — tenant-flipped "Order Available" toggle on the Share
+  // Menu dialog. Undefined on legacy payloads → treated as true so
+  // pre-V303 shops keep accepting orders. Same effect as `frozen`
+  // on the customer view (no cart, no checkout), but without the
+  // "temporarily paused" banner — this is a deliberate tenant
+  // choice, not a compliance state.
+  const orderingEnabled = data.orderingEnabled !== false;
+  // Combined gate — anything that hides cart / add-to-cart /
+  // checkout reads off this so the two states behave the same.
+  const orderingBlocked = frozen || !orderingEnabled;
+  // V303 — KHRQR payment button is hidden when the tenant hasn't
+  // configured PayWay credentials. Undefined on legacy payloads →
+  // treated as false to be safe (better to hide than to show a
+  // button whose mint would 500).
+  const khqrEnabled = data.khqrEnabled === true;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -1000,7 +1015,7 @@ export function PublicShopPage() {
                     .reduce((s, l) => s + l.qty, 0)}
                   onOpen={() => setDetailTarget(it)}
                   onAdd={() => addOne(it)}
-                  orderingDisabled={frozen}
+                  orderingDisabled={orderingBlocked}
                 />
               ))}
             </div>
@@ -1051,7 +1066,7 @@ export function PublicShopPage() {
           V277 — hidden entirely when the shop is frozen; the BE
           would reject the order anyway and hiding the bar is a
           clearer signal than a disabled button. */}
-      {cartCount > 0 && !frozen && (
+      {cartCount > 0 && !orderingBlocked && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -1336,19 +1351,25 @@ export function PublicShopPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                   Payment method
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('khrqr')}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition ${
-                      paymentMethod === 'khrqr'
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    <QrCode className="h-4 w-4" />
-                    KHRQR
-                  </button>
+                <div className={khqrEnabled ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
+                  {/* V303 — KHRQR hidden entirely when the tenant
+                      hasn't uploaded PayWay credentials. Only the
+                      Cash option shows in that case (single-col
+                      layout). */}
+                  {khqrEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('khrqr')}
+                      className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition ${
+                        paymentMethod === 'khrqr'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <QrCode className="h-4 w-4" />
+                      KHRQR
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('cash')}
