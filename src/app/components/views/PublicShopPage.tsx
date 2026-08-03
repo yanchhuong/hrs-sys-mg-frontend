@@ -176,6 +176,15 @@ export function PublicShopPage() {
   // a fresh filter always starts from the top.
   const [visibleCount, setVisibleCount] = useState<number>(SHOP_PAGE_SIZE);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  // v-shop-chip-scroll-arrows — visible left / right chevron buttons
+  // that slide the category strip on click. The strip is already
+  // touch-swipeable via .chip-row, but a mouse-only laptop customer
+  // on a narrow window has no obvious affordance to reach the chips
+  // that fell off-screen. The arrows appear only in the direction
+  // that has hidden content and hide when the strip fits entirely
+  // (so wide screens with a short chip set stay clean).
+  const chipRowRef = useRef<HTMLDivElement | null>(null);
+  const [chipScroll, setChipScroll] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   // "Back to top" FAB — appears once the customer has scrolled past
   // ~one viewport so the button never shows on short menus.
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
@@ -522,6 +531,46 @@ export function PublicShopPage() {
     () => deriveCategoryChips(inStockSearched),
     [inStockSearched],
   );
+
+  // v-shop-chip-scroll-arrows — recompute canScrollLeft / canScrollRight
+  // whenever the strip scrolls, the viewport resizes, or the chip
+  // set changes (a tenant flipping between search terms can add /
+  // remove buckets). Also runs a moment after mount so the initial
+  // render sees a non-zero scrollWidth. Kept as a plain event
+  // listener + ResizeObserver so we don't pull a scroll library
+  // for one row.
+  useEffect(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    const update = () => {
+      const maxScroll = el.scrollWidth - el.clientWidth;
+      // 1-px epsilon guards floating-point rounding on some browsers
+      // where scrollLeft can land just shy of maxScroll.
+      setChipScroll({
+        left: el.scrollLeft > 1,
+        right: el.scrollLeft < maxScroll - 1,
+      });
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, [chipKeys.length]);
+
+  /** v-shop-chip-scroll-arrows — click handler for the chevron
+   *  buttons. Slides the strip by ~70% of the visible width so a
+   *  couple of chips overlap between clicks (matches the "carousel"
+   *  UX customers expect). Uses smooth-scroll for the animation. */
+  const scrollChips = (direction: 'left' | 'right') => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    const delta = el.clientWidth * 0.7 * (direction === 'left' ? -1 : 1);
+    el.scrollBy({ left: delta, behavior: 'smooth' });
+  };
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
   const cartCount = useMemo(() => cartLines.reduce((s, l) => s + l.qty, 0), [cartLines]);
@@ -939,33 +988,60 @@ export function PublicShopPage() {
             side inputs from squeezing; the chip-row scrolls
             independently when it overflows. */}
         <div className="flex items-center gap-2 min-w-0">
-          <div className="chip-row flex-1 min-w-0">
-          {chipKeys
-            // Hide chips whose bucket has zero items — keeps the shop
-            // menu clean for tenants that only sell drinks (no Snacks(0)
-            // / Food(0) / Other(0) clutter next to Drinks). "All" is
-            // always visible; the active chip stays visible even if a
-            // filter change leaves its count at 0 mid-search.
-            .filter(key => key === 'all' || category === key || (counts.get(key) ?? 0) > 0)
-            .map(key => {
-              const active = category === key;
-              const count = counts.get(key) ?? 0;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setCategory(key)}
-                  className={`px-3 h-8 rounded-full border text-sm font-medium transition ${
-                    active
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {catLabel(key)}
-                  <span className="ml-1 text-[11px] opacity-70">({count})</span>
-                </button>
-              );
-            })}
+          {/* v-shop-chip-scroll-arrows — relative wrapper so the two
+              chevron buttons can absolute-position against the chip
+              strip's edges. flex-1 min-w-0 stays on the wrapper (not
+              the inner .chip-row) so the row keeps its native flex
+              share and can shrink correctly on narrow viewports. */}
+          <div className="relative flex-1 min-w-0">
+            {chipScroll.left && (
+              <button
+                type="button"
+                onClick={() => scrollChips('left')}
+                aria-label="Scroll categories left"
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <ChevronLeft className="h-4 w-4 text-gray-700" />
+              </button>
+            )}
+            <div ref={chipRowRef} className="chip-row">
+            {chipKeys
+              // Hide chips whose bucket has zero items — keeps the shop
+              // menu clean for tenants that only sell drinks (no Snacks(0)
+              // / Food(0) / Other(0) clutter next to Drinks). "All" is
+              // always visible; the active chip stays visible even if a
+              // filter change leaves its count at 0 mid-search.
+              .filter(key => key === 'all' || category === key || (counts.get(key) ?? 0) > 0)
+              .map(key => {
+                const active = category === key;
+                const count = counts.get(key) ?? 0;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setCategory(key)}
+                    className={`px-3 h-8 rounded-full border text-sm font-medium transition ${
+                      active
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {catLabel(key)}
+                    <span className="ml-1 text-[11px] opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+            {chipScroll.right && (
+              <button
+                type="button"
+                onClick={() => scrollChips('right')}
+                aria-label="Scroll categories right"
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <ChevronRight className="h-4 w-4 text-gray-700" />
+              </button>
+            )}
           </div>
           {/* Search input pinned right. shrink-0 so the chip row
               (flex-1) absorbs the remaining width. */}
