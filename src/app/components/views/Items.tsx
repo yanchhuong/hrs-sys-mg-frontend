@@ -129,6 +129,7 @@ const DRINK_DEFAULT_MODIFIERS: itemsApi.ModifierGroup[] = [
 function ReceiveStockPopover({
   item,
   onReceived,
+  external,
 }: {
   item: itemsApi.Item;
   /** Called with the fresh Item returned by itemsApi.stockIn (or the
@@ -136,8 +137,16 @@ function ReceiveStockPopover({
    *  Price) so the parent can splice-in-place. Matches the same
    *  optimistic pattern the flag toggles + edit save use. */
   onReceived: (updated: itemsApi.Item) => void;
+  /** v-items-scan-to-stock-in — externally-controlled open state.
+   *  When set, the component skips its own trigger button and
+   *  renders only the dialog. Used by the barcode-scan flow on the
+   *  Items page toolbar: scan → lookup item → open this dialog
+   *  from the parent without an anchor button. */
+  external?: { open: boolean; onOpenChange: (open: boolean) => void };
 }) {
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = external ? external.open : innerOpen;
+  const setOpen = external ? external.onOpenChange : setInnerOpen;
   const [qty, setQty] = useState<string>('');
   const [cost, setCost] = useState<string>('');
   const [price, setPrice] = useState<string>('');
@@ -237,7 +246,7 @@ function ReceiveStockPopover({
 
   return (
     <>
-      {trigger}
+      {!external && trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
         <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader>
@@ -683,6 +692,14 @@ export function Items() {
   /** V302 — camera-scan dialog open state for the Item edit form.
    *  Decoded value drops into form.barcode. */
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  /** v-items-scan-to-stock-in — separate scanner state for the
+   *  toolbar barcode icon (as opposed to the one inside the edit
+   *  form). Decoded value routes through itemsApi.getByBarcode; on
+   *  match the ReceiveStockPopover opens in external mode for that
+   *  item; on miss a toast tells the operator to add the item
+   *  first. */
+  const [toolbarScannerOpen, setToolbarScannerOpen] = useState(false);
+  const [scanStockInItem, setScanStockInItem] = useState<itemsApi.Item | null>(null);
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   // Filter applied to the list query when the feature is on. Empty
   // string = "All" (no warehouse filter).
@@ -1272,6 +1289,44 @@ export function Items() {
         }}
       />
 
+      {/* v-items-scan-to-stock-in — toolbar-driven scan. Decoded
+          value is looked up by barcode against the full catalogue
+          (including rows outside the currently-loaded window).
+          Hits open the Increase Stock dialog for that item; misses
+          toast the operator without stealing the search string. */}
+      <CameraBarcodeScanner
+        open={toolbarScannerOpen}
+        onOpenChange={setToolbarScannerOpen}
+        onDecoded={async code => {
+          const norm = code.trim();
+          setToolbarScannerOpen(false);
+          if (!norm) return;
+          try {
+            const hit = await itemsApi.getByBarcode(norm);
+            setScanStockInItem(hit);
+          } catch {
+            toast.error(`No item matches barcode "${norm}"`);
+          }
+        }}
+      />
+
+      {scanStockInItem && (
+        <ReceiveStockPopover
+          item={scanStockInItem}
+          external={{
+            open: true,
+            onOpenChange: (o) => { if (!o) setScanStockInItem(null); },
+          }}
+          onReceived={(updated) => {
+            // Splice the fresh row into the currently-loaded list so
+            // the stock cell updates without a full refetch. Same
+            // pattern the row-level popover uses.
+            setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
+            setScanStockInItem(null);
+          }}
+        />
+      )}
+
       <StockItemUsageSettingsDialog
         open={usageSettingsOpen}
         onOpenChange={setUsageSettingsOpen}
@@ -1602,6 +1657,25 @@ export function Items() {
                 }
               }}
             />
+            {/* v-items-scan-to-stock-in — camera scan button next to
+                the search input. Only surfaces when the barcode
+                feature is on. Decoded value routes through
+                getByBarcode; if the item exists we open the
+                Increase Stock dialog straight away (no click into
+                the row's + icon). */}
+            {barcodeFeatureOn && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                title="Scan barcode to increase stock"
+                aria-label="Scan barcode to increase stock"
+                onClick={() => setToolbarScannerOpen(true)}
+              >
+                <ScanBarcode className="h-4 w-4" />
+              </Button>
+            )}
             <Button type="submit" variant="outline" size="sm">Search</Button>
           </form>
         </CardHeader>
