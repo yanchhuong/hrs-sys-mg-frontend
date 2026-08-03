@@ -289,23 +289,37 @@ export function POS() {
           setLoading(false);
           return;
         }
-        const [itemList, custList, open, active, pos] = await Promise.all([
-          // slim=true trims the description text field from every row;
-          // POS tiles don't render description, so this is a pure
-          // payload win with no visual impact.
+        // v-pos-load-two-phase — the Promise.all previously blocked
+        // POS paint on the SLOWEST of five fetches. The items(1000)
+        // call carries base64 thumbs and dominates on the droplet
+        // (200+ ms sustained). Split into:
+        //   Phase 1 (blocking): items page-1 (50 rows) + pos settings.
+        //     Enough to paint the grid + let the operator tap tiles.
+        //   Phase 2 (background): the remaining ~950 items + customers
+        //     + open orders + active fulfillment. Silently backfills;
+        //     no spinner, no re-mount.
+        const [firstPage, pos] = await Promise.all([
+          itemsApi.list({ page: 0, size: 50, slim: true }),
+          settingsApi.get('pos'),
+        ]);
+        setItems(firstPage.content.filter(i => i.active));
+        setPosSettings(pos);
+        // Release the loading gate now — operator can already work
+        // with the first 50 tiles while the tail streams in.
+        setLoading(false);
+
+        // Phase 2 — everything else, fire-and-forget style.
+        Promise.all([
           itemsApi.list({ size: 1000, slim: true }),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
           posApi.listActiveFulfillment(),
-          settingsApi.get('pos'),
-        ]);
-        // Only show active items in the grid; deductionEnabled is
-        // respected by the backend at checkout time.
-        setItems(itemList.content.filter(i => i.active));
-        setCustomers(custList.content);
-        setOpenOrders(open);
-        setActiveOrders(active);
-        setPosSettings(pos);
+        ]).then(([itemList, custList, open, active]) => {
+          setItems(itemList.content.filter(i => i.active));
+          setCustomers(custList.content);
+          setOpenOrders(open);
+          setActiveOrders(active);
+        }).catch(() => { /* first-page tiles keep working on failure */ });
         // Fire-and-forget the company profile fetch — the receipt
         // renders without it if the request fails; no reason to
         // block POS load on a hiccup here.
@@ -602,7 +616,10 @@ export function POS() {
       onItemTap(remote);
       setSearch('');
     } catch {
-      toast.error(`No item matches "${norm}"`);
+      // v-pos-search-silent-miss — no toast on a search miss. The
+      // "No items match your search." empty-state in the grid is
+      // already the cashier's signal; a red toast for a
+      // typo-in-progress felt punitive.
     }
   };
 

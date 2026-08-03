@@ -221,7 +221,17 @@ function isTenantFrozenResponse(status: number, body: any): boolean {
 /** JSON request that throws ApiError on non-2xx. */
 export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   const res = await apiFetch(path, opts);
-  if (res.status === 401) setToken(null);
+  if (res.status === 401) {
+    // v-session-timeout-redirect — clear the token AND fire a page-
+    // scoped event so AuthContext can drop currentUser + route back
+    // to the login screen. Without this, the user keeps sitting on
+    // whatever protected page they had open while every subsequent
+    // call quietly 401s.
+    setToken(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+  }
   const body = await safeJson<any>(res);
   if (isModuleDisabledResponse(res.status, body)) {
     throw new ModuleDisabledError(path);
@@ -240,7 +250,17 @@ export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise
 /** For DELETE / 204 endpoints that return no body. */
 export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<void> {
   const res = await apiFetch(path, opts);
-  if (res.status === 401) setToken(null);
+  if (res.status === 401) {
+    // v-session-timeout-redirect — clear the token AND fire a page-
+    // scoped event so AuthContext can drop currentUser + route back
+    // to the login screen. Without this, the user keeps sitting on
+    // whatever protected page they had open while every subsequent
+    // call quietly 401s.
+    setToken(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
+  }
   if (!res.ok) {
     const body = await safeJson<any>(res);
     if (isModuleDisabledResponse(res.status, body)) throw new ModuleDisabledError(path);

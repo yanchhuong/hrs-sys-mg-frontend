@@ -542,6 +542,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi.logout();
   };
 
+  // v-session-timeout-redirect — the api client fires 'auth:expired'
+  // on any 401 (JWT expired, revoked, tenant frozen-out, etc.).
+  // Reacting here drops currentUser so the App root renders
+  // LandingPage / LoginPage instead of stranding the operator on a
+  // protected page whose calls all silently fail.
+  useEffect(() => {
+    const onExpired = () => { logout(); };
+    window.addEventListener('auth:expired', onExpired);
+    return () => window.removeEventListener('auth:expired', onExpired);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
   // Dev-only role toggle — only meaningful against the mock user list.
   const switchRole = async (role: UserRole) => {
     if (!USE_MOCKS) return;
