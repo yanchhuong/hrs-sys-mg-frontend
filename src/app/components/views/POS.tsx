@@ -1680,6 +1680,9 @@ export function POS() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Add customer</DialogTitle>
+            <DialogDescription className="sr-only">
+              Create a new customer record so this ticket can be attached to it.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <div>

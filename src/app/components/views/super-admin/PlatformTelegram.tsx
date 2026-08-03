@@ -54,6 +54,9 @@ export function PlatformTelegram() {
   // Edit-dialog form state. Mirrors the previous in-page form but
   // lives in the dialog now. Reset on every open from the current
   // platform row so re-opening doesn't carry stale typed values.
+  // V304 — {@link audience} routes save/delete between the customer
+  // and HR platform endpoints. One dialog, two singletons.
+  const [audience, setAudience] = useState<'customer' | 'employee'>('customer');
   const [botUsername, setBotUsername] = useState('');
   const [botToken, setBotToken] = useState('');
   const [enabled, setEnabled] = useState(true);
@@ -85,12 +88,15 @@ export function PlatformTelegram() {
   };
   useEffect(() => { void load(); }, []);
 
-  // Platform row lookup — null when not yet registered. Used both
-  // to show the "Add" CTA and to prefill the edit dialog. There's
-  // only one platform bot today (customer-audience); a platform HR
-  // bot would slot in here as a second row if that lands later.
-  const platformBot = useMemo(
-    () => rows.find(r => r.kind === 'platform') ?? null,
+  // V304 — two Super-Admin platform singletons now: customer (V108)
+  // and employee (V304). Each has its own Add CTA that only shows
+  // when the row is missing, and its own edit path via {@link audience}.
+  const platformCustomerBot = useMemo(
+    () => rows.find(r => r.kind === 'platform' && r.audience === 'customer') ?? null,
+    [rows],
+  );
+  const platformEmployeeBot = useMemo(
+    () => rows.find(r => r.kind === 'platform' && r.audience === 'employee') ?? null,
     [rows],
   );
   const tenantBots = useMemo(
@@ -102,20 +108,61 @@ export function PlatformTelegram() {
     [rows],
   );
 
+  /** V304 — helper: pick the row that matches the currently-selected
+   *  audience so the dialog + confirm-remove know which singleton
+   *  they're operating on. */
+  const currentPlatformBot = audience === 'employee' ? platformEmployeeBot : platformCustomerBot;
+
+  /** V304 — dialog mode. In 'add' the audience picker is live so the
+   *  Super Admin can flip between Customer + Employee before saving;
+   *  in 'edit' the audience is locked to the row that opened the
+   *  dialog. Kept in state (not derived) so switching audience
+   *  mid-Add doesn't accidentally flip us into edit. */
+  const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
+
   const openAdd = () => {
+    // Default to the first audience that isn't already registered so
+    // the picker doesn't land on a disabled option. When both are
+    // free (empty state), Customer is the historical first flavour so
+    // we keep it as the default. When Customer is already taken but
+    // Employee isn't, jump straight to Employee.
+    const initial: 'customer' | 'employee' =
+      !platformCustomerBot ? 'customer'
+        : !platformEmployeeBot ? 'employee'
+          : 'customer';
+    setDialogMode('add');
+    setAudience(initial);
     setBotUsername('');
     setBotToken('');
     setEnabled(true);
     setDescription('');
     setDialogOpen(true);
   };
-  const openEdit = () => {
-    if (!platformBot) { openAdd(); return; }
-    setBotUsername(platformBot.botUsername);
+  const openEdit = (which: 'customer' | 'employee') => {
+    const row = which === 'employee' ? platformEmployeeBot : platformCustomerBot;
+    if (!row) { openAdd(); return; }
+    setDialogMode('edit');
+    setAudience(which);
+    setBotUsername(row.botUsername);
     setBotToken('');
-    setEnabled(platformBot.enabled);
-    setDescription(platformBot.description ?? '');
+    setEnabled(row.enabled);
+    setDescription(row.description ?? '');
     setDialogOpen(true);
+  };
+
+  /** V304 — user flips the audience segment inside the Add dialog.
+   *  Reset the form so the previously-typed values from the other
+   *  audience don't bleed across. Ignored when the target audience is
+   *  already registered (button rendered disabled anyway, defensive). */
+  const pickAudienceInAdd = (which: 'customer' | 'employee') => {
+    if (dialogMode !== 'add') return;
+    if (which === 'customer' && platformCustomerBot) return;
+    if (which === 'employee' && platformEmployeeBot) return;
+    setAudience(which);
+    setBotUsername('');
+    setBotToken('');
+    setEnabled(true);
+    setDescription('');
   };
 
   const save = async () => {
@@ -124,20 +171,24 @@ export function PlatformTelegram() {
       return;
     }
     if (!botToken.trim()) {
-      toast.error(platformBot
+      toast.error(currentPlatformBot
         ? 'Re-enter the bot token to confirm (tokens are write-only).'
         : 'Bot token is required');
       return;
     }
     setSaving(true);
     try {
-      await telegramApi.putPlatformBot({
+      const put = audience === 'employee'
+        ? telegramApi.putPlatformHrBot
+        : telegramApi.putPlatformBot;
+      await put({
         botUsername: botUsername.trim(),
         botToken: botToken.trim(),
         enabled,
         description: description.trim() || undefined,
       });
-      toast.success(platformBot ? 'Platform bot updated' : 'Platform bot registered');
+      const label = audience === 'employee' ? 'HR bot' : 'Customer bot';
+      toast.success(currentPlatformBot ? `Platform ${label} updated` : `Platform ${label} registered`);
       setDialogOpen(false);
       await load();
     } catch (e) {
@@ -147,11 +198,23 @@ export function PlatformTelegram() {
     }
   };
 
+  /** V304 — audience of the row targeted by the current confirm-remove
+   *  dialog. Set by the row's trash button so remove() knows which
+   *  endpoint to call. */
+  const [removeAudience, setRemoveAudience] = useState<'customer' | 'employee'>('customer');
+  const askRemove = (which: 'customer' | 'employee') => {
+    setRemoveAudience(which);
+    setConfirmRemove(true);
+  };
   const remove = async () => {
     setSaving(true);
     try {
-      await telegramApi.deletePlatformBot();
-      toast.success('Platform bot removed');
+      const del = removeAudience === 'employee'
+        ? telegramApi.deletePlatformHrBot
+        : telegramApi.deletePlatformBot;
+      await del();
+      const label = removeAudience === 'employee' ? 'HR bot' : 'Customer bot';
+      toast.success(`Platform ${label} removed`);
       setConfirmRemove(false);
       await load();
     } catch (e) {
@@ -273,9 +336,11 @@ export function PlatformTelegram() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-sm">
-                    One <span className="font-medium text-blue-700">Public</span> shared
-                    bot belongs to Super Admin and falls back for every tenant without
-                    their own.{' '}
+                    <span className="font-medium text-blue-700">Public</span> bots
+                    belong to Super Admin and are shared across every tenant without their
+                    own — one for <span className="font-medium text-sky-700">Customer</span>{' '}
+                    (invoice) and one for{' '}
+                    <span className="font-medium text-amber-700">Employee</span> (check-in / out).{' '}
                     <span className="font-medium text-purple-700">Private</span> bots
                     are owned by tenants and listed here for visibility.{' '}
                     <span className="font-medium text-red-700">Error</span> bot receives
@@ -291,7 +356,10 @@ export function PlatformTelegram() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {!platformBot && (
+          {/* V304 — one CTA. Type gets picked inside the dialog.
+              Button disappears once both platform singletons are
+              registered because there's nothing left to add. */}
+          {(!platformCustomerBot || !platformEmployeeBot) && (
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add Public Bot
@@ -332,7 +400,8 @@ export function PlatformTelegram() {
               {!loading && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    No bots registered yet. Click <strong>Add Public Bot</strong> for the shared customer fallback,
+                    No bots registered yet. Click <strong>Add Customer Bot</strong> for the shared invoice fallback,{' '}
+                    <strong>Add Employee Bot</strong> for the shared HR check-in/out fallback,
                     or <strong>Add Error Bot</strong> to receive unhandled server errors on Telegram.
                   </TableCell>
                 </TableRow>
@@ -437,14 +506,19 @@ export function PlatformTelegram() {
                         </div>
                       ) : isPlatform ? (
                         <div className="inline-flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7" onClick={openEdit}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7"
+                            onClick={() => openEdit(isEmployee ? 'employee' : 'customer')}
+                          >
                             <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => setConfirmRemove(true)}
+                            onClick={() => askRemove(isEmployee ? 'employee' : 'customer')}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -469,8 +543,10 @@ export function PlatformTelegram() {
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-blue-600" />
-              {platformBot ? 'Edit Public Bot' : 'Register Public Bot'}
+              <Bot className={`h-4 w-4 ${audience === 'employee' ? 'text-amber-600' : 'text-blue-600'}`} />
+              {currentPlatformBot
+                ? `Edit Public ${audience === 'employee' ? 'Employee' : 'Customer'} Bot`
+                : `Register Public ${audience === 'employee' ? 'Employee' : 'Customer'} Bot`}
             </DialogTitle>
             <DialogDescription>
               Create the platform bot via{' '}
@@ -478,31 +554,85 @@ export function PlatformTelegram() {
                  className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
                 @BotFather <ExternalLink className="h-3 w-3" />
               </a>
-              {' '}then paste the username and token. Tenants with no bot of
-              their own will deliver invoices through this one.
+              {' '}then paste the username and token. Tenants with no{' '}
+              {audience === 'employee' ? 'HR' : 'customer'} bot of their own will use this one automatically —{' '}
+              {audience === 'employee'
+                ? 'employees check in / out through this bot when the tenant has none.'
+                : 'invoices deliver through this bot when the tenant has none.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* V304 — bot-type picker. Live only in 'add' mode; on
+                Edit the picker is hidden entirely because the row's
+                audience is fixed. Options already registered are
+                shown greyed-out with a hint so the Super Admin
+                doesn't try to duplicate. */}
+            {dialogMode === 'add' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Bot type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['customer', 'employee'] as const).map((k) => {
+                    const taken = k === 'customer' ? !!platformCustomerBot : !!platformEmployeeBot;
+                    const active = audience === k;
+                    const tone = k === 'employee'
+                      ? 'border-amber-300 bg-amber-50 text-amber-800'
+                      : 'border-sky-300 bg-sky-50 text-sky-800';
+                    const inactive = 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50';
+                    const disabled = 'opacity-60 cursor-not-allowed';
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => pickAudienceInAdd(k)}
+                        disabled={taken || saving}
+                        aria-pressed={active}
+                        className={`text-left px-3 py-2 rounded-md border text-sm transition ${
+                          active ? tone : inactive
+                        } ${taken ? disabled : ''}`}
+                      >
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {k === 'employee'
+                            ? <Briefcase className="h-3.5 w-3.5" />
+                            : <Users className="h-3.5 w-3.5" />}
+                          {k === 'employee' ? 'Employee bot' : 'Customer bot'}
+                          {taken && (
+                            <span className="ml-auto text-[10px] text-gray-500 font-normal">
+                              Already registered
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          {k === 'employee'
+                            ? 'Shared HR bot — check-in / out for tenants without their own.'
+                            : 'Shared invoice bot — customer notifications for tenants without their own.'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs">Bot username</Label>
                 <Input
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value)}
-                  placeholder="HRMS_Platform_Bot"
+                  placeholder={audience === 'employee' ? 'HRMS_HR_Bot' : 'HRMS_Platform_Bot'}
                   className="tabular-nums"
                   disabled={saving}
                 />
                 <div className="text-[10px] text-gray-500">
-                  Must end in "bot" (e.g. <code>HRMS_Platform_Bot</code>). Cannot be a username already claimed by a tenant.
+                  Must end in "bot". Cannot be a username already claimed by a tenant or by the other platform bot.
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">
-                  Bot token {platformBot && (
+                  Bot token {currentPlatformBot && (
                     <span className="text-[10px] text-gray-400 ml-1">
-                      (current: <code>{platformBot.tokenTail}</code> — re-enter to update)
+                      (current: <code>{currentPlatformBot.tokenTail}</code> — re-enter to update)
                     </span>
                   )}
                 </Label>
@@ -510,7 +640,7 @@ export function PlatformTelegram() {
                   type="password"
                   value={botToken}
                   onChange={e => setBotToken(e.target.value)}
-                  placeholder={platformBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
+                  placeholder={currentPlatformBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
                   className="tabular-nums"
                   disabled={saving}
                   autoComplete="off"
@@ -550,7 +680,7 @@ export function PlatformTelegram() {
             </Button>
             <Button onClick={save} disabled={saving}>
               <Save className="h-4 w-4 mr-1.5" />
-              {saving ? 'Saving…' : (platformBot ? 'Update Bot' : 'Register Bot')}
+              {saving ? 'Saving…' : (currentPlatformBot ? 'Update Bot' : 'Register Bot')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -559,14 +689,17 @@ export function PlatformTelegram() {
       <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove platform bot?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Remove platform {removeAudience === 'employee' ? 'Employee' : 'Customer'} bot?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Tenants who relied on the shared bot ({tenantBots.length === 0
-                ? 'none currently'
-                : `${tenantBots.length} tenant${tenantBots.length === 1 ? '' : 's'} have their own`})
-              will stop receiving Telegram messages until you register a new one
-              (or until they register their own). Existing linked customer chats
-              are not deleted — they just won't receive new messages from this bot.
+              Tenants who rely on this shared bot will stop receiving{' '}
+              {removeAudience === 'employee'
+                ? 'HR notifications and check-in/out commands'
+                : 'invoice deliveries'}{' '}
+              until you register a new one (or until they register their own).
+              Existing linked chats are not deleted — they just won't receive
+              new messages from this bot.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

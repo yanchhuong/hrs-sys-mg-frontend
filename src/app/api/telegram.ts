@@ -130,6 +130,23 @@ export async function deletePlatformBot(): Promise<void> {
   return apiVoid('/api/v1/platform/telegram/bot', { method: 'DELETE' });
 }
 
+/* V304 — platform HR (Employee) fallback bot. Same shape + write-only
+ * token as the customer-side platform bot; tenants without their own
+ * HR bot auto-fall through to this one. */
+export async function getPlatformHrBot(): Promise<PlatformTelegramBot | null> {
+  return (await apiJson<PlatformTelegramBot | null>('/api/v1/platform/hr-telegram/bot')) ?? null;
+}
+
+export async function putPlatformHrBot(
+  req: PlatformTelegramBotRequest,
+): Promise<PlatformTelegramBot> {
+  return apiJson('/api/v1/platform/hr-telegram/bot', { method: 'PUT', json: req });
+}
+
+export async function deletePlatformHrBot(): Promise<void> {
+  return apiVoid('/api/v1/platform/hr-telegram/bot', { method: 'DELETE' });
+}
+
 /** One row in the Super Admin's unified Telegram Bots table.
  *  Two filterable axes:
  *    - {@code kind}     — ownership / role (Public = platform,

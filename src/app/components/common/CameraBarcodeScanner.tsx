@@ -7,7 +7,7 @@ import {
 } from '@zxing/library';
 import { X, Camera, AlertCircle } from 'lucide-react';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 
@@ -198,6 +198,9 @@ export function CameraBarcodeScanner({ open, onOpenChange, onDecoded }: Props): 
             <Camera className="h-4 w-4 text-blue-600" />
             Scan barcode
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Point the camera at a barcode to auto-fill the field.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="relative bg-black aspect-video">
