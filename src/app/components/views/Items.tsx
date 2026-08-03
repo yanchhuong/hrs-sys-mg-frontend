@@ -665,6 +665,13 @@ export function Items() {
   const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  /** v-items-suggestion-pick-by-id — id of the row the operator just
+   *  picked from the search-suggestion dropdown. When set, the
+   *  client-side `filtered` derivation narrows to only that row —
+   *  bypassing the server-side `q` LIKE query, which mis-matches on
+   *  non-ASCII names (Khmer combining marks / whitespace). Cleared
+   *  the moment the operator types in the search box again. */
+  const [pickedItemId, setPickedItemId] = useState<string | null>(null);
   // V149 — warehouse feature. The gate comes from the same per-tenant
   // usage settings row the picker toggles live on, so flipping it in
   // the settings dialog updates the gate here on the parent's onSaved
@@ -811,6 +818,10 @@ export function Items() {
   const filtered = useMemo(() => {
     const cat = categoryFilter.trim().toLowerCase();
     return rows.filter(r => {
+      // v-items-suggestion-pick-by-id — sticky filter after picking
+      // a suggestion: narrow to only that row until the operator
+      // types again (which clears pickedItemId in onChange).
+      if (pickedItemId && r.id !== pickedItemId) return false;
       if (cat && ((r.category ?? '') as string).toLowerCase() !== cat) return false;
       if (stockIoFilter === 'on'  && !r.deductionEnabled) return false;
       if (stockIoFilter === 'off' &&  r.deductionEnabled) return false;
@@ -834,7 +845,7 @@ export function Items() {
       }
       return true;
     });
-  }, [rows, categoryFilter, stockIoFilter, activeFilter, imageFilter, priceRange, stockRange]);
+  }, [rows, categoryFilter, stockIoFilter, activeFilter, imageFilter, priceRange, stockRange, pickedItemId]);
 
   // Distinct category options for the dropdown — derived from the
   // items currently on the page so a tenant's custom labels (e.g.
@@ -855,7 +866,16 @@ export function Items() {
 
   const filtersActive =
     !!categoryFilter || !!stockIoFilter || !!activeFilter || !!imageFilter
-    || priceRange != null || stockRange != null;
+    || priceRange != null || stockRange != null || !!pickedItemId;
+  // v-items-tiles-follow-filter — the stat tiles previously pinned to
+  // `serverTotals` (server-computed cross-catalogue) which ignored
+  // client-side filters like Image:No / category / stock range —
+  // resulting in "Total Items 2" while the table showed 1 row.
+  // Once a filter is active, prefer the client-computed totals so
+  // the tiles reflect what the operator sees. When no filter is
+  // active AND the background 1000-fetch hasn't landed yet, keep
+  // serverTotals so the tiles stay accurate on first paint.
+  const tilesUseFiltered = filtersActive;
   const clearFilters = () => {
     setCategoryFilter('');
     setStockIoFilter('');
@@ -865,6 +885,9 @@ export function Items() {
     setStockRange(null);
     setPriceOpen(false);
     setStockOpen(false);
+    // v-items-suggestion-pick-by-id — Clear also drops any sticky
+    // suggestion pick so the operator gets a fresh view.
+    setPickedItemId(null);
   };
 
   // v-items-summary-cards — inventory totals across the currently
@@ -1283,7 +1306,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Items</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(serverTotals?.totalElements ?? filtered.length).toLocaleString('en-US')}
+                {(tilesUseFiltered ? filtered.length : (serverTotals?.totalElements ?? filtered.length)).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1294,7 +1317,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Active</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(serverTotals?.totalActive ?? totals.active).toLocaleString('en-US')}
+                {(tilesUseFiltered ? totals.active : (serverTotals?.totalActive ?? totals.active)).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1305,7 +1328,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Out of Stock</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(serverTotals?.totalOutOfStock ?? totals.outOfStock).toLocaleString('en-US')}
+                {(tilesUseFiltered ? totals.outOfStock : (serverTotals?.totalOutOfStock ?? totals.outOfStock)).toLocaleString('en-US')}
               </div>
             </div>
           </div>
@@ -1327,7 +1350,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Price</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                ${(serverTotals?.totalPrice ?? totals.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                ${(tilesUseFiltered ? totals.price : (serverTotals?.totalPrice ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
@@ -1338,7 +1361,7 @@ export function Items() {
             <div className="min-w-0">
               <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock (QTY)</div>
               <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(serverTotals?.totalStock ?? totals.qty).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                {(tilesUseFiltered ? totals.qty : (serverTotals?.totalStock ?? totals.qty)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
@@ -1550,7 +1573,12 @@ export function Items() {
                 table narrows to that row. */}
             <SearchWithSuggestions
               value={search}
-              onChange={setSearch}
+              onChange={(v) => {
+                setSearch(v);
+                // v-items-suggestion-pick-by-id — any typing after a
+                // suggestion pick reverts to server-based search.
+                if (pickedItemId) setPickedItemId(null);
+              }}
               placeholder="Search name or SKU…"
               wrapperClassName="w-64"
               className="h-9"
@@ -1558,6 +1586,21 @@ export function Items() {
                 label: r.name,
                 secondary: r.sku || undefined,
               }))}
+              /* v-items-suggestion-pick-by-id — display the name in
+                 the search box (what the operator recognises), and
+                 pin the client-side filter to the picked row's ID.
+                 Server search is skipped — we already know which row
+                 the operator wants. Reliable for non-ASCII names
+                 that hit server LIKE mismatches. */
+              onPick={(s) => {
+                const row = rows.find(r =>
+                  r.name === s.label && (r.sku ?? undefined) === s.secondary,
+                );
+                if (row) {
+                  setSearch(s.label);
+                  setPickedItemId(row.id);
+                }
+              }}
             />
             <Button type="submit" variant="outline" size="sm">Search</Button>
           </form>

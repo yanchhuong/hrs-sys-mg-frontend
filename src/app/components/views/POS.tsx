@@ -951,21 +951,51 @@ export function POS() {
   // branch: N+1) → "Rendered more hooks than during the previous
   // render". Cost is trivial: capped at 200 items by the POS fetch.
   const showWarehouseFilter = warehouses.length >= 2;
-  // Chip counts operate on the same sellable-set the grid renders,
-  // so "Snack (3)" always matches what the cashier can actually tap.
-  // OOS deduction items excluded here just like they are in the grid.
+  // v-pos-chip-counts-search — chip counts reflect the current search
+  // + warehouse filters so "Drinks (3)" drops to "Drinks (0)" when the
+  // operator types a query that matches nothing. Previously counts
+  // came off the full sellable set and were misleading.
+  //
+  // Each dimension's counts EXCLUDE its own filter so its chip label
+  // stays sticky when selected:
+  //  • categoryCounts respect search + warehouse, ignore categoryFilter
+  //  • warehouseCounts respect search + category, ignore warehouseFilter
+  const searchLower = search.trim().toLowerCase();
+  const matchesSearch = (i: itemsApi.Item) =>
+    !searchLower
+    || i.name.toLowerCase().includes(searchLower)
+    || (i.sku ?? '').toLowerCase().includes(searchLower)
+    || (i.barcode ?? '').toLowerCase().includes(searchLower);
+
+  // Plain sellable — still needed by the SearchWithSuggestions
+  // dropdown so typeahead can suggest items the operator hasn't
+  // narrowed yet.
   const sellable = items.filter(itemsApi.isItemSellable);
+  const sellableSearched = sellable.filter(matchesSearch);
+
   const warehouseCounts = new Map<string, number>();
-  warehouseCounts.set('', sellable.length);
-  for (const it of sellable) {
-    if (!it.warehouseId) continue;
-    warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
+  {
+    // Warehouse counts — apply search + category, drop warehouseFilter
+    // itself so operators still see the other warehouses' totals.
+    const base = sellableSearched.filter(i =>
+      categoryFilter === 'all' || normalCat(i.category) === categoryFilter,
+    );
+    warehouseCounts.set('', base.length);
+    for (const it of base) {
+      if (!it.warehouseId) continue;
+      warehouseCounts.set(it.warehouseId, (warehouseCounts.get(it.warehouseId) ?? 0) + 1);
+    }
   }
+
   // Category chips + counts — shared derivation with the Public
   // Shop page (utils/categoryChips.ts). Same ordering / normalisation
   // so a tenant that customises "Pin" or "Hairpin" sees the same
-  // strip in both surfaces.
-  const { chipKeys, counts: categoryCounts } = deriveCategoryChips(sellable);
+  // strip in both surfaces. Feeds off sellableSearched + warehouse
+  // filter so counts respect both dimensions.
+  const categoryChipBase = sellableSearched.filter(i =>
+    !warehouseFilter || (i.warehouseId ?? '') === warehouseFilter,
+  );
+  const { chipKeys, counts: categoryCounts } = deriveCategoryChips(categoryChipBase);
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
   // mobile bottom Sheet, so both surfaces stay in sync without a

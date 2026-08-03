@@ -738,10 +738,12 @@ export function PublicShopPage() {
   if (loading) {
     // v-skeleton-loading — customers land on this page cold (no
     // service worker cache), so a menu-shaped skeleton makes the
-    // wait feel faster than a centered spinner. 10 tiles cover a
-    // typical 5-col × 2-row viewport; the shop header stays as a
-    // simple placeholder strip above the grid to avoid layout jump
-    // when the real header renders in.
+    // wait feel faster than a centered spinner. Header + chip strip
+    // stay as simple placeholders above the grid to avoid layout
+    // jump when the real ones render in. v-shop-skeleton-parity-pos —
+    // tile shape (2 rows below the image: name + price/badge row)
+    // + count match the POS grid so both surfaces read identically
+    // during load.
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
@@ -755,12 +757,15 @@ export function PublicShopPage() {
             ))}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {Array.from({ length: 10 }).map((_, i) => (
+            {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} className="rounded-lg border bg-white overflow-hidden">
                 <Skeleton className="aspect-square w-full rounded-none" />
                 <div className="p-2 space-y-2">
                   <Skeleton className="h-3.5 w-4/5" />
-                  <Skeleton className="h-4 w-14" />
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-14" />
+                    <Skeleton className="h-3 w-8" />
+                  </div>
                 </div>
               </div>
             ))}
@@ -986,13 +991,19 @@ export function PublicShopPage() {
                 />
               ))}
             </div>
-            {/* Sentinel + "loading more…" spinner. The IntersectionObserver
-                above watches this element — when it enters the viewport
-                the visible window grows by SHOP_PAGE_SIZE. Hides once
-                every filtered item is rendered. */}
+            {/* Sentinel + "loading more…" indicator. The
+                IntersectionObserver above watches this element — when
+                it enters the viewport the visible window grows by
+                SHOP_PAGE_SIZE. Hides once every filtered item is
+                rendered. v-shop-loadmore-parity-pos — text + spinner
+                match the POS sentinel so the two surfaces read
+                identically during scroll-load. */}
             {visibleCount < filtered.length && (
-              <div ref={loadMoreRef} className="mt-6 flex justify-center text-xs text-gray-500 py-4">
-                Loading more items…
+              <div
+                ref={loadMoreRef}
+                className="mt-6 flex items-center justify-center text-xs text-gray-400 py-4"
+              >
+                Loading more…
               </div>
             )}
             {visibleCount >= filtered.length && filtered.length > SHOP_PAGE_SIZE && (
