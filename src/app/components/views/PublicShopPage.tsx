@@ -505,9 +505,22 @@ export function PublicShopPage() {
   // shared helper so POS and this page can never drift on order,
   // normalisation, or empty-hiding rules. Same input shape (item
   // slice with .category); both surfaces feed their in-stock list.
+  // v-shop-chip-counts-search — chip counts respect the current
+  // search + warehouse filters so "Craft (9)" drops to "Craft (0)"
+  // when the query matches nothing. Category filter is excluded
+  // (else selecting a chip would zero every OTHER chip's count).
+  const inStockSearched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return inStockItems.filter(it => {
+      if (warehouse && (it.warehouseName ?? '') !== warehouse) return false;
+      if (!q) return true;
+      return it.name.toLowerCase().includes(q)
+          || (it.description ?? '').toLowerCase().includes(q);
+    });
+  }, [inStockItems, search, warehouse]);
   const { chipKeys, counts } = useMemo(
-    () => deriveCategoryChips(inStockItems),
-    [inStockItems],
+    () => deriveCategoryChips(inStockSearched),
+    [inStockSearched],
   );
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
