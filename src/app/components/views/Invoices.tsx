@@ -337,7 +337,12 @@ export function Invoices({
     setLoading(true);
     try {
       const [invRes, custRes] = await Promise.all([
-        invoicesApi.list({ kind: kindFilter === 'all' ? undefined : kindFilter, size: 200 }),
+        // v-perf-list-slim — slim=true drops items[] / adjustments[]
+        // / notes / terms / diagnosis and kills the {@code getItems()}
+        // N+1 that fired once per row on the previous fat payload.
+        // Row-detail dialogs re-fetch the fat DTO via
+        // {@link invoicesApi.get}.
+        invoicesApi.list({ kind: kindFilter === 'all' ? undefined : kindFilter, size: 200, slim: true }),
         customersApi.list({ size: 500 }),
       ]);
       const invoices = invRes.content ?? [];
@@ -2720,17 +2725,20 @@ function InvoiceDetailDialog({
                   buttons and stays clear of the dialog's built-in X
                   (top:1rem right:1rem inside DialogContent).
                   Sign-coloured: red = customer owes, amber = refund
-                  pending, emerald = balanced. */}
-              <div className="text-right shrink-0 mr-8 print:hidden">
-                <div className="text-[11px] uppercase tracking-wide text-gray-500">AR ({invoice.currency})</div>
-                <div className={`text-3xl font-bold mt-1 tabular-nums ${
-                  arUsd > 0 ? 'text-rose-700'
-                    : arUsd < 0 ? 'text-amber-700'
-                    : 'text-emerald-700'
-                }`}>
-                  {fmtMoney(arUsd, invoice.currency)}
+                  pending. Hidden entirely when AR is zero — a
+                  balanced invoice already carries the PAID stamp,
+                  and rendering "$0.00" behind the stamp was visually
+                  noisy + made the number look like the invoice total. */}
+              {Math.abs(arUsd) >= 0.005 && (
+                <div className="text-right shrink-0 mr-8 print:hidden">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">AR ({invoice.currency})</div>
+                  <div className={`text-3xl font-bold mt-1 tabular-nums ${
+                    arUsd > 0 ? 'text-rose-700' : 'text-amber-700'
+                  }`}>
+                    {fmtMoney(arUsd, invoice.currency)}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Line items — Specification + UOM surfaced as their own

@@ -216,7 +216,10 @@ export function Quotations() {
     setLoading(true);
     try {
       const [qRes, cRes] = await Promise.all([
-        quotationsApi.list({ size: 500 }),
+        // v-perf-list-slim — slim=true drops notes / terms / items[]
+        // from the response. Row-open re-fetches the fat DTO via
+        // quotationsApi.get() so edit / print still get everything.
+        quotationsApi.list({ size: 500, slim: true }),
         customersApi.list({ size: 500 }),
       ]);
       setRows(qRes.content ?? []);
@@ -257,7 +260,20 @@ export function Quotations() {
   }, [statusFilter, dateFrom, dateTo, search]);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
-  const openEdit   = (q: quotationsApi.Quotation) => { setEditing(q); setFormOpen(true); };
+  /** v-perf-list-slim — the list payload now ships without items[]
+   *  / notes / terms (slim projection), so we re-fetch the fat DTO
+   *  before opening the edit form. Opens optimistically with the
+   *  slim row so the dialog paints immediately; a fresh {@code get}
+   *  overwrites it with the full record once the network call
+   *  resolves. Save path is unchanged — the form still POSTs the
+   *  full items array back. */
+  const openEdit = (q: quotationsApi.Quotation) => {
+    setEditing(q);
+    setFormOpen(true);
+    void quotationsApi.get(q.id)
+      .then(full => setEditing(prev => prev && prev.id === full.id ? full : prev))
+      .catch(() => { /* toast omitted — the slim row is a valid interim state */ });
+  };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;

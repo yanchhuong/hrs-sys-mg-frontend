@@ -166,6 +166,12 @@ export interface ListParams {
   customerId?: string | '';
   page?: number;
   size?: number;
+  /** v-perf-list-slim — drop items[] / adjustments[] / notes /
+   *  terms / diagnosis from the response and skip the per-row
+   *  {@code getItems()} lazy fetch that fired 200 extra SQL queries
+   *  on a full-page load. Row-detail dialogs re-fetch the fat DTO
+   *  via {@link get}. */
+  slim?: boolean;
 }
 
 export interface PagedResponse<T> {
@@ -182,6 +188,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Invoi
   if (params.customerId) q.customerId = params.customerId;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
+  if (params.slim) q.slim = 'true';
   return apiJson('/api/v1/invoices', { query: q });
 }
 

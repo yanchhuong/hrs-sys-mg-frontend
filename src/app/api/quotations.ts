@@ -90,6 +90,11 @@ export interface ListParams {
   customerId?: string;
   page?: number;
   size?: number;
+  /** v-perf-list-slim — drop notes / terms / items[] from the
+   *  response. Server-side flag skips the per-row items lazy fetch
+   *  (was the N+1 hot spot on 500-row lists). Row-detail dialogs
+   *  re-fetch the fat DTO via {@link get}. */
+  slim?: boolean;
 }
 
 export interface PagedResponse<T> {
@@ -106,6 +111,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Quota
   if (params.customerId) query.customerId = params.customerId;
   if (params.page  != null) query.page = String(params.page);
   if (params.size  != null) query.size = String(params.size);
+  if (params.slim) query.slim = 'true';
   return apiJson('/api/v1/quotations', { query });
 }
 

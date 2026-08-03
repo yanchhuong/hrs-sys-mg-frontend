@@ -14,6 +14,7 @@ import * as plApi from '../../api/profitLossReport';
 import * as currencyApi from '../../api/currencySettings';
 import { useI18n } from '../../i18n/I18nContext';
 import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /** Render an amount with the tenant's primary currency prefix. USD
  *  collapses to "$", KHR / KRW show the local symbol without decimals;
@@ -142,6 +143,40 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
           <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
         </Button>
       </div>
+
+      {/* v-skeleton-loading — first-load placeholder. Mirrors the
+          real content geometry: three stat cards + a five-column
+          monthly table. Only fires when there's no prior report;
+          a re-Apply keeps the existing data visible while the new
+          window loads. */}
+      {loading && !report && (
+        <>
+          <StatCardsSkeleton cards={3} className="stat-strip stat-cols-3" />
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3 flex-wrap justify-between">
+                <CardTitle className="text-base">Monthly Breakdown</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-32">Month</TableHead>
+                    <TableHead>Trend</TableHead>
+                    <TableHead className="text-right w-32">Income</TableHead>
+                    <TableHead className="text-right w-32">Expense</TableHead>
+                    <TableHead className="text-right w-32">Net</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableBodySkeletonRows rows={6} columns={5} />
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Headline strip — separate cards per metric, matching the
           Sale Ledger totals-strip pattern (which mirrors Payroll

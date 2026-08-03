@@ -20,6 +20,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
 
 /** Render an amount with the currency in front (matches the Bills /
  *  Invoices list pages). USD collapses to "$" with 2dp, KHR uses ISO
@@ -363,6 +364,38 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
         </Button>
       </div>
+
+      {/* v-skeleton-loading — first-load placeholder for the stat
+          strip + the group table. Matches the shape of the real
+          content so nothing shifts when {@link load} resolves.
+          Only fires when we have neither data yet nor an error;
+          re-runs (clicking Apply on a reloaded range) keep the
+          previous report visible so the operator can compare
+          old vs. new without a jarring re-mount. */}
+      {loading && !report && (
+        <>
+          <StatCardsSkeleton cards={splitCols === 2 ? 5 : splitCols === 1 ? 4 : 3} />
+          <Card>
+            <CardContent className="pt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{labels.party}</TableHead>
+                    <TableHead className="text-right w-28">Opening</TableHead>
+                    <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
+                    <TableHead className="text-right w-28">{labels.settledHeader}</TableHead>
+                    <TableHead className="text-right w-28">{labels.refundHeader}</TableHead>
+                    <TableHead className="text-right w-32">Closing</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableBodySkeletonRows rows={6} columns={6} />
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Grand totals strip — one Card per metric, Payroll Report
           style. Card count is 3 / 4 / 5 depending on which
