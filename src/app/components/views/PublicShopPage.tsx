@@ -1510,6 +1510,7 @@ export function PublicShopPage() {
         qtyInCart={detailTarget
           ? cartLines.filter(l => l.item.id === detailTarget.id).reduce((s, l) => s + l.qty, 0)
           : 0}
+        orderingDisabled={orderingBlocked}
         onClose={() => setDetailTarget(null)}
         onAdd={() => { if (detailTarget) addOne(detailTarget); }}
       />
@@ -1679,17 +1680,23 @@ function PublicShopCard({
           {/* Quick-add button — stopPropagation so tapping the "+" only
               adds one and doesn't also open the detail dialog. Items with
               modifiers still open the picker via addOne()'s existing
-              fork, so the customer picks Size/Sugar before committing. */}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            disabled={!item.inStock || orderingDisabled}
-            aria-label={`Add ${item.name} to cart`}
-            title={orderingDisabled ? 'Ordering is temporarily paused' : 'Add to cart'}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+              fork, so the customer picks Size/Sugar before committing.
+              v-shop-ordering-toggle — hidden entirely when ordering
+              is off; a disabled + button reads as "temporarily
+              broken", whereas hiding matches the operator's "Order
+              Available off" intent (menu-preview only). */}
+          {!orderingDisabled && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              disabled={!item.inStock}
+              aria-label={`Add ${item.name} to cart`}
+              title="Add to cart"
+              className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         {/* v-shop-card-stock-line + v-shop-warehouse-badge — stock
             remaining + which warehouse this SKU ships from. Both
@@ -1735,10 +1742,14 @@ function PublicShopCard({
  *  through the existing picker.
  * =================================================================== */
 function ItemDetailDialog({
-  item, qtyInCart, onClose, onAdd,
+  item, qtyInCart, orderingDisabled = false, onClose, onAdd,
 }: {
   item: shopApi.PublicShopItem | null;
   qtyInCart: number;
+  /** v-shop-ordering-toggle — when true the Add-to-cart button
+   *  hides entirely; the dialog stays useful as a menu preview
+   *  (image + description + price) without any checkout affordance. */
+  orderingDisabled?: boolean;
   onClose: () => void;
   onAdd: () => void;
 }) {
@@ -1888,14 +1899,19 @@ function ItemDetailDialog({
 
         <DialogFooter className="px-5 py-3 border-t shrink-0">
           <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button
-            className="bg-blue-600 hover:bg-blue-700"
-            disabled={!item.inStock}
-            onClick={() => { onAdd(); onClose(); }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            {item.inStock ? 'Add to cart' : 'Out of stock'}
-          </Button>
+          {/* v-shop-ordering-toggle — Add-to-cart hidden entirely
+              when ordering is off. The dialog remains useful as a
+              menu preview (image + description + price). */}
+          {!orderingDisabled && (
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!item.inStock}
+              onClick={() => { onAdd(); onClose(); }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              {item.inStock ? 'Add to cart' : 'Out of stock'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
