@@ -3,7 +3,7 @@ import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
-  ClipboardList, ArrowRight, RotateCcw, Gift, Star, Stamp as StampIcon, Trash2,
+  ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, CheckCircle, Flame, Hourglass,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
   ChevronLeft, ChevronRight, ScanBarcode,
 } from 'lucide-react';
@@ -3013,86 +3013,261 @@ interface ActiveDrawerProps {
   onAdvance: (id: string, next: posApi.PosFulfillmentStatus) => void;
 }
 
-/** Pill colour per status. Greys for the early "waiting" states,
- *  greens once cooking is underway / done — readable at a glance from
- *  across a counter. */
-const FULFILLMENT_PILL: Record<posApi.PosFulfillmentStatus, string> = {
-  requested:   'bg-amber-100 text-amber-800 ring-1 ring-amber-200',
-  accepted:    'bg-blue-100 text-blue-800 ring-1 ring-blue-200',
-  in_progress: 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-200',
-  ready:       'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
-  done:        'bg-gray-100 text-gray-600 ring-1 ring-gray-200',
+/** v-pos-active-queue-kds — visual theme per fulfillment status,
+ *  mirrored across the header ribbon, the elapsed-time colour, the
+ *  primary action button, and the item strikethrough on Ready.
+ *  Wording matches the KDS mockup:
+ *     requested   → Pending   → gray  → "Awaiting Prep" (advances to accepted)
+ *     accepted    → Prep      → gray  → "Start Cooking" (advances to in_progress)
+ *     in_progress → Cooking   → amber → "Mark Ready"    (advances to ready)
+ *     ready       → Food Ready → green → "Clear from Board" (advances to done)
+ *
+ *  Kept as a plain data table so a new status (e.g. "delivering")
+ *  can slot in with one row + no if-branch surgery.
+ */
+type KdsTheme = {
+  /** Label shown on the ribbon under the header (the block that reads
+   *  PENDING / PREP / START COOKING / FOOD READY on the mockup). */
+  ribbonLabel: string;
+  ribbonClass: string;
+  /** Big elapsed-time colour on the top-right of the card. */
+  elapsedClass: string;
+  /** Primary action label + colour. Null on 'done' since that row
+   *  never renders — {@code done} orders drop off the board. */
+  actionLabel: string | null;
+  actionClass: string;
+  actionIcon: 'flame' | 'utensils' | 'check' | 'trash' | 'hourglass';
+};
+const KDS_THEME: Record<posApi.PosFulfillmentStatus, KdsTheme> = {
+  requested: {
+    ribbonLabel: 'Pending',    ribbonClass: 'bg-gray-100 text-gray-500',
+    elapsedClass: 'text-gray-500',
+    actionLabel: 'Awaiting Prep',
+    actionClass: 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200',
+    actionIcon: 'hourglass',
+  },
+  accepted: {
+    ribbonLabel: 'Prep',       ribbonClass: 'bg-gray-100 text-gray-600',
+    elapsedClass: 'text-gray-700',
+    actionLabel: 'Start Cooking',
+    actionClass: 'bg-orange-500 hover:bg-orange-600 text-white',
+    actionIcon: 'flame',
+  },
+  in_progress: {
+    ribbonLabel: 'Start Cooking', ribbonClass: 'bg-amber-100 text-amber-800',
+    elapsedClass: 'text-amber-600',
+    actionLabel: 'Mark Ready',
+    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
+    actionIcon: 'check',
+  },
+  ready: {
+    ribbonLabel: 'Food Ready',    ribbonClass: 'bg-emerald-100 text-emerald-700',
+    elapsedClass: 'text-emerald-600',
+    actionLabel: 'Clear from Board',
+    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
+    actionIcon: 'trash',
+  },
+  done: {
+    // Never renders — done orders drop off the board. Kept here so
+    // the Record<all statuses, …> type stays exhaustive.
+    ribbonLabel: 'Done',        ribbonClass: 'bg-gray-100 text-gray-500',
+    elapsedClass: 'text-gray-500',
+    actionLabel: null,
+    actionClass: '',
+    actionIcon: 'check',
+  },
 };
 
+/** v-pos-active-queue-kds — format elapsed time as MM:SS when under
+ *  an hour, HH:MM otherwise. Same shape as the KDS mockup ("12:45").
+ *  Recomputed once per second by the parent's tick effect so cards
+ *  advance in real time without a full re-fetch. */
+function formatElapsed(fromIso: string, nowMs: number): string {
+  const start = new Date(fromIso).getTime();
+  const secs = Math.max(0, Math.floor((nowMs - start) / 1000));
+  const hh = Math.floor(secs / 3600);
+  const mm = Math.floor((secs % 3600) / 60);
+  const ss = secs % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hh > 0 ? `${pad(hh)}:${pad(mm)}` : `${pad(mm)}:${pad(ss)}`;
+}
+
 function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance }: ActiveDrawerProps) {
+  // v-pos-active-queue-kds — 1s ticker so the elapsed-time counter
+  // on every card increments live while the drawer is open. Only
+  // runs when the drawer IS open — a closed drawer doesn't need to
+  // re-render every second.
+  const [nowMs, setNowMs] = useState<number>(Date.now());
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [open]);
+
+  // Filter chips at the top-right of the header. 'all' shows every
+  // active order; the two named chips narrow to the mockup's two
+  // buckets: Cooking (in_progress) and Prep (requested + accepted,
+  // grouped because both are pre-cook waiting states).
+  const [filter, setFilter] = useState<'all' | 'cooking' | 'prep'>('all');
+  const filtered = orders.filter(o => {
+    if (filter === 'cooking') return o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready';
+    if (filter === 'prep')    return o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted';
+    return true;
+  });
+  const inProgressCount = orders.filter(o => o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready').length;
+  const pendingCount    = orders.filter(o => o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted').length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4" /> Active Orders
-          </DialogTitle>
-          <DialogDescription>
-            Paid orders moving through the kitchen — tap an order to advance its status.
-          </DialogDescription>
+      <DialogContent className="max-w-[96vw] xl:max-w-6xl flex flex-col max-h-[92vh] p-0 gap-0">
+        <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DialogTitle className="flex items-center gap-2 text-2xl font-bold">
+                <ClipboardList className="h-5 w-5 text-gray-500" />
+                Active Queue
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-xs text-gray-500">
+                {inProgressCount} Order{inProgressCount === 1 ? '' : 's'} in Progress
+                {' · '}
+                {pendingCount} Pending
+              </DialogDescription>
+            </div>
+            {/* Filter chips — Cooking vs Prep, matching the KDS mockup.
+                'all' is the default; the pill only visually "picks"
+                the named chip so an operator can keep the eye where
+                the fire is. */}
+            <div className="inline-flex items-center gap-1.5 shrink-0">
+              {([
+                { key: 'all',     label: 'All',     dot: 'bg-gray-400',   count: orders.length },
+                { key: 'cooking', label: 'Cooking', dot: 'bg-amber-500',  count: inProgressCount },
+                { key: 'prep',    label: 'Prep',    dot: 'bg-gray-400',   count: pendingCount },
+              ] as const).map(chip => {
+                const active = filter === chip.key;
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => setFilter(chip.key)}
+                    className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full border text-xs font-medium transition ${
+                      active
+                        ? 'border-gray-800 bg-gray-900 text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                    {chip.label}
+                    <span className={`text-[10px] tabular-nums ${active ? 'text-gray-200' : 'text-gray-400'}`}>
+                      {chip.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </DialogHeader>
-        {orders.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-6">No active orders.</p>
-        ) : (
-          <ul className="divide-y border rounded-md max-h-[480px] overflow-auto">
-            {orders.map(o => {
-              const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
-              const next = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
-              const prev = idx > 0 ? posApi.POS_FULFILLMENT_CHAIN[idx - 1] : null;
-              return (
-                <li key={o.id} className="px-3 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="tabular-nums text-sm font-semibold">{o.queueNo}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${FULFILLMENT_PILL[o.fulfillmentStatus]}`}>
-                          {posApi.POS_FULFILLMENT_LABELS[o.fulfillmentStatus]}
-                        </span>
+
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-16">
+              {orders.length === 0 ? 'No active orders.' : 'No orders match this filter.'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(o => {
+                const theme = KDS_THEME[o.fulfillmentStatus];
+                const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
+                const nextStatus = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
+                const isReady = o.fulfillmentStatus === 'ready';
+                const clickable = theme.actionLabel != null && nextStatus != null;
+                return (
+                  <div
+                    key={o.id}
+                    className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col"
+                  >
+                    {/* Card header — queue number + location/customer,
+                        elapsed time on the right in the status colour. */}
+                    <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-lg font-bold tracking-tight tabular-nums">
+                          #{o.queueNo}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-gray-500 truncate">
+                          {o.customerName ?? 'Walk-in'}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 truncate mt-0.5">
-                        {o.customerName ?? 'Walk-in'} · {o.items.length} item(s)
+                      <div className="text-right shrink-0">
+                        <div className={`text-2xl font-bold tabular-nums leading-none ${theme.elapsedClass}`}>
+                          {formatElapsed(o.createdAt, nowMs)}
+                        </div>
+                        <div className="text-[9px] uppercase tracking-widest text-gray-400 mt-1">
+                          Elapsed
+                        </div>
                       </div>
                     </div>
-                    <div className="text-sm font-semibold tabular-nums shrink-0">${o.total.toFixed(2)}</div>
-                  </div>
 
-                  <div className="flex items-center gap-2 mt-2">
-                    {prev && (
+                    {/* Status ribbon — the coloured strip under the
+                        header. Mirrors the mockup exactly (PREP /
+                        START COOKING / PENDING / FOOD READY). */}
+                    <div className={`mx-4 rounded-md text-[11px] font-semibold uppercase tracking-wide text-center py-1.5 ${theme.ribbonClass}`}>
+                      {theme.ribbonLabel}
+                    </div>
+
+                    {/* Line items — struck through when the order
+                        is ready-to-serve (mockup #201). Modifiers /
+                        notes rendered as red-tinted sub-bullets
+                        under the name so the cook sees "Medium Rare"
+                        / "No Onions" at a glance. */}
+                    <ul className="px-4 py-3 space-y-2 flex-1">
+                      {o.items.map((it, i) => {
+                        const notes = (it.notes ?? '').split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+                        return (
+                          <li key={it.id ?? i} className="text-sm">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className={`font-medium text-gray-900 ${isReady ? 'line-through text-gray-400' : ''}`}>
+                                {it.name}
+                              </span>
+                              <span className={`text-xs tabular-nums shrink-0 ${isReady ? 'text-gray-400' : 'text-gray-500'}`}>
+                                x{it.quantity}
+                              </span>
+                            </div>
+                            {notes.length > 0 && !isReady && (
+                              <ul className="mt-0.5 space-y-0.5">
+                                {notes.map((n, j) => (
+                                  <li key={j} className="text-[11px] text-rose-600">
+                                    · {n}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {/* Primary action — advances to the next state.
+                        Wording matches the mockup: Awaiting Prep /
+                        Start Cooking / Mark Ready / Clear from Board. */}
+                    <div className="px-4 pb-4">
                       <button
                         type="button"
-                        onClick={() => onAdvance(o.id, prev)}
-                        className="text-[11px] text-gray-500 hover:text-gray-800 inline-flex items-center gap-1"
-                        title={`Back to ${posApi.POS_FULFILLMENT_LABELS[prev]}`}
+                        disabled={!clickable}
+                        onClick={() => nextStatus && onAdvance(o.id, nextStatus)}
+                        className={`w-full h-9 rounded-md text-xs font-semibold uppercase tracking-wide inline-flex items-center justify-center gap-2 transition disabled:cursor-not-allowed ${theme.actionClass}`}
                       >
-                        <RotateCcw className="h-3 w-3" /> Back
+                        {theme.actionIcon === 'flame'     && <Flame className="h-3.5 w-3.5" />}
+                        {theme.actionIcon === 'check'     && <CheckCircle className="h-3.5 w-3.5" />}
+                        {theme.actionIcon === 'trash'     && <Trash2 className="h-3.5 w-3.5" />}
+                        {theme.actionIcon === 'hourglass' && <Hourglass className="h-3.5 w-3.5" />}
+                        {theme.actionLabel}
                       </button>
-                    )}
-                    <div className="flex-1" />
-                    {next ? (
-                      <Button
-                        size="sm"
-                        onClick={() => onAdvance(o.id, next)}
-                        className={next === 'done'
-                          ? 'h-7 bg-gray-700 hover:bg-gray-800 text-xs'
-                          : 'h-7 bg-emerald-600 hover:bg-emerald-700 text-xs'}
-                      >
-                        {posApi.POS_FULFILLMENT_LABELS[next]}
-                        <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                      </Button>
-                    ) : (
-                      <span className="text-[11px] text-gray-400">Completed</span>
-                    )}
+                    </div>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
