@@ -95,6 +95,13 @@ export function BulkUploadItemsDialog({
   // behaviour. Reset on every fresh parse so a stale chip doesn't
   // hide new rows.
   const [rowFilter, setRowFilter] = useState<'all' | 'new' | 'update' | 'error'>('all');
+  /** V305 — tenant's item-quota snapshot fetched on dialog open.
+   *  Null = still loading OR fetch failed OR the tenant is
+   *  unlimited (BE returns roomForNew=null in that case, so we
+   *  treat "no room known" as "no block" — no false-positive
+   *  disable). Compared against the parsed file's "new" count so
+   *  we can warn / disable Import before the operator commits. */
+  const [quota, setQuota] = useState<itemsApi.StockQuota | null>(null);
   // Reverse lookup for the preview table's Warehouse column — parser
   // stores the UUID after resolving the name; the table shows the name
   // back so operators recognise it at a glance.
@@ -135,6 +142,16 @@ export function BulkUploadItemsDialog({
       } catch {
         // Silent — feature may be off, or user lacks stock.view on
         // warehouses. Parser tolerates an empty list.
+      }
+      try {
+        // V305 — pre-flight quota so we can block the Import button
+        // up-front instead of letting the BE reject rows one-by-one.
+        const q = await itemsApi.getQuota();
+        if (!cancelled) setQuota(q);
+      } catch {
+        // Silent — fall back to "no block". Individual creates still
+        // hit the per-row cap gate on the BE, so the enforcement
+        // never disappears — this is a UX pre-flight only.
       }
     })();
     return () => { cancelled = true; };
@@ -341,6 +358,18 @@ export function BulkUploadItemsDialog({
   const doneCount = Array.from(progress.values()).filter(p => p.status === 'created' || p.status === 'failed').length;
   const progressPct = selectedRows.size > 0 ? Math.round((doneCount / selectedRows.size) * 100) : 0;
 
+  /** V305 — count the currently-selected NEW rows against the
+   *  tenant's item quota. Updates + error rows don't count (updates
+   *  don't create; error rows won't fire the create call). Null
+   *  {@code roomForNew} = unlimited plan → no block. */
+  const selectedNewCount = parsed
+    ? parsed.items.filter(r => r.errors.length === 0 && !r.existingItemId && selectedRows.has(r.rowNumber)).length
+    : 0;
+  const quotaBlocked = quota?.roomForNew != null && selectedNewCount > quota.roomForNew;
+  const quotaExceededBy = quotaBlocked && quota?.roomForNew != null
+    ? selectedNewCount - quota.roomForNew
+    : 0;
+
   const toggleOne = (rowNumber: number) => {
     setSelectedRows(prev => {
       const next = new Set(prev);
@@ -443,6 +472,30 @@ export function BulkUploadItemsDialog({
                     {summary.valid > 0
                       ? 'Untick the failed rows below, or fix them in Excel and re-upload.'
                       : 'Fix the highlighted rows in your spreadsheet and re-upload.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* V305 — quota pre-flight. Blocks the Import button when
+              the number of NEW rows selected would push the tenant
+              past its item cap. Wording matches the per-row error
+              the BE would otherwise throw one-by-one. */}
+          {parsed && quotaBlocked && !importing && !finalResult && (
+            <div className="rounded-md border p-3 bg-amber-50 border-amber-200">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-amber-900">
+                    This import would go over your Stock limit by {quotaExceededBy}
+                    {quotaExceededBy === 1 ? ' item' : ' items'}.
+                  </p>
+                  <p className="text-sm text-amber-800">
+                    Your Stock has reached the limit ({quota!.cap}). Untick{' '}
+                    {quotaExceededBy === 1 ? 'one new row' : `${quotaExceededBy} new rows`} below,
+                    or contact your platform owner to raise the limit before adding more.
+                    Try again later.
                   </p>
                 </div>
               </div>
@@ -767,7 +820,7 @@ export function BulkUploadItemsDialog({
             {!finalResult && (
               <Button
                 onClick={handleImport}
-                disabled={!parsed || parsed.totalItems === 0 || selectedRows.size === 0 || importing}
+                disabled={!parsed || parsed.totalItems === 0 || selectedRows.size === 0 || importing || quotaBlocked}
               >
                 {importing ? (
                   <>

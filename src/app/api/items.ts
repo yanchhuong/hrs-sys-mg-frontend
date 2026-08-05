@@ -280,6 +280,22 @@ export interface ItemsListWithTotals {
   totalPrice: number;
 }
 
+/** V305 — tenant's own item-quota snapshot. Used by the bulk-upload
+ *  dialog to pre-flight a proposed import: if the file's "new" count
+ *  exceeds {@code roomForNew}, the Import button switches to warn +
+ *  disable up-front instead of letting rows fail one-by-one against
+ *  {@link create}. {@code cap = 0} + {@code roomForNew = null} means
+ *  unlimited. */
+export interface StockQuota {
+  cap: number;
+  current: number;
+  roomForNew: number | null;
+}
+
+export async function getQuota(): Promise<StockQuota> {
+  return apiJson('/api/v1/stock-items/quota');
+}
+
 export async function listWithTotals(params: ListParams = {}): Promise<ItemsListWithTotals> {
   const q: Record<string, string | number | boolean> = {};
   if (params.q) q.q = params.q;
