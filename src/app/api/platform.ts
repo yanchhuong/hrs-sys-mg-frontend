@@ -55,6 +55,12 @@ export interface PlatformTenant {
    *  Populated on list + get + create + setBusinessBase responses.
    *  Empty array = "no industry" (rare but legal). V181. */
   businessBases?: BusinessBase[];
+  /** V305 — per-tenant quota overrides. Null / undefined = inherit
+   *  the plan tier's cap; a number replaces it. Zero = "unlimited
+   *  for this tenant regardless of plan". */
+  maxUsersOverride?: number | null;
+  maxEmployeesOverride?: number | null;
+  maxItemsOverride?: number | null;
 }
 
 /** Business Base identifiers (V181, v-business-base-plumbing).
@@ -88,7 +94,22 @@ export interface UpdateTenantRequest {
   planTier?: string;
   /** Super-Admin Apps-launcher toggle. Omit to leave unchanged. */
   appLauncherEnabled?: boolean;
+  /** V305 — per-tenant quota overrides. Three-state PATCH:
+   *   • undefined (omit field) → leave unchanged.
+   *   • {@link CLEAR_QUOTA_OVERRIDE} (-1) → clear the override so
+   *     the tenant inherits the plan's cap again.
+   *   • non-negative integer → set the override. Zero = "unlimited
+   *     for this tenant regardless of plan". */
+  maxUsersOverride?: number;
+  maxEmployeesOverride?: number;
+  maxItemsOverride?: number;
 }
+
+/** V305 — sentinel the FE sends on {@link UpdateTenantRequest}'s
+ *  quota-override fields to clear the value back to "inherit plan".
+ *  Kept exported so the Companies edit dialog reads the same
+ *  constant the type doc references. */
+export const CLEAR_QUOTA_OVERRIDE = -1;
 
 export interface ListTenantsParams {
   q?: string;
@@ -151,6 +172,11 @@ export interface PlanLimits {
   maxStorageMb: number;
   maxLocalInstalls: number;
   monthlyPriceCents: number;
+  /** V305 — user (login) cap. Zero = unlimited (matches the
+   *  storage-layer convention used by every count-based cap). */
+  maxUsers: number;
+  /** V305 — stock-item catalogue cap. Zero = unlimited. */
+  maxItems: number;
   /** Returned by the list endpoint — count of tenants currently on this
    *  plan. Drives the Adoption column and gates the delete button. */
   tenantsOnPlan?: number;
@@ -164,6 +190,9 @@ export interface PlanRequest {
   maxStorageMb: number;
   maxLocalInstalls: number;
   monthlyPriceCents: number;
+  /** V305 — same zero-as-unlimited convention as PlanLimits. */
+  maxUsers: number;
+  maxItems: number;
 }
 
 export const plans = {

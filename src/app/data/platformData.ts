@@ -77,6 +77,13 @@ export interface Company {
    *  flips status → 'frozen' at this timestamp. Null once the freeze
    *  has fired or when no schedule is pending. */
   frozenFrom?: string | null;
+  /** V305 — per-tenant quota overrides. Null = inherit the plan
+   *  tier's cap; a number replaces the plan cap for this specific
+   *  tenant. Zero means "unlimited for this tenant regardless of
+   *  plan" (matches the storage-layer convention). */
+  maxUsersOverride?: number | null;
+  maxEmployeesOverride?: number | null;
+  maxItemsOverride?: number | null;
 }
 
 export interface LocalInstall {

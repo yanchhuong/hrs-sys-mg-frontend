@@ -76,6 +76,12 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     // V277 — deferred-freeze start date (nullable). When status is
     // 'active' and this is set, a scheduled freeze is pending.
     frozenFrom:   t.frozenFrom   ?? null,
+    // V305 — per-tenant quota overrides. Backend returns undefined
+    // when the column is NULL; the FE treats null as "inherit plan"
+    // so we normalise undefined → null here.
+    maxUsersOverride:     t.maxUsersOverride     ?? null,
+    maxEmployeesOverride: t.maxEmployeesOverride ?? null,
+    maxItemsOverride:     t.maxItemsOverride     ?? null,
   };
 }
 
@@ -305,6 +311,27 @@ export function Companies() {
     return PLAN_LIMITS[tier as PlanTier]?.monthlyPriceUsd ?? 0;
   };
 
+  /** V305 — map the form's three-state override value back to the
+   *  API's three-state PATCH:
+   *   • unchanged from the initial snapshot → undefined (no-op)
+   *   • null in the form → -1 (CLEAR_QUOTA_OVERRIDE — inherit plan)
+   *   • number → number (0 = "unlimited for this tenant")
+   *  Comparing against the initial snapshot avoids overwriting the
+   *  stored value when the user opens the dialog and saves without
+   *  touching the override fields. */
+  const serialiseOverride = (
+    current: number | null | undefined,
+    original: number | null | undefined,
+  ): number | undefined => {
+    // undefined + null are the same "inherit plan" state to the BE,
+    // so treat them as equivalent for the change check.
+    const normCurrent = current == null ? null : current;
+    const normOrig    = original == null ? null : original;
+    if (normCurrent === normOrig) return undefined;
+    if (normCurrent === null) return platformApi.CLEAR_QUOTA_OVERRIDE;
+    return normCurrent;
+  };
+
   // CRUD
   const handleOpenCreate = () => {
     setEditing(null);
@@ -386,6 +413,15 @@ export function Companies() {
           // freshly seeded from `editing`) so we don't accidentally
           // overwrite the stored value with the form's default.
           appLauncherEnabled: form.appLauncherEnabled,
+          // V305 — three-state per-tenant quota overrides. serialiseOverride
+          // maps the form's string field back to what the API expects:
+          //  ''       → CLEAR_QUOTA_OVERRIDE (-1) → BE clears back to null
+          //  '0'      → 0 → "unlimited for this tenant"
+          //  '123'    → 123 → hard cap
+          //  unchanged from the initial edit-load → undefined → BE ignores
+          maxUsersOverride:     serialiseOverride(form.maxUsersOverride,     editing.maxUsersOverride),
+          maxEmployeesOverride: serialiseOverride(form.maxEmployeesOverride, editing.maxEmployeesOverride),
+          maxItemsOverride:     serialiseOverride(form.maxItemsOverride,     editing.maxItemsOverride),
         });
         // Business Base — separate endpoint (V181) with atomic
         // toggle + audit entry. Only fire when the picker changed;
@@ -867,6 +903,86 @@ export function Companies() {
                   </p>
                 </div>
               )}
+              {/* V305 — per-tenant quota overrides. Only shown on edit
+                  (fresh creates use the plan default until the tenant
+                  has actual usage). Three number inputs — blank means
+                  "inherit the plan tier's default", so a Super Admin
+                  can raise or lower a single tenant's cap without
+                  minting a new plan. Placeholder on each input shows
+                  the current plan default so the operator knows what
+                  they're replacing. Zero = "unlimited for this
+                  tenant regardless of plan" (matches BE convention). */}
+              {editing && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
+                    Quota overrides
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Blank = inherit the {form.planTier ?? 'plan'} tier's cap.
+                    A number replaces the plan cap for this tenant only.
+                    Enter <code>0</code> to remove the limit.
+                  </p>
+                  {(() => {
+                    const tierKey = (form.planTier ?? editing.planTier) as string;
+                    const planRow = plansByTier[tierKey];
+                    const rows: Array<{
+                      key: 'maxUsersOverride' | 'maxEmployeesOverride' | 'maxItemsOverride';
+                      label: string;
+                      used: number;
+                      planDefault: number;
+                    }> = [
+                      { key: 'maxUsersOverride',
+                        label: 'Max users',
+                        used: editing.userCount,
+                        planDefault: planRow?.maxUsers ?? 0 },
+                      { key: 'maxEmployeesOverride',
+                        label: 'Max employees',
+                        used: editing.employeeCount,
+                        planDefault: planRow?.maxEmployees ?? 0 },
+                      { key: 'maxItemsOverride',
+                        label: 'Max items',
+                        used: 0,
+                        planDefault: planRow?.maxItems ?? 0 },
+                    ];
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {rows.map(r => {
+                          const raw = form[r.key];
+                          const inputVal = (raw === null || raw === undefined) ? '' : String(raw);
+                          const effective = raw != null ? raw : r.planDefault;
+                          const effectiveLabel = effective === 0
+                            ? 'unlimited'
+                            : `${effective.toLocaleString('en-US')} cap`;
+                          return (
+                            <div key={r.key} className="space-y-1">
+                              <Label className="text-xs">{r.label}</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={inputVal}
+                                onChange={e => {
+                                  const t = e.target.value.trim();
+                                  setForm({
+                                    ...form,
+                                    [r.key]: t === '' ? null : Math.max(0, parseInt(t, 10) || 0),
+                                  });
+                                }}
+                                placeholder={r.planDefault === 0 ? 'unlimited' : String(r.planDefault)}
+                                className="h-8 text-sm"
+                              />
+                              <div className="text-[10px] text-gray-500">
+                                Currently used: <span className="tabular-nums">{r.used.toLocaleString('en-US')}</span>
+                                {' · '}Effective: <span className="tabular-nums">{effectiveLabel}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* Feature toggles — Super Admin controls visibility of
                   tenant-side surfaces that don't fit the per-module
                   catalog (single-flag features, not a whole sub-app).

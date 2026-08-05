@@ -40,10 +40,15 @@ type FormState = {
   maxLocalInstalls: string;
   /** Edited as dollars in the UI; converted to cents on submit. */
   priceDollars: string;
+  /** V305 — user (login) cap for this plan tier. Blank / 0 = unlimited. */
+  maxUsers: string;
+  /** V305 — stock-item catalogue cap. Blank / 0 = unlimited. */
+  maxItems: string;
 };
 
 const EMPTY: FormState = {
   planTier: '', maxEmployees: '', maxStorageMb: '', maxLocalInstalls: '', priceDollars: '',
+  maxUsers: '', maxItems: '',
 };
 
 const slugify = (s: string) =>
@@ -92,6 +97,8 @@ export function Plans() {
       maxStorageMb: String(p.maxStorageMb),
       maxLocalInstalls: String(p.maxLocalInstalls),
       priceDollars: (p.monthlyPriceCents / 100).toFixed(2),
+      maxUsers: String(p.maxUsers ?? 0),
+      maxItems: String(p.maxItems ?? 0),
     });
     setDialogOpen(true);
   };
@@ -108,7 +115,14 @@ export function Plans() {
     const maxStorageMb     = parseInt(form.maxStorageMb, 10);
     const maxLocalInstalls = parseInt(form.maxLocalInstalls, 10);
     const dollars          = parseFloat(form.priceDollars);
-    if (![maxEmployees, maxStorageMb, maxLocalInstalls, dollars].every(n => Number.isFinite(n) && n >= 0)) {
+    // V305 — blank field on the two new caps means "unlimited"; the
+    // BE stores that as 0 (matches the other quota columns). Old
+    // plans that predate V305 also come back as 0, keeping their
+    // behaviour unchanged.
+    const maxUsers = form.maxUsers.trim() === '' ? 0 : parseInt(form.maxUsers, 10);
+    const maxItems = form.maxItems.trim() === '' ? 0 : parseInt(form.maxItems, 10);
+    if (![maxEmployees, maxStorageMb, maxLocalInstalls, dollars, maxUsers, maxItems]
+          .every(n => Number.isFinite(n) && n >= 0)) {
       toast.error('All numeric fields must be ≥ 0');
       return;
     }
@@ -119,6 +133,8 @@ export function Plans() {
       maxLocalInstalls,
       // Round to whole cents — JS float math otherwise produces 4999.999…
       monthlyPriceCents: Math.round(dollars * 100),
+      maxUsers,
+      maxItems,
     };
     setSubmitting(true);
     try {
@@ -343,6 +359,41 @@ export function Plans() {
               <p className="text-[11px] text-gray-500">
                 e.g. <code>1024</code> = 1 GB · <code>10240</code> = 10 GB.
               </p>
+            </div>
+
+            {/* V305 — user + item caps. Same zero-as-unlimited
+                convention as Max employees; blank field is treated
+                as zero on submit for a friendlier "leave it open"
+                UX than requiring "0". */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="plan-users">Max users</Label>
+                <Input
+                  id="plan-users"
+                  type="number"
+                  min="0"
+                  value={form.maxUsers}
+                  onChange={e => setForm({ ...form, maxUsers: e.target.value })}
+                  placeholder="25"
+                />
+                <p className="text-[11px] text-gray-500">
+                  Login accounts on this tenant. <code>0</code> or blank = unlimited.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="plan-items">Max items</Label>
+                <Input
+                  id="plan-items"
+                  type="number"
+                  min="0"
+                  value={form.maxItems}
+                  onChange={e => setForm({ ...form, maxItems: e.target.value })}
+                  placeholder="1000"
+                />
+                <p className="text-[11px] text-gray-500">
+                  Stock-item catalogue rows. <code>0</code> or blank = unlimited.
+                </p>
+              </div>
             </div>
           </div>
 
