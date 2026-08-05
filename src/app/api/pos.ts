@@ -65,6 +65,10 @@ export interface PosOrder {
   queueDate: string;     // ISO date (YYYY-MM-DD)
   customerId: string | null;
   customerName: string | null;
+  /** V307 — raw creator user id. Null on anonymous / public-shop
+   *  orders. Used by the kitchen share flow to filter the shared
+   *  board to the code holder's own orders + anonymous ones. */
+  createdById: string | null;
   /** Cashier display name — resolved server-side from the creator
    *  user's linked Employee row (V138). Falls back to email. */
   createdByName: string | null;

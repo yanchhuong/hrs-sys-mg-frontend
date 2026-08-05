@@ -105,7 +105,13 @@ export function KdsOrderCard({ order: o, nowMs, onAdvance }: KdsOrderCardProps):
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col">
       <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-lg font-bold tracking-tight tabular-nums">#{o.queueNo}</div>
+          {/* Kitchen cards use the short sequence (#001, #042) so the
+              cook sees the number at a glance from across a counter.
+              The full document number (POSQ-15072026-042) sits on the
+              row detail / receipt where the accountant needs it. */}
+          <div className="text-lg font-bold tracking-tight tabular-nums">
+            #{String(o.queueSeq).padStart(3, '0')}
+          </div>
           <div className="text-[10px] uppercase tracking-wide text-gray-500 truncate">
             {o.customerName ?? 'Walk-in'}
           </div>
