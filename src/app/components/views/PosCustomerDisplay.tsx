@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ShoppingCart, CheckCircle2, Package, Maximize2, Minimize2 } from 'lucide-react';
+import { ShoppingCart, CheckCircle2, Package, Maximize2, Minimize2, Utensils, Star } from 'lucide-react';
 import {
   POS_DISPLAY_CHANNEL,
   POS_DISPLAY_PATH,
@@ -127,34 +127,25 @@ export function PosCustomerDisplay() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-slate-200 text-slate-900">
-      {/* v-display-fullscreen — floating maximise / exit icon. Sits
-          top-right, semi-transparent so it doesn't distract the
-          customer. Cashier taps once to enter fullscreen; Esc or
-          the same icon (now Minimize2) exits. */}
-      <button
-        type="button"
-        onClick={toggleFullscreen}
-        className="fixed top-3 right-3 z-30 p-2 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-slate-800 border border-slate-200 shadow-sm backdrop-blur-sm transition"
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-        title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
-      >
-        {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-      </button>
+    <div className="min-h-screen flex flex-col bg-[#f4f7f9] text-slate-800">
       <Header
         shopName={state.shopName}
         logoUrl={state.logoUrl}
         queueNo={state.queueNo}
         customerName={state.customerName}
+        onToggleFullscreen={toggleFullscreen}
+        isFullscreen={isFullscreen}
       />
 
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_24rem] gap-6 px-8 pb-8">
+      <main className="flex-1 px-8 pb-6 flex gap-6">
         {/* ---- Order list ---- */}
-        <section className="bg-white rounded-3xl shadow-md overflow-hidden flex flex-col">
-          <div className="px-6 py-4 border-b bg-gradient-to-r from-emerald-50 to-white flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-lg font-semibold tracking-tight">Your Order</h2>
-            <span className="ml-auto text-sm text-slate-500">
+        <section className="flex-1 bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b border-gray-100 bg-[#fafcff] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ShoppingCart className="h-5 w-5 text-teal-700" />
+              <h2 className="text-xl font-bold text-slate-800">Your Order</h2>
+            </div>
+            <span className="text-sm text-slate-500">
               {state.items.length === 0
                 ? 'Tap items at the counter'
                 : `${state.items.length} item${state.items.length === 1 ? '' : 's'}`}
@@ -165,7 +156,7 @@ export function PosCustomerDisplay() {
             {state.items.length === 0 ? (
               <WelcomeEmpty />
             ) : (
-              <ul className="divide-y">
+              <ul>
                 {state.items.map((i, idx) => (
                   <LineTile key={idx} line={i} currency={state.currency} />
                 ))}
@@ -175,46 +166,64 @@ export function PosCustomerDisplay() {
         </section>
 
         {/* ---- Totals card ---- */}
-        <aside className="bg-white rounded-3xl shadow-md p-6 flex flex-col gap-3 h-fit lg:sticky lg:top-6">
-          <Row label="Subtotal" value={fmtDisplayMoney(state.subtotal, state.currency)} />
-          {state.discountAmount > 0 && (
-            <Row label="Discount" value={`- ${fmtDisplayMoney(state.discountAmount, state.currency)}`} muted />
-          )}
-          {state.taxAmount > 0 && (
-            <Row
-              label={state.invoiceKind === 'tax' ? 'Tax (VAT 10%)' : 'Tax'}
-              value={fmtDisplayMoney(state.taxAmount, state.currency)}
-              muted
-            />
-          )}
-          <hr className="my-2 border-slate-200" />
-          <div className="flex items-baseline justify-between">
-            <span className="text-lg text-slate-600">Total</span>
-            <span className="text-5xl font-bold text-emerald-700 tabular-nums tracking-tight">
-              {fmtDisplayMoney(state.total, state.currency)}
-            </span>
+        <aside className="w-[380px] shrink-0">
+          <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-8 flex flex-col">
+            <div className="flex justify-between items-center text-slate-600 mb-6">
+              <span className="text-sm">Subtotal</span>
+              <span className="font-bold text-slate-900 text-sm tabular-nums">
+                {fmtDisplayMoney(state.subtotal, state.currency)}
+              </span>
+            </div>
+            {state.discountAmount > 0 && (
+              <div className="flex justify-between items-center text-slate-500 mb-3">
+                <span className="text-sm">Discount</span>
+                <span className="text-sm tabular-nums">
+                  − {fmtDisplayMoney(state.discountAmount, state.currency)}
+                </span>
+              </div>
+            )}
+            {state.taxAmount > 0 && (
+              <div className="flex justify-between items-center text-slate-500 mb-3">
+                <span className="text-sm">{state.invoiceKind === 'tax' ? 'Tax (VAT 10%)' : 'Tax'}</span>
+                <span className="text-sm tabular-nums">
+                  {fmtDisplayMoney(state.taxAmount, state.currency)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-sm text-slate-600">Total</span>
+              <span className="text-5xl font-bold text-teal-700 tabular-nums tracking-tight">
+                {fmtDisplayMoney(state.total, state.currency)}
+              </span>
+            </div>
+            {/* V141 — KHR equivalent line at the bottom of the card,
+                matches the printed receipt wording so the customer
+                sees "Total KHR (@ 4,100)  ៛ 410,000" identical on
+                screen and on paper. */}
+            {state.currency === 'USD' && state.exchangeRate > 0 && (
+              <div className="flex justify-between items-center text-slate-500 mt-auto">
+                <span className="text-xs">
+                  Total KHR (@ {state.exchangeRate.toLocaleString('en-US')})
+                </span>
+                <span className="font-bold text-slate-800 text-sm tabular-nums">
+                  ៛ {(state.total * state.exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
+            {state.invoiceKind === 'tax' && (
+              <div className="mt-2 text-xs text-slate-500 text-right">Includes VAT 10%</div>
+            )}
           </div>
-          {/* V141 — KHR equivalent on a single line with the rate
-              inside the label parens. Matches the printed receipt's
-              "TOTAL KHR (@ 4,100)  ៛ 410,000" layout so the customer
-              sees the same wording on screen + on paper. */}
-          {state.currency === 'USD' && state.exchangeRate > 0 && (
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-sm text-slate-600">
-                Total KHR (@ {state.exchangeRate.toLocaleString('en-US')})
-              </span>
-              <span className="text-lg font-semibold text-slate-700 tabular-nums">
-                ៛ {(state.total * state.exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-          )}
-          {state.invoiceKind === 'tax' && (
-            <div className="mt-1 text-xs text-slate-500 text-right">
-              Includes VAT 10%
-            </div>
-          )}
         </aside>
       </main>
+
+      {/* Featured slider — pinned at the bottom of the page. Uses the
+          same {@link slideMedia} array the fullscreen ads carousel
+          consumes (V143), so a tenant that already configured slides
+          gets them here automatically. Not rendered when there's
+          nothing to show — leaves the page clean instead of a blank
+          card. */}
+      <FeaturedSlider state={state} />
     </div>
   );
 }
@@ -224,30 +233,59 @@ export function PosCustomerDisplay() {
 /* -------------------------------------------------------------------- */
 
 function Header({
-  shopName, logoUrl, queueNo, customerName,
+  shopName, logoUrl, queueNo, customerName, onToggleFullscreen, isFullscreen,
 }: {
   shopName: string; logoUrl: string | null;
   queueNo: string | null; customerName: string | null;
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
 }) {
   return (
-    <header className="px-8 py-5 flex items-center gap-4">
-      {logoUrl && (
-        <img src={logoUrl} alt="" className="h-14 w-14 object-contain rounded-xl bg-white border border-slate-200 shadow-sm" />
-      )}
-      <div className="flex-1 min-w-0">
-        <h1 className="text-3xl font-bold tracking-tight truncate">{shopName}</h1>
-        <div className="text-sm text-slate-500 mt-0.5">
-          {customerName ?? 'Walk-in'} · {new Date().toLocaleDateString()}
+    <header className="w-full p-8 pb-6 flex items-start justify-between gap-4">
+      <div className="flex items-center gap-4 min-w-0">
+        {/* Rounded white square with the shop's logo (when set) or a
+            neutral fork/knife glyph fallback. Matches the mockup's
+            top-left mark. */}
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt=""
+            className="w-16 h-16 rounded-2xl object-contain bg-white border border-gray-100 shadow-sm"
+          />
+        ) : (
+          <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-800">
+            <Utensils className="h-8 w-8" strokeWidth={2} />
+          </div>
+        )}
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 truncate">
+            {/* Greeting-first, shop name secondary. Matches the mockup
+                where the display leads with "Welcome" and the shop
+                identity sits in the logo mark. Falls back to the
+                shop name if the tenant hasn't set one. */}
+            {shopName === 'Welcome' ? 'Welcome' : shopName}
+          </h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            {customerName ?? 'Walk-in'} · {new Date().toLocaleDateString()}
+            {queueNo && (
+              <>
+                {' · '}
+                <span className="text-teal-700 font-semibold tabular-nums">Order {queueNo}</span>
+              </>
+            )}
+          </p>
         </div>
       </div>
-      {/* Prominent Order chip — the customer's anchor for matching
-          their slip with the order pickup. Hidden until the cart is
-          first saved (queueNo arrives with the persisted order). */}
-      {queueNo && (
-        <div className="text-right">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 font-semibold">Order</div>
-          <div className="text-4xl tabular-nums font-bold text-emerald-700 leading-none mt-1">{queueNo}</div>
-        </div>
+      {onToggleFullscreen && (
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors shrink-0"
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
+        >
+          {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+        </button>
       )}
     </header>
   );
@@ -265,20 +303,21 @@ function WelcomeEmpty() {
   );
 }
 
-/** One item tile with its cover image. Square thumbnail on the left
- *  (graceful Package fallback when no image), name + qty × price in
- *  the middle, line total bold on the right. */
+/** One item tile with its cover image. Rounded-16 thumbnail on the
+ *  left (graceful Package fallback when no image), name + qty × price
+ *  in the middle, line total bold on the right. Matches the mockup's
+ *  order-row shape. */
 function LineTile({ line, currency }: { line: DisplayItem; currency: string }) {
   const [broken, setBroken] = useState(false);
   const showImage = !!line.imageUrl && !broken;
   return (
-    <li className="px-6 py-3 flex items-center gap-4">
-      <div className="h-16 w-16 shrink-0 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+    <li className="flex items-center gap-6 px-6 py-4 border-b border-gray-50 last:border-b-0">
+      <div className="w-16 h-16 shrink-0 rounded-[16px] overflow-hidden shadow-sm bg-slate-50 border border-slate-100 flex items-center justify-center">
         {showImage ? (
           <img
             src={line.imageUrl!}
             alt=""
-            className="h-full w-full object-cover"
+            className="w-full h-full object-cover"
             loading="lazy"
             onError={() => setBroken(true)}
           />
@@ -288,21 +327,119 @@ function LineTile({ line, currency }: { line: DisplayItem; currency: string }) {
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="text-xl font-semibold leading-snug truncate">{line.name}</div>
-        <div className="text-sm text-slate-500 mt-0.5 tabular-nums">
+        <h3 className="text-lg font-medium text-slate-800 truncate">{line.name}</h3>
+        <p className="text-slate-500 text-sm mt-1 tabular-nums">
           {line.qty} × {fmtDisplayMoney(line.unitPrice, currency)}
-        </div>
+        </p>
         {line.notes && (
-          <div className="text-sm italic text-emerald-700 mt-1 break-words">
+          <p className="text-sm italic text-teal-700 mt-1 break-words">
             · {line.notes}
-          </div>
+          </p>
         )}
       </div>
 
-      <div className="text-2xl font-bold tabular-nums text-slate-800">
+      <div className="text-2xl font-bold text-slate-900 tabular-nums shrink-0">
         {fmtDisplayMoney(line.lineTotal, currency)}
       </div>
     </li>
+  );
+}
+
+/**
+ * Compact featured slider pinned at the bottom of the display page.
+ * Reuses the {@link DisplayState.slideMedia} array the fullscreen
+ * ads carousel already consumes — a tenant that added slides via
+ * settings gets them here automatically.
+ *
+ * <p>Renders one media at a time with a "FEATURED" label + shop
+ * name on the right. Auto-advances every 5s; navigation dots at the
+ * bottom let the customer see how many slides remain. Not rendered
+ * at all when there's nothing playable, so tenants without slides
+ * see a clean page instead of a placeholder card.</p>
+ */
+function FeaturedSlider({ state }: { state: DisplayState }) {
+  const playable = state.slideMedia.filter(m => m.src.trim().length > 0);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (playable.length <= 1) return;
+    const id = window.setInterval(
+      () => setIdx(i => (i + 1) % playable.length),
+      5000,
+    );
+    return () => window.clearInterval(id);
+  }, [playable.length]);
+  // Clamp if the list shrank (a tenant removed the current slide
+  // via settings — the state broadcast picked it up here).
+  useEffect(() => {
+    if (idx >= playable.length && playable.length > 0) setIdx(0);
+  }, [idx, playable.length]);
+
+  if (playable.length === 0) return null;
+  const current = playable[idx];
+
+  return (
+    <section className="px-8 pb-8">
+      <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex flex-col md:flex-row items-stretch">
+          <div className="w-full md:w-1/2 h-64 md:h-72 p-4">
+            {current.kind === 'image' ? (
+              <img
+                src={current.src}
+                alt=""
+                className="w-full h-full object-cover rounded-[16px]"
+              />
+            ) : (
+              // Video slides render as a muted looping <video> — the
+              // compact bottom bar isn't the place for an iframe
+              // embed (YouTube/Vimeo controls chrome would fight the
+              // layout). Iframe-hosted slides show a still frame
+              // instead; for the full-quality video experience the
+              // tenant should let the cart empty and the fullscreen
+              // ads carousel takes over via the V143 toggle.
+              <video
+                src={current.src}
+                className="w-full h-full object-cover rounded-[16px]"
+                autoPlay muted loop playsInline
+              />
+            )}
+          </div>
+          <div className="w-full md:w-1/2 p-8 flex flex-col gap-4 justify-center">
+            <div className="flex items-center gap-3">
+              <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
+              <span className="font-bold text-xs uppercase tracking-widest text-slate-500">Featured</span>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 leading-tight">
+              {state.shopName || 'Welcome'}
+            </h2>
+            <p className="text-slate-500 text-base">
+              {/* Static tagline — the DisplayState doesn't carry
+                  per-slide text yet. Extending slideMedia with
+                  {caption, subtitle} is the natural follow-up if the
+                  tenant wants per-slide copy. */}
+              See what's new at the counter — ask us about today's
+              specials.
+            </p>
+          </div>
+        </div>
+        {/* Slide dots — hidden when there's only one slide (no
+            navigation is meaningful). */}
+        {playable.length > 1 && (
+          <div className="flex justify-center gap-3 pb-4">
+            {playable.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Slide ${i + 1}`}
+                onClick={() => setIdx(i)}
+                className={`h-2 w-2 rounded-full transition-colors ${
+                  i === idx ? 'bg-slate-800' : 'bg-gray-300'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
