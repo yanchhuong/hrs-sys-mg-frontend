@@ -1522,6 +1522,14 @@ function PosSlidesEditor({
   const removeAt = (idx: number) => commit(items.filter((_, i) => i !== idx));
   const setSrc = (idx: number, src: string) =>
     commit(items.map((m, i) => (i === idx ? { ...m, src } : m)));
+  /** Update caption / subtitle on a single slide. Empty string → null
+   *  so the persisted JSON stays clean (no {"caption": ""}). */
+  const setText = (idx: number, field: 'caption' | 'subtitle', raw: string) =>
+    commit(items.map((m, i) => {
+      if (i !== idx) return m;
+      const trimmed = raw.trim();
+      return { ...m, [field]: trimmed === '' ? null : raw };
+    }));
 
   return (
     <div className="space-y-3">
@@ -1597,6 +1605,30 @@ function PosSlidesEditor({
                       disabled={disabled}
                     />
                   )}
+                  {/* Optional per-slide text — shown next to the media
+                      on the bottom Featured slider of the customer
+                      display. Both fields are optional; the slider
+                      falls back to the shop name + a generic tagline
+                      when they're empty, so old slides keep working
+                      without an edit. */}
+                  <div className="mt-2 grid grid-cols-1 gap-1.5">
+                    <Input
+                      value={m.caption ?? ''}
+                      onChange={e => setText(idx, 'caption', e.target.value)}
+                      placeholder="Headline (optional) — e.g. Handcrafted Morning Brews"
+                      className="text-xs"
+                      disabled={disabled}
+                      maxLength={80}
+                    />
+                    <Input
+                      value={m.subtitle ?? ''}
+                      onChange={e => setText(idx, 'subtitle', e.target.value)}
+                      placeholder="Subtitle (optional) — one short sentence about this slide"
+                      className="text-xs"
+                      disabled={disabled}
+                      maxLength={200}
+                    />
+                  </div>
                 </div>
                 <button
                   type="button"

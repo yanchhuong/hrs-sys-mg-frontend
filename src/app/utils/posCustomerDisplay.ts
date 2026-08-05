@@ -58,9 +58,20 @@ export interface DisplayState {
    *  empty (no items, no paid splash), the display swaps to a
    *  fullscreen ads carousel instead of the Welcome state. (V143) */
   slideEnabled: boolean;
-  /** Carousel media list — {kind, src} entries; image src can be a
-   *  base64 data URL or a public URL, video src must be a URL. */
-  slideMedia: { kind: 'image' | 'video'; src: string }[];
+  /** Carousel media list. Each entry carries the media itself
+   *  ({kind, src} — image src can be a base64 data URL or a public
+   *  URL; video src must be a URL) plus optional per-slide text
+   *  ({caption, subtitle}) that the bottom Featured slider on the
+   *  main display view renders next to the media. Text fields are
+   *  optional so old slides (V143) keep parsing without a migration.
+   *  The fullscreen ads carousel ignores the text fields — it only
+   *  shows media. */
+  slideMedia: {
+    kind: 'image' | 'video';
+    src: string;
+    caption?: string | null;
+    subtitle?: string | null;
+  }[];
   /** Checkout-in-progress overlay. Non-null while the cashier has
    *  the Checkout dialog open. When method='khqr', the customer
    *  display shows the bank's QR fullscreen so the customer can

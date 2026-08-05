@@ -408,16 +408,20 @@ function FeaturedSlider({ state }: { state: DisplayState }) {
               <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
               <span className="font-bold text-xs uppercase tracking-widest text-slate-500">Featured</span>
             </div>
+            {/* Per-slide headline + subtitle (added on top of the
+                V143 slideMedia shape). Fall back to the shop name +
+                a generic tagline when the tenant hasn't filled the
+                fields in — old slides + freshly-added ones both keep
+                rendering something sensible. */}
             <h2 className="text-2xl font-bold text-slate-900 leading-tight">
-              {state.shopName || 'Welcome'}
+              {(current.caption && current.caption.trim())
+                ? current.caption
+                : (state.shopName || 'Welcome')}
             </h2>
             <p className="text-slate-500 text-base">
-              {/* Static tagline — the DisplayState doesn't carry
-                  per-slide text yet. Extending slideMedia with
-                  {caption, subtitle} is the natural follow-up if the
-                  tenant wants per-slide copy. */}
-              See what's new at the counter — ask us about today's
-              specials.
+              {(current.subtitle && current.subtitle.trim())
+                ? current.subtitle
+                : "See what's new at the counter — ask us about today's specials."}
             </p>
           </div>
         </div>

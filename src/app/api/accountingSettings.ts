@@ -143,17 +143,39 @@ export interface AccountingSettings {
 export interface PosSlideItem {
   kind: 'image' | 'video';
   src: string;
+  /** Optional headline shown next to the media on the Featured
+   *  slider (bottom card of the customer display). When null /
+   *  missing the slider falls back to the shop name. Kept optional
+   *  so legacy JSON stored before this field existed keeps parsing
+   *  without a migration. */
+  caption?: string | null;
+  /** Optional subtitle / description under the headline. When null
+   *  / missing the slider falls back to a generic tagline. Same
+   *  optional-additive semantics as {@link caption}. */
+  subtitle?: string | null;
 }
 
 /** Defensive JSON parse — bad / empty input becomes an empty list
- *  so the display falls back to its Welcome state cleanly. */
+ *  so the display falls back to its Welcome state cleanly. The
+ *  filter keeps only rows that carry the minimum required fields
+ *  (kind + src as strings); caption / subtitle pass through when
+ *  they're strings, coerce to null otherwise so downstream code
+ *  can treat the field as "string or null". */
 export function parsePosSlideMedia(raw: string | null | undefined): PosSlideItem[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((m): m is PosSlideItem =>
-      m && typeof m.src === 'string' && (m.kind === 'image' || m.kind === 'video'));
+    return parsed
+      .filter((m: unknown): m is PosSlideItem =>
+        !!m && typeof (m as PosSlideItem).src === 'string'
+             && ((m as PosSlideItem).kind === 'image' || (m as PosSlideItem).kind === 'video'))
+      .map(m => ({
+        kind: m.kind,
+        src: m.src,
+        caption:  typeof m.caption  === 'string' ? m.caption  : null,
+        subtitle: typeof m.subtitle === 'string' ? m.subtitle : null,
+      }));
   } catch {
     return [];
   }
