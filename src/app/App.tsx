@@ -21,6 +21,7 @@ import { QrScanPage } from './components/views/QrScanPage';
 import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { PublicShopPage } from './components/views/PublicShopPage';
+import { KitchenSharePage } from './components/views/KitchenSharePage';
 import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
 import { CambodiaLearnPage } from './components/CambodiaLearnPage';
 import { ResetPasswordPage } from './components/ResetPasswordPage';
@@ -52,6 +53,13 @@ const isPosDisplayPath = (): boolean =>
 const isPublicShopPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/shop/');
+
+/** V306 — anonymous kitchen KDS board reached via /kitchen/{code}.
+ *  Same "no auth, no sidebar" posture as /shop, but the 8-char code
+ *  grants write privilege (advance an order's fulfillmentStatus). */
+const isPublicKitchenPath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/kitchen/');
 
 /** V170 — /requirement-survey — anonymous landing-page form. Prospects
  *  submit before any account exists, so it runs outside the auth flow. */
@@ -272,6 +280,16 @@ export default function App() {
     return (
       <>
         <PublicShopPage />
+        <Toaster />
+      </>
+    );
+  }
+  // V306 — public kitchen KDS board. Same anonymous posture as /shop
+  // but code holder gets limited write privilege (advance status).
+  if (isPublicKitchenPath()) {
+    return (
+      <>
+        <KitchenSharePage />
         <Toaster />
       </>
     );

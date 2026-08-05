@@ -3,7 +3,7 @@ import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
-  ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, CheckCircle, Flame, Hourglass,
+  ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, ChefHat,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
   ChevronLeft, ChevronRight, ScanBarcode,
 } from 'lucide-react';
@@ -44,6 +44,8 @@ import * as paywayApi from '../../api/payway';
 import { ThumbnailImage } from '../common/ThumbnailImage';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { ShareShopDialog } from '../common/ShareShopDialog';
+import { ShareKitchenDialog } from '../common/ShareKitchenDialog';
+import { KdsOrderCard } from '../common/KdsOrderCard';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
 import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
 import { printPosReceipt } from '../../utils/posReceipt';
@@ -187,6 +189,10 @@ export function POS() {
   const [companyInfo, setCompanyInfo] = useState<companyApi.CompanyInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // V306 — Share to Kitchen dialog. Reached from a button inside
+  // the Active Orders drawer header; the drawer stays open behind
+  // the share dialog so the operator can flip between the two.
+  const [shareKitchenOpen, setShareKitchenOpen] = useState(false);
   // KHQR bank-account cards (V133 settings dialog → Bank Account
   // section). Loaded once on mount + re-read when the settings dialog
   // closes so a newly-uploaded QR shows up on the next checkout.
@@ -1807,7 +1813,9 @@ export function POS() {
         onOpenChange={setActiveDrawerOpen}
         orders={activeOrders}
         onAdvance={advanceFulfillment}
+        onShareKitchen={() => setShareKitchenOpen(true)}
       />
+      <ShareKitchenDialog open={shareKitchenOpen} onOpenChange={setShareKitchenOpen} />
       <PosReceiptDialog
         order={receipt}
         settings={posSettings}
@@ -3011,88 +3019,14 @@ interface ActiveDrawerProps {
   onOpenChange: (v: boolean) => void;
   orders: PosOrder[];
   onAdvance: (id: string, next: posApi.PosFulfillmentStatus) => void;
+  /** V306 — parent-owned "Share to Kitchen" opener. Rendered as a
+   *  small button in the header next to the filter chips. Optional
+   *  so callers that don't want the button (e.g. a future
+   *  read-only variant) can omit it. */
+  onShareKitchen?: () => void;
 }
 
-/** v-pos-active-queue-kds — visual theme per fulfillment status,
- *  mirrored across the header ribbon, the elapsed-time colour, the
- *  primary action button, and the item strikethrough on Ready.
- *  Wording matches the KDS mockup:
- *     requested   → Pending   → gray  → "Awaiting Prep" (advances to accepted)
- *     accepted    → Prep      → gray  → "Start Cooking" (advances to in_progress)
- *     in_progress → Cooking   → amber → "Mark Ready"    (advances to ready)
- *     ready       → Food Ready → green → "Clear from Board" (advances to done)
- *
- *  Kept as a plain data table so a new status (e.g. "delivering")
- *  can slot in with one row + no if-branch surgery.
- */
-type KdsTheme = {
-  /** Label shown on the ribbon under the header (the block that reads
-   *  PENDING / PREP / START COOKING / FOOD READY on the mockup). */
-  ribbonLabel: string;
-  ribbonClass: string;
-  /** Big elapsed-time colour on the top-right of the card. */
-  elapsedClass: string;
-  /** Primary action label + colour. Null on 'done' since that row
-   *  never renders — {@code done} orders drop off the board. */
-  actionLabel: string | null;
-  actionClass: string;
-  actionIcon: 'flame' | 'utensils' | 'check' | 'trash' | 'hourglass';
-};
-const KDS_THEME: Record<posApi.PosFulfillmentStatus, KdsTheme> = {
-  requested: {
-    ribbonLabel: 'Pending',    ribbonClass: 'bg-gray-100 text-gray-500',
-    elapsedClass: 'text-gray-500',
-    actionLabel: 'Waiting',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200',
-    actionIcon: 'hourglass',
-  },
-  accepted: {
-    ribbonLabel: 'Prep',       ribbonClass: 'bg-gray-100 text-gray-600',
-    elapsedClass: 'text-gray-700',
-    actionLabel: 'Start Cooking',
-    actionClass: 'bg-orange-500 hover:bg-orange-600 text-white',
-    actionIcon: 'flame',
-  },
-  in_progress: {
-    ribbonLabel: 'Start Cooking', ribbonClass: 'bg-amber-100 text-amber-800',
-    elapsedClass: 'text-amber-600',
-    actionLabel: 'Mark Ready',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
-    actionIcon: 'check',
-  },
-  ready: {
-    ribbonLabel: 'Food Ready',    ribbonClass: 'bg-emerald-100 text-emerald-700',
-    elapsedClass: 'text-emerald-600',
-    actionLabel: 'Clear from Board',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
-    actionIcon: 'trash',
-  },
-  done: {
-    // Never renders — done orders drop off the board. Kept here so
-    // the Record<all statuses, …> type stays exhaustive.
-    ribbonLabel: 'Done',        ribbonClass: 'bg-gray-100 text-gray-500',
-    elapsedClass: 'text-gray-500',
-    actionLabel: null,
-    actionClass: '',
-    actionIcon: 'check',
-  },
-};
-
-/** v-pos-active-queue-kds — format elapsed time as MM:SS when under
- *  an hour, HH:MM otherwise. Same shape as the KDS mockup ("12:45").
- *  Recomputed once per second by the parent's tick effect so cards
- *  advance in real time without a full re-fetch. */
-function formatElapsed(fromIso: string, nowMs: number): string {
-  const start = new Date(fromIso).getTime();
-  const secs = Math.max(0, Math.floor((nowMs - start) / 1000));
-  const hh = Math.floor(secs / 3600);
-  const mm = Math.floor((secs % 3600) / 60);
-  const ss = secs % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return hh > 0 ? `${pad(hh)}:${pad(mm)}` : `${pad(mm)}:${pad(ss)}`;
-}
-
-function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance }: ActiveDrawerProps) {
+function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareKitchen }: ActiveDrawerProps) {
   // v-pos-active-queue-kds — 1s ticker so the elapsed-time counter
   // on every card increments live while the drawer is open. Only
   // runs when the drawer IS open — a closed drawer doesn't need to
@@ -3133,11 +3067,23 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance }: Active
                 {pendingCount} Pending
               </DialogDescription>
             </div>
-            {/* Filter chips — Cooking vs Prep, matching the KDS mockup.
-                'all' is the default; the pill only visually "picks"
-                the named chip so an operator can keep the eye where
-                the fire is. */}
+            {/* Filter chips + Share to Kitchen. The share button
+                mirrors the Share Menu affordance on the POS header;
+                pinning it inside the drawer keeps the KDS discovery
+                path tight (operator is already looking at the
+                board they want to hand off). */}
             <div className="inline-flex items-center gap-1.5 shrink-0">
+              {onShareKitchen && (
+                <button
+                  type="button"
+                  onClick={onShareKitchen}
+                  className="inline-flex items-center gap-1.5 px-3 h-7 rounded-full border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 text-xs font-medium transition"
+                  title="Get a shareable kitchen URL"
+                >
+                  <ChefHat className="h-3.5 w-3.5" />
+                  Share to Kitchen
+                </button>
+              )}
               {([
                 { key: 'all',     label: 'All',     dot: 'bg-gray-400',   count: orders.length },
                 { key: 'cooking', label: 'Cooking', dot: 'bg-amber-500',  count: inProgressCount },
@@ -3174,97 +3120,9 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance }: Active
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filtered.map(o => {
-                const theme = KDS_THEME[o.fulfillmentStatus];
-                const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
-                const nextStatus = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
-                const isReady = o.fulfillmentStatus === 'ready';
-                const clickable = theme.actionLabel != null && nextStatus != null;
-                return (
-                  <div
-                    key={o.id}
-                    className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col"
-                  >
-                    {/* Card header — queue number + location/customer,
-                        elapsed time on the right in the status colour. */}
-                    <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-lg font-bold tracking-tight tabular-nums">
-                          #{o.queueNo}
-                        </div>
-                        <div className="text-[10px] uppercase tracking-wide text-gray-500 truncate">
-                          {o.customerName ?? 'Walk-in'}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className={`text-2xl font-bold tabular-nums leading-none ${theme.elapsedClass}`}>
-                          {formatElapsed(o.createdAt, nowMs)}
-                        </div>
-                        <div className="text-[9px] uppercase tracking-widest text-gray-400 mt-1">
-                          Elapsed
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status ribbon — the coloured strip under the
-                        header. Mirrors the mockup exactly (PREP /
-                        START COOKING / PENDING / FOOD READY). */}
-                    <div className={`mx-4 rounded-md text-[11px] font-semibold uppercase tracking-wide text-center py-1.5 ${theme.ribbonClass}`}>
-                      {theme.ribbonLabel}
-                    </div>
-
-                    {/* Line items — struck through when the order
-                        is ready-to-serve (mockup #201). Modifiers /
-                        notes rendered as red-tinted sub-bullets
-                        under the name so the cook sees "Medium Rare"
-                        / "No Onions" at a glance. */}
-                    <ul className="px-4 py-3 space-y-2 flex-1">
-                      {o.items.map((it, i) => {
-                        const notes = (it.notes ?? '').split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-                        return (
-                          <li key={it.id ?? i} className="text-sm">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className={`font-medium text-gray-900 ${isReady ? 'line-through text-gray-400' : ''}`}>
-                                {it.name}
-                              </span>
-                              <span className={`text-xs tabular-nums shrink-0 ${isReady ? 'text-gray-400' : 'text-gray-500'}`}>
-                                x{it.quantity}
-                              </span>
-                            </div>
-                            {notes.length > 0 && !isReady && (
-                              <ul className="mt-0.5 space-y-0.5">
-                                {notes.map((n, j) => (
-                                  <li key={j} className="text-[11px] text-rose-600">
-                                    · {n}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-
-                    {/* Primary action — advances to the next state.
-                        Wording matches the mockup: Awaiting Prep /
-                        Start Cooking / Mark Ready / Clear from Board. */}
-                    <div className="px-4 pb-4">
-                      <button
-                        type="button"
-                        disabled={!clickable}
-                        onClick={() => nextStatus && onAdvance(o.id, nextStatus)}
-                        className={`w-full h-9 rounded-md text-xs font-semibold uppercase tracking-wide inline-flex items-center justify-center gap-2 transition disabled:cursor-not-allowed ${theme.actionClass}`}
-                      >
-                        {theme.actionIcon === 'flame'     && <Flame className="h-3.5 w-3.5" />}
-                        {theme.actionIcon === 'check'     && <CheckCircle className="h-3.5 w-3.5" />}
-                        {theme.actionIcon === 'trash'     && <Trash2 className="h-3.5 w-3.5" />}
-                        {theme.actionIcon === 'hourglass' && <Hourglass className="h-3.5 w-3.5" />}
-                        {theme.actionLabel}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {filtered.map(o => (
+                <KdsOrderCard key={o.id} order={o} nowMs={nowMs} onAdvance={onAdvance} />
+              ))}
             </div>
           )}
         </div>
