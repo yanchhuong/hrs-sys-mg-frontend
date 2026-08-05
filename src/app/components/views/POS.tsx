@@ -425,9 +425,17 @@ export function POS() {
       notes: l.notes,
       imageUrl: (l.stockItemId && itemById.get(l.stockItemId)?.imageUrl) || null,
     }));
+    // Logo fallback chain: POS-specific logo (posLogoUrl) wins so a
+    // tenant can pick a compact / mono variant just for the customer
+    // display; when unset, fall back to the tenant's company logo
+    // (Settings → Company Info). Both empty → the display renders
+    // the fork/knife glyph placeholder.
+    const resolvedLogo =
+      ((posSettings.posLogoUrl ?? '').trim() || null)
+      ?? ((companyInfo?.logoUrl ?? '').trim() || null);
     const snapshot: DisplayState = {
       shopName: posSettings.posShopName?.trim() || 'Welcome',
-      logoUrl: (posSettings.posLogoUrl ?? '').trim() || null,
+      logoUrl: resolvedLogo,
       queueNo: currentOrder
         ? `#${String(currentOrder.queueSeq).padStart(3, '0')}`
         : null,
@@ -484,6 +492,10 @@ export function POS() {
     subtotal, discountAmount, taxAmount, total, invoiceKind,
     posSettings.posShopName, posSettings.posLogoUrl, posSettings.posExchangeRate,
     posSettings.posSlideEnabled, posSettings.posSlideMedia,
+    // Re-broadcast when the company logo lands so a delayed
+    // /company-info fetch flips the placeholder → real logo on the
+    // display without waiting for the next cart edit.
+    companyInfo?.logoUrl,
     checkoutOpen, checkoutMethod, banks,
     paidSnapshot, pairedDisplayCode,
   ]);
