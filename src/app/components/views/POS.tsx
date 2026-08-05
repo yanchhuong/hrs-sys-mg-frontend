@@ -3042,7 +3042,7 @@ const KDS_THEME: Record<posApi.PosFulfillmentStatus, KdsTheme> = {
   requested: {
     ribbonLabel: 'Pending',    ribbonClass: 'bg-gray-100 text-gray-500',
     elapsedClass: 'text-gray-500',
-    actionLabel: 'Awaiting Prep',
+    actionLabel: 'Waiting',
     actionClass: 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200',
     actionIcon: 'hourglass',
   },
