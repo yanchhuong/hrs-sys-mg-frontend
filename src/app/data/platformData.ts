@@ -59,6 +59,10 @@ export interface Company {
   attendanceCount?: number;
   /** Live row count from the cloud's payroll_items table. */
   payrollItemCount?: number;
+  /** V305 — live stock-item count. Populated by the tenants list
+   *  endpoint so the Edit Company dialog can show item usage next to
+   *  the Max items cap on the Quota overrides card. */
+  itemCount?: number;
   storageMb: number;
   monthlyCostUsd: number;
   createdAt: string;

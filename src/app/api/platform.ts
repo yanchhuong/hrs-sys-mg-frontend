@@ -47,6 +47,10 @@ export interface PlatformTenant {
   userCount?: number;
   attendanceCount?: number;
   payrollItemCount?: number;
+  /** V305 — live stock-item row count. Feeds the "Currently used" line
+   *  on the Edit Company dialog's Quota-overrides card so the operator
+   *  can see item usage next to the Max items cap. */
+  itemCount?: number;
   /** Approx bytes stored — attachments (file uploads) + inline base64
    *  image blobs on stock_items. Feeds the Companies page Storage
    *  column. Zero on create/update responses where it isn't computed. */

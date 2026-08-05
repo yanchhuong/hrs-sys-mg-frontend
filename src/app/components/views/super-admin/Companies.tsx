@@ -56,6 +56,10 @@ function toLegacyCompany(t: platformApi.PlatformTenant): Company {
     employeeCount: t.employeeCount ?? 0,
     attendanceCount: t.attendanceCount ?? 0,
     payrollItemCount: t.payrollItemCount ?? 0,
+    // V305 — carry the item count through so the edit dialog's
+    // Quota-overrides card can render "Currently used: N" for items
+    // (same shape as the existing employeeCount / userCount rows).
+    itemCount: t.itemCount ?? 0,
     // Approximate MB — sum of file-upload sizes (attachments) plus the
     // character length of inline base64 image blobs on stock_items.
     // Backend returns bytes; divide by 1024×1024. Zero on create/update
@@ -941,7 +945,7 @@ export function Companies() {
                         planDefault: planRow?.maxEmployees ?? 0 },
                       { key: 'maxItemsOverride',
                         label: 'Max items',
-                        used: 0,
+                        used: editing.itemCount ?? 0,
                         planDefault: planRow?.maxItems ?? 0 },
                     ];
                     return (
