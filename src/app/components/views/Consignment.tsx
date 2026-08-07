@@ -994,6 +994,13 @@ function ConsignmentDialog({
         // — matching the schema's original intent and the operator's
         // mental model ("Cola: $65 retail, $45.50 to supplier, $19.50
         // commission — all per bottle; times qty gives the totals").
+        // v-consignment-partial-settlement — soldQty starts at 0 (was
+        // = receivedQty in the earlier single-shot model). Settlements
+        // bump it as units get sold, so "Available on this consignment"
+        // = receivedQty - soldQty stays honest across multiple partial
+        // settlements. The OUT stock movement at consignment save still
+        // deducts receivedQty (goods physically transferred to the
+        // supplier's shelf); soldQty tracks resale progress separately.
         items: cleanLines.map((l, idx) => {
           const qty = Number(l.orderQty) || 0;
           const commissionPerUnit = Number(l.commissionAmount) || 0;
@@ -1002,7 +1009,7 @@ function ConsignmentDialog({
             id: l.id,
             stockItemId: l.stockItemId,
             receivedQty:  qty,
-            soldQty:      qty,
+            soldQty:      0,
             returnedQty:  0,
             adjustedQty:  0,
             supplierPrice: supplierPerUnit,
@@ -1941,9 +1948,10 @@ function SettlementDialog({
       const picked = consignments.find(x => x.id === consignmentId);
       const remaining = picked
         ? picked.items.reduce((sum, it) => {
-            const qty  = it.receivedQty ?? 0;
-            const sold = Number(soldByLine[it.id] ?? '0') || 0;
-            return sum + Math.max(0, qty - sold);
+            const qty      = it.receivedQty ?? 0;
+            const prevSold = it.soldQty ?? 0;
+            const thisSold = Number(soldByLine[it.id] ?? '0') || 0;
+            return sum + Math.max(0, qty - prevSold - thisSold);
           }, 0)
         : 0;
       let composedNotes = notes.trim();
@@ -1955,6 +1963,17 @@ function SettlementDialog({
           ? `${dispositionNote}\n${composedNotes}`
           : dispositionNote;
       }
+      // Per-line breakdown — BE bumps parent items' sold_qty when
+      // status='paid'. Only sends rows the operator actually filled
+      // (sold > 0) to keep the payload lean.
+      const lines = picked
+        ? picked.items
+            .map(it => ({
+              consignmentItemId: it.id,
+              sold: Number(soldByLine[it.id] ?? '0') || 0,
+            }))
+            .filter(l => l.sold > 0)
+        : [];
       const req: settlementsApi.ConsignmentSettlementRequest = {
         consignmentId,
         settlementDate,
@@ -1970,6 +1989,7 @@ function SettlementDialog({
         netAmount: netAmount < 0 ? 0 : netAmount,
         status,
         notes: composedNotes || null,
+        lines: lines.length > 0 ? lines : undefined,
       };
       if (editing) {
         await settlementsApi.update(editing.id, req);
@@ -2094,21 +2114,22 @@ function SettlementDialog({
           </div>
         </div>
 
-        {/* Line items of the picked consignment. Sold column is
-            editable + starts at 0 per line — the operator enters
-            what actually sold this period. Row Total = sold ×
-            retail; Total Comm. = sold × commPerUnit; both update
-            live as sold values are typed. Fill button drops the
-            row totals into Gross Sales + Commission (kept by us)
-            above. Sold is capped at Qty (can't settle more than
-            was consigned); the cell tints red if the operator
-            somehow types over the cap. */}
+        {/* Line items of the picked consignment. Editable Sold
+            column starts at 0 per line, capped at Available (=
+            receivedQty − soldQty). soldQty tracks cumulative sales
+            from prior paid settlements — so a consignment that has
+            been partially settled shows the correct remaining
+            volume, not the initial consigned Qty. Row Total = sold
+            × retail; Total Comm. = sold × commPerUnit; both live-
+            update as the operator types. */}
         {(() => {
           const picked = consignments.find(x => x.id === consignmentId);
           if (!picked || picked.items.length === 0) return null;
           let sumGross = 0, sumComm = 0;
           const rows = picked.items.map((it, idx) => {
-            const qty   = it.receivedQty ?? 0;
+            const qty       = it.receivedQty ?? 0;
+            const prevSold  = it.soldQty ?? 0;
+            const available = Math.max(0, qty - prevSold);
             const soldRaw = soldByLine[it.id] ?? '0';
             const sold = Number(soldRaw) || 0;
             const price = it.sellingPrice ?? 0;
@@ -2119,7 +2140,7 @@ function SettlementDialog({
             const rowComm  = sold * commPerUnit;
             sumGross += rowTotal;
             sumComm  += rowComm;
-            return { it, idx, qty, soldRaw, sold, price, commPerUnit, rowTotal, rowComm };
+            return { it, idx, qty, prevSold, available, soldRaw, sold, price, commPerUnit, rowTotal, rowComm };
           });
           return (
             <div className="space-y-1 mt-4">
@@ -2130,7 +2151,13 @@ function SettlementDialog({
                     <TableRow>
                       <TableHead className="w-8">#</TableHead>
                       <TableHead>Item</TableHead>
-                      <TableHead className="text-right w-16">Qty</TableHead>
+                      <TableHead className="text-right w-14">Qty</TableHead>
+                      <TableHead className="text-right w-20">
+                        <span title="Units already sold on prior settlements">Prev</span>
+                      </TableHead>
+                      <TableHead className="text-right w-16">
+                        <span title="Available = Qty − Prev Sold. Cap for the Sold input on this settlement.">Avail</span>
+                      </TableHead>
                       <TableHead className="text-right w-20">Sold</TableHead>
                       <TableHead className="text-right w-24">Retail</TableHead>
                       <TableHead className="text-right w-24">Comm./unit</TableHead>
@@ -2140,7 +2167,7 @@ function SettlementDialog({
                   </TableHeader>
                   <TableBody>
                     {rows.map(r => {
-                      const over = r.sold > r.qty;
+                      const over = r.sold > r.available;
                       return (
                         <TableRow key={r.idx}>
                           <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
@@ -2148,24 +2175,31 @@ function SettlementDialog({
                             {itemById.get(r.it.stockItemId)?.name ?? '—'}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs text-gray-500">{formatNumber(r.prevSold)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatNumber(r.available)}</TableCell>
                           <TableCell>
                             <Input
                               type="number"
                               min={0}
-                              max={r.qty}
+                              max={r.available}
                               value={r.soldRaw}
+                              disabled={r.available <= 0}
                               onChange={e => {
                                 const v = Number(e.target.value) || 0;
-                                // Clamp on change so the state never
-                                // holds an over-Qty value that would
-                                // desync from what the row can pay.
-                                const clamped = Math.max(0, Math.min(v, r.qty));
+                                // Cap at Available (Qty − Prev Sold) so
+                                // one settlement can't oversell units
+                                // that a prior paid settlement already
+                                // counted.
+                                const clamped = Math.max(0, Math.min(v, r.available));
                                 setSoldByLine(prev => ({
                                   ...prev,
                                   [r.it.id]: String(clamped),
                                 }));
                               }}
-                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-red-400' : ''}`}
+                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-red-400' : ''} disabled:opacity-60 disabled:cursor-not-allowed`}
+                              title={r.available <= 0
+                                ? 'Nothing left to sell on this line — prior settlements already accounted for the whole Qty.'
+                                : undefined}
                             />
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
@@ -2176,7 +2210,7 @@ function SettlementDialog({
                       );
                     })}
                     <TableRow className="border-t-2 border-slate-300 bg-gray-50">
-                      <TableCell colSpan={6} className="text-right font-semibold text-xs">Totals:</TableCell>
+                      <TableCell colSpan={8} className="text-right font-semibold text-xs">Totals:</TableCell>
                       <TableCell className="text-right tabular-nums text-xs font-bold">{formatUSD(sumGross)}</TableCell>
                       <TableCell className="text-right tabular-nums text-xs font-bold text-emerald-700">{formatUSD(sumComm)}</TableCell>
                     </TableRow>
@@ -2202,21 +2236,23 @@ function SettlementDialog({
           );
         })()}
 
-        {/* Purpose of Settlement — only surfaces when status='paid'
-            AND at least one line has unsold units (Qty − Sold > 0).
-            Payout-time forcing function: does the leftover stock
-            get carried into the next settlement, or does the
-            supplier take it back? Phase 3 will wire the stock IN
-            + consignment.status transition; today the choice is
-            captured in the notes field for the audit trail. */}
+        {/* Purpose of Settlement — surfaces when status='paid' AND
+            any units are still unsold. "Unsold" = the residual
+            volume after (a) what prior paid settlements already
+            counted (soldQty on each line) and (b) what this
+            settlement itself is settling (soldByLine input). Phase
+            3 will wire the stock IN + consignment.status
+            transition on Return; today the choice is captured in
+            the notes field for the audit trail. */}
         {(() => {
           if (status !== 'paid') return null;
           const picked = consignments.find(x => x.id === consignmentId);
           if (!picked) return null;
           const remaining = picked.items.reduce((sum, it) => {
-            const qty  = it.receivedQty ?? 0;
-            const sold = Number(soldByLine[it.id] ?? '0') || 0;
-            return sum + Math.max(0, qty - sold);
+            const qty      = it.receivedQty ?? 0;
+            const prevSold = it.soldQty ?? 0;
+            const thisSold = Number(soldByLine[it.id] ?? '0') || 0;
+            return sum + Math.max(0, qty - prevSold - thisSold);
           }, 0);
           if (remaining <= 0) return null;
           return (

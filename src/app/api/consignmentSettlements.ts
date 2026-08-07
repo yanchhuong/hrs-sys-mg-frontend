@@ -51,6 +51,13 @@ export interface ConsignmentSettlementRequest {
   status?: SettlementStatus;
   paymentId?: string | null;
   notes?: string | null;
+  /** v-consignment-partial-settlement — per-line sold quantities.
+   *  Sent when the operator has typed values in the Sold column.
+   *  When present AND status='paid', BE bumps each parent
+   *  {@code consignment_items.sold_qty} by the matching {@code sold}
+   *  so subsequent settlements see the true remainder. Optional so
+   *  legacy callers that only send aggregate amounts still work. */
+  lines?: { consignmentItemId: string; sold: number }[];
 }
 
 export interface ListParams {
