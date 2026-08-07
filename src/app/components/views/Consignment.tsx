@@ -1876,6 +1876,13 @@ function SettlementDialog({
   const [status, setStatus] = useState<settlementsApi.SettlementStatus>('draft');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Per-line sold quantities the operator enters on this dialog.
+   *  Keyed by consignment_items.id so re-picking the same consignment
+   *  preserves whatever's already been typed. Defaults to 0 for each
+   *  line — operator fills in what actually sold; Gross + Total Comm.
+   *  on the table update live; the Fill button drops both into the
+   *  Gross Sales / Commission inputs. */
+  const [soldByLine, setSoldByLine] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -1896,6 +1903,7 @@ function SettlementDialog({
       setStatus('draft');
       setNotes('');
     }
+    setSoldByLine({}); // fresh sold entries on every dialog open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
 
@@ -2019,23 +2027,23 @@ function SettlementDialog({
           </div>
         </div>
 
-        {/* Line items of the picked consignment — read-only preview
-            below the amount fields so the operator can eyeball what
-            they're settling. Totals row + "Fill Gross + Comm." button
-            let them adopt the consignment's own numbers in one click.
-            Now includes a Sold column separate from Qty: in the
-            single-shot model they match, but Phase 3 POS-driven
-            accrual will diverge them (Sold ≤ Qty). Row Total +
-            Total Comm. derive from Sold, since a settlement pays
-            out on what's been sold, not on what's still on the
-            shelf. */}
+        {/* Line items of the picked consignment. Sold column is
+            editable + starts at 0 per line — the operator enters
+            what actually sold this period. Row Total = sold ×
+            retail; Total Comm. = sold × commPerUnit; both update
+            live as sold values are typed. Fill button drops the
+            row totals into Gross Sales + Commission (kept by us)
+            above. Sold is capped at Qty (can't settle more than
+            was consigned); the cell tints red if the operator
+            somehow types over the cap. */}
         {(() => {
           const picked = consignments.find(x => x.id === consignmentId);
           if (!picked || picked.items.length === 0) return null;
           let sumGross = 0, sumComm = 0;
           const rows = picked.items.map((it, idx) => {
             const qty   = it.receivedQty ?? 0;
-            const sold  = it.soldQty ?? 0;
+            const soldRaw = soldByLine[it.id] ?? '0';
+            const sold = Number(soldRaw) || 0;
             const price = it.sellingPrice ?? 0;
             let commPerUnit = 0;
             if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
@@ -2044,7 +2052,7 @@ function SettlementDialog({
             const rowComm  = sold * commPerUnit;
             sumGross += rowTotal;
             sumComm  += rowComm;
-            return { it, idx, qty, sold, price, commPerUnit, rowTotal, rowComm };
+            return { it, idx, qty, soldRaw, sold, price, commPerUnit, rowTotal, rowComm };
           });
           return (
             <div className="space-y-1 mt-4">
@@ -2056,7 +2064,7 @@ function SettlementDialog({
                       <TableHead className="w-8">#</TableHead>
                       <TableHead>Item</TableHead>
                       <TableHead className="text-right w-16">Qty</TableHead>
-                      <TableHead className="text-right w-16">Sold</TableHead>
+                      <TableHead className="text-right w-20">Sold</TableHead>
                       <TableHead className="text-right w-24">Retail</TableHead>
                       <TableHead className="text-right w-24">Comm./unit</TableHead>
                       <TableHead className="text-right w-24">Total</TableHead>
@@ -2064,20 +2072,42 @@ function SettlementDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map(r => (
-                      <TableRow key={r.idx}>
-                        <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
-                        <TableCell className="text-xs">
-                          {itemById.get(r.it.stockItemId)?.name ?? '—'}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.sold)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.commPerUnit)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs font-medium">{formatUSD(r.rowTotal)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs font-medium text-emerald-700">{formatUSD(r.rowComm)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {rows.map(r => {
+                      const over = r.sold > r.qty;
+                      return (
+                        <TableRow key={r.idx}>
+                          <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
+                          <TableCell className="text-xs">
+                            {itemById.get(r.it.stockItemId)?.name ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={r.qty}
+                              value={r.soldRaw}
+                              onChange={e => {
+                                const v = Number(e.target.value) || 0;
+                                // Clamp on change so the state never
+                                // holds an over-Qty value that would
+                                // desync from what the row can pay.
+                                const clamped = Math.max(0, Math.min(v, r.qty));
+                                setSoldByLine(prev => ({
+                                  ...prev,
+                                  [r.it.id]: String(clamped),
+                                }));
+                              }}
+                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-red-400' : ''}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.commPerUnit)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatUSD(r.rowTotal)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium text-emerald-700">{formatUSD(r.rowComm)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                     <TableRow className="border-t-2 border-slate-300 bg-gray-50">
                       <TableCell colSpan={6} className="text-right font-semibold text-xs">Totals:</TableCell>
                       <TableCell className="text-right tabular-nums text-xs font-bold">{formatUSD(sumGross)}</TableCell>
@@ -2096,9 +2126,9 @@ function SettlementDialog({
                     setGrossSales(sumGross.toFixed(2));
                     setCommissionAmount(sumComm.toFixed(2));
                   }}
-                  title="Copy the consignment's own totals into the fields above"
+                  title="Copy the Sold-driven totals into Gross Sales + Commission above"
                 >
-                  Fill Gross + Comm. from consignment
+                  Fill Gross + Comm. from Sold
                 </Button>
               </div>
             </div>
