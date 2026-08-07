@@ -163,6 +163,11 @@ const MODULES: ModuleDef[] = [
   { key: 'voucher',           label: 'Voucher',           description: 'Free-of-charge giveaways (charity, donation, sponsorship)',   parent: 'sales' },
   { key: 'commission',        label: 'Commission',        description: 'Per-seller commission plans + accrued report + settlement payouts', parent: 'sales' },
   { key: 'invoice_template',  label: 'Templates',         description: 'Custom invoice / receipt layouts — set one as default per doc type', parent: 'sales' },
+  // v-consignment-move (V309) — Consignment lives under Sale next
+  // to Commission (mental model: "money owed because of what we
+  // sold"). Was originally seeded under Stock; nav.ts + matrix
+  // moved together 2026-08-07.
+  { key: 'consignment',       label: 'Consignment',       description: 'Supplier-owned goods you hold + sell + settle (V308)',        parent: 'sales' },
   // Payment intentionally NOT a matrix row — it has no sidebar leaf
   // (the Pay button lives inside Invoice). The backend's
   // {@code @perm.allow('payment', ...)} gate is still real; admin /
@@ -212,7 +217,6 @@ const MODULES: ModuleDef[] = [
   { key: 'stock',             label: 'Items',             description: 'Sellable products / services catalog',                        parent: 'stock-group' },
   { key: 'movement',          label: 'Movement',          description: 'Append-only history of every IN / OUT / Adjustment',          parent: 'stock-group' },
   { key: 'adjustment',        label: 'Adjustment',        description: 'Manual stock corrections (damaged / lost / counting error)',  parent: 'stock-group' },
-  { key: 'consignment',       label: 'Consignment',       description: 'Supplier-owned goods you hold + sell + settle (V308)',        parent: 'stock-group' },
 
   // Cash Flow group (V155 / V156). One leaf for now — Transactions
   // is the unified ledger; Cash Advance + Internal Transfer ship in

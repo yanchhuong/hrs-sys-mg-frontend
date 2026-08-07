@@ -210,6 +210,12 @@ export const NAV_LEAVES: NavLeaf[] = [
   // sidebar. Reuses the `invoice` module gate so tenants with a Sale
   // side see it.
   { id: 'commission',        labelKey: 'nav.commission',             icon: Percent,         module: 'commission',         component: Commission,               group: 'sales-group' },
+  // Consignment lives under Sale next to Commission — same UX
+  // shape (two tabs: report + settlement) and the same operator
+  // mental model ("money owed to X because of what we sold").
+  // Was originally under Stock; moved 2026-08-07 so Sale-side
+  // operators find it where they'd expect.
+  { id: 'consignment',       labelKey: 'nav.consignment',            icon: Handshake,       module: 'consignment',        component: Consignment,              group: 'sales-group' },
   // v-invoice-template-mvp — per-tenant custom invoice / receipt
   // layouts. Sits under Sale next to Commission; own module key
   // `invoice_template` (V256) so tenants can toggle it independently
@@ -250,7 +256,6 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
   { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'movement',           component: StockMovements,           group: 'stock-group' },
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
-  { id: 'consignment',       labelKey: 'nav.stock.consignment',      icon: Handshake,       module: 'consignment',        component: Consignment,              group: 'stock-group' },
   { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
   { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
   // Hospital Business Base leaves (V181 / v-hospital-fe +

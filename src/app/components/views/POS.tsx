@@ -314,9 +314,12 @@ export function POS() {
         // with the first 50 tiles while the tail streams in.
         setLoading(false);
 
-        // Phase 2 — everything else, fire-and-forget style.
+        // Phase 2 — backfill more items + everything else. Capped at
+        // 300 (was 1000) so the wire payload + JSON parse stay under
+        // the operator's noticeable threshold; tenants past 300 items
+        // hit server-side search when they type in the item filter.
         Promise.all([
-          itemsApi.list({ size: 1000, slim: true }),
+          itemsApi.list({ size: 300, slim: true }),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
           posApi.listActiveFulfillment(),
