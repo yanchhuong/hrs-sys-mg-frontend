@@ -2128,7 +2128,12 @@ function SettlementDialog({
           let sumGross = 0, sumComm = 0;
           const rows = picked.items.map((it, idx) => {
             const qty       = it.receivedQty ?? 0;
-            const prevSold  = it.soldQty ?? 0;
+            // Defensive clamp: legacy rows may carry a soldQty above
+            // receivedQty (old single-shot save + settlement bump).
+            // V311 normalizes the DB; this keeps the display honest
+            // for anyone opening the dialog before the migration
+            // hits their instance.
+            const prevSold  = Math.min(qty, it.soldQty ?? 0);
             const available = Math.max(0, qty - prevSold);
             const soldRaw = soldByLine[it.id] ?? '0';
             const sold = Number(soldRaw) || 0;
