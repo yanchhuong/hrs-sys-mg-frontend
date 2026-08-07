@@ -1866,8 +1866,10 @@ function SettlementDialog({
   const today = new Date().toISOString().slice(0, 10);
   const [consignmentId, setConsignmentId] = useState('');
   const [settlementDate, setSettlementDate] = useState<string>(today);
-  const [periodFrom, setPeriodFrom] = useState<string>(today);
-  const [periodTo, setPeriodTo] = useState<string>(today);
+  // Period from/to fields retired from the UI — settlements are
+  // one-shot for the whole consignment in the current model, so the
+  // wire uses settlementDate for both. Schema keeps them for a
+  // future partial-period flow without a migration.
   const [grossSales, setGrossSales] = useState('0');
   const [commissionAmount, setCommissionAmount] = useState('0');
   const [deductionAmount, setDeductionAmount] = useState('0');
@@ -1880,8 +1882,6 @@ function SettlementDialog({
     if (editing) {
       setConsignmentId(editing.consignmentId);
       setSettlementDate(editing.settlementDate);
-      setPeriodFrom(editing.periodFrom);
-      setPeriodTo(editing.periodTo);
       setGrossSales(String(editing.grossSales ?? 0));
       setCommissionAmount(String(editing.commissionAmount ?? 0));
       setDeductionAmount(String(editing.deductionAmount ?? 0));
@@ -1890,8 +1890,6 @@ function SettlementDialog({
     } else {
       setConsignmentId('');
       setSettlementDate(today);
-      setPeriodFrom(today);
-      setPeriodTo(today);
       setGrossSales('0');
       setCommissionAmount('0');
       setDeductionAmount('0');
@@ -1915,17 +1913,17 @@ function SettlementDialog({
   const save = async () => {
     if (!consignmentId) { toast.error('Consignment is required'); return; }
     if (!settlementDate) { toast.error('Settlement date is required'); return; }
-    if (!periodFrom || !periodTo) { toast.error('Period is required'); return; }
-    if (new Date(periodFrom) > new Date(periodTo)) {
-      toast.error('Period end must be on or after period start'); return;
-    }
     setSaving(true);
     try {
       const req: settlementsApi.ConsignmentSettlementRequest = {
         consignmentId,
         settlementDate,
-        periodFrom,
-        periodTo,
+        // Wire fields still required by the schema; UI retired the
+        // period range in favour of a single settlement date. Both
+        // pinned to settlementDate so period_to >= period_from
+        // (CHECK constraint) always holds.
+        periodFrom: settlementDate,
+        periodTo:   settlementDate,
         grossSales: Number(grossSales) || 0,
         commissionAmount: Number(commissionAmount) || 0,
         deductionAmount: Number(deductionAmount) || 0,
@@ -1980,89 +1978,6 @@ function SettlementDialog({
             )}
           </div>
 
-          {/* Line items of the picked consignment — read-only preview
-              so the operator sees exactly what's being settled. Also
-              stamps a per-line Total (qty × retail) and Comm./unit so
-              the "Gross Sales" + "Commission (kept by us)" numbers
-              they'll type below have a reference. */}
-          {(() => {
-            const picked = consignments.find(x => x.id === consignmentId);
-            if (!picked || picked.items.length === 0) return null;
-            let sumGross = 0, sumComm = 0;
-            const rows = picked.items.map((it, idx) => {
-              const qty   = it.receivedQty ?? 0;
-              const price = it.sellingPrice ?? 0;
-              let commPerUnit = 0;
-              if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
-              else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
-              const rowTotal = qty * price;
-              const rowComm  = qty * commPerUnit;
-              sumGross += rowTotal;
-              sumComm  += rowComm;
-              return { it, idx, qty, price, commPerUnit, rowTotal, rowComm };
-            });
-            return (
-              <div className="col-span-2 space-y-1">
-                <Label className="text-xs">Line items in this consignment</Label>
-                <div className="border rounded-md overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-8">#</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead className="text-right w-16">Qty</TableHead>
-                        <TableHead className="text-right w-24">Retail</TableHead>
-                        <TableHead className="text-right w-24">Comm./unit</TableHead>
-                        <TableHead className="text-right w-24">Total</TableHead>
-                        <TableHead className="text-right w-24">Total Comm.</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.map(r => (
-                        <TableRow key={r.idx}>
-                          <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
-                          <TableCell className="text-xs">
-                            {itemById.get(r.it.stockItemId)?.name ?? '—'}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.commPerUnit)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatUSD(r.rowTotal)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-xs font-medium text-emerald-700">{formatUSD(r.rowComm)}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="border-t-2 border-slate-300 bg-gray-50">
-                        <TableCell colSpan={5} className="text-right font-semibold text-xs">Totals:</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs font-bold">{formatUSD(sumGross)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-xs font-bold text-emerald-700">{formatUSD(sumComm)}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-                {/* Quick-fill: dropping the consignment's own totals
-                    into Gross Sales + Commission saves manual entry
-                    when the operator settles the whole consignment
-                    at once. Editable after, so partial settlements
-                    still work. */}
-                <div className="flex items-center justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      setGrossSales(sumGross.toFixed(2));
-                      setCommissionAmount(sumComm.toFixed(2));
-                    }}
-                    title="Copy the consignment's own totals into the fields below"
-                  >
-                    Fill Gross + Comm. from consignment
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-
           <div className="space-y-1">
             <Label className="text-xs">Settlement date <span className="text-red-500">*</span></Label>
             <DateInput value={settlementDate} onChange={v => setSettlementDate(v ?? '')} className="h-9 w-full" />
@@ -2077,14 +1992,6 @@ function SettlementDialog({
               {(Object.keys(settlementsApi.SETTLEMENT_STATUS_LABELS) as settlementsApi.SettlementStatus[]).map(k =>
                 <option key={k} value={k}>{settlementsApi.SETTLEMENT_STATUS_LABELS[k]}</option>)}
             </select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Period from <span className="text-red-500">*</span></Label>
-            <DateInput value={periodFrom} onChange={v => setPeriodFrom(v ?? '')} className="h-9 w-full" max={periodTo || undefined} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Period to <span className="text-red-500">*</span></Label>
-            <DateInput value={periodTo} onChange={v => setPeriodTo(v ?? '')} className="h-9 w-full" min={periodFrom || undefined} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Gross sales</Label>
@@ -2111,6 +2018,92 @@ function SettlementDialog({
             </div>
           </div>
         </div>
+
+        {/* Line items of the picked consignment — read-only preview
+            below the amount fields so the operator can eyeball what
+            they're settling. Totals row + "Fill Gross + Comm." button
+            let them adopt the consignment's own numbers in one click.
+            Now includes a Sold column separate from Qty: in the
+            single-shot model they match, but Phase 3 POS-driven
+            accrual will diverge them (Sold ≤ Qty). Row Total +
+            Total Comm. derive from Sold, since a settlement pays
+            out on what's been sold, not on what's still on the
+            shelf. */}
+        {(() => {
+          const picked = consignments.find(x => x.id === consignmentId);
+          if (!picked || picked.items.length === 0) return null;
+          let sumGross = 0, sumComm = 0;
+          const rows = picked.items.map((it, idx) => {
+            const qty   = it.receivedQty ?? 0;
+            const sold  = it.soldQty ?? 0;
+            const price = it.sellingPrice ?? 0;
+            let commPerUnit = 0;
+            if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
+            else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
+            const rowTotal = sold * price;
+            const rowComm  = sold * commPerUnit;
+            sumGross += rowTotal;
+            sumComm  += rowComm;
+            return { it, idx, qty, sold, price, commPerUnit, rowTotal, rowComm };
+          });
+          return (
+            <div className="space-y-1 mt-4">
+              <Label className="text-xs">Line items in this consignment</Label>
+              <div className="border rounded-md overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">#</TableHead>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right w-16">Qty</TableHead>
+                      <TableHead className="text-right w-16">Sold</TableHead>
+                      <TableHead className="text-right w-24">Retail</TableHead>
+                      <TableHead className="text-right w-24">Comm./unit</TableHead>
+                      <TableHead className="text-right w-24">Total</TableHead>
+                      <TableHead className="text-right w-24">Total Comm.</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map(r => (
+                      <TableRow key={r.idx}>
+                        <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
+                        <TableCell className="text-xs">
+                          {itemById.get(r.it.stockItemId)?.name ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.sold)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.commPerUnit)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs font-medium">{formatUSD(r.rowTotal)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs font-medium text-emerald-700">{formatUSD(r.rowComm)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2 border-slate-300 bg-gray-50">
+                      <TableCell colSpan={6} className="text-right font-semibold text-xs">Totals:</TableCell>
+                      <TableCell className="text-right tabular-nums text-xs font-bold">{formatUSD(sumGross)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-xs font-bold text-emerald-700">{formatUSD(sumComm)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setGrossSales(sumGross.toFixed(2));
+                    setCommissionAmount(sumComm.toFixed(2));
+                  }}
+                  title="Copy the consignment's own totals into the fields above"
+                >
+                  Fill Gross + Comm. from consignment
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="space-y-1 mt-3">
           <Label className="text-xs">Notes</Label>
