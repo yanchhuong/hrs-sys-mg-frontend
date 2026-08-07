@@ -100,6 +100,7 @@ export const dict: Dict = {
   'nav.items':                { en: 'Items',                km: 'មុខទំនិញ',           zh: '物料' },
   'nav.stock.movement':       { en: 'Movement',             km: 'ការផ្លាស់ប្តូរ',     zh: '出入库' },
   'nav.stock.adjustment':     { en: 'Adjustment',           km: 'ការកែតម្រូវ',         zh: '调整' },
+  'nav.stock.consignment':    { en: 'Consignment',          km: 'ការផ្ញើលក់',           zh: '寄售' },
   'nav.cashflow':             { en: 'Cash Flow',            km: 'លំហូរសាច់ប្រាក់',     zh: '现金流' },
   'nav.cashflow.transactions':{ en: 'Transactions',         km: 'ប្រតិបត្តិការ',          zh: '交易' },
   'nav.cashflow.advance':     { en: 'Cash Advance',         km: 'រំសាយប្រាក់',           zh: '现金预支' },

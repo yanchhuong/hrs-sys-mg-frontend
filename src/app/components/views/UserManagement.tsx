@@ -212,6 +212,7 @@ const MODULES: ModuleDef[] = [
   { key: 'stock',             label: 'Items',             description: 'Sellable products / services catalog',                        parent: 'stock-group' },
   { key: 'movement',          label: 'Movement',          description: 'Append-only history of every IN / OUT / Adjustment',          parent: 'stock-group' },
   { key: 'adjustment',        label: 'Adjustment',        description: 'Manual stock corrections (damaged / lost / counting error)',  parent: 'stock-group' },
+  { key: 'consignment',       label: 'Consignment',       description: 'Supplier-owned goods you hold + sell + settle (V308)',        parent: 'stock-group' },
 
   // Cash Flow group (V155 / V156). One leaf for now — Transactions
   // is the unified ledger; Cash Advance + Internal Transfer ship in

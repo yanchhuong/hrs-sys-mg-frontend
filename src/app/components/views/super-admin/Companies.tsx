@@ -146,9 +146,10 @@ const INSTALL_GROUPS: Array<{ label: string; modules: Array<{ key: string; label
     { key: 'receipt', label: 'Expenses' },
   ] },
   { label: 'Stock', modules: [
-    { key: 'stock',      label: 'Items' },
-    { key: 'movement',   label: 'Movement' },
-    { key: 'adjustment', label: 'Adjustment' },
+    { key: 'stock',       label: 'Items' },
+    { key: 'movement',    label: 'Movement' },
+    { key: 'adjustment',  label: 'Adjustment' },
+    { key: 'consignment', label: 'Consignment' },
   ] },
   { label: 'Cash Flow', modules: [
     { key: 'transaction', label: 'Transactions' },

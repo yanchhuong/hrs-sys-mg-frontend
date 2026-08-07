@@ -48,7 +48,7 @@ const CATEGORIES: CategoryDef[] = [
   {
     key: 'accounting', labelKey: 'apps.category.account',
     installedBadge: 'bg-emerald-100 text-emerald-700',
-    ids: ['customers', 'quotations', 'invoices', 'invoice-templates', 'pos', 'vouchers', 'commission', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'stock-adjustment'],
+    ids: ['customers', 'quotations', 'invoices', 'invoice-templates', 'pos', 'vouchers', 'commission', 'vendors', 'bills', 'receipts', 'items', 'stock-movement', 'stock-adjustment', 'consignment'],
   },
   {
     // Receivables — Business Agreements / Payment Plans (V251).

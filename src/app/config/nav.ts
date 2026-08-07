@@ -23,6 +23,7 @@ import {
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
   FileText, UserCheck, ShoppingCart, ReceiptText, ShoppingBag, FileMinus,
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
+  Handshake,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
   GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
   CreditCard, Home, Ticket, ArrowDownLeft,
@@ -74,6 +75,7 @@ import { Enrollments } from '../components/views/Enrollments';
 import { Attendances } from '../components/views/Attendances';
 import { Appointments } from '../components/views/Appointments';
 import { StockAdjustments } from '../components/views/StockAdjustments';
+import { Consignment } from '../components/views/Consignment';
 import { Announcements } from '../components/views/Announcements';
 import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
 import { ProfitLossReport } from '../components/views/ProfitLossReport';
@@ -248,6 +250,7 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
   { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'movement',           component: StockMovements,           group: 'stock-group' },
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
+  { id: 'consignment',       labelKey: 'nav.stock.consignment',      icon: Handshake,       module: 'consignment',        component: Consignment,              group: 'stock-group' },
   { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
   { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
   // Hospital Business Base leaves (V181 / v-hospital-fe +
