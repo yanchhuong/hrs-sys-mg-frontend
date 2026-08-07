@@ -1920,10 +1920,35 @@ function SettlementDialog({
       setStatus('draft');
       setNotes('');
     }
-    setSoldByLine({}); // fresh sold entries on every dialog open
+    setSoldByLine({}); // fresh sold entries; the effect below fills them
     setDisposition('partial'); // remainder defaults to "carry over"
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
+
+  // Default the Sold column to Available (= Qty − Prev Sold) on
+  // every consignment pick. Operator's most common intent is to
+  // settle the whole remaining batch; anything less (partial) is
+  // an easy edit-down. Skips lines that already have a value so
+  // switching consignments and back doesn't wipe manual edits on
+  // the same session.
+  useEffect(() => {
+    if (!open || !consignmentId) return;
+    const picked = consignments.find(x => x.id === consignmentId);
+    if (!picked) return;
+    setSoldByLine(prev => {
+      const next: Record<string, string> = { ...prev };
+      let changed = false;
+      for (const it of picked.items) {
+        if (next[it.id] !== undefined) continue; // preserve manual edits
+        const qty       = it.receivedQty ?? 0;
+        const prevSold  = Math.min(qty, it.soldQty ?? 0);
+        const available = Math.max(0, qty - prevSold);
+        next[it.id] = String(available);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [open, consignmentId, consignments]);
 
   const netAmount =
     (Number(grossSales) || 0)
