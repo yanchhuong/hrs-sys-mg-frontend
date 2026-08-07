@@ -1917,7 +1917,10 @@ function SettlementDialog({
       setGrossSales('0');
       setCommissionAmount('0');
       setDeductionAmount('0');
-      setStatus('draft');
+      // Create-mode default is 'paid' — Draft is a separate footer
+      // button, so the primary Create action commits a live payout.
+      // Same pattern the Consignment dialog uses.
+      setStatus('paid');
       setNotes('');
     }
     setSoldByLine({}); // fresh sold entries; the effect below fills them
@@ -1961,10 +1964,14 @@ function SettlementDialog({
     return c.supplierName ?? vendors.find(v => v.id === c.supplierId)?.name ?? null;
   }, [consignmentId, consignments, vendors]);
 
-  const save = async () => {
+  const save = async (statusOverride?: settlementsApi.SettlementStatus) => {
     if (!consignmentId) { toast.error('Consignment is required'); return; }
     if (!settlementDate) { toast.error('Settlement date is required'); return; }
     setSaving(true);
+    // statusOverride wins so the Draft button can commit as
+    // 'draft' without racing setState with the visible Status
+    // dropdown (edit mode).
+    const effectiveStatus = statusOverride ?? status;
     try {
       // Per-line breakdown — BE bumps parent items' sold_qty when
       // status='paid'. Only sends rows the operator actually filled
@@ -1992,7 +1999,7 @@ function SettlementDialog({
             return sum + Math.max(0, qty - prevSold - thisSold);
           }, 0)
         : 0;
-      const dispositionToSend = (status === 'paid' && remaining > 0)
+      const dispositionToSend = (effectiveStatus === 'paid' && remaining > 0)
         ? disposition
         : undefined;
       const req: settlementsApi.ConsignmentSettlementRequest = {
@@ -2008,7 +2015,7 @@ function SettlementDialog({
         commissionAmount: Number(commissionAmount) || 0,
         deductionAmount: Number(deductionAmount) || 0,
         netAmount: netAmount < 0 ? 0 : netAmount,
-        status,
+        status: effectiveStatus,
         notes: notes.trim() || null,
         lines: lines.length > 0 ? lines : undefined,
         disposition: dispositionToSend,
@@ -2059,13 +2066,23 @@ function SettlementDialog({
               </DialogDescription>
             </div>
             {/* Actions moved from the bottom Footer to the top-right.
-                mr-8 reserves space for Radix's built-in × close. */}
+                Draft is a separate outlined button on Create only —
+                the primary Create button commits as 'paid'. Status
+                is a real dropdown on Edit (below) for status shifts
+                on an existing record. mr-8 reserves space for
+                Radix's built-in × close. */}
             <div className="flex items-center gap-2 shrink-0 mr-8">
               <Button variant="outline" size="sm"
                 onClick={() => onOpenChange(false)} disabled={saving}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={save} disabled={saving}>
+              {!editing && (
+                <Button variant="outline" size="sm"
+                  onClick={() => save('draft')} disabled={saving}>
+                  Save as Draft
+                </Button>
+              )}
+              <Button size="sm" onClick={() => save()} disabled={saving}>
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
                 {editing ? 'Save changes' : 'Create'}
               </Button>
@@ -2099,17 +2116,23 @@ function SettlementDialog({
             <Label className="text-xs">Settlement date <span className="text-red-500">*</span></Label>
             <DateInput value={settlementDate} onChange={v => setSettlementDate(v ?? '')} className="h-9 w-full" />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Status</Label>
-            <select
-              value={status}
-              onChange={e => setStatus(e.target.value as settlementsApi.SettlementStatus)}
-              className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
-            >
-              {(Object.keys(settlementsApi.SETTLEMENT_STATUS_LABELS) as settlementsApi.SettlementStatus[]).map(k =>
-                <option key={k} value={k}>{settlementsApi.SETTLEMENT_STATUS_LABELS[k]}</option>)}
-            </select>
-          </div>
+          {/* Status dropdown lives on Edit only. Create uses the
+              primary Create button (→ paid) or the Save-as-Draft
+              button in the top bar (→ draft) — no manual status
+              pick needed at creation. */}
+          {editing && (
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value as settlementsApi.SettlementStatus)}
+                className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
+              >
+                {(Object.keys(settlementsApi.SETTLEMENT_STATUS_LABELS) as settlementsApi.SettlementStatus[]).map(k =>
+                  <option key={k} value={k}>{settlementsApi.SETTLEMENT_STATUS_LABELS[k]}</option>)}
+              </select>
+            </div>
+          )}
           <div className="space-y-1">
             <Label className="text-xs">Gross sales</Label>
             <Input type="number" min={0} step="0.01" value={grossSales}
