@@ -1624,6 +1624,11 @@ function ConsignmentSettlementView() {
   const [rows, setRows] = useState<settlementsApi.ConsignmentSettlement[]>([]);
   const [consignments, setConsignments] = useState<consignmentsApi.Consignment[]>([]);
   const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
+  // Item catalog powers the "line items" display in the New /
+  // Edit Settlement dialog once a consignment is picked — the
+  // consignment DTO only carries stockItemId + prices; names come
+  // from the items catalog. active=true mirrors POS behavior.
+  const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
@@ -1633,14 +1638,16 @@ function ConsignmentSettlementView() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, c, v] = await Promise.all([
+      const [s, c, v, i] = await Promise.all([
         settlementsApi.list({ size: 200 }),
         consignmentsApi.list({ size: 200 }),
         vendorsApi.list({ size: 500 }).catch(() => ({ content: [] as vendorsApi.Vendor[] } as any)),
+        itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
       ]);
       setRows(s.content ?? []);
       setConsignments(c.content ?? []);
       setVendors(v.content ?? []);
+      setItems(i.content ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load settlements');
     } finally {
@@ -1771,6 +1778,7 @@ function ConsignmentSettlementView() {
           editing={editing}
           consignments={consignments}
           vendors={vendors}
+          items={items}
           onSaved={async () => { setDialogOpen(false); await load(); }}
         />
       )}
@@ -1838,15 +1846,23 @@ function ConsignmentSettlementView() {
 /* ------------------------------------------------------------------ */
 
 function SettlementDialog({
-  open, onOpenChange, editing, consignments, vendors, onSaved,
+  open, onOpenChange, editing, consignments, vendors, items, onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   editing: settlementsApi.ConsignmentSettlement | null;
   consignments: consignmentsApi.Consignment[];
   vendors: vendorsApi.Vendor[];
+  items: itemsApi.Item[];
   onSaved: () => Promise<void> | void;
 }) {
+  // Name lookup for the line-items list rendered under the
+  // Consignment picker. O(1) instead of items.find() per row.
+  const itemById = useMemo(() => {
+    const m = new Map<string, itemsApi.Item>();
+    for (const it of items) m.set(it.id, it);
+    return m;
+  }, [items]);
   const today = new Date().toISOString().slice(0, 10);
   const [consignmentId, setConsignmentId] = useState('');
   const [settlementDate, setSettlementDate] = useState<string>(today);
@@ -1934,7 +1950,7 @@ function SettlementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {editing ? `Edit ${editing.settlementNo}` : 'New Settlement'}
@@ -1963,6 +1979,89 @@ function SettlementDialog({
               <div className="text-[10px] text-gray-500">Supplier: <span className="font-medium text-gray-700">{supplierName}</span></div>
             )}
           </div>
+
+          {/* Line items of the picked consignment — read-only preview
+              so the operator sees exactly what's being settled. Also
+              stamps a per-line Total (qty × retail) and Comm./unit so
+              the "Gross Sales" + "Commission (kept by us)" numbers
+              they'll type below have a reference. */}
+          {(() => {
+            const picked = consignments.find(x => x.id === consignmentId);
+            if (!picked || picked.items.length === 0) return null;
+            let sumGross = 0, sumComm = 0;
+            const rows = picked.items.map((it, idx) => {
+              const qty   = it.receivedQty ?? 0;
+              const price = it.sellingPrice ?? 0;
+              let commPerUnit = 0;
+              if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
+              else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
+              const rowTotal = qty * price;
+              const rowComm  = qty * commPerUnit;
+              sumGross += rowTotal;
+              sumComm  += rowComm;
+              return { it, idx, qty, price, commPerUnit, rowTotal, rowComm };
+            });
+            return (
+              <div className="col-span-2 space-y-1">
+                <Label className="text-xs">Line items in this consignment</Label>
+                <div className="border rounded-md overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-8">#</TableHead>
+                        <TableHead>Item</TableHead>
+                        <TableHead className="text-right w-16">Qty</TableHead>
+                        <TableHead className="text-right w-24">Retail</TableHead>
+                        <TableHead className="text-right w-24">Comm./unit</TableHead>
+                        <TableHead className="text-right w-24">Total</TableHead>
+                        <TableHead className="text-right w-24">Total Comm.</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map(r => (
+                        <TableRow key={r.idx}>
+                          <TableCell className="tabular-nums text-xs">{r.idx + 1}</TableCell>
+                          <TableCell className="text-xs">
+                            {itemById.get(r.it.stockItemId)?.name ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatNumber(r.qty)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.commPerUnit)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium">{formatUSD(r.rowTotal)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-xs font-medium text-emerald-700">{formatUSD(r.rowComm)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2 border-slate-300 bg-gray-50">
+                        <TableCell colSpan={5} className="text-right font-semibold text-xs">Totals:</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs font-bold">{formatUSD(sumGross)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-xs font-bold text-emerald-700">{formatUSD(sumComm)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+                {/* Quick-fill: dropping the consignment's own totals
+                    into Gross Sales + Commission saves manual entry
+                    when the operator settles the whole consignment
+                    at once. Editable after, so partial settlements
+                    still work. */}
+                <div className="flex items-center justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setGrossSales(sumGross.toFixed(2));
+                      setCommissionAmount(sumComm.toFixed(2));
+                    }}
+                    title="Copy the consignment's own totals into the fields below"
+                  >
+                    Fill Gross + Comm. from consignment
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="space-y-1">
             <Label className="text-xs">Settlement date <span className="text-red-500">*</span></Label>
