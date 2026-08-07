@@ -2167,6 +2167,13 @@ function SettlementDialog({
                   </TableHeader>
                   <TableBody>
                     {rows.map(r => {
+                      // Cap at Qty (not Avail) so the operator can
+                      // always type — including on legacy consignments
+                      // where Prev Sold happens to equal Qty from the
+                      // old single-shot save default. Red border still
+                      // fires when Sold > Avail so overselling past
+                      // what prior settlements counted stays visible
+                      // instead of silently blocked.
                       const over = r.sold > r.available;
                       return (
                         <TableRow key={r.idx}>
@@ -2181,24 +2188,24 @@ function SettlementDialog({
                             <Input
                               type="number"
                               min={0}
-                              max={r.available}
+                              max={r.qty}
                               value={r.soldRaw}
-                              disabled={r.available <= 0}
                               onChange={e => {
                                 const v = Number(e.target.value) || 0;
-                                // Cap at Available (Qty − Prev Sold) so
-                                // one settlement can't oversell units
-                                // that a prior paid settlement already
-                                // counted.
-                                const clamped = Math.max(0, Math.min(v, r.available));
+                                // Clamp at the initial Qty (hard cap
+                                // — never oversell what was consigned).
+                                // Between Avail and Qty is allowed but
+                                // flagged: the operator has explicitly
+                                // signalled a correction.
+                                const clamped = Math.max(0, Math.min(v, r.qty));
                                 setSoldByLine(prev => ({
                                   ...prev,
                                   [r.it.id]: String(clamped),
                                 }));
                               }}
-                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-red-400' : ''} disabled:opacity-60 disabled:cursor-not-allowed`}
-                              title={r.available <= 0
-                                ? 'Nothing left to sell on this line — prior settlements already accounted for the whole Qty.'
+                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-amber-400' : ''}`}
+                              title={over
+                                ? `Sold > Available (${r.available}). Prior settlements had already counted ${r.prevSold} on this line — override only if you're correcting them.`
                                 : undefined}
                             />
                           </TableCell>
