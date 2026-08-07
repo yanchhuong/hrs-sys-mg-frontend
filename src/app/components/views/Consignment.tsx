@@ -2127,7 +2127,17 @@ function SettlementDialog({
               className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm disabled:opacity-60 disabled:bg-gray-50"
             >
               <option value="">Select consignment…</option>
-              {consignments.map(c =>
+              {consignments
+                // Hide fully-settled consignments — they've either
+                // been closed via Return Stock or fully paid down,
+                // so no further settlements should attach. The
+                // 'cancelled' branch is filtered here too (dead
+                // records). Edit mode keeps the current row
+                // visible even if it's now settled — the operator
+                // is looking at that exact settlement.
+                .filter(c => c.status !== 'settled' && c.status !== 'cancelled'
+                  || c.id === consignmentId)
+                .map(c =>
                 <option key={c.id} value={c.id}>
                   {c.consignmentNo} — {c.supplierName ?? 'Unknown supplier'}
                 </option>)}
