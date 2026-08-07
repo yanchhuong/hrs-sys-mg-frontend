@@ -305,7 +305,14 @@ export function POS() {
         //     + open orders + active fulfillment. Silently backfills;
         //     no spinner, no re-mount.
         const [firstPage, pos] = await Promise.all([
-          itemsApi.list({ page: 0, size: 50, slim: true }),
+          // v-pos-active-only-server-filter — active=true pushes the
+          // filter into SQL so the page budget is spent entirely on
+          // rows POS will actually render. Without it, tenants with
+          // many inactive items ended up with active rows past the
+          // size cap missing from the grid (POS and Shop diverged
+          // on same-tenant counts). Server sort is by name; matches
+          // ShopLinkService.publicMenu so both surfaces align.
+          itemsApi.list({ page: 0, size: 50, slim: true, active: true }),
           settingsApi.get('pos'),
         ]);
         setItems(firstPage.content.filter(i => i.active));
@@ -314,12 +321,14 @@ export function POS() {
         // with the first 50 tiles while the tail streams in.
         setLoading(false);
 
-        // Phase 2 — backfill more items + everything else. Capped at
-        // 300 (was 1000) so the wire payload + JSON parse stay under
-        // the operator's noticeable threshold; tenants past 300 items
-        // hit server-side search when they type in the item filter.
+        // Phase 2 — backfill more items + everything else. Bumped
+        // back to 1000 now that the query is active-only server-side
+        // — the whole 1000 budget goes to rows POS actually shows,
+        // so this covers even the largest realistic catalogue in
+        // one shot. The 300-row cap was defensive against the
+        // active-filter-bug scenario that no longer exists.
         Promise.all([
-          itemsApi.list({ size: 300, slim: true }),
+          itemsApi.list({ size: 1000, slim: true, active: true }),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
           posApi.listActiveFulfillment(),

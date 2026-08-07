@@ -238,6 +238,12 @@ export interface ListParams {
    *  field for a 30-70% smaller payload. POS uses it; the Items
    *  page keeps false so the row's description line still renders. */
   slim?: boolean;
+  /** v-pos-active-only-server-filter — when true, BE pushes an
+   *  {@code active = true} predicate into the SQL so the paginated
+   *  slice is spent entirely on rows the caller will actually
+   *  render. POS uses this; the Items page keeps it off because
+   *  admins need to see inactive rows there. */
+  active?: boolean;
 }
 
 export interface PagedResponse<T> {
@@ -256,6 +262,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Item>
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   if (params.slim) q.slim = true;
+  if (params.active) q.active = true;
   return apiJson('/api/v1/stock-items', { query: q });
 }
 
