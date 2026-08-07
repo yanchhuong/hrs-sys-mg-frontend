@@ -1934,23 +1934,48 @@ function SettlementDialog({
   // an easy edit-down. Skips lines that already have a value so
   // switching consignments and back doesn't wipe manual edits on
   // the same session.
+  //
+  // Also auto-populates Gross Sales + Commission from those Sold
+  // defaults on Create (not Edit — the loaded settlement carries
+  // its own amounts; overwriting would clobber the operator's
+  // prior work). Fill Gross + Comm. from Sold button remains for
+  // manual re-syncs after the operator edits Sold values.
   useEffect(() => {
     if (!open || !consignmentId) return;
     const picked = consignments.find(x => x.id === consignmentId);
     if (!picked) return;
+    let sumGross = 0, sumComm = 0;
     setSoldByLine(prev => {
       const next: Record<string, string> = { ...prev };
       let changed = false;
       for (const it of picked.items) {
-        if (next[it.id] !== undefined) continue; // preserve manual edits
         const qty       = it.receivedQty ?? 0;
         const prevSold  = Math.min(qty, it.soldQty ?? 0);
         const available = Math.max(0, qty - prevSold);
-        next[it.id] = String(available);
-        changed = true;
+        // Preserve manual edits; auto-fill on first pick only.
+        if (next[it.id] === undefined) {
+          next[it.id] = String(available);
+          changed = true;
+        }
+        // Compute totals from whatever's in state now (either the
+        // manual edit or the just-set Available default).
+        const soldForTotals = Number(next[it.id] ?? '0') || 0;
+        const price = it.sellingPrice ?? 0;
+        let commPerUnit = 0;
+        if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
+        else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
+        sumGross += soldForTotals * price;
+        sumComm  += soldForTotals * commPerUnit;
       }
       return changed ? next : prev;
     });
+    // Only auto-populate Gross/Comm on Create — editing an existing
+    // settlement should carry its persisted amounts as-is.
+    if (!editing) {
+      setGrossSales(sumGross.toFixed(2));
+      setCommissionAmount(sumComm.toFixed(2));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignmentId, consignments]);
 
   const netAmount =
@@ -2042,7 +2067,7 @@ function SettlementDialog({
           the DialogContent default padding via p-0 so we own the
           rhythm. Matches the Consignment dialog layout so the two
           modals read as one system. */}
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
         <div className="px-6 pt-6 pb-4 border-b bg-white shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -2208,7 +2233,7 @@ function SettlementDialog({
                       <TableHead className="text-right w-16">
                         <span title="Available = Qty − Prev Sold. Cap for the Sold input on this settlement.">Avail</span>
                       </TableHead>
-                      <TableHead className="text-right w-20">Sold</TableHead>
+                      <TableHead className="text-right w-28">Sold</TableHead>
                       <TableHead className="text-right w-24">Retail</TableHead>
                       <TableHead className="text-right w-24">Comm./unit</TableHead>
                       <TableHead className="text-right w-24">Total</TableHead>
