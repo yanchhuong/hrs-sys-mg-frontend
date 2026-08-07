@@ -1883,6 +1883,16 @@ function SettlementDialog({
    *  on the table update live; the Fill button drops both into the
    *  Gross Sales / Commission inputs. */
   const [soldByLine, setSoldByLine] = useState<Record<string, string>>({});
+  /** When status=paid AND at least one line has (Qty − Sold) > 0,
+   *  the operator picks what to do with the remainder:
+   *   • 'partial' — leave remainder on the consignment for the next
+   *                 settlement round (default).
+   *   • 'return'  — supplier takes the remainder back; consignment
+   *                 gets closed after this settlement lands.
+   *  Captured in the notes field on save (Phase 3 will promote this
+   *  to a first-class column with real BE handling — stock IN for
+   *  return, consignment.status = 'closed' etc.). UI-only for now. */
+  const [disposition, setDisposition] = useState<'partial' | 'return'>('partial');
 
   useEffect(() => {
     if (!open) return;
@@ -1904,6 +1914,7 @@ function SettlementDialog({
       setNotes('');
     }
     setSoldByLine({}); // fresh sold entries on every dialog open
+    setDisposition('partial'); // remainder defaults to "carry over"
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
 
@@ -1923,6 +1934,27 @@ function SettlementDialog({
     if (!settlementDate) { toast.error('Settlement date is required'); return; }
     setSaving(true);
     try {
+      // Disposition audit trail — only meaningful when status='paid'
+      // AND remainder exists. Prepended to notes so the operator's
+      // choice (return vs partial) is visible without a schema
+      // change. Phase 3 will promote this to a real column.
+      const picked = consignments.find(x => x.id === consignmentId);
+      const remaining = picked
+        ? picked.items.reduce((sum, it) => {
+            const qty  = it.receivedQty ?? 0;
+            const sold = Number(soldByLine[it.id] ?? '0') || 0;
+            return sum + Math.max(0, qty - sold);
+          }, 0)
+        : 0;
+      let composedNotes = notes.trim();
+      if (status === 'paid' && remaining > 0) {
+        const dispositionNote = disposition === 'return'
+          ? `[Return Stock: ${remaining} unit${remaining === 1 ? '' : 's'} to supplier]`
+          : `[Partial: ${remaining} unit${remaining === 1 ? '' : 's'} carried to next settlement]`;
+        composedNotes = composedNotes
+          ? `${dispositionNote}\n${composedNotes}`
+          : dispositionNote;
+      }
       const req: settlementsApi.ConsignmentSettlementRequest = {
         consignmentId,
         settlementDate,
@@ -1937,7 +1969,7 @@ function SettlementDialog({
         deductionAmount: Number(deductionAmount) || 0,
         netAmount: netAmount < 0 ? 0 : netAmount,
         status,
-        notes: notes.trim() || null,
+        notes: composedNotes || null,
       };
       if (editing) {
         await settlementsApi.update(editing.id, req);
@@ -1956,15 +1988,50 @@ function SettlementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {editing ? `Edit ${editing.settlementNo}` : 'New Settlement'}
-          </DialogTitle>
-          <DialogDescription>
-            One period's payout to the supplier — net = gross − commission − deductions.
-          </DialogDescription>
-        </DialogHeader>
+      {/* Two-panel layout: fixed header (title + info tooltip +
+          Cancel/Create) at top, scrolling body below. Overrides
+          the DialogContent default padding via p-0 so we own the
+          rhythm. Matches the Consignment dialog layout so the two
+          modals read as one system. */}
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="px-6 pt-6 pb-4 border-b bg-white shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-semibold flex items-center gap-1.5">
+                <span>{editing ? `Edit ${editing.settlementNo}` : 'New Settlement'}</span>
+                {/* Info icon — hovering surfaces the payout formula
+                    that used to live inline in the description. */}
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600 transition"
+                  title="One period's payout to the supplier — net = gross − commission − deductions."
+                  aria-label="Settlement formula info"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                {editing
+                  ? `Editing ${editing.settlementNo}`
+                  : 'New settlement — net = gross minus commission minus deductions.'}
+              </DialogDescription>
+            </div>
+            {/* Actions moved from the bottom Footer to the top-right.
+                mr-8 reserves space for Radix's built-in × close. */}
+            <div className="flex items-center gap-2 shrink-0 mr-8">
+              <Button variant="outline" size="sm"
+                onClick={() => onOpenChange(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={save} disabled={saving}>
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                {editing ? 'Save changes' : 'Create'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1 col-span-2">
@@ -2135,19 +2202,67 @@ function SettlementDialog({
           );
         })()}
 
+        {/* Purpose of Settlement — only surfaces when status='paid'
+            AND at least one line has unsold units (Qty − Sold > 0).
+            Payout-time forcing function: does the leftover stock
+            get carried into the next settlement, or does the
+            supplier take it back? Phase 3 will wire the stock IN
+            + consignment.status transition; today the choice is
+            captured in the notes field for the audit trail. */}
+        {(() => {
+          if (status !== 'paid') return null;
+          const picked = consignments.find(x => x.id === consignmentId);
+          if (!picked) return null;
+          const remaining = picked.items.reduce((sum, it) => {
+            const qty  = it.receivedQty ?? 0;
+            const sold = Number(soldByLine[it.id] ?? '0') || 0;
+            return sum + Math.max(0, qty - sold);
+          }, 0);
+          if (remaining <= 0) return null;
+          return (
+            <div className="space-y-1 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <Label className="text-xs font-semibold text-amber-900">
+                {remaining.toLocaleString('en-US')} unit{remaining === 1 ? '' : 's'} unsold — how do you settle the remainder?
+              </Label>
+              <div className="flex flex-col gap-1.5 mt-1">
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input
+                    type="radio"
+                    name="settlement-disposition"
+                    value="partial"
+                    checked={disposition === 'partial'}
+                    onChange={() => setDisposition('partial')}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <strong>Partial</strong> — leave the remainder on the consignment for the next settlement round. Consignment stays open.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input
+                    type="radio"
+                    name="settlement-disposition"
+                    value="return"
+                    checked={disposition === 'return'}
+                    onChange={() => setDisposition('return')}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <strong>Return Stock</strong> — supplier takes the {remaining.toLocaleString('en-US')} unsold unit{remaining === 1 ? '' : 's'} back. Consignment closes after this settlement.
+                  </span>
+                </label>
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="space-y-1 mt-3">
           <Label className="text-xs">Notes</Label>
           <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
             placeholder="Optional context for the payout" />
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-            {editing ? 'Save changes' : 'Create'}
-          </Button>
-        </DialogFooter>
+        </div>{/* end scrolling body */}
       </DialogContent>
     </Dialog>
   );
