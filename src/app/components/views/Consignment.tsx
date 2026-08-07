@@ -1966,31 +1966,10 @@ function SettlementDialog({
     if (!settlementDate) { toast.error('Settlement date is required'); return; }
     setSaving(true);
     try {
-      // Disposition audit trail — only meaningful when status='paid'
-      // AND remainder exists. Prepended to notes so the operator's
-      // choice (return vs partial) is visible without a schema
-      // change. Phase 3 will promote this to a real column.
-      const picked = consignments.find(x => x.id === consignmentId);
-      const remaining = picked
-        ? picked.items.reduce((sum, it) => {
-            const qty      = it.receivedQty ?? 0;
-            const prevSold = it.soldQty ?? 0;
-            const thisSold = Number(soldByLine[it.id] ?? '0') || 0;
-            return sum + Math.max(0, qty - prevSold - thisSold);
-          }, 0)
-        : 0;
-      let composedNotes = notes.trim();
-      if (status === 'paid' && remaining > 0) {
-        const dispositionNote = disposition === 'return'
-          ? `[Return Stock: ${remaining} unit${remaining === 1 ? '' : 's'} to supplier]`
-          : `[Partial: ${remaining} unit${remaining === 1 ? '' : 's'} carried to next settlement]`;
-        composedNotes = composedNotes
-          ? `${dispositionNote}\n${composedNotes}`
-          : dispositionNote;
-      }
       // Per-line breakdown — BE bumps parent items' sold_qty when
       // status='paid'. Only sends rows the operator actually filled
       // (sold > 0) to keep the payload lean.
+      const picked = consignments.find(x => x.id === consignmentId);
       const lines = picked
         ? picked.items
             .map(it => ({
@@ -1999,6 +1978,23 @@ function SettlementDialog({
             }))
             .filter(l => l.sold > 0)
         : [];
+      // Disposition is a real request field now — BE handles the
+      // Return Stock path (IN movement + stock_qty increment) and
+      // the parent consignment status transition. Only sent when
+      // status='paid' AND there's a remainder to dispose of;
+      // omitted otherwise so draft/pending saves stay purely
+      // recordational.
+      const remaining = picked
+        ? picked.items.reduce((sum, it) => {
+            const qty      = it.receivedQty ?? 0;
+            const prevSold = it.soldQty ?? 0;
+            const thisSold = Number(soldByLine[it.id] ?? '0') || 0;
+            return sum + Math.max(0, qty - prevSold - thisSold);
+          }, 0)
+        : 0;
+      const dispositionToSend = (status === 'paid' && remaining > 0)
+        ? disposition
+        : undefined;
       const req: settlementsApi.ConsignmentSettlementRequest = {
         consignmentId,
         settlementDate,
@@ -2013,8 +2009,9 @@ function SettlementDialog({
         deductionAmount: Number(deductionAmount) || 0,
         netAmount: netAmount < 0 ? 0 : netAmount,
         status,
-        notes: composedNotes || null,
+        notes: notes.trim() || null,
         lines: lines.length > 0 ? lines : undefined,
+        disposition: dispositionToSend,
       };
       if (editing) {
         await settlementsApi.update(editing.id, req);

@@ -58,6 +58,15 @@ export interface ConsignmentSettlementRequest {
    *  so subsequent settlements see the true remainder. Optional so
    *  legacy callers that only send aggregate amounts still work. */
   lines?: { consignmentItemId: string; sold: number }[];
+  /** v-consignment-disposition — what to do with units still unsold
+   *  after this settlement:
+   *   • 'partial' — keep the consignment open (status →
+   *                 partially_settled).
+   *   • 'return'  — push remainder back into stock (IN movement +
+   *                 stock_qty increment) and close the consignment
+   *                 (status → settled).
+   *  Only meaningful when status='paid' AND remainder > 0. */
+  disposition?: 'partial' | 'return';
 }
 
 export interface ListParams {
