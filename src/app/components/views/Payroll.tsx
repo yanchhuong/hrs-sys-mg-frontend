@@ -48,7 +48,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
-import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit } from 'lucide-react';
+import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit, Coins } from 'lucide-react';
+import { CashCountDialog } from '../common/CashCountDialog';
 import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
@@ -3913,6 +3914,9 @@ function PayslipBody({
   // Pay" line always renders (from the payslip's aggregate otPay); the
   // breakdown appears below it once the OT rows land.
   const [otBreakdown, setOtBreakdown] = useState<OtRateGroup[] | null>(null);
+  // Cash-count popup. Opens with the payslip's net salary pre-filled so
+  // the cashier reads out denominations without retyping the amount.
+  const [cashCountOpen, setCashCountOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const empUuid = (employee as Employee | undefined)?.apiId ?? payslip.employeeId;
@@ -4023,10 +4027,28 @@ function PayslipBody({
         </div>
       </div>
 
-      <Button onClick={() => onDownload(payslip.id)} className="w-full">
-        <Download className="mr-2 h-4 w-4" />
-        Download PDF
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          onClick={() => setCashCountOpen(true)}
+          className="flex-1"
+          title="Break the net salary into notes"
+        >
+          <Coins className="mr-2 h-4 w-4" />
+          Cash Count
+        </Button>
+        <Button onClick={() => onDownload(payslip.id)} className="flex-1">
+          <Download className="mr-2 h-4 w-4" />
+          Download PDF
+        </Button>
+      </div>
+
+      <CashCountDialog
+        open={cashCountOpen}
+        onOpenChange={setCashCountOpen}
+        defaultAmount={payslip.totalPay}
+        defaultCurrency="USD"
+      />
     </div>
   );
 }
