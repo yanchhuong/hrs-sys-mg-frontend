@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { toast } from 'sonner';
 import {
   Handshake, Wallet, ReceiptText, Package, DollarSign,
-  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Printer, Share2, Info,
+  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Printer, Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
@@ -99,6 +99,11 @@ function ConsignmentReport() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<consignmentsApi.Consignment | null>(null);
+  // Read-only viewer target — the Eye button on every row (regardless
+  // of status) sets this and re-uses the ConsignmentDialog in
+  // readOnly mode so operators see the exact same layout as Edit
+  // but with a Print + Close footer instead of save buttons.
+  const [viewing, setViewing] = useState<consignmentsApi.Consignment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<consignmentsApi.Consignment | null>(null);
   // Settlement refs per consignment — powers the "Ref No." column
   // (multiple settlements can attach to one consignment as it goes
@@ -330,6 +335,15 @@ function ConsignmentReport() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          {/* View is always visible — even locked
+                              consignments stay inspectable + printable.
+                              Opens the same ConsignmentDialog layout
+                              wrapped in a disabled fieldset. */}
+                          <Button variant="outline" size="sm"
+                            onClick={() => setViewing(c)}
+                            title="View">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
                           {/* Edit + Delete only surface for draft rows.
                               Beyond draft, the row has posted a stock
                               movement + started accumulating settlement
@@ -348,9 +362,6 @@ function ConsignmentReport() {
                                 <Trash2 className="h-3.5 w-3.5 text-red-600" />
                               </Button>
                             </>
-                          )}
-                          {!canMutate && (
-                            <span className="text-[11px] text-gray-400 italic">Locked</span>
                           )}
                         </div>
                       </TableCell>
@@ -380,6 +391,25 @@ function ConsignmentReport() {
         />
       )}
 
+      {/* Read-only variant — same ConsignmentDialog component, wrapped
+          in a disabled fieldset. Renders the exact Edit layout so
+          operators recognize the shape immediately, but every field
+          is inert and the footer shows Print + Close. */}
+      {viewing && (
+        <ConsignmentDialog
+          open={!!viewing}
+          onOpenChange={(o) => !o && setViewing(null)}
+          editing={viewing}
+          vendors={vendors}
+          warehouses={warehouses}
+          items={items}
+          itemsLoaded={itemsLoaded}
+          onVendorAdded={v => setVendors(prev => [...prev, v])}
+          onSaved={async () => { setViewing(null); }}
+          readOnly
+        />
+      )}
+
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -401,211 +431,6 @@ function ConsignmentReport() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Consignment Detail dialog — read-only view with Send + Print       */
-/* ------------------------------------------------------------------ */
-
-function ConsignmentDetailDialog({
-  consignment, itemsById, onOpenChange,
-}: {
-  consignment: consignmentsApi.Consignment | null;
-  itemsById: Map<string, itemsApi.Item>;
-  onOpenChange: (open: boolean) => void;
-}) {
-  if (!consignment) return null;
-  const c = consignment;
-
-  // Compute the same numbers the list row shows, so the detail
-  // sheet reads consistently with the operator's outside view.
-  let totalQty = 0, totalRetail = 0, totalComm = 0;
-  const rowMath = c.items.map(it => {
-    const qty      = it.receivedQty ?? 0;
-    const price    = it.sellingPrice ?? 0;
-    const supplier = it.supplierPrice ?? 0;
-    let commPerUnit = 0;
-    if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
-    else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
-    const total     = qty * price;
-    const rowComm   = qty * commPerUnit;
-    totalQty    += qty;
-    totalRetail += total;
-    totalComm   += rowComm;
-    return { it, qty, price, supplier, commPerUnit, total, rowComm };
-  });
-
-  const summaryText =
-    `Consignment ${c.consignmentNo}\n` +
-    `Supplier: ${c.supplierName ?? '—'}\n` +
-    `Date: ${c.startDate}${c.endDate ? ` → ${c.endDate}` : ''}\n` +
-    `Status: ${consignmentsApi.CONSIGNMENT_STATUS_LABELS[c.status]}\n\n` +
-    rowMath.map(r => {
-      const name = itemsById.get(r.it.stockItemId)?.name ?? '(unknown item)';
-      return `• ${name}  qty ${r.qty}  retail ${formatUSD(r.price)}  supplier ${formatUSD(r.supplier)}  comm ${formatUSD(r.commPerUnit)}/unit`;
-    }).join('\n') +
-    `\n\nTotal Retail: ${formatUSD(totalRetail)}\nTotal Comm.: ${formatUSD(totalComm)}`;
-
-  const handleSend = async () => {
-    // navigator.share where available (mobile PWAs, some desktops),
-    // clipboard fallback elsewhere. Either path gets the operator a
-    // shareable summary without leaving the dialog.
-    if (typeof navigator !== 'undefined' && (navigator as Navigator).share) {
-      try {
-        await (navigator as Navigator).share({ title: c.consignmentNo, text: summaryText });
-      } catch { /* user cancelled the share sheet — no toast */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(summaryText);
-        toast.success('Consignment summary copied to clipboard');
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Copy failed');
-      }
-    }
-  };
-
-  // Effective commission rate for the whole consignment — used on
-  // both the on-screen detail and the print header. Derived from
-  // totals so mixed-per-line rates still show a single meaningful
-  // number (weighted average).
-  const effectiveRatePct = totalRetail > 0
-    ? Math.round((totalComm / totalRetail) * 100)
-    : 0;
-
-  const handlePrint = () => printConsignmentNote(c, itemsById);
-
-  return (
-    <Dialog open={!!consignment} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          {/* Title on the left, action buttons on the right — the
-              paper-header equivalent lives in the print template only,
-              so keeping these here saves a footer row on-screen and
-              puts Print / Send within thumb-reach of the top-right
-              close X the operator's mouse is already near. */}
-          <div className="flex items-start justify-between gap-4">
-            <DialogTitle className="text-2xl uppercase tracking-tight font-bold">
-              Consignment Note
-            </DialogTitle>
-            <div className="flex items-center gap-2 shrink-0 mr-8">
-              <Button variant="outline" size="sm" onClick={handleSend}>
-                <Share2 className="h-3.5 w-3.5 mr-1.5" /> Send
-              </Button>
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-              </Button>
-            </div>
-          </div>
-          <DialogDescription className="sr-only">
-            Read-only detail view of consignment {c.consignmentNo}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Agreement & Document Details — matches the print block. */}
-        <section className="p-4 bg-gray-50 border border-gray-300 rounded">
-          <h3 className="text-base font-semibold text-slate-800 mb-4">
-            Agreement &amp; Document Details
-          </h3>
-          <div className="grid grid-cols-3 gap-5 text-sm">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Document ID</div>
-              <div className="font-mono font-semibold mt-0.5">{c.consignmentNo}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Date</div>
-              <div className="font-mono font-semibold mt-0.5">{c.startDate}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Status</div>
-              <div className="mt-1">
-                <Badge className={CONSIGN_TONE[c.status]}>
-                  {consignmentsApi.CONSIGNMENT_STATUS_LABELS[c.status]}
-                </Badge>
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Supplier to</div>
-              <div className="font-semibold mt-0.5">{c.supplierName ?? '—'}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Warehouse</div>
-              <div className="font-semibold mt-0.5">{c.warehouseName ?? '—'}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">Commission Rate</div>
-              <div className="font-semibold mt-0.5">{effectiveRatePct.toFixed(2)}%</div>
-            </div>
-          </div>
-        </section>
-
-        {/* Consigned Inventory — mirrors the print table's columns
-            + row heights so the on-screen preview matches the paper
-            output. */}
-        <section>
-          <h3 className="text-base font-semibold text-slate-800 mb-3">Consigned Inventory</h3>
-          <div className="border-b-2 border-slate-800"></div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">#</TableHead>
-                <TableHead className="w-14">Product</TableHead>
-                <TableHead className="w-24">Code</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right w-16">Qty</TableHead>
-                <TableHead className="text-right w-28">Retail Price</TableHead>
-                <TableHead className="text-right w-28">$ Consignment</TableHead>
-                <TableHead className="text-right w-28">Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rowMath.map((r, i) => {
-                const item = itemsById.get(r.it.stockItemId);
-                const img = item?.imageUrl || (item?.imageUrls && item.imageUrls[0]) || null;
-                return (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono">{i + 1}</TableCell>
-                    <TableCell>
-                      <div className="h-10 w-10 rounded overflow-hidden bg-gray-100 border flex items-center justify-center">
-                        {img ? (
-                          <img src={img} alt=""
-                            className="w-full h-full object-cover"
-                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          <Package className="h-4 w-4 text-gray-400" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono">{item?.sku ?? '—'}</TableCell>
-                    <TableCell>{item?.name ?? '—'}</TableCell>
-                    <TableCell className="text-right tabular-nums font-mono">{formatNumber(r.qty)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-mono">{formatUSD(r.price)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-mono">{formatUSD(r.supplier)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-mono font-semibold">{formatUSD(r.total)}</TableCell>
-                  </TableRow>
-                );
-              })}
-              <TableRow className="border-t-2 border-slate-800 bg-gray-50">
-                <TableCell colSpan={4} className="text-right font-semibold">Totals:</TableCell>
-                <TableCell className="text-right tabular-nums font-mono font-bold">{formatNumber(totalQty)}</TableCell>
-                <TableCell colSpan={2}></TableCell>
-                <TableCell className="text-right tabular-nums font-mono font-bold">{formatUSD(totalRetail)}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </section>
-
-        {c.notes && (
-          <div className="text-xs text-gray-600 border-t pt-2 mt-2">
-            <div className="text-gray-500 mb-1">Notes</div>
-            {c.notes}
-          </div>
-        )}
-
-        {/* Signature blocks live on the print template only — on
-            screen they're dead space, so they're omitted here. */}
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -801,6 +626,193 @@ function printConsignmentNote(
   setTimeout(() => { w.focus(); w.print(); }, 700);
 }
 
+/** Settlement Statement print helper — opens a fresh A4 window with
+ *  the paper-format payout summary. Renders the parent consignment's
+ *  line items (name, qty, sold, retail, commission-per-unit) plus the
+ *  headline gross / commission / deductions / net totals so the
+ *  supplier receives a full breakdown, not just aggregates. Shared
+ *  by the read-only SettlementDialog. */
+function printSettlementNote(
+  s: settlementsApi.ConsignmentSettlement,
+  consignments: consignmentsApi.Consignment[],
+  itemsById: Map<string, itemsApi.Item>,
+): void {
+  const parent = consignments.find(c => c.id === s.consignmentId);
+  // Sold quantities the operator entered on this settlement — pulled
+  // from the persisted line breakdown (V313). Empty on legacy rows
+  // written before the column existed; the render falls back to "—".
+  const soldById = new Map<string, number>();
+  for (const l of s.lineBreakdown ?? []) {
+    soldById.set(l.consignmentItemId, Number(l.sold) || 0);
+  }
+  const rowsHtml = (parent?.items ?? []).map((it, i) => {
+    const item = itemsById.get(it.stockItemId);
+    const name = item?.name ?? '(unknown)';
+    const sku  = item?.sku ?? '';
+    const img  = item?.imageUrl || (item?.imageUrls && item.imageUrls[0]) || '';
+    const imgCell = img
+      ? `<img src="${escapeHtml(img)}" alt="" style="width:36px;height:36px;object-fit:cover;border:1px solid #ddd;border-radius:2px" />`
+      : '<div style="width:36px;height:36px;background:#f3f4f6;border:1px solid #ddd;border-radius:2px"></div>';
+    const qty   = it.receivedQty ?? 0;
+    const price = it.sellingPrice ?? 0;
+    let commPerUnit = 0;
+    if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
+    else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
+    const sold = soldById.get(it.id);
+    const soldCell = sold != null ? String(sold) : '—';
+    const rowTotal = (sold ?? 0) * price;
+    return `<tr>
+      <td style="text-align:center;font-family:'JetBrains Mono',monospace">${i + 1}</td>
+      <td>${imgCell}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${escapeHtml(sku)}</td>
+      <td>${escapeHtml(name)}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${qty}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${soldCell}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${formatUSD(price)}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${formatUSD(commPerUnit)}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${formatUSD(rowTotal)}</td>
+    </tr>`;
+  }).join('');
+  const html = `<!doctype html><html><head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(s.settlementNo)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@300;400;700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+    <style>
+      @page { size: A4 portrait; margin: 0; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 20mm;
+        font: 12px/1.45 'Hanken Grotesk', 'Battambang', system-ui, sans-serif;
+        color: #0b1c30; background: #fff;
+      }
+      h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: -0.02em; text-transform: uppercase; }
+      h3 { font-size: 16px; margin: 0 0 12px; color: #131b2e; }
+      .agreement {
+        padding: 16px; margin: 24px 0;
+        background: #eff4ff; border: 1px solid #c6c6cd; border-radius: 2px;
+      }
+      .agreement-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+      .label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #45464d; }
+      .value { font-size: 14px; font-weight: 600; margin-top: 2px; }
+      .value.mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+      .badge {
+        display: inline-block; padding: 2px 8px; border-radius: 12px;
+        background: #6cf8bb; color: #00714d;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+      thead th {
+        text-align: left; padding: 8px 6px;
+        border-bottom: 1px solid #94a3b8;
+        font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+        color: #45464d;
+        white-space: nowrap;
+      }
+      thead th.right { text-align: right; }
+      tbody td { padding: 10px 6px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
+      .totals {
+        margin-top: 32px; padding: 16px;
+        background: #eff4ff; border: 1px solid #c6c6cd; border-radius: 2px;
+      }
+      .totals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; }
+      .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+      .total-row.net {
+        border-top: 1px solid #94a3b8; margin-top: 8px; padding-top: 12px;
+        font-size: 16px; font-weight: 700; color: #047857;
+      }
+      .notes { margin-top: 24px; font-size: 11px; color: #45464d; }
+      .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; margin-top: 48px; }
+      .sig-line { border-bottom: 1px solid #c6c6cd; height: 56px; margin-bottom: 8px; }
+      .sig-date { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: #45464d; }
+      .sig-date-line { border-bottom: 1px solid #c6c6cd; width: 128px; height: 16px; }
+    </style>
+  </head><body>
+    <h1>Settlement Statement</h1>
+
+    <section class="agreement">
+      <h3>Payout Details</h3>
+      <div class="agreement-grid">
+        <div>
+          <div class="label">Settlement ID</div>
+          <div class="value mono">${escapeHtml(s.settlementNo)}</div>
+        </div>
+        <div>
+          <div class="label">Consignment</div>
+          <div class="value mono">${escapeHtml(s.consignmentNo ?? '—')}</div>
+        </div>
+        <div>
+          <div class="label">Status</div>
+          <div style="margin-top:4px"><span class="badge">${escapeHtml(settlementsApi.SETTLEMENT_STATUS_LABELS[s.status])}</span></div>
+        </div>
+        <div>
+          <div class="label">Supplier</div>
+          <div class="value">${escapeHtml(s.supplierName ?? '—')}</div>
+        </div>
+        <div>
+          <div class="label">Settlement date</div>
+          <div class="value mono">${escapeHtml(s.settlementDate)}</div>
+        </div>
+        <div>
+          <div class="label">Period</div>
+          <div class="value mono">${escapeHtml(s.periodFrom)} → ${escapeHtml(s.periodTo)}</div>
+        </div>
+      </div>
+    </section>
+
+    ${parent && parent.items.length > 0 ? `
+    <section>
+      <h3>Line Breakdown</h3>
+      <table>
+        <thead><tr>
+          <th style="width:32px">#</th>
+          <th style="width:48px">Product</th>
+          <th style="width:80px">Code</th>
+          <th>Description</th>
+          <th class="right" style="width:48px">Qty</th>
+          <th class="right" style="width:56px">Sold</th>
+          <th class="right" style="width:88px">Retail</th>
+          <th class="right" style="width:96px">Comm/unit</th>
+          <th class="right" style="width:96px">Line total</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </section>` : ''}
+
+    <section class="totals">
+      <h3>Amounts</h3>
+      <div class="totals-grid">
+        <div class="total-row"><span>Gross sales</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.grossSales ?? 0)}</span></div>
+        <div class="total-row"><span>Commission (kept by us)</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.commissionAmount ?? 0)}</span></div>
+        <div class="total-row"><span>Deductions</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.deductionAmount ?? 0)}</span></div>
+        <div class="total-row net" style="grid-column:1 / -1"><span>Net owed to supplier</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.netAmount ?? 0)}</span></div>
+      </div>
+    </section>
+
+    ${s.notes ? `<div class="notes"><strong>Notes:</strong> ${escapeHtml(s.notes)}</div>` : ''}
+
+    <section class="signatures">
+      <div>
+        <div class="sig-line"></div>
+        <div class="label">Paid by</div>
+        <div class="sig-date"><span>Date:</span><div class="sig-date-line"></div></div>
+      </div>
+      <div>
+        <div class="sig-line"></div>
+        <div class="label">Received by (Supplier)</div>
+        <div class="sig-date"><span>Date:</span><div class="sig-date-line"></div></div>
+      </div>
+    </section>
+  </body></html>`;
+  const w = window.open('', '_blank', 'width=900,height=1100');
+  if (!w) { toast.error('Popup blocked — allow popups to print'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 700);
+}
+
 /* ------------------------------------------------------------------ */
 /* Consignment Add / Edit dialog                                      */
 /* ------------------------------------------------------------------ */
@@ -843,6 +855,7 @@ const EMPTY_ITEM: FormItem = {
 
 function ConsignmentDialog({
   open, onOpenChange, editing, vendors, warehouses, items, itemsLoaded, onVendorAdded, onSaved,
+  readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -853,6 +866,12 @@ function ConsignmentDialog({
   itemsLoaded: boolean;
   onVendorAdded: (v: vendorsApi.Vendor) => void;
   onSaved: () => Promise<void> | void;
+  /** View mode — the whole form body is wrapped in a disabled
+   *  {@code <fieldset>} so every input/select/button natively
+   *  ignores clicks. The header swaps its action row to a Print +
+   *  Close pair. Reuses the exact same layout as Edit so the two
+   *  modes read as one dialog. */
+  readOnly?: boolean;
 }) {
   // Map for O(1) name lookup in the picker's "selected" display —
   // avoids items.find() per row-render on a long consignment.
@@ -1110,12 +1129,18 @@ function ConsignmentDialog({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <DialogTitle className="text-lg font-semibold flex items-center gap-1.5">
-                <span>{editing ? `Edit ${editing.consignmentNo}` : 'New Consignment'}</span>
+                <span>
+                  {readOnly && editing
+                    ? `View ${editing.consignmentNo}`
+                    : editing
+                      ? `Edit ${editing.consignmentNo}`
+                      : 'New Consignment'}
+                </span>
                 {/* Info icon on Create — hovering surfaces the
                     auto-mint format that used to live inline in the
                     description. Kept out of the visible header so
                     the top bar stays clean. */}
-                {!editing && (
+                {!editing && !readOnly && (
                   <button
                     type="button"
                     className="text-gray-400 hover:text-gray-600 transition"
@@ -1137,16 +1162,19 @@ function ConsignmentDialog({
               {/* Description kept for Radix a11y but hidden visually
                   — the tooltip above carries the same content. */}
               <DialogDescription className="sr-only">
-                {editing
-                  ? `Editing ${editing.consignmentNo}`
-                  : 'Server auto-mints the consignment number (C-YYMM-001) on save.'}
+                {readOnly && editing
+                  ? `Viewing ${editing.consignmentNo}`
+                  : editing
+                    ? `Editing ${editing.consignmentNo}`
+                    : 'Server auto-mints the consignment number (C-YYMM-001) on save.'}
               </DialogDescription>
             </div>
             {/* Actions moved from the bottom Footer to the top-right.
-                Print is edit-only — nothing to print on a fresh line.
-                Save-as-Draft is create-only — Edit uses the visible
-                Status dropdown to shift into draft. mr-8 reserves
-                space for Radix's built-in × close button. */}
+                readOnly: [Print, Close] — same layout, no mutation.
+                Edit:    [Print, Cancel, Save]
+                Create:  [Cancel, Save Draft, Create]
+                Print is edit / view only (nothing to print on a fresh
+                blank line). mr-8 reserves space for Radix's × close. */}
             <div className="flex items-center gap-2 shrink-0 mr-8">
               {editing && (
                 <Button variant="outline" size="sm"
@@ -1154,25 +1182,40 @@ function ConsignmentDialog({
                   <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
                 </Button>
               )}
-              <Button variant="outline" size="sm"
-                onClick={() => onOpenChange(false)} disabled={saving}>
-                Cancel
-              </Button>
-              {!editing && (
+              {readOnly ? (
                 <Button variant="outline" size="sm"
-                  onClick={() => save('draft')} disabled={saving}>
-                  Save as Draft
+                  onClick={() => onOpenChange(false)}>
+                  Close
                 </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm"
+                    onClick={() => onOpenChange(false)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  {!editing && (
+                    <Button variant="outline" size="sm"
+                      onClick={() => save('draft')} disabled={saving}>
+                      Save as Draft
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => save()} disabled={saving}>
+                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                    {editing ? 'Save changes' : 'Create'}
+                  </Button>
+                </>
               )}
-              <Button size="sm" onClick={() => save()} disabled={saving}>
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                {editing ? 'Save changes' : 'Create'}
-              </Button>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-w-0">
+        {/* Fieldset with native `disabled` inheritance — every input,
+            select and button inside stops responding when readOnly.
+            The `contents` display keeps layout identical to the
+            unwrapped form (no extra box, no shifted spacing). */}
+        <fieldset disabled={readOnly} className="contents">
+        <div className="space-y-4">
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -1582,6 +1625,8 @@ function ConsignmentDialog({
             placeholder="Optional agreement notes" />
         </div>
 
+        </div>{/* end space-y-4 inside fieldset */}
+        </fieldset>
         </div>{/* end scrolling body */}
 
         {/* Quick-add Supplier sub-dialog. Mirrors POS Customer quick-add:
@@ -1929,41 +1974,23 @@ function ConsignmentSettlementView() {
         />
       )}
 
-      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{viewing?.settlementNo}</DialogTitle>
-            <DialogDescription>
-              {viewing?.supplierName ?? 'Supplier'} · {viewing?.periodFrom} → {viewing?.periodTo}
-            </DialogDescription>
-          </DialogHeader>
-          {viewing && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="col-span-2 flex items-center justify-between">
-                <span className="text-gray-500">Status</span>
-                <Badge className={SETTLE_TONE[viewing.status]}>
-                  {settlementsApi.SETTLEMENT_STATUS_LABELS[viewing.status]}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between"><span className="text-gray-500">Consignment</span><span className="tabular-nums">{viewing.consignmentNo ?? '—'}</span></div>
-              <div className="flex items-center justify-between"><span className="text-gray-500">Settlement date</span><span>{viewing.settlementDate}</span></div>
-              <div className="flex items-center justify-between"><span className="text-gray-500">Gross</span><span className="tabular-nums">{formatUSD(viewing.grossSales)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-gray-500">Commission</span><span className="tabular-nums">{formatUSD(viewing.commissionAmount)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-gray-500">Deductions</span><span className="tabular-nums">{formatUSD(viewing.deductionAmount)}</span></div>
-              <div className="col-span-2 flex items-center justify-between border-t pt-2">
-                <span className="text-gray-700 font-medium">Net owed to supplier</span>
-                <span className="text-lg font-bold text-emerald-700 tabular-nums">{formatUSD(viewing.netAmount)}</span>
-              </div>
-              {viewing.notes && (
-                <div className="col-span-2 text-xs text-gray-600 border-t pt-2">
-                  <div className="text-gray-500 mb-1">Notes</div>
-                  {viewing.notes}
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Read-only variant of SettlementDialog — same layout as Edit
+          wrapped in a disabled fieldset. Print button in the top bar
+          renders the paper-format Settlement Statement. Always
+          available (every row's Eye button opens this, regardless
+          of settlement status). */}
+      {viewing && (
+        <SettlementDialog
+          open={!!viewing}
+          onOpenChange={(o) => !o && setViewing(null)}
+          editing={viewing}
+          consignments={consignments}
+          vendors={vendors}
+          items={items}
+          onSaved={async () => { setViewing(null); }}
+          readOnly
+        />
+      )}
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">
@@ -1993,6 +2020,7 @@ function ConsignmentSettlementView() {
 
 function SettlementDialog({
   open, onOpenChange, editing, consignments, vendors, items, onSaved,
+  readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -2001,6 +2029,11 @@ function SettlementDialog({
   vendors: vendorsApi.Vendor[];
   items: itemsApi.Item[];
   onSaved: () => Promise<void> | void;
+  /** View mode — wraps the form body in a disabled fieldset so every
+   *  input/select/button becomes inert. Header footer swaps to a
+   *  Print + Close pair. Matches the ConsignmentDialog treatment so
+   *  View and Edit read as one dialog across both entities. */
+  readOnly?: boolean;
 }) {
   // Name lookup for the line-items list rendered under the
   // Consignment picker. O(1) instead of items.find() per row.
@@ -2224,50 +2257,81 @@ function SettlementDialog({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <DialogTitle className="text-lg font-semibold flex items-center gap-1.5">
-                <span>{editing ? `Edit ${editing.settlementNo}` : 'New Settlement'}</span>
+                <span>
+                  {readOnly && editing
+                    ? `View ${editing.settlementNo}`
+                    : editing
+                      ? `Edit ${editing.settlementNo}`
+                      : 'New Settlement'}
+                </span>
                 {/* Info icon — hovering surfaces the payout formula
                     that used to live inline in the description. */}
-                <button
-                  type="button"
-                  className="text-gray-400 hover:text-gray-600 transition"
-                  title="One period's payout to the supplier — net = gross − commission − deductions."
-                  aria-label="Settlement formula info"
-                >
-                  <Info className="h-3.5 w-3.5" />
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="text-gray-400 hover:text-gray-600 transition"
+                    title="One period's payout to the supplier — net = gross − commission − deductions."
+                    aria-label="Settlement formula info"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </DialogTitle>
               <DialogDescription className="sr-only">
-                {editing
-                  ? `Editing ${editing.settlementNo}`
-                  : 'New settlement — net = gross minus commission minus deductions.'}
+                {readOnly && editing
+                  ? `Viewing ${editing.settlementNo}`
+                  : editing
+                    ? `Editing ${editing.settlementNo}`
+                    : 'New settlement — net = gross minus commission minus deductions.'}
               </DialogDescription>
             </div>
             {/* Actions moved from the bottom Footer to the top-right.
-                Draft is a separate outlined button on Create only —
-                the primary Create button commits as 'paid'. Status
-                is a real dropdown on Edit (below) for status shifts
-                on an existing record. mr-8 reserves space for
-                Radix's built-in × close. */}
+                readOnly: [Print, Close]
+                Edit:     [Cancel, Save changes]
+                Create:   [Cancel, Save as Draft, Create]
+                Print is view-only (Edit doesn't include it — matches
+                the Consignment dialog's rule). mr-8 reserves space
+                for Radix's built-in × close. */}
             <div className="flex items-center gap-2 shrink-0 mr-8">
-              <Button variant="outline" size="sm"
-                onClick={() => onOpenChange(false)} disabled={saving}>
-                Cancel
-              </Button>
-              {!editing && (
+              {readOnly && editing && (
                 <Button variant="outline" size="sm"
-                  onClick={() => save('draft')} disabled={saving}>
-                  Save as Draft
+                  onClick={() => printSettlementNote(editing, consignments, itemById)}>
+                  <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
                 </Button>
               )}
-              <Button size="sm" onClick={() => save()} disabled={saving}>
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                {editing ? 'Save changes' : 'Create'}
-              </Button>
+              {readOnly ? (
+                <Button variant="outline" size="sm"
+                  onClick={() => onOpenChange(false)}>
+                  Close
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm"
+                    onClick={() => onOpenChange(false)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  {!editing && (
+                    <Button variant="outline" size="sm"
+                      onClick={() => save('draft')} disabled={saving}>
+                      Save as Draft
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => save()} disabled={saving}>
+                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                    {editing ? 'Save changes' : 'Create'}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-w-0">
+        {/* Fieldset with native `disabled` inheritance — same
+            treatment as ConsignmentDialog so every input/select/
+            button becomes inert in read-only mode. */}
+        <fieldset disabled={readOnly} className="contents">
+        <div className="space-y-4">
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1 col-span-2">
@@ -2553,6 +2617,8 @@ function SettlementDialog({
             placeholder="Optional context for the payout" />
         </div>
 
+        </div>{/* end space-y-4 inside fieldset */}
+        </fieldset>
         </div>{/* end scrolling body */}
       </DialogContent>
     </Dialog>
