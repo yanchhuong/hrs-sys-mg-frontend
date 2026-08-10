@@ -100,6 +100,11 @@ function ConsignmentReport() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<consignmentsApi.Consignment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<consignmentsApi.Consignment | null>(null);
+  // Settlement refs per consignment — powers the "Ref No." column
+  // (multiple settlements can attach to one consignment as it goes
+  // through partial → paid rounds). Map keyed by consignmentId,
+  // value is the list of settlementNos in creation order.
+  const [refsByConsignment, setRefsByConsignment] = useState<Map<string, string[]>>(new Map());
   // Client-side filters — the tenant list fits comfortably in one
   // 200-row page fetch, so no need to round-trip to the BE for
   // typeahead / date-range filtering.
@@ -110,17 +115,31 @@ function ConsignmentReport() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [r, v, w, i] = await Promise.all([
+      const [r, v, w, i, s] = await Promise.all([
         consignmentsApi.list({ size: 200 }),
         vendorsApi.list({ size: 500 }).catch(() => ({ content: [] as vendorsApi.Vendor[] } as any)),
         warehousesApi.list().catch(() => [] as warehousesApi.Warehouse[]),
         itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
+        settlementsApi.list({ size: 500 }).catch(() => ({ content: [] as settlementsApi.ConsignmentSettlement[] } as any)),
       ]);
       setRows(r.content ?? []);
       setVendors(v.content ?? []);
       setWarehouses(w ?? []);
       setItems(i.content ?? []);
       setItemsLoaded(true);
+      // Group settlement numbers by their parent consignment so the
+      // list row can show every settlement that's ever attached.
+      // Sorted by settlementDate so the oldest reads first.
+      const grouped = new Map<string, string[]>();
+      const sortedSettlements = [...(s.content ?? [])]
+        .sort((a: settlementsApi.ConsignmentSettlement, b: settlementsApi.ConsignmentSettlement) =>
+          (a.settlementDate ?? '').localeCompare(b.settlementDate ?? ''));
+      for (const st of sortedSettlements) {
+        const arr = grouped.get(st.consignmentId) ?? [];
+        arr.push(st.settlementNo);
+        grouped.set(st.consignmentId, arr);
+      }
+      setRefsByConsignment(grouped);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load consignments');
     } finally {
@@ -253,6 +272,7 @@ function ConsignmentReport() {
                   <TableHead className="text-right">Order Qty</TableHead>
                   <TableHead className="text-right">Total Retail</TableHead>
                   <TableHead className="text-right">Total Comm.</TableHead>
+                  <TableHead>Ref No.</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
@@ -269,6 +289,14 @@ function ConsignmentReport() {
                     if (it.commissionType === 'percent') comm += g * (it.commissionValue ?? 0) / 100;
                     else if (it.commissionType === 'amount') comm += q * (it.commissionValue ?? 0);
                   }
+                  // Row actions gate: only draft consignments are
+                  // mutable. Once a consignment goes active (which
+                  // also means it's been through at least one save
+                  // that posted the OUT stock movement), editing or
+                  // deleting would leave the sold_qty accumulator
+                  // and stock movement audit trail inconsistent.
+                  const canMutate = c.status === 'draft';
+                  const refs = refsByConsignment.get(c.id) ?? [];
                   return (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium tabular-nums">{c.consignmentNo}</TableCell>
@@ -280,6 +308,21 @@ function ConsignmentReport() {
                       <TableCell className="text-right tabular-nums font-medium text-emerald-700">
                         {comm > 0 ? formatUSD(comm) : <span className="text-gray-300 font-normal">—</span>}
                       </TableCell>
+                      <TableCell className="text-xs">
+                        {refs.length === 0
+                          ? <span className="text-gray-300">—</span>
+                          : (
+                            <div className="flex flex-wrap gap-1"
+                              title={`${refs.length} settlement${refs.length === 1 ? '' : 's'}`}>
+                              {refs.map(no => (
+                                <span key={no}
+                                  className="px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 font-mono text-[11px]">
+                                  {no}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                      </TableCell>
                       <TableCell>
                         <Badge className={CONSIGN_TONE[c.status]}>
                           {consignmentsApi.CONSIGNMENT_STATUS_LABELS[c.status]}
@@ -287,16 +330,28 @@ function ConsignmentReport() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button variant="outline" size="sm"
-                            onClick={() => { setEditing(c); setDialogOpen(true); }}
-                            title="Edit">
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="outline" size="sm"
-                            onClick={() => setDeleteTarget(c)}
-                            title="Delete">
-                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                          </Button>
+                          {/* Edit + Delete only surface for draft rows.
+                              Beyond draft, the row has posted a stock
+                              movement + started accumulating settlement
+                              breakdowns; late edits would rip that
+                              audit trail apart. */}
+                          {canMutate && (
+                            <>
+                              <Button variant="outline" size="sm"
+                                onClick={() => { setEditing(c); setDialogOpen(true); }}
+                                title="Edit">
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="outline" size="sm"
+                                onClick={() => setDeleteTarget(c)}
+                                title="Delete">
+                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                              </Button>
+                            </>
+                          )}
+                          {!canMutate && (
+                            <span className="text-[11px] text-gray-400 italic">Locked</span>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1801,7 +1856,15 @@ function ConsignmentSettlementView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.map(r => (
+                {filteredRows.map(r => {
+                  // Once a settlement transitions from draft to any
+                  // downstream status (pending/paid/cancelled), the
+                  // sold_qty bumps + stock-return disposition have
+                  // already been applied to the parent consignment.
+                  // Editing or deleting past that point would leave
+                  // the parent's accumulators in a nonsense state.
+                  const canMutate = r.status === 'draft';
+                  return (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium tabular-nums">{r.settlementNo}</TableCell>
                     <TableCell className="tabular-nums text-xs">{r.consignmentNo ?? '—'}</TableCell>
@@ -1825,20 +1888,29 @@ function ConsignmentSettlementView() {
                         <Button variant="outline" size="sm" onClick={() => setViewing(r)} title="View details">
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="outline" size="sm"
-                          onClick={() => { setEditing(r); setDialogOpen(true); }}
-                          title="Edit">
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="outline" size="sm"
-                          onClick={() => setDeleteTarget(r)}
-                          title="Delete">
-                          <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                        </Button>
+                        {/* Only draft settlements are mutable — see
+                            comment above. View stays visible in every
+                            state so operators can still inspect a
+                            paid settlement. */}
+                        {canMutate && (
+                          <>
+                            <Button variant="outline" size="sm"
+                              onClick={() => { setEditing(r); setDialogOpen(true); }}
+                              title="Edit">
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="outline" size="sm"
+                              onClick={() => setDeleteTarget(r)}
+                              title="Delete">
+                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
