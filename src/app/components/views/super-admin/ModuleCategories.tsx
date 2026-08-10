@@ -743,10 +743,34 @@ export function ModuleCategories() {
       <Dialog open={modEditOpen} onOpenChange={setModEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {modEdit.isEdit ? `Edit '${modEdit.key}'` : 'New module'}
+            <DialogTitle className="flex items-center gap-1.5">
+              <span>{modEdit.isEdit ? `Edit '${modEdit.key}'` : 'New module'}</span>
+              {/* Info icon → Tooltip carries what used to be the
+                  inline DialogDescription. Text varies with edit /
+                  create + source flavour; the description also stays
+                  as sr-only for a11y. */}
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-gray-400 hover:text-gray-600 transition"
+                      aria-label="Module info"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    {modEdit.isEdit
+                      ? (modEdit.source === 'code'
+                          ? 'Code-defined module — label, category, sort, and parent are editable; status is locked to complete.'
+                          : 'Manual/planning module — fully editable.')
+                      : 'New modules default to draft. Promote to complete once the real controller ships.'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="sr-only">
               {modEdit.isEdit
                 ? (modEdit.source === 'code'
                     ? 'Code-defined module — label, category, sort, and parent are editable; status is locked to complete.'
