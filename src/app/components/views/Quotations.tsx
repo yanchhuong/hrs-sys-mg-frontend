@@ -40,6 +40,7 @@ import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../utils/format';
 import * as quotationsApi from '../../api/quotations';
+import { useI18n } from '../../i18n/I18nContext';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { BarcodeScanInput } from '../common/BarcodeScanInput';
@@ -179,6 +180,7 @@ const TAX_TYPE_BY_KEY: Record<string, typeof TAX_TYPES[number]> =
 export function Quotations() {
   const { canView, canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
+  const { t } = useI18n();
   const canAdd    = canCreate('quotation');
   const canEdit   = canUpdate('quotation');
   const canRemove = canDelete('quotation');
@@ -291,7 +293,7 @@ export function Quotations() {
   return (
     <div className="space-y-6">
       <div className="page-header-strip">
-        <h1 className="text-3xl font-bold">Quotation</h1>
+        <h1 className="text-3xl font-bold km-title">{t('nav.quotation')}</h1>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
