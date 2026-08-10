@@ -140,6 +140,14 @@ export function CrossTenantUsers() {
           name: addCompanyName.trim(),
           slug,
           planTier: 'starter',
+          // v-admin-email-mirrors-company-contact — the SA flow only
+          // collects one email in this dialog (the admin's login).
+          // Treat it as the company's contactEmail too, so the tenant
+          // record isn't minted with a NULL/placeholder value that the
+          // Companies page then flags as missing. If the admin later
+          // wants a distinct company contact (e.g. billing@…), they
+          // change it on the Companies page.
+          contactEmail: addEmail.trim(),
           initialAdmin: {
             email: addEmail.trim(),
             password: addPassword,
