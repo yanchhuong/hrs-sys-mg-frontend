@@ -678,8 +678,29 @@ export function ModuleCategories() {
       <Dialog open={catEditOpen} onOpenChange={setCatEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{catEdit.isEdit ? `Edit '${catEdit.key}'` : 'New category'}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="flex items-center gap-1.5">
+              <span>{catEdit.isEdit ? `Edit '${catEdit.key}'` : 'New category'}</span>
+              {/* Info icon → Tooltip carries what used to be the
+                  inline DialogDescription. The description stays in
+                  the DOM (sr-only) for Radix a11y compliance. */}
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-gray-400 hover:text-gray-600 transition"
+                      aria-label="Category info"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    Categories are the app-level groupings shown on Tenant Modules and the tenant sidebar.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
               Categories are the app-level groupings shown on Tenant Modules and the
               tenant sidebar.
             </DialogDescription>
