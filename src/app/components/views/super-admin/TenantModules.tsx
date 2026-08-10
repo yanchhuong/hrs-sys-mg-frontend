@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
+import { Input } from '../../ui/input';
 import { Switch } from '../../ui/switch';
 import { Badge } from '../../ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
-import { Layers, Save, RotateCcw, Building2, Link2 } from 'lucide-react';
+import { Layers, Save, RotateCcw, Building2, Link2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 
@@ -102,6 +103,12 @@ export function TenantModules() {
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [loadingFlags, setLoadingFlags] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Client-side filters — the tenant's module catalog is small enough
+  // (a few dozen rows), so we don't need server-side filtering. Search
+  // matches the display label (case-insensitive), and stateFilter
+  // narrows to enabled/disabled tiles only.
+  const [search, setSearch] = useState('');
+  const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
 
   useEffect(() => {
     (async () => {
@@ -251,7 +258,7 @@ export function TenantModules() {
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 space-y-3">
           <div className="filter-strip items-end justify-between">
             <div className="flex-1 min-w-[260px] shrink-0">
               <label className="text-xs font-medium text-gray-600 mb-1.5 block flex items-center gap-1.5">
@@ -279,6 +286,62 @@ export function TenantModules() {
               </Badge>
             </div>
           </div>
+          {/* Search + state filter row — same shape as the list-page
+              filter-strip so operators recognise the pattern. Chips
+              swap state via a single controlled var; empty categories
+              are hidden further below in the render pass. */}
+          <div className="filter-strip">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search modules by name…"
+                className="h-9 pl-8 pr-8 text-sm"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {(['all', 'enabled', 'disabled'] as const).map(k => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setStateFilter(k)}
+                  className={`h-9 px-3 rounded-md text-xs font-medium border transition-colors capitalize ${
+                    stateFilter === k
+                      ? k === 'enabled'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : k === 'disabled'
+                          ? 'border-slate-300 bg-slate-100 text-slate-700'
+                          : 'border-blue-300 bg-blue-50 text-blue-700'
+                      : 'border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+            {(search || stateFilter !== 'all') && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => { setSearch(''); setStateFilter('all'); }}
+                className="h-9 text-xs text-gray-500 hover:text-gray-700 shrink-0"
+                title="Clear filters"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loadingFlags ? (
@@ -287,20 +350,40 @@ export function TenantModules() {
             <p className="text-sm text-gray-500">No company selected.</p>
           ) : (
             <div className="space-y-4">
-              {categories.map(cat => {
-                // Real, togglable keys — hidden ones (e.g. medical-service)
-                // pruned before counting so the "N / M enabled" badge tracks
-                // what's actually visible.
-                // Node objects here so the render loop below has the
-                // BE-supplied label ready to render.
-                const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
-                const moduleKeys = modules.map(n => n.key);
-                const inheritTiles = INHERIT_TILES[cat.key] ?? [];
-                const total = moduleKeys.length;
-                const on = moduleKeys.filter(k => draft[k]).length;
-                const allOn = on === total && total > 0;
-                const noneOn = on === 0;
-                return (
+              {(() => {
+                // Precompute term + filter matchers once per render.
+                // The tile-level filter narrows what shows in each
+                // category; the category header still shows totals
+                // for the FULL category so the "N / M enabled" badge
+                // stays a truthful audit, not a filtered ratio.
+                const term = search.trim().toLowerCase();
+                const matchesSearch = (label: string, key: string) =>
+                  !term || label.toLowerCase().includes(term) || key.toLowerCase().includes(term);
+                const matchesState = (on: boolean) =>
+                  stateFilter === 'all'
+                  || (stateFilter === 'enabled'  && on)
+                  || (stateFilter === 'disabled' && !on);
+                const rendered: ReactNode[] = [];
+                for (const cat of categories) {
+                  const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
+                  const moduleKeys = modules.map(n => n.key);
+                  const inheritTiles = INHERIT_TILES[cat.key] ?? [];
+                  const total = moduleKeys.length;
+                  const on = moduleKeys.filter(k => draft[k]).length;
+                  const allOn = on === total && total > 0;
+                  const noneOn = on === 0;
+                  // Apply search + state filter to the tile lists.
+                  const visibleInheritTiles = inheritTiles.filter(t => {
+                    const parentOn = Boolean(draft[t.inheritsFrom]);
+                    return matchesSearch(t.label, t.key) && matchesState(parentOn);
+                  });
+                  const visibleModules = modules.filter(({ key, label }) => {
+                    const display = LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key));
+                    return matchesSearch(display, key) && matchesState(Boolean(draft[key]));
+                  });
+                  // Skip categories where the filter left nothing to render.
+                  if (visibleInheritTiles.length === 0 && visibleModules.length === 0) continue;
+                  rendered.push(
                   <div
                     key={cat.key}
                     className={`rounded-lg border ${
@@ -344,13 +427,16 @@ export function TenantModules() {
                     {/* Children — individual module toggles. Same per-row
                         styling as before; bulk-flip from the parent
                         propagates through the same draft object so this
-                        view stays in sync without extra wiring. */}
+                        view stays in sync without extra wiring. Only
+                        tiles that survive the search + state filter
+                        render here; hidden tiles still exist in state
+                        and stay toggled. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
                       {/* Inherit tiles first — Students (before Enrollment),
                           Patients (before Encounter). Read-only; state
                           mirrors the parent module so the operator sees
                           them light up when they enable the parent. */}
-                      {inheritTiles.map(tile => {
+                      {visibleInheritTiles.map(tile => {
                         const parentOn = Boolean(draft[tile.inheritsFrom]);
                         const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
                           ?? tile.inheritsFrom.replace(/-/g, ' ');
@@ -374,7 +460,7 @@ export function TenantModules() {
                           </div>
                         );
                       })}
-                      {modules.map(({ key, label }) => (
+                      {visibleModules.map(({ key, label }) => (
                         <div
                           key={key}
                           className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
@@ -404,8 +490,17 @@ export function TenantModules() {
                       ))}
                     </div>
                   </div>
-                );
-              })}
+                  );
+                }
+                if (rendered.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500 py-6 text-center">
+                      No modules match the current filter.
+                    </p>
+                  );
+                }
+                return rendered;
+              })()}
             </div>
           )}
         </CardContent>
