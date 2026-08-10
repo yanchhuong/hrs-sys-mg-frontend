@@ -188,7 +188,7 @@ function ConsignmentReport() {
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search No / supplier / warehouse / notes…"
+              placeholder="Search by No, supplier, warehouse, or notes…"
               className="h-9 w-64 text-sm"
             />
             <Label className="text-xs text-gray-500">From</Label>
@@ -1720,7 +1720,7 @@ function ConsignmentSettlementView() {
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search No / consignment / supplier / notes…"
+              placeholder="Search by No, consignment, supplier, or notes…"
               className="h-9 w-64 text-sm"
             />
             <Label className="text-xs text-gray-500">From</Label>
