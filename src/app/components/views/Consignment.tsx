@@ -30,6 +30,7 @@ import * as settlementsApi from '../../api/consignmentSettlements';
 import * as vendorsApi from '../../api/vendors';
 import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
+import { useI18n } from '../../i18n/I18nContext';
 
 /**
  * V309 Consignment page — same UI/UX shell as {@link ./Commission}:
@@ -43,11 +44,16 @@ import * as itemsApi from '../../api/items';
  * mental model ("money owed to a party because of what we sold").
  */
 export function Consignment() {
+  // Tab labels track the sidebar via the shared nav.* keys so
+  // switching to Khmer flips both the left-menu leaf ("បញ្ញើលក់")
+  // and the page's first tab in lock-step. Same for Settlement
+  // ("ការទូរទាត់").
+  const { t } = useI18n();
   return (
     <Tabs defaultValue="report" className="w-full">
       <TabsList>
-        <TabsTrigger value="report">Consignment</TabsTrigger>
-        <TabsTrigger value="settlement">Settlement</TabsTrigger>
+        <TabsTrigger value="report">{t('nav.consignment')}</TabsTrigger>
+        <TabsTrigger value="settlement">{t('nav.settlement')}</TabsTrigger>
       </TabsList>
       <TabsContent value="report" className="mt-4">
         <ConsignmentReport />
