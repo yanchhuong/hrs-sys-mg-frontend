@@ -107,8 +107,13 @@ export function TenantModules() {
   // (a few dozen rows), so we don't need server-side filtering. Search
   // matches the display label (case-insensitive), and stateFilter
   // narrows to enabled/disabled tiles only.
+  //
+  // Default = 'enabled' — an SA opening the page usually wants to see
+  // what a tenant CURRENTLY has (to audit or turn off), not the full
+  // catalog of every possible module. The "All" chip is one click away
+  // when they need to grant a new module.
   const [search, setSearch] = useState('');
-  const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('enabled');
 
   useEffect(() => {
     (async () => {
