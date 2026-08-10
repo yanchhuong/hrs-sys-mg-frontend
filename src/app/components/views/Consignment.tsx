@@ -52,8 +52,13 @@ export function Consignment() {
   return (
     <Tabs defaultValue="report" className="w-full">
       <TabsList>
-        <TabsTrigger value="report">{t('nav.consignment')}</TabsTrigger>
-        <TabsTrigger value="settlement">{t('nav.settlement')}</TabsTrigger>
+        {/* km-title flips these two labels to Moul (the display
+            Khmer script) when the app is in Khmer, matching the
+            heavier titling style operators expect from headings /
+            titles. No-op in en/zh — pure Latin/CJK text still
+            renders in the default stack. */}
+        <TabsTrigger value="report" className="km-title">{t('nav.consignment')}</TabsTrigger>
+        <TabsTrigger value="settlement" className="km-title">{t('nav.settlement')}</TabsTrigger>
       </TabsList>
       <TabsContent value="report" className="mt-4">
         <ConsignmentReport />
