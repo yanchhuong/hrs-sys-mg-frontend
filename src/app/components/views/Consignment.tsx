@@ -7,7 +7,7 @@ import {
   Handshake, Wallet, ReceiptText, Package, DollarSign,
   Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Printer, Share2, Info,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -196,14 +196,12 @@ function ConsignmentReport() {
               value={dateFrom || null}
               onChange={v => setDateFrom(v ?? '')}
               className="h-9 w-36 text-sm"
-              title="Start date filter — from"
             />
             <Label className="text-xs text-gray-500">To</Label>
             <DateInput
               value={dateTo || null}
               onChange={v => setDateTo(v ?? '')}
               className="h-9 w-36 text-sm"
-              title="Start date filter — to"
               min={dateFrom || undefined}
             />
             {(search || dateFrom || dateTo) && (
@@ -1641,6 +1639,12 @@ function ConsignmentSettlementView() {
   const [editing, setEditing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   const [viewing, setViewing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<settlementsApi.ConsignmentSettlement | null>(null);
+  // Client-side filters — same shape as the Consignment tab's
+  // filter row. Search matches settlementNo / consignmentNo /
+  // supplierName / notes. Date range checks settlementDate.
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1663,14 +1667,27 @@ function ConsignmentSettlementView() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const totals = useMemo(() => rows.reduce((a, r) => ({
+  const filteredRows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (term) {
+        const hay = `${r.settlementNo} ${r.consignmentNo ?? ''} ${r.supplierName ?? ''} ${r.notes ?? ''}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      if (dateFrom && r.settlementDate < dateFrom) return false;
+      if (dateTo   && r.settlementDate > dateTo)   return false;
+      return true;
+    });
+  }, [rows, search, dateFrom, dateTo]);
+
+  const totals = useMemo(() => filteredRows.reduce((a, r) => ({
     count:       a.count + 1,
     gross:       a.gross + (r.grossSales ?? 0),
     commission:  a.commission + (r.commissionAmount ?? 0),
     outstanding: a.outstanding + (
       r.status === 'draft' || r.status === 'pending' ? (r.netAmount ?? 0) : 0
     ),
-  }), { count: 0, gross: 0, commission: 0, outstanding: 0 }), [rows]);
+  }), { count: 0, gross: 0, commission: 0, outstanding: 0 }), [filteredRows]);
 
   const doDelete = async (r: settlementsApi.ConsignmentSettlement) => {
     try {
@@ -1696,7 +1713,40 @@ function ConsignmentSettlementView() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
-          <CardTitle>Supplier Settlements</CardTitle>
+          {/* Filter strip — keyword search + From/To date range on
+              settlementDate. Same shape the Consignment tab uses so
+              the two lists read as one system. */}
+          <div className="filter-strip">
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search No / consignment / supplier / notes…"
+              className="h-9 w-64 text-sm"
+            />
+            <Label className="text-xs text-gray-500">From</Label>
+            <DateInput
+              value={dateFrom || null}
+              onChange={v => setDateFrom(v ?? '')}
+              className="h-9 w-36 text-sm"
+            />
+            <Label className="text-xs text-gray-500">To</Label>
+            <DateInput
+              value={dateTo || null}
+              onChange={v => setDateTo(v ?? '')}
+              className="h-9 w-36 text-sm"
+              min={dateFrom || undefined}
+            />
+            {(search || dateFrom || dateTo) && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); }}
+                className="h-9 text-xs text-gray-500 hover:text-gray-700"
+                title="Clear filters"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -1710,12 +1760,18 @@ function ConsignmentSettlementView() {
           </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {filteredRows.length === 0 ? (
             <div className="text-center py-10 text-gray-500 text-sm">
-              No settlements yet.
-              {consignments.length === 0
-                ? <> Create a consignment on the previous tab before you can settle one.</>
-                : <> Click <b>New settlement</b> to record a period payout.</>}
+              {rows.length === 0
+                ? (
+                  <>
+                    No settlements yet.
+                    {consignments.length === 0
+                      ? <> Create a consignment on the previous tab before you can settle one.</>
+                      : <> Click <b>New settlement</b> to record a period payout.</>}
+                  </>
+                )
+                : <>No settlements match the current filter.</>}
             </div>
           ) : (
             <Table>
@@ -1734,7 +1790,7 @@ function ConsignmentSettlementView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map(r => (
+                {filteredRows.map(r => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium tabular-nums">{r.settlementNo}</TableCell>
                     <TableCell className="tabular-nums text-xs">{r.consignmentNo ?? '—'}</TableCell>
