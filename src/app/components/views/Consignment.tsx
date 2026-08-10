@@ -1979,7 +1979,20 @@ function SettlementDialog({
       setStatus('paid');
       setNotes('');
     }
-    setSoldByLine({}); // fresh sold entries; the effect below fills them
+    // On Edit open, pre-fill Sold from the persisted line breakdown
+    // so the operator sees the actual sold quantities that built
+    // this settlement (not zeros or defaults). Create starts empty
+    // — the default-Available effect below fills it once a
+    // consignment is picked.
+    if (editing && editing.lineBreakdown && editing.lineBreakdown.length > 0) {
+      const seed: Record<string, string> = {};
+      for (const l of editing.lineBreakdown) {
+        seed[l.consignmentItemId] = String(l.sold ?? 0);
+      }
+      setSoldByLine(seed);
+    } else {
+      setSoldByLine({});
+    }
     setDisposition('partial'); // remainder defaults to "carry over"
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
@@ -2331,6 +2344,15 @@ function SettlementDialog({
                               min={0}
                               max={r.qty}
                               value={r.soldRaw}
+                              // Sold is read-only on Edit — the
+                              // settlement's soldQty bumps already
+                              // flushed to the parent items on create;
+                              // rewriting Sold here would drift from
+                              // that accumulator. Value comes from
+                              // editing.lineBreakdown via the init
+                              // effect so operators still SEE what
+                              // was settled.
+                              disabled={!!editing}
                               onChange={e => {
                                 const v = Number(e.target.value) || 0;
                                 // Clamp at the initial Qty (hard cap
@@ -2344,10 +2366,12 @@ function SettlementDialog({
                                   [r.it.id]: String(clamped),
                                 }));
                               }}
-                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-amber-400' : ''}`}
-                              title={over
-                                ? `Sold > Available (${r.available}). Prior settlements had already counted ${r.prevSold} on this line — override only if you're correcting them.`
-                                : undefined}
+                              className={`h-7 text-xs text-right tabular-nums ${over ? 'border-amber-400' : ''} disabled:opacity-60 disabled:cursor-not-allowed`}
+                              title={editing
+                                ? 'Sold values are locked once the settlement is created — post-hoc changes would drift from the parent consignment_items.sold_qty accumulator.'
+                                : (over
+                                  ? `Sold > Available (${r.available}). Prior settlements had already counted ${r.prevSold} on this line — override only if you're correcting them.`
+                                  : undefined)}
                             />
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-xs">{formatUSD(r.price)}</TableCell>

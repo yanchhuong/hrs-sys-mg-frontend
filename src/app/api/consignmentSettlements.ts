@@ -33,6 +33,12 @@ export interface ConsignmentSettlement {
   status: SettlementStatus;
   paymentId: string | null;
   notes: string | null;
+  /** V313 — per-line sold breakdown persisted with this settlement.
+   *  Empty on rows created before the column existed. The Edit dialog
+   *  uses this to re-hydrate the Sold column and disable it (post-hoc
+   *  editing of Sold on a paid settlement would drift from the
+   *  cumulative sold_qty accumulator on the parent items). */
+  lineBreakdown?: { consignmentItemId: string; sold: number }[];
   createdAt: string;
   updatedAt: string;
 }
