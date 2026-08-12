@@ -151,6 +151,54 @@ export async function listCategories(): Promise<DashboardCategory[]> {
   return apiJson('/api/v1/dashboard/categories');
 }
 
+/* -------------------------------------------------------------------------- */
+/*                          Category summary cache                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * v-perf-dashboard-tab-cache — the shell mounts one bundle at a
+ * time, so clicking POS → Accounting → POS would previously refire
+ * the fetch on each remount. Each bundle sees a loading spinner
+ * flash even though the data hadn't gone stale.
+ *
+ * Module-level TTL cache keyed on the category code, 60s TTL to
+ * match the BE's shop-menu cache. In-flight promises are cached
+ * too so two components asking simultaneously coalesce into one
+ * request. Invalidate via {@link invalidateCategorySummary} after
+ * a mutation that would change the numbers (none exist yet).
+ */
+const SUMMARY_TTL_MS = 60_000;
+interface CachedSummary { data: DashboardSummary; expiresAt: number }
+const summaryCache = new Map<string, CachedSummary>();
+const inFlight = new Map<string, Promise<DashboardSummary>>();
+
 export async function getCategorySummary(code: string): Promise<DashboardSummary> {
-  return apiJson(`/api/v1/dashboard/${encodeURIComponent(code)}`);
+  const now = Date.now();
+  const cached = summaryCache.get(code);
+  if (cached && cached.expiresAt > now) return cached.data;
+  // Coalesce concurrent fetches — two components mounting in the
+  // same tick don't fire two network requests.
+  const pending = inFlight.get(code);
+  if (pending) return pending;
+  const promise = apiJson<DashboardSummary>(`/api/v1/dashboard/${encodeURIComponent(code)}`)
+    .then(data => {
+      summaryCache.set(code, { data, expiresAt: Date.now() + SUMMARY_TTL_MS });
+      return data;
+    })
+    .finally(() => { inFlight.delete(code); });
+  inFlight.set(code, promise);
+  return promise;
+}
+
+/** Clear the cache for {@code code} (or all when omitted) so the
+ *  next fetch re-hits the origin. Useful for a future "Refresh"
+ *  button; unused today. */
+export function invalidateCategorySummary(code?: string): void {
+  if (code == null) {
+    summaryCache.clear();
+    inFlight.clear();
+  } else {
+    summaryCache.delete(code);
+    inFlight.delete(code);
+  }
 }
