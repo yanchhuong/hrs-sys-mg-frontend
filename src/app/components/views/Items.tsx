@@ -444,14 +444,21 @@ function RowImageCell({
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
         <DialogContent className="sm:max-w-md" hideClose>
-          <DialogHeader>
+          <DialogHeader className="min-w-0">
             {/* No X close button on row-level dialogs — footer's Cancel
-                is the explicit dismiss. min-w-0 + truncate handle long
-                item names without overlapping the header. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0">
+                is the explicit dismiss. Whole label + name lives in a
+                single truncate span so long item names ellipsis-clip
+                at the dialog's right edge instead of pushing the
+                header past the DialogContent border. The native
+                {@code title} attr surfaces the full string on hover. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 overflow-hidden">
               <Camera className="h-4 w-4 text-blue-600 shrink-0" />
-              <span className="shrink-0">{cover ? 'Change image' : 'Upload image'} —</span>
-              <span className="truncate min-w-0" title={item.name}>{item.name}</span>
+              <span
+                className="truncate min-w-0 block"
+                title={`${cover ? 'Change image' : 'Upload image'} — ${item.name}`}
+              >
+                {cover ? 'Change image' : 'Upload image'} — {item.name}
+              </span>
             </DialogTitle>
             {/* Keep DialogDescription mounted (Radix a11y expects one
                 per DialogContent). sr-only makes it accessible-only
