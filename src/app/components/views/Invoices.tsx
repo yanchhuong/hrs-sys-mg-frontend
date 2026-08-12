@@ -55,7 +55,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
-  Package, CheckCircle2, Upload, FileSpreadsheet,
+  Package, CheckCircle2, Upload, FileSpreadsheet, Copy,
 } from 'lucide-react';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
@@ -322,6 +322,11 @@ export function Invoices({
   /** When set, the form dialog runs in edit-mode against this invoice
    *  instead of opening blank for a fresh create. */
   const [formEditing, setFormEditing] = useState<invoicesApi.Invoice | null>(null);
+  /** When set, the form dialog opens in NEW-invoice mode with line
+   *  items pre-filled from this source. Customer is left blank so
+   *  the operator picks fresh. Only used for the row-level Copy
+   *  action on Progress / Paid invoices. */
+  const [formCopyFrom, setFormCopyFrom] = useState<invoicesApi.Invoice | null>(null);
   /** When set, the form dialog opens for a CN/DN pre-pointing at this
    *  invoice id (skips the parent picker — saves a click from the
    *  inline "adjust" dropdown on each commercial/tax row). */
@@ -937,9 +942,35 @@ export function Invoices({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7" onClick={() => setDetailId(inv.id)}>
-                            <Eye className="h-3 w-3 mr-1" /> View
+                          {/* View — icon-only, tooltip carries the
+                              label. Frees width in the Actions column
+                              for the new Copy button next to it. */}
+                          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setDetailId(inv.id)} title="View">
+                            <Eye className="h-3 w-3" />
                           </Button>
+                          {/* Copy — only surfaces on Progress / Paid
+                              rows (the ones with a settled shape worth
+                              duplicating). Draft is edited directly;
+                              CN/DN adjustments have their own flow;
+                              void/overdue rarely mean "run this again".
+                              Also hidden on the Encounter tab — its
+                              form dialog doesn't accept copyFrom yet.
+                              Opens the form in NEW mode with items
+                              pre-filled from this invoice but the
+                              customer left blank so the operator picks
+                              fresh. */}
+                          {!isEncounter && !isAdjustment && (inv.status === 'progress' || inv.status === 'paid') && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2"
+                              onClick={() => {
+                                setFormKind(inv.kind);
+                                setFormEditing(null);
+                                setFormCopyFrom(inv);
+                                setFormOpen(true);
+                              }}
+                              title="Copy — new invoice, same items">
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          )}
                           {/* Only root invoices (commercial / tax) can
                               carry adjustments; voided rows are sealed.
                               The dropdown skips the parent-picker step
@@ -1055,17 +1086,19 @@ export function Invoices({
       ) : (
       <InvoiceFormDialog
         open={formOpen}
-        onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormParentPrefill(null); } }}
+        onOpenChange={(o) => { setFormOpen(o); if (!o) { setFormEditing(null); setFormCopyFrom(null); setFormParentPrefill(null); } }}
         kind={formKind}
         customers={customers}
         setCustomers={setCustomers}
         invoices={rows}
         editing={formEditing}
+        copyFrom={formCopyFrom}
         parentPrefill={formParentPrefill}
         settings={settings}
         onCreated={async (created) => {
           setFormOpen(false);
           setFormEditing(null);
+          setFormCopyFrom(null);
           setFormParentPrefill(null);
           await load();
           // Chain to the image-based Telegram send when the form
@@ -1169,7 +1202,7 @@ const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1'
 // popover + search logic.
 
 function InvoiceFormDialog({
-  open, onOpenChange, kind, customers, setCustomers, invoices, editing, parentPrefill, settings, onCreated,
+  open, onOpenChange, kind, customers, setCustomers, invoices, editing, copyFrom, parentPrefill, settings, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -1183,6 +1216,12 @@ function InvoiceFormDialog({
    *  instead of creating a new one. Submit calls PUT /invoices/{id}
    *  instead of POST /invoices. */
   editing?: invoicesApi.Invoice | null;
+  /** Copy source. When set (and {@code editing} is null), the dialog
+   *  opens in NEW mode with line items pre-populated from this
+   *  invoice's rows plus currency / discount / tax carry-over. The
+   *  customer is LEFT BLANK so the operator picks a (possibly
+   *  different) recipient. Invoice number is auto-minted. */
+  copyFrom?: invoicesApi.Invoice | null;
   /** When set on a create-mode open, seeds parentInvoiceId so the
    *  parent picker is pre-filled. Used by the inline "adjust"
    *  dropdown on commercial / tax rows. */
@@ -1311,6 +1350,40 @@ function InvoiceFormDialog({
       setDiscountValue(String(editing.discountValue ?? editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
+    } else if (copyFrom) {
+      // Copy source: mint a fresh invoice carrying every line item +
+      // currency / discount / tax from the source, but WITHOUT the
+      // customer (operator picks fresh) and with a server-minted
+      // invoice number. Parent-adjustment linkage isn't carried over
+      // — a copied CN/DN would need a fresh parent pick anyway.
+      setCustomerId('');
+      setParentInvoiceId('');
+      setInvoiceNo('');
+      setIssueDate(new Date().toISOString().slice(0, 10));
+      setDueDate('');
+      setCurrency(copyFrom.currency);
+      setExchangeRate(String(copyFrom.exchangeRate));
+      setItems(copyFrom.items.length === 0
+        ? [{ ...blankItem }]
+        : copyFrom.items.map(it => ({
+            name: it.name,
+            description: it.description ?? '',
+            unit: it.unit ?? '',
+            quantity: String(it.quantity),
+            unitPrice: String(it.unitPrice),
+            stockItemId: it.stockItemId ?? null,
+          })));
+      setTaxType((copyFrom.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
+      setTaxAmount(String(copyFrom.taxAmount));
+      setDiscountType(copyFrom.discountType ?? 'amount');
+      setDiscountValue(String(copyFrom.discountValue ?? copyFrom.discountAmount));
+      setNotes(copyFrom.notes ?? '');
+      setTerms(copyFrom.terms ?? '');
+      let cancelled = false;
+      invoicesApi.nextNumber(kind)
+        .then(res => { if (!cancelled) setInvoiceNo(res.invoiceNo); })
+        .catch(() => { /* non-fatal — user can type their own */ });
+      return () => { cancelled = true; };
     } else {
       // For a CN/DN opened via the inline dropdown, seed the parent
       // (and customer + currency + taxType) from the parent invoice
@@ -1340,18 +1413,18 @@ function InvoiceFormDialog({
         .catch(() => { /* non-fatal — user can type their own */ });
       return () => { cancelled = true; };
     }
-  }, [open, kind, editing, parentPrefill, invoices]);
+  }, [open, kind, editing, copyFrom, parentPrefill, invoices]);
 
   // Follow-up sync: when the tenant currency settings arrive AFTER
   // the reset effect above ran (network race on first open), pin the
   // form's currency + exchange rate to the tenant defaults. Skip in
-  // edit mode (row's own currency wins) and CN/DN parent-prefill
-  // (parent's currency wins).
+  // edit mode (row's own currency wins), CN/DN parent-prefill
+  // (parent's currency wins), and copy mode (source's currency wins).
   useEffect(() => {
-    if (!open || editing || parentPrefill || !currencySettings) return;
+    if (!open || editing || copyFrom || parentPrefill || !currencySettings) return;
     setCurrency(currencySettings.primaryCurrency);
     setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
-  }, [open, editing, parentPrefill, currencySettings]);
+  }, [open, editing, copyFrom, parentPrefill, currencySettings]);
 
   const rootInvoiceOptions = useMemo(() =>
     invoices.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
@@ -1581,7 +1654,11 @@ function InvoiceFormDialog({
               stays compact. Visible label is the short title; the
               DialogDescription below is sr-only for Radix' a11y. */}
           <DialogTitle className="flex items-center gap-1.5">
-            {isEdit ? `Edit ${editing?.invoiceNo}` : `New ${KIND_LABEL[kind]}`}
+            {isEdit
+              ? `Edit ${editing?.invoiceNo}`
+              : copyFrom
+                ? `Copy of ${copyFrom.invoiceNo}`
+                : `New ${KIND_LABEL[kind]}`}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
