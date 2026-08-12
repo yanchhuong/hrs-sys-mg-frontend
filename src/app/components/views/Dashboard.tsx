@@ -17,6 +17,7 @@ import {
   Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle,
   RefreshCw, CalendarDays, LayoutDashboard, Wallet, Landmark,
   ShoppingCart, Gauge, Sparkles, Loader2, TrendingUp, TrendingDown,
+  GraduationCap, Stethoscope,
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
@@ -35,11 +36,13 @@ import { toast } from 'sonner';
  * an empty tile.
  */
 const CATEGORY_ICON: Record<string, ComponentType<{ className?: string }>> = {
-  users:           Users,
-  wallet:          Wallet,
-  landmark:        Landmark,
-  'shopping-cart': ShoppingCart,
-  gauge:           Gauge,
+  users:             Users,
+  wallet:            Wallet,
+  landmark:          Landmark,
+  'shopping-cart':   ShoppingCart,
+  gauge:             Gauge,
+  'graduation-cap':  GraduationCap,
+  stethoscope:       Stethoscope,
 };
 function CategoryIcon({ name, className }: { name: string | null | undefined; className?: string }) {
   const Icon = (name && CATEGORY_ICON[name]) || LayoutDashboard;
@@ -148,6 +151,8 @@ export function Dashboard() {
         : active.code === 'accounting'  ? <AccountingDashboardBundle />
         : active.code === 'payroll'     ? <PayrollDashboardBundle />
         : active.code === 'management'  ? <ManagementDashboardBundle />
+        : active.code === 'school'      ? <SchoolDashboardBundle />
+        : active.code === 'hospital'    ? <HospitalDashboardBundle />
         : <ComingSoonBundle category={active} />}
     </div>
   );
@@ -767,6 +772,250 @@ function ManagementDashboardBundle() {
                     </li>
                   );
                 })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* School dashboard bundle                                         */
+/* ============================================================== */
+
+const ENROLLMENT_STATUS_TONE: Record<string, string> = {
+  enrolled:  'bg-blue-100 text-blue-800',
+  active:    'bg-emerald-100 text-emerald-800',
+  completed: 'bg-slate-100 text-slate-700',
+  withdrawn: 'bg-rose-100 text-rose-800',
+};
+
+/** V319 — School category widgets. KPI strip + 6-month enrollment
+ *  trend + a recent enrollments log. Same recipe every operational
+ *  bundle uses. */
+function SchoolDashboardBundle() {
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('school')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const num = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return n.toLocaleString();
+  };
+
+  const kpi = data?.kpi ?? {};
+  const trend = (data?.trend ?? []) as { month: string; enrollments: number }[];
+  const peak = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.enrollments) || 0), 0
+  ), [trend]);
+  const recent = data?.recentEnrollments ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading School dashboard…
+      </div>
+    );
+  }
+  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <PosKpiTile label="Active students"    value={num(kpi.activeStudents)}    icon={GraduationCap} tone="emerald" />
+        <PosKpiTile label="Total students"     value={num(kpi.totalStudents)}     icon={Users} tone="blue" />
+        <PosKpiTile label="New (MTD)"          value={num(kpi.newEnrollmentsMtd)} icon={FileText} tone="violet" />
+        <PosKpiTile label="Completed"          value={num(kpi.completed)}         icon={CheckCircle} tone="emerald" />
+        <PosKpiTile label="Withdrawn"          value={num(kpi.withdrawn)}         icon={AlertCircle} tone="rose" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Enrollments — last 6 months</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || peak === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No enrollments in the last 6 months.
+              </div>
+            ) : (
+              <div className="flex items-end gap-2 h-40 pt-2">
+                {trend.map(p => {
+                  const v = Number(p.enrollments) || 0;
+                  const h = Math.max(4, Math.round((v / peak) * 140));
+                  const [y, m] = p.month.split('-');
+                  const label = new Date(Number(y), Number(m) - 1, 1)
+                    .toLocaleDateString(undefined, { month: 'short' });
+                  return (
+                    <div key={p.month} className="flex-1 flex flex-col items-center gap-1"
+                      title={`${p.month}: ${v} enrollments`}>
+                      <div className="w-full rounded-t bg-blue-500/80" style={{ height: `${h}px` }} />
+                      <div className="text-[10px] text-gray-500 tabular-nums">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recent enrollments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recent.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No enrollments.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {recent.map(r => (
+                  <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium tabular-nums text-xs truncate">{r.enrollmentNo}</div>
+                      <div className="text-[10px] text-gray-400">
+                        {r.enrollmentDate ?? '—'}
+                      </div>
+                    </div>
+                    <Badge className={`text-[10px] px-1.5 py-0 capitalize ${
+                      ENROLLMENT_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'
+                    }`}>{r.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* Hospital dashboard bundle                                       */
+/* ============================================================== */
+
+const ENCOUNTER_STATUS_TONE: Record<string, string> = {
+  pending:  'bg-amber-100 text-amber-800',
+  progress: 'bg-blue-100 text-blue-800',
+  done:     'bg-emerald-100 text-emerald-800',
+  close:    'bg-slate-100 text-slate-700',
+  void:     'bg-rose-100 text-rose-800',
+};
+
+/** V319 — Hospital category widgets. KPI strip + 6-month encounter
+ *  trend + a recent encounters log. Same recipe every operational
+ *  bundle uses. */
+function HospitalDashboardBundle() {
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('hospital')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const num = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return n.toLocaleString();
+  };
+
+  const kpi = data?.kpi ?? {};
+  const trend = (data?.trend ?? []) as { month: string; encounters: number }[];
+  const peak = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.encounters) || 0), 0
+  ), [trend]);
+  const recent = data?.recentEncounters ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading Hospital dashboard…
+      </div>
+    );
+  }
+  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <PosKpiTile label="Encounters today"    value={num(kpi.encountersToday)}   icon={Stethoscope} tone="emerald" />
+        <PosKpiTile label="Encounters (MTD)"    value={num(kpi.encountersMtd)}     icon={FileText}    tone="blue" />
+        <PosKpiTile label="Appointments today"  value={num(kpi.appointmentsToday)} icon={CalendarDays} tone="violet" />
+        <PosKpiTile label="Pending"             value={num(kpi.pending)}           icon={AlertCircle}  tone="amber" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Encounters — last 6 months</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || peak === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No encounters in the last 6 months.
+              </div>
+            ) : (
+              <div className="flex items-end gap-2 h-40 pt-2">
+                {trend.map(p => {
+                  const v = Number(p.encounters) || 0;
+                  const h = Math.max(4, Math.round((v / peak) * 140));
+                  const [y, m] = p.month.split('-');
+                  const label = new Date(Number(y), Number(m) - 1, 1)
+                    .toLocaleDateString(undefined, { month: 'short' });
+                  return (
+                    <div key={p.month} className="flex-1 flex flex-col items-center gap-1"
+                      title={`${p.month}: ${v} encounters`}>
+                      <div className="w-full rounded-t bg-teal-500/80" style={{ height: `${h}px` }} />
+                      <div className="text-[10px] text-gray-500 tabular-nums">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recent encounters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recent.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No encounters.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {recent.map(r => (
+                  <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium tabular-nums text-xs truncate">{r.encounterNo}</div>
+                      <div className="text-[10px] text-gray-400">
+                        {r.encounterDate ?? '—'}
+                      </div>
+                    </div>
+                    <Badge className={`text-[10px] px-1.5 py-0 capitalize ${
+                      ENCOUNTER_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'
+                    }`}>{r.status}</Badge>
+                  </li>
+                ))}
               </ul>
             )}
           </CardContent>

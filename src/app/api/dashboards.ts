@@ -61,12 +61,25 @@ export interface DashboardSummary {
     // Management roll-up (composed from the other services)
     payrollNetMtd?:  number | string;
     employees?:      number;
+    // School
+    activeStudents?:     number;
+    totalStudents?:      number;
+    newEnrollmentsMtd?:  number;
+    completed?:          number;
+    withdrawn?:          number;
+    // Hospital
+    encountersToday?:    number;
+    encountersMtd?:      number;
+    appointmentsToday?:  number;
+    pending?:            number;
   };
   /** Per-category trend rows. */
   trend?:
     | { date: string; sales: number | string; orders: number }[]
     | { month: string; revenue: number | string; expense: number | string; profit: number | string }[]
-    | { month: string; net: number | string; earnings: number | string; deductions: number | string }[];
+    | { month: string; net: number | string; earnings: number | string; deductions: number | string }[]
+    | { month: string; enrollments: number }[]
+    | { month: string; encounters: number }[];
   /** POS-only. */
   recentOrders?: {
     id: string;
@@ -110,6 +123,22 @@ export interface DashboardSummary {
     date: string | null;
     status: string;
     amountUsd: number | string;
+  }[];
+  /** School-only. */
+  recentEnrollments?: {
+    id: string;
+    enrollmentNo: string;
+    status: string;
+    enrollmentDate: string | null;
+    studentId: string | null;
+  }[];
+  /** Hospital-only. */
+  recentEncounters?: {
+    id: string;
+    encounterNo: string;
+    status: string;
+    encounterDate: string | null;
+    patientId: string | null;
   }[];
   [k: string]: unknown;
 }
