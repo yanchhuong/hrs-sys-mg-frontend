@@ -2442,6 +2442,11 @@ function InvoiceDetailDialog({
         settings,
         items: items.content,
         shopNameFallback: companyInfo?.name ?? undefined,
+        // The invoice's issueDate is the authoritative "when this
+        // sale is dated" — it may have been shifted via Edit off the
+        // raw POS checkout timestamp. Feed it in so the printed
+        // receipt matches what the operator sees on the invoice.
+        issueDateOverride: inv.issueDate ?? null,
         paidDateOverride: paidWhen ?? null,
       });
       if (!ok) toast.error('Could not open the print dialog.');

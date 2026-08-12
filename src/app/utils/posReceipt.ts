@@ -36,6 +36,14 @@ interface BuildArgs {
   settings: AccountingSettings;
   items: Item[];
   shopNameFallback?: string;
+  /** Optional override for the "Date" line at the top of the
+   *  receipt. When set, drives the printed DATE portion; the TIME
+   *  portion still comes from the order's checkout timestamp
+   *  (transaction time). Lets a re-print from the invoice detail
+   *  dialog honour the invoice's issueDate — which may have been
+   *  edited off the raw checkout date. Empty / undefined → fall back
+   *  to the order's checkout date. Accepts YYYY-MM-DD or Date. */
+  issueDateOverride?: string | Date | null;
   /** Optional override for the date printed next to the PAID stamp.
    *  When set, uses this (the payment's actual date) instead of the
    *  order's checkout date. Lets a re-print from the invoice detail
@@ -46,19 +54,32 @@ interface BuildArgs {
 }
 
 export function buildPosReceiptInner(args: BuildArgs): string {
-  const { order, settings, items, shopNameFallback, paidDateOverride } = args;
+  const { order, settings, items, shopNameFallback, issueDateOverride, paidDateOverride } = args;
   const when = new Date(order.checkedOutAt ?? order.createdAt);
-  const datePart = when.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Time portion — always from the transaction (checkedOutAt). The
+  // date can drift (via edited issueDate or backdated payment) but
+  // the wall-clock moment of sale is a fact.
   const timePart = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
-  // Stamp date — mirrors datePart unless the caller supplied an
-  // explicit paidDateOverride. Kept as its own variable so the
-  // top-of-receipt "Date" line stays glued to the transaction time
-  // even when the actual payment landed on a different day.
+  const fmtShortDate = (d: Date) =>
+    d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Top-of-receipt "Date" — invoice issueDate wins when supplied,
+  // falls back to the order's checkout date. Prints the invoice's
+  // authoritative date rather than the raw POS-order timestamp,
+  // which the operator may have shifted via Edit.
+  const issueWhen: Date | null = issueDateOverride
+    ? (issueDateOverride instanceof Date ? issueDateOverride : new Date(issueDateOverride))
+    : null;
+  const datePart = issueWhen && !Number.isNaN(issueWhen.getTime())
+    ? fmtShortDate(issueWhen)
+    : fmtShortDate(when);
+  // Stamp date — payment's actual date when supplied. Kept separate
+  // from datePart because the two can legitimately differ (e.g.
+  // invoice issued Aug 12 but paid Aug 11).
   const paidWhen: Date | null = paidDateOverride
     ? (paidDateOverride instanceof Date ? paidDateOverride : new Date(paidDateOverride))
     : null;
   const stampDatePart = paidWhen && !Number.isNaN(paidWhen.getTime())
-    ? paidWhen.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
+    ? fmtShortDate(paidWhen)
     : datePart;
   const shopName = (settings.posShopName ?? '').trim() || shopNameFallback || 'SHOP NAME';
 
