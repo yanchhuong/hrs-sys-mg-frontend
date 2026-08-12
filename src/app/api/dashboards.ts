@@ -33,6 +33,24 @@ export interface DashboardSummary {
   approvals?: { leavePending: number; otPending: number; payrollPending: number };
   payrollMonth?: { month: string; netTotal: string; totalEarnings: string; totalDeductions: string };
   contracts?: { expiringIn30Days: number };
+  /** V316 — POS-specific fields. Present when {@code category === 'pos'}. */
+  kpi?: {
+    todaySales:     number | string;
+    todayOrders:    number;
+    avgOrderValue:  number | string;
+    todayCustomers: number;
+    todayDiscount:  number | string;
+  };
+  trend?: { date: string; sales: number | string; orders: number }[];
+  recentOrders?: {
+    id: string;
+    queueNo: string;
+    customerName: string;
+    currency: string;
+    total: number | string;
+    paymentMethod: string;
+    checkedOutAt: string | null;
+  }[];
   [k: string]: unknown;
 }
 

@@ -140,11 +140,173 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* The current widget bundle. HR is the only category with real
-          content; everything else lands on the shared placeholder. */}
-      {active.code === 'hr'
-        ? <HrDashboardWidgets />
+      {/* Widget bundle for the active category. HR + POS have real
+          content; other categories land on the shared placeholder
+          until their bundle ships. */}
+      {active.code === 'hr'      ? <HrDashboardWidgets />
+        : active.code === 'pos'  ? <PosDashboardBundle />
         : <ComingSoonBundle category={active} />}
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* POS dashboard bundle                                            */
+/* ============================================================== */
+
+/** V316 — POS category widgets. KPI row (today's sales / orders /
+ *  AOV / customers / discount), a 7-day sales trend, and the most
+ *  recent 10 checked-out tickets. Reads the batched payload from
+ *  {@code /api/v1/dashboard/pos} so widgets don't fan out into per-
+ *  widget HTTP calls. */
+function PosDashboardBundle() {
+  const { formatDate } = useDateFormat();
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('pos')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const usd = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const num = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return n.toLocaleString();
+  };
+
+  const trend = data?.trend ?? [];
+  // Y-scale for the mini bar chart — normalize to the peak so a
+  // typical mid-week bar reads as ~half-height even on a flat week.
+  const maxSales = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.sales) || 0), 0
+  ), [trend]);
+
+  const recent = data?.recentOrders ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading POS dashboard…
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="p-6 text-sm text-red-600">{error}</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip — five tiles, wraps on small screens. Same
+          rhythm the other pages' stat-strip uses. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <PosKpiTile label="Today's Sales"   value={usd(data?.kpi?.todaySales)}     icon={ShoppingCart} tone="emerald" />
+        <PosKpiTile label="Orders"          value={num(data?.kpi?.todayOrders)}    icon={FileText}     tone="blue" />
+        <PosKpiTile label="Avg. Order"      value={usd(data?.kpi?.avgOrderValue)}  icon={Wallet}       tone="amber" />
+        <PosKpiTile label="Customers"       value={num(data?.kpi?.todayCustomers)} icon={Users}        tone="violet" />
+        <PosKpiTile label="Discounts"       value={usd(data?.kpi?.todayDiscount)}  icon={Landmark}     tone="rose" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 7-day trend — inline SVG bar chart; no chart lib to keep
+            the FE bundle lean. Bars are ~normalized so a slow day
+            still shows as a visible sliver. */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Sales — last 7 days</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || maxSales === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No sales in the last 7 days yet.
+              </div>
+            ) : (
+              <div className="flex items-end gap-2 h-40 pt-2">
+                {trend.map(p => {
+                  const v = Number(p.sales) || 0;
+                  const h = Math.max(4, Math.round((v / maxSales) * 140));
+                  const d = new Date(p.date + 'T00:00:00');
+                  const dayLabel = d.toLocaleDateString(undefined, { weekday: 'short' });
+                  return (
+                    <div key={p.date} className="flex-1 flex flex-col items-center gap-1" title={`${p.date}: ${usd(v)} · ${p.orders} orders`}>
+                      <div className="w-full rounded-t bg-blue-500/80 hover:bg-blue-600 transition-colors" style={{ height: `${h}px` }} />
+                      <div className="text-[10px] text-gray-500 tabular-nums">{dayLabel}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent orders — narrow card next to the trend chart. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recent orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recent.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No orders yet.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {recent.map(r => (
+                  <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium tabular-nums text-xs">{r.queueNo}</div>
+                      <div className="text-[11px] text-gray-500 truncate">
+                        {r.customerName?.trim() || 'Walk-in'}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-medium tabular-nums text-xs text-emerald-700">{usd(r.total)}</div>
+                      <div className="text-[10px] text-gray-400">
+                        {r.checkedOutAt ? formatDate(r.checkedOutAt) : '—'}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+type PosKpiTone = 'emerald' | 'blue' | 'amber' | 'violet' | 'rose';
+const POS_KPI_TONE_CLASS: Record<PosKpiTone, string> = {
+  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  blue:    'bg-blue-50 text-blue-700 border-blue-200',
+  amber:   'bg-amber-50 text-amber-700 border-amber-200',
+  violet:  'bg-violet-50 text-violet-700 border-violet-200',
+  rose:    'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+function PosKpiTile({ label, value, icon: Icon, tone }: {
+  label: string;
+  value: string;
+  icon: ComponentType<{ className?: string }>;
+  tone: PosKpiTone;
+}) {
+  return (
+    <div className="rounded-md border bg-white px-3 py-2.5 flex items-start justify-between gap-2">
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-wide text-gray-500">{label}</div>
+        <div className="text-lg font-semibold tabular-nums mt-0.5 truncate" title={value}>{value}</div>
+      </div>
+      <div className={`h-8 w-8 rounded-md border flex items-center justify-center ${POS_KPI_TONE_CLASS[tone]}`}>
+        <Icon className="h-4 w-4" />
+      </div>
     </div>
   );
 }
