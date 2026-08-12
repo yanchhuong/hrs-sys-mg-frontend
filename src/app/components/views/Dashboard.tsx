@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import {
@@ -10,13 +10,182 @@ import * as overtimeApi from '../../api/overtime';
 import * as contractsApi from '../../api/contracts';
 import * as departmentsApi from '../../api/departments';
 import * as leaveApi from '../../api/leave';
+import * as dashboardsApi from '../../api/dashboards';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
-import { Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle, RefreshCw, CalendarDays } from 'lucide-react';
+import {
+  Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle,
+  RefreshCw, CalendarDays, LayoutDashboard, Wallet, Landmark,
+  ShoppingCart, Gauge, Sparkles, Loader2,
+} from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
+
+/* ============================================================== */
+/* V316 — Dynamic multi-category Dashboard shell                   */
+/* ============================================================== */
+
+/**
+ * Icon lookup keyed by the {@code dashboard_categories.icon} column
+ * value (kebab-case Lucide name). Adding a new category on the BE
+ * only requires an entry here on the FE. Falls back to a generic
+ * dashboard glyph so an unknown icon renders as a shape rather than
+ * an empty tile.
+ */
+const CATEGORY_ICON: Record<string, ComponentType<{ className?: string }>> = {
+  users:           Users,
+  wallet:          Wallet,
+  landmark:        Landmark,
+  'shopping-cart': ShoppingCart,
+  gauge:           Gauge,
+};
+function CategoryIcon({ name, className }: { name: string | null | undefined; className?: string }) {
+  const Icon = (name && CATEGORY_ICON[name]) || LayoutDashboard;
+  return <Icon className={className} />;
+}
+
+/** V316 — the exported Dashboard is the shell. It resolves the user's
+ *  available categories, renders a tab strip, and mounts the widget
+ *  bundle for the selected code. Legacy HR content lives on as
+ *  {@link HrDashboardWidgets}; unimplemented categories render the
+ *  shared {@link ComingSoonBundle} placeholder until real widgets
+ *  ship. */
+export function Dashboard() {
+  const [categories, setCategories] = useState<dashboardsApi.DashboardCategory[]>([]);
+  const [selected, setSelected] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await dashboardsApi.listCategories();
+        if (cancelled) return;
+        setCategories(list);
+        // Default selection order: last-picked (localStorage), then
+        // the first category in server-sorted order. This gives us
+        // per-user preference for free without needing a DB row.
+        const stored = typeof window !== 'undefined'
+          ? window.localStorage.getItem('dashboard.lastCategory')
+          : null;
+        const initial = list.find(c => c.code === stored)?.code ?? list[0]?.code ?? '';
+        setSelected(initial);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load dashboards');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const pick = (code: string) => {
+    setSelected(code);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('dashboard.lastCategory', code);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading dashboards…
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="p-6 text-sm text-red-600">{error}</div>;
+  }
+  if (categories.length === 0) {
+    return (
+      <div className="p-8 text-center text-sm text-gray-500 space-y-1">
+        <div className="text-gray-700 font-medium">No dashboards available.</div>
+        <div>Ask an admin to grant a dashboard permission on your role.</div>
+      </div>
+    );
+  }
+
+  const active = categories.find(c => c.code === selected) ?? categories[0];
+
+  return (
+    <div className="space-y-4">
+      {/* Category tab strip. Hidden entirely when the user has access
+          to just one category — no signal there, keeps the page clean
+          (a Cashier with only POS shouldn't see a "POS" tab as their
+          only option). */}
+      {categories.length > 1 && (
+        <div className="filter-strip">
+          {categories.map(c => {
+            const on = c.code === active.code;
+            return (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => pick(c.code)}
+                className={`h-9 px-3 rounded-md text-sm font-medium border transition-colors inline-flex items-center gap-1.5 ${
+                  on
+                    ? 'border-blue-300 bg-blue-50 text-blue-700'
+                    : 'border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100'
+                }`}
+                title={c.description ?? c.name}
+              >
+                <CategoryIcon name={c.icon} className="h-3.5 w-3.5" />
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* The current widget bundle. HR is the only category with real
+          content; everything else lands on the shared placeholder. */}
+      {active.code === 'hr'
+        ? <HrDashboardWidgets />
+        : <ComingSoonBundle category={active} />}
+    </div>
+  );
+}
+
+/** Shared placeholder for every category whose widgets haven't landed
+ *  yet. Reads the server's "coming_soon" stub so we can still show a
+ *  friendly message without a per-category component. */
+function ComingSoonBundle({ category }: { category: dashboardsApi.DashboardCategory }) {
+  const [summary, setSummary] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary(category.code)
+      .then(s => { if (!cancelled) setSummary(s); })
+      .catch(() => { if (!cancelled) setSummary(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [category.code]);
+  return (
+    <Card>
+      <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
+        <div className="h-12 w-12 rounded-full bg-blue-50 flex items-center justify-center">
+          <CategoryIcon name={category.icon} className="h-6 w-6 text-blue-600" />
+        </div>
+        <div className="space-y-1">
+          <div className="text-lg font-semibold flex items-center justify-center gap-2">
+            {category.name} Dashboard
+            <Sparkles className="h-4 w-4 text-blue-500" />
+          </div>
+          <div className="text-sm text-gray-500 max-w-md">
+            {loading
+              ? 'Loading…'
+              : (summary?.message
+                  ?? 'Widgets for this dashboard are on the roadmap.')}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 /** ISO YYYY-MM-DD for today, used for "today's attendance" lookups. */
 const todayISO = () => format(new Date(), 'yyyy-MM-dd');
@@ -28,7 +197,13 @@ function isExpiringSoon(endDate?: string | null, today = new Date()): boolean {
   return days >= 0 && days <= 30;
 }
 
-export function Dashboard() {
+/** V316 — the HR-specific widget bundle. Renamed from the previous
+ *  top-level {@code Dashboard} export; the shell at the top of this
+ *  file now mounts one of the category bundles based on the
+ *  selected tab. Content is unchanged from the pre-multi-category
+ *  version — this remains the reference "real widgets" bundle until
+ *  Payroll / Accounting / POS / Management catch up. */
+function HrDashboardWidgets() {
   const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee, isModuleAvailable } = useAuth();
 
