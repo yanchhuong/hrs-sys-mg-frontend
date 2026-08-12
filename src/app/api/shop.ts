@@ -103,6 +103,13 @@ export interface PublicShopPayload {
    *  file. When false the FE hides the KHRQR payment button because
    *  the mint call would fail. */
   khqrEnabled?: boolean;
+  /** V315 — populated only when the customer arrived via a per-table
+   *  QR ({@code /shop/table/{tableCode}}). Null / absent on the
+   *  tenant-wide shop code path so the FE header can conditionally
+   *  render a "Table 3" badge. */
+  tableId?: string | null;
+  tableLabel?: string | null;
+  tableSeats?: number | null;
 }
 
 export async function getMyShopLink(): Promise<ShopLinkInfo> {
@@ -168,6 +175,27 @@ export async function submitPublicOrder(
   body: PublicOrderRequest,
 ): Promise<PublicOrderResult> {
   return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/order`, {
+    method: 'POST',
+    json: body,
+  });
+}
+
+/** V315 — table-scoped variant. Resolves via the per-table code
+ *  ({@code /shop/table/{tableCode}}) and populates the tableId /
+ *  tableLabel / tableSeats fields on the response so the FE can
+ *  render a "Table 3" header. */
+export async function getPublicMenuByTable(tableCode: string): Promise<PublicShopPayload> {
+  return apiJson(`/api/v1/public/shop/table/${encodeURIComponent(tableCode)}`);
+}
+
+/** V315 — table-scoped order submit. Server tags the created
+ *  PosOrder with the resolved table_id so kitchen tickets / reports
+ *  can slice by table. */
+export async function submitPublicOrderByTable(
+  tableCode: string,
+  body: PublicOrderRequest,
+): Promise<PublicOrderResult> {
+  return apiJson(`/api/v1/public/shop/table/${encodeURIComponent(tableCode)}/order`, {
     method: 'POST',
     json: body,
   });

@@ -7,10 +7,11 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye, ShoppingCart } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye, ShoppingCart, Utensils } from 'lucide-react';
 import { Switch } from '../ui/switch';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
+import { ManageTablesDialog } from './ManageTablesDialog';
 
 /**
  * "Share menu" popup launched from the POS header. Surfaces the
@@ -36,6 +37,8 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
    *  switch so the operator can't spam-flip while the request is
    *  in flight. */
   const [orderingBusy, setOrderingBusy] = useState(false);
+  /** V315 — nested dialog for per-table QR management. */
+  const [tablesOpen, setTablesOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Compose the full URL the customer will hit. The API returns either
@@ -240,12 +243,21 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
         ) : null}
 
         <DialogFooter className="gap-2">
+          {/* V315 — Manage tables opens a sibling dialog for per-table
+              QR codes. Left of Rotate so operators reach for it first
+              (rotate is a rare / destructive action). */}
+          <Button variant="outline" size="sm" onClick={() => setTablesOpen(true)}>
+            <Utensils className="h-3.5 w-3.5 mr-1.5" />
+            Manage tables
+          </Button>
           <Button variant="outline" size="sm" onClick={rotate} disabled={rotating || loading || !info}>
             {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Rotate code
           </Button>
           <Button onClick={() => onOpenChange(false)}>Done</Button>
         </DialogFooter>
+
+        <ManageTablesDialog open={tablesOpen} onOpenChange={setTablesOpen} />
       </DialogContent>
     </Dialog>
   );

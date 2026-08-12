@@ -153,12 +153,23 @@ function lineUnitPrice(line: CartLine): number {
 }
 
 export function PublicShopPage() {
-  const code = useMemo(() => {
-    if (typeof window === 'undefined') return '';
+  /** V315 — the pathname can now take two shapes:
+   *    /shop/{tenantCode}           — tenant-wide QR
+   *    /shop/table/{tableCode}      — per-table QR
+   *  The router matches both under {@code /shop/*}; we parse the tail
+   *  to pick which API call to make. When the "table" prefix is present
+   *  we track {@code tableCode} instead of {@code code}. */
+  const { code, tableCode } = useMemo(() => {
+    if (typeof window === 'undefined') return { code: '', tableCode: '' };
     const parts = window.location.pathname.split('/').filter(Boolean);
     const i = parts.indexOf('shop');
-    return i >= 0 && i + 1 < parts.length ? parts[i + 1] : '';
+    if (i < 0) return { code: '', tableCode: '' };
+    if (parts[i + 1] === 'table' && parts[i + 2]) {
+      return { code: '', tableCode: parts[i + 2] };
+    }
+    return { code: parts[i + 1] ?? '', tableCode: '' };
   }, []);
+  const isTableMode = tableCode !== '';
 
   const [data, setData] = useState<shopApi.PublicShopPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -280,7 +291,7 @@ export function PublicShopPage() {
   };
 
   useEffect(() => {
-    if (!code) {
+    if (!code && !tableCode) {
       setError('Missing shop code');
       setLoading(false);
       return;
@@ -288,7 +299,9 @@ export function PublicShopPage() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await shopApi.getPublicMenu(code);
+        const r = isTableMode
+          ? await shopApi.getPublicMenuByTable(tableCode)
+          : await shopApi.getPublicMenu(code);
         if (!cancelled) {
           setData(r);
           // ── SEO metadata ────────────────────────────────────────
@@ -747,7 +760,7 @@ export function PublicShopPage() {
         setSubmitting(false);
         return;
       }
-      const result = await shopApi.submitPublicOrder(code, {
+      const orderBody: shopApi.PublicOrderRequest = {
         customerName: custName.trim() || undefined,
         contactPhone: custPhone.trim() || undefined,
         notes: composedOrderNote,
@@ -762,7 +775,14 @@ export function PublicShopPage() {
         })),
         turnstileToken: turnstileToken || undefined,
         website: '',  // honeypot — humans never fill this
-      });
+      };
+      // V315 — route through the table-scoped endpoint when the
+      // customer arrived via /shop/table/{tableCode}, so the created
+      // PosOrder gets tagged with table_id and the kitchen ticket
+      // reads "Table 3" instead of a raw walk-in.
+      const result = isTableMode
+        ? await shopApi.submitPublicOrderByTable(tableCode, orderBody)
+        : await shopApi.submitPublicOrder(code, orderBody);
       setConfirmed(result);
       setCheckoutOpen(false);
       clearCart();
@@ -824,7 +844,9 @@ export function PublicShopPage() {
         <p className="text-sm text-gray-500 mt-1">
           {error ?? 'This shop link is no longer active.'}
         </p>
-        <p className="text-xs text-gray-400 mt-3 tabular-nums">/shop/{code}</p>
+        <p className="text-xs text-gray-400 mt-3 tabular-nums">
+          {isTableMode ? `/shop/table/${tableCode}` : `/shop/${code}`}
+        </p>
       </FullPageState>
     );
   }
@@ -866,8 +888,20 @@ export function PublicShopPage() {
               : <Store className="h-7 w-7" />}
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold truncate">
-              {data.shopName || 'Shop'}
+            <h1 className="text-xl sm:text-2xl font-semibold truncate flex items-center gap-2 flex-wrap">
+              <span className="truncate">{data.shopName || 'Shop'}</span>
+              {/* V315 — Table badge, only when the customer scanned a
+                  per-table QR. Prominent enough that the operator
+                  handing them the phone knows which table it's tied
+                  to. Includes seat count when set. */}
+              {data.tableLabel && (
+                <span className="inline-flex items-center gap-1.5 bg-white text-blue-700 rounded-full px-2.5 py-0.5 text-xs font-semibold tracking-wide">
+                  {data.tableLabel}
+                  {data.tableSeats ? (
+                    <span className="text-blue-500 font-normal">· {data.tableSeats} seats</span>
+                  ) : null}
+                </span>
+              )}
             </h1>
             <div className="mt-1 flex items-center gap-3 text-xs sm:text-sm text-white/85 flex-wrap">
               <span className="inline-flex items-center gap-1">
