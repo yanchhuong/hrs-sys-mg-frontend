@@ -112,18 +112,16 @@ export function CashCountDialog({
             <span className="text-right">Amount</span>
           </div>
           {rows.map(r => {
-            // Rows with qty > 0 pick up an emerald tint + left accent
-            // so the operator can eye-scan the active denominations
-            // instead of reading every quantity cell. Zero rows stay
-            // muted (grey) so they read as "not part of the count".
+            // Rows with qty > 0 pick up a soft emerald tint so the
+            // operator can eye-scan the active denominations. Zero
+            // rows stay muted grey to read as "skip this row". No
+            // left accent — the tint alone is enough signal.
             const active = r.qty > 0;
             return (
               <div
                 key={r.denom}
-                className={`grid grid-cols-[1fr_auto_1fr] gap-4 px-3 py-1.5 text-sm tabular-nums border-l-2 transition-colors ${
-                  active
-                    ? 'border-l-emerald-500 bg-emerald-50/40 text-emerald-900'
-                    : 'border-l-transparent text-gray-400'
+                className={`grid grid-cols-[1fr_auto_1fr] gap-4 px-3 py-1.5 text-sm tabular-nums transition-colors ${
+                  active ? 'bg-emerald-50/40 text-emerald-900' : 'text-gray-400'
                 }`}
               >
                 <span>{symbol}{fmt(r.denom)}</span>
