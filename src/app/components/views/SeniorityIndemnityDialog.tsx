@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Calculator, Download, Info, Scale, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../utils/xlsxLoader';
 
 import * as seniorityApi from '../../api/seniorityIndemnity';
 import * as categoriesApi from '../../api/payrollCategories';
@@ -169,74 +169,76 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
    */
   const handleDownloadExcel = () => {
     if (!preview) return;
-    // Pull month keys from the response so the spreadsheet header
-    // matches what's on screen (Jan→Jun or Jul→Dec).
-    const sample = preview.items.find(r => r.monthlyGross && Object.keys(r.monthlyGross).length > 0);
-    const monthKeys = sample ? Object.keys(sample.monthlyGross) : [];
+    void loadXlsx().then(XLSX => {
+      // Pull month keys from the response so the spreadsheet header
+      // matches what's on screen (Jan→Jun or Jul→Dec).
+      const sample = preview.items.find(r => r.monthlyGross && Object.keys(r.monthlyGross).length > 0);
+      const monthKeys = sample ? Object.keys(sample.monthlyGross) : [];
 
-    // Short month labels (Jan, Feb, …) to match the on-screen headers.
-    const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const xlsxShortLabel = (ym: string) => {
-      const m = parseInt(ym.slice(5, 7), 10);
-      return m >= 1 && m <= 12 ? MONTH_LABELS[m - 1] : ym;
-    };
-    const headers = [
-      'Employee No', 'Employee Name',
-      ...monthKeys.map(xlsxShortLabel),
-      'Months found',
-      'Daily wage (USD)', `Seniority (${preview.daysPaid} days)`,
-      'Included',
-    ];
-    const sheetRows: (string | number)[][] = [];
-    sheetRows.push([`Seniority — ${preview.startDate} → ${preview.endDate} · ${preview.daysPaid} days × daily wage`]);
-    sheetRows.push(headers);
-    let totalSeniority = 0;
-    // Per-month totals across the selected rows so the auditor can
-    // verify the average without re-summing each column by hand.
-    const monthTotals: Record<string, number> = {};
-    for (const r of preview.items) {
-      const seniorityUsd = r.dailyWage * preview.daysPaid;
-      const isIncluded = included.has(r.employeeId);
-      if (isIncluded) totalSeniority += seniorityUsd;
-      const monthCells = monthKeys.map(k => {
-        const v = r.monthlyGross?.[k] ?? 0;
-        if (isIncluded) monthTotals[k] = (monthTotals[k] ?? 0) + v;
-        return Number(v.toFixed(2));
-      });
+      // Short month labels (Jan, Feb, …) to match the on-screen headers.
+      const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const xlsxShortLabel = (ym: string) => {
+        const m = parseInt(ym.slice(5, 7), 10);
+        return m >= 1 && m <= 12 ? MONTH_LABELS[m - 1] : ym;
+      };
+      const headers = [
+        'Employee No', 'Employee Name',
+        ...monthKeys.map(xlsxShortLabel),
+        'Months found',
+        'Daily wage (USD)', `Seniority (${preview.daysPaid} days)`,
+        'Included',
+      ];
+      const sheetRows: (string | number)[][] = [];
+      sheetRows.push([`Seniority — ${preview.startDate} → ${preview.endDate} · ${preview.daysPaid} days × daily wage`]);
+      sheetRows.push(headers);
+      let totalSeniority = 0;
+      // Per-month totals across the selected rows so the auditor can
+      // verify the average without re-summing each column by hand.
+      const monthTotals: Record<string, number> = {};
+      for (const r of preview.items) {
+        const seniorityUsd = r.dailyWage * preview.daysPaid;
+        const isIncluded = included.has(r.employeeId);
+        if (isIncluded) totalSeniority += seniorityUsd;
+        const monthCells = monthKeys.map(k => {
+          const v = r.monthlyGross?.[k] ?? 0;
+          if (isIncluded) monthTotals[k] = (monthTotals[k] ?? 0) + v;
+          return Number(v.toFixed(2));
+        });
+        sheetRows.push([
+          r.empNo ?? '',
+          r.name ?? '',
+          ...monthCells,
+          r.monthsFound,
+          Number(r.dailyWage.toFixed(2)),
+          Number(seniorityUsd.toFixed(2)),
+          isIncluded ? 'Yes' : 'No',
+        ]);
+      }
       sheetRows.push([
-        r.empNo ?? '',
-        r.name ?? '',
-        ...monthCells,
-        r.monthsFound,
-        Number(r.dailyWage.toFixed(2)),
-        Number(seniorityUsd.toFixed(2)),
-        isIncluded ? 'Yes' : 'No',
+        'TOTAL (selected)', '',
+        ...monthKeys.map(k => Number((monthTotals[k] ?? 0).toFixed(2))),
+        '',
+        '',
+        Number(totalSeniority.toFixed(2)),
+        '',
       ]);
-    }
-    sheetRows.push([
-      'TOTAL (selected)', '',
-      ...monthKeys.map(k => Number((monthTotals[k] ?? 0).toFixed(2))),
-      '',
-      '',
-      Number(totalSeniority.toFixed(2)),
-      '',
-    ]);
 
-    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
-    ws['!cols'] = [
-      { wch: 12 }, // Emp No
-      { wch: 26 }, // Name
-      ...monthKeys.map(() => ({ wch: 14 })),
-      { wch: 12 }, // Months
-      { wch: 14 }, // Daily wage
-      { wch: 18 }, // Seniority
-      { wch: 10 }, // Included
-    ];
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws['!cols'] = [
+        { wch: 12 }, // Emp No
+        { wch: 26 }, // Name
+        ...monthKeys.map(() => ({ wch: 14 })),
+        { wch: 12 }, // Months
+        { wch: 14 }, // Daily wage
+        { wch: 18 }, // Seniority
+        { wch: 10 }, // Included
+      ];
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Seniority');
-    XLSX.writeFile(wb, `Seniority-${preview.startDate}-to-${preview.endDate}.xlsx`);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Seniority');
+      XLSX.writeFile(wb, `Seniority-${preview.startDate}-to-${preview.endDate}.xlsx`);
+    });
   };
 
   const toggleAll = (allOn: boolean) => {

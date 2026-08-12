@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 
 /**
  * One row parsed out of the Attendance Records upload template (see
@@ -104,7 +104,7 @@ function toIsoDate(v: unknown): string {
  * errors so the user can fix them before retrying.
  */
 export function parseAttendanceExcel(file: File): Promise<ParsedAttendance> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -194,5 +194,5 @@ export function parseAttendanceExcel(file: File): Promise<ParsedAttendance> {
     };
     reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }

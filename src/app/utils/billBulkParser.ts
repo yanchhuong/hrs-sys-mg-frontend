@@ -10,7 +10,7 @@
  * OR Bill No. (B) is non-blank. Anything else stacks onto the
  * previous bill as an additional line item.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type { Vendor, VendorRequest } from '../api/vendors';
 import type { BillKind, BillTaxType, BillItemRequest } from '../api/bills';
 
@@ -103,7 +103,7 @@ const ALLOWED_CURRENCIES: ReadonlySet<string> = new Set(['USD', 'KHR', 'KRW']);
  * mixed-source Excel file behaves identically on either side.
  * ------------------------------------------------------------------------- */
 
-function normaliseDate(v: unknown): string | null | undefined {
+function normaliseDate(v: unknown, XLSX: typeof import('xlsx')): string | null | undefined {
   if (v == null || v === '') return undefined;
   if (typeof v === 'number') {
     const date = XLSX.SSF?.parse_date_code(v);
@@ -177,7 +177,7 @@ export function parseBillsExcel(
   vendors: Vendor[] = [],
   existingBillNos: string[] = [],
 ): Promise<ParsedBillData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -192,20 +192,21 @@ export function parseBillsExcel(
           return;
         }
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
-        resolve(buildBills(rows, vendors, existingBillNos));
+        resolve(buildBills(rows, vendors, existingBillNos, XLSX));
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildBills(
   rows: Record<string, unknown>[],
   vendors: Vendor[],
   existingBillNos: string[] = [],
+  XLSX: typeof import('xlsx'),
 ): ParsedBillData {
   const bills: ParsedBill[] = [];
   const byName = new Map<string, Vendor>();
@@ -227,7 +228,7 @@ function buildBills(
     if (rowIsBlank) return;
 
     if (!isContinuationRow(row) || current === null) {
-      const bill = parseHeaderRow(row, excelRow);
+      const bill = parseHeaderRow(row, excelRow, XLSX);
       bills.push(bill);
       current = bill;
     }
@@ -305,12 +306,12 @@ function buildBills(
   return { bills, errors: [], totalBills: bills.length, validBills };
 }
 
-function parseHeaderRow(row: Record<string, unknown>, excelRow: number): ParsedBill {
+function parseHeaderRow(row: Record<string, unknown>, excelRow: number, XLSX: typeof import('xlsx')): ParsedBill {
   const rawKind = readString(row['Bill Type']).toUpperCase();
   const rawTax  = readString(row['Tax Type']);
   const rawCurrency = readString(row['Currency']).toUpperCase();
-  const issueDate = normaliseDate(row['Issue Date']);
-  const dueDate   = normaliseDate(row['Due Date']);
+  const issueDate = normaliseDate(row['Issue Date'], XLSX);
+  const dueDate   = normaliseDate(row['Due Date'], XLSX);
   const discountRaw = readNumber(row['Discount']);
 
   const bill: ParsedBill = {
@@ -362,44 +363,46 @@ function parseItemRow(row: Record<string, unknown>, excelRow: number): ParsedBil
  * ------------------------------------------------------------------------- */
 
 export function downloadBillTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  const sample: (string | number)[][] = [
-    ['2020-01-30', 'B-001', 'T', 'Global Supplies Co., Ltd', 'V0001-000000001', 'USD', '2020-02-28', 'Purchase agreement — Q1 hardware refresh.', 'Server Rack', '12 Slots', 1, '', 500, 50, 500, '1', ''],
-    ['',            '',      '',  '',                          '',                  '',    '',           '',                                              'HDD',         '1TB',      20, '', 400, '',  8000, '1', ''],
-    ['',            '',      '',  '',                          '',                  '',    '',           '',                                              'Memory',      'DDR4 16G', 10, '',  80, '',   800, '1', ''],
-    ['2020-01-31', 'B-002', 'C', 'Peripheral Depot',           'V0021-000000009',   'KHR', '2020-03-01', 'Monitor batch order.',                          'Monitor',     '27 inch',   4, '', 200, 50,   800, '3', ''],
-  ];
+    const sample: (string | number)[][] = [
+      ['2020-01-30', 'B-001', 'T', 'Global Supplies Co., Ltd', 'V0001-000000001', 'USD', '2020-02-28', 'Purchase agreement — Q1 hardware refresh.', 'Server Rack', '12 Slots', 1, '', 500, 50, 500, '1', ''],
+      ['',            '',      '',  '',                          '',                  '',    '',           '',                                              'HDD',         '1TB',      20, '', 400, '',  8000, '1', ''],
+      ['',            '',      '',  '',                          '',                  '',    '',           '',                                              'Memory',      'DDR4 16G', 10, '',  80, '',   800, '1', ''],
+      ['2020-01-31', 'B-002', 'C', 'Peripheral Depot',           'V0021-000000009',   'KHR', '2020-03-01', 'Monitor batch order.',                          'Monitor',     '27 inch',   4, '', 200, 50,   800, '3', ''],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Bill');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Bill');
 
-  const guide: (string | number)[][] = [
-    ['Field',          'Rule'],
-    ['Issue Date',     'Required on header row. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, Excel date cell.'],
-    ['Bill No.',       'Required on header row. Must be unique per tenant.'],
-    ['Bill Type',      'T = Tax bill, C = Commercial, CN = Credit Note, DN = Debit Note.'],
-    ['Vendor',         'Vendor name — matched case-insensitively against your Vendors list.'],
-    ['TIN',            'Optional for individuals; required for business vendors auto-created during import.'],
-    ['Currency',       'USD, KHR, or KRW (must match the tenant Currency setting).'],
-    ['Due Date',       'Optional. Same date formats as Issue Date.'],
-    ['Note',           'Optional bill-level note (printed on the bill head).'],
-    ['Item / Qty / Unit Price', 'Required on every non-blank row.'],
-    ['Specification',  'Optional line-level description.'],
-    ['Unit',           'Optional UOM (pcs, box, kg, hour, …).'],
-    ['Discount',       'On the header row only. Treated as a BILL-level flat discount.'],
-    ['Amount',         'Informational — the server computes Qty × Unit Price at save time.'],
-    ['Tax Type',       'Datakey: 1 = VAT 10%, 2 = VAT 0%, 3 = Exclusive VAT, 11 = WHT 15%, 12 = WHT 14%.'],
-    ['Remarks',        'Optional. Not persisted on the bill today — informational.'],
-    ['', ''],
-    ['Grouping rule',  'A row with Issue Date OR Bill No. filled starts a NEW bill. Subsequent rows that leave columns A–H blank attach as extra line items to the previous bill.'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 22 }, { wch: 80 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide: (string | number)[][] = [
+      ['Field',          'Rule'],
+      ['Issue Date',     'Required on header row. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, Excel date cell.'],
+      ['Bill No.',       'Required on header row. Must be unique per tenant.'],
+      ['Bill Type',      'T = Tax bill, C = Commercial, CN = Credit Note, DN = Debit Note.'],
+      ['Vendor',         'Vendor name — matched case-insensitively against your Vendors list.'],
+      ['TIN',            'Optional for individuals; required for business vendors auto-created during import.'],
+      ['Currency',       'USD, KHR, or KRW (must match the tenant Currency setting).'],
+      ['Due Date',       'Optional. Same date formats as Issue Date.'],
+      ['Note',           'Optional bill-level note (printed on the bill head).'],
+      ['Item / Qty / Unit Price', 'Required on every non-blank row.'],
+      ['Specification',  'Optional line-level description.'],
+      ['Unit',           'Optional UOM (pcs, box, kg, hour, …).'],
+      ['Discount',       'On the header row only. Treated as a BILL-level flat discount.'],
+      ['Amount',         'Informational — the server computes Qty × Unit Price at save time.'],
+      ['Tax Type',       'Datakey: 1 = VAT 10%, 2 = VAT 0%, 3 = Exclusive VAT, 11 = WHT 15%, 12 = WHT 14%.'],
+      ['Remarks',        'Optional. Not persisted on the bill today — informational.'],
+      ['', ''],
+      ['Grouping rule',  'A row with Issue Date OR Bill No. filled starts a NEW bill. Subsequent rows that leave columns A–H blank attach as extra line items to the previous bill.'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 22 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Bills-Template.xlsx');
+    XLSX.writeFile(wb, 'Bills-Template.xlsx');
+  });
 }
 
 /* -------------------------------------------------------------------------

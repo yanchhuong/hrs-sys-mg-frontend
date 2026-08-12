@@ -21,7 +21,7 @@
  * CustomerRequest and the caller spreads `{ ...toCustomerRequest,
  * kind: presentAs }` before POSTing.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type {
   Customer, CustomerRequest, CustomerType, BusinessSubType,
   CustomerKind, PatientSex,
@@ -136,7 +136,7 @@ export function parseCustomersExcel(
   existingCustomers: Customer[] = [],
   kind: CustomerKind = 'customer',
 ): Promise<ParsedCustomerData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -160,7 +160,7 @@ export function parseCustomersExcel(
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildCustomers(
@@ -356,19 +356,21 @@ function parseRow(
  * ------------------------------------------------------------------------- */
 
 export function downloadCustomerTemplate(kind: CustomerKind = 'customer'): void {
-  const wb = XLSX.utils.book_new();
-  const headers = HEADERS_BY_KIND[kind];
-  const sample = SAMPLE_ROWS[kind];
-  const ws = XLSX.utils.aoa_to_sheet([headers as unknown as string[], ...sample]);
-  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 2, 16) }));
-  XLSX.utils.book_append_sheet(wb, ws, SHEET_NAME[kind]);
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
+    const headers = HEADERS_BY_KIND[kind];
+    const sample = SAMPLE_ROWS[kind];
+    const ws = XLSX.utils.aoa_to_sheet([headers as unknown as string[], ...sample]);
+    ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 2, 16) }));
+    XLSX.utils.book_append_sheet(wb, ws, SHEET_NAME[kind]);
 
-  const guide = GUIDE_ROWS[kind];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide = GUIDE_ROWS[kind];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, FILE_NAME[kind]);
+    XLSX.writeFile(wb, FILE_NAME[kind]);
+  });
 }
 
 const SAMPLE_ROWS: Record<CustomerKind, (string | number)[][]> = {

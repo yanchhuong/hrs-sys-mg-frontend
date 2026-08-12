@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Calculator, Download, Info } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../utils/xlsxLoader';
 import { formatMoney, formatNumber } from '../../utils/format';
 
 import {
@@ -277,71 +277,73 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
    * the same `xlsx` library other download helpers in this repo lean on.
    */
   const handleDownloadExcel = () => {
-    const headers = [
-      'Employee No', 'Employee Name', 'Position',
-      'Basic Salary (USD)', 'Position Allowance (USD)', 'Evaluation Allowance (USD)',
-      'OT (USD)', 'Bonus (USD)',
-      'Gross (USD)',
-      'Taxable (KHR)', 'Bracket (Rate)', 'Bracket Excess',
-      'Tax (KHR)', 'Tax (USD)',
-    ];
-    const sheetRows: (string | number)[][] = [];
-    sheetRows.push([`Cambodia Tax on Salary (TOS) — Period ${periodLabel} · FX ${fx} KHR/USD`]);
-    sheetRows.push(headers);
-    for (const r of rows) {
+    void loadXlsx().then(XLSX => {
+      const headers = [
+        'Employee No', 'Employee Name', 'Position',
+        'Basic Salary (USD)', 'Position Allowance (USD)', 'Evaluation Allowance (USD)',
+        'OT (USD)', 'Bonus (USD)',
+        'Gross (USD)',
+        'Taxable (KHR)', 'Bracket (Rate)', 'Bracket Excess',
+        'Tax (KHR)', 'Tax (USD)',
+      ];
+      const sheetRows: (string | number)[][] = [];
+      sheetRows.push([`Cambodia Tax on Salary (TOS) — Period ${periodLabel} · FX ${fx} KHR/USD`]);
+      sheetRows.push(headers);
+      for (const r of rows) {
+        sheetRows.push([
+          r.employee.id,
+          r.employee.name,
+          r.employee.position ?? '',
+          Number(r.basicUsd.toFixed(2)),
+          Number(r.positionAllowanceUsd.toFixed(2)),
+          Number(r.evaluationAllowanceUsd.toFixed(2)),
+          Number(r.otUsd.toFixed(2)),
+          Number(r.bonusUsd.toFixed(2)),
+          Number(r.grossUsd.toFixed(2)),
+          Math.round(r.taxableKhr),
+          r.bracket ? `${r.bracket.ratePercent}%` : '',
+          r.bracket ? r.bracket.excessAmount : 0,
+          Math.round(r.taxKhr),
+          Number(r.taxUsd.toFixed(2)),
+        ]);
+      }
+      // Totals row — sum every USD column so the file is audit-friendly.
       sheetRows.push([
-        r.employee.id,
-        r.employee.name,
-        r.employee.position ?? '',
-        Number(r.basicUsd.toFixed(2)),
-        Number(r.positionAllowanceUsd.toFixed(2)),
-        Number(r.evaluationAllowanceUsd.toFixed(2)),
-        Number(r.otUsd.toFixed(2)),
-        Number(r.bonusUsd.toFixed(2)),
-        Number(r.grossUsd.toFixed(2)),
-        Math.round(r.taxableKhr),
-        r.bracket ? `${r.bracket.ratePercent}%` : '',
-        r.bracket ? r.bracket.excessAmount : 0,
-        Math.round(r.taxKhr),
-        Number(r.taxUsd.toFixed(2)),
+        'TOTAL', '', '',
+        Number(rows.reduce((s, r) => s + r.basicUsd, 0).toFixed(2)),
+        Number(rows.reduce((s, r) => s + r.positionAllowanceUsd, 0).toFixed(2)),
+        Number(rows.reduce((s, r) => s + r.evaluationAllowanceUsd, 0).toFixed(2)),
+        Number(rows.reduce((s, r) => s + r.otUsd, 0).toFixed(2)),
+        Number(rows.reduce((s, r) => s + r.bonusUsd, 0).toFixed(2)),
+        Number(rows.reduce((s, r) => s + r.grossUsd, 0).toFixed(2)),
+        '', '', '',
+        Math.round(rows.reduce((s, r) => s + r.taxKhr, 0)),
+        Number(totalTaxUsd.toFixed(2)),
       ]);
-    }
-    // Totals row — sum every USD column so the file is audit-friendly.
-    sheetRows.push([
-      'TOTAL', '', '',
-      Number(rows.reduce((s, r) => s + r.basicUsd, 0).toFixed(2)),
-      Number(rows.reduce((s, r) => s + r.positionAllowanceUsd, 0).toFixed(2)),
-      Number(rows.reduce((s, r) => s + r.evaluationAllowanceUsd, 0).toFixed(2)),
-      Number(rows.reduce((s, r) => s + r.otUsd, 0).toFixed(2)),
-      Number(rows.reduce((s, r) => s + r.bonusUsd, 0).toFixed(2)),
-      Number(rows.reduce((s, r) => s + r.grossUsd, 0).toFixed(2)),
-      '', '', '',
-      Math.round(rows.reduce((s, r) => s + r.taxKhr, 0)),
-      Number(totalTaxUsd.toFixed(2)),
-    ]);
 
-    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
-    ws['!cols'] = [
-      { wch: 12 }, // Employee No
-      { wch: 26 }, // Name
-      { wch: 22 }, // Position
-      { wch: 14 }, // Basic Salary
-      { wch: 16 }, // Position Allowance
-      { wch: 18 }, // Evaluation Allowance
-      { wch: 10 }, // OT
-      { wch: 12 }, // Bonus
-      { wch: 12 }, // Gross USD
-      { wch: 14 }, // Taxable KHR
-      { wch: 12 }, // Bracket
-      { wch: 14 }, // Bracket Excess
-      { wch: 12 }, // Tax KHR
-      { wch: 12 }, // Tax USD
-    ];
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws['!cols'] = [
+        { wch: 12 }, // Employee No
+        { wch: 26 }, // Name
+        { wch: 22 }, // Position
+        { wch: 14 }, // Basic Salary
+        { wch: 16 }, // Position Allowance
+        { wch: 18 }, // Evaluation Allowance
+        { wch: 10 }, // OT
+        { wch: 12 }, // Bonus
+        { wch: 12 }, // Gross USD
+        { wch: 14 }, // Taxable KHR
+        { wch: 12 }, // Bracket
+        { wch: 14 }, // Bracket Excess
+        { wch: 12 }, // Tax KHR
+        { wch: 12 }, // Tax USD
+      ];
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Tax');
-    XLSX.writeFile(wb, `Tax-Calculation-${periodLabel}.xlsx`);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Tax');
+      XLSX.writeFile(wb, `Tax-Calculation-${periodLabel}.xlsx`);
+    });
   };
 
   return (

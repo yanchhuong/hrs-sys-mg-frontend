@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import { Employee } from '../types/hrms';
 
 export interface ParsedEmployeeRow {
@@ -59,7 +59,7 @@ const COLUMN_MAP: Record<string, keyof Employee> = {
  *     segment can't be a day, e.g. 13/04/2020 stays DD/MM, but 04/13/2020 is MM/DD)
  *   - JS Date-parseable strings, as a last resort
  */
-function normaliseDate(v: any): string | null | undefined {
+function normaliseDate(v: any, XLSX: typeof import('xlsx')): string | null | undefined {
   if (v == null || v === '') return undefined;
 
   // 1. Excel serial date
@@ -118,7 +118,7 @@ export function parseEmployeesExcel(
   knownIds: string[] = [],
   knownEmails: string[] = [],
 ): Promise<ParsedEmployeeData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
@@ -164,7 +164,7 @@ export function parseEmployeesExcel(
               else if (n < 0) rowErrors.push('Base Salary cannot be negative');
               else (parsed as any)[key] = n;
             } else if (key === 'joinDate' || key === 'dateOfBirth' || key === 'contractExpireDate') {
-              const iso = normaliseDate(value);
+              const iso = normaliseDate(value, XLSX);
               if (iso === null) {
                 // Present but unparseable — emit a visible error rather than
                 // sending garbage to the backend (which would 400 the POST).
@@ -249,7 +249,7 @@ export function parseEmployeesExcel(
 
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 /** Canonical column order for the Bulk Upload template and the
@@ -263,17 +263,19 @@ const EXPORT_HEADERS = [
 ] as const;
 
 export function downloadEmployeeTemplate() {
-  const wb = XLSX.utils.book_new();
-  const example = [
-    'EMP128', 'Dara Sok', 'តារា សុខ', 'dara@company.com', 'Junior Developer', 'Engineering',
-    '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
-    'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
-    'ABA', '000-123-456',
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], example]);
-  ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Employees');
-  XLSX.writeFile(wb, 'Employees-Template.xlsx');
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
+    const example = [
+      'EMP128', 'Dara Sok', 'តារា សុខ', 'dara@company.com', 'Junior Developer', 'Engineering',
+      '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
+      'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
+      'ABA', '000-123-456',
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], example]);
+    ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+    XLSX.writeFile(wb, 'Employees-Template.xlsx');
+  });
 }
 
 /**
@@ -291,30 +293,32 @@ export function exportEmployeesToExcel(
   deptNameById: (idOrName: string | undefined) => string,
   filename = `Employees-${new Date().toISOString().slice(0, 10)}.xlsx`,
 ): void {
-  const rows: (string | number)[][] = employees.map(e => [
-    e.id ?? '',
-    e.name ?? '',
-    e.khmerName ?? '',
-    e.email ?? '',
-    e.position ?? '',
-    deptNameById(e.department) || '',
-    e.joinDate ?? '',
-    e.baseSalary ?? 0,
-    e.gender ?? '',
-    e.dateOfBirth ?? '',
-    e.contactNumber ?? '',
-    e.placeOfBirth ?? '',
-    e.currentAddress ?? '',
-    e.nffNo ?? '',
-    e.tid ?? '',
-    e.contractExpireDate ?? '',
-    e.bankName ?? '',
-    e.bankAccount ?? '',
-  ]);
+  void loadXlsx().then(XLSX => {
+    const rows: (string | number)[][] = employees.map(e => [
+      e.id ?? '',
+      e.name ?? '',
+      e.khmerName ?? '',
+      e.email ?? '',
+      e.position ?? '',
+      deptNameById(e.department) || '',
+      e.joinDate ?? '',
+      e.baseSalary ?? 0,
+      e.gender ?? '',
+      e.dateOfBirth ?? '',
+      e.contactNumber ?? '',
+      e.placeOfBirth ?? '',
+      e.currentAddress ?? '',
+      e.nffNo ?? '',
+      e.tid ?? '',
+      e.contractExpireDate ?? '',
+      e.bankName ?? '',
+      e.bankAccount ?? '',
+    ]);
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], ...rows]);
-  ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Employees');
-  XLSX.writeFile(wb, filename);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], ...rows]);
+    ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+    XLSX.writeFile(wb, filename);
+  });
 }

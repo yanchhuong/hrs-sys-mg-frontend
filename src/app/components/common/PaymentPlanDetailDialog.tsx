@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { DateInput } from './DateInput';
 import { toast } from 'sonner';
 import { DollarSign, ReceiptText, RefreshCw, PlayCircle, Download } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../utils/xlsxLoader';
 import { format } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { formatMoney } from '../../utils/format';
@@ -121,33 +121,35 @@ export function PaymentPlanDetailDialog({
    *  to open the app to explain the numbers. */
   const handleExportExcel = () => {
     if (!plan) return;
-    const purpose = paymentPlansApi.PLAN_TYPE_LABELS[plan.planType] ?? plan.planType;
-    const header = [
-      ['Payment Plan', plan.planNo],
-      ['Purpose',      purpose],
-      ['Customer',     plan.customerName ?? ''],
-      ['Invoice',      plan.invoiceNo ?? ''],
-      ['Status',       plan.status],
-      ['Total',        plan.totalAmount],
-      ['Down Payment', plan.downPayment],
-      ['Financed',     plan.totalAmount - plan.downPayment],
-      ['Terms',        `${(plan.schedules ?? []).filter(s => s.status === 'paid').length} / ${plan.schedules?.length ?? 0}`],
-      [],
-      ['#', 'Due Date', 'Due', 'Principal', 'Interest', 'Paid', 'Balance', 'Status'],
-    ];
-    const rows = (plan.schedules ?? []).map(s => [
-      s.installmentNo, s.dueDate, s.dueAmount, s.principal, s.interest, s.paidAmount, s.balance, s.status,
-    ]);
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([...header, ...rows]);
-    // Nudge column widths so the sheet opens looking clean.
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
-    XLSX.writeFile(wb, `${plan.planNo}-schedule.xlsx`);
-    toast.success('Schedule exported');
+    void loadXlsx().then(XLSX => {
+      const purpose = paymentPlansApi.PLAN_TYPE_LABELS[plan.planType] ?? plan.planType;
+      const header = [
+        ['Payment Plan', plan.planNo],
+        ['Purpose',      purpose],
+        ['Customer',     plan.customerName ?? ''],
+        ['Invoice',      plan.invoiceNo ?? ''],
+        ['Status',       plan.status],
+        ['Total',        plan.totalAmount],
+        ['Down Payment', plan.downPayment],
+        ['Financed',     plan.totalAmount - plan.downPayment],
+        ['Terms',        `${(plan.schedules ?? []).filter(s => s.status === 'paid').length} / ${plan.schedules?.length ?? 0}`],
+        [],
+        ['#', 'Due Date', 'Due', 'Principal', 'Interest', 'Paid', 'Balance', 'Status'],
+      ];
+      const rows = (plan.schedules ?? []).map(s => [
+        s.installmentNo, s.dueDate, s.dueAmount, s.principal, s.interest, s.paidAmount, s.balance, s.status,
+      ]);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([...header, ...rows]);
+      // Nudge column widths so the sheet opens looking clean.
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 14 }, { wch: 12 }, { wch: 12 },
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
+      XLSX.writeFile(wb, `${plan.planNo}-schedule.xlsx`);
+      toast.success('Schedule exported');
+    });
   };
 
   return (

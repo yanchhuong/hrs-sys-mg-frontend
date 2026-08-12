@@ -7,7 +7,7 @@
  * whitelists the POS category enum, and flags SKU collisions against
  * the tenant's existing catalog + against other rows in the file.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type { Item, ItemCategory, ItemRequest } from '../api/items';
 import type { Warehouse } from '../api/warehouses';
 
@@ -124,7 +124,7 @@ export function parseItemsExcel(
    *  configured; parser then treats the Warehouse column as ignored. */
   warehouses: Warehouse[] = [],
 ): Promise<ParsedItemData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -145,7 +145,7 @@ export function parseItemsExcel(
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 /** Attempt to decode the given image URL via <img>. Resolves true when
@@ -353,46 +353,48 @@ function parseRow(
  * ------------------------------------------------------------------------- */
 
 export function downloadItemTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  const sample: (string | number)[][] = [
-    // Image URL column intentionally blank on the template. Populating
-    // it with a real base64 data URL would blow the template up to
-    // megabytes and swamp the Image cell (32 KB Excel cell limit).
-    // Operators fill it by round-tripping — download the existing
-    // catalog via the Export button, edit rows, re-upload here.
-    ['PR-001', 'Cappuccino',        'Classic Italian espresso with steamed milk', 'Coffee',    'drink', 'cup', 0.80, 1.50, 20, 5,  'Yes', 'No',  'Main Store',  ''],
-    ['PR-002', 'Americano',         'Espresso topped with hot water',              'Coffee',    'drink', 'cup', 0.60, 1.50, 30, 5,  'Yes', 'No',  'Main Store',  ''],
-    ['PR-003', 'Macha Latte',       'Matcha green tea whisked with steamed milk',  'Tea',       'drink', 'cup', 1.10, 1.50, 15, 5,  'Yes', 'No',  'Main Store',  ''],
-    ['SNK-01', 'Chocolate Croissant', 'Buttery pastry with chocolate filling',     'Bakery',    'snack', 'pcs', 0.90, 2.00, 10, 3,  'Yes', 'Yes', 'Warehouse A', ''],
-  ];
+    const sample: (string | number)[][] = [
+      // Image URL column intentionally blank on the template. Populating
+      // it with a real base64 data URL would blow the template up to
+      // megabytes and swamp the Image cell (32 KB Excel cell limit).
+      // Operators fill it by round-tripping — download the existing
+      // catalog via the Export button, edit rows, re-upload here.
+      ['PR-001', 'Cappuccino',        'Classic Italian espresso with steamed milk', 'Coffee',    'drink', 'cup', 0.80, 1.50, 20, 5,  'Yes', 'No',  'Main Store',  ''],
+      ['PR-002', 'Americano',         'Espresso topped with hot water',              'Coffee',    'drink', 'cup', 0.60, 1.50, 30, 5,  'Yes', 'No',  'Main Store',  ''],
+      ['PR-003', 'Macha Latte',       'Matcha green tea whisked with steamed milk',  'Tea',       'drink', 'cup', 1.10, 1.50, 15, 5,  'Yes', 'No',  'Main Store',  ''],
+      ['SNK-01', 'Chocolate Croissant', 'Buttery pastry with chocolate filling',     'Bakery',    'snack', 'pcs', 0.90, 2.00, 10, 3,  'Yes', 'Yes', 'Warehouse A', ''],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Items');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Items');
 
-  const guide: (string | number)[][] = [
-    ['Field',           'Rule'],
-    ['Code',            'Optional SKU — must be unique per tenant when set. Leave blank to let the operator hand out codes manually later.'],
-    ['Item Name',       'Required. Free text.'],
-    ['Description',     'Optional. Free text; shown under the name on the catalog table.'],
-    ['Category',        'Optional free-text Stock category (V151) — e.g. "Coffee", "Bakery", "Beverages/Hot".'],
-    ['POS Category',    'Optional. One of drink / snack / food / other. Drives the POS filter tabs.'],
-    ['Unit',            'Optional. Free text — pcs, kg, hour, cup, …'],
-    ['Cost Price',      'Optional. Non-negative decimal.'],
-    ['Selling Price',   'Optional. Non-negative decimal.'],
-    ['Current Stock',   'Optional. Initial on-hand quantity. Negatives allowed if the tenant tracks back-orders.'],
-    ['Min Stock',       'Optional. Reorder threshold — drives the Low / Out status badge.'],
-    ['Active',          'Optional. Yes / No (accepts Y/N, True/False, 1/0). Defaults Yes on the server.'],
-    ['Stock IN/OUT',    'Optional. When Yes: Invoices & POS lines with this item decrement stock (OUT), Bills increment (IN). Defaults No.'],
-    ['Warehouse',       'Optional. Warehouse NAME as configured under Stock → Warehouses (case-insensitive). Leave blank for no assignment. Unknown names skip the assignment with a warning — the row still imports.'],
-    ['Image URL',       'Optional. Either a data URL ("data:image/jpeg;base64,…") or an http(s) link. The easiest way to get it: click Export on the Items page, edit the rows in Excel, then re-upload here — data URLs travel round-trip. Excel caps a single cell at 32,767 characters; the app compresses uploads to ~15–25 KB per image which fits well inside. Larger source images may be truncated and produce a broken image.'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide: (string | number)[][] = [
+      ['Field',           'Rule'],
+      ['Code',            'Optional SKU — must be unique per tenant when set. Leave blank to let the operator hand out codes manually later.'],
+      ['Item Name',       'Required. Free text.'],
+      ['Description',     'Optional. Free text; shown under the name on the catalog table.'],
+      ['Category',        'Optional free-text Stock category (V151) — e.g. "Coffee", "Bakery", "Beverages/Hot".'],
+      ['POS Category',    'Optional. One of drink / snack / food / other. Drives the POS filter tabs.'],
+      ['Unit',            'Optional. Free text — pcs, kg, hour, cup, …'],
+      ['Cost Price',      'Optional. Non-negative decimal.'],
+      ['Selling Price',   'Optional. Non-negative decimal.'],
+      ['Current Stock',   'Optional. Initial on-hand quantity. Negatives allowed if the tenant tracks back-orders.'],
+      ['Min Stock',       'Optional. Reorder threshold — drives the Low / Out status badge.'],
+      ['Active',          'Optional. Yes / No (accepts Y/N, True/False, 1/0). Defaults Yes on the server.'],
+      ['Stock IN/OUT',    'Optional. When Yes: Invoices & POS lines with this item decrement stock (OUT), Bills increment (IN). Defaults No.'],
+      ['Warehouse',       'Optional. Warehouse NAME as configured under Stock → Warehouses (case-insensitive). Leave blank for no assignment. Unknown names skip the assignment with a warning — the row still imports.'],
+      ['Image URL',       'Optional. Either a data URL ("data:image/jpeg;base64,…") or an http(s) link. The easiest way to get it: click Export on the Items page, edit the rows in Excel, then re-upload here — data URLs travel round-trip. Excel caps a single cell at 32,767 characters; the app compresses uploads to ~15–25 KB per image which fits well inside. Larger source images may be truncated and produce a broken image.'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Items-Template.xlsx');
+    XLSX.writeFile(wb, 'Items-Template.xlsx');
+  });
 }
 
 /** Adapt to the ItemRequest the create endpoint expects. Blank

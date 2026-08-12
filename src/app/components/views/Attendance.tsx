@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../utils/xlsxLoader';
 import { useAuth } from '../../context/AuthContext';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
@@ -1001,28 +1001,30 @@ export function Attendance({ onNavigate }: Props = {}) {
       ];
     });
 
-    const wb = XLSX.utils.book_new();
-    const wsSummary = XLSX.utils.aoa_to_sheet(summary);
-    // 28-char first column gets the long labels; second column is the value.
-    wsSummary['!cols'] = [{ wch: 28 }, { wch: 32 }];
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+    void loadXlsx().then(XLSX => {
+      const wb = XLSX.utils.book_new();
+      const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+      // 28-char first column gets the long labels; second column is the value.
+      wsSummary['!cols'] = [{ wch: 28 }, { wch: 32 }];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
-    const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailRows]);
-    // Reasonable column widths for the columns that benefit; rest auto.
-    wsDetail['!cols'] = [
-      { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 22 }, { wch: 18 },
-      { wch: 22 }, { wch: 22 }, { wch: 11 }, { wch: 11 }, { wch: 11 },
-      { wch: 11 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 36 },
-    ];
-    XLSX.utils.book_append_sheet(wb, wsDetail, 'Records');
+      const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailRows]);
+      // Reasonable column widths for the columns that benefit; rest auto.
+      wsDetail['!cols'] = [
+        { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 22 }, { wch: 18 },
+        { wch: 22 }, { wch: 22 }, { wch: 11 }, { wch: 11 }, { wch: 11 },
+        { wch: 11 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 36 },
+      ];
+      XLSX.utils.book_append_sheet(wb, wsDetail, 'Records');
 
-    const periodSlug = dateFrom && dateTo && dateFrom === dateTo
-      ? dateFrom
-      : dateFrom && dateTo
-        ? `${dateFrom}_to_${dateTo}`
-        : format(new Date(), 'yyyy-MM-dd');
-    XLSX.writeFile(wb, `attendance_${periodSlug}.xlsx`);
-    toast.success(`Exported ${filteredRecords.length} row${filteredRecords.length === 1 ? '' : 's'}`);
+      const periodSlug = dateFrom && dateTo && dateFrom === dateTo
+        ? dateFrom
+        : dateFrom && dateTo
+          ? `${dateFrom}_to_${dateTo}`
+          : format(new Date(), 'yyyy-MM-dd');
+      XLSX.writeFile(wb, `attendance_${periodSlug}.xlsx`);
+      toast.success(`Exported ${filteredRecords.length} row${filteredRecords.length === 1 ? '' : 's'}`);
+    });
   };
 
   // Scan History — flattens each row's four punches (morningIn / morningOut /

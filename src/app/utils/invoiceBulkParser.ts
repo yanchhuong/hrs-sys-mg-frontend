@@ -12,7 +12,7 @@
  * (A) OR Invoice No. (B) is non-blank. Anything else stacks onto
  * the previous invoice as an additional line item.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type { Customer, CustomerRequest } from '../api/customers';
 import type { InvoiceKind, InvoiceTaxType, InvoiceItemRequest } from '../api/invoices';
 
@@ -121,7 +121,7 @@ const ALLOWED_CURRENCIES: ReadonlySet<string> = new Set(['USD', 'KHR', 'KRW']);
 /** Returns an ISO `YYYY-MM-DD` string, or `null` if the input is
  *  present but unparseable. Returns `undefined` for genuinely empty
  *  input. Mirrors the accepted formats used in the Employee parser. */
-function normaliseDate(v: unknown): string | null | undefined {
+function normaliseDate(v: unknown, XLSX: typeof import('xlsx')): string | null | undefined {
   if (v == null || v === '') return undefined;
   if (typeof v === 'number') {
     const date = XLSX.SSF?.parse_date_code(v);
@@ -198,7 +198,7 @@ export function parseInvoicesExcel(
   customers: Customer[] = [],
   existingInvoiceNos: string[] = [],
 ): Promise<ParsedInvoiceData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -213,20 +213,21 @@ export function parseInvoicesExcel(
           return;
         }
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
-        resolve(buildInvoices(rows, customers, existingInvoiceNos));
+        resolve(buildInvoices(rows, customers, existingInvoiceNos, XLSX));
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildInvoices(
   rows: Record<string, unknown>[],
   customers: Customer[],
   existingInvoiceNos: string[] = [],
+  XLSX: typeof import('xlsx'),
 ): ParsedInvoiceData {
   const invoices: ParsedInvoice[] = [];
   const byName = new Map<string, Customer>();
@@ -257,7 +258,7 @@ function buildInvoices(
     if (!isContinuationRow(row) || current === null) {
       // Close out the running invoice (if any) — validated below on
       // the whole set so we don't emit partial errors here.
-      const inv = parseHeaderRow(row, excelRow, byName, byTin);
+      const inv = parseHeaderRow(row, excelRow, byName, byTin, XLSX);
       invoices.push(inv);
       current = inv;
     }
@@ -352,12 +353,13 @@ function parseHeaderRow(
   excelRow: number,
   _byName: Map<string, Customer>,
   _byTin: Map<string, Customer>,
+  XLSX: typeof import('xlsx'),
 ): ParsedInvoice {
   const rawKind = readString(row['Invoice Type']).toUpperCase();
   const rawTax  = readString(row['Tax Type']);
   const rawCurrency = readString(row['Currency']).toUpperCase();
-  const issueDate = normaliseDate(row['Issue Date']);
-  const dueDate   = normaliseDate(row['Due Date']);
+  const issueDate = normaliseDate(row['Issue Date'], XLSX);
+  const dueDate   = normaliseDate(row['Due Date'], XLSX);
   const discountRaw = readNumber(row['Discount']);
 
   const inv: ParsedInvoice = {
@@ -409,50 +411,52 @@ function parseItemRow(row: Record<string, unknown>, excelRow: number): ParsedInv
  * ------------------------------------------------------------------------- */
 
 export function downloadInvoiceTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  // Sample rows: one Tax invoice with three line items, one
-  // Commercial invoice with a single line — mirrors the shape the
-  // ops team already uses so the operator sees the grouping rule
-  // (blank A–H = continuation) rendered concretely.
-  const sample: (string | number)[][] = [
-    ['2020-01-30', '001', 'T', 'Test Trading Co., Ltd', 'L0001-000000001', 'USD', '2020-02-28', 'Agreement on the first Quotation with the customer.', 'Server Rack', '12 Slots', 1, '', 500, 50, 500, '1', ''],
-    ['',            '',    '',  '',                      '',                  '',    '',           '',                                                       'HDD',         '1TB',      20, '', 400, '',  8000, '1', ''],
-    ['',            '',    '',  '',                      '',                  '',    '',           '',                                                       'Memory',      'DDR4 16G', 10, '',  80, '',   800, '1', ''],
-    ['2020-01-31', '002', 'C', 'Enterprise Corp.',       'E0021-000000009',   'KHR', '2020-03-01', 'The amount agreed with the Manager.',                    'Monitor',     '27 inch',   4, '', 200, 50,   800, '3', ''],
-  ];
+    // Sample rows: one Tax invoice with three line items, one
+    // Commercial invoice with a single line — mirrors the shape the
+    // ops team already uses so the operator sees the grouping rule
+    // (blank A–H = continuation) rendered concretely.
+    const sample: (string | number)[][] = [
+      ['2020-01-30', '001', 'T', 'Test Trading Co., Ltd', 'L0001-000000001', 'USD', '2020-02-28', 'Agreement on the first Quotation with the customer.', 'Server Rack', '12 Slots', 1, '', 500, 50, 500, '1', ''],
+      ['',            '',    '',  '',                      '',                  '',    '',           '',                                                       'HDD',         '1TB',      20, '', 400, '',  8000, '1', ''],
+      ['',            '',    '',  '',                      '',                  '',    '',           '',                                                       'Memory',      'DDR4 16G', 10, '',  80, '',   800, '1', ''],
+      ['2020-01-31', '002', 'C', 'Enterprise Corp.',       'E0021-000000009',   'KHR', '2020-03-01', 'The amount agreed with the Manager.',                    'Monitor',     '27 inch',   4, '', 200, 50,   800, '3', ''],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
 
-  // Guide tab — one-page cheat-sheet for the grouping rule + the
-  // enum codes so the operator doesn't have to guess.
-  const guide: (string | number)[][] = [
-    ['Field',          'Rule'],
-    ['Issue Date',     'Required on header row. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, Excel date cell.'],
-    ['Invoice No.',    'Required on header row. Must be unique per tenant.'],
-    ['Invoice Type',   'T = Tax invoice, C = Commercial, CN = Credit Note, DN = Debit Note.'],
-    ['Name',           'Customer name — matched case-insensitively against your Customers list.'],
-    ['TIN',            'Optional. Used as a fallback when Name doesn’t match a customer.'],
-    ['Currency',       'USD, KHR, or KRW (must match the tenant Currency setting).'],
-    ['Due Date',       'Optional. Same date formats as Issue Date.'],
-    ['Note',           'Optional invoice-level note (printed on the invoice head).'],
-    ['Item / Qty / Unit Price', 'Required on every non-blank row.'],
-    ['Specification',  'Optional line-level description.'],
-    ['Unit',           'Optional UOM (pcs, box, kg, hour, …).'],
-    ['Discount',       'On the header row only. Treated as an INVOICE-level flat discount.'],
-    ['Amount',         'Informational — the server computes Qty × Unit Price at save time.'],
-    ['Tax Type',       'Datakey: 1 = VAT 10%, 2 = VAT 0%, 3 = Exclusive VAT, 11 = WHT 15%, 12 = WHT 14%.'],
-    ['Remarks',        'Optional. Not persisted on the invoice today — informational.'],
-    ['', ''],
-    ['Grouping rule',  'A row with Issue Date OR Invoice No. filled starts a NEW invoice. Subsequent rows that leave columns A–H blank attach as extra line items to the previous invoice.'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 22 }, { wch: 80 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    // Guide tab — one-page cheat-sheet for the grouping rule + the
+    // enum codes so the operator doesn't have to guess.
+    const guide: (string | number)[][] = [
+      ['Field',          'Rule'],
+      ['Issue Date',     'Required on header row. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, Excel date cell.'],
+      ['Invoice No.',    'Required on header row. Must be unique per tenant.'],
+      ['Invoice Type',   'T = Tax invoice, C = Commercial, CN = Credit Note, DN = Debit Note.'],
+      ['Name',           'Customer name — matched case-insensitively against your Customers list.'],
+      ['TIN',            'Optional. Used as a fallback when Name doesn’t match a customer.'],
+      ['Currency',       'USD, KHR, or KRW (must match the tenant Currency setting).'],
+      ['Due Date',       'Optional. Same date formats as Issue Date.'],
+      ['Note',           'Optional invoice-level note (printed on the invoice head).'],
+      ['Item / Qty / Unit Price', 'Required on every non-blank row.'],
+      ['Specification',  'Optional line-level description.'],
+      ['Unit',           'Optional UOM (pcs, box, kg, hour, …).'],
+      ['Discount',       'On the header row only. Treated as an INVOICE-level flat discount.'],
+      ['Amount',         'Informational — the server computes Qty × Unit Price at save time.'],
+      ['Tax Type',       'Datakey: 1 = VAT 10%, 2 = VAT 0%, 3 = Exclusive VAT, 11 = WHT 15%, 12 = WHT 14%.'],
+      ['Remarks',        'Optional. Not persisted on the invoice today — informational.'],
+      ['', ''],
+      ['Grouping rule',  'A row with Issue Date OR Invoice No. filled starts a NEW invoice. Subsequent rows that leave columns A–H blank attach as extra line items to the previous invoice.'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 22 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Invoices-Template.xlsx');
+    XLSX.writeFile(wb, 'Invoices-Template.xlsx');
+  });
 }
 
 /* -------------------------------------------------------------------------

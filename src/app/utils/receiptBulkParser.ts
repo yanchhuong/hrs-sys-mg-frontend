@@ -5,7 +5,7 @@
  * record (no line items). One workbook row → one receipt.
  * Resolves vendors the same way {@code billBulkParser} does.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type { Vendor, VendorRequest } from '../api/vendors';
 import type { ReceiptRequest, ReceiptTaxType, SupplierType } from '../api/receipts';
 
@@ -77,7 +77,7 @@ const ALLOWED_CURRENCIES: ReadonlySet<string> = new Set(['USD', 'KHR', 'KRW']);
  * workbook reads the same way on either side.
  * ------------------------------------------------------------------------- */
 
-function normaliseDate(v: unknown): string | null | undefined {
+function normaliseDate(v: unknown, XLSX: typeof import('xlsx')): string | null | undefined {
   if (v == null || v === '') return undefined;
   if (typeof v === 'number') {
     const date = XLSX.SSF?.parse_date_code(v);
@@ -136,7 +136,7 @@ export function parseReceiptsExcel(
   vendors: Vendor[] = [],
   existingReceiptNos: string[] = [],
 ): Promise<ParsedReceiptData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -149,20 +149,21 @@ export function parseReceiptsExcel(
           return;
         }
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
-        resolve(buildReceipts(rows, vendors, existingReceiptNos));
+        resolve(buildReceipts(rows, vendors, existingReceiptNos, XLSX));
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildReceipts(
   rows: Record<string, unknown>[],
   vendors: Vendor[],
   existingReceiptNos: string[],
+  XLSX: typeof import('xlsx'),
 ): ParsedReceiptData {
   const receipts: ParsedReceipt[] = [];
   const byName = new Map<string, Vendor>();
@@ -178,7 +179,7 @@ function buildReceipts(
     const excelRow = idx + 2;
     const rowIsBlank = HEADERS.every(h => readString(row[h]) === '');
     if (rowIsBlank) return;
-    receipts.push(parseReceiptRow(row, excelRow));
+    receipts.push(parseReceiptRow(row, excelRow, XLSX));
   });
 
   // Duplicate Receipt No. detection across the file.
@@ -241,11 +242,11 @@ function buildReceipts(
   return { receipts, errors: [], totalReceipts: receipts.length, validReceipts };
 }
 
-function parseReceiptRow(row: Record<string, unknown>, excelRow: number): ParsedReceipt {
+function parseReceiptRow(row: Record<string, unknown>, excelRow: number, XLSX: typeof import('xlsx')): ParsedReceipt {
   const rawSupplier = readString(row['Supplier Type']).toUpperCase();
   const rawTax      = readString(row['Tax Type']);
   const rawCurrency = readString(row['Currency']).toUpperCase();
-  const issueDate   = normaliseDate(row['Issue Date']);
+  const issueDate   = normaliseDate(row['Issue Date'], XLSX);
 
   const receipt: ParsedReceipt = {
     rowNumber: excelRow,
@@ -278,39 +279,41 @@ function parseReceiptRow(row: Record<string, unknown>, excelRow: number): Parsed
  * ------------------------------------------------------------------------- */
 
 export function downloadReceiptTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  const sample: (string | number)[][] = [
-    ['R-2026-0001', '2026-01-15', 'ACME Services Ltd.', 'K001-000123456', 'T', 'USD', 1,    1000,   '11', 150,  'Consulting fee'],
-    ['R-2026-0002', '2026-01-20', 'Sok Sopheak',        '',                'N', 'USD', 1,     500,   '',    0,   'Freelance design'],
-    ['R-2026-0003', '2026-01-22', 'Overseas Vendor SA', '',                'R', 'USD', 1,    2500,   '20', 350,  'Technical service fee'],
-  ];
+    const sample: (string | number)[][] = [
+      ['R-2026-0001', '2026-01-15', 'ACME Services Ltd.', 'K001-000123456', 'T', 'USD', 1,    1000,   '11', 150,  'Consulting fee'],
+      ['R-2026-0002', '2026-01-20', 'Sok Sopheak',        '',                'N', 'USD', 1,     500,   '',    0,   'Freelance design'],
+      ['R-2026-0003', '2026-01-22', 'Overseas Vendor SA', '',                'R', 'USD', 1,    2500,   '20', 350,  'Technical service fee'],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Expense');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Expense');
 
-  const guide: (string | number)[][] = [
-    ['Field',           'Rule'],
-    ['Expense No.',     'Required. Must be unique per tenant.'],
-    ['Issue Date',      'Required. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or an Excel date cell.'],
-    ['Vendor',          'Vendor name — matched case-insensitively against your Vendors list. Missing vendors can be auto-created at import.'],
-    ['TIN',             'Optional for individuals; required if you want the auto-created vendor to be Business type.'],
-    ['Supplier Type',   'T = Taxable Person, N = Non-Taxable Person, R = Non-Resident. Optional.'],
-    ['Currency',        'USD, KHR, or KRW (must match your tenant Currency setting).'],
-    ['Exchange Rate',   'Expense-currency → base rate. Leave 1 for same-currency expenses.'],
-    ['Amount',          'Required. Positive number, taxes shown separately.'],
-    ['Tax Type',        'Datakey: 11 = WHT Service 15%, 15 = WHT Rental (Physical) 10%, 16 = WHT Rental (Legal) 10%, 20 = WHT Non-resident 14%.'],
-    ['Tax Amount',      'Withholding amount computed from Amount × rate. Leave 0 or blank for no WHT.'],
-    ['Notes',           'Optional free-text note.'],
-    ['', ''],
-    ['Row rule',        'One row = one expense. No continuation rows (expenses have no line items).'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 18 }, { wch: 90 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide: (string | number)[][] = [
+      ['Field',           'Rule'],
+      ['Expense No.',     'Required. Must be unique per tenant.'],
+      ['Issue Date',      'Required. Formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or an Excel date cell.'],
+      ['Vendor',          'Vendor name — matched case-insensitively against your Vendors list. Missing vendors can be auto-created at import.'],
+      ['TIN',             'Optional for individuals; required if you want the auto-created vendor to be Business type.'],
+      ['Supplier Type',   'T = Taxable Person, N = Non-Taxable Person, R = Non-Resident. Optional.'],
+      ['Currency',        'USD, KHR, or KRW (must match your tenant Currency setting).'],
+      ['Exchange Rate',   'Expense-currency → base rate. Leave 1 for same-currency expenses.'],
+      ['Amount',          'Required. Positive number, taxes shown separately.'],
+      ['Tax Type',        'Datakey: 11 = WHT Service 15%, 15 = WHT Rental (Physical) 10%, 16 = WHT Rental (Legal) 10%, 20 = WHT Non-resident 14%.'],
+      ['Tax Amount',      'Withholding amount computed from Amount × rate. Leave 0 or blank for no WHT.'],
+      ['Notes',           'Optional free-text note.'],
+      ['', ''],
+      ['Row rule',        'One row = one expense. No continuation rows (expenses have no line items).'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 18 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Expenses-Template.xlsx');
+    XLSX.writeFile(wb, 'Expenses-Template.xlsx');
+  });
 }
 
 /* -------------------------------------------------------------------------

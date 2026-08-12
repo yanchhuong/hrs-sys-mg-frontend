@@ -7,7 +7,7 @@
  * requires BOTH a TIN and a representative (see VendorService.validate).
  * TIN-less rows must therefore be typed as {@code individual}.
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type {
   Vendor, VendorRequest, VendorType,
 } from '../api/vendors';
@@ -52,7 +52,7 @@ export function parseVendorsExcel(
   file: File,
   existingVendors: Vendor[] = [],
 ): Promise<ParsedVendorData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -72,7 +72,7 @@ export function parseVendorsExcel(
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildVendors(
@@ -172,35 +172,37 @@ function parseRow(
  * ------------------------------------------------------------------------- */
 
 export function downloadVendorTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  const sample: (string | number)[][] = [
-    ['individual', 'Sok Panha',                '+855-12-000-111', 'Phnom Penh',                    '',                    '',                  ''],
-    ['business',   'Global Supplies Co., Ltd', '+855-23-000-222', 'Toul Kork, Phnom Penh',         'V0001-000000001',     'Mr. Vireak Chan',   'https://globalsupplies.kh'],
-    ['business',   'Peripheral Depot',         '+855-23-000-333', 'Chamkarmon, Phnom Penh',        'V0021-000000009',     'Ms. Sophea Kim',    ''],
-  ];
+    const sample: (string | number)[][] = [
+      ['individual', 'Sok Panha',                '+855-12-000-111', 'Phnom Penh',                    '',                    '',                  ''],
+      ['business',   'Global Supplies Co., Ltd', '+855-23-000-222', 'Toul Kork, Phnom Penh',         'V0001-000000001',     'Mr. Vireak Chan',   'https://globalsupplies.kh'],
+      ['business',   'Peripheral Depot',         '+855-23-000-333', 'Chamkarmon, Phnom Penh',        'V0021-000000009',     'Ms. Sophea Kim',    ''],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 16) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Vendors');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 16) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendors');
 
-  const guide: (string | number)[][] = [
-    ['Field',          'Rule'],
-    ['Type',           'individual (default when blank) or business.'],
-    ['Name',           'Required. Free text.'],
-    ['Phone',          'Optional.'],
-    ['Address',        'Optional. Free text.'],
-    ['TIN',            'Required for business vendors; optional for individuals.'],
-    ['Representative', 'Required for business vendors; optional for individuals.'],
-    ['Site',           'Optional. Business website URL.'],
-    ['', ''],
-    ['Duplicates',     'A repeat Name is a warning only (some tenants list branches separately). A repeat TIN blocks the row — TINs are meant to be unique per tenant.'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide: (string | number)[][] = [
+      ['Field',          'Rule'],
+      ['Type',           'individual (default when blank) or business.'],
+      ['Name',           'Required. Free text.'],
+      ['Phone',          'Optional.'],
+      ['Address',        'Optional. Free text.'],
+      ['TIN',            'Required for business vendors; optional for individuals.'],
+      ['Representative', 'Required for business vendors; optional for individuals.'],
+      ['Site',           'Optional. Business website URL.'],
+      ['', ''],
+      ['Duplicates',     'A repeat Name is a warning only (some tenants list branches separately). A repeat TIN blocks the row — TINs are meant to be unique per tenant.'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 18 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Vendors-Template.xlsx');
+    XLSX.writeFile(wb, 'Vendors-Template.xlsx');
+  });
 }
 
 export function toVendorRequest(rec: ParsedVendorRow): VendorRequest {

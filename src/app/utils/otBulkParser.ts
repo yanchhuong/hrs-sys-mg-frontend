@@ -9,7 +9,7 @@
  * Consumed by {@link BulkUploadOtDialog}; the caller decides who's allowed
  * to file OT on behalf of others (see the gate in Overtime.tsx).
  */
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import type { CreateOtRequest } from '../api/overtime';
 import type { Employee } from '../types/hrms';
 
@@ -102,7 +102,7 @@ export function parseOtExcel(
   file: File,
   employees: Employee[],
 ): Promise<ParsedOtData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -122,7 +122,7 @@ export function parseOtExcel(
     };
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsBinaryString(file);
-  });
+  }));
 }
 
 function buildEmployeeIndex(employees: Employee[]) {
@@ -259,38 +259,40 @@ function parseRow(
  * ------------------------------------------------------------------------- */
 
 export function downloadOtTemplate(): void {
-  const wb = XLSX.utils.book_new();
+  void loadXlsx().then(XLSX => {
+    const wb = XLSX.utils.book_new();
 
-  const sample: (string | number)[][] = [
-    ['E001', '2026-07-10', '',           '18:00', '21:00', 3,   'Month-end closing',       '',        ''],
-    ['E002', '2026-07-11', '',           '17:30', '19:30', 2,   'Customer demo prep',      'weekend', ''],
-    ['E003', '2026-07-12', '2026-07-13', '22:00', '02:00', 4,   'Night deploy rollback',   '',        1.5],
-  ];
+    const sample: (string | number)[][] = [
+      ['E001', '2026-07-10', '',           '18:00', '21:00', 3,   'Month-end closing',       '',        ''],
+      ['E002', '2026-07-11', '',           '17:30', '19:30', 2,   'Customer demo prep',      'weekend', ''],
+      ['E003', '2026-07-12', '2026-07-13', '22:00', '02:00', 4,   'Night deploy rollback',   '',        1.5],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
-  ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Overtime');
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...sample]);
+    ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Overtime');
 
-  const guide: (string | number)[][] = [
-    ['Field',         'Rule'],
-    ['Employee ID',   'Required. Use the empNo shown on the Employees page (e.g. E001). Name is accepted as a fallback but flags a warning.'],
-    ['Date',          'Required. YYYY-MM-DD or an Excel date cell. Calendar day the OT begins.'],
-    ['End Date',      'Optional. Same as Date for same-day OT; Date + 1 for cross-midnight shifts.'],
-    ['Start Hour',    'Optional HH:mm label (e.g. 18:00). Not used by pay calc, shown in history.'],
-    ['End Hour',      'Optional HH:mm label (e.g. 21:00). Not used by pay calc, shown in history.'],
-    ['Hours',         'Required. Total OT hours worked, e.g. 3 for 18:00–21:00.'],
-    ['Reason',        'Optional free text.'],
-    ['Day Type',      'Optional. workday | weekend | holiday. Blank = auto-detect from Date.'],
-    ['Rate Override', 'Optional numeric multiplier that bypasses day-type + night composition. Leave blank to use the auto-detected rate.'],
-    ['', ''],
-    ['Duplicates',    'Same employee + same date is flagged as a warning (still importable — real double-shifts exist).'],
-    ['Access',        'This upload is available only to users with full Overtime permission AND tenant-wide employee visibility.'],
-  ];
-  const gws = XLSX.utils.aoa_to_sheet(guide);
-  gws['!cols'] = [{ wch: 16 }, { wch: 90 }];
-  XLSX.utils.book_append_sheet(wb, gws, 'Guide');
+    const guide: (string | number)[][] = [
+      ['Field',         'Rule'],
+      ['Employee ID',   'Required. Use the empNo shown on the Employees page (e.g. E001). Name is accepted as a fallback but flags a warning.'],
+      ['Date',          'Required. YYYY-MM-DD or an Excel date cell. Calendar day the OT begins.'],
+      ['End Date',      'Optional. Same as Date for same-day OT; Date + 1 for cross-midnight shifts.'],
+      ['Start Hour',    'Optional HH:mm label (e.g. 18:00). Not used by pay calc, shown in history.'],
+      ['End Hour',      'Optional HH:mm label (e.g. 21:00). Not used by pay calc, shown in history.'],
+      ['Hours',         'Required. Total OT hours worked, e.g. 3 for 18:00–21:00.'],
+      ['Reason',        'Optional free text.'],
+      ['Day Type',      'Optional. workday | weekend | holiday. Blank = auto-detect from Date.'],
+      ['Rate Override', 'Optional numeric multiplier that bypasses day-type + night composition. Leave blank to use the auto-detected rate.'],
+      ['', ''],
+      ['Duplicates',    'Same employee + same date is flagged as a warning (still importable — real double-shifts exist).'],
+      ['Access',        'This upload is available only to users with full Overtime permission AND tenant-wide employee visibility.'],
+    ];
+    const gws = XLSX.utils.aoa_to_sheet(guide);
+    gws['!cols'] = [{ wch: 16 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, gws, 'Guide');
 
-  XLSX.writeFile(wb, 'Overtime-Template.xlsx');
+    XLSX.writeFile(wb, 'Overtime-Template.xlsx');
+  });
 }
 
 /** Strip the {@code employeeIdLabel} helper field before sending to the API. */

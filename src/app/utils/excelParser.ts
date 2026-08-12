@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { loadXlsx } from './xlsxLoader';
 import { PayrollCategory } from '../types/settings';
 import { loadPayrollCategories } from './payrollCategories';
 
@@ -49,7 +49,7 @@ export function parsePayrollExcel(
   file: File,
   options: ParsePayrollOptions = {},
 ): Promise<ParsedPayrollData> {
-  return new Promise((resolve, reject) => {
+  return loadXlsx().then(XLSX => new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
@@ -202,5 +202,5 @@ export function parsePayrollExcel(
     };
 
     reader.readAsBinaryString(file);
-  });
+  }));
 }
