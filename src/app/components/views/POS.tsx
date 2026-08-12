@@ -2186,7 +2186,15 @@ function PosCheckoutDialog({
   customerId, loyaltyState, cartLines, catalogItems, onLoyaltyChanged,
 }: CheckoutProps) {
   const setMethod = onMethodChange;
-  const [received, setReceived] = useState<number>(0);
+  /** String-first state so the input can show "0.90" with the
+   *  trailing zero preserved. `<Input type="number">` strips
+   *  formatting zeros on assignment; using type="text" +
+   *  inputMode="decimal" lets us keep 2-decimal display parity
+   *  with the Total / Change rows. Derived number is used for math
+   *  and the submit callback. */
+  const [receivedStr, setReceivedStr] = useState<string>('0.00');
+  const received = Number(receivedStr) || 0;
+  const setReceived = (n: number) => setReceivedStr(n.toFixed(2));
   /**
    * v-pos-checkout-total-cents — snap the incoming {@code total} to
    * whole cents once. Upstream computes it as subtotal + tax + …,
@@ -2867,9 +2875,18 @@ function PosCheckoutDialog({
                 <div className="flex items-center gap-2">
                   <span className="text-gray-600 flex-1">Received</span>
                   <Input
-                    type="number"
-                    value={received}
-                    onChange={e => setReceived(parseFloat(e.target.value) || 0)}
+                    type="text"
+                    inputMode="decimal"
+                    value={receivedStr}
+                    // Sanitize as the cashier types — digits + one dot
+                    // only. Keeps live editing responsive (an in-flight
+                    // "1." doesn't collapse to "1") while blocking
+                    // letters and stray characters.
+                    onChange={e => setReceivedStr(e.target.value.replace(/[^\d.]/g, ''))}
+                    // Snap to 2 decimals on blur so the field always
+                    // reads $0.90 / $12.00 shape when the cashier is
+                    // done typing, matching Total + Change formatting.
+                    onBlur={() => setReceivedStr((Number(receivedStr) || 0).toFixed(2))}
                     className="h-8 w-28 text-right"
                   />
                 </div>
