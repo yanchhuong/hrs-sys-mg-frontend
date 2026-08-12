@@ -33,9 +33,10 @@ export interface DashboardSummary {
   approvals?: { leavePending: number; otPending: number; payrollPending: number };
   payrollMonth?: { month: string; netTotal: string; totalEarnings: string; totalDeductions: string };
   contracts?: { expiringIn30Days: number };
-  /** V316 — POS + Accounting share the {@code kpi} key on the wire.
-   *  Each bundle reads only the fields it knows about; the union
-   *  keeps TS from complaining while both surfaces coexist. */
+  /** V316 — every category with real widgets shares the {@code kpi}
+   *  key on the wire. Each bundle reads only the fields it knows
+   *  about; the union keeps TS from complaining while surfaces
+   *  coexist. */
   kpi?: {
     // POS
     todaySales?:     number | string;
@@ -43,17 +44,26 @@ export interface DashboardSummary {
     avgOrderValue?:  number | string;
     todayCustomers?: number;
     todayDiscount?:  number | string;
-    // Accounting (MTD-to-date, USD-normalized on the server)
+    // Accounting (MTD, USD-normalized)
     revenueMtd?: number | string;
     expenseMtd?: number | string;
     profitMtd?:  number | string;
     arOpen?:     number | string;
     apOpen?:     number | string;
+    // Payroll (MTD)
+    netMtd?:         number | string;
+    earningsMtd?:    number | string;
+    deductionsMtd?:  number | string;
+    avgSalary?:      number | string;
+    employeesMtd?:   number;
+    paidBatchesMtd?: number;
+    pendingBatches?: number;
   };
-  /** POS 7-day daily bucket. */
+  /** Per-category trend rows. */
   trend?:
     | { date: string; sales: number | string; orders: number }[]
-    | { month: string; revenue: number | string; expense: number | string; profit: number | string }[];
+    | { month: string; revenue: number | string; expense: number | string; profit: number | string }[]
+    | { month: string; net: number | string; earnings: number | string; deductions: number | string }[];
   /** POS-only. */
   recentOrders?: {
     id: string;
@@ -73,6 +83,18 @@ export interface DashboardSummary {
     amountUsd: number | string;
     currency: string;
     status: string;
+  }[];
+  /** Payroll-only. */
+  recentBatches?: {
+    id: string;
+    subject: string;
+    type: string;
+    monthYear: string;
+    batchDate: string | null;
+    employees: number;
+    status: string;
+    netSalaryTotal: number | string;
+    currency: string;
   }[];
   [k: string]: unknown;
 }

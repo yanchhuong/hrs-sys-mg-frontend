@@ -146,6 +146,7 @@ export function Dashboard() {
       {active.code === 'hr'             ? <HrDashboardWidgets />
         : active.code === 'pos'         ? <PosDashboardBundle />
         : active.code === 'accounting'  ? <AccountingDashboardBundle />
+        : active.code === 'payroll'     ? <PayrollDashboardBundle />
         : <ComingSoonBundle category={active} />}
     </div>
   );
@@ -448,6 +449,158 @@ function AccountingDashboardBundle() {
                     </li>
                   );
                 })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* Payroll dashboard bundle                                        */
+/* ============================================================== */
+
+const PAYROLL_STATUS_TONE: Record<string, string> = {
+  pending:  'bg-amber-100 text-amber-800',
+  approved: 'bg-blue-100 text-blue-800',
+  done:     'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-rose-100 text-rose-800',
+};
+
+/** V316 — Payroll category widgets. MTD KPI row + 6-month payroll-
+ *  cost trend + recent batches log. All money figures come from
+ *  payroll_batches directly so the numbers match the Payroll page's
+ *  own aggregations. */
+function PayrollDashboardBundle() {
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('payroll')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const usd = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const num = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return n.toLocaleString();
+  };
+
+  const kpi = data?.kpi ?? {};
+  const trend = (data?.trend ?? []) as {
+    month: string; net: number | string; earnings: number | string; deductions: number | string;
+  }[];
+  // Peak-normalize across the earnings + deductions series so
+  // proportional heights read across bars.
+  const peak = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.earnings) || 0, Number(p.deductions) || 0), 0
+  ), [trend]);
+  const recent = data?.recentBatches ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading Payroll dashboard…
+      </div>
+    );
+  }
+  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip. Net stays the headline number; earnings +
+          deductions live on the trend chart so operators can eye the
+          gross-to-net gap without a second row of tiles. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <PosKpiTile label="Net (MTD)"    value={usd(kpi.netMtd)}       icon={Wallet}    tone="emerald" />
+        <PosKpiTile label="Employees"    value={num(kpi.employeesMtd)} icon={Users}     tone="blue" />
+        <PosKpiTile label="Avg. Salary"  value={usd(kpi.avgSalary)}    icon={FileText}  tone="violet" />
+        <PosKpiTile label="Paid batches" value={num(kpi.paidBatchesMtd)} icon={CheckCircle} tone="emerald" />
+        <PosKpiTile label="Pending"      value={num(kpi.pendingBatches)} icon={AlertCircle} tone="amber" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 6-month trend — earnings + deductions per month. Two bars
+            per month, same peak-normalization as the accounting chart. */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Payroll cost — last 6 months</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || peak === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No payroll runs in the last 6 months.
+              </div>
+            ) : (
+              <div className="flex items-end gap-3 h-48 pt-2">
+                {trend.map(p => {
+                  const e = Number(p.earnings) || 0;
+                  const d = Number(p.deductions) || 0;
+                  const eh = Math.max(2, Math.round((e / peak) * 170));
+                  const dh = Math.max(2, Math.round((d / peak) * 170));
+                  const [y, m] = p.month.split('-');
+                  const label = new Date(Number(y), Number(m) - 1, 1)
+                    .toLocaleDateString(undefined, { month: 'short' });
+                  return (
+                    <div key={p.month} className="flex-1 flex flex-col items-center gap-1"
+                      title={`${p.month} · Earnings ${usd(e)} · Deductions ${usd(d)} · Net ${usd(Number(p.net))}`}>
+                      <div className="flex items-end gap-0.5 w-full h-[172px]">
+                        <div className="flex-1 rounded-t bg-emerald-500/80" style={{ height: `${eh}px` }} />
+                        <div className="flex-1 rounded-t bg-slate-400/80"   style={{ height: `${dh}px` }} />
+                      </div>
+                      <div className="text-[10px] text-gray-500 tabular-nums">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-4 text-[11px] text-gray-500">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500/80" /> Earnings</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-slate-400/80" /> Deductions</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent batches — status-coloured badges so a Rejected /
+            Pending row jumps out of the log. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recent batches</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recent.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No batches yet.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {recent.map(r => (
+                  <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium text-xs truncate" title={r.subject}>{r.subject || r.type}</div>
+                      <div className="text-[11px] text-gray-500 tabular-nums">
+                        {r.monthYear} · {r.employees} emp.
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 space-y-0.5">
+                      <div className="text-xs font-medium tabular-nums text-emerald-700">
+                        {usd(r.netSalaryTotal)}
+                      </div>
+                      <Badge className={`text-[10px] px-1.5 py-0 capitalize ${PAYROLL_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                        {r.status}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </CardContent>
