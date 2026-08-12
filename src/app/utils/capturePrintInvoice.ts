@@ -1,4 +1,6 @@
-import html2canvas from 'html2canvas';
+// v-perf-lazy-capturePng — html2canvas alone is ~250KB gz. Loaded
+// on demand via dynamic import so it stays out of the initial
+// bundle; users who never Send-as-image never download it.
 
 /**
  * Capture the currently-mounted sale-document print template (the
@@ -18,6 +20,7 @@ import html2canvas from 'html2canvas';
 export async function capturePrintImage(): Promise<string | null> {
   const el = document.querySelector<HTMLElement>('.print-tax-invoice');
   if (!el) return null;
+  const { default: html2canvas } = await import('html2canvas');
 
   // Snapshot the styles we'll mutate so we can put them back even
   // if html2canvas throws mid-render.

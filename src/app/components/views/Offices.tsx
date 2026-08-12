@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -19,7 +19,12 @@ import {
 import { Plus, Pencil, Trash2, MapPin, Loader2, QrCode } from 'lucide-react';
 import * as officesApi from '../../api/offices';
 import { QrDisplayDialog } from '../common/QrDisplayDialog';
-import { MapPicker } from '../common/MapPicker';
+// v-perf-lazy-map — leaflet + react-leaflet weigh ~250KB gz. Only
+// paid when the operator opens the office-edit dialog with the
+// map picker inside; the office list itself never loads it.
+const MapPicker = lazy(() =>
+  import('../common/MapPicker').then(m => ({ default: m.MapPicker })),
+);
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 
 interface FormState {
@@ -292,16 +297,21 @@ export function Offices({ embedded = false }: Props = {}) {
             {/* Map picker — click / drag / search to set coordinates.
                 Stays in sync with the lat/lng text inputs below so an
                 admin who already knows the exact numbers can still type
-                them in. */}
-            <MapPicker
-              lat={parseFloat(form.latitude) || null}
-              lng={parseFloat(form.longitude) || null}
-              onChange={(la, lo) => setForm(prev => ({
-                ...prev,
-                latitude:  la.toFixed(7),
-                longitude: lo.toFixed(7),
-              }))}
-            />
+                them in.
+                v-perf-lazy-map — Suspense keeps leaflet out of the
+                initial bundle; fallback is a placeholder so the form
+                doesn't jump when the chunk lands. */}
+            <Suspense fallback={<div className="h-64 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-400">Loading map…</div>}>
+              <MapPicker
+                lat={parseFloat(form.latitude) || null}
+                lng={parseFloat(form.longitude) || null}
+                onChange={(la, lo) => setForm(prev => ({
+                  ...prev,
+                  latitude:  la.toFixed(7),
+                  longitude: lo.toFixed(7),
+                }))}
+              />
+            </Suspense>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

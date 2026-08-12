@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, type MutableRefObject } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
@@ -28,7 +28,12 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
-import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
+// v-perf-lazy-scanner — @zxing/library is ~250KB gz. Deferred
+// until the operator first opens the scanner dialog.
+const CameraBarcodeScanner = lazy(() =>
+  import('../common/CameraBarcodeScanner')
+    .then(m => ({ default: m.CameraBarcodeScanner })),
+);
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
@@ -1890,15 +1895,21 @@ export function POS() {
 
       {/* V302 phase 2 — camera-scan dialog. Feeds decoded codes
           straight into the same handleScannedCode used by Enter on
-          the search input, so the two paths add items identically. */}
-      <CameraBarcodeScanner
-        open={scannerOpen}
-        onOpenChange={setScannerOpen}
-        onDecoded={code => {
-          setScannerOpen(false);
-          void handleScannedCode(code);
-        }}
-      />
+          the search input, so the two paths add items identically.
+          v-perf-lazy-scanner — Suspense-mounted so @zxing only
+          loads when the operator first opens the dialog. */}
+      {scannerOpen && (
+        <Suspense fallback={null}>
+          <CameraBarcodeScanner
+            open={scannerOpen}
+            onOpenChange={setScannerOpen}
+            onDecoded={code => {
+              setScannerOpen(false);
+              void handleScannedCode(code);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

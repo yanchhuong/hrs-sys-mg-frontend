@@ -1,5 +1,7 @@
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+// v-perf-lazy-capturePdf — html2canvas + jspdf together weigh ~500KB
+// gzipped. They're only used when the operator hits Send-with-PDF /
+// Download PDF, which is an interactive action; loading them on
+// demand keeps them out of the initial bundle entirely.
 
 /**
  * V271 — capture the currently-mounted sale-document print template
@@ -30,6 +32,12 @@ export async function capturePrintPdf(defaultFilename = 'document.pdf'): Promise
     console.warn('[capturePrintPdf] .print-tax-invoice not in DOM — skipping attachment');
     return null;
   }
+  // Dynamic imports — Vite creates a separate chunk so html2canvas
+  // + jspdf don't ride on the initial page load.
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
 
   const prev = {
     display: el.style.display,

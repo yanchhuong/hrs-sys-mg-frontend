@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -35,7 +35,12 @@ import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
 import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
-import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
+// v-perf-lazy-scanner — @zxing/library is ~250KB gz. Only loaded
+// when the operator clicks the barcode-scan button.
+const CameraBarcodeScanner = lazy(() =>
+  import('../common/CameraBarcodeScanner')
+    .then(m => ({ default: m.CameraBarcodeScanner })),
+);
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
@@ -1286,36 +1291,48 @@ export function Items() {
       {/* V302 — camera-scan dialog for the Item edit form. Decoded
           value fills form.barcode, then closes. Mounted at the top
           level (not inside the edit Dialog) so it can portal above
-          the item dialog's overlay without z-index gymnastics. */}
-      <CameraBarcodeScanner
-        open={barcodeScannerOpen}
-        onOpenChange={setBarcodeScannerOpen}
-        onDecoded={code => {
-          setForm(f => ({ ...f, barcode: code.trim() }));
-          setBarcodeScannerOpen(false);
-        }}
-      />
+          the item dialog's overlay without z-index gymnastics.
+          v-perf-lazy-scanner — Suspense-mounted; @zxing only loads
+          once one of the scanner dialogs first opens. Fallback is
+          null because the dialog itself renders nothing until
+          {@code open} is true. */}
+      {barcodeScannerOpen && (
+        <Suspense fallback={null}>
+          <CameraBarcodeScanner
+            open={barcodeScannerOpen}
+            onOpenChange={setBarcodeScannerOpen}
+            onDecoded={code => {
+              setForm(f => ({ ...f, barcode: code.trim() }));
+              setBarcodeScannerOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* v-items-scan-to-stock-in — toolbar-driven scan. Decoded
           value is looked up by barcode against the full catalogue
           (including rows outside the currently-loaded window).
           Hits open the Increase Stock dialog for that item; misses
           toast the operator without stealing the search string. */}
-      <CameraBarcodeScanner
-        open={toolbarScannerOpen}
-        onOpenChange={setToolbarScannerOpen}
-        onDecoded={async code => {
-          const norm = code.trim();
-          setToolbarScannerOpen(false);
-          if (!norm) return;
-          try {
-            const hit = await itemsApi.getByBarcode(norm);
-            setScanStockInItem(hit);
-          } catch {
-            toast.error(`No item matches barcode "${norm}"`);
-          }
-        }}
-      />
+      {toolbarScannerOpen && (
+        <Suspense fallback={null}>
+          <CameraBarcodeScanner
+            open={toolbarScannerOpen}
+            onOpenChange={setToolbarScannerOpen}
+            onDecoded={async code => {
+              const norm = code.trim();
+              setToolbarScannerOpen(false);
+              if (!norm) return;
+              try {
+                const hit = await itemsApi.getByBarcode(norm);
+                setScanStockInItem(hit);
+              } catch {
+                toast.error(`No item matches barcode "${norm}"`);
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
       {scanStockInItem && (
         <ReceiveStockPopover

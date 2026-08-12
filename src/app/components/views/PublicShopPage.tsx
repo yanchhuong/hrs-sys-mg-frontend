@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
   ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
@@ -16,7 +16,12 @@ import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
-import { MapPicker } from '../common/MapPicker';
+// v-perf-lazy-map — customer-facing storefront page; most customers
+// never open the delivery-location picker. Deferring leaflet keeps
+// the shop menu's cold-load fast on mobile.
+const MapPicker = lazy(() =>
+  import('../common/MapPicker').then(m => ({ default: m.MapPicker })),
+);
 
 /** Customer's pick inside one modifier group. The cashier sees these
  *  baked into the line's notes field so they can fulfil the order
@@ -1652,11 +1657,15 @@ export function PublicShopPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="p-4">
-            <MapPicker
-              lat={pinLatLng?.lat ?? null}
-              lng={pinLatLng?.lng ?? null}
-              onChange={(lat, lng) => setPinLatLng({ lat, lng })}
-            />
+            {/* v-perf-lazy-map — Suspense loads leaflet only when
+                the customer opens this Pin Location dialog. */}
+            <Suspense fallback={<div className="h-64 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-400">Loading map…</div>}>
+              <MapPicker
+                lat={pinLatLng?.lat ?? null}
+                lng={pinLatLng?.lng ?? null}
+                onChange={(lat, lng) => setPinLatLng({ lat, lng })}
+              />
+            </Suspense>
           </div>
           <DialogFooter className="px-5 py-3 border-t">
             <Button variant="outline" onClick={() => setPinOpen(false)}>Cancel</Button>
