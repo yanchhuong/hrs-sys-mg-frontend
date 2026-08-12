@@ -2425,11 +2425,24 @@ function InvoiceDetailDialog({
         accountingSettingsApi.get('pos'),
         itemsApi.list({ size: 500 }),
       ]);
+      // Pick the most recent settlement-direction payment against
+      // this invoice — its date is what the "next to PAID stamp"
+      // line should read. Falls back to undefined so the receipt
+      // template lands on the order's checkout date (legacy
+      // behaviour) if no payments have posted yet.
+      const isCn = inv.kind === 'credit_note';
+      const paidWhen = payments
+        .filter(p => (isCn ? p.direction === 'debit' : p.direction === 'credit'))
+        .map(p => p.paymentDate)
+        .filter(Boolean)
+        .sort()
+        .pop();
       const ok = printPosReceipt({
         order,
         settings,
         items: items.content,
         shopNameFallback: companyInfo?.name ?? undefined,
+        paidDateOverride: paidWhen ?? null,
       });
       if (!ok) toast.error('Could not open the print dialog.');
     } catch (e) {

@@ -36,13 +36,30 @@ interface BuildArgs {
   settings: AccountingSettings;
   items: Item[];
   shopNameFallback?: string;
+  /** Optional override for the date printed next to the PAID stamp.
+   *  When set, uses this (the payment's actual date) instead of the
+   *  order's checkout date. Lets a re-print from the invoice detail
+   *  dialog honour a backdated / separately-recorded payment. Empty
+   *  or undefined → fall back to the order's checkout date. Accepts
+   *  an ISO YYYY-MM-DD string or a Date. */
+  paidDateOverride?: string | Date | null;
 }
 
 export function buildPosReceiptInner(args: BuildArgs): string {
-  const { order, settings, items, shopNameFallback } = args;
+  const { order, settings, items, shopNameFallback, paidDateOverride } = args;
   const when = new Date(order.checkedOutAt ?? order.createdAt);
   const datePart = when.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timePart = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+  // Stamp date — mirrors datePart unless the caller supplied an
+  // explicit paidDateOverride. Kept as its own variable so the
+  // top-of-receipt "Date" line stays glued to the transaction time
+  // even when the actual payment landed on a different day.
+  const paidWhen: Date | null = paidDateOverride
+    ? (paidDateOverride instanceof Date ? paidDateOverride : new Date(paidDateOverride))
+    : null;
+  const stampDatePart = paidWhen && !Number.isNaN(paidWhen.getTime())
+    ? paidWhen.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : datePart;
   const shopName = (settings.posShopName ?? '').trim() || shopNameFallback || 'SHOP NAME';
 
   const logo = (settings.posLogoUrl ?? '').trim()
@@ -112,7 +129,7 @@ export function buildPosReceiptInner(args: BuildArgs): string {
 
   const stampRow = `
     <div class="stamp-row">
-      <span class="stamp-date">${esc(datePart)}</span>
+      <span class="stamp-date">${esc(stampDatePart)}</span>
       ${paidStamp}
     </div>
   `;
