@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { mockEmployees, mockContracts } from '../../data/mockData';
 import { Contract, Employee } from '../../types/hrms';
 import * as employeesApi from '../../api/employees';
@@ -623,7 +623,9 @@ export function Employees() {
 
   // departmentId → name lookup. In mock mode the adapter stores the name
   // directly, so the map just round-trips through the same string.
-  const deptName = makeDeptName(departments, '-');
+  // v-perf-memo-employees — memoised so downstream useMemo blocks
+  // (haystack build, filter) don't churn on unrelated re-renders.
+  const deptName = useMemo(() => makeDeptName(departments, '-'), [departments]);
   // Bump on create so re-read of mockEmployees refreshes the table.
   const [, setRosterVersion] = useState(0);
   const bumpRoster = () => setRosterVersion(v => v + 1);
@@ -1197,32 +1199,58 @@ export function Employees() {
   // Searchable fields: English name, Khmer name, employee id (empNo), phone,
   // email, department. Khmer is matched case-insensitively too — toLowerCase
   // is a no-op on Khmer script but keeps the comparison uniform.
-  const tokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = useMemo(
+    () => searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [searchTerm],
+  );
   // Visible roster (after permission scope) is the basis for both the
   // status-chip counts and the filtered list, so the badges always reflect
-  // what the current user is allowed to see.
-  const visibleEmployees = employees.filter(canSeeEmployee);
-  const statusCounts = {
+  // what the current user is allowed to see. Memoised so the three
+  // downstream .filter() calls + the haystack build don't fire on every
+  // render (v-perf-memo-employees).
+  const visibleEmployees = useMemo(
+    () => employees.filter(canSeeEmployee),
+    // canSeeEmployee closes over the current user + permission scope,
+    // both of which are stable within a session; deps intentionally
+    // narrow so a stable-identity permission read doesn't churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [employees],
+  );
+  const statusCounts = useMemo(() => ({
     all: visibleEmployees.length,
     active: visibleEmployees.filter(e => e.status === 'active').length,
     inactive: visibleEmployees.filter(e => e.status !== 'active').length,
-  };
-  let filteredEmployees = visibleEmployees.filter(emp => {
+  }), [visibleEmployees]);
+  // Per-employee lowercased search hay, precomputed once so the token
+  // filter is a Map read + N .includes() calls instead of rebuilding
+  // + lowercasing 6 fields per row per render.
+  const haystackByEmployee = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const emp of visibleEmployees) {
+      m.set(emp.id, [
+        emp.name, emp.khmerName, emp.id, emp.empNo,
+        emp.contactNumber, emp.email, deptName(emp.department),
+      ].filter(Boolean).join(' ').toLowerCase());
+    }
+    return m;
+  }, [visibleEmployees, deptName]);
+  // Employees per department id — O(N) build vs. the previous
+  // .filter().length inside departments.map (O(N × M) per render).
+  const employeeCountByDept = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of visibleEmployees) {
+      if (e.department) m.set(e.department, (m.get(e.department) ?? 0) + 1);
+    }
+    return m;
+  }, [visibleEmployees]);
+  let filteredEmployees = useMemo(() => visibleEmployees.filter(emp => {
     if (statusFilter === 'active' && emp.status !== 'active') return false;
     if (statusFilter === 'inactive' && emp.status === 'active') return false;
     if (departmentFilter !== 'all' && emp.department !== departmentFilter) return false;
     if (tokens.length === 0) return true;
-    const haystack = [
-      emp.name,
-      emp.khmerName,
-      emp.id,
-      emp.empNo,
-      emp.contactNumber,
-      emp.email,
-      deptName(emp.department),
-    ].filter(Boolean).join(' ').toLowerCase();
+    const haystack = haystackByEmployee.get(emp.id) ?? '';
     return tokens.every(tok => haystack.includes(tok));
-  });
+  }), [visibleEmployees, statusFilter, departmentFilter, tokens, haystackByEmployee]);
 
   // Apply date filter based on joinDate
   if (dateFilter.start || dateFilter.end) {
@@ -1512,7 +1540,9 @@ export function Employees() {
               >
                 <option value="all">All Departments ({visibleEmployees.length})</option>
                 {departments.map(d => {
-                  const n = visibleEmployees.filter(e => e.department === d.id).length;
+                  // v-perf-memo-employees — precomputed count map
+                  // beats the previous O(N × M) filter-per-option.
+                  const n = employeeCountByDept.get(d.id) ?? 0;
                   return (
                     <option key={d.id} value={d.id}>{d.name} ({n})</option>
                   );

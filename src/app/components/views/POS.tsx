@@ -1020,6 +1020,16 @@ export function POS() {
   const sellable = items.filter(itemsApi.isItemSellable);
   const sellableSearched = sellable.filter(matchesSearch);
 
+  // v-perf-memo-pos — id → item lookup used by the cart-row image
+  // resolver below. Building the map once per render (O(N)) beats
+  // items.find() per cart row per render (O(N × M)). Not useMemo
+  // because the plain-compute rationale for the sellable filters
+  // above (hook count parity across early-return branches) applies
+  // equally here — the map lives after the loading-guard early
+  // return, so a hook here would shift the count between renders.
+  const itemsById = new Map<string, itemsApi.Item>();
+  for (const i of items) itemsById.set(i.id, i);
+
   const warehouseCounts = new Map<string, number>();
   {
     // Warehouse counts — apply search + category, drop warehouseFilter
@@ -1144,7 +1154,7 @@ export function POS() {
                 <CartLineRow
                   key={idx}
                   line={l}
-                  imageUrl={(l.stockItemId && items.find(i => i.id === l.stockItemId)?.imageUrl) || null}
+                  imageUrl={(l.stockItemId && itemsById.get(l.stockItemId)?.imageUrl) || null}
                   maxQty={maxQty}
                   onQty={n => setLineQty(idx, n)}
                   onRemove={() => removeLine(idx)}
