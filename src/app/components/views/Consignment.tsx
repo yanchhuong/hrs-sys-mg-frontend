@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { toast } from 'sonner';
 import {
   Handshake, Wallet, ReceiptText, Package, DollarSign,
-  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Printer, Info,
+  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Copy, Printer, Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
@@ -104,6 +104,11 @@ function ConsignmentReport() {
   // readOnly mode so operators see the exact same layout as Edit
   // but with a Print + Close footer instead of save buttons.
   const [viewing, setViewing] = useState<consignmentsApi.Consignment | null>(null);
+  // Copy source — the Copy button on every row sets this and re-uses
+  // the ConsignmentDialog in "New consignment" mode with item lines
+  // pre-filled from the source. Supplier is deliberately left empty
+  // so the operator picks a (possibly different) partner.
+  const [copyFrom, setCopyFrom] = useState<consignmentsApi.Consignment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<consignmentsApi.Consignment | null>(null);
   // Settlement refs per consignment — powers the "Ref No." column
   // (multiple settlements can attach to one consignment as it goes
@@ -344,6 +349,17 @@ function ConsignmentReport() {
                             title="View">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
+                          {/* Copy is always visible — duplicating a
+                              settled/active consignment onto a fresh
+                              agreement is the whole reason the button
+                              exists. Opens a new-consignment dialog
+                              with items pre-filled but supplier blank
+                              so the operator picks a new partner. */}
+                          <Button variant="outline" size="sm"
+                            onClick={() => setCopyFrom(c)}
+                            title="Copy — new consignment, same items">
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
                           {/* Edit + Delete only surface for draft rows.
                               Beyond draft, the row has posted a stock
                               movement + started accumulating settlement
@@ -388,6 +404,26 @@ function ConsignmentReport() {
           // this dialog's lifetime (next open uses the updated list).
           onVendorAdded={v => setVendors(prev => [...prev, v])}
           onSaved={async () => { setDialogOpen(false); await load(); }}
+        />
+      )}
+
+      {/* Copy variant — same ConsignmentDialog in NEW mode with the
+          copyFrom prop set so items pre-populate from the source but
+          supplier is blank + consignment number is auto-minted on
+          save. Closing without saving discards the draft; saving
+          calls load() so the fresh row appears in the list. */}
+      {copyFrom && (
+        <ConsignmentDialog
+          open={!!copyFrom}
+          onOpenChange={(o) => !o && setCopyFrom(null)}
+          editing={null}
+          copyFrom={copyFrom}
+          vendors={vendors}
+          warehouses={warehouses}
+          items={items}
+          itemsLoaded={itemsLoaded}
+          onVendorAdded={v => setVendors(prev => [...prev, v])}
+          onSaved={async () => { setCopyFrom(null); await load(); }}
         />
       )}
 
@@ -854,12 +890,19 @@ const EMPTY_ITEM: FormItem = {
 };
 
 function ConsignmentDialog({
-  open, onOpenChange, editing, vendors, warehouses, items, itemsLoaded, onVendorAdded, onSaved,
+  open, onOpenChange, editing, copyFrom, vendors, warehouses, items, itemsLoaded, onVendorAdded, onSaved,
   readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   editing: consignmentsApi.Consignment | null;
+  /** Copy source. When set (and {@code editing} is null), the dialog
+   *  opens in NEW-consignment mode with items pre-populated from this
+   *  source's lines (their {@code id} stripped so the BE mints fresh
+   *  rows), warehouse + notes pre-filled, but supplier LEFT BLANK so
+   *  the operator must pick one. Consignment number is auto-minted on
+   *  save like any other new consignment. */
+  copyFrom?: consignmentsApi.Consignment | null;
   vendors: vendorsApi.Vendor[];
   warehouses: warehousesApi.Warehouse[];
   items: itemsApi.Item[];
@@ -968,6 +1011,57 @@ function ConsignmentDialog({
           commissionRatePct: null,
         };
       }) : [{ ...EMPTY_ITEM }]);
+    } else if (copyFrom) {
+      // Copy source: mint a fresh consignment carrying every item
+      // line from the source but WITHOUT its supplier (operator picks
+      // fresh) and without any of the settlement accumulators. The
+      // consignment number is server-auto-minted on save.
+      setSupplierId('');
+      setWarehouseId(copyFrom.warehouseId ?? '');
+      // Same 'active' default as blank-create so the primary Create
+      // button commits a live agreement (matches operator intent when
+      // duplicating an in-flight consignment).
+      setStatus('active');
+      setStartDate(new Date().toISOString().slice(0, 10));
+      setEndDate('');
+      // Copy opens in % mode — same reasoning as Edit: the operator is
+      // re-reading an existing agreement's commission structure.
+      setCommissionMode('%');
+      let totalRetailForRate = 0;
+      let totalCommForRate = 0;
+      for (const it of copyFrom.items) {
+        const q = it.receivedQty ?? 0;
+        const p = it.sellingPrice ?? 0;
+        const g = q * p;
+        totalRetailForRate += g;
+        if (it.commissionType === 'amount')       totalCommForRate += q * (it.commissionValue ?? 0);
+        else if (it.commissionType === 'percent') totalCommForRate += g * (it.commissionValue ?? 0) / 100;
+      }
+      const derivedRate = totalRetailForRate > 0
+        ? Math.round((totalCommForRate / totalRetailForRate) * 100)
+        : 0;
+      setBulkCommissionPct(derivedRate > 0 ? String(derivedRate) : '');
+      setNotes(copyFrom.notes ?? '');
+      setLines(copyFrom.items.length > 0 ? copyFrom.items.map(it => {
+        const qty   = it.receivedQty ?? 0;
+        const price = it.sellingPrice ?? 0;
+        let commissionPerUnit = 0;
+        if (it.commissionType === 'amount')       commissionPerUnit = it.commissionValue ?? 0;
+        else if (it.commissionType === 'percent') commissionPerUnit = price * (it.commissionValue ?? 0) / 100;
+        const supplierPerUnit = Math.max(0, price - commissionPerUnit);
+        return {
+          // id=null forces the BE to insert a NEW consignment_items
+          // row instead of touching the source's line.
+          id: null,
+          stockItemId: it.stockItemId,
+          orderQty: String(qty),
+          retailPrice: price.toFixed(2),
+          supplierAmount:   supplierPerUnit.toFixed(2),
+          commissionAmount: commissionPerUnit.toFixed(2),
+          commissionRatePct: null,
+        };
+      }) : [{ ...EMPTY_ITEM }]);
+      void consignmentsApi.nextNumber().then(r => setNextNumber(r.consignmentNo)).catch(() => setNextNumber(''));
     } else {
       setSupplierId('');
       setWarehouseId('');
@@ -985,7 +1079,7 @@ function ConsignmentDialog({
       setLines([{ ...EMPTY_ITEM }]);
       void consignmentsApi.nextNumber().then(r => setNextNumber(r.consignmentNo)).catch(() => setNextNumber(''));
     }
-  }, [open, editing]);
+  }, [open, editing, copyFrom]);
 
   const setLine = (idx: number, patch: Partial<FormItem>) =>
     setLines(prev => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -1134,7 +1228,9 @@ function ConsignmentDialog({
                     ? `View ${editing.consignmentNo}`
                     : editing
                       ? `Edit ${editing.consignmentNo}`
-                      : 'New Consignment'}
+                      : copyFrom
+                        ? `Copy of ${copyFrom.consignmentNo}`
+                        : 'New Consignment'}
                 </span>
                 {/* Info icon on Create — hovering surfaces the
                     auto-mint format that used to live inline in the
