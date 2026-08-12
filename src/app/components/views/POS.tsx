@@ -2187,6 +2187,17 @@ function PosCheckoutDialog({
 }: CheckoutProps) {
   const setMethod = onMethodChange;
   const [received, setReceived] = useState<number>(0);
+  /**
+   * v-pos-checkout-total-cents — snap the incoming {@code total} to
+   * whole cents once. Upstream computes it as subtotal + tax + …,
+   * which can drift into floating-point crumbs like 0.899999999999
+   * for a nominally-$0.90 sale. If we let that value flow through
+   * to the Received input, the cashier sees an ugly figure AND the
+   * server-side {@code paymentReceived >= total} check trips against
+   * its own clean-cents total. Rounding here fixes both without
+   * chasing the artifact through every arithmetic upstream.
+   */
+  const totalCents = useMemo(() => Math.round(total * 100) / 100, [total]);
 
   /* v-loyalty-redeem-at-checkout — local map of rewards the cashier
    *  has ticked "Use this time". Each entry carries the loyalty
@@ -2433,10 +2444,11 @@ function PosCheckoutDialog({
   // Re-sync the "received" default to the order total whenever the
   // dialog re-opens — non-cash methods always equal the total, and a
   // fresh cash sale starts at total too so the cashier only types
-  // when they're actually overpaying.
+  // when they're actually overpaying. Uses the cent-snapped total so
+  // the Received input never shows a floating crumb.
   useEffect(() => {
-    if (open) setReceived(total);
-  }, [open, total]);
+    if (open) setReceived(totalCents);
+  }, [open, totalCents]);
 
   /** Tracks the last (open, method, total) tuple we attempted so a
    *  failed mint doesn't enter a retry storm. The previous version
@@ -2485,7 +2497,7 @@ function PosCheckoutDialog({
         if (next.status !== paywaySession.status) setPaywaySession(next);
         if (next.status === 'paid') {
           clearInterval(timer);
-          onSubmit('khqr', total);
+          onSubmit('khqr', totalCents);
         }
       } catch { /* swallow — try again next tick */ }
     }, 2000);
@@ -2509,8 +2521,8 @@ function PosCheckoutDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, method]);
 
-  const change = Math.max(0, received - total);
-  const short  = received < total;
+  const change = Math.max(0, received - totalCents);
+  const short  = received < totalCents;
 
   // v-pos-checkout-methods — six payment methods:
   //   Cash (Banknote)  · Transfer (Landmark bank wire)
@@ -2848,7 +2860,7 @@ function PosCheckoutDialog({
 
             <div className="flex justify-between border-t pt-1.5">
               <span className="text-gray-600">Total</span>
-              <span className="font-semibold">${total.toFixed(2)}</span>
+              <span className="font-semibold">${totalCents.toFixed(2)}</span>
             </div>
             {method === 'cash' && (
               <>
@@ -2887,7 +2899,11 @@ function PosCheckoutDialog({
               //     failure here is a soft error — the customer
               //     already paid the discounted total, so we just
               //     toast and let admin reconcile via ADJUST.
-              const ok = await onSubmit(method, method === 'cash' ? received : total);
+              // Send cent-snapped values only. `received` is already
+              // snapped by the auto-fill effect; non-cash methods use
+              // the same clean total so the BE's amount check never
+              // trips on a floating-point crumb (see totalCents doc).
+              const ok = await onSubmit(method, method === 'cash' ? received : totalCents);
               if (!ok) return;
               await commitLoyalty();
             }}
