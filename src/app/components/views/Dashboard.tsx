@@ -16,7 +16,7 @@ import { makeDeptName } from '../../utils/deptName';
 import {
   Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle,
   RefreshCw, CalendarDays, LayoutDashboard, Wallet, Landmark,
-  ShoppingCart, Gauge, Sparkles, Loader2,
+  ShoppingCart, Gauge, Sparkles, Loader2, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { format, differenceInDays, parseISO } from 'date-fns';
@@ -140,11 +140,12 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Widget bundle for the active category. HR + POS have real
-          content; other categories land on the shared placeholder
-          until their bundle ships. */}
-      {active.code === 'hr'      ? <HrDashboardWidgets />
-        : active.code === 'pos'  ? <PosDashboardBundle />
+      {/* Widget bundle for the active category. HR + POS +
+          Accounting have real content; other categories land on the
+          shared placeholder until their bundle ships. */}
+      {active.code === 'hr'             ? <HrDashboardWidgets />
+        : active.code === 'pos'         ? <PosDashboardBundle />
+        : active.code === 'accounting'  ? <AccountingDashboardBundle />
         : <ComingSoonBundle category={active} />}
     </div>
   );
@@ -306,6 +307,151 @@ function PosKpiTile({ label, value, icon: Icon, tone }: {
       </div>
       <div className={`h-8 w-8 rounded-md border flex items-center justify-center ${POS_KPI_TONE_CLASS[tone]}`}>
         <Icon className="h-4 w-4" />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* Accounting dashboard bundle                                     */
+/* ============================================================== */
+
+/** V316 — Accounting category widgets. MTD KPI row (revenue,
+ *  expense, profit, AR, AP), a 6-month revenue-vs-expense trend,
+ *  and an activity feed of the last 10 non-void invoices + bills.
+ *  All money figures come from the BE already USD-normalized using
+ *  each row's captured exchange rate. */
+function AccountingDashboardBundle() {
+  const { formatDate } = useDateFormat();
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('accounting')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const usd = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    const abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n < 0 ? `-$${abs}` : `$${abs}`;
+  };
+
+  const kpi = data?.kpi ?? {};
+  const trend = (data?.trend ?? []) as { month: string; revenue: number | string; expense: number | string; profit: number | string }[];
+  // Peak-normalize both series against the same y-axis so a strong
+  // revenue month doesn't dwarf a small expense month by comparison.
+  const peak = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.revenue) || 0, Number(p.expense) || 0), 0
+  ), [trend]);
+  const recent = data?.recentTransactions ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading Accounting dashboard…
+      </div>
+    );
+  }
+  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip — 5 tiles. Profit tone shifts to rose when
+          negative so an operator sees the sign at a glance. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <PosKpiTile label="Revenue (MTD)" value={usd(kpi.revenueMtd)} icon={TrendingUp} tone="emerald" />
+        <PosKpiTile label="Expense (MTD)" value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="rose" />
+        <PosKpiTile label="Profit (MTD)"  value={usd(kpi.profitMtd)}
+          icon={Wallet}
+          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'emerald' : 'rose'} />
+        <PosKpiTile label="AR (open)"     value={usd(kpi.arOpen)} icon={FileText} tone="blue" />
+        <PosKpiTile label="AP (open)"     value={usd(kpi.apOpen)} icon={Landmark}  tone="amber" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 6-month trend — two bars per month (revenue + expense).
+            Same shared-peak normalization so bars are comparable
+            across months and series. */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Revenue vs Expense — last 6 months</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || peak === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No activity in the last 6 months.
+              </div>
+            ) : (
+              <div className="flex items-end gap-3 h-48 pt-2">
+                {trend.map(p => {
+                  const rv = Number(p.revenue) || 0;
+                  const ex = Number(p.expense) || 0;
+                  const rh = Math.max(2, Math.round((rv / peak) * 170));
+                  const eh = Math.max(2, Math.round((ex / peak) * 170));
+                  const [y, m] = p.month.split('-');
+                  const label = new Date(Number(y), Number(m) - 1, 1)
+                    .toLocaleDateString(undefined, { month: 'short' });
+                  return (
+                    <div key={p.month} className="flex-1 flex flex-col items-center gap-1"
+                      title={`${p.month} · Revenue ${usd(rv)} · Expense ${usd(ex)} · Profit ${usd(Number(p.profit))}`}>
+                      <div className="flex items-end gap-0.5 w-full h-[172px]">
+                        <div className="flex-1 rounded-t bg-emerald-500/80" style={{ height: `${rh}px` }} />
+                        <div className="flex-1 rounded-t bg-rose-500/80"    style={{ height: `${eh}px` }} />
+                      </div>
+                      <div className="text-[10px] text-gray-500 tabular-nums">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-4 text-[11px] text-gray-500">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500/80" /> Revenue</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-rose-500/80" /> Expense</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent transactions — activity feed. Revenue rows show
+            emerald + no sign; expense rows show rose + a "−" prefix
+            (server sends negative amountUsd on bills). */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recent transactions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recent.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No transactions.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {recent.map(r => {
+                  const amt = Number(r.amountUsd) || 0;
+                  const positive = amt >= 0;
+                  return (
+                    <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                      <div className="min-w-0">
+                        <div className="font-medium tabular-nums text-xs truncate">{r.docNo}</div>
+                        <div className="text-[11px] text-gray-500 capitalize">{r.kind} · {r.status}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`font-medium tabular-nums text-xs ${
+                          positive ? 'text-emerald-700' : 'text-rose-700'
+                        }`}>{usd(amt)}</div>
+                        <div className="text-[10px] text-gray-400">{formatDate(r.issueDate)}</div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

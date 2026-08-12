@@ -33,15 +33,28 @@ export interface DashboardSummary {
   approvals?: { leavePending: number; otPending: number; payrollPending: number };
   payrollMonth?: { month: string; netTotal: string; totalEarnings: string; totalDeductions: string };
   contracts?: { expiringIn30Days: number };
-  /** V316 — POS-specific fields. Present when {@code category === 'pos'}. */
+  /** V316 — POS + Accounting share the {@code kpi} key on the wire.
+   *  Each bundle reads only the fields it knows about; the union
+   *  keeps TS from complaining while both surfaces coexist. */
   kpi?: {
-    todaySales:     number | string;
-    todayOrders:    number;
-    avgOrderValue:  number | string;
-    todayCustomers: number;
-    todayDiscount:  number | string;
+    // POS
+    todaySales?:     number | string;
+    todayOrders?:    number;
+    avgOrderValue?:  number | string;
+    todayCustomers?: number;
+    todayDiscount?:  number | string;
+    // Accounting (MTD-to-date, USD-normalized on the server)
+    revenueMtd?: number | string;
+    expenseMtd?: number | string;
+    profitMtd?:  number | string;
+    arOpen?:     number | string;
+    apOpen?:     number | string;
   };
-  trend?: { date: string; sales: number | string; orders: number }[];
+  /** POS 7-day daily bucket. */
+  trend?:
+    | { date: string; sales: number | string; orders: number }[]
+    | { month: string; revenue: number | string; expense: number | string; profit: number | string }[];
+  /** POS-only. */
   recentOrders?: {
     id: string;
     queueNo: string;
@@ -50,6 +63,16 @@ export interface DashboardSummary {
     total: number | string;
     paymentMethod: string;
     checkedOutAt: string | null;
+  }[];
+  /** Accounting-only. Positive amountUsd = revenue; negative = expense. */
+  recentTransactions?: {
+    id: string;
+    kind: 'invoice' | 'bill';
+    docNo: string;
+    issueDate: string;
+    amountUsd: number | string;
+    currency: string;
+    status: string;
   }[];
   [k: string]: unknown;
 }
