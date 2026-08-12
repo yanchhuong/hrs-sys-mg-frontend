@@ -147,6 +147,7 @@ export function Dashboard() {
         : active.code === 'pos'         ? <PosDashboardBundle />
         : active.code === 'accounting'  ? <AccountingDashboardBundle />
         : active.code === 'payroll'     ? <PayrollDashboardBundle />
+        : active.code === 'management'  ? <ManagementDashboardBundle />
         : <ComingSoonBundle category={active} />}
     </div>
   );
@@ -601,6 +602,171 @@ function PayrollDashboardBundle() {
                     </div>
                   </li>
                 ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/* Management dashboard bundle                                     */
+/* ============================================================== */
+
+const ACTIVITY_SOURCE_TONE: Record<string, string> = {
+  accounting: 'text-blue-600 bg-blue-50',
+  payroll:    'text-violet-600 bg-violet-50',
+  pos:        'text-emerald-600 bg-emerald-50',
+};
+
+/** V316 — Management category widgets. A cross-category roll-up
+ *  composed from the accounting + payroll + POS services (all on
+ *  the BE — this bundle just renders). Eight KPI tiles, the shared
+ *  revenue-vs-expense trend, and a merged activity feed so an
+ *  owner scans one page. */
+function ManagementDashboardBundle() {
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    dashboardsApi.getCategorySummary('management')
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const usd = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    const abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n < 0 ? `-$${abs}` : `$${abs}`;
+  };
+  const num = (v: number | string | undefined) => {
+    const n = typeof v === 'string' ? Number(v) : (v ?? 0);
+    return n.toLocaleString();
+  };
+
+  const kpi = data?.kpi ?? {};
+  const trend = (data?.trend ?? []) as { month: string; revenue: number | string; expense: number | string; profit: number | string }[];
+  const peak = useMemo(() => trend.reduce(
+    (m, p) => Math.max(m, Number(p.revenue) || 0, Number(p.expense) || 0), 0
+  ), [trend]);
+  const activity = data?.activity ?? [];
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading Management dashboard…
+      </div>
+    );
+  }
+  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* 8 KPI tiles laid out on two rows at md+ so an owner reads
+          the whole business status without scrolling. Profit tone
+          flips rose when negative — same rule the Accounting bundle
+          uses so the two dashboards read consistently. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <PosKpiTile label="Revenue (MTD)"  value={usd(kpi.revenueMtd)} icon={TrendingUp}   tone="emerald" />
+        <PosKpiTile label="Expense (MTD)"  value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="rose" />
+        <PosKpiTile label="Profit (MTD)"   value={usd(kpi.profitMtd)}
+          icon={Wallet}
+          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'emerald' : 'rose'} />
+        <PosKpiTile label="Payroll (MTD)"  value={usd(kpi.payrollNetMtd)} icon={Landmark} tone="violet" />
+        <PosKpiTile label="POS today"      value={usd(kpi.todaySales)}    icon={ShoppingCart} tone="emerald" />
+        <PosKpiTile label="Employees"      value={num(kpi.employees)}     icon={Users} tone="blue" />
+        <PosKpiTile label="AR (open)"      value={usd(kpi.arOpen)}        icon={FileText} tone="blue" />
+        <PosKpiTile label="AP (open)"      value={usd(kpi.apOpen)}        icon={Gauge} tone="amber" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Same revenue-vs-expense chart the Accounting bundle
+            uses, rendered from the shared trend payload — one
+            source of truth for the 6-month revenue picture. */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">Revenue vs Expense — last 6 months</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trend.length === 0 || peak === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">
+                No activity in the last 6 months.
+              </div>
+            ) : (
+              <div className="flex items-end gap-3 h-48 pt-2">
+                {trend.map(p => {
+                  const rv = Number(p.revenue) || 0;
+                  const ex = Number(p.expense) || 0;
+                  const rh = Math.max(2, Math.round((rv / peak) * 170));
+                  const eh = Math.max(2, Math.round((ex / peak) * 170));
+                  const [y, m] = p.month.split('-');
+                  const label = new Date(Number(y), Number(m) - 1, 1)
+                    .toLocaleDateString(undefined, { month: 'short' });
+                  return (
+                    <div key={p.month} className="flex-1 flex flex-col items-center gap-1"
+                      title={`${p.month} · Revenue ${usd(rv)} · Expense ${usd(ex)} · Profit ${usd(Number(p.profit))}`}>
+                      <div className="flex items-end gap-0.5 w-full h-[172px]">
+                        <div className="flex-1 rounded-t bg-emerald-500/80" style={{ height: `${rh}px` }} />
+                        <div className="flex-1 rounded-t bg-rose-500/80"    style={{ height: `${eh}px` }} />
+                      </div>
+                      <div className="text-[10px] text-gray-500 tabular-nums">{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-4 text-[11px] text-gray-500">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500/80" /> Revenue</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-rose-500/80" /> Expense</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Merged activity feed — rows tinted per source so an
+            owner spots what kind of event landed at a glance. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Business activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activity.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4 text-center">No recent activity.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {activity.map(r => {
+                  const amt = Number(r.amountUsd) || 0;
+                  const positive = amt >= 0;
+                  return (
+                    <li key={`${r.source}-${r.id}`} className="flex items-center justify-between gap-2 text-sm">
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide ${
+                          ACTIVITY_SOURCE_TONE[r.source] ?? 'text-gray-600 bg-gray-100'
+                        }`}>
+                          {r.source}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-medium tabular-nums text-xs truncate">{r.docNo}</div>
+                          <div className="text-[11px] text-gray-500 capitalize">{r.status}</div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`font-medium tabular-nums text-xs ${
+                          positive ? 'text-emerald-700' : 'text-rose-700'
+                        }`}>{usd(amt)}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {r.date ? String(r.date).slice(0, 10) : '—'}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </CardContent>

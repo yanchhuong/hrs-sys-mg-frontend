@@ -58,6 +58,9 @@ export interface DashboardSummary {
     employeesMtd?:   number;
     paidBatchesMtd?: number;
     pendingBatches?: number;
+    // Management roll-up (composed from the other services)
+    payrollNetMtd?:  number | string;
+    employees?:      number;
   };
   /** Per-category trend rows. */
   trend?:
@@ -95,6 +98,18 @@ export interface DashboardSummary {
     status: string;
     netSalaryTotal: number | string;
     currency: string;
+  }[];
+  /** Management-only. Merged feed of accounting / payroll / POS
+   *  rows. Positive amountUsd = money in; negative = money out.
+   *  {@code source} + {@code kind} let the FE colour + icon the row. */
+  activity?: {
+    id: string;
+    source: 'accounting' | 'payroll' | 'pos';
+    kind?: string;
+    docNo: string;
+    date: string | null;
+    status: string;
+    amountUsd: number | string;
   }[];
   [k: string]: unknown;
 }
