@@ -961,10 +961,25 @@ export function Invoices({
                               fresh. */}
                           {!isEncounter && !isAdjustment && (inv.status === 'progress' || inv.status === 'paid') && (
                             <Button size="sm" variant="ghost" className="h-7 px-2"
-                              onClick={() => {
-                                setFormKind(inv.kind);
-                                setFormEditing(null);
-                                setFormCopyFrom(inv);
+                              onClick={async () => {
+                                // The list payload can carry an empty
+                                // items[] (hydrated only on the
+                                // single-row GET), which would leave
+                                // the copied form's Line items row
+                                // blank. Fetch the full invoice first
+                                // so the pre-fill has real rows to
+                                // copy. Fall back to the list row on
+                                // error rather than blocking.
+                                try {
+                                  const full = await invoicesApi.get(inv.id);
+                                  setFormKind(full.kind);
+                                  setFormEditing(null);
+                                  setFormCopyFrom(full);
+                                } catch {
+                                  setFormKind(inv.kind);
+                                  setFormEditing(null);
+                                  setFormCopyFrom(inv);
+                                }
                                 setFormOpen(true);
                               }}
                               title="Copy — new invoice, same items">
