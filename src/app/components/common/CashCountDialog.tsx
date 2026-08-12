@@ -111,18 +111,27 @@ export function CashCountDialog({
             <span className="text-center min-w-[64px]">Quantity</span>
             <span className="text-right">Amount</span>
           </div>
-          {rows.map(r => (
-            <div
-              key={r.denom}
-              className={`grid grid-cols-[1fr_auto_1fr] gap-4 px-3 py-1.5 text-sm tabular-nums ${
-                r.qty === 0 ? 'text-gray-400' : ''
-              }`}
-            >
-              <span>{symbol}{fmt(r.denom)}</span>
-              <span className="text-center min-w-[64px]">{r.qty}</span>
-              <span className="text-right">{symbol}{fmt(r.amount)}</span>
-            </div>
-          ))}
+          {rows.map(r => {
+            // Rows with qty > 0 pick up an emerald tint + left accent
+            // so the operator can eye-scan the active denominations
+            // instead of reading every quantity cell. Zero rows stay
+            // muted (grey) so they read as "not part of the count".
+            const active = r.qty > 0;
+            return (
+              <div
+                key={r.denom}
+                className={`grid grid-cols-[1fr_auto_1fr] gap-4 px-3 py-1.5 text-sm tabular-nums border-l-2 transition-colors ${
+                  active
+                    ? 'border-l-emerald-500 bg-emerald-50/40 text-emerald-900'
+                    : 'border-l-transparent text-gray-400'
+                }`}
+              >
+                <span>{symbol}{fmt(r.denom)}</span>
+                <span className={`text-center min-w-[64px] ${active ? 'font-semibold' : ''}`}>{r.qty}</span>
+                <span className="text-right">{symbol}{fmt(r.amount)}</span>
+              </div>
+            );
+          })}
           <div className="grid grid-cols-[1fr_auto_1fr] gap-4 px-3 py-2 text-sm font-semibold bg-gray-50">
             <span>Total</span>
             <span className="min-w-[64px]" />
