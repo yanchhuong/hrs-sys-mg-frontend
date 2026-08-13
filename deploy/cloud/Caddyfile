@@ -25,8 +25,24 @@
     Referrer-Policy "strict-origin-when-cross-origin"
     Permissions-Policy "geolocation=(), microphone=(), camera=()"
 
-    # v-csp — defence-in-depth against XSS. Sources chosen from the
-    # app's real dependencies:
+    # v-csp — defence-in-depth against XSS. Shipped as
+    # Content-Security-Policy-Report-Only so the browser LOGS
+    # violations to the DevTools console but does NOT block the
+    # resource. Zero risk of breaking anything on this compose stack
+    # — the app behaves exactly as it does today.
+    #
+    # ROLLOUT: open the running app in DevTools → Console tab for a
+    # few minutes and click through Dashboard / POS / Items /
+    # Invoices / Public shop menu. Any legitimate resource the
+    # browser would have blocked shows up as:
+    #   "Refused to load … because it violates the following
+    #    Content Security Policy directive"
+    # Add the source to the appropriate -src directive, redeploy.
+    # When the console is clean, rename the header key from
+    # Content-Security-Policy-Report-Only → Content-Security-Policy
+    # and redeploy once more. That's when it starts enforcing.
+    #
+    # Sources chosen from the app's real dependencies:
     #   fonts.googleapis.com  — Google Fonts CSS (Battambang, Moul,
     #                           Hanken Grotesk, JetBrains Mono)
     #   fonts.gstatic.com     — the font files themselves
@@ -37,10 +53,6 @@
     #                                     dumps, camera stream (@zxing)
     #   wasm-unsafe-eval      — @zxing/library ships WebAssembly for
     #                           its barcode decoder
-    #
-    # If any of these ever moves to a different CDN, add it here and
-    # redeploy — CSP violations show up as blocked network requests
-    # in the browser DevTools console, so triage is fast.
-    Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
   }
 }

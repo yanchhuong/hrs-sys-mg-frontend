@@ -1,0 +1,67 @@
+# v-csp-report-only — security headers for the droplet's nginx site.
+#
+# Drop this file into `/etc/nginx/conf.d/` or `include` it from the
+# main site `server { … }` block, then:
+#
+#   sudo nginx -t                 # syntax check
+#   sudo nginx -s reload          # apply
+#
+# TWO ROLLOUT STAGES.
+#
+# ─── Stage 1 (this file, as-shipped) ────────────────────────────────
+# The CSP is set as `Content-Security-Policy-Report-Only`. That word
+# means the browser LOGS violations to the DevTools console but does
+# NOT block the resource. Zero risk of breaking anything — the app
+# behaves exactly as it does today.
+#
+# What to do while Report-Only is live:
+#   1. Open the running app in Chrome or Firefox.
+#   2. Open DevTools (F12) → Console tab.
+#   3. Click through the pages you care about: Dashboard, POS, Items,
+#      Invoices, Employees, Public Shop menu, etc.
+#   4. Look for messages matching:
+#        Refused to load … because it violates the following
+#        Content Security Policy directive
+#   5. Screenshot / paste any hits so the policy can be adjusted.
+#
+# ─── Stage 2 (after Stage 1 is clean) ───────────────────────────────
+# Rename the header line below from `Content-Security-Policy-Report-Only`
+# to `Content-Security-Policy` and reload nginx. The browser starts
+# enforcing; the same list of sources now blocks anything not on it.
+#
+# ────────────────────────────────────────────────────────────────────
+#
+# The `always` keyword makes nginx emit the header even on 4xx/5xx
+# responses. Without it, the header wouldn't apply to error pages,
+# which is where XSS lures sometimes land.
+
+# HSTS — force HTTPS for a year. Already set on most Let's Encrypt
+# setups; harmless if duplicated (last one wins).
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Block MIME sniffing — the browser trusts the Content-Type we send.
+add_header X-Content-Type-Options "nosniff" always;
+
+# Trim what shows up in the Referer header on cross-origin nav.
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+# Deny geolocation / mic / camera by default (barcode scanner uses
+# camera via a page-level permissions prompt, unaffected).
+add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+# ─── CSP — REPORT-ONLY MODE ─────────────────────────────────────────
+# When ready to enforce, rename the header key to
+# Content-Security-Policy (drop the -Report-Only suffix).
+#
+# Sources chosen from the app's real dependencies:
+#   fonts.googleapis.com      — Google Fonts CSS (Battambang, Moul,
+#                               Hanken Grotesk, JetBrains Mono)
+#   fonts.gstatic.com         — the font files themselves
+#   challenges.cloudflare.com — Turnstile bot-protection on public
+#                               shop checkout
+#   data: / blob: (img/media/font) — base64 item thumbnails,
+#                               camera stream, capturePrintImage
+#                               canvas dumps
+#   wasm-unsafe-eval          — @zxing/library's WebAssembly
+#                               barcode decoder
+add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'" always;
