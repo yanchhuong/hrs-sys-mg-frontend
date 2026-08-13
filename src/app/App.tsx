@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 // Side-effect import — monkey-patches sonner's toast.error to swallow
 // module-disabled messages so a tenant with an uninstalled module sees
 // the page render empty instead of a red toast on every fetch.
@@ -8,26 +8,36 @@ import { AgencyClientProvider } from './context/AgencyClientContext';
 import { DateFormatProvider } from './context/DateFormatContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { I18nProvider } from './i18n/I18nContext';
+// LandingPage + LoginPage stay eager — one of them is the first paint
+// for every anonymous visitor and lazy-loading them would flash a
+// Suspense fallback on landing, hurting perceived performance.
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
-import { Layout } from './components/Layout';
-import { SuperAdminApp } from './components/views/super-admin/SuperAdminApp';
-import { AgencyApp } from './components/views/agency/AgencyApp';
 import { Toaster } from './components/ui/sonner';
 import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
 import { NAV_BY_ID, NAV_LEAVES } from './config/nav';
-import { QrScanPage } from './components/views/QrScanPage';
-import { PosCustomerDisplay } from './components/views/PosCustomerDisplay';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
-import { PublicShopPage } from './components/views/PublicShopPage';
-import { KitchenSharePage } from './components/views/KitchenSharePage';
-import { RequirementSurveyForm } from './components/views/RequirementSurveyForm';
-import { CambodiaLearnPage } from './components/CambodiaLearnPage';
-import { ResetPasswordPage } from './components/ResetPasswordPage';
-import { PublicInvoiceView } from './components/views/PublicInvoiceView';
 import { DesktopApiModeSwitch } from './components/DesktopApiModeSwitch';
 import { isTauri } from './utils/runtime';
+
+// v-lazy-app-shells — every logged-in surface + every anonymous
+// deep-link page is lazy-loaded. Anonymous landing/login visitors
+// download none of this code. Suspense boundaries below the auth
+// providers gate the async render with a null fallback (matches the
+// `if (loading) return null` posture the app already uses during
+// AuthProvider's /me boot fetch — no visible spinner flicker).
+const Layout          = lazy(() => import('./components/Layout').then(m => ({ default: m.Layout })));
+const SuperAdminApp   = lazy(() => import('./components/views/super-admin/SuperAdminApp').then(m => ({ default: m.SuperAdminApp })));
+const AgencyApp       = lazy(() => import('./components/views/agency/AgencyApp').then(m => ({ default: m.AgencyApp })));
+const QrScanPage         = lazy(() => import('./components/views/QrScanPage').then(m => ({ default: m.QrScanPage })));
+const PosCustomerDisplay = lazy(() => import('./components/views/PosCustomerDisplay').then(m => ({ default: m.PosCustomerDisplay })));
+const PublicShopPage     = lazy(() => import('./components/views/PublicShopPage').then(m => ({ default: m.PublicShopPage })));
+const KitchenSharePage   = lazy(() => import('./components/views/KitchenSharePage').then(m => ({ default: m.KitchenSharePage })));
+const RequirementSurveyForm = lazy(() => import('./components/views/RequirementSurveyForm').then(m => ({ default: m.RequirementSurveyForm })));
+const CambodiaLearnPage  = lazy(() => import('./components/CambodiaLearnPage').then(m => ({ default: m.CambodiaLearnPage })));
+const ResetPasswordPage  = lazy(() => import('./components/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const PublicInvoiceView  = lazy(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -257,7 +267,7 @@ export default function App() {
   if (isPublicScanPath()) {
     return (
       <>
-        <QrScanPage />
+        <Suspense fallback={null}><QrScanPage /></Suspense>
         <Toaster />
       </>
     );
@@ -269,7 +279,7 @@ export default function App() {
   if (isPosDisplayPath()) {
     return (
       <>
-        <PosCustomerDisplay />
+        <Suspense fallback={null}><PosCustomerDisplay /></Suspense>
         <Toaster />
       </>
     );
@@ -279,7 +289,7 @@ export default function App() {
   if (isPublicShopPath()) {
     return (
       <>
-        <PublicShopPage />
+        <Suspense fallback={null}><PublicShopPage /></Suspense>
         <Toaster />
       </>
     );
@@ -289,7 +299,7 @@ export default function App() {
   if (isPublicKitchenPath()) {
     return (
       <>
-        <KitchenSharePage />
+        <Suspense fallback={null}><KitchenSharePage /></Suspense>
         <Toaster />
       </>
     );
@@ -300,9 +310,11 @@ export default function App() {
   if (isPublicSurveyPath()) {
     return (
       <>
-        <RequirementSurveyForm
-          onBack={() => { window.location.href = '/'; }}
-        />
+        <Suspense fallback={null}>
+          <RequirementSurveyForm
+            onBack={() => { window.location.href = '/'; }}
+          />
+        </Suspense>
         <Toaster />
       </>
     );
@@ -312,7 +324,7 @@ export default function App() {
   if (isCambodiaLearnPath()) {
     return (
       <I18nProvider>
-        <CambodiaLearnPage />
+        <Suspense fallback={null}><CambodiaLearnPage /></Suspense>
         <Toaster />
       </I18nProvider>
     );
@@ -322,7 +334,7 @@ export default function App() {
   if (isResetPasswordPath()) {
     return (
       <>
-        <ResetPasswordPage />
+        <Suspense fallback={null}><ResetPasswordPage /></Suspense>
         <Toaster />
       </>
     );
@@ -332,7 +344,7 @@ export default function App() {
   if (isPublicInvoicePath()) {
     return (
       <>
-        <PublicInvoiceView />
+        <Suspense fallback={null}><PublicInvoiceView /></Suspense>
         <Toaster />
       </>
     );
@@ -343,7 +355,13 @@ export default function App() {
         <AgencyClientProvider>
           <DateFormatProvider>
             <ConfirmProvider>
-              <AppContent />
+              {/* Single Suspense wraps everything below the auth providers.
+                  Fallback is null — matches the `if (loading) return null`
+                  posture AppContent already uses while /me is verifying,
+                  so no visible spinner flicker on landing or route flips. */}
+              <Suspense fallback={null}>
+                <AppContent />
+              </Suspense>
               <Toaster />
             </ConfirmProvider>
           </DateFormatProvider>

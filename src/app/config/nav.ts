@@ -17,7 +17,7 @@
  *      and the permission matrix gates it.)
  */
 
-import { ComponentType } from 'react';
+import { ComponentType, lazy } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
@@ -29,56 +29,70 @@ import {
   CreditCard, Home, Ticket, ArrowDownLeft,
   type LucideIcon,
 } from 'lucide-react';
-import { Dashboard } from '../components/views/Dashboard';
-import { Employees } from '../components/views/Employees';
-import { Attendance } from '../components/views/Attendance';
-import { Overtime } from '../components/views/Overtime';
-import { Payroll } from '../components/views/Payroll';
-import { BenefitCalculator } from '../components/views/BenefitCalculator';
-import { UserManagement } from '../components/views/UserManagement';
-import { Settings as SettingsView } from '../components/views/Settings';
-import { AllLeave } from '../components/views/AllLeave';
-import { Exception } from '../components/views/Exception';
-import { Deduction } from '../components/views/Deduction';
-import { Increase } from '../components/views/Increase';
-import { AttendanceSettings } from '../components/views/AttendanceSettings';
-import { EmployeeSettings } from '../components/views/EmployeeSettings';
-import { PayrollCategorySettings } from '../components/views/PayrollCategorySettings';
-import { Reports } from '../components/views/Reports';
-import { Customers } from '../components/views/Customers';
-import { Vendors } from '../components/views/Vendors';
-import { Invoices } from '../components/views/Invoices';
-import { POS } from '../components/views/POS';
-import { Quotations } from '../components/views/Quotations';
-import { Vouchers } from '../components/views/Vouchers';
+
+// v-lazy-nav-views — every view referenced from the sidebar is lazy-
+// loaded. Landing / login visitors never download this code; a signed-
+// in user only fetches the chunk for the leaf they actually open. The
+// helper wraps React.lazy so we can point at NAMED exports (React.lazy
+// itself only accepts default exports). App.tsx wraps ViewComponent in
+// a <Suspense> boundary; Layout doesn't need one because it never
+// mounts the view directly.
+const lazyView = <T extends string>(
+  loader: () => Promise<Record<string, ComponentType<any>>>,
+  name: T,
+): ComponentType<any> =>
+  lazy(() => loader().then(m => ({ default: m[name] })));
+
+const Dashboard              = lazyView(() => import('../components/views/Dashboard'),              'Dashboard');
+const Employees              = lazyView(() => import('../components/views/Employees'),              'Employees');
+const Attendance             = lazyView(() => import('../components/views/Attendance'),             'Attendance');
+const Overtime               = lazyView(() => import('../components/views/Overtime'),               'Overtime');
+const Payroll                = lazyView(() => import('../components/views/Payroll'),                'Payroll');
+const BenefitCalculator      = lazyView(() => import('../components/views/BenefitCalculator'),      'BenefitCalculator');
+const UserManagement         = lazyView(() => import('../components/views/UserManagement'),         'UserManagement');
+const SettingsView           = lazyView(() => import('../components/views/Settings'),               'Settings');
+const AllLeave               = lazyView(() => import('../components/views/AllLeave'),               'AllLeave');
+const Exception              = lazyView(() => import('../components/views/Exception'),              'Exception');
+const Deduction              = lazyView(() => import('../components/views/Deduction'),              'Deduction');
+const Increase               = lazyView(() => import('../components/views/Increase'),               'Increase');
+const AttendanceSettings     = lazyView(() => import('../components/views/AttendanceSettings'),     'AttendanceSettings');
+const EmployeeSettings       = lazyView(() => import('../components/views/EmployeeSettings'),       'EmployeeSettings');
+const PayrollCategorySettings = lazyView(() => import('../components/views/PayrollCategorySettings'), 'PayrollCategorySettings');
+const Reports                = lazyView(() => import('../components/views/Reports'),                'Reports');
+const Customers              = lazyView(() => import('../components/views/Customers'),              'Customers');
+const Vendors                = lazyView(() => import('../components/views/Vendors'),                'Vendors');
+const Invoices               = lazyView(() => import('../components/views/Invoices'),               'Invoices');
+const POS                    = lazyView(() => import('../components/views/POS'),                    'POS');
+const Quotations             = lazyView(() => import('../components/views/Quotations'),             'Quotations');
+const Vouchers               = lazyView(() => import('../components/views/Vouchers'),               'Vouchers');
 // Loyalty is not registered as a sidebar leaf — its component is
-// embedded in POS Settings via AccountingSettingsDialog. No import
-// here.
-import { Commission } from '../components/views/Commission';
-import { InvoiceTemplates } from '../components/views/InvoiceTemplates';
-import { Bills } from '../components/views/Bills';
-import { Receipts } from '../components/views/Receipts';
-import { PaymentPlans } from '../components/views/PaymentPlans';
-import { PaymentCollections } from '../components/views/PaymentCollections';
-import { Property } from '../components/views/Property';
-import { Bookings } from '../components/views/Bookings';
-import { Items } from '../components/views/Items';
-import { StockMovements } from '../components/views/StockMovements';
-import { Transactions } from '../components/views/Transactions';
-import { CashAdvances } from '../components/views/CashAdvances';
-import { Approvals } from '../components/views/Approvals';
-import { TaxDeclarationsView } from '../components/views/TaxDeclarationsView';
-import { Encounters } from '../components/views/Encounters';
-import { Patients } from '../components/views/Patients';
-import { Students } from '../components/views/Students';
-import { Enrollments } from '../components/views/Enrollments';
-import { Attendances } from '../components/views/Attendances';
-import { Appointments } from '../components/views/Appointments';
-import { StockAdjustments } from '../components/views/StockAdjustments';
-import { Consignment } from '../components/views/Consignment';
-import { Announcements } from '../components/views/Announcements';
-import { SaleLedger, PurchaseLedger } from '../components/views/LedgerReport';
-import { ProfitLossReport } from '../components/views/ProfitLossReport';
+// embedded in POS Settings via AccountingSettingsDialog. No import here.
+const Commission             = lazyView(() => import('../components/views/Commission'),             'Commission');
+const InvoiceTemplates       = lazyView(() => import('../components/views/InvoiceTemplates'),       'InvoiceTemplates');
+const Bills                  = lazyView(() => import('../components/views/Bills'),                  'Bills');
+const Receipts               = lazyView(() => import('../components/views/Receipts'),               'Receipts');
+const PaymentPlans           = lazyView(() => import('../components/views/PaymentPlans'),           'PaymentPlans');
+const PaymentCollections     = lazyView(() => import('../components/views/PaymentCollections'),     'PaymentCollections');
+const Property               = lazyView(() => import('../components/views/Property'),               'Property');
+const Bookings               = lazyView(() => import('../components/views/Bookings'),               'Bookings');
+const Items                  = lazyView(() => import('../components/views/Items'),                  'Items');
+const StockMovements         = lazyView(() => import('../components/views/StockMovements'),         'StockMovements');
+const Transactions           = lazyView(() => import('../components/views/Transactions'),           'Transactions');
+const CashAdvances           = lazyView(() => import('../components/views/CashAdvances'),           'CashAdvances');
+const Approvals              = lazyView(() => import('../components/views/Approvals'),              'Approvals');
+const TaxDeclarationsView    = lazyView(() => import('../components/views/TaxDeclarationsView'),    'TaxDeclarationsView');
+const Encounters             = lazyView(() => import('../components/views/Encounters'),             'Encounters');
+const Patients               = lazyView(() => import('../components/views/Patients'),               'Patients');
+const Students               = lazyView(() => import('../components/views/Students'),               'Students');
+const Enrollments            = lazyView(() => import('../components/views/Enrollments'),            'Enrollments');
+const Attendances            = lazyView(() => import('../components/views/Attendances'),            'Attendances');
+const Appointments           = lazyView(() => import('../components/views/Appointments'),           'Appointments');
+const StockAdjustments       = lazyView(() => import('../components/views/StockAdjustments'),       'StockAdjustments');
+const Consignment            = lazyView(() => import('../components/views/Consignment'),            'Consignment');
+const Announcements          = lazyView(() => import('../components/views/Announcements'),          'Announcements');
+const SaleLedger             = lazyView(() => import('../components/views/LedgerReport'),           'SaleLedger');
+const PurchaseLedger         = lazyView(() => import('../components/views/LedgerReport'),           'PurchaseLedger');
+const ProfitLossReport       = lazyView(() => import('../components/views/ProfitLossReport'),       'ProfitLossReport');
 // Offices + QrDisplay are no longer registered as standalone leaves.
 // Both are reached through popups on the Attendance page:
 //   • Offices  → the gear-icon "Manage Offices" dialog
