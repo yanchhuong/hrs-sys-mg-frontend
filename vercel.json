@@ -4,7 +4,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api-02/:path*", "destination": "http://198.211.108.211:8081/api-02/:path*" },
+    { "source": "/api-02/:path*", "destination": "https://hr-share.com/api-02/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
