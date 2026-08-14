@@ -70,3 +70,35 @@ export function lazyWithReload<T extends ComponentType<any>>(
     }
   });
 }
+
+/** Global fallback for chunk-load failures that slip past `lazyWithReload`.
+ *  Registers window-level `error` + `unhandledrejection` listeners; if
+ *  either surfaces a stale-chunk fetch error, we reload the tab once
+ *  under the same 60 s cooldown. Called from `main.tsx` at boot so it
+ *  covers every raw dynamic `import()` in the app — including any not
+ *  wrapped in lazyWithReload — plus the extremely rare case where the
+ *  loader rejection bubbles as an unhandled promise instead of into
+ *  React's error boundary. */
+export function installChunkReloadSafetyNet(): void {
+  const reloadIfStaleChunk = (err: unknown) => {
+    if (!isChunkLoadError(err)) return;
+
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0); } catch { /* noop */ }
+
+    const now = Date.now();
+    if (now - last < RELOAD_COOLDOWN_MS) return;   // don't loop
+
+    try { sessionStorage.setItem(RELOAD_KEY, String(now)); } catch { /* noop */ }
+    window.location.reload();
+  };
+
+  window.addEventListener('error', ev => {
+    // Prefer `ev.error` (real Error object) over `ev.message` — some
+    // browsers stringify cross-origin script errors and lose the class.
+    reloadIfStaleChunk(ev.error ?? ev.message);
+  });
+  window.addEventListener('unhandledrejection', ev => {
+    reloadIfStaleChunk(ev.reason);
+  });
+}
