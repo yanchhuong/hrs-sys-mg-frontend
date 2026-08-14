@@ -95,7 +95,15 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      // v-dialog-header-min-w-0 — DialogContent uses `grid`, which gives
+      // its children an implicit `min-width: auto` (content-driven).
+      // Without `min-w-0` on the header, a long title (e.g. Items page's
+      // Increase Stock — {long name}) overflows past the modal's
+      // max-width and the built-in `truncate` on the title's inner span
+      // can never take effect. Also add `overflow-hidden` so anything
+      // else placed in the header (e.g. a badge row) can't push the
+      // header wider than the content column either.
+      className={cn("flex flex-col gap-2 text-center sm:text-left min-w-0 overflow-hidden", className)}
       {...props}
     />
   );
