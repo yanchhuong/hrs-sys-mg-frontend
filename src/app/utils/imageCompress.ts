@@ -20,15 +20,25 @@
  * not a storage cap — the OUTPUT is always small.
  */
 
-// v-image-sharpen — bumped from 512/Q70 to 768/Q78 after operators
-// reported soft covers on the POS grid (a 224 px tile at 2× DPR is
-// ~448 px, which the old 512 pipeline barely covered; anything past
-// 1× DPR — desktop zooms, product-detail overlays — visibly blurred).
-// New pipeline ships ~1.5× the pixels at slightly higher quality, so
-// covers land around 60–150 KB base64 versus the prior 40–110 KB.
-// Thumbnails (`makeThumbnailFromUrl` below) stay at 200/Q65 — those
-// are only ever rendered at row-thumbnail size so higher fidelity
-// there is wasted bytes on the list-JSON path.
+// v-image-sharpen-v2 — every upload used to run through this
+// downscale + re-encode pipeline unconditionally, so a pristine
+// 500 KB source JPG lost quality even though it never needed
+// compression. Operators reported the resulting POS covers looked
+// soft. New rules:
+//   • Source under BYPASS_COMPRESS_BYTES (2 MB) — return it as-is,
+//     no canvas trip, no re-encode. Pristine bytes ship straight
+//     through as the base64 data URL.
+//   • Source at or over 2 MB — downscale to MAX_EDGE and re-encode
+//     at QUALITY as before. Protects the DB from a 25 MB phone photo
+//     while leaving normal shop pictures untouched.
+//
+// Downscaled pipeline sits at 768px / Q78 (previously 512/Q70). A
+// 224 px POS tile at 2× DPR is ~448 px, which the old 512 pipeline
+// barely covered; 768 covers desktop zooms + product-detail overlays.
+// Thumbnails (`makeThumbnailFromUrl` below) now emit 400/Q80 so the
+// grid tile is crisp on high-DPI displays — see the bumped defaults
+// on the export.
+const BYPASS_COMPRESS_BYTES = 2 * 1024 * 1024;
 const MAX_EDGE = 768;
 const QUALITY  = 0.78;
 const HARD_MAX_BYTES = 25 * 1024 * 1024;
@@ -60,23 +70,26 @@ function edges(source: HTMLImageElement | ImageBitmap): { w: number; h: number }
 }
 
 /**
- * Downscale an existing data-URL (or http URL) image to a small
- * base64 thumbnail. Used at save time to produce the tiny cover
- * that list surfaces render — POS grid tile, Items table row,
- * Public Shop card — so the item-list JSON doesn't have to ship
- * the full-size cover per row.
+ * Downscale an existing data-URL (or http URL) image to a base64
+ * thumbnail. Used at save time to produce the small cover that
+ * list surfaces render — POS grid tile, Items table row, Public
+ * Shop card — so the item-list JSON doesn't have to ship the
+ * full-size cover per row.
  *
- * ~200 px longest edge at Q65 lands around 10-15 KB per photo.
- * Callers pass the {@link imageUrls}[0] cover; legacy items that
- * only have an http URL work too (browsers load it via <img>).
+ * Defaults bumped from 200/Q65 (v-image-sharpen) to 400/Q80
+ * (v-image-sharpen-v2). A POS tile is ~200 px CSS and displays at
+ * ~400 px on a 2× DPR panel; anything smaller than the display size
+ * gets upscaled by the browser and reads as blur. Bytes go from
+ * ~10 KB to ~35 KB per thumbnail — the list-JSON payload cost is
+ * manageable up to a few hundred items and disappears in gzip.
  *
  * Returns the original URL unchanged if it's already smaller than
  * the thumbnail edge — no point re-encoding a 128 px icon.
  */
 export async function makeThumbnailFromUrl(
   src: string,
-  edge = 200,
-  quality = 0.65,
+  edge = 400,
+  quality = 0.8,
 ): Promise<string> {
   if (!src) return src;
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -105,7 +118,10 @@ export async function makeThumbnailFromUrl(
 }
 
 /** Compress a picked File to a base64 data URL. Preserves PNG when
- *  the source is PNG (probably has alpha); otherwise emits JPEG. */
+ *  the source is PNG (probably has alpha); otherwise emits JPEG.
+ *  Bypasses the whole pipeline when the source is already small
+ *  (under {@link BYPASS_COMPRESS_BYTES}) so pristine photos ship
+ *  through untouched. */
 export async function compressImageToDataUrl(file: File): Promise<string> {
   if (!file.type.startsWith('image/')) {
     throw new Error(`"${file.name}" is not an image`);
@@ -114,6 +130,12 @@ export async function compressImageToDataUrl(file: File): Promise<string> {
     throw new Error('Image is over 25 MB — pick a smaller source file.');
   }
   if (PASSTHROUGH_MIME.has(file.type)) {
+    return await fileToDataUrl(file);
+  }
+  // Under 2 MB — return the source bytes as-is. Avoids the quality
+  // hit of a canvas re-encode on a picture that never needed
+  // compression to begin with. GIFs already short-circuited above.
+  if (file.size < BYPASS_COMPRESS_BYTES) {
     return await fileToDataUrl(file);
   }
 

@@ -10,12 +10,14 @@
  */
 import { compressImageToDataUrl } from './imageCompress';
 
-/** Compression happens BEFORE the size check, so this cap is measured
- *  on the compressed output, not the source file. Kept at 1 MB — that's
- *  larger than what our 1600px/JPEG82 pipeline produces for any normal
- *  photo, and blocks a still-huge PNG (mostly transparent screenshot
- *  scaled up) from silently going through. */
-export const MAX_IMAGE_BYTES = 1024 * 1024;
+/** Post-compression cap, measured on the base64 output. Set to 3 MB
+ *  because the pipeline now bypasses re-encode for sources under 2 MB
+ *  (v-image-sharpen-v2 in imageCompress.ts) — those pass through as-is
+ *  and pick up the base64 4/3 overhead, so a 2 MB source produces a
+ *  ~2.67 MB data URL. 3 MB leaves a small margin while still catching
+ *  the pathological cases (mostly-transparent scaled-up PNG that even
+ *  the 768px/Q78 pipeline can't shrink). */
+export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 export interface ReadOptions {
   /** Override the default 1 MB cap on the compressed output. Pass 0

@@ -2365,7 +2365,8 @@ export function Items() {
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
                       PNG / JPG · first image is the product card cover.
-                      Big files are auto-compressed.
+                      Files under 2 MB keep their original quality;
+                      larger files are auto-compressed.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
