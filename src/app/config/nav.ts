@@ -17,7 +17,7 @@
  *      and the permission matrix gates it.)
  */
 
-import { ComponentType, lazy } from 'react';
+import { ComponentType } from 'react';
 import {
   LayoutDashboard, Users, Clock, TimerIcon, DollarSign, AlertCircle,
   Minus, TrendingUp, BarChart3, Settings, Briefcase, Calculator,
@@ -29,19 +29,22 @@ import {
   CreditCard, Home, Ticket, ArrowDownLeft,
   type LucideIcon,
 } from 'lucide-react';
+import { lazyWithReload } from '../utils/lazyWithReload';
 
 // v-lazy-nav-views — every view referenced from the sidebar is lazy-
 // loaded. Landing / login visitors never download this code; a signed-
 // in user only fetches the chunk for the leaf they actually open. The
-// helper wraps React.lazy so we can point at NAMED exports (React.lazy
-// itself only accepts default exports). App.tsx wraps ViewComponent in
-// a <Suspense> boundary; Layout doesn't need one because it never
-// mounts the view directly.
+// helper adapts NAMED exports to React.lazy's default-only contract
+// AND wraps the loader in the stale-chunk auto-reload guard (see
+// v-lazy-reload-guard in lazyWithReload.ts) so a user with the app
+// open across a deploy gets one reload instead of a broken screen.
+// App.tsx wraps ViewComponent in a <Suspense> boundary; Layout
+// doesn't need one because it never mounts the view directly.
 const lazyView = <T extends string>(
   loader: () => Promise<Record<string, ComponentType<any>>>,
   name: T,
 ): ComponentType<any> =>
-  lazy(() => loader().then(m => ({ default: m[name] })));
+  lazyWithReload(() => loader().then(m => ({ default: m[name] })));
 
 const Dashboard              = lazyView(() => import('../components/views/Dashboard'),              'Dashboard');
 const Employees              = lazyView(() => import('../components/views/Employees'),              'Employees');

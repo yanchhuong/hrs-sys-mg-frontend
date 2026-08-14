@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { lazyWithReload } from './utils/lazyWithReload';
 // Side-effect import — monkey-patches sonner's toast.error to swallow
 // module-disabled messages so a tenant with an uninstalled module sees
 // the page render empty instead of a red toast on every fetch.
@@ -27,17 +28,17 @@ import { isTauri } from './utils/runtime';
 // providers gate the async render with a null fallback (matches the
 // `if (loading) return null` posture the app already uses during
 // AuthProvider's /me boot fetch — no visible spinner flicker).
-const Layout          = lazy(() => import('./components/Layout').then(m => ({ default: m.Layout })));
-const SuperAdminApp   = lazy(() => import('./components/views/super-admin/SuperAdminApp').then(m => ({ default: m.SuperAdminApp })));
-const AgencyApp       = lazy(() => import('./components/views/agency/AgencyApp').then(m => ({ default: m.AgencyApp })));
-const QrScanPage         = lazy(() => import('./components/views/QrScanPage').then(m => ({ default: m.QrScanPage })));
-const PosCustomerDisplay = lazy(() => import('./components/views/PosCustomerDisplay').then(m => ({ default: m.PosCustomerDisplay })));
-const PublicShopPage     = lazy(() => import('./components/views/PublicShopPage').then(m => ({ default: m.PublicShopPage })));
-const KitchenSharePage   = lazy(() => import('./components/views/KitchenSharePage').then(m => ({ default: m.KitchenSharePage })));
-const RequirementSurveyForm = lazy(() => import('./components/views/RequirementSurveyForm').then(m => ({ default: m.RequirementSurveyForm })));
-const CambodiaLearnPage  = lazy(() => import('./components/CambodiaLearnPage').then(m => ({ default: m.CambodiaLearnPage })));
-const ResetPasswordPage  = lazy(() => import('./components/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
-const PublicInvoiceView  = lazy(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
+const Layout          = lazyWithReload(() => import('./components/Layout').then(m => ({ default: m.Layout })));
+const SuperAdminApp   = lazyWithReload(() => import('./components/views/super-admin/SuperAdminApp').then(m => ({ default: m.SuperAdminApp })));
+const AgencyApp       = lazyWithReload(() => import('./components/views/agency/AgencyApp').then(m => ({ default: m.AgencyApp })));
+const QrScanPage         = lazyWithReload(() => import('./components/views/QrScanPage').then(m => ({ default: m.QrScanPage })));
+const PosCustomerDisplay = lazyWithReload(() => import('./components/views/PosCustomerDisplay').then(m => ({ default: m.PosCustomerDisplay })));
+const PublicShopPage     = lazyWithReload(() => import('./components/views/PublicShopPage').then(m => ({ default: m.PublicShopPage })));
+const KitchenSharePage   = lazyWithReload(() => import('./components/views/KitchenSharePage').then(m => ({ default: m.KitchenSharePage })));
+const RequirementSurveyForm = lazyWithReload(() => import('./components/views/RequirementSurveyForm').then(m => ({ default: m.RequirementSurveyForm })));
+const CambodiaLearnPage  = lazyWithReload(() => import('./components/CambodiaLearnPage').then(m => ({ default: m.CambodiaLearnPage })));
+const ResetPasswordPage  = lazyWithReload(() => import('./components/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const PublicInvoiceView  = lazyWithReload(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
