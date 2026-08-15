@@ -2076,14 +2076,16 @@ function InvoiceFormDialog({
                     }}
                     onBlur={() => updateItem(idx, { totalEditing: undefined })}
                   />
+                  {/* Trash button matches Quotation — same sm ghost
+                      button + h-3.5 icon so both forms feel identical
+                      to click. removeItem already refuses to delete
+                      the last row, so no visual disabled state needed. */}
                   <Button
                     size="sm" variant="ghost"
-                    className="col-span-1 h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                    className="col-span-1 text-red-600"
                     onClick={() => removeItem(idx)}
-                    disabled={items.length === 1}
-                    title="Remove line"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );
