@@ -1481,10 +1481,11 @@ function QuotationDetailDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      {/* hideClose — on narrow mobile viewports the Radix X collided
-          with the Send dropdown chevron in the header. Footer Close
-          button is the primary dismiss anyway. */}
-      <DialogContent className="sm:max-w-[1100px] w-[90vw] max-h-[90vh] overflow-y-auto" hideClose>
+      {/* Radix X restored for consistency with the rest of the app's
+          popups. The header's action group carries mr-10 below to
+          reserve enough clearance so the X doesn't overlap the Send
+          dropdown chevron even on narrow mobile viewports. */}
+      <DialogContent className="sm:max-w-[1100px] w-[90vw] max-h-[90vh] overflow-y-auto">
         {/* Same bilingual print layout as Invoice, just retitled — the
             screen dashboard is hidden via @media print; only the
             body-level .print-tax-invoice portal renders on paper. */}
@@ -1531,7 +1532,7 @@ function QuotationDetailDialog({
               </DialogDescription>
             </div>
             {quotation && (
-              <div className="flex gap-1.5 mr-8 print:hidden">
+              <div className="flex gap-1.5 mr-10 print:hidden">
                 <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }}>
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
