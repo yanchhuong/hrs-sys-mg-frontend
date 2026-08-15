@@ -27,8 +27,9 @@ import {
 } from '../ui/tooltip';
 import {
   Plus, RefreshCw, Eye, Pencil, Trash2, Ban, Printer,
-  Mail, ChevronDown, Search, Info, Settings, FileText,
+  Mail, ChevronDown, Search, Info, Settings, FileText, ScanBarcode,
 } from 'lucide-react';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
@@ -40,7 +41,6 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import * as vouchersApi from '../../api/vouchers';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
-import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import * as itemsApi from '../../api/items';
@@ -56,6 +56,19 @@ import { useDateFormat } from '../../context/DateFormatContext';
 /** USD collapses to "$"; KHR uses the riel symbol ៛. Mirrors the
  *  formatting helper in Invoices / Quotations so the column widths
  *  and minus-sign convention all line up across the sale ledger. */
+/** Constrain a raw input to a decimal shape: digits + at most one
+ *  dot + up to `decimals` fractional digits (default 2). Same helper
+ *  used on Invoices / Quotations. */
+const maskDecimal = (raw: string, decimals = 2): string => {
+  let s = raw.replace(/[^\d.]/g, '');
+  const first = s.indexOf('.');
+  if (first !== -1) {
+    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
+  }
+  const [intPart, decPart] = s.split('.');
+  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
+};
+
 const fmtMoney = (n: number, currency: string): string => {
   const epsilon = currency === 'KHR' ? 0.5 : 0.005;
   if (Math.abs(n) < epsilon) n = 0;
@@ -697,23 +710,24 @@ function VoucherFormDialog({
   const updateLine = (id: string, patch: Partial<FormLine>) =>
     setLines(prev => prev.map(l => l.localId === id ? { ...l, ...patch } : l));
 
-  /** V302 phase 2 — barcode scan handler. Same overwrite-empty-or-
-   *  append pattern the other doc forms use. */
-  const addLineFromScan = (si: itemsApi.Item) => {
-    setLines(prev => {
-      const empty = (l: FormLine) => !l.name && !l.stockItemId;
-      const filled: FormLine = {
-        ...newLine(),
+  /** localId of the line whose row-icon opened the camera scanner.
+   *  On decode, look the code up and fill THAT row (mirrors the
+   *  per-row scan UX on Invoice / Quotation). */
+  const [scanTargetLineId, setScanTargetLineId] = useState<string | null>(null);
+
+  /** Fill an existing row with a scanned catalog entry. */
+  const fillLineFromBarcode = async (localId: string, code: string) => {
+    try {
+      const si = await itemsApi.getByBarcode(code.trim());
+      updateLine(localId, {
         stockItemId: si.id,
         name: si.name,
         unit: si.unit ?? '',
         unitPrice: String(si.unitPrice ?? 0),
-      };
-      if (prev.length > 0 && empty(prev[prev.length - 1])) {
-        return prev.slice(0, -1).concat(filled);
-      }
-      return [...prev, filled];
-    });
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `No item found for barcode ${code}`);
+    }
   };
 
   const validate = (): boolean => {
@@ -924,27 +938,19 @@ function VoucherFormDialog({
           <div className="space-y-2 border rounded-md p-3">
             <div className="flex items-center justify-between gap-3">
               <Label className="text-xs font-semibold shrink-0">Line items</Label>
-              <div className="flex items-center gap-2 flex-1 justify-end">
-                {barcodeFeatureOn && (
-                  <div className="w-56">
-                    <BarcodeScanInput
-                      onScan={addLineFromScan}
-                      placeholder="Scan barcode…"
-                    />
-                  </div>
-                )}
-                <Button size="sm" variant="outline" onClick={addLine} className="shrink-0 text-blue-600 hover:text-blue-700">
-                  <Plus className="h-3 w-3 mr-1" /> Add line
-                </Button>
-              </div>
+              <Button size="sm" variant="outline" onClick={addLine} className="shrink-0 text-blue-600 hover:text-blue-700">
+                <Plus className="h-3 w-3 mr-1" /> Add line
+              </Button>
             </div>
+            {/* Column widths mirror Invoice — Total needs the same
+                breathing room for 4-digit thousands. */}
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
-              <div className="col-span-3">Specification</div>
+              <div className="col-span-2">Specification</div>
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-1 text-right">Total</div>
+              <div className="col-span-2 text-right">Total</div>
               <div className="col-span-1" />
             </div>
             {lines.map(l => {
@@ -1004,6 +1010,7 @@ function VoucherFormDialog({
                                 name: r.name,
                                 unit: r.unit ?? l.unit ?? '',
                                 unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
+                                stockItemId: null,
                               });
                               setFocusedLineId(null);
                             }}
@@ -1018,9 +1025,24 @@ function VoucherFormDialog({
                       </div>
                     )}
                     </div>
+                    {/* Per-row barcode scan icon after Item name —
+                        matches Invoice / Quotation. */}
+                    {barcodeFeatureOn && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="shrink-0 h-8 w-8"
+                        onClick={() => setScanTargetLineId(l.localId)}
+                        title="Scan barcode into this row"
+                        aria-label="Scan barcode into this row"
+                      >
+                        <ScanBarcode className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                   <Input
-                    className="col-span-3 h-8 text-sm"
+                    className="col-span-2 h-8 text-sm"
                     value={l.description}
                     onChange={e => updateLine(l.localId, { description: e.target.value })}
                     placeholder="Model, size, variant…"
@@ -1032,28 +1054,26 @@ function VoucherFormDialog({
                     placeholder="pcs"
                   />
                   <Input
-                    className="col-span-1 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
+                    className="col-span-1 h-8 text-sm text-right tabular-nums"
+                    inputMode="decimal"
                     value={l.quantity}
-                    onChange={e => updateLine(l.localId, { quantity: e.target.value })}
+                    onChange={e => updateLine(l.localId, { quantity: maskDecimal(e.target.value) })}
                   />
                   <Input
-                    className="col-span-2 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
+                    className="col-span-2 h-8 text-sm text-right tabular-nums"
+                    inputMode="decimal"
                     value={l.unitPrice}
-                    onChange={e => updateLine(l.localId, { unitPrice: e.target.value })}
+                    onChange={e => updateLine(l.localId, { unitPrice: maskDecimal(e.target.value, 4) })}
                   />
-                  <div className="col-span-1 text-right text-sm tabular-nums px-2">
+                  <div className="col-span-2 text-right text-sm tabular-nums px-2">
                     {lineTotal.toFixed(2)}
                   </div>
                   <Button
                     size="sm" variant="ghost"
-                    className="col-span-1 h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                    className="col-span-1 text-red-600"
                     onClick={() => removeLine(l.localId)}
-                    disabled={lines.length === 1}
-                    title="Remove line"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );
@@ -1087,45 +1107,54 @@ function VoucherFormDialog({
             )}
             {settings.showTax && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
+              <Label className="text-xs block text-right">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
                 )}
               </Label>
               <Input
-                type="number" min={0} step="0.01"
+                inputMode="decimal"
                 value={taxType
                   ? (totals.subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
                   : '0.00'}
                 disabled
                 title="Voucher tax is auto-computed and informational only"
+                className="tabular-nums text-right"
               />
             </div>
             )}
             {settings.showDiscount && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
-                Discount <span className="text-[10px] text-gray-400">(locked at 100%)</span>
-              </Label>
-              <div className="flex">
+              {/* Label mirrors the input+toggle row so it lands over
+                  the digits, not the disabled $/% chip. */}
+              <div className="flex items-center gap-2">
+                <Label className="text-xs flex-1 text-right block">
+                  Discount <span className="text-[10px] text-gray-400">(locked at 100%)</span>
+                </Label>
+                <div className="shrink-0 inline-flex invisible" aria-hidden="true">
+                  <span className="px-3 py-1.5 text-sm">$</span>
+                  <span className="px-3 py-1.5 text-sm border-l">%</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
                 <Input
-                  type="number"
+                  inputMode="decimal"
                   value="100"
                   disabled
-                  className="rounded-r-none text-gray-500"
+                  className="flex-1 tabular-nums text-right text-gray-500"
                   title="Voucher discount is server-locked at 100%"
                 />
-                <div className="inline-flex border border-l-0 rounded-r-md overflow-hidden">
+                <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button
                     type="button"
                     disabled
-                    className="px-3 text-sm bg-white text-gray-400 cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm bg-white text-gray-400 cursor-not-allowed"
                     title="Voucher discount is always a percentage"
                   >$</button>
                   <button
                     type="button"
                     disabled
-                    className="px-3 text-sm border-l bg-blue-50 text-blue-700 cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm border-l bg-blue-50 text-blue-700 cursor-not-allowed"
                     title="Voucher discount is server-locked at 100%"
                   >%</button>
                 </div>
@@ -1256,6 +1285,16 @@ function VoucherFormDialog({
         </DialogFooter>
       </DialogContent>
       {quickAdd.dialog}
+      {/* Per-row barcode scanner — mounted once at the form level. */}
+      <CameraBarcodeScanner
+        open={scanTargetLineId !== null}
+        onOpenChange={o => { if (!o) setScanTargetLineId(null); }}
+        onDecoded={code => {
+          const target = scanTargetLineId;
+          setScanTargetLineId(null);
+          if (target) void fillLineFromBarcode(target, code);
+        }}
+      />
     </Dialog>
   );
 }

@@ -39,11 +39,12 @@ import * as vendorsApi from '../../api/vendors';
 import * as itemsApi from '../../api/items';
 import * as currencyApi from '../../api/currencySettings';
 import { StockItemPicker } from '../common/StockItemPicker';
-import { BarcodeScanInput } from '../common/BarcodeScanInput';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, FileSpreadsheet,
+  ScanBarcode,
 } from 'lucide-react';
 import { BulkUploadBillsDialog } from '../common/BulkUploadBillsDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
@@ -116,6 +117,19 @@ const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: str
  *  (no space — matches how customers read it on a printed invoice);
  *  other currencies keep the ISO code prefix with a space so the
  *  symbol stays unambiguous. */
+/** Constrain a raw input to a decimal shape: digits + at most one
+ *  dot + up to `decimals` fractional digits (default 2). Same helper
+ *  used on Invoices / Quotations / Vouchers. */
+const maskDecimal = (raw: string, decimals = 2): string => {
+  let s = raw.replace(/[^\d.]/g, '');
+  const first = s.indexOf('.');
+  if (first !== -1) {
+    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
+  }
+  const [intPart, decPart] = s.split('.');
+  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
+};
+
 const fmtMoney = (n: number, currency: string): string => {
   // Negative amounts render as "− $X" (leading minus + unsigned
   // amount) so they line up with the explicit "− {fmtMoney(positive)}"
@@ -1181,24 +1195,25 @@ function BillFormDialog({
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
   };
   const addItem = () => setItems(prev => [...prev, { ...blankItem }]);
-  /** V302 phase 2 — scan handler mirrors Invoice's addLineFromScan.
-   *  Empty last line → overwrite; otherwise append fresh. */
-  const addLineFromScan = (si: itemsApi.Item) => {
-    setItems(prev => {
-      const empty = (r: FormItem) => !r.name && !r.stockItemId;
-      const filled: FormItem = {
-        ...blankItem,
+  /** Row index whose scan icon opened the camera. On decode we look
+   *  up the barcode and fill THAT row (matches Invoice's per-row UX). */
+  const [scanTargetIdx, setScanTargetIdx] = useState<number | null>(null);
+
+  /** Fill an existing item row with a scanned catalog entry. */
+  const fillItemFromBarcode = async (idx: number, code: string) => {
+    try {
+      const si = await itemsApi.getByBarcode(code.trim());
+      updateItem(idx, {
         stockItemId: si.id,
         name: si.name,
         unit: si.unit ?? '',
         unitPrice: String(si.unitPrice ?? 0),
-      };
-      if (prev.length > 0 && empty(prev[prev.length - 1])) {
-        return prev.slice(0, -1).concat(filled);
-      }
-      return [...prev, filled];
-    });
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `No item found for barcode ${code}`);
+    }
   };
+
   const removeItem = (idx: number) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
   /** Build the request payload from the current form state. Used by
@@ -1466,27 +1481,19 @@ function BillFormDialog({
           <div className="space-y-2 border rounded-md p-3">
             <div className="flex items-center justify-between gap-3">
               <Label className="text-xs font-semibold shrink-0">Line items</Label>
-              <div className="flex items-center gap-2 flex-1 justify-end">
-                {barcodeFeatureOn && (
-                  <div className="w-56">
-                    <BarcodeScanInput
-                      onScan={addLineFromScan}
-                      placeholder="Scan barcode…"
-                    />
-                  </div>
-                )}
-                <Button size="sm" variant="outline" onClick={addItem} className="shrink-0 text-blue-600 hover:text-blue-700">
-                  <Plus className="h-3 w-3 mr-1" /> Add line
-                </Button>
-              </div>
+              <Button size="sm" variant="outline" onClick={addItem} className="shrink-0 text-blue-600 hover:text-blue-700">
+                <Plus className="h-3 w-3 mr-1" /> Add line
+              </Button>
             </div>
+            {/* Column widths mirror Invoice — Total gets col-span-2 for
+                 4-digit thousands; Specification gives up one slot. */}
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
-              <div className="col-span-3">Specification</div>
+              <div className="col-span-2">Specification</div>
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-1 text-right">Total</div>
+              <div className="col-span-2 text-right">Total</div>
               <div className="col-span-1" />
             </div>
             {items.map((it, idx) => {
@@ -1528,9 +1535,24 @@ function BillFormDialog({
                       })}
                       placeholder="Item or service name"
                     />
+                    {/* Per-row barcode scan icon after Item name —
+                        matches Invoice / Quotation / Voucher. */}
+                    {barcodeFeatureOn && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="shrink-0 h-8 w-8"
+                        onClick={() => setScanTargetIdx(idx)}
+                        title="Scan barcode into this row"
+                        aria-label="Scan barcode into this row"
+                      >
+                        <ScanBarcode className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                   <Input
-                    className="col-span-3 h-8 text-sm"
+                    className="col-span-2 h-8 text-sm"
                     value={it.description ?? ''}
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
@@ -1542,28 +1564,26 @@ function BillFormDialog({
                     placeholder="pcs"
                   />
                   <Input
-                    className="col-span-1 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
+                    className="col-span-1 h-8 text-sm text-right tabular-nums"
+                    inputMode="decimal"
                     value={it.quantity}
-                    onChange={e => updateItem(idx, { quantity: e.target.value })}
+                    onChange={e => updateItem(idx, { quantity: maskDecimal(e.target.value) })}
                   />
                   <Input
-                    className="col-span-2 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
+                    className="col-span-2 h-8 text-sm text-right tabular-nums"
+                    inputMode="decimal"
                     value={it.unitPrice}
-                    onChange={e => updateItem(idx, { unitPrice: e.target.value })}
+                    onChange={e => updateItem(idx, { unitPrice: maskDecimal(e.target.value, 4) })}
                   />
-                  <div className="col-span-1 text-right text-sm tabular-nums px-2">
+                  <div className="col-span-2 text-right text-sm tabular-nums px-2">
                     {lineTotal.toFixed(2)}
                   </div>
                   <Button
                     size="sm" variant="ghost"
-                    className="col-span-1 h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                    className="col-span-1 text-red-600"
                     onClick={() => removeItem(idx)}
-                    disabled={items.length === 1}
-                    title="Remove line"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );
@@ -1612,51 +1632,59 @@ function BillFormDialog({
             )}
             {settings.showTax && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
+              <Label className="text-xs block text-right">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
                 )}
               </Label>
               <Input
-                type="number" min={0} step="0.01"
+                inputMode="decimal"
                 value={taxType
                   ? (subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
                   : taxAmount}
-                onChange={e => setTaxAmount(e.target.value)}
+                onChange={e => setTaxAmount(maskDecimal(e.target.value))}
                 disabled={!!taxType}
                 title={taxType ? 'Auto-computed from the taxation type' : ''}
+                className="tabular-nums text-right"
               />
             </div>
             )}
             {settings.showDiscount && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
-                Discount {discountType === 'percent' && (
-                  <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
-                )}
-              </Label>
-              {/* Input + segmented type toggle on the right end. The
-                  $ button = flat money-off, % button = percent of
-                  subtotal. Server recomputes discount_amount on save. */}
-              <div className="flex">
+              {/* Label mirrors the input+toggle row so its right edge
+                  ends at the input's right edge. */}
+              <div className="flex items-center gap-2">
+                <Label className="text-xs flex-1 text-right block">
+                  Discount {discountType === 'percent' && (
+                    <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
+                  )}
+                </Label>
+                <div className="shrink-0 inline-flex invisible" aria-hidden="true">
+                  <span className="px-3 py-1.5 text-sm">$</span>
+                  <span className="px-3 py-1.5 text-sm border-l">%</span>
+                </div>
+              </div>
+              {/* Input + segmented type toggle with a small gap between
+                  so the digits don't press against the $/% chip. */}
+              <div className="flex items-center gap-2">
                 <Input
-                  type="number" min={0} step="0.01"
+                  inputMode="decimal"
                   value={discountValue}
-                  onChange={e => setDiscountValue(e.target.value)}
-                  className="rounded-r-none"
+                  onChange={e => setDiscountValue(maskDecimal(e.target.value))}
+                  className="flex-1 tabular-nums text-right"
                 />
-                <div className="inline-flex border border-l-0 rounded-r-md overflow-hidden">
+                <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button
                     type="button"
                     onClick={() => setDiscountType('amount')}
-                    className={`px-3 text-sm ${discountType === 'amount'
+                    className={`px-3 py-1.5 text-sm ${discountType === 'amount'
                       ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                     title="Flat money-off"
                   >$</button>
                   <button
                     type="button"
                     onClick={() => setDiscountType('percent')}
-                    className={`px-3 text-sm border-l ${discountType === 'percent'
+                    className={`px-3 py-1.5 text-sm border-l ${discountType === 'percent'
                       ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                     title="Percentage of subtotal"
                   >%</button>
@@ -1828,6 +1856,16 @@ function BillFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      {/* Per-row barcode scanner — mounted once at the form level. */}
+      <CameraBarcodeScanner
+        open={scanTargetIdx !== null}
+        onOpenChange={o => { if (!o) setScanTargetIdx(null); }}
+        onDecoded={code => {
+          const target = scanTargetIdx;
+          setScanTargetIdx(null);
+          if (target !== null) void fillItemFromBarcode(target, code);
+        }}
+      />
     </Dialog>
   );
 }
