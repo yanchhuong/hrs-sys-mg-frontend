@@ -1175,11 +1175,20 @@ function QuotationFormDialog({
               )}
               {settings.showDiscount && (
               <div className="space-y-1.5">
-                <Label className="text-xs block text-right">
-                  Discount {discountType === 'percent' && (
-                    <span className="text-[10px] text-gray-400">→ {fmtMoney(totals.disc, currency)}</span>
-                  )}
-                </Label>
+                {/* Label mirrors the input+toggle row so its right
+                    edge ends at the input's right edge, not over the
+                    $/% toggle. Invisible spacer holds the toggle's slot. */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs flex-1 text-right block">
+                    Discount {discountType === 'percent' && (
+                      <span className="text-[10px] text-gray-400">→ {fmtMoney(totals.disc, currency)}</span>
+                    )}
+                  </Label>
+                  <div className="shrink-0 inline-flex invisible" aria-hidden="true">
+                    <span className="px-3 py-1.5 text-sm">$</span>
+                    <span className="px-3 py-1.5 text-sm border-l">%</span>
+                  </div>
+                </div>
                 {/* Input + segmented $/% toggle — matches Invoice.
                     Small gap between the two so the value has room
                     from the chip; each control keeps its own border. */}
