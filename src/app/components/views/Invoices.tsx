@@ -1843,13 +1843,17 @@ function InvoiceFormDialog({
                 <Plus className="h-3 w-3 mr-1" /> Add line
               </Button>
             </div>
+            {/* Column widths mirror Quotation's Total column so the
+                line-total number has room to breathe (was col-span-1
+                which clipped 4-digit thousands). Specification gives
+                up one slot to Total. */}
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
-              <div className="col-span-3">Specification</div>
+              <div className="col-span-2">Specification</div>
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-1 text-right">Total</div>
+              <div className="col-span-2 text-right">Total</div>
               <div className="col-span-1" />
             </div>
             {items.map((it, idx) => {
@@ -1980,7 +1984,7 @@ function InvoiceFormDialog({
                     )}
                   </div>
                   <Input
-                    className="col-span-3 h-8 text-sm"
+                    className="col-span-2 h-8 text-sm"
                     value={it.description ?? ''}
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
@@ -2043,7 +2047,7 @@ function InvoiceFormDialog({
                       changes; on blur we drop back to the canonical
                       qty×unitPrice display. */}
                   <Input
-                    className="col-span-1 h-8 text-sm text-right tabular-nums"
+                    className="col-span-2 h-8 text-sm text-right tabular-nums"
                     inputMode="decimal"
                     value={it.totalEditing !== undefined
                       ? it.totalEditing
