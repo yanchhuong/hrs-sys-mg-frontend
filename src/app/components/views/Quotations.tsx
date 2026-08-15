@@ -20,7 +20,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -336,13 +335,19 @@ export function Quotations() {
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-              <TabsList>
-                {STATUS_FILTERS.map(f => (
-                  <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            {/* Status filter — dropdown to match Invoice's Kind filter
+                shape. Cheaper on horizontal space than tabs and reads
+                the same across both pages. */}
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {STATUS_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
             <div className="flex items-center gap-2">
               <Label className="text-xs text-gray-500">From</Label>
               <DateInput
@@ -1170,21 +1175,37 @@ function QuotationFormDialog({
               )}
               {settings.showDiscount && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Discount</Label>
-                <div className="flex gap-2">
-                  <Select value={discountType} onValueChange={v => setDiscountType(v as 'amount' | 'percent')}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="amount">$ amount</SelectItem>
-                      <SelectItem value="percent">% percent</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <Label className="text-xs">
+                  Discount {discountType === 'percent' && (
+                    <span className="text-[10px] text-gray-400">→ {fmtMoney(totals.disc, currency)}</span>
+                  )}
+                </Label>
+                {/* Input + segmented $/% toggle — matches Invoice.
+                    Small gap between the two so the value has room
+                    from the chip; each control keeps its own border. */}
+                <div className="flex items-center gap-2">
                   <Input
                     inputMode="decimal"
-                    className="tabular-nums"
+                    className="flex-1 tabular-nums"
                     value={discountValue}
                     onChange={e => setDiscountValue(maskDecimal(e.target.value))}
                   />
+                  <div className="inline-flex border rounded-md overflow-hidden shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType('amount')}
+                      className={`px-3 py-1.5 text-sm ${discountType === 'amount'
+                        ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                      title="Flat money-off"
+                    >$</button>
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType('percent')}
+                      className={`px-3 py-1.5 text-sm border-l ${discountType === 'percent'
+                        ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                      title="Percentage of subtotal"
+                    >%</button>
+                  </div>
                 </div>
               </div>
               )}
