@@ -28,7 +28,9 @@ import {
 import {
   Plus, RefreshCw, Eye, Pencil, Trash2, Ban, FileText, ArrowRightCircle, Printer,
   Mail, ChevronDown, Search, Settings, Send, MessageCircle, Loader2, Info, Share2,
+  ScanBarcode,
 } from 'lucide-react';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { capturePrintPdf } from '../../utils/capturePrintPdf';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
@@ -43,7 +45,6 @@ import * as quotationsApi from '../../api/quotations';
 import { useI18n } from '../../i18n/I18nContext';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
-import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
@@ -745,23 +746,26 @@ function QuotationFormDialog({
   const updateLine = (id: string, patch: Partial<FormLine>) =>
     setLines(prev => prev.map(l => l.localId === id ? { ...l, ...patch } : l));
 
-  /** V302 phase 2 — scan handler. If the last line is empty (no name
-   *  + no stockItemId) overwrite it; otherwise append fresh. */
-  const addLineFromScan = (si: itemsApi.Item) => {
-    setLines(prev => {
-      const empty = (l: FormLine) => !l.name && !l.stockItemId;
-      const filled: FormLine = {
-        ...newLine(),
+  /** localId of the line whose row-icon opened the camera scanner.
+   *  On decode, we look up the barcode and fill THAT specific row,
+   *  not a fresh one. Cleared when the scanner closes. */
+  const [scanTargetLineId, setScanTargetLineId] = useState<string | null>(null);
+
+  /** Fill an existing row with a scanned item — same field shape as
+   *  the catalog picker's onPick. Used by the per-row barcode icon so
+   *  each row scans into itself instead of appending a new line. */
+  const fillLineFromBarcode = async (localId: string, code: string) => {
+    try {
+      const si = await itemsApi.getByBarcode(code.trim());
+      updateLine(localId, {
         stockItemId: si.id,
         name: si.name,
         unit: si.unit ?? '',
         unitPrice: String(si.unitPrice ?? 0),
-      };
-      if (prev.length > 0 && empty(prev[prev.length - 1])) {
-        return prev.slice(0, -1).concat(filled);
-      }
-      return [...prev, filled];
-    });
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `No item found for barcode ${code}`);
+    }
   };
 
   const validate = (): boolean => {
@@ -951,23 +955,7 @@ function QuotationFormDialog({
           {/* Line items */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              {/* v-quotation-barcode-inline — the barcode scan input
-                  now sits right after the "Line items" label so it
-                  reads as a search-affordance for that section, not a
-                  peer of Add line. Add line stays right-aligned as the
-                  primary action. Only rendered when the tenant has
-                  the barcode feature on. */}
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <Label className="text-xs font-semibold shrink-0">Line items</Label>
-                {barcodeFeatureOn && (
-                  <div className="w-56 max-w-full">
-                    <BarcodeScanInput
-                      onScan={addLineFromScan}
-                      placeholder="Scan barcode…"
-                    />
-                  </div>
-                )}
-              </div>
+              <Label className="text-xs font-semibold shrink-0">Line items</Label>
               <Button size="sm" variant="outline" onClick={addLine} className="shrink-0">
                 <Plus className="h-3 w-3 mr-1" /> Add line
               </Button>
@@ -1059,6 +1047,25 @@ function QuotationFormDialog({
                               </div>
                             )}
                             </div>
+                            {/* v-quotation-barcode-per-row — icon-only
+                                scan trigger sits AFTER the Item name.
+                                Tapping it opens the camera scanner and
+                                the decoded barcode fills THIS row (not
+                                a fresh one). Hidden when the tenant's
+                                barcode feature is off. */}
+                            {barcodeFeatureOn && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="shrink-0 h-9 w-9"
+                                onClick={() => setScanTargetLineId(l.localId)}
+                                title="Scan barcode into this row"
+                                aria-label="Scan barcode into this row"
+                              >
+                                <ScanBarcode className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1306,6 +1313,18 @@ function QuotationFormDialog({
         </DialogFooter>
       </DialogContent>
       {quickAdd.dialog}
+      {/* Per-row barcode scanner — mounted once at the form level and
+          fills whichever row set scanTargetLineId. Closes automatically
+          on successful decode via onDecoded → fillLineFromBarcode. */}
+      <CameraBarcodeScanner
+        open={scanTargetLineId !== null}
+        onOpenChange={o => { if (!o) setScanTargetLineId(null); }}
+        onDecoded={code => {
+          const target = scanTargetLineId;
+          setScanTargetLineId(null);
+          if (target) void fillLineFromBarcode(target, code);
+        }}
+      />
     </Dialog>
   );
 }
