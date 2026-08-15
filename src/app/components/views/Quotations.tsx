@@ -1721,8 +1721,28 @@ function QuotationDetailDialog({
                 {settings.showTax && quotation.taxAmount > 0 && (
                 <div className="flex justify-end gap-6"><span className="text-gray-600">Tax</span><span className="tabular-nums w-32 text-right">+ {fmtMoney(quotation.taxAmount, quotation.currency)}</span></div>
                 )}
-                {settings.showDiscount && quotation.discountAmount > 0 && (
-                <div className="flex justify-end gap-6"><span className="text-gray-600">Discount</span><span className="tabular-nums w-32 text-right">− {fmtMoney(quotation.discountAmount, quotation.currency)}</span></div>
+                {settings.showDiscount && (
+                <div className="flex justify-end gap-6">
+                  <span className="text-gray-600">
+                    Discount
+                    {/* Show the raw input (e.g. "5%" or "$10") next to
+                        the label so the viewer sees the same thing the
+                        editor entered, not only the computed deduction.
+                        Matches the Discount row on the Edit form. */}
+                    {quotation.discountValue > 0 && (
+                      <span className="ml-1 text-gray-400">
+                        ({quotation.discountType === 'percent'
+                          ? `${quotation.discountValue}%`
+                          : fmtMoney(quotation.discountValue, quotation.currency)})
+                      </span>
+                    )}
+                  </span>
+                  <span className="tabular-nums w-32 text-right">
+                    {quotation.discountAmount > 0
+                      ? `− ${fmtMoney(quotation.discountAmount, quotation.currency)}`
+                      : fmtMoney(0, quotation.currency)}
+                  </span>
+                </div>
                 )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {quotation.currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(quotation.total, quotation.currency)}</span></div>
               </div>
