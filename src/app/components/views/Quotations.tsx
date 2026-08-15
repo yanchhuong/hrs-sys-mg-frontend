@@ -1175,7 +1175,7 @@ function QuotationFormDialog({
               )}
               {settings.showDiscount && (
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                <Label className="text-xs block text-right">
                   Discount {discountType === 'percent' && (
                     <span className="text-[10px] text-gray-400">→ {fmtMoney(totals.disc, currency)}</span>
                   )}

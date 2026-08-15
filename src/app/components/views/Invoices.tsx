@@ -2135,7 +2135,7 @@ function InvoiceFormDialog({
             )}
             {settings.showTax && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
+              <Label className="text-xs block text-right">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
                 )}
@@ -2154,7 +2154,7 @@ function InvoiceFormDialog({
             )}
             {settings.showDiscount && (
             <div className="space-y-1.5">
-              <Label className="text-xs">
+              <Label className="text-xs block text-right">
                 Discount {discountType === 'percent' && (
                   <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
                 )}
