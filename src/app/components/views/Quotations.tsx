@@ -1062,14 +1062,18 @@ function QuotationFormDialog({
                           <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
                         </TableCell>
                         <TableCell>
-                          <Input className="text-right" value={l.quantity}
+                          <Input
+                            className="text-right tabular-nums"
+                            inputMode="decimal"
+                            value={l.quantity}
                             onChange={e => updateLine(l.localId, {
-                              quantity: e.target.value,
+                              quantity: maskDecimal(e.target.value),
                               // Changing qty invalidates any stale
                               // Total override — fall back to the
                               // canonical qty × unitPrice display.
                               totalEditing: undefined,
-                            })} />
+                            })}
+                          />
                         </TableCell>
                         <TableCell>
                           <Input
