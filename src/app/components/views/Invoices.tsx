@@ -119,6 +119,23 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
  *  (no space — matches how customers read it on a printed invoice);
  *  other currencies keep the ISO code prefix with a space so the
  *  symbol stays unambiguous. */
+/**
+ * Constrain a raw input to a decimal shape: digits + at most one dot
+ * + up to `decimals` fractional digits (default 2). Mirrors the same
+ * mask used on Quotations. Callers pass `decimals=4` for unit-price
+ * inputs that need finer precision (e.g. "#,###.0000" style tariffs).
+ */
+const maskDecimal = (raw: string, decimals = 2): string => {
+  let s = raw.replace(/[^\d.]/g, '');
+  const first = s.indexOf('.');
+  if (first !== -1) {
+    // Keep only the FIRST dot; strip any further ones.
+    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
+  }
+  const [intPart, decPart] = s.split('.');
+  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
+};
+
 const fmtMoney = (n: number, currency: string): string => {
   // Negative amounts render with a leading "− " before the currency
   // prefix ("− $55.00") instead of letting toLocaleString embed the
@@ -1968,17 +1985,13 @@ function InvoiceFormDialog({
                   />
                   <div className="col-span-1 flex flex-col gap-0.5">
                     <Input
-                      className={`h-8 text-sm text-right ${overStock ? 'border-red-400 text-red-700' : ''}`}
-                      type="number" min={0} step="0.01"
-                      max={Number.isFinite(stockRemaining) ? stockRemaining : undefined}
+                      className={`h-8 text-sm text-right tabular-nums ${overStock ? 'border-red-400 text-red-700' : ''}`}
+                      inputMode="decimal"
                       value={it.quantity}
                       onChange={e => {
-                        const raw = e.target.value;
-                        // Clamp on the way in so the FE state never
-                        // holds an over-stock value the BE would
-                        // reject. Empty string / partial edits (e.g.
-                        // "1.") stay uncoerced so mid-typing doesn't
-                        // fight the user.
+                        // Mask first so stray letters / commas can't
+                        // reach the parseFloat + stock-clamp logic below.
+                        const raw = maskDecimal(e.target.value);
                         let next = raw;
                         const n = parseFloat(raw);
                         if (Number.isFinite(n) && Number.isFinite(stockRemaining) && n > stockRemaining) {
@@ -2001,11 +2014,14 @@ function InvoiceFormDialog({
                     )}
                   </div>
                   <Input
-                    className="col-span-2 h-8 text-sm text-right"
-                    type="number" min={0} step="0.01"
+                    className="col-span-2 h-8 text-sm text-right tabular-nums"
+                    inputMode="decimal"
                     value={it.unitPrice}
                     onChange={e => updateItem(idx, {
-                      unitPrice: e.target.value,
+                      // Unit price allows up to 4 fractional digits
+                      // (#,###.0000) for tariff / bulk-rate pricing —
+                      // qty/total still cap at 2 decimals.
+                      unitPrice: maskDecimal(e.target.value, 4),
                       // Switching focus to Unit Price → Total returns
                       // to the computed-from-unitPrice path.
                       totalEditing: undefined,
@@ -2020,12 +2036,16 @@ function InvoiceFormDialog({
                       qty×unitPrice display. */}
                   <Input
                     className="col-span-1 h-8 text-sm text-right tabular-nums"
-                    type="number" min={0} step="0.01"
+                    inputMode="decimal"
                     value={it.totalEditing !== undefined
                       ? it.totalEditing
                       : lineTotal.toFixed(2)}
                     onChange={e => {
-                      const raw = e.target.value;
+                      // Sanitize so a stray comma / letter can't
+                      // derail total / qty math. type=text also stops
+                      // Chrome from re-rendering 33.00 as 33,00 on
+                      // comma-decimal locales.
+                      const raw = maskDecimal(e.target.value);
                       const total = Number(raw);
                       const qty = Number(it.quantity) || 0;
                       // Keep enough precision on the back-computed
@@ -2129,10 +2149,10 @@ function InvoiceFormDialog({
                   subtotal. Server recomputes discount_amount on save. */}
               <div className="flex">
                 <Input
-                  type="number" min={0} step="0.01"
+                  inputMode="decimal"
                   value={discountValue}
-                  onChange={e => setDiscountValue(e.target.value)}
-                  className="rounded-r-none"
+                  onChange={e => setDiscountValue(maskDecimal(e.target.value))}
+                  className="rounded-r-none tabular-nums"
                 />
                 <div className="inline-flex border border-l-0 rounded-r-md overflow-hidden">
                   <button
