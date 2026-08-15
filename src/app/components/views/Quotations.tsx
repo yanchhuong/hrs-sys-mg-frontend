@@ -1096,12 +1096,17 @@ function QuotationFormDialog({
                         <TableCell className="text-right tabular-nums text-sm">
                           <Input
                             className="text-right tabular-nums"
-                            type="number" min={0} step="0.01"
+                            inputMode="decimal"
                             value={l.totalEditing !== undefined
                               ? l.totalEditing
                               : lineTotal.toFixed(2)}
                             onChange={e => {
-                              const raw = e.target.value;
+                              // Sanitize first so a stray comma or letter
+                              // never reaches the qty × unitPrice math.
+                              // type="text" also stops Chrome from
+                              // re-rendering "33.00" as "33,00" under
+                              // locales that use a comma decimal.
+                              const raw = maskDecimal(e.target.value);
                               const total = Number(raw);
                               const qty = Number(l.quantity) || 0;
                               const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
