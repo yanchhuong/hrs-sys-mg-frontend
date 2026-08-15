@@ -933,7 +933,7 @@ function VoucherFormDialog({
                     />
                   </div>
                 )}
-                <Button size="sm" variant="outline" onClick={addLine} className="shrink-0">
+                <Button size="sm" variant="outline" onClick={addLine} className="shrink-0 text-blue-600 hover:text-blue-700">
                   <Plus className="h-3 w-3 mr-1" /> Add line
                 </Button>
               </div>
