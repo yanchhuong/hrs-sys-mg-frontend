@@ -1166,7 +1166,12 @@ function QuotationFormDialog({
                       <SelectItem value="percent">% percent</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input value={discountValue} onChange={e => setDiscountValue(e.target.value)} />
+                  <Input
+                    inputMode="decimal"
+                    className="tabular-nums"
+                    value={discountValue}
+                    onChange={e => setDiscountValue(maskDecimal(e.target.value))}
+                  />
                 </div>
               </div>
               )}
