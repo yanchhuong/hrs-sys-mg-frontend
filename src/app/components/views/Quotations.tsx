@@ -313,7 +313,7 @@ export function Quotations() {
   return (
     <div className="space-y-6">
       <div className="page-header-strip">
-        <h1 className="text-3xl font-bold km-title">{t('nav.quotation')}</h1>
+        <h1 className="text-3xl font-bold km-title">{t('nav.quotations')}</h1>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
