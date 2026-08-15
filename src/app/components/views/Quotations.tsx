@@ -965,7 +965,11 @@ function QuotationFormDialog({
                 <Plus className="h-3 w-3 mr-1" /> Add line
               </Button>
             </div>
-            <div className="border rounded-md overflow-hidden">
+            {/* No overflow-hidden — the Item cell's Recent typeahead
+                is absolute-positioned and spills below the row; the
+                outer wrapper would otherwise clip it (matches Invoice
+                which uses a plain grid with no clipping). */}
+            <div className="border rounded-md">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1038,6 +1042,13 @@ function QuotationFormDialog({
                                         name: r.name,
                                         unit: r.unit ?? l.unit ?? '',
                                         unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
+                                        // Recent-item pick is a
+                                        // free-text row — unlink any
+                                        // stock-catalog binding so the
+                                        // BE doesn't decrement the
+                                        // (now-mismatched) stock row.
+                                        // Matches Invoice's behaviour.
+                                        stockItemId: null,
                                       });
                                       setFocusedLineId(null);
                                     }}

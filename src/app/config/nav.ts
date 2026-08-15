@@ -268,7 +268,11 @@ export const NAV_LEAVES: NavLeaf[] = [
 
   { id: 'vendors',           labelKey: 'nav.vendors',                icon: UserCheck,       module: 'vendor',             component: Vendors,                  group: 'purchases' },
   { id: 'bills',             labelKey: 'nav.bills',                  icon: FileMinus,       module: 'bill',               component: Bills,                    group: 'purchases' },
-  { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'receipt',            component: Receipts,                 group: 'purchases' },
+  // V201 dropped the 'receipt' row from module_assignments — the
+  // Expense page is now gated by the parent 'expenses' module only.
+  // Using 'receipt' here would leave the nav item hidden even after
+  // a tenant installs the Expense app from the marketplace.
+  { id: 'receipts',          labelKey: 'nav.receipts',               icon: FileText,        module: 'expenses',           component: Receipts,                 group: 'purchases' },
 
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
   { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'movement',           component: StockMovements,           group: 'stock-group' },
