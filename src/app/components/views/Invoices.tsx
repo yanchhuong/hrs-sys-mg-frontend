@@ -1853,8 +1853,9 @@ function InvoiceFormDialog({
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-2 text-right">Total</div>
-              <div className="col-span-1" />
+              {/* Total header + empty trash header collapsed into one
+                  col-span-3 slot so it lines up with the row below. */}
+              <div className="col-span-3 text-right pr-8">Total</div>
             </div>
             {items.map((it, idx) => {
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
@@ -2039,54 +2040,48 @@ function InvoiceFormDialog({
                       totalEditing: undefined,
                     })}
                   />
-                  {/* Total cell is editable too — typing here
-                      back-computes unitPrice = total ÷ qty. While the
-                      Total input has focus we display the raw user
-                      string verbatim (totalEditing) so the cursor
-                      doesn't jump as the rounded round-trip value
-                      changes; on blur we drop back to the canonical
-                      qty×unitPrice display. */}
-                  <Input
-                    className="col-span-2 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
-                    value={it.totalEditing !== undefined
-                      ? it.totalEditing
-                      : lineTotal.toFixed(2)}
-                    onChange={e => {
-                      // Sanitize so a stray comma / letter can't
-                      // derail total / qty math. type=text also stops
-                      // Chrome from re-rendering 33.00 as 33,00 on
-                      // comma-decimal locales.
-                      const raw = maskDecimal(e.target.value);
-                      const total = Number(raw);
-                      const qty = Number(it.quantity) || 0;
-                      // Keep enough precision on the back-computed
-                      // unitPrice so that for divisible totals the
-                      // displayed lineTotal lands exactly back on what
-                      // the user typed (e.g. qty=3, total=100 → uP
-                      // = 33.3333 → display = 99.9999). Stored as a
-                      // string so React doesn't rerun toFixed weirdly.
-                      const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
-                        ? String(total / qty)
-                        : it.unitPrice;
-                      updateItem(idx, {
-                        unitPrice: nextUnitPrice,
-                        totalEditing: raw,
-                      });
-                    }}
-                    onBlur={() => updateItem(idx, { totalEditing: undefined })}
-                  />
-                  {/* Trash button matches Quotation — same sm ghost
-                      button + h-3.5 icon so both forms feel identical
-                      to click. removeItem already refuses to delete
-                      the last row, so no visual disabled state needed. */}
-                  <Button
-                    size="sm" variant="ghost"
-                    className="col-span-1 text-red-600"
-                    onClick={() => removeItem(idx)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {/* Total input + Trash share one col-span-3 slot with
+                      a tight inner gap so the trash sits close to the
+                      amount, matching the Item cell's icon spacing. */}
+                  <div className="col-span-3 flex items-center gap-1">
+                    <Input
+                      className="flex-1 h-8 text-sm text-right tabular-nums"
+                      inputMode="decimal"
+                      value={it.totalEditing !== undefined
+                        ? it.totalEditing
+                        : lineTotal.toFixed(2)}
+                      onChange={e => {
+                        // Sanitize so a stray comma / letter can't
+                        // derail total / qty math. type=text also stops
+                        // Chrome from re-rendering 33.00 as 33,00 on
+                        // comma-decimal locales.
+                        const raw = maskDecimal(e.target.value);
+                        const total = Number(raw);
+                        const qty = Number(it.quantity) || 0;
+                        // Keep enough precision on the back-computed
+                        // unitPrice so that for divisible totals the
+                        // displayed lineTotal lands exactly back on what
+                        // the user typed (e.g. qty=3, total=100 → uP
+                        // = 33.3333 → display = 99.9999). Stored as a
+                        // string so React doesn't rerun toFixed weirdly.
+                        const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
+                          ? String(total / qty)
+                          : it.unitPrice;
+                        updateItem(idx, {
+                          unitPrice: nextUnitPrice,
+                          totalEditing: raw,
+                        });
+                      }}
+                      onBlur={() => updateItem(idx, { totalEditing: undefined })}
+                    />
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-red-600 shrink-0"
+                      onClick={() => removeItem(idx)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               );
             })}

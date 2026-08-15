@@ -1493,8 +1493,9 @@ function BillFormDialog({
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
               <div className="col-span-2 text-right">Unit price</div>
-              <div className="col-span-2 text-right">Total</div>
-              <div className="col-span-1" />
+              {/* Total header + empty trash header collapsed into one
+                  col-span-3 slot so it lines up with the row below. */}
+              <div className="col-span-3 text-right pr-8">Total</div>
             </div>
             {items.map((it, idx) => {
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
@@ -1575,16 +1576,21 @@ function BillFormDialog({
                     value={it.unitPrice}
                     onChange={e => updateItem(idx, { unitPrice: maskDecimal(e.target.value, 4) })}
                   />
-                  <div className="col-span-2 text-right text-sm tabular-nums px-2">
-                    {lineTotal.toFixed(2)}
+                  {/* Total + Trash share one col-span-3 slot with a
+                      tight inner gap so the trash sits close to the
+                      amount, matching the Item cell's icon spacing. */}
+                  <div className="col-span-3 flex items-center gap-1 justify-end">
+                    <div className="flex-1 text-right text-sm tabular-nums">
+                      {lineTotal.toFixed(2)}
+                    </div>
+                    <Button
+                      size="sm" variant="ghost"
+                      className="text-red-600 shrink-0"
+                      onClick={() => removeItem(idx)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  <Button
-                    size="sm" variant="ghost"
-                    className="col-span-1 text-red-600"
-                    onClick={() => removeItem(idx)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
                 </div>
               );
             })}

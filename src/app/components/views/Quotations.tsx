@@ -1000,8 +1000,10 @@ function QuotationFormDialog({
                     <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="w-[40px]"></TableHead>
+                    {/* Total cell spans 2 in the body (see below) to
+                        hold Total + trash together with a tight gap.
+                        Header collapses the pair into one cell. */}
+                    <TableHead className="text-right" colSpan={2}>Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1114,37 +1116,39 @@ function QuotationFormDialog({
                             on every rounded round-trip; on blur the
                             cell snaps to the canonical fmtMoney
                             display. */}
-                        <TableCell className="text-right tabular-nums text-sm">
-                          <Input
-                            className="text-right tabular-nums"
-                            inputMode="decimal"
-                            value={l.totalEditing !== undefined
-                              ? l.totalEditing
-                              : lineTotal.toFixed(2)}
-                            onChange={e => {
-                              // Sanitize first so a stray comma or letter
-                              // never reaches the qty × unitPrice math.
-                              // type="text" also stops Chrome from
-                              // re-rendering "33.00" as "33,00" under
-                              // locales that use a comma decimal.
-                              const raw = maskDecimal(e.target.value);
-                              const total = Number(raw);
-                              const qty = Number(l.quantity) || 0;
-                              const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
-                                ? String(total / qty)
-                                : l.unitPrice;
-                              updateLine(l.localId, {
-                                unitPrice: nextUnitPrice,
-                                totalEditing: raw,
-                              });
-                            }}
-                            onBlur={() => updateLine(l.localId, { totalEditing: undefined })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Button size="sm" variant="ghost" className="text-red-600" onClick={() => removeLine(l.localId)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        {/* Total input + Trash share one TableCell so
+                            the trash sits close to the amount, matching
+                            the Item cell's icon spacing. Two separate
+                            cells gave visibly bigger gap than the Item
+                            row (which uses inline flex gap-1). */}
+                        <TableCell className="text-right tabular-nums text-sm" colSpan={2}>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              className="flex-1 text-right tabular-nums"
+                              inputMode="decimal"
+                              value={l.totalEditing !== undefined
+                                ? l.totalEditing
+                                : lineTotal.toFixed(2)}
+                              onChange={e => {
+                                // Sanitize first so a stray comma or letter
+                                // never reaches the qty × unitPrice math.
+                                const raw = maskDecimal(e.target.value);
+                                const total = Number(raw);
+                                const qty = Number(l.quantity) || 0;
+                                const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
+                                  ? String(total / qty)
+                                  : l.unitPrice;
+                                updateLine(l.localId, {
+                                  unitPrice: nextUnitPrice,
+                                  totalEditing: raw,
+                                });
+                              }}
+                              onBlur={() => updateLine(l.localId, { totalEditing: undefined })}
+                            />
+                            <Button size="sm" variant="ghost" className="text-red-600 shrink-0" onClick={() => removeLine(l.localId)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
