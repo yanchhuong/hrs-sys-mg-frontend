@@ -39,7 +39,6 @@ import * as itemsApi from '../../api/items';
 import { loadBankAccounts, MAX_BANK_ACCOUNTS_ON_INVOICE } from '../../utils/bankAccount';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
-import { BarcodeScanInput } from '../common/BarcodeScanInput';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { capturePrintPdf } from '../../utils/capturePrintPdf';
@@ -55,8 +54,9 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
-  Package, CheckCircle2, Upload, FileSpreadsheet, Copy,
+  Package, CheckCircle2, Upload, FileSpreadsheet, Copy, ScanBarcode,
 } from 'lucide-react';
+import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { LinkifiedText } from '../common/LinkifiedText';
@@ -1486,25 +1486,26 @@ function InvoiceFormDialog({
   const addItem = () => setItems(prev => [...prev, { ...blankItem }]);
   const removeItem = (idx: number) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
-  /** V302 phase 2 — barcode scan handler. If the last line is blank
-   *  (no name, no stockItemId), overwrite it with the matched item;
-   *  otherwise append a fresh line. Matches the mental model of "the
-   *  scanner replaces the first empty row I would have typed into". */
-  const addLineFromScan = (si: itemsApi.Item) => {
-    setItems(prev => {
-      const empty = (r: FormItem) => !r.name && !r.stockItemId;
-      const filled: FormItem = {
-        ...blankItem,
+  /** Row index whose scan icon opened the camera. On decode we look
+   *  the code up and fill THIS row, not a fresh one — mirrors the
+   *  per-row barcode UX on Quotation for consistency. */
+  const [scanTargetIdx, setScanTargetIdx] = useState<number | null>(null);
+
+  /** Fill an existing item row with the scanned catalog entry. Same
+   *  field shape as the StockItemPicker's onPick. */
+  const fillItemFromBarcode = async (idx: number, code: string) => {
+    try {
+      const si = await itemsApi.getByBarcode(code.trim());
+      updateItem(idx, {
         stockItemId: si.id,
         name: si.name,
         unit: si.unit ?? '',
         unitPrice: String(si.unitPrice ?? 0),
-      };
-      if (prev.length > 0 && empty(prev[prev.length - 1])) {
-        return prev.slice(0, -1).concat(filled);
-      }
-      return [...prev, filled];
-    });
+        totalEditing: undefined,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `No item found for barcode ${code}`);
+    }
   };
 
   /** Build the request payload from the current form state. Used by
@@ -1838,19 +1839,9 @@ function InvoiceFormDialog({
           <div className="space-y-2 border rounded-md p-3">
             <div className="flex items-center justify-between gap-3">
               <Label className="text-xs font-semibold shrink-0">Line items</Label>
-              <div className="flex items-center gap-2 flex-1 justify-end">
-                {barcodeFeatureOn && (
-                  <div className="w-56">
-                    <BarcodeScanInput
-                      onScan={addLineFromScan}
-                      placeholder="Scan barcode…"
-                    />
-                  </div>
-                )}
-                <Button size="sm" variant="outline" onClick={addItem} className="shrink-0">
-                  <Plus className="h-3 w-3 mr-1" /> Add line
-                </Button>
-              </div>
+              <Button size="sm" variant="outline" onClick={addItem} className="shrink-0">
+                <Plus className="h-3 w-3 mr-1" /> Add line
+              </Button>
             </div>
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
@@ -1970,6 +1961,23 @@ function InvoiceFormDialog({
                         </div>
                       )}
                     </div>
+                    {/* v-invoice-barcode-per-row — matches Quotation's
+                        per-row scan UX: icon-only button after the Item
+                        input opens the camera scanner; decoded barcode
+                        fills THIS row via itemsApi.getByBarcode. */}
+                    {barcodeFeatureOn && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="shrink-0 h-8 w-8"
+                        onClick={() => setScanTargetIdx(idx)}
+                        title="Scan barcode into this row"
+                        aria-label="Scan barcode into this row"
+                      >
+                        <ScanBarcode className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                   <Input
                     className="col-span-3 h-8 text-sm"
@@ -2273,6 +2281,17 @@ function InvoiceFormDialog({
         </DialogFooter>
       </DialogContent>
       {quickAdd.dialog}
+      {/* Per-row barcode scanner — mounted once at the form level.
+          Fills whichever row set scanTargetIdx and self-closes. */}
+      <CameraBarcodeScanner
+        open={scanTargetIdx !== null}
+        onOpenChange={o => { if (!o) setScanTargetIdx(null); }}
+        onDecoded={code => {
+          const target = scanTargetIdx;
+          setScanTargetIdx(null);
+          if (target !== null) void fillItemFromBarcode(target, code);
+        }}
+      />
     </Dialog>
   );
 }
