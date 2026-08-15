@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
@@ -595,6 +595,28 @@ function QuotationFormDialog({
   // row's Item input is focused so the dropdown only renders for it.
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
   const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
+  // v-quotation-recent-portal — the Recent dropdown used to live
+  // inside the Item cell with position:absolute, which meant it got
+  // clipped by any ancestor with overflow set (Table wrapper, dialog
+  // scroll region) and stacked below neighbouring cells. Anchor the
+  // focused input via its DOM node and portal a fixed-positioned
+  // dropdown to <body> instead, mirroring SearchWithSuggestions.
+  const [recentAnchorEl, setRecentAnchorEl] = useState<HTMLInputElement | null>(null);
+  const [recentAnchorRect, setRecentAnchorRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!recentAnchorEl) { setRecentAnchorRect(null); return; }
+    const update = () => {
+      const r = recentAnchorEl.getBoundingClientRect();
+      setRecentAnchorRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [recentAnchorEl]);
   // Stock-catalog picker state — lazy-loaded on first open of any
   // line's picker, then shared across rows. Same lazy pattern as
   // the Invoice form to keep the dialog mount path light.
@@ -1022,46 +1044,16 @@ function QuotationFormDialog({
                                   // row — same rationale as Invoices.
                                   stockItemId: null,
                                 })}
-                                onFocus={() => setFocusedLineId(l.localId)}
-                                onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
+                                onFocus={e => {
+                                  setFocusedLineId(l.localId);
+                                  setRecentAnchorEl(e.currentTarget);
+                                }}
+                                onBlur={() => setTimeout(() => {
+                                  setFocusedLineId(p => p === l.localId ? null : p);
+                                  setRecentAnchorEl(prev => prev && prev.value === l.name ? null : prev);
+                                }, 120)}
                                 placeholder="Item name"
                               />
-                              {focusedLineId === l.localId && !l.name && recentItems.length > 0 && (
-                              <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
-                                  Recent
-                                </div>
-                                {recentItems.map(r => (
-                                  <button
-                                    key={r.name}
-                                    type="button"
-                                    className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                                    onMouseDown={e => {
-                                      e.preventDefault();
-                                      updateLine(l.localId, {
-                                        name: r.name,
-                                        unit: r.unit ?? l.unit ?? '',
-                                        unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
-                                        // Recent-item pick is a
-                                        // free-text row — unlink any
-                                        // stock-catalog binding so the
-                                        // BE doesn't decrement the
-                                        // (now-mismatched) stock row.
-                                        // Matches Invoice's behaviour.
-                                        stockItemId: null,
-                                      });
-                                      setFocusedLineId(null);
-                                    }}
-                                  >
-                                    <div className="font-medium truncate">{r.name}</div>
-                                    <div className="text-[11px] text-gray-500 flex justify-between gap-2">
-                                      <span>{r.unit ?? 'pcs'}</span>
-                                      <span className="tabular-nums">{(r.unitPrice ?? 0).toFixed(2)}</span>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                             </div>
                             {/* v-quotation-barcode-per-row — icon-only
                                 scan trigger sits AFTER the Item name.
@@ -1366,6 +1358,56 @@ function QuotationFormDialog({
           if (target) void fillLineFromBarcode(target, code);
         }}
       />
+      {/* Recent-items typeahead, portalled to <body> so ancestor
+          overflow / z-index / transform boundaries can't clip it.
+          Only renders when a row's Item input is focused and empty. */}
+      {(() => {
+        if (!focusedLineId || !recentAnchorRect || recentItems.length === 0) return null;
+        const line = lines.find(x => x.localId === focusedLineId);
+        if (!line || line.name) return null;
+        return createPortal(
+          <div
+            className="fixed z-[100] rounded-md border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto"
+            style={{
+              top: recentAnchorRect.top,
+              left: recentAnchorRect.left,
+              width: Math.max(288, recentAnchorRect.width),
+            }}
+          >
+            <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+              Recent
+            </div>
+            {recentItems.map(r => (
+              <button
+                key={r.name}
+                type="button"
+                className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  updateLine(line.localId, {
+                    name: r.name,
+                    unit: r.unit ?? line.unit ?? '',
+                    unitPrice: r.unitPrice != null ? String(r.unitPrice) : line.unitPrice,
+                    // Recent-item pick is a free-text row — unlink
+                    // any stock-catalog binding so the BE doesn't
+                    // decrement the (now-mismatched) stock row.
+                    stockItemId: null,
+                  });
+                  setFocusedLineId(null);
+                  setRecentAnchorEl(null);
+                }}
+              >
+                <div className="font-medium truncate">{r.name}</div>
+                <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                  <span>{r.unit ?? 'pcs'}</span>
+                  <span className="tabular-nums">{(r.unitPrice ?? 0).toFixed(2)}</span>
+                </div>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        );
+      })()}
     </Dialog>
   );
 }
