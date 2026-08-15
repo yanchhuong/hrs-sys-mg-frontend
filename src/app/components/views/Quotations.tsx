@@ -951,20 +951,26 @@ function QuotationFormDialog({
           {/* Line items */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <Label className="text-xs font-semibold shrink-0">Line items</Label>
-              <div className="flex items-center gap-2 flex-1 justify-end">
+              {/* v-quotation-barcode-inline — the barcode scan input
+                  now sits right after the "Line items" label so it
+                  reads as a search-affordance for that section, not a
+                  peer of Add line. Add line stays right-aligned as the
+                  primary action. Only rendered when the tenant has
+                  the barcode feature on. */}
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Label className="text-xs font-semibold shrink-0">Line items</Label>
                 {barcodeFeatureOn && (
-                  <div className="w-56">
+                  <div className="w-56 max-w-full">
                     <BarcodeScanInput
                       onScan={addLineFromScan}
                       placeholder="Scan barcode…"
                     />
                   </div>
                 )}
-                <Button size="sm" variant="outline" onClick={addLine} className="shrink-0">
-                  <Plus className="h-3 w-3 mr-1" /> Add line
-                </Button>
               </div>
+              <Button size="sm" variant="outline" onClick={addLine} className="shrink-0">
+                <Plus className="h-3 w-3 mr-1" /> Add line
+              </Button>
             </div>
             <div className="border rounded-md overflow-hidden">
               <Table>
