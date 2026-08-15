@@ -1186,7 +1186,7 @@ function QuotationFormDialog({
                 <div className="flex items-center gap-2">
                   <Input
                     inputMode="decimal"
-                    className="flex-1 tabular-nums"
+                    className="flex-1 tabular-nums text-right"
                     value={discountValue}
                     onChange={e => setDiscountValue(maskDecimal(e.target.value))}
                   />

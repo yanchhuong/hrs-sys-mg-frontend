@@ -2141,13 +2141,14 @@ function InvoiceFormDialog({
                 )}
               </Label>
               <Input
-                type="number" min={0} step="0.01"
+                inputMode="decimal"
                 value={taxType
                   ? (subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
                   : taxAmount}
-                onChange={e => setTaxAmount(e.target.value)}
+                onChange={e => setTaxAmount(maskDecimal(e.target.value))}
                 disabled={!!taxType}
                 title={taxType ? 'Auto-computed from the taxation type' : ''}
+                className="tabular-nums text-right"
               />
             </div>
             )}
@@ -2168,7 +2169,7 @@ function InvoiceFormDialog({
                   inputMode="decimal"
                   value={discountValue}
                   onChange={e => setDiscountValue(maskDecimal(e.target.value))}
-                  className="flex-1 tabular-nums"
+                  className="flex-1 tabular-nums text-right"
                 />
                 <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button
