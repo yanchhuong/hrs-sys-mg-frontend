@@ -2158,28 +2158,30 @@ function InvoiceFormDialog({
                   <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
                 )}
               </Label>
-              {/* Input + segmented type toggle on the right end. The
-                  $ button = flat money-off, % button = percent of
-                  subtotal. Server recomputes discount_amount on save. */}
-              <div className="flex">
+              {/* Input + segmented type toggle. The two used to share
+                  a border (rounded-r-none + border-l-0) which pressed
+                  the value flush against the $/% chip. Small gap + each
+                  control keeping its own rounded border reads cleaner
+                  and gives the digits breathing room. */}
+              <div className="flex items-center gap-2">
                 <Input
                   inputMode="decimal"
                   value={discountValue}
                   onChange={e => setDiscountValue(maskDecimal(e.target.value))}
-                  className="rounded-r-none tabular-nums"
+                  className="flex-1 tabular-nums"
                 />
-                <div className="inline-flex border border-l-0 rounded-r-md overflow-hidden">
+                <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button
                     type="button"
                     onClick={() => setDiscountType('amount')}
-                    className={`px-3 text-sm ${discountType === 'amount'
+                    className={`px-3 py-1.5 text-sm ${discountType === 'amount'
                       ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                     title="Flat money-off"
                   >$</button>
                   <button
                     type="button"
                     onClick={() => setDiscountType('percent')}
-                    className={`px-3 text-sm border-l ${discountType === 'percent'
+                    className={`px-3 py-1.5 text-sm border-l ${discountType === 'percent'
                       ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                     title="Percentage of subtotal"
                   >%</button>
