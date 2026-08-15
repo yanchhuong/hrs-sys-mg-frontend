@@ -125,6 +125,25 @@ function RecipientsPopover({
  *  rest of the accounting flows. Negative renders with leading "− "
  *  (almost never happens on a quote — totals are gross positives —
  *  but kept symmetrical with Invoice / Bill / Receipt). */
+/**
+ * Constrain a raw input string to a decimal shape: digits, an optional
+ * single dot, and at most two fractional digits. Cursor-friendly —
+ * returns the sanitized text so the controlled input keeps whatever
+ * the user *could* have meant (e.g. "1." while they're mid-type). Used
+ * on the unit-price cell so cashiers can't paste letters or currency
+ * symbols and derail qty × unit-price arithmetic.
+ */
+const maskDecimal = (raw: string): string => {
+  let s = raw.replace(/[^\d.]/g, '');
+  const first = s.indexOf('.');
+  if (first !== -1) {
+    // Keep only the FIRST dot; strip any further ones.
+    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
+  }
+  const [intPart, decPart] = s.split('.');
+  return decPart !== undefined ? `${intPart}.${decPart.slice(0, 2)}` : s;
+};
+
 const fmtMoney = (n: number, currency: string): string => {
   const epsilon = currency === 'KHR' ? 0.5 : 0.005;
   if (Math.abs(n) < epsilon) n = 0;
@@ -1053,11 +1072,15 @@ function QuotationFormDialog({
                             })} />
                         </TableCell>
                         <TableCell>
-                          <Input className="text-right" value={l.unitPrice}
+                          <Input
+                            className="text-right tabular-nums"
+                            inputMode="decimal"
+                            value={l.unitPrice}
                             onChange={e => updateLine(l.localId, {
-                              unitPrice: e.target.value,
+                              unitPrice: maskDecimal(e.target.value),
                               totalEditing: undefined,
-                            })} />
+                            })}
+                          />
                         </TableCell>
                         {/* Total is editable too — typing here back-
                             computes unitPrice = total ÷ qty. While the
