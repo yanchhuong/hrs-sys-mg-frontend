@@ -3135,7 +3135,7 @@ function InvoiceDetailDialog({
                         auto-minted on issue in the backend and stitched
                         into outgoing Telegram / mail bodies (see the
                         send handlers), so no manual step is needed. */}
-                    <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)}>
+                    <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="text-blue-600 hover:text-blue-700">
                       <Plus className="h-3 w-3 mr-1" /> Record payment
                     </Button>
                   </div>

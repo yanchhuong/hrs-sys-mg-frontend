@@ -518,7 +518,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs uppercase text-gray-500">Payments</div>
         {canRecord && !showForm && (
-          <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+          <Button size="sm" variant="outline" onClick={() => setShowForm(true)} className="text-blue-600 hover:text-blue-700">
             <Plus className="h-3.5 w-3.5 mr-1" /> Record Payment
           </Button>
         )}

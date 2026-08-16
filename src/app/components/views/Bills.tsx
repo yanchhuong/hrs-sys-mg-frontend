@@ -2350,7 +2350,7 @@ function BillDetailDialog({
                     same way Paid does so the operator can't double-
                     book the return. */}
                 {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'returned' && (
-                  <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden">
+                  <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden text-blue-600 hover:text-blue-700">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
                 )}
