@@ -253,13 +253,13 @@ function ReceiveStockPopover({
     <>
       {!external && trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md" hideClose>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            {/* No X close button on row-level dialogs (hideClose above)
-                — footer's Cancel button is the explicit dismiss. Long
-                Khmer / Chinese names still truncate via min-w-0 +
-                truncate; icon + action label stay shrink-0. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0">
+            {/* pr-8 pushes the truncation zone clear of the built-in
+                X close (top-4 right-4 inside DialogContent). Without
+                the reserve, a truncated Khmer / Chinese name's last
+                chars can ride under the X. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 pr-8">
               <PackagePlus className="h-4 w-4 text-emerald-600 shrink-0" />
               <span className="shrink-0">Increase Stock —</span>
               <span className="truncate min-w-0" title={item.name}>{item.name}</span>
@@ -448,15 +448,13 @@ function RowImageCell({
     <>
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md" hideClose>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader className="min-w-0">
-            {/* No X close button on row-level dialogs — footer's Cancel
-                is the explicit dismiss. Whole label + name lives in a
-                single truncate span so long item names ellipsis-clip
-                at the dialog's right edge instead of pushing the
-                header past the DialogContent border. The native
-                {@code title} attr surfaces the full string on hover. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0 overflow-hidden">
+            {/* pr-8 keeps the truncated name clear of the built-in X
+                close. Whole label + name lives in a single truncate
+                span so long item names ellipsis-clip at that reserved
+                zone instead of running under the X. */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 overflow-hidden pr-8">
               <Camera className="h-4 w-4 text-blue-600 shrink-0" />
               <span
                 className="truncate min-w-0 block"
@@ -612,12 +610,11 @@ function RowModifiersPopover({
     <>
       {trigger}
       <Dialog open={open} onOpenChange={(o) => { if (!busy) setOpen(o); }}>
-        <DialogContent className="sm:max-w-md" hideClose>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            {/* No X close button on row-level dialogs — footer's
-                Cancel is the explicit dismiss. min-w-0 + truncate
-                keep long Khmer / Chinese names inside the header. */}
-            <DialogTitle className="flex items-center gap-2 min-w-0">
+            {/* pr-8 keeps the truncated Khmer / Chinese name clear of
+                the built-in X close (top-4 right-4). */}
+            <DialogTitle className="flex items-center gap-2 min-w-0 pr-8">
               <SlidersHorizontal className="h-4 w-4 text-purple-600 shrink-0" />
               <span className="shrink-0">Modifier Groups —</span>
               <span className="truncate min-w-0" title={item.name}>{item.name}</span>

@@ -2679,10 +2679,11 @@ function InvoiceDetailDialog({
           below the page flow. The stamp's absolute positioning
           anchors to DialogContent because `fixed` is already a
           positioned ancestor — no extra `relative` needed. */}
-      {/* hideClose — on narrow mobile viewports the Radix X collided
-          with the Send dropdown chevron in the header. Footer Close
-          button is the primary dismiss anyway. */}
-      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto" hideClose>
+      {/* Radix X restored for consistency with the rest of the app's
+          popups. The header's action group + amount block carry mr-10
+          below to reserve clearance so the X doesn't overlap the Send
+          dropdown chevron on narrow mobile viewports. */}
+      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         {/* Stamp lives at DialogContent root so it overlays the whole
             preview area regardless of where the user scrolls inside.
             Only shown for non-draft/void invoices with AR ≈ 0. */}
@@ -2729,7 +2730,7 @@ function InvoiceDetailDialog({
                 The whole row is gated on `invoice` so the buttons
                 don't render before data is in. */}
             {invoice && (
-              <div className="flex gap-1.5 mr-8 print:hidden">
+              <div className="flex gap-1.5 mr-10 print:hidden">
                 <Button size="sm" variant="outline" onClick={() => { void printInvoiceOrReceipt(invoice); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
@@ -2892,7 +2893,7 @@ function InvoiceDetailDialog({
                   and rendering "$0.00" behind the stamp was visually
                   noisy + made the number look like the invoice total. */}
               {Math.abs(arUsd) >= 0.005 && (
-                <div className="text-right shrink-0 mr-8 print:hidden">
+                <div className="text-right shrink-0 mr-10 print:hidden">
                   <div className="text-[11px] uppercase tracking-wide text-gray-500">AR ({invoice.currency})</div>
                   <div className={`text-3xl font-bold mt-1 tabular-nums ${
                     arUsd > 0 ? 'text-rose-700' : 'text-amber-700'

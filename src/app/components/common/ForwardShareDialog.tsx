@@ -155,9 +155,12 @@ export function useForwardShare(opts: UseForwardShareOptions): UseForwardShareRe
 
   const dialog = (
     <Dialog open={chooserOpen} onOpenChange={setChooserOpen}>
-      <DialogContent className="sm:max-w-xs" hideClose>
+      <DialogContent className="sm:max-w-xs">
         <DialogHeader>
-          <DialogTitle className="text-center">Forward to</DialogTitle>
+          {/* pr-8 leaves room for the built-in X close (top-4 right-4)
+              on the right side of the header so the centered title
+              still visually reads centered. */}
+          <DialogTitle className="text-center pr-8">Forward to</DialogTitle>
         </DialogHeader>
         <div className="flex justify-center gap-6 py-4">
           <button
