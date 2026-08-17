@@ -87,6 +87,12 @@ export interface Invoice {
   notes?: string | null;
   /** Customer-facing terms & conditions text printed on the invoice. */
   terms?: string | null;
+  /** V-invoice-purpose — free-text reason the invoice was raised
+   *  (e.g. "Q3 consulting retainer"). Rendered on the create form
+   *  and the printed invoice when the sale-scope `showPurpose`
+   *  setting is on. Null when unset or the tenant hasn't started
+   *  using the field. */
+  purpose?: string | null;
   /** Free-text diagnosis on the Encounter lens (kind='medical'). Null
    *  on non-encounter invoices. */
   diagnosis?: string | null;
@@ -146,6 +152,10 @@ export interface InvoiceRequest {
   discountAmount?: number;
   notes?: string | null;
   terms?: string | null;
+  /** V-invoice-purpose — free-text reason the invoice was raised.
+   *  Backend trims blank → null; caller may pass null / undefined /
+   *  "" interchangeably. */
+  purpose?: string | null;
   /** Free-text diagnosis field on the Encounter lens (V185). Null /
    *  omitted on Sale > Invoice callers. */
   diagnosis?: string | null;

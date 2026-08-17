@@ -582,6 +582,16 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.showNotes, v => setDraft({ ...draft, showNotes: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Terms & Conditions', 'Customer-facing terms printed at the bottom.',
                   draft.showTerms, v => setDraft({ ...draft, showTerms: v }))}
+                {/* V-invoice-purpose — Sale-only toggle for now.
+                    Turns the "Purpose" input on the Invoice create/
+                    edit form on or off, and gates the "Purpose:" line
+                    on the printed invoice. Off = the field vanishes
+                    entirely; any purpose already saved on legacy
+                    invoices stays in the DB but no longer surfaces. */}
+                {scope === 'sale' && toggleRow(
+                  'Show Purpose',
+                  'Free-text label for WHY the invoice was raised (e.g. "Q3 retainer"). Shown on the form and printed on the invoice.',
+                  draft.showPurpose, v => setDraft({ ...draft, showPurpose: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Discount', 'Discount input (amount or percent) + line in the totals.',
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',

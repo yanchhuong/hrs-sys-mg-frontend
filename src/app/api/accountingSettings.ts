@@ -12,6 +12,12 @@ export type AccountingScope = 'sale' | 'purchase' | 'receipt' | 'quotation' | 'v
 export interface AccountingSettings {
   showNotes: boolean;
   showTerms: boolean;
+  /** V-invoice-purpose — gates the Purpose input on the Invoice
+   *  create/edit form + the "Purpose:" line on the printed invoice.
+   *  Sale-scope only consumer today; other scopes carry the column
+   *  for shape uniformity. Default true — matches show_notes /
+   *  show_terms so a new tenant sees the field immediately. */
+  showPurpose: boolean;
   showDiscount: boolean;
   showTax: boolean;
   /** When true, the Invoice form auto-fires a Telegram send after a
@@ -220,6 +226,10 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
   return {
     showNotes: true,
     showTerms: true,
+    // V-invoice-purpose — on by default so a fresh tenant sees the
+    // Purpose input immediately on the Invoice create form; matches
+    // show_notes / show_terms / show_discount / show_tax defaults.
+    showPurpose: true,
     showDiscount: true,
     showTax: true,
     // Opt-in: a fresh tenant doesn't auto-send anything until the

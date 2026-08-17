@@ -1350,6 +1350,12 @@ function InvoiceFormDialog({
   const [discountValue, setDiscountValue] = useState('0');
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
+  /** V-invoice-purpose — controlled by the Sale-scope `showPurpose`
+   *  toggle in Accountant Settings. Reset on cancel / new / copy;
+   *  seeded from the row on edit; sent as trimmed value or omitted
+   *  on save. Rendered next to Notes/Terms below the line-items
+   *  block. */
+  const [purpose, setPurpose] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
@@ -1382,6 +1388,7 @@ function InvoiceFormDialog({
       setDiscountValue(String(editing.discountValue ?? editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
+      setPurpose(editing.purpose ?? '');
     } else if (copyFrom) {
       // Copy source: mint a fresh invoice carrying every line item +
       // currency / discount / tax from the source, but WITHOUT the
@@ -1411,6 +1418,7 @@ function InvoiceFormDialog({
       setDiscountValue(String(copyFrom.discountValue ?? copyFrom.discountAmount));
       setNotes(copyFrom.notes ?? '');
       setTerms(copyFrom.terms ?? '');
+      setPurpose(copyFrom.purpose ?? '');
       let cancelled = false;
       invoicesApi.nextNumber(kind)
         .then(res => { if (!cancelled) setInvoiceNo(res.invoiceNo); })
@@ -1437,6 +1445,7 @@ function InvoiceFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+      setPurpose('');
       // Fetch the preview after state resets — race-protected so a
       // rapid kind switch doesn't land the wrong value.
       let cancelled = false;
@@ -1529,6 +1538,9 @@ function InvoiceFormDialog({
     discountAmount: computedDiscount,
     notes: notes || undefined,
     terms: terms || undefined,
+    // V-invoice-purpose — blank-to-undefined keeps the backend's
+    // `blank → null` normalisation from having to run on the wire.
+    purpose: purpose.trim() || undefined,
     items: items.map(it => ({
       name: it.name.trim(),
       description: it.description?.trim() || undefined,
@@ -1650,6 +1662,7 @@ function InvoiceFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+      setPurpose('');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
     } finally {
@@ -2195,6 +2208,23 @@ function InvoiceFormDialog({
             </div>
             )}
           </div>
+          )}
+
+          {/* V-invoice-purpose — one-liner right above the Notes/Terms
+              row. Sale-scope toggle in Accountant Settings hides it.
+              Single-line Input rather than a Textarea because Purpose
+              is a short label (e.g. "Q3 retainer", "Monthly service")
+              not a paragraph. */}
+          {settings.showPurpose && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Purpose</Label>
+              <Input
+                value={purpose}
+                onChange={e => setPurpose(e.target.value)}
+                placeholder='Why this invoice was raised — e.g. "Q3 consulting retainer"'
+                maxLength={255}
+              />
+            </div>
           )}
 
           {/* Two-column layout: Notes on the left (internal memo),
