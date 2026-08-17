@@ -2181,25 +2181,29 @@ function InvoiceFormDialog({
             )}
             {settings.showDiscount && (
             <div className={`space-y-1.5 ${settings.showTax ? 'col-span-2' : 'col-span-4'}`}>
-              {/* v-discount-label-height-fix — label used to be wrapped
-                  in a `flex items-center` with an invisible $/% spacer
-                  next to it (to keep the label from stretching under
-                  the toggle). That spacer was `text-sm py-1.5` — taller
-                  than the label's `text-xs` — so it pushed the whole
-                  Discount cell down by a few pixels vs. Taxation on the
-                  left, and the two rows visibly misaligned on the same
-                  horizontal grid row. Dropped the spacer entirely — the
-                  label sitting flush above the input+toggle row is fine
-                  and lines up cleanly with Taxation. */}
-              {/* v-numeric-right-align — same rule as Exchange rate:
-                  numeric input = right-aligned label + right-aligned
-                  value. Sits above the input+toggle row so the digits
-                  and the label anchor to the same right edge. */}
-              <Label className="text-xs block text-right">
-                Discount {discountType === 'percent' && (
-                  <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
-                )}
-              </Label>
+              {/* v-discount-label-right-to-input-edge — the label
+                  needs to right-align to the INPUT's right edge (i.e.
+                  where the "0" value sits), not the CELL's right edge
+                  which sits past the $/% toggle — otherwise "Discount"
+                  hangs over the toggle and no longer sits above its
+                  own value.
+
+                  Invisible $/% spacer reserves the toggle's horizontal
+                  slot. Kept at `h-0` (was `py-1.5 text-sm` which added
+                  height and pushed the whole cell 4-6 px below Taxation)
+                  so the row's vertical extent tracks the Label + its
+                  `text-xs` line height only. */}
+              <div className="flex items-center gap-2">
+                <Label className="text-xs flex-1 block text-right">
+                  Discount {discountType === 'percent' && (
+                    <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
+                  )}
+                </Label>
+                <div className="shrink-0 inline-flex invisible h-0 overflow-hidden" aria-hidden="true">
+                  <span className="px-3 py-1.5 text-sm">$</span>
+                  <span className="px-3 py-1.5 text-sm border-l">%</span>
+                </div>
+              </div>
               {/* Input + segmented type toggle. The two used to share
                   a border (rounded-r-none + border-l-0) which pressed
                   the value flush against the $/% chip. Small gap + each

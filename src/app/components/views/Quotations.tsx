@@ -971,10 +971,19 @@ function QuotationFormDialog({
                 selected currency. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                {/* v-numeric-right-align — numeric inputs (rates,
+                    money, counts) get right-aligned label + right-
+                    aligned value so the digits line up under a
+                    consistent right margin. Matches the same rule
+                    already applied to the Invoice form. */}
+                <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
+                <Input
+                  value={exchangeRate}
+                  onChange={e => setExchangeRate(e.target.value)}
+                  className="tabular-nums text-right"
+                />
               </div>
             )}
           </div>
