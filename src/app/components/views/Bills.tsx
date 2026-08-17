@@ -1356,8 +1356,30 @@ function BillFormDialog({
           the 640px breakpoint. */}
       <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit ${editing?.billNo}` : `New ${KIND_LABEL[kind]}`}</DialogTitle>
-          <DialogDescription>
+          {/* Matches Invoice — long copy hides behind an Info tooltip
+              so the title bar stays compact. The visible label is
+              just the short title; the DialogDescription below is
+              sr-only for Radix a11y (screen readers still get it). */}
+          <DialogTitle className="flex items-center gap-1.5">
+            {isEdit ? `Edit ${editing?.billNo}` : `New ${KIND_LABEL[kind]}`}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label={`${KIND_LABEL[kind]} form description`}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                {isAdjustment
+                  ? 'Record an adjustment against the parent bill — lines and tax recompute the totals.'
+                  : 'Capture a vendor bill. Lines and tax type drive the totals; saving as Issued moves it into AP.'}
+              </TooltipContent>
+            </Tooltip>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
             {isAdjustment
               ? 'Record an adjustment against the parent bill — lines and tax recompute the totals.'
               : 'Capture a vendor bill. Lines and tax type drive the totals; saving as Issued moves it into AP.'}
@@ -1873,7 +1895,7 @@ function BillFormDialog({
           {!isEdit && (
             <>
               <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Draft and reset the form for the next entry">
-                {saving ? 'Saving…' : 'Save & add new'}
+                {saving ? 'Saving…' : 'Save & New'}
               </Button>
               <Button variant="outline" onClick={submitAndClose} disabled={saving} title="Save as Draft and close the dialog">
                 {saving ? 'Saving…' : 'Save & close'}

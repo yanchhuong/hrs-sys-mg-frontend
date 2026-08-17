@@ -873,7 +873,7 @@ function ReceiptFormDialog({
             <>
               <Button variant="outline" onClick={submitAndNew} disabled={saving}
                       title="Save as Draft and reset the form for the next entry">
-                {saving ? 'Saving…' : 'Save & add new'}
+                {saving ? 'Saving…' : 'Save & New'}
               </Button>
               <Button variant="outline" onClick={submitAndClose} disabled={saving}
                       title="Save as Draft and close the dialog">

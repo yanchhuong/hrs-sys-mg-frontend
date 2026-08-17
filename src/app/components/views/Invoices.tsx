@@ -2369,7 +2369,7 @@ function InvoiceFormDialog({
           {!isEdit && (
             <>
               <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Progress and reset the form for the next entry">
-                {saving ? 'Saving…' : 'Save & add new'}
+                {saving ? 'Saving…' : 'Save & New'}
               </Button>
               <Button onClick={submitAndClose} disabled={saving} title="Save as Progress and close the dialog">
                 {saving ? 'Saving…' : 'Save & close'}
