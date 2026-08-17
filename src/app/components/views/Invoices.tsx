@@ -2346,8 +2346,18 @@ function InvoiceFormDialog({
           </div>
         </div>
 
+        {/* v-invoice-footer-reorder — primary "Create draft" button
+            moves to the SECOND slot (right after Cancel) so the
+            most-frequent action sits within a mouse-inch of the
+            close affordance and doesn't get lost at the far right
+            of the row. Save-and-* variants trail as the less-common
+            options. Edit mode is unchanged (just Cancel + Save
+            changes). */}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
+          </Button>
           {/* Save & add new and Save & close both skip Draft and issue
               directly to Progress — only available on create, since on
               edit the row already exists with a final state. */}
@@ -2361,9 +2371,6 @@ function InvoiceFormDialog({
               </Button>
             </>
           )}
-          <Button onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
-          </Button>
         </DialogFooter>
       </DialogContent>
       {quickAdd.dialog}
