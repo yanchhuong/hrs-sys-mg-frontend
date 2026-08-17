@@ -93,11 +93,30 @@ export async function reactivate(id: string): Promise<User> {
   return apiJson(`/api/v1/users/${id}/reactivate`, { method: 'POST' });
 }
 
-/** Backend returns 202 Accepted with no body — it sends the reset link
- *  out-of-band. Fire-and-forget. */
+/** V-admin-reset-email — admin-triggered password reset email. Reuses
+ *  the same self-service /reset-password token pipeline the FE
+ *  Forgot-Password flow uses. Backend returns 202 Accepted. Throws
+ *  400 if the user row has no email (rare — typically ex-employees
+ *  or username-only logins); the caller should offer
+ *  {@link resetToDefault} instead in that case. */
 export async function resetPassword(id: string): Promise<void> {
   return apiVoid(`/api/v1/users/${id}/reset-password`, { method: 'POST' });
 }
+
+/** V-admin-default-password — sets the user's password to the well-
+ *  known default "qwer1234!". Use when the user can't receive email
+ *  (no address on file, mailbox down) and the admin can read the
+ *  credential aloud on a support call. Users MUST change it via
+ *  Profile → Change Password or the Forgot Password flow ASAP.
+ *  Backend returns 202 Accepted. */
+export async function resetToDefault(id: string): Promise<void> {
+  return apiVoid(`/api/v1/users/${id}/reset-to-default`, { method: 'POST' });
+}
+
+/** Shared literal so the FE toast + confirm dialog show the exact
+ *  password the backend assigns — keep in sync with
+ *  UserService.ADMIN_DEFAULT_PASSWORD. */
+export const ADMIN_DEFAULT_PASSWORD = 'qwer1234!';
 
 export async function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/users/${id}`, { method: 'DELETE' });

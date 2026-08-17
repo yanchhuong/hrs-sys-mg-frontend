@@ -54,7 +54,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, ChevronsUpDown, Check, Info,
+  Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { format } from 'date-fns';
@@ -886,7 +886,11 @@ export function UserManagement() {
     }
   };
 
-  const handleResetPassword = async (user: User) => {
+  /** V-admin-reset-email — sends the reset link to the user's email
+   *  via the same PasswordResetService pipeline the Forgot-Password
+   *  self-service flow uses. Backend rejects if the user row has no
+   *  email; the popover UI hides this action in that case. */
+  const handleEmailResetLink = async (user: User) => {
     if (USE_MOCKS) {
       toast.success(`Reset link sent to ${user.email}`);
       return;
@@ -895,7 +899,36 @@ export function UserManagement() {
       await usersApi.resetPassword(user.id);
       toast.success(`Reset link sent to ${user.email}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reset password');
+      toast.error(err instanceof Error ? err.message : 'Failed to send reset link');
+    }
+  };
+
+  /** V-admin-default-password — overwrites the user's password with
+   *  the well-known default {@code qwer1234!}. Admin should read the
+   *  password aloud on the support call, then tell the user to change
+   *  it immediately. */
+  const handleResetToDefault = async (user: User) => {
+    const ok = await confirm({
+      title: `Set ${user.name || user.email || 'this user'}'s password to the default?`,
+      message:
+        `Their current password will be replaced with "${usersApi.ADMIN_DEFAULT_PASSWORD}". ` +
+        `Tell them to change it immediately via Profile → Change Password after signing in. ` +
+        `This is a well-known credential — anyone who learns it can log in as this user until it's changed.`,
+      confirmLabel: 'Set default password',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    if (USE_MOCKS) {
+      toast.success(`Password set to "${usersApi.ADMIN_DEFAULT_PASSWORD}". Tell the user to change it.`);
+      return;
+    }
+    try {
+      await usersApi.resetToDefault(user.id);
+      toast.success(
+        `Password set to "${usersApi.ADMIN_DEFAULT_PASSWORD}". Tell the user to change it right away.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set default password');
     }
   };
 
@@ -1530,14 +1563,60 @@ export function UserManagement() {
                             >
                               {user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleResetPassword(user)}
-                              title="Send password reset link"
-                            >
-                              <Key className="h-3 w-3" />
-                            </Button>
+                            {/* V-admin-reset-picker — click the key icon
+                                to open a small chooser. Two paths:
+                                (a) email a self-service reset link
+                                (Mail); (b) set the password to the
+                                well-known default (KeyRound) so the
+                                admin can read it aloud on a call. */}
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  title="Reset password…"
+                                >
+                                  <Key className="h-3 w-3" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-64 p-1">
+                                <button
+                                  type="button"
+                                  disabled={!user.email}
+                                  onClick={() => { void handleEmailResetLink(user); }}
+                                  className="w-full flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Mail className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                                  <span className="min-w-0">
+                                    <span className="block font-medium text-gray-900">Email reset link</span>
+                                    <span className="block text-xs text-gray-500 mt-0.5">
+                                      {user.email
+                                        ? `Send to ${user.email}`
+                                        : 'User has no email address on file'}
+                                    </span>
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { void handleResetToDefault(user); }}
+                                  className="w-full flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-100"
+                                >
+                                  <KeyRound className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                                  <span className="min-w-0">
+                                    <span className="block font-medium text-gray-900">
+                                      Set default password
+                                    </span>
+                                    <span className="block text-xs text-gray-500 mt-0.5">
+                                      Overwrites with{' '}
+                                      <span className="font-mono text-gray-700">
+                                        {usersApi.ADMIN_DEFAULT_PASSWORD}
+                                      </span>{' '}
+                                      — user must change on first sign-in.
+                                    </span>
+                                  </span>
+                                </button>
+                              </PopoverContent>
+                            </Popover>
                             <Button
                               variant="outline"
                               size="sm"
