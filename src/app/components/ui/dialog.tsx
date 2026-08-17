@@ -79,7 +79,21 @@ const DialogContent = React.forwardRef<
       >
         {children}
         {!hideClose && (
-          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+          // v-dialog-close-mobile — the built-in X used to be
+          // absolute+plain and drifted / overlapped adjacent action
+          // buttons on narrow mobile viewports (see Invoice detail
+          // screenshot: X ended up on the LEFT of Print/Send/Void).
+          // Same top:4 right:4 anchor as before, but:
+          //   • z-50 keeps it above any overflowing header content
+          //   • bg-background rounded-full padded circle gives it a
+          //     tap-target hit area + guarantees the icon is
+          //     readable against any content behind it
+          //   • ring-1 border-line so the pill reads as a control
+          //     even on dark screenshots
+          //   • h-8 w-8 makes it a proper 32 px touch target on
+          //     phones (was ~16 px with no padding — below Apple
+          //     HIG's 44 px suggestion but at least visible)
+          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-3 right-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-full bg-background ring-1 ring-border opacity-80 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
             <XIcon />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
