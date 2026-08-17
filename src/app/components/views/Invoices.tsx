@@ -290,13 +290,6 @@ export function Invoices({
   // between commercial/tax/CN/DN via the tabs.
   const [kindFilter, setKindFilter] = useState<invoicesApi.InvoiceKind | 'all'>(fixedKind ?? 'all');
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
-  /** V-invoice-purpose-picker — distinct purposes the tenant has
-   *  used before, fed to the Purpose SearchablePicker. Load once on
-   *  page mount + refresh after a save so a newly-typed purpose
-   *  shows up in the picker the next time the form opens. Empty
-   *  list is fine — the picker still supports the inline "create"
-   *  affordance for first-use tenants. */
-  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
@@ -377,12 +370,6 @@ export function Invoices({
       const invoices = invRes.content ?? [];
       setRows(invoices);
       setCustomers(custRes.content ?? []);
-      // V-invoice-purpose-picker — fire-and-forget alongside the list
-      // load. Failure is non-fatal (picker just has no suggestions
-      // until the tenant saves a purpose the next time).
-      invoicesApi.listPurposes()
-        .then(setPurposeOptions)
-        .catch(() => setPurposeOptions([]));
       // Kick off the per-currency totals in the background — the table
       // renders the legacy total in the USD column while this resolves,
       // then refines. Skip entirely for roles without payment:view (a
@@ -1369,6 +1356,13 @@ function InvoiceFormDialog({
    *  on save. Rendered next to Notes/Terms below the line-items
    *  block. */
   const [purpose, setPurpose] = useState('');
+  /** V-invoice-purpose-picker — distinct purposes the tenant has
+   *  used before, fed to the Purpose SearchablePicker below.
+   *  Loaded once when the dialog mounts (see the useEffect further
+   *  down) so subsequent form opens hit the network again and pick
+   *  up any newly-typed values. Empty list is fine — the picker's
+   *  inline "create" affordance handles first-use tenants. */
+  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
@@ -1479,6 +1473,17 @@ function InvoiceFormDialog({
     setCurrency(currencySettings.primaryCurrency);
     setExchangeRate(String(currencySettings.secondaryRate ?? 4100));
   }, [open, editing, copyFrom, parentPrefill, currencySettings]);
+
+  // V-invoice-purpose-picker — pull the tenant's distinct saved
+  // purposes each time the dialog opens so a purpose the operator
+  // added in a previous open shows up as a one-click option. Silent
+  // failure — the picker still supports free-type create.
+  useEffect(() => {
+    if (!open) return;
+    invoicesApi.listPurposes()
+      .then(setPurposeOptions)
+      .catch(() => setPurposeOptions([]));
+  }, [open]);
 
   const rootInvoiceOptions = useMemo(() =>
     invoices.filter(i => (i.kind === 'commercial' || i.kind === 'tax') && i.status !== 'void'),
