@@ -2122,22 +2122,26 @@ function InvoiceFormDialog({
               cross-system reference; server applies subtotal × rate.
               Commercial / CN-DN-against-commercial → just VAT 0% +
               Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
-          {/* Tax + Discount row. Each cell is gated by the tenant
+          {/* Tax + Discount block. Each cell is gated by the tenant
               Accountant Settings — flip a toggle off in the Settings
-              popup and the matching cell vanishes here. Row only
-              renders if at least one cell is visible.
+              popup and the matching cell vanishes here.
 
-              v-tax-discount-row-align — grid switched from cols-3 to
-              cols-4 to match the row above (Issue date + Due date +
-              Currency + Exchange rate). Taxation is a wide dropdown
-              so it spans 2 columns; Tax and Discount are narrow
-              numeric inputs so each takes 1. When one of the two is
-              hidden the visible sibling absorbs the freed columns so
-              the row still fills flush — no dead whitespace stripe. */}
+              v-tax-discount-row-align-v2 — earlier attempts kept all
+              three (Taxation / Tax / Discount) on one row, but the
+              Taxation dropdown's chevron read visually as a component
+              of the Tax input right next to it, so the two looked
+              like a single compound field. Split into two rows:
+
+                Row A: Taxation (full width, gets breathing room, no
+                       adjacent input to blur into).
+                Row B: Tax + Discount side by side (grid-cols-2). If
+                       one is hidden the other spans the row.
+
+              Row is only rendered if at least one cell is visible. */}
           {(settings.showTax || settings.showDiscount) && (
-          <div className="grid grid-cols-4 gap-3">
+          <div className="space-y-3">
             {settings.showTax && (
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5">
               <Label className="text-xs">Taxation</Label>
               <Select
                 value={taxType || '_none'}
@@ -2167,9 +2171,16 @@ function InvoiceFormDialog({
               </Select>
             </div>
             )}
+            {/* Row B — Tax + Discount side by side (2 equal cols).
+                If Tax OR Discount is hidden, the visible sibling
+                spans the row on its own via a col-span-2. Rendered
+                inside the outer space-y-3 so the vertical rhythm
+                stays consistent with the row above (Taxation). */}
+            {(settings.showTax || settings.showDiscount) && (
+            <div className="grid grid-cols-2 gap-3">
             {settings.showTax && (
             <div className={`space-y-1.5 ${settings.showDiscount ? '' : 'col-span-2'}`}>
-              <Label className="text-xs block text-right">
+              <Label className="text-xs">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
                 )}
@@ -2182,17 +2193,17 @@ function InvoiceFormDialog({
                 onChange={e => setTaxAmount(maskDecimal(e.target.value))}
                 disabled={!!taxType}
                 title={taxType ? 'Auto-computed from the taxation type' : ''}
-                className="tabular-nums text-right"
+                className="tabular-nums"
               />
             </div>
             )}
             {settings.showDiscount && (
-            <div className={`space-y-1.5 ${settings.showTax ? '' : 'col-span-4'}`}>
+            <div className={`space-y-1.5 ${settings.showTax ? '' : 'col-span-2'}`}>
               {/* Label mirrors the input+toggle row so its right edge
                   ends at the input's right edge, not over the $/%
                   toggle. Invisible spacer holds the toggle's slot. */}
               <div className="flex items-center gap-2">
-                <Label className="text-xs flex-1 text-right block">
+                <Label className="text-xs flex-1 block">
                   Discount {discountType === 'percent' && (
                     <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
                   )}
@@ -2231,6 +2242,8 @@ function InvoiceFormDialog({
                   >%</button>
                 </div>
               </div>
+            </div>
+            )}
             </div>
             )}
           </div>
