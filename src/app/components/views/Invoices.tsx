@@ -3511,9 +3511,17 @@ function VatTinBoxes({ tin }: { tin: string }) {
   return (
     <span
       style={{
-        display: 'inline-flex',
-        flexWrap: 'nowrap',
-        gap: '2px',
+        // v-vat-tin-boxes-center-v2 — parent switched from inline-flex
+        // to inline-block. Each child now uses inline-block +
+        // vertical-align:middle, which every renderer aligns
+        // predictably on the shared baseline; inline-flex kept the
+        // on-screen centering intact but html2canvas measured child
+        // heights inconsistently there.
+        //
+        // Whitespace character between children carries the gap so
+        // the layout is CSS-free below; using a fixed marginRight on
+        // each child instead of gap for maximum renderer coverage.
+        display: 'inline-block',
         verticalAlign: 'middle',
         whiteSpace: 'nowrap',
       }}
@@ -3522,19 +3530,27 @@ function VatTinBoxes({ tin }: { tin: string }) {
         <span
           key={i}
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: '0 0 auto',
+            // v-vat-tin-boxes-center-v2 — earlier fix used inline-flex
+            // with alignItems/justifyContent + lineHeight:1 for
+            // centering. Reliable on-screen but html2canvas (used for
+            // Telegram / Messenger forwards via capturePrintImage)
+            // doesn't render flex-centered content consistently — the
+            // captured digits landed at the box bottom, mismatched
+            // with the dash beside them.
+            //
+            // Classic block-level centering technique instead:
+            //   display: inline-block
+            //   width  = box width
+            //   height = line-height = box height
+            //   text-align: center
+            // Renderer-agnostic; the glyph sits on the mid-line in
+            // native print, html2canvas, headless-Chromium PDF, and
+            // Telegram photo capture alike.
+            display: 'inline-block',
             width: '16px',
             height: '18px',
             fontSize: '11px',
-            // lineHeight:1 makes the glyph height equal the font size so
-            // the flex-center actually sits the character on the cell's
-            // visual midline. Without this, the inherited line-height
-            // (~1.4) pads above/below the glyph and the character drops
-            // toward the bottom border.
-            lineHeight: 1,
+            lineHeight: '18px',
             // Tabular numerals + Arial keep each digit + the letter on
             // the same advance width so the cells line up uniformly
             // under html2canvas (different fonts can fall back to
@@ -3542,8 +3558,13 @@ function VatTinBoxes({ tin }: { tin: string }) {
             fontFamily: 'Arial, sans-serif',
             fontVariantNumeric: 'tabular-nums',
             textAlign: 'center',
+            verticalAlign: 'middle',
             border: c === '-' ? 'none' : '1px solid #000',
             boxSizing: 'border-box',
+            // 2 px right margin on every cell except the last gives
+            // the same visual gap the previous flex `gap: 2px`
+            // provided. Renders identically under html2canvas.
+            marginRight: i < chars.length - 1 ? '2px' : 0,
           }}
         >
           {c}
