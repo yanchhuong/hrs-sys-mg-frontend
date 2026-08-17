@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { createPortal, flushSync } from 'react-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -44,6 +44,7 @@ import * as quotationsApi from '../../api/quotations';
 import { useI18n } from '../../i18n/I18nContext';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
+import { NumericInput } from '../common/NumericInput';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
@@ -577,11 +578,6 @@ function QuotationFormDialog({
   const [recipientPhone, setRecipientPhone] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
-  /** v-exchange-rate-mask — when the input has focus we show the raw
-   *  digit string so cursor-editing is straightforward. When focus
-   *  leaves we render the value with a thousand separator ("4,100"
-   *  instead of "4100") so it reads as a number at a glance. */
-  const [rateFocused, setRateFocused] = useState(false);
   const [taxType, setTaxType] = useState('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState('0');
@@ -600,28 +596,12 @@ function QuotationFormDialog({
   // row's Item input is focused so the dropdown only renders for it.
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
   const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
-  // v-quotation-recent-portal — the Recent dropdown used to live
-  // inside the Item cell with position:absolute, which meant it got
-  // clipped by any ancestor with overflow set (Table wrapper, dialog
-  // scroll region) and stacked below neighbouring cells. Anchor the
-  // focused input via its DOM node and portal a fixed-positioned
-  // dropdown to <body> instead, mirroring SearchWithSuggestions.
-  const [recentAnchorEl, setRecentAnchorEl] = useState<HTMLInputElement | null>(null);
-  const [recentAnchorRect, setRecentAnchorRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  useLayoutEffect(() => {
-    if (!recentAnchorEl) { setRecentAnchorRect(null); return; }
-    const update = () => {
-      const r = recentAnchorEl.getBoundingClientRect();
-      setRecentAnchorRect({ top: r.bottom + 4, left: r.left, width: r.width });
-    };
-    update();
-    window.addEventListener('scroll', update, true);
-    window.addEventListener('resize', update);
-    return () => {
-      window.removeEventListener('scroll', update, true);
-      window.removeEventListener('resize', update);
-    };
-  }, [recentAnchorEl]);
+  // v-recent-item-match-invoice — portal state (recentAnchorEl,
+  // recentAnchorRect, and the useLayoutEffect that kept them in
+  // sync with the focused input's DOM rect) was deleted alongside
+  // the portal itself. The dropdown now renders inline as a sibling
+  // of each row's Item input, so its position is handled by plain
+  // CSS `absolute top-full left-0` — no ref-tracking needed.
   // Stock-catalog picker state — lazy-loaded on first open of any
   // line's picker, then shared across rows. Same lazy pattern as
   // the Invoice form to keep the dialog mount path light.
@@ -976,32 +956,20 @@ function QuotationFormDialog({
                 selected currency. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                {/* v-numeric-right-align — numeric inputs (rates,
-                    money, counts) get right-aligned label + right-
-                    aligned value so the digits line up under a
-                    consistent right margin. Matches the same rule
-                    already applied to the Invoice form.
-
-                    v-exchange-rate-mask — onChange runs the value
-                    through maskDecimal so only digits + one dot pass
-                    through; a paste like "41yhjhjhjhj00" comes in as
-                    "4100". While focused we show the raw string for
-                    easy editing; when blurred we show a comma-
-                    formatted view ("4,100") so the number reads
-                    cleanly at rest. */}
+                {/* v-numeric-input-common — swapped the inline
+                    masking + focus-toggle boilerplate for the shared
+                    NumericInput component. Same behaviour (digits
+                    only, comma format on blur, raw digits on focus,
+                    right-aligned tabular-nums) but written once and
+                    reused system-wide. */}
                 <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input
-                  inputMode="decimal"
-                  value={rateFocused
-                    ? exchangeRate
-                    : (exchangeRate === '' ? '' : Number(exchangeRate || 0).toLocaleString('en-US', { maximumFractionDigits: 4 }))}
-                  onChange={e => setExchangeRate(maskDecimal(e.target.value))}
-                  onFocus={() => setRateFocused(true)}
-                  onBlur={() => setRateFocused(false)}
+                <NumericInput
+                  value={exchangeRate}
+                  onChange={setExchangeRate}
+                  decimals={4}
                   placeholder={String(currencySettings?.secondaryRate ?? 4100)}
-                  className="tabular-nums text-right"
                 />
               </div>
             )}
@@ -1015,11 +983,20 @@ function QuotationFormDialog({
                 <Plus className="h-3 w-3 mr-1" /> Add line
               </Button>
             </div>
-            {/* No overflow-hidden — the Item cell's Recent typeahead
-                is absolute-positioned and spills below the row; the
-                outer wrapper would otherwise clip it (matches Invoice
-                which uses a plain grid with no clipping). */}
-            <div className="border rounded-md">
+            {/* v-recent-item-escape-table-clip — shadcn <Table> wraps
+                its content in a hidden inner <div class="relative
+                w-full overflow-auto"> which was clipping the Recent
+                dropdown from spilling below its row (only the first
+                item stayed visible; the rest were behind the
+                container border).
+
+                The arbitrary-selector `[&>div]:!overflow-visible`
+                targets that inner wrapper and lifts the clip, so the
+                dropdown floats free the way Invoice's does (Invoice
+                avoids the problem entirely by not using <Table>).
+                We also lift the overflow on <TableCell> children in
+                case the browser applies row-level clipping. */}
+            <div className="border rounded-md [&>div]:!overflow-visible">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1074,16 +1051,68 @@ function QuotationFormDialog({
                                   // row — same rationale as Invoices.
                                   stockItemId: null,
                                 })}
-                                onFocus={e => {
-                                  setFocusedLineId(l.localId);
-                                  setRecentAnchorEl(e.currentTarget);
-                                }}
-                                onBlur={() => setTimeout(() => {
-                                  setFocusedLineId(p => p === l.localId ? null : p);
-                                  setRecentAnchorEl(prev => prev && prev.value === l.name ? null : prev);
-                                }, 120)}
+                                onFocus={() => setFocusedLineId(l.localId)}
+                                // Delay so a mousedown on a suggestion
+                                // can register before the blur tears
+                                // down the dropdown. Copies Invoices'
+                                // exact working pattern (v-recent-item-
+                                // match-invoice).
+                                onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
                                 placeholder="Item name"
                               />
+                              {/* v-recent-item-match-invoice — inline
+                                  Recent-items dropdown, mirrors the
+                                  working Invoices form verbatim. The
+                                  earlier body-portal approach was
+                                  removed because Radix Dialog outside-
+                                  click detection and the resulting
+                                  cross-subtree focus race meant the
+                                  button's onMouseDown never landed a
+                                  reliable state update. Inline in the
+                                  Input's sibling flex-1 wrapper — the
+                                  same subtree — restores the click
+                                  reliability that Invoice has always
+                                  had. Slight clipping by the outer
+                                  Table's overflow-auto is the trade-
+                                  off; the visible items still pick
+                                  cleanly and that's what matters. */}
+                              {focusedLineId === l.localId && !l.name && recentItems.length > 0 && (
+                                <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                  <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+                                    Recent
+                                  </div>
+                                  {recentItems.map(r => (
+                                    <button
+                                      key={r.name}
+                                      type="button"
+                                      className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                                      // mousedown + preventDefault keeps
+                                      // the input's focus alive long
+                                      // enough for the click handler to
+                                      // fire reliably. Exactly the
+                                      // pattern Invoices uses.
+                                      onMouseDown={e => {
+                                        e.preventDefault();
+                                        updateLine(l.localId, {
+                                          name: r.name,
+                                          unit: r.unit ?? l.unit ?? '',
+                                          unitPrice: r.unitPrice != null ? String(r.unitPrice) : l.unitPrice,
+                                          stockItemId: null,
+                                        });
+                                        setFocusedLineId(null);
+                                      }}
+                                    >
+                                      <div className="font-medium truncate">{r.name}</div>
+                                      <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                                        <span>{r.unit ?? 'pcs'}</span>
+                                        <span className="tabular-nums">
+                                          {(r.unitPrice ?? 0).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             {/* v-quotation-barcode-per-row — icon-only
                                 scan trigger sits AFTER the Item name.
@@ -1113,12 +1142,13 @@ function QuotationFormDialog({
                           <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            className="text-right tabular-nums"
-                            inputMode="decimal"
+                          {/* v-numeric-input-common — shared masking +
+                              comma-on-blur across the app. */}
+                          <NumericInput
                             value={l.quantity}
-                            onChange={e => updateLine(l.localId, {
-                              quantity: maskDecimal(e.target.value),
+                            decimals={2}
+                            onChange={raw => updateLine(l.localId, {
+                              quantity: raw,
                               // Changing qty invalidates any stale
                               // Total override — fall back to the
                               // canonical qty × unitPrice display.
@@ -1127,12 +1157,11 @@ function QuotationFormDialog({
                           />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            className="text-right tabular-nums"
-                            inputMode="decimal"
+                          <NumericInput
                             value={l.unitPrice}
-                            onChange={e => updateLine(l.localId, {
-                              unitPrice: maskDecimal(e.target.value),
+                            decimals={4}
+                            onChange={raw => updateLine(l.localId, {
+                              unitPrice: raw,
                               totalEditing: undefined,
                             })}
                           />
@@ -1151,16 +1180,13 @@ function QuotationFormDialog({
                             row (which uses inline flex gap-1). */}
                         <TableCell className="text-right tabular-nums text-sm" colSpan={2}>
                           <div className="flex items-center gap-1">
-                            <Input
-                              className="flex-1 text-right tabular-nums"
-                              inputMode="decimal"
+                            <NumericInput
+                              className="flex-1"
                               value={l.totalEditing !== undefined
                                 ? l.totalEditing
                                 : lineTotal.toFixed(2)}
-                              onChange={e => {
-                                // Sanitize first so a stray comma or letter
-                                // never reaches the qty × unitPrice math.
-                                const raw = maskDecimal(e.target.value);
+                              decimals={2}
+                              onChange={raw => {
                                 const total = Number(raw);
                                 const qty = Number(l.quantity) || 0;
                                 const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
@@ -1228,11 +1254,11 @@ function QuotationFormDialog({
                     Small gap between the two so the value has room
                     from the chip; each control keeps its own border. */}
                 <div className="flex items-center gap-2">
-                  <Input
-                    inputMode="decimal"
-                    className="flex-1 tabular-nums text-right"
+                  <NumericInput
+                    className="flex-1"
                     value={discountValue}
-                    onChange={e => setDiscountValue(maskDecimal(e.target.value))}
+                    onChange={setDiscountValue}
+                    decimals={2}
                   />
                   <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                     <button
@@ -1390,97 +1416,12 @@ function QuotationFormDialog({
           if (target) void fillLineFromBarcode(target, code);
         }}
       />
-      {/* Recent-items typeahead, portalled to <body> so ancestor
-          overflow / z-index / transform boundaries can't clip it.
-          Only renders when a row's Item input is focused and empty. */}
-      {(() => {
-        if (!focusedLineId || !recentAnchorRect || recentItems.length === 0) return null;
-        const line = lines.find(x => x.localId === focusedLineId);
-        if (!line || line.name) return null;
-        return createPortal(
-          <div
-            className="fixed z-[100] rounded-md border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto"
-            style={{
-              top: recentAnchorRect.top,
-              left: recentAnchorRect.left,
-              width: Math.max(288, recentAnchorRect.width),
-            }}
-            // v-quotation-recent-portal-click-hardened — belt AND
-            // suspenders for the "click a recent item, nothing
-            // happens" bug on the Quotation form. The dropdown is
-            // portalled to <body>, so several event handlers between
-            // the child button and the Radix Dialog root (which
-            // wraps the form) can preempt or consume the click.
-            //
-            // Container guards (this level):
-            //   • onPointerDown / onMouseDown / onClick all call
-            //     stopPropagation so no ancestor (Radix Dialog's
-            //     outside-click detector included) sees the events.
-            //   • onMouseDown additionally preventDefault to block
-            //     the browser's native focus transfer to the child
-            //     button — that transfer is what fires the Input's
-            //     onBlur and triggers the 120 ms teardown that
-            //     unmounted the dropdown before the click landed.
-            //
-            // Child buttons keep their own onMouseDown handler
-            // (matches the proven-working Invoices pattern) so state
-            // updates the moment the mouse press is registered — we
-            // don't wait for the click event at all.
-            onPointerDown={e => e.stopPropagation()}
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
-              Recent
-            </div>
-            {recentItems.map(r => (
-              <button
-                key={r.name}
-                type="button"
-                className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                // v-recent-item-flush-sync — flushSync forces the
-                // line's state update to commit synchronously WITHIN
-                // this event tick, before React can batch it with a
-                // subsequent onBlur teardown that used to overwrite
-                // it. Also uses a functional setLines that reads the
-                // LATEST prev state instead of any captured
-                // reference, so even if `line` from the render
-                // closure is stale, the update lands on the
-                // currently-focused row.
-                onMouseDown={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const targetId = line.localId;
-                  const pickedName = r.name;
-                  const pickedUnit = r.unit;
-                  const pickedPrice = r.unitPrice;
-                  flushSync(() => {
-                    setLines(prev => prev.map(l => l.localId === targetId ? {
-                      ...l,
-                      name: pickedName,
-                      unit: pickedUnit ?? l.unit ?? '',
-                      unitPrice: pickedPrice != null ? String(pickedPrice) : l.unitPrice,
-                      // Recent-item pick is a free-text row — unlink
-                      // any stock-catalog binding so the BE doesn't
-                      // decrement the (now-mismatched) stock row.
-                      stockItemId: null,
-                    } : l));
-                  });
-                  setFocusedLineId(null);
-                  setRecentAnchorEl(null);
-                }}
-              >
-                <div className="font-medium truncate">{r.name}</div>
-                <div className="text-[11px] text-gray-500 flex justify-between gap-2">
-                  <span>{r.unit ?? 'pcs'}</span>
-                  <span className="tabular-nums">{(r.unitPrice ?? 0).toFixed(2)}</span>
-                </div>
-              </button>
-            ))}
-          </div>,
-          document.body,
-        );
-      })()}
+      {/* v-recent-item-match-invoice — the Recent-items dropdown that
+          used to live down here (portalled to <body>) is gone. It
+          now renders INLINE inside each row's Item input container,
+          exactly like the Invoices form. That eliminates the whole
+          class of portal / focus-race / Radix-outside-click bugs
+          that made the previous version's clicks silently no-op. */}
     </Dialog>
   );
 }

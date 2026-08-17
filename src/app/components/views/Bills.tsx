@@ -26,6 +26,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { NumericInput } from '../common/NumericInput';
 import { LinkifiedText } from '../common/LinkifiedText';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
@@ -981,6 +982,12 @@ interface FormItem {
    *  null for hand-typed names. Used by the server to decrement the
    *  Stock IN/OUT ledger only when a real item is referenced. */
   stockItemId?: string | null;
+  /** v-bill-editable-total — user-typed override on the Line total
+   *  cell. When set, back-computes unitPrice = total ÷ qty so the
+   *  operator can enter "$ paid the vendor" and let the form derive
+   *  the per-unit rate. Cleared on blur so the canonical qty × price
+   *  display comes back. Matches Invoice's flow. */
+  totalEditing?: string;
 }
 
 const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0', stockItemId: null };
@@ -1460,13 +1467,16 @@ function BillFormDialog({
                 entirely to keep the form focused. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                {/* v-numeric-input-common — matches Invoice/Quotation:
+                    right-aligned label, NumericInput with comma-on-blur
+                    and digit-only masking. */}
+                <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input
-                  type="number" min={0} step="0.0001"
+                <NumericInput
                   value={exchangeRate}
-                  onChange={e => setExchangeRate(e.target.value)}
+                  onChange={setExchangeRate}
+                  decimals={4}
                   placeholder={String(currencySettings?.secondaryRate ?? 4100)}
                 />
               </div>
@@ -1564,25 +1574,49 @@ function BillFormDialog({
                     onChange={e => updateItem(idx, { unit: e.target.value })}
                     placeholder="pcs"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
+                  {/* v-numeric-input-common — shared masking +
+                      comma-on-blur across the app. Qty + Unit price
+                      also clear the Total override so the display
+                      snaps back to the canonical qty × price. */}
+                  <NumericInput
+                    className="col-span-1 h-8 text-sm"
                     value={it.quantity}
-                    onChange={e => updateItem(idx, { quantity: maskDecimal(e.target.value) })}
+                    decimals={2}
+                    onChange={raw => updateItem(idx, { quantity: raw, totalEditing: undefined })}
                   />
-                  <Input
-                    className="col-span-2 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
+                  <NumericInput
+                    className="col-span-2 h-8 text-sm"
                     value={it.unitPrice}
-                    onChange={e => updateItem(idx, { unitPrice: maskDecimal(e.target.value, 4) })}
+                    decimals={4}
+                    onChange={raw => updateItem(idx, { unitPrice: raw, totalEditing: undefined })}
                   />
-                  {/* Total + Trash share one col-span-3 slot with a
-                      tight inner gap so the trash sits close to the
-                      amount, matching the Item cell's icon spacing. */}
-                  <div className="col-span-3 flex items-center gap-1 justify-end">
-                    <div className="flex-1 text-right text-sm tabular-nums">
-                      {lineTotal.toFixed(2)}
-                    </div>
+                  {/* v-bill-editable-total — Total is now an editable
+                      NumericInput matching Invoice. Typing here back-
+                      computes unitPrice = total ÷ qty so the operator
+                      can enter the total the vendor charged and let
+                      the form derive the per-unit rate. Cleared on
+                      blur so the canonical qty × price display comes
+                      back. */}
+                  <div className="col-span-3 flex items-center gap-1">
+                    <NumericInput
+                      className="flex-1 h-8 text-sm"
+                      value={it.totalEditing !== undefined
+                        ? it.totalEditing
+                        : lineTotal.toFixed(2)}
+                      decimals={2}
+                      onChange={raw => {
+                        const total = Number(raw);
+                        const qty = Number(it.quantity) || 0;
+                        const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
+                          ? String(total / qty)
+                          : it.unitPrice;
+                        updateItem(idx, {
+                          unitPrice: nextUnitPrice,
+                          totalEditing: raw,
+                        });
+                      }}
+                      onBlur={() => updateItem(idx, { totalEditing: undefined })}
+                    />
                     <Button
                       size="sm" variant="ghost"
                       className="text-red-600 shrink-0"
@@ -1596,17 +1630,19 @@ function BillFormDialog({
             })}
           </div>
 
-          {/* Tax controls — pick a Taxation pattern from the
-              cross-system reference; server applies subtotal × rate.
-              Commercial / CN-DN-against-commercial → just VAT 0% +
-              Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
-          {/* Tax + Discount row gated by tenant Accountant Settings —
-              flip the matching toggle off in the Settings popup and
-              the cell vanishes here. */}
+          {/* Taxation + Discount row — matches Invoice (v-tax-input-
+              removed + v-tax-discount-align-with-dates):
+                • Standalone Tax input is gone — value auto-computes
+                  from the Taxation dropdown and still surfaces in
+                  the summary card below.
+                • grid-cols-4 with Taxation + Discount each spanning
+                  2 cols, so the internal divider aligns with the
+                  Currency / Exchange-rate divider on the row above.
+                • Each cell is gated by tenant Accountant Settings. */}
           {(settings.showTax || settings.showDiscount) && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             {settings.showTax && (
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${settings.showDiscount ? 'col-span-2' : 'col-span-4'}`}>
               <Label className="text-xs">Taxation</Label>
               <Select
                 value={taxType || '_none'}
@@ -1636,36 +1672,23 @@ function BillFormDialog({
               </Select>
             </div>
             )}
-            {settings.showTax && (
-            <div className="space-y-1.5">
-              <Label className="text-xs block text-right">
-                Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
-                  <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
-                )}
-              </Label>
-              <Input
-                inputMode="decimal"
-                value={taxType
-                  ? (subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
-                  : taxAmount}
-                onChange={e => setTaxAmount(maskDecimal(e.target.value))}
-                disabled={!!taxType}
-                title={taxType ? 'Auto-computed from the taxation type' : ''}
-                className="tabular-nums text-right"
-              />
-            </div>
-            )}
             {settings.showDiscount && (
-            <div className="space-y-1.5">
-              {/* Label mirrors the input+toggle row so its right edge
-                  ends at the input's right edge. */}
+            <div className={`space-y-1.5 ${settings.showTax ? 'col-span-2' : 'col-span-4'}`}>
+              {/* Label right-aligns to the input's right edge (not
+                  the cell edge) via a flex row with an invisible $/%
+                  spacer that reserves the toggle's horizontal slot.
+                  `h-0 overflow-hidden` on the spacer preserves its
+                  intrinsic WIDTH but zeros its HEIGHT so it can't
+                  push the label row taller than Taxation on the left,
+                  which would misalign the two cells vertically
+                  (v-discount-label-height-fix on Invoice). */}
               <div className="flex items-center gap-2">
                 <Label className="text-xs flex-1 text-right block">
                   Discount {discountType === 'percent' && (
                     <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
                   )}
                 </Label>
-                <div className="shrink-0 inline-flex invisible" aria-hidden="true">
+                <div className="shrink-0 inline-flex invisible h-0 overflow-hidden" aria-hidden="true">
                   <span className="px-3 py-1.5 text-sm">$</span>
                   <span className="px-3 py-1.5 text-sm border-l">%</span>
                 </div>
@@ -1673,11 +1696,11 @@ function BillFormDialog({
               {/* Input + segmented type toggle with a small gap between
                   so the digits don't press against the $/% chip. */}
               <div className="flex items-center gap-2">
-                <Input
-                  inputMode="decimal"
+                <NumericInput
                   value={discountValue}
-                  onChange={e => setDiscountValue(maskDecimal(e.target.value))}
-                  className="flex-1 tabular-nums text-right"
+                  onChange={setDiscountValue}
+                  decimals={2}
+                  className="flex-1"
                 />
                 <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button

@@ -34,6 +34,7 @@ import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { NumericInput } from '../common/NumericInput';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
@@ -1054,17 +1055,19 @@ function VoucherFormDialog({
                     onChange={e => updateLine(l.localId, { unit: e.target.value })}
                     placeholder="pcs"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
+                  {/* v-numeric-input-common — shared masking +
+                      comma-on-blur across the app. */}
+                  <NumericInput
+                    className="col-span-1 h-8 text-sm"
                     value={l.quantity}
-                    onChange={e => updateLine(l.localId, { quantity: maskDecimal(e.target.value) })}
+                    decimals={2}
+                    onChange={raw => updateLine(l.localId, { quantity: raw })}
                   />
-                  <Input
-                    className="col-span-2 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
+                  <NumericInput
+                    className="col-span-2 h-8 text-sm"
                     value={l.unitPrice}
-                    onChange={e => updateLine(l.localId, { unitPrice: maskDecimal(e.target.value, 4) })}
+                    decimals={4}
+                    onChange={raw => updateLine(l.localId, { unitPrice: raw })}
                   />
                   {/* Total + Trash share one col-span-3 slot with a
                       tight inner gap so the trash icon sits close to
@@ -1120,14 +1123,14 @@ function VoucherFormDialog({
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
                 )}
               </Label>
-              <Input
-                inputMode="decimal"
+              <NumericInput
                 value={taxType
                   ? (totals.subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
                   : '0.00'}
+                onChange={() => { /* disabled; write path stays no-op */ }}
+                decimals={2}
                 disabled
                 title="Voucher tax is auto-computed and informational only"
-                className="tabular-nums text-right"
               />
             </div>
             )}
@@ -1145,11 +1148,12 @@ function VoucherFormDialog({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Input
-                  inputMode="decimal"
+                <NumericInput
                   value="100"
+                  onChange={() => { /* disabled; write path stays no-op */ }}
+                  decimals={2}
                   disabled
-                  className="flex-1 tabular-nums text-right text-gray-500"
+                  className="flex-1 text-gray-500"
                   title="Voucher discount is server-locked at 100%"
                 />
                 <div className="inline-flex border rounded-md overflow-hidden shrink-0">

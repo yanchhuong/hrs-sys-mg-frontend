@@ -28,6 +28,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { NumericInput } from '../common/NumericInput';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import * as invoicesApi from '../../api/invoices';
@@ -1849,20 +1850,19 @@ function InvoiceFormDialog({
                 meaning, so hide the field to keep the form focused. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                {/* v-numeric-right-align — numeric inputs (rates, money,
-                    counts) get right-aligned label + right-aligned
-                    value so the digits line up under a consistent
-                    right margin. Makes it obvious at a glance that
-                    this is a number, not a free-text label. */}
+                {/* v-numeric-input-common — uses the shared NumericInput
+                    so Exchange rate on Invoice matches Quotation and
+                    every other numeric field system-wide: digits only,
+                    comma format when blurred, raw digits when focused,
+                    tabular-nums + right-align by default. */}
                 <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input
-                  type="number" min={0} step="0.0001"
+                <NumericInput
                   value={exchangeRate}
-                  onChange={e => setExchangeRate(e.target.value)}
+                  onChange={setExchangeRate}
+                  decimals={4}
                   placeholder={String(currencySettings?.secondaryRate ?? 4100)}
-                  className="tabular-nums text-right"
                 />
               </div>
             )}
@@ -2034,14 +2034,14 @@ function InvoiceFormDialog({
                     placeholder="pcs"
                   />
                   <div className="col-span-1 flex flex-col gap-0.5">
-                    <Input
-                      className={`h-8 text-sm text-right tabular-nums ${overStock ? 'border-red-400 text-red-700' : ''}`}
-                      inputMode="decimal"
+                    {/* v-numeric-input-common — NumericInput handles
+                        masking + focus-toggle format; the stock-cap
+                        side effect lives in onChange as before. */}
+                    <NumericInput
+                      className={`h-8 text-sm ${overStock ? 'border-red-400 text-red-700' : ''}`}
                       value={it.quantity}
-                      onChange={e => {
-                        // Mask first so stray letters / commas can't
-                        // reach the parseFloat + stock-clamp logic below.
-                        const raw = maskDecimal(e.target.value);
+                      decimals={2}
+                      onChange={raw => {
                         let next = raw;
                         const n = parseFloat(raw);
                         if (Number.isFinite(n) && Number.isFinite(stockRemaining) && n > stockRemaining) {
@@ -2063,15 +2063,15 @@ function InvoiceFormDialog({
                       </span>
                     )}
                   </div>
-                  <Input
-                    className="col-span-2 h-8 text-sm text-right tabular-nums"
-                    inputMode="decimal"
+                  <NumericInput
+                    className="col-span-2 h-8 text-sm"
                     value={it.unitPrice}
-                    onChange={e => updateItem(idx, {
-                      // Unit price allows up to 4 fractional digits
-                      // (#,###.0000) for tariff / bulk-rate pricing —
-                      // qty/total still cap at 2 decimals.
-                      unitPrice: maskDecimal(e.target.value, 4),
+                    // Unit price allows up to 4 fractional digits
+                    // (#,###.0000) for tariff / bulk-rate pricing —
+                    // qty/total still cap at 2 decimals.
+                    decimals={4}
+                    onChange={raw => updateItem(idx, {
+                      unitPrice: raw,
                       // Switching focus to Unit Price → Total returns
                       // to the computed-from-unitPrice path.
                       totalEditing: undefined,
@@ -2081,18 +2081,13 @@ function InvoiceFormDialog({
                       a tight inner gap so the trash sits close to the
                       amount, matching the Item cell's icon spacing. */}
                   <div className="col-span-3 flex items-center gap-1">
-                    <Input
-                      className="flex-1 h-8 text-sm text-right tabular-nums"
-                      inputMode="decimal"
+                    <NumericInput
+                      className="flex-1 h-8 text-sm"
                       value={it.totalEditing !== undefined
                         ? it.totalEditing
                         : lineTotal.toFixed(2)}
-                      onChange={e => {
-                        // Sanitize so a stray comma / letter can't
-                        // derail total / qty math. type=text also stops
-                        // Chrome from re-rendering 33.00 as 33,00 on
-                        // comma-decimal locales.
-                        const raw = maskDecimal(e.target.value);
+                      decimals={2}
+                      onChange={raw => {
                         const total = Number(raw);
                         const qty = Number(it.quantity) || 0;
                         // Keep enough precision on the back-computed
@@ -2210,11 +2205,11 @@ function InvoiceFormDialog({
                   control keeping its own rounded border reads cleaner
                   and gives the digits breathing room. */}
               <div className="flex items-center gap-2">
-                <Input
-                  inputMode="decimal"
+                <NumericInput
                   value={discountValue}
-                  onChange={e => setDiscountValue(maskDecimal(e.target.value))}
-                  className="flex-1 tabular-nums text-right"
+                  onChange={setDiscountValue}
+                  decimals={2}
+                  className="flex-1"
                 />
                 <div className="inline-flex border rounded-md overflow-hidden shrink-0">
                   <button
