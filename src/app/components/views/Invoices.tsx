@@ -3894,6 +3894,37 @@ function PrintTaxInvoice({
                     <AmountCell value={fmtSecondary(grandSecondary)} bold />
                   </tr>
                 )}
+                {/* v-invoice-print-deposit-remain — when a partial
+                    payment has been recorded (paidAmount > 0 AND
+                    the invoice isn't fully paid) show two extra
+                    rows so the printed copy reflects what's already
+                    been received and what's still owed. Skipped
+                    entirely when nothing's been paid (avoids a
+                    noisy "$0.00" Deposit line) OR when the invoice
+                    is fully settled (Grand Total = what they owe,
+                    no need for the split). */}
+                {(() => {
+                  const paid = invoice.paidAmount ?? 0;
+                  const remainPrimary = (invoice.netBalance ?? (invoice.total - paid));
+                  const hasPartialPayment = paid > 0 && invoice.status !== 'paid' && remainPrimary > 0;
+                  if (!hasPartialPayment) return null;
+                  return (
+                    <>
+                      <tr>
+                        <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
+                          បានទទួល ({primaryCode}) / Deposit ({primaryCode})
+                        </td>
+                        <AmountCell value={fmtPrimary(paid)} />
+                      </tr>
+                      <tr>
+                        <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
+                          នៅសល់ ({primaryCode}) / Remain ({primaryCode})
+                        </td>
+                        <AmountCell value={fmtPrimary(remainPrimary)} bold />
+                      </tr>
+                    </>
+                  );
+                })()}
               </>
             );
           })()}
