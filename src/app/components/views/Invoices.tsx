@@ -1849,7 +1849,12 @@ function InvoiceFormDialog({
                 meaning, so hide the field to keep the form focused. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                {/* v-numeric-right-align — numeric inputs (rates, money,
+                    counts) get right-aligned label + right-aligned
+                    value so the digits line up under a consistent
+                    right margin. Makes it obvious at a glance that
+                    this is a number, not a free-text label. */}
+                <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
                 <Input
@@ -1857,6 +1862,7 @@ function InvoiceFormDialog({
                   value={exchangeRate}
                   onChange={e => setExchangeRate(e.target.value)}
                   placeholder={String(currencySettings?.secondaryRate ?? 4100)}
+                  className="tabular-nums text-right"
                 />
               </div>
             )}
@@ -2185,7 +2191,11 @@ function InvoiceFormDialog({
                   horizontal grid row. Dropped the spacer entirely — the
                   label sitting flush above the input+toggle row is fine
                   and lines up cleanly with Taxation. */}
-              <Label className="text-xs block">
+              {/* v-numeric-right-align — same rule as Exchange rate:
+                  numeric input = right-aligned label + right-aligned
+                  value. Sits above the input+toggle row so the digits
+                  and the label anchor to the same right edge. */}
+              <Label className="text-xs block text-right">
                 Discount {discountType === 'percent' && (
                   <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
                 )}
