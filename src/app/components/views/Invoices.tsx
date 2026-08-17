@@ -55,7 +55,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
-  Package, CheckCircle2, Upload, FileSpreadsheet, Copy, ScanBarcode,
+  Package, CheckCircle2, Upload, FileSpreadsheet, Copy, ScanBarcode, X as XIcon,
 } from 'lucide-react';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
@@ -2764,11 +2764,15 @@ function InvoiceDetailDialog({
           below the page flow. The stamp's absolute positioning
           anchors to DialogContent because `fixed` is already a
           positioned ancestor — no extra `relative` needed. */}
-      {/* Radix X restored for consistency with the rest of the app's
-          popups. The header's action group + amount block carry mr-10
-          below to reserve clearance so the X doesn't overlap the Send
-          dropdown chevron on narrow mobile viewports. */}
-      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto">
+      {/* v-invoice-detail-close-inline — Radix's default X (absolute
+          top:4 right:4) rendered oddly on narrow mobile screens: the
+          header's action row sat next to it and the two visually
+          collided / the X appeared on the wrong side after content
+          wrapping. Fix: hideClose kills Radix's absolute X; we render
+          our OWN X as the LAST item in the action row below, so the
+          order is Print → Send → Void → X guaranteed on every screen
+          size (and the group wraps as one unit if needed). */}
+      <DialogContent className="sm:max-w-[1260px] w-[90vw] max-h-[90vh] overflow-y-auto" hideClose>
         {/* Stamp lives at DialogContent root so it overlays the whole
             preview area regardless of where the user scrolls inside.
             Only shown for non-draft/void invoices with AR ≈ 0. */}
@@ -2807,15 +2811,17 @@ function InvoiceDetailDialog({
                 )}
               </DialogDescription>
             </div>
-            {/* mr-8 reserves room for the dialog's built-in close (X)
-                button which sits at top:1rem right:1rem inside the
-                DialogContent. print:hidden drops the whole action row
-                from the Print output so the printed page only carries
-                the invoice itself, not the management controls.
-                The whole row is gated on `invoice` so the buttons
-                don't render before data is in. */}
+            {/* v-invoice-detail-close-inline — the X is now the last
+                button in this row (see below) instead of Radix's
+                absolute-positioned close, so no `mr-10` clearance is
+                needed anymore. print:hidden drops the whole action
+                row from the Print output. Gated on `invoice` so the
+                buttons don't render before data is in.
+
+                flex-wrap so on very narrow phones the buttons wrap
+                below the title instead of overflowing horizontally. */}
             {invoice && (
-              <div className="flex gap-1.5 mr-10 print:hidden">
+              <div className="flex flex-wrap gap-1.5 justify-end print:hidden">
                 <Button size="sm" variant="outline" onClick={() => { void printInvoiceOrReceipt(invoice); }} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
@@ -2923,6 +2929,22 @@ function InvoiceDetailDialog({
                     <Ban className="h-3.5 w-3.5 mr-1" /> Void
                   </Button>
                 )}
+                {/* v-invoice-detail-close-inline — X is inline as the
+                    LAST item in the action row, so on any screen size
+                    it stays visually attached to the button group at
+                    the top-right and never collides with the other
+                    actions (which is what happened on narrow mobile
+                    with Radix's absolute-positioned X). */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onClose}
+                  title="Close"
+                  aria-label="Close"
+                  className="shrink-0"
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                </Button>
               </div>
             )}
           </div>
