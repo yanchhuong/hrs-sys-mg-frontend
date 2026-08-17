@@ -290,6 +290,13 @@ export function Invoices({
   // between commercial/tax/CN/DN via the tabs.
   const [kindFilter, setKindFilter] = useState<invoicesApi.InvoiceKind | 'all'>(fixedKind ?? 'all');
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
+  /** V-invoice-purpose-picker — distinct purposes the tenant has
+   *  used before, fed to the Purpose SearchablePicker. Load once on
+   *  page mount + refresh after a save so a newly-typed purpose
+   *  shows up in the picker the next time the form opens. Empty
+   *  list is fine — the picker still supports the inline "create"
+   *  affordance for first-use tenants. */
+  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
   // Date-range + keyword filters — applied client-side over the rows
   // we already loaded so HR sees instant feedback when scrubbing dates
   // or typing without round-tripping for each keystroke.
@@ -370,6 +377,12 @@ export function Invoices({
       const invoices = invRes.content ?? [];
       setRows(invoices);
       setCustomers(custRes.content ?? []);
+      // V-invoice-purpose-picker — fire-and-forget alongside the list
+      // load. Failure is non-fatal (picker just has no suggestions
+      // until the tenant saves a purpose the next time).
+      invoicesApi.listPurposes()
+        .then(setPurposeOptions)
+        .catch(() => setPurposeOptions([]));
       // Kick off the per-currency totals in the background — the table
       // renders the legacy total in the USD column while this resolves,
       // then refines. Skip entirely for roles without payment:view (a
@@ -2212,17 +2225,37 @@ function InvoiceFormDialog({
 
           {/* V-invoice-purpose — one-liner right above the Notes/Terms
               row. Sale-scope toggle in Accountant Settings hides it.
-              Single-line Input rather than a Textarea because Purpose
-              is a short label (e.g. "Q3 retainer", "Monthly service")
-              not a paragraph. */}
+              V-invoice-purpose-picker — reuses the same
+              SearchablePicker pattern the Customer picker uses: the
+              tenant's previously-used purposes are one-click choices;
+              a novel purpose falls through to the "Create" affordance
+              and lands on the invoice as free text. The picker owns
+              the string identity (value === label === the purpose
+              text), so there's no separate lookup table — the
+              backend's DISTINCT query IS the source of truth. */}
           {settings.showPurpose && (
             <div className="space-y-1.5">
               <Label className="text-xs">Purpose</Label>
-              <Input
+              <SearchablePicker
                 value={purpose}
-                onChange={e => setPurpose(e.target.value)}
-                placeholder='Why this invoice was raised — e.g. "Q3 consulting retainer"'
-                maxLength={255}
+                onChange={setPurpose}
+                placeholder='Pick or type a purpose — e.g. "Q3 consulting retainer"'
+                searchPlaceholder="Search or type a new purpose…"
+                emptyResultsLabel="No match — type a new purpose to add."
+                createLabel={q => `Add "${q}" as a new purpose`}
+                onCreate={async (label) => {
+                  const trimmed = label.trim();
+                  // Add locally so the freshly-created value appears
+                  // in the dropdown for the rest of this session; the
+                  // canonical list refreshes on the next form open
+                  // via loadPurposes(). Backend picks up the string
+                  // when the invoice saves — no separate persist call.
+                  setPurposeOptions(prev =>
+                    prev.includes(trimmed) ? prev : [...prev, trimmed].sort(),
+                  );
+                  return { value: trimmed, label: trimmed };
+                }}
+                options={purposeOptions.map(p => ({ value: p, label: p }))}
               />
             </div>
           )}

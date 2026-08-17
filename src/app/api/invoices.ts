@@ -213,6 +213,16 @@ export async function nextNumber(kind: InvoiceKind): Promise<{ kind: InvoiceKind
   return apiJson(`/api/v1/invoices/next-number`, { query: { kind } });
 }
 
+/** V-invoice-purpose-picker — distinct non-blank purposes already used
+ *  by this tenant, alphabetised. Feeds the Purpose SearchablePicker on
+ *  the Invoice create/edit form: existing values are one-click, and the
+ *  picker's inline-create affordance covers first-time / novel values.
+ *  Returns [] when the tenant has never saved a Purpose (e.g. because
+ *  the toggle was flipped off, or on a brand-new deploy). */
+export async function listPurposes(): Promise<string[]> {
+  return apiJson<string[]>(`/api/v1/invoices/purposes`);
+}
+
 /** Create an invoice. {@code notifyTelegram=false} suppresses the
  *  backend's auto-issue text-only Telegram so the caller can follow
  *  up with an image-based sendPhoto. Defaults to true (legacy). */
