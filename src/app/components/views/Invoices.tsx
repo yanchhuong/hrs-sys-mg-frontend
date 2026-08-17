@@ -2175,20 +2175,21 @@ function InvoiceFormDialog({
             )}
             {settings.showDiscount && (
             <div className={`space-y-1.5 ${settings.showTax ? 'col-span-2' : 'col-span-4'}`}>
-              {/* Label mirrors the input+toggle row's width so it
-                  ends at the input's right edge, not over the $/%
-                  toggle. Invisible spacer reserves the toggle's slot. */}
-              <div className="flex items-center gap-2">
-                <Label className="text-xs flex-1 block">
-                  Discount {discountType === 'percent' && (
-                    <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
-                  )}
-                </Label>
-                <div className="shrink-0 inline-flex invisible" aria-hidden="true">
-                  <span className="px-3 py-1.5 text-sm">$</span>
-                  <span className="px-3 py-1.5 text-sm border-l">%</span>
-                </div>
-              </div>
+              {/* v-discount-label-height-fix — label used to be wrapped
+                  in a `flex items-center` with an invisible $/% spacer
+                  next to it (to keep the label from stretching under
+                  the toggle). That spacer was `text-sm py-1.5` — taller
+                  than the label's `text-xs` — so it pushed the whole
+                  Discount cell down by a few pixels vs. Taxation on the
+                  left, and the two rows visibly misaligned on the same
+                  horizontal grid row. Dropped the spacer entirely — the
+                  label sitting flush above the input+toggle row is fine
+                  and lines up cleanly with Taxation. */}
+              <Label className="text-xs block">
+                Discount {discountType === 'percent' && (
+                  <span className="text-[10px] text-gray-400">→ {fmtMoney(computedDiscount, currency)}</span>
+                )}
+              </Label>
               {/* Input + segmented type toggle. The two used to share
                   a border (rounded-r-none + border-l-0) which pressed
                   the value flush against the $/% chip. Small gap + each
