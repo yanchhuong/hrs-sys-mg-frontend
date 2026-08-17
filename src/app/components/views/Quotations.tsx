@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -1438,22 +1438,33 @@ function QuotationFormDialog({
                 key={r.name}
                 type="button"
                 className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                // Same pattern as the working Invoices dropdown —
-                // fire state update on mousedown so we sidestep the
-                // click-event race entirely. Container above already
-                // called preventDefault; calling it here again is
-                // idempotent.
+                // v-recent-item-flush-sync — flushSync forces the
+                // line's state update to commit synchronously WITHIN
+                // this event tick, before React can batch it with a
+                // subsequent onBlur teardown that used to overwrite
+                // it. Also uses a functional setLines that reads the
+                // LATEST prev state instead of any captured
+                // reference, so even if `line` from the render
+                // closure is stale, the update lands on the
+                // currently-focused row.
                 onMouseDown={e => {
                   e.preventDefault();
                   e.stopPropagation();
-                  updateLine(line.localId, {
-                    name: r.name,
-                    unit: r.unit ?? line.unit ?? '',
-                    unitPrice: r.unitPrice != null ? String(r.unitPrice) : line.unitPrice,
-                    // Recent-item pick is a free-text row — unlink
-                    // any stock-catalog binding so the BE doesn't
-                    // decrement the (now-mismatched) stock row.
-                    stockItemId: null,
+                  const targetId = line.localId;
+                  const pickedName = r.name;
+                  const pickedUnit = r.unit;
+                  const pickedPrice = r.unitPrice;
+                  flushSync(() => {
+                    setLines(prev => prev.map(l => l.localId === targetId ? {
+                      ...l,
+                      name: pickedName,
+                      unit: pickedUnit ?? l.unit ?? '',
+                      unitPrice: pickedPrice != null ? String(pickedPrice) : l.unitPrice,
+                      // Recent-item pick is a free-text row — unlink
+                      // any stock-catalog binding so the BE doesn't
+                      // decrement the (now-mismatched) stock row.
+                      stockItemId: null,
+                    } : l));
                   });
                   setFocusedLineId(null);
                   setRecentAnchorEl(null);
