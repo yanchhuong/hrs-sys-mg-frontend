@@ -27,6 +27,7 @@ import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
+import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { LinkifiedText } from '../common/LinkifiedText';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
@@ -1056,6 +1057,13 @@ function BillFormDialog({
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [pickerEnabled, setPickerEnabled] = useState(false);
+  // v-bill-recent-items — same cross-doc "Recent" typeahead the
+  // Invoice / Quotation / Voucher forms use. `focusedItemIdx` tracks
+  // which row's Item input is active; the dropdown renders only for
+  // that row + only when the name is empty (no point suggesting
+  // recents over their own typing). Push happens on save.
+  const [focusedItemIdx, setFocusedItemIdx] = useState<number | null>(null);
+  const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
   /** V302 phase 2 — barcode feature gate for the scan input above
    *  the line-items table. */
   const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
@@ -1320,6 +1328,15 @@ function BillFormDialog({
         const created = await createAsProgress();
         toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
       }
+      // v-bill-recent-items — push just-saved names into the shared
+      // "recent items" cache so the typeahead surfaces them on the
+      // next form open (same helper Invoice / Quotation / Voucher use).
+      addRecentLineItems(items.map(it => ({
+        name: it.name,
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       await onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save bill');
@@ -1338,6 +1355,15 @@ function BillFormDialog({
     try {
       const created = await createAsProgress();
       toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
+      // Same recent-items push as submit() — cover the chain path so
+      // typing "Rent" once and using Save & New still populates the
+      // typeahead on the fresh row.
+      addRecentLineItems(items.map(it => ({
+        name: it.name,
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountValue('0');
@@ -1358,6 +1384,14 @@ function BillFormDialog({
     try {
       const created = await createAsProgress();
       toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
+      // Same recent-items push as submit() so Save & close also
+      // primes the typeahead for the next form open.
+      addRecentLineItems(items.map(it => ({
+        name: it.name,
+        unit: it.unit,
+        unitPrice: Number(it.unitPrice) || undefined,
+      })));
+      setRecentItems(getRecentLineItems());
       await onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create bill');
@@ -1574,17 +1608,63 @@ function BillFormDialog({
                         })}
                       />
                     )}
-                    <Input
-                      className="h-8 text-sm flex-1"
-                      value={it.name}
-                      onChange={e => updateItem(idx, {
-                        name: e.target.value,
-                        // Hand-editing the name unlinks it from the
-                        // catalog row — keeps stock decrement consistent.
-                        stockItemId: null,
-                      })}
-                      placeholder="Item or service name"
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        className="h-8 text-sm w-full"
+                        value={it.name}
+                        onChange={e => updateItem(idx, {
+                          name: e.target.value,
+                          // Hand-editing the name unlinks it from the
+                          // catalog row — keeps stock decrement consistent.
+                          stockItemId: null,
+                        })}
+                        onFocus={() => setFocusedItemIdx(idx)}
+                        // Delay so a mousedown on a suggestion can
+                        // register before the blur tears down the
+                        // dropdown. Matches Invoice's proven pattern.
+                        onBlur={() => setTimeout(() => setFocusedItemIdx(p => p === idx ? null : p), 120)}
+                        placeholder="Item or service name"
+                      />
+                      {/* v-bill-recent-items — inline Recent-items
+                          typeahead, mirrors Invoice's working impl. */}
+                      {focusedItemIdx === idx && !it.name && recentItems.length > 0 && (
+                        <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
+                            Recent
+                          </div>
+                          {recentItems.map(r => (
+                            <button
+                              key={r.name}
+                              type="button"
+                              className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                              // mousedown + preventDefault keeps the
+                              // input's focus alive long enough for the
+                              // click handler to fire reliably. Matches
+                              // Invoice's proven pattern.
+                              onMouseDown={e => {
+                                e.preventDefault();
+                                updateItem(idx, {
+                                  name: r.name,
+                                  unit: r.unit ?? it.unit ?? '',
+                                  unitPrice: r.unitPrice != null ? String(r.unitPrice) : it.unitPrice,
+                                  totalEditing: undefined,
+                                  stockItemId: null,
+                                });
+                                setFocusedItemIdx(null);
+                              }}
+                            >
+                              <div className="font-medium truncate">{r.name}</div>
+                              <div className="text-[11px] text-gray-500 flex justify-between gap-2">
+                                <span>{r.unit ?? 'pcs'}</span>
+                                <span className="tabular-nums">
+                                  {(r.unitPrice ?? 0).toFixed(2)}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     {/* Per-row barcode scan icon after Item name —
                         matches Invoice / Quotation / Voucher. */}
                     {barcodeFeatureOn && (
