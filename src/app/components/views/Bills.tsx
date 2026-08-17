@@ -1057,13 +1057,14 @@ function BillFormDialog({
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [pickerEnabled, setPickerEnabled] = useState(false);
-  // v-bill-recent-items — same cross-doc "Recent" typeahead the
-  // Invoice / Quotation / Voucher forms use. `focusedItemIdx` tracks
-  // which row's Item input is active; the dropdown renders only for
-  // that row + only when the name is empty (no point suggesting
-  // recents over their own typing). Push happens on save.
+  // v-bill-recent-items — same "Recent" typeahead the Invoice /
+  // Quotation / Voucher forms use, but bucketed to Bill's OWN
+  // storage key via scope='bill' (v-recent-items-per-scope). Bill
+  // is purchase-side — the item catalog (rent, subscriptions,
+  // supplier SKUs) has nothing in common with sale-side items, so
+  // sharing the dropdown would surface noise. Push happens on save.
   const [focusedItemIdx, setFocusedItemIdx] = useState<number | null>(null);
-  const [recentItems, setRecentItems] = useState(() => getRecentLineItems());
+  const [recentItems, setRecentItems] = useState(() => getRecentLineItems(undefined, 'bill'));
   /** V302 phase 2 — barcode feature gate for the scan input above
    *  the line-items table. */
   const [barcodeFeatureOn, setBarcodeFeatureOn] = useState(false);
@@ -1328,15 +1329,16 @@ function BillFormDialog({
         const created = await createAsProgress();
         toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
       }
-      // v-bill-recent-items — push just-saved names into the shared
-      // "recent items" cache so the typeahead surfaces them on the
-      // next form open (same helper Invoice / Quotation / Voucher use).
+      // v-bill-recent-items — push just-saved names into the Bill-
+      // scoped recent-items bucket so the typeahead surfaces them
+      // on the next Bill form open. Bill uses scope='bill'; sale-
+      // side docs stay on the default shared bucket.
       addRecentLineItems(items.map(it => ({
         name: it.name,
         unit: it.unit,
         unitPrice: Number(it.unitPrice) || undefined,
-      })));
-      setRecentItems(getRecentLineItems());
+      })), 'bill');
+      setRecentItems(getRecentLineItems(undefined, 'bill'));
       await onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save bill');
@@ -1362,8 +1364,8 @@ function BillFormDialog({
         name: it.name,
         unit: it.unit,
         unitPrice: Number(it.unitPrice) || undefined,
-      })));
-      setRecentItems(getRecentLineItems());
+      })), 'bill');
+      setRecentItems(getRecentLineItems(undefined, 'bill'));
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountValue('0');
@@ -1390,8 +1392,8 @@ function BillFormDialog({
         name: it.name,
         unit: it.unit,
         unitPrice: Number(it.unitPrice) || undefined,
-      })));
-      setRecentItems(getRecentLineItems());
+      })), 'bill');
+      setRecentItems(getRecentLineItems(undefined, 'bill'));
       await onCreated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create bill');
