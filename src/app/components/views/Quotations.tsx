@@ -1405,6 +1405,22 @@ function QuotationFormDialog({
               left: recentAnchorRect.left,
               width: Math.max(288, recentAnchorRect.width),
             }}
+            // v-quotation-recent-portal-mousedown-guard — the dropdown
+            // is portalled to <body>, so mousedown on a child button
+            // happens OUTSIDE the Item input's DOM subtree. Some
+            // browsers race the native focus-transfer to the button
+            // ahead of the child's `preventDefault`, which fires the
+            // Input's onBlur, which fires the 120 ms teardown, which
+            // unmounts the dropdown before the button's click handler
+            // gets a chance to run. Result: click looks like a no-op.
+            //
+            // Guard by intercepting mousedown at the CONTAINER — the
+            // outermost portal element is in the event path first, so
+            // preventDefault here reliably suppresses the focus
+            // transfer for every button inside. Children now use
+            // plain onClick, which fires after mouseup regardless of
+            // focus state.
+            onMouseDown={e => e.preventDefault()}
           >
             <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
               Recent
@@ -1414,8 +1430,7 @@ function QuotationFormDialog({
                 key={r.name}
                 type="button"
                 className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                onMouseDown={e => {
-                  e.preventDefault();
+                onClick={() => {
                   updateLine(line.localId, {
                     name: r.name,
                     unit: r.unit ?? line.unit ?? '',
