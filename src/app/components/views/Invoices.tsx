@@ -2122,19 +2122,21 @@ function InvoiceFormDialog({
               cross-system reference; server applies subtotal × rate.
               Commercial / CN-DN-against-commercial → just VAT 0% +
               Exclusive VAT. Tax / CN-DN-against-tax → all five. */}
-          {/* Taxation + Tax + Discount row. Each cell is gated by
-              the tenant Accountant Settings — flip a toggle off and
-              the matching cell vanishes here.
+          {/* Taxation + Discount row. Each cell is gated by the
+              tenant Accountant Settings — flip a toggle off and the
+              matching cell vanishes.
 
-              v-tax-discount-row-align-v3 — three equal columns in a
-              single row. All labels are LEFT-aligned above their
-              input (earlier revisions right-aligned Tax + Discount
-              labels which made them look detached from their fields
-              and adrift from Taxation). The dropdown chevron on
-              Taxation gets natural separation from the Tax input via
-              the grid's `gap-3` gutter — no extra spacer needed. */}
+              v-tax-input-removed — the standalone Tax input used to
+              sit between Taxation and Discount. It was redundant:
+              when a Taxation type is picked the value auto-computes
+              from `subtotal × rate`, and when Taxation is "None" the
+              value is always 0. The final tax figure still surfaces
+              on the summary card below (Tax row of the totals),
+              which is where the operator actually reads it. Backend
+              still receives `taxAmount` on the request — the state
+              is now write-only from the Taxation dropdown. */}
           {(settings.showTax || settings.showDiscount) && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {settings.showTax && (
             <div className="space-y-1.5">
               <Label className="text-xs">Taxation</Label>
@@ -2166,27 +2168,8 @@ function InvoiceFormDialog({
               </Select>
             </div>
             )}
-            {settings.showTax && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
-                  <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
-                )}
-              </Label>
-              <Input
-                inputMode="decimal"
-                value={taxType
-                  ? (subtotal * (TAX_TYPE_BY_KEY[taxType]?.rate ?? 0) / 100).toFixed(2)
-                  : taxAmount}
-                onChange={e => setTaxAmount(maskDecimal(e.target.value))}
-                disabled={!!taxType}
-                title={taxType ? 'Auto-computed from the taxation type' : ''}
-                className="tabular-nums"
-              />
-            </div>
-            )}
             {settings.showDiscount && (
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${settings.showTax ? '' : 'col-span-2'}`}>
               {/* Label mirrors the input+toggle row's width so it
                   ends at the input's right edge, not over the $/%
                   toggle. Invisible spacer reserves the toggle's slot. */}
