@@ -577,6 +577,11 @@ function QuotationFormDialog({
   const [recipientPhone, setRecipientPhone] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
+  /** v-exchange-rate-mask — when the input has focus we show the raw
+   *  digit string so cursor-editing is straightforward. When focus
+   *  leaves we render the value with a thousand separator ("4,100"
+   *  instead of "4100") so it reads as a number at a glance. */
+  const [rateFocused, setRateFocused] = useState(false);
   const [taxType, setTaxType] = useState('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState('0');
@@ -975,13 +980,27 @@ function QuotationFormDialog({
                     money, counts) get right-aligned label + right-
                     aligned value so the digits line up under a
                     consistent right margin. Matches the same rule
-                    already applied to the Invoice form. */}
+                    already applied to the Invoice form.
+
+                    v-exchange-rate-mask — onChange runs the value
+                    through maskDecimal so only digits + one dot pass
+                    through; a paste like "41yhjhjhjhj00" comes in as
+                    "4100". While focused we show the raw string for
+                    easy editing; when blurred we show a comma-
+                    formatted view ("4,100") so the number reads
+                    cleanly at rest. */}
                 <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
                 <Input
-                  value={exchangeRate}
-                  onChange={e => setExchangeRate(e.target.value)}
+                  inputMode="decimal"
+                  value={rateFocused
+                    ? exchangeRate
+                    : (exchangeRate === '' ? '' : Number(exchangeRate || 0).toLocaleString('en-US', { maximumFractionDigits: 4 }))}
+                  onChange={e => setExchangeRate(maskDecimal(e.target.value))}
+                  onFocus={() => setRateFocused(true)}
+                  onBlur={() => setRateFocused(false)}
+                  placeholder={String(currencySettings?.secondaryRate ?? 4100)}
                   className="tabular-nums text-right"
                 />
               </div>
