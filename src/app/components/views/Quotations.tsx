@@ -1405,22 +1405,30 @@ function QuotationFormDialog({
               left: recentAnchorRect.left,
               width: Math.max(288, recentAnchorRect.width),
             }}
-            // v-quotation-recent-portal-mousedown-guard — the dropdown
-            // is portalled to <body>, so mousedown on a child button
-            // happens OUTSIDE the Item input's DOM subtree. Some
-            // browsers race the native focus-transfer to the button
-            // ahead of the child's `preventDefault`, which fires the
-            // Input's onBlur, which fires the 120 ms teardown, which
-            // unmounts the dropdown before the button's click handler
-            // gets a chance to run. Result: click looks like a no-op.
+            // v-quotation-recent-portal-click-hardened — belt AND
+            // suspenders for the "click a recent item, nothing
+            // happens" bug on the Quotation form. The dropdown is
+            // portalled to <body>, so several event handlers between
+            // the child button and the Radix Dialog root (which
+            // wraps the form) can preempt or consume the click.
             //
-            // Guard by intercepting mousedown at the CONTAINER — the
-            // outermost portal element is in the event path first, so
-            // preventDefault here reliably suppresses the focus
-            // transfer for every button inside. Children now use
-            // plain onClick, which fires after mouseup regardless of
-            // focus state.
-            onMouseDown={e => e.preventDefault()}
+            // Container guards (this level):
+            //   • onPointerDown / onMouseDown / onClick all call
+            //     stopPropagation so no ancestor (Radix Dialog's
+            //     outside-click detector included) sees the events.
+            //   • onMouseDown additionally preventDefault to block
+            //     the browser's native focus transfer to the child
+            //     button — that transfer is what fires the Input's
+            //     onBlur and triggers the 120 ms teardown that
+            //     unmounted the dropdown before the click landed.
+            //
+            // Child buttons keep their own onMouseDown handler
+            // (matches the proven-working Invoices pattern) so state
+            // updates the moment the mouse press is registered — we
+            // don't wait for the click event at all.
+            onPointerDown={e => e.stopPropagation()}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={e => e.stopPropagation()}
           >
             <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400 border-b">
               Recent
@@ -1430,7 +1438,14 @@ function QuotationFormDialog({
                 key={r.name}
                 type="button"
                 className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0"
-                onClick={() => {
+                // Same pattern as the working Invoices dropdown —
+                // fire state update on mousedown so we sidestep the
+                // click-event race entirely. Container above already
+                // called preventDefault; calling it here again is
+                // idempotent.
+                onMouseDown={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   updateLine(line.localId, {
                     name: r.name,
                     unit: r.unit ?? line.unit ?? '',
