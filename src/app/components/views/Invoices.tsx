@@ -2125,11 +2125,19 @@ function InvoiceFormDialog({
           {/* Tax + Discount row. Each cell is gated by the tenant
               Accountant Settings — flip a toggle off in the Settings
               popup and the matching cell vanishes here. Row only
-              renders if at least one cell is visible. */}
+              renders if at least one cell is visible.
+
+              v-tax-discount-row-align — grid switched from cols-3 to
+              cols-4 to match the row above (Issue date + Due date +
+              Currency + Exchange rate). Taxation is a wide dropdown
+              so it spans 2 columns; Tax and Discount are narrow
+              numeric inputs so each takes 1. When one of the two is
+              hidden the visible sibling absorbs the freed columns so
+              the row still fills flush — no dead whitespace stripe. */}
           {(settings.showTax || settings.showDiscount) && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             {settings.showTax && (
-            <div className="space-y-1.5">
+            <div className="col-span-2 space-y-1.5">
               <Label className="text-xs">Taxation</Label>
               <Select
                 value={taxType || '_none'}
@@ -2160,7 +2168,7 @@ function InvoiceFormDialog({
             </div>
             )}
             {settings.showTax && (
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${settings.showDiscount ? '' : 'col-span-2'}`}>
               <Label className="text-xs block text-right">
                 Tax {taxType && TAX_TYPE_BY_KEY[taxType] && (
                   <span className="text-[10px] text-gray-400">@ {TAX_TYPE_BY_KEY[taxType].rate}%</span>
@@ -2179,7 +2187,7 @@ function InvoiceFormDialog({
             </div>
             )}
             {settings.showDiscount && (
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${settings.showTax ? '' : 'col-span-4'}`}>
               {/* Label mirrors the input+toggle row so its right edge
                   ends at the input's right edge, not over the $/%
                   toggle. Invisible spacer holds the toggle's slot. */}
