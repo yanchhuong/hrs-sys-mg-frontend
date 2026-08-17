@@ -51,6 +51,12 @@ export interface UpdateUserRequest {
   username?: string;
   /** V140 — same PATCH semantics as {@link username}. */
   name?: string;
+  /** V-user-email-editable — update the login email. Non-null values
+   *  are trimmed + lowercased server-side and enforced unique per
+   *  tenant. Empty string is rejected (400) — every user needs SOME
+   *  identifier; switch to username-only by adding a username without
+   *  clearing the email. */
+  email?: string;
 }
 
 export interface ListParams {

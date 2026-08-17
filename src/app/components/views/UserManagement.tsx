@@ -493,6 +493,13 @@ export function UserManagement() {
   const { isModuleAvailable, isModuleEnabled } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  /** V-user-email-editable — pop-up dialog behind the popover's
+   *  "Email reset link" action. Holds the user we're resetting plus
+   *  the editable email address (pre-filled from the row). Setting
+   *  to null closes the dialog. */
+  const [emailResetDialog, setEmailResetDialog] = useState<
+    { user: User; email: string; busy: boolean } | null
+  >(null);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const [, setLoading] = useState<boolean>(!USE_MOCKS);
 
@@ -886,20 +893,49 @@ export function UserManagement() {
     }
   };
 
-  /** V-admin-reset-email — sends the reset link to the user's email
-   *  via the same PasswordResetService pipeline the Forgot-Password
-   *  self-service flow uses. Backend rejects if the user row has no
-   *  email; the popover UI hides this action in that case. */
-  const handleEmailResetLink = async (user: User) => {
-    if (USE_MOCKS) {
-      toast.success(`Reset link sent to ${user.email}`);
+  /** V-admin-reset-email — opens a small dialog pre-filled with the
+   *  user's current email so the admin can correct a typo, update to
+   *  a new address the user actually reads, or just click Send. On
+   *  submit, if the email changed we PATCH the user row first then
+   *  fire the reset link; if unchanged we skip straight to the reset. */
+  const handleEmailResetLink = (user: User) => {
+    setEmailResetDialog({ user, email: user.email || '', busy: false });
+  };
+
+  const submitEmailResetLink = async () => {
+    if (!emailResetDialog) return;
+    const { user, email } = emailResetDialog;
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      toast.error('Enter a valid email address');
       return;
     }
+    setEmailResetDialog(d => (d ? { ...d, busy: true } : d));
     try {
-      await usersApi.resetPassword(user.id);
-      toast.success(`Reset link sent to ${user.email}`);
+      // If the admin changed the email, persist it first so the reset
+      // link goes to the address they typed (not the old one) AND
+      // subsequent logins use the same identifier. Backend enforces
+      // per-tenant uniqueness — 409 surfaces as a toast, no reset
+      // link sent.
+      const changed = trimmed !== (user.email || '').trim().toLowerCase();
+      if (changed && !USE_MOCKS) {
+        await usersApi.update(user.id, { email: trimmed });
+      }
+      if (USE_MOCKS) {
+        toast.success(`Reset link sent to ${trimmed}`);
+      } else {
+        await usersApi.resetPassword(user.id);
+        toast.success(
+          changed
+            ? `Email updated to ${trimmed}. Reset link sent.`
+            : `Reset link sent to ${trimmed}.`,
+        );
+      }
+      setEmailResetDialog(null);
+      if (!USE_MOCKS) await loadUsers();   // refresh the row so the new email shows in the table
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send reset link');
+      setEmailResetDialog(d => (d ? { ...d, busy: false } : d));
     }
   };
 
@@ -1582,17 +1618,16 @@ export function UserManagement() {
                               <PopoverContent align="end" className="w-64 p-1">
                                 <button
                                   type="button"
-                                  disabled={!user.email}
-                                  onClick={() => { void handleEmailResetLink(user); }}
-                                  className="w-full flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  onClick={() => { handleEmailResetLink(user); }}
+                                  className="w-full flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-100"
                                 >
                                   <Mail className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
                                   <span className="min-w-0">
-                                    <span className="block font-medium text-gray-900">Email reset link</span>
+                                    <span className="block font-medium text-gray-900">Email reset link…</span>
                                     <span className="block text-xs text-gray-500 mt-0.5">
                                       {user.email
-                                        ? `Send to ${user.email}`
-                                        : 'User has no email address on file'}
+                                        ? `Confirm or change ${user.email} before sending`
+                                        : 'Enter an email to send the reset link to'}
                                     </span>
                                   </span>
                                 </button>
@@ -2083,6 +2118,80 @@ export function UserManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* V-user-email-editable — small dialog behind the popover's
+          "Email reset link" action. Pre-fills the row's email so the
+          admin can confirm before sending, or type a new one — the
+          new value is PATCHed onto the user before the reset link
+          fires, so future logins use the same address. */}
+      <Dialog
+        open={!!emailResetDialog}
+        onOpenChange={o => { if (!o && !emailResetDialog?.busy) setEmailResetDialog(null); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-blue-600 shrink-0" />
+              <span>Email password reset link</span>
+            </DialogTitle>
+            <DialogDescription>
+              We'll send a one-time link to the address below. Editing it
+              saves the change on the user's account before sending.
+            </DialogDescription>
+          </DialogHeader>
+          {emailResetDialog && (
+            <form
+              className="space-y-3"
+              onSubmit={e => { e.preventDefault(); void submitEmailResetLink(); }}
+            >
+              <div className="text-xs text-gray-500">
+                User:{' '}
+                <span className="font-medium text-gray-800">
+                  {emailResetDialog.user.name || emailResetDialog.user.email || emailResetDialog.user.username || 'Unnamed'}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="email-reset-address" className="text-xs text-gray-600">
+                  Send to
+                </Label>
+                <Input
+                  id="email-reset-address"
+                  type="email"
+                  autoFocus
+                  value={emailResetDialog.email}
+                  disabled={emailResetDialog.busy}
+                  onChange={e =>
+                    setEmailResetDialog(d => (d ? { ...d, email: e.target.value } : d))
+                  }
+                  placeholder="user@example.com"
+                />
+                {emailResetDialog.user.email &&
+                  emailResetDialog.email.trim().toLowerCase() !== emailResetDialog.user.email.trim().toLowerCase() && (
+                    <p className="text-[11px] text-amber-700 flex items-start gap-1">
+                      <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                      This will update the user's login email from{' '}
+                      <span className="font-medium">{emailResetDialog.user.email}</span>{' '}
+                      before sending the reset link.
+                    </p>
+                  )}
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={emailResetDialog.busy}
+                  onClick={() => setEmailResetDialog(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={emailResetDialog.busy}>
+                  {emailResetDialog.busy ? 'Sending…' : 'Send reset link'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
