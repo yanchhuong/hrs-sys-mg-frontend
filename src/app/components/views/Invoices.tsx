@@ -2346,16 +2346,21 @@ function InvoiceFormDialog({
           </div>
         </div>
 
-        {/* v-invoice-footer-reorder — primary "Create draft" button
-            moves to the SECOND slot (right after Cancel) so the
-            most-frequent action sits within a mouse-inch of the
-            close affordance and doesn't get lost at the far right
-            of the row. Save-and-* variants trail as the less-common
-            options. Edit mode is unchanged (just Cancel + Save
-            changes). */}
+        {/* v-invoice-footer-primary-save-close — "Save & close" is
+            the primary (blue) affordance on create; "Create draft"
+            drops to outline. Rationale: most operators want the
+            issued/progress path (skip-draft), not the two-step
+            draft-then-issue path — the primary color should point
+            at the more-frequent action. Draft stays visible as an
+            outline for the "not sure yet, come back later" case.
+            Order still matches v-invoice-footer-reorder: Cancel,
+            Draft, Save & add new, Save & close.
+            Edit mode is unchanged — the two "Save & …" variants
+            are hidden, so it stays Cancel + Save changes (which is
+            still the natural primary on that path). */}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>
+          <Button variant={isEdit ? undefined : 'outline'} onClick={submit} disabled={saving}>
             {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create draft')}
           </Button>
           {/* Save & add new and Save & close both skip Draft and issue
@@ -2366,7 +2371,7 @@ function InvoiceFormDialog({
               <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Progress and reset the form for the next entry">
                 {saving ? 'Saving…' : 'Save & add new'}
               </Button>
-              <Button variant="outline" onClick={submitAndClose} disabled={saving} title="Save as Progress and close the dialog">
+              <Button onClick={submitAndClose} disabled={saving} title="Save as Progress and close the dialog">
                 {saving ? 'Saving…' : 'Save & close'}
               </Button>
             </>
