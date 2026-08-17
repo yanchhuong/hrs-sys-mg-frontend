@@ -20,6 +20,7 @@ import {
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { NumericInput } from '../common/NumericInput';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
@@ -467,11 +468,23 @@ function ReceiptFormDialog({
     if (!open) return;
     currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, [open]);
+  // V-bill-receipt-purpose — load tenant's prior purposes each
+  // time the dialog opens so freshly-typed ones show up as one-
+  // click options in the picker.
+  useEffect(() => {
+    if (!open) return;
+    receiptsApi.listPurposes().then(setPurposeOptions).catch(() => setPurposeOptions([]));
+  }, [open]);
   const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [exchangeRate, setExchangeRate] = useState('4100');
   const [amount, setAmount] = useState('0');
   const [taxType, setTaxType] = useState<receiptsApi.ReceiptTaxType | ''>('');
   const [notes, setNotes] = useState('');
+  /** V-bill-receipt-purpose — controlled by the receipt-scope
+   *  `showPurpose` toggle in Accountant Settings. Same shape as
+   *  Invoice/Bill's picker. */
+  const [purpose, setPurpose] = useState('');
+  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   // Chain-approver picker state (V172, Phase 3b).
   const [users, setUsers] = useState<usersApi.User[]>([]);
@@ -494,6 +507,7 @@ function ReceiptFormDialog({
       setAmount(String(editing.amount));
       setTaxType((editing.taxType ?? '') as any);
       setNotes(editing.notes ?? '');
+      setPurpose(editing.purpose ?? '');
     } else {
       setSavedReceiptId(null);
       receiptsApi.nextNumber().then(r => setReceiptNo(r.receiptNo)).catch(() => setReceiptNo(''));
@@ -506,6 +520,7 @@ function ReceiptFormDialog({
       setAmount('0');
       setTaxType('');
       setNotes('');
+      setPurpose('');
       setApprover1('');
       setApprover2('');
       setApprover3('');
@@ -581,6 +596,8 @@ function ReceiptFormDialog({
       taxType: taxType || '',
       taxAmount: computedTax,
       notes: notes.trim() || undefined,
+      // V-bill-receipt-purpose — blank-to-undefined normalisation.
+      purpose: purpose.trim() || undefined,
       ...(isEdit ? {} : { approverUserIds: orderedApprovers.length > 0 ? orderedApprovers : undefined }),
     };
   };
@@ -622,6 +639,7 @@ function ReceiptFormDialog({
       setAmount('0');
       setTaxType('');
       setNotes('');
+      setPurpose('');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create expense');
     } finally {
@@ -739,49 +757,84 @@ function ReceiptFormDialog({
                 selected currency. */}
             {currencySettings?.secondaryCurrency && currency !== currencySettings.secondaryCurrency && (
               <div className="space-y-1.5">
-                <Label className="text-xs">
+                {/* v-numeric-input-common — right-aligned label +
+                    NumericInput with digit mask and comma-on-blur,
+                    same as Invoice / Bill. */}
+                <Label className="text-xs block text-right">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input type="number" value={exchangeRate}
-                       onChange={e => setExchangeRate(e.target.value)} />
+                <NumericInput
+                  value={exchangeRate}
+                  onChange={setExchangeRate}
+                  decimals={4}
+                />
               </div>
             )}
             <div className="space-y-1.5">
-              <Label className="text-xs">Amount *</Label>
-              <Input type="number" min={0} step="0.01" value={amount}
-                     onChange={e => setAmount(e.target.value)} />
+              <Label className="text-xs block text-right">Amount *</Label>
+              <NumericInput
+                value={amount}
+                onChange={setAmount}
+                decimals={2}
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Withholding Tax</Label>
-              <Select value={taxType || '_none'}
-                      onValueChange={v => setTaxType(v === '_none' ? '' : v as receiptsApi.ReceiptTaxType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">— None —</SelectItem>
-                  {receiptsApi.RECEIPT_TAX_TYPES.map(t => (
-                    <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                Tax Amount
-                {taxType && (
-                  <span className="text-[10px] text-gray-400 ml-1">
-                    @ {taxRate}% → {fmtMoney(computedTax, currency)}
-                  </span>
-                )}
-              </Label>
-              <Input type="number" min={0} step="0.01"
-                     value={taxType ? computedTax.toFixed(2) : '0'}
-                     disabled
-                     title="Auto-computed from the WHT pattern" />
-            </div>
+          {/* v-receipt-tax-amount-removed — the standalone Tax Amount
+              cell used to sit next to Withholding Tax showing the
+              auto-computed value (disabled). Redundant: the WHT rate
+              label already shows the computed money on the same line
+              ("@ 15% → $12.34"), and the summary card at the bottom
+              of the dialog also shows it. Withholding Tax dropdown
+              now takes the full row; the label carries the auto-
+              computed value inline. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Withholding Tax
+              {taxType && (
+                <span className="text-[10px] text-gray-400 ml-1">
+                  @ {taxRate}% → {fmtMoney(computedTax, currency)}
+                </span>
+              )}
+            </Label>
+            <Select value={taxType || '_none'}
+                    onValueChange={v => setTaxType(v === '_none' ? '' : v as receiptsApi.ReceiptTaxType)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">— None —</SelectItem>
+                {receiptsApi.RECEIPT_TAX_TYPES.map(t => (
+                  <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* V-bill-receipt-purpose — Purpose picker above Notes.
+              Same SearchablePicker pattern the Invoice/Bill forms
+              use: existing purposes as one-click options; a novel
+              value falls through to the inline "Create" affordance.
+              Gated on the receipt-scope `showPurpose` toggle. */}
+          {settings.showPurpose && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Purpose</Label>
+              <SearchablePicker
+                value={purpose}
+                onChange={setPurpose}
+                placeholder='Pick or type a purpose — e.g. "Client entertainment"'
+                searchPlaceholder="Search or type a new purpose…"
+                emptyResultsLabel="No match — type a new purpose to add."
+                createLabel={q => `Add "${q}" as a new purpose`}
+                onCreate={async label => {
+                  const trimmed = label.trim();
+                  setPurposeOptions(prev =>
+                    prev.includes(trimmed) ? prev : [...prev, trimmed].sort(),
+                  );
+                  return { value: trimmed, label: trimmed };
+                }}
+                options={purposeOptions.map(p => ({ value: p, label: p }))}
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>

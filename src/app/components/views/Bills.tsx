@@ -1040,6 +1040,13 @@ function BillFormDialog({
     if (!open) return;
     currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, [open]);
+  // V-bill-receipt-purpose — load tenant's prior purposes each
+  // time the dialog opens so freshly-typed ones show up as one-
+  // click options in the picker.
+  useEffect(() => {
+    if (!open) return;
+    billsApi.listPurposes().then(setPurposeOptions).catch(() => setPurposeOptions([]));
+  }, [open]);
   const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
   // Stock-catalog picker (parity with Invoices / Quotations). Loaded
@@ -1077,6 +1084,11 @@ function BillFormDialog({
   const [discountValue, setDiscountValue] = useState('0');
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
+  /** V-bill-receipt-purpose — controlled by the purchase-scope
+   *  `showPurpose` toggle in Accountant Settings. Same shape as
+   *  Invoice's purpose picker. */
+  const [purpose, setPurpose] = useState('');
+  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   // Chain-approver picker state (V172, Phase 3b). Empty = skip chain,
   // bill flows through legacy draft → issued → paid states.
@@ -1115,6 +1127,7 @@ function BillFormDialog({
       setDiscountValue(String(editing.discountValue ?? editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
+      setPurpose(editing.purpose ?? '');
     } else {
       // For a CN/DN opened via the inline dropdown, seed the parent
       // (and customer + currency + taxType) from the parent invoice
@@ -1136,6 +1149,7 @@ function BillFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+      setPurpose('');
       setApprover1('');
       setApprover2('');
       setApprover3('');
@@ -1255,6 +1269,8 @@ function BillFormDialog({
       discountAmount: computedDiscount,
       notes: notes || undefined,
       terms: terms || undefined,
+      // V-bill-receipt-purpose — blank-to-undefined normalisation.
+      purpose: purpose.trim() || undefined,
       items: items.map(it => ({
         name: it.name.trim(),
         description: it.description?.trim() || undefined,
@@ -1327,6 +1343,7 @@ function BillFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
+      setPurpose('');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create bill');
     } finally {
@@ -1744,6 +1761,33 @@ function BillFormDialog({
             </div>
             )}
           </div>
+          )}
+
+          {/* V-bill-receipt-purpose — Purpose picker above Notes.
+              Same SearchablePicker pattern the Invoice form uses:
+              existing purposes as one-click options; a novel value
+              falls through to the inline "Create" affordance. Gated
+              on the purchase-scope `showPurpose` toggle. */}
+          {settings.showPurpose && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Purpose</Label>
+              <SearchablePicker
+                value={purpose}
+                onChange={setPurpose}
+                placeholder='Pick or type a purpose — e.g. "Monthly rent"'
+                searchPlaceholder="Search or type a new purpose…"
+                emptyResultsLabel="No match — type a new purpose to add."
+                createLabel={q => `Add "${q}" as a new purpose`}
+                onCreate={async label => {
+                  const trimmed = label.trim();
+                  setPurposeOptions(prev =>
+                    prev.includes(trimmed) ? prev : [...prev, trimmed].sort(),
+                  );
+                  return { value: trimmed, label: trimmed };
+                }}
+                options={purposeOptions.map(p => ({ value: p, label: p }))}
+              />
+            </div>
           )}
 
           {/* Notes / Terms 2-col + summary. Either or both can be

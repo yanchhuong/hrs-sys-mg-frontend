@@ -582,15 +582,24 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.showNotes, v => setDraft({ ...draft, showNotes: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Terms & Conditions', 'Customer-facing terms printed at the bottom.',
                   draft.showTerms, v => setDraft({ ...draft, showTerms: v }))}
-                {/* V-invoice-purpose — Sale-only toggle for now.
-                    Turns the "Purpose" input on the Invoice create/
-                    edit form on or off, and gates the "Purpose:" line
-                    on the printed invoice. Off = the field vanishes
-                    entirely; any purpose already saved on legacy
-                    invoices stays in the DB but no longer surfaces. */}
-                {scope === 'sale' && toggleRow(
+                {/* V-invoice-purpose / V-bill-receipt-purpose — the
+                    Show Purpose toggle is available on all three
+                    document-issuing scopes:
+                      sale     → Invoice (Purpose picker on Sale form)
+                      purchase → Bill (Purpose picker on Bill form)
+                      receipt  → Expense (Purpose picker on Expense
+                                 form; column already exists on the
+                                 accounting_settings row for shape
+                                 uniformity, now exposed on the UI).
+                    Off = the field vanishes; any purpose already
+                    saved stays in the DB but doesn't surface. */}
+                {(scope === 'sale' || scope === 'purchase' || scope === 'receipt') && toggleRow(
                   'Show Purpose',
-                  'Free-text label for WHY the invoice was raised (e.g. "Q3 retainer"). Shown on the form and printed on the invoice.',
+                  scope === 'sale'
+                    ? 'Free-text label for WHY the invoice was raised (e.g. "Q3 retainer"). Shown on the form and printed on the invoice.'
+                    : scope === 'purchase'
+                      ? 'Free-text label for WHY the bill was raised (e.g. "Monthly rent", "Q3 marketing spend"). Shown on the form and printed on the bill.'
+                      : 'Free-text label for WHY the expense was raised (e.g. "Client entertainment", "Software subscription"). Shown on the expense form.',
                   draft.showPurpose, v => setDraft({ ...draft, showPurpose: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Discount', 'Discount input (amount or percent) + line in the totals.',
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}

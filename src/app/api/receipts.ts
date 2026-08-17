@@ -60,6 +60,10 @@ export interface Receipt {
    *  ledger strip; Remain = amount − |paidAmount|. */
   paidAmount: number;
   notes?: string | null;
+  /** V-bill-receipt-purpose — free-text reason the expense was
+   *  raised. Rendered on the form when receipt-scope showPurpose
+   *  is on. */
+  purpose?: string | null;
   status: ReceiptStatus;
   createdAt?: string;
   updatedAt?: string;
@@ -77,6 +81,8 @@ export interface ReceiptRequest {
   taxType?: ReceiptTaxType | '';
   taxAmount?: number;
   notes?: string;
+  /** V-bill-receipt-purpose — free-text reason. */
+  purpose?: string;
   /** Ordered list of approver user IDs (up to 3). Drives the unified
    *  approval inbox (V172, Phase 3b) via
    *  {@code ApprovalService.startChainWithApprovers}. Empty / omitted
@@ -113,6 +119,13 @@ export async function get(id: string): Promise<Receipt> {
 
 export async function nextNumber(): Promise<{ receiptNo: string }> {
   return apiJson('/api/v1/receipts/next-number');
+}
+
+/** V-bill-receipt-purpose — distinct non-blank purposes the tenant
+ *  has used on prior expense receipts, alphabetised. Feeds the
+ *  Expense form's Purpose SearchablePicker. */
+export async function listPurposes(): Promise<string[]> {
+  return apiJson<string[]>('/api/v1/receipts/purposes');
 }
 
 export async function create(req: ReceiptRequest): Promise<Receipt> {

@@ -85,6 +85,10 @@ export interface Bill {
   notes?: string | null;
   /** Customer-facing terms & conditions text printed on the invoice. */
   terms?: string | null;
+  /** V-bill-receipt-purpose — free-text reason the bill was raised.
+   *  Rendered on the create form and printed on the bill when the
+   *  purchase-scope `showPurpose` setting is on. */
+  purpose?: string | null;
   items: BillItem[];
   /** Child Credit / Debit Notes attached to this invoice. Populated
    *  on the single-invoice GET; empty on the list payload. */
@@ -132,6 +136,8 @@ export interface BillRequest {
   discountAmount?: number;
   notes?: string | null;
   terms?: string | null;
+  /** V-bill-receipt-purpose — free-text reason the bill was raised. */
+  purpose?: string | null;
   items: BillItemRequest[];
   /** Ordered list of approver user IDs (up to 3). Drives the unified
    *  approval inbox (V172, Phase 3b) via
@@ -174,6 +180,14 @@ export async function get(id: string): Promise<Bill> {
  *  number input so HR sees the default but can override before save. */
 export async function nextNumber(kind: BillKind): Promise<{ kind: BillKind; billNo: string }> {
   return apiJson(`/api/v1/bills/next-number`, { query: { kind } });
+}
+
+/** V-bill-receipt-purpose — distinct non-blank purposes the tenant
+ *  has used before, alphabetised. Feeds the Bill form's Purpose
+ *  SearchablePicker so operators pick from what's been used rather
+ *  than re-typing. Same shape as invoicesApi.listPurposes. */
+export async function listPurposes(): Promise<string[]> {
+  return apiJson<string[]>(`/api/v1/bills/purposes`);
 }
 
 export async function create(req: BillRequest): Promise<Bill> {
