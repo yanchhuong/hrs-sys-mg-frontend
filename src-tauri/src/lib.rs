@@ -7,6 +7,10 @@
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // V-fcm-3-tauri — surface HRMS notifications as Windows
+        // Action-Center toasts. The FE calls this from the FCM
+        // foreground handler and the notification poller.
+        .plugin(tauri_plugin_notification::init())
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

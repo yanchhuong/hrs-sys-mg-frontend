@@ -37,6 +37,10 @@ import { isTauri } from '../utils/runtime';
 // V-fcm-2b — silently registers this browser's Web-Push token with
 // the backend whenever a tenant user reaches the authenticated shell.
 import { useFcmToken } from '../hooks/useFcmToken';
+// V-fcm-3-tauri — polling fallback for the Windows desktop app so
+// WebView2's flaky Web-Push receive doesn't leave the desktop-app
+// operator silent. No-op in browsers.
+import { useTauriNotificationPoller } from '../hooks/useTauriNotificationPoller';
 // Sidebar brand assets — wide wordmark when the sidebar is expanded,
 // square app icon when collapsed. Same files that back the landing
 // nav and the Tauri desktop shell so the identity stays coherent
@@ -81,7 +85,14 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   // V-fcm-2b — register this device's push token once we know who's
   // signed in. The hook silently no-ops on unsupported browsers,
   // denied permission, or opted-out preference; nothing to render.
-  useFcmToken(currentUser?.id);
+  // V-fcm-3-user-pref — also respects the server-side per-user
+  // Profile toggle so an OFF value blocks registration everywhere.
+  useFcmToken(currentUser?.id, currentUser?.notificationsEnabled);
+  // V-fcm-3-tauri — Tauri-only polling fallback that shows Windows
+  // Action-Center toasts for newly-arriving server notifications.
+  // Browsers get FCM Web Push instead; this is idempotent on the
+  // same host so a mixed-mode dev environment is fine.
+  useTauriNotificationPoller(currentUser?.id, currentUser?.notificationsEnabled);
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);

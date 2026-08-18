@@ -11,9 +11,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
-  Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock,
+  Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock, Bell, BellOff,
   Paperclip, Upload, Download, Trash2,
 } from 'lucide-react';
+import { Switch } from '../ui/switch';
+// V-fcm-3-user-pref — re-registers the browser's FCM token when the
+// user flips push notifications back on within the same session.
+import { refreshFcmToken } from '../../hooks/useFcmToken';
 import { format } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
@@ -70,6 +74,14 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   const [profile, setProfile] = useState<Partial<Employee>>(initialProfile);
   const [accountEmail, setAccountEmail] = useState(currentUser?.email ?? '');
   const [savingProfile, setSavingProfile] = useState(false);
+  // V-fcm-3-user-pref — bind the Switch to the server pref surfaced on
+  // currentUser.notificationsEnabled. Undefined-safe: absent field
+  // (pre-V325 tenant, or a stale cached user) defaults to ON so the
+  // toggle isn't misleading before /me responds.
+  const [notificationsOn, setNotificationsOn] = useState<boolean>(
+    currentUser?.notificationsEnabled !== false,
+  );
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   // Departments list — only used to resolve the dept UUID on
   // currentEmployee.department into a human label for the badge
@@ -493,6 +505,49 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                   {currentUser?.lastLogin ? format(new Date(currentUser.lastLogin), 'MMM dd, yyyy HH:mm') : '—'}
                 </div>
               </FieldBox>
+            </div>
+
+            {/* V-fcm-3-user-pref — server-side per-user push toggle.
+                Persists via PUT /api/v1/auth/me/notifications and
+                immediately re-registers the browser's token when
+                turned back on so the current tab starts receiving
+                pushes without a reload. */}
+            <div className="rounded-md border p-3 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                {notificationsOn
+                  ? <Bell    className="h-5 w-5 mt-0.5 text-blue-600" />
+                  : <BellOff className="h-5 w-5 mt-0.5 text-gray-400" />}
+                <div>
+                  <div className="text-sm font-medium">Push notifications</div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Notifications for invoice payments, leave / OT requests, and check-in / check-out. Turning this off silences pushes across every device you sign in on.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={notificationsOn}
+                disabled={savingNotifications || USE_MOCKS}
+                onCheckedChange={async (next) => {
+                  const prev = notificationsOn;
+                  setNotificationsOn(next);
+                  setSavingNotifications(true);
+                  try {
+                    await authApi.updateNotifications(next);
+                    await refreshUser();
+                    if (next) {
+                      // Re-register on this browser so the same tab
+                      // starts receiving pushes without a reload.
+                      void refreshFcmToken();
+                    }
+                    toast.success(next ? 'Push notifications enabled' : 'Push notifications disabled');
+                  } catch (err) {
+                    setNotificationsOn(prev);
+                    toast.error(err instanceof Error ? err.message : 'Could not update push notifications');
+                  } finally {
+                    setSavingNotifications(false);
+                  }
+                }}
+              />
             </div>
 
             <DialogFooter className="pt-2">

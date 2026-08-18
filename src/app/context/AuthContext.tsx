@@ -158,6 +158,9 @@ function fromApi(apiUser: authApi.AuthUser): User {
     tenantStatus: apiUser.tenantStatus ?? null,
     tenantFrozenReason: apiUser.tenantFrozenReason ?? null,
     tenantFrozenUntil: apiUser.tenantFrozenUntil ?? null,
+    // V-fcm-3-user-pref — carry the per-user push toggle through so
+    // useFcmToken can skip registration when the user is opted out.
+    notificationsEnabled: apiUser.notificationsEnabled,
     createdAt: new Date().toISOString(),
     isActive: true,
   };
@@ -575,7 +578,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onExpired = () => { logout(); };
     const onUnreachable = () => {
-      toast.error('Cannot reach the server. Please sign in again once the connection is restored.');
+      toast.error('Service on maintenance! Please sign in again once the connection is restored.');
       logout();
     };
     window.addEventListener('auth:expired', onExpired);

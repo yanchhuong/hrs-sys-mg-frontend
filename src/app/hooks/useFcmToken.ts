@@ -20,6 +20,10 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { toast } from 'sonner';
 import { FCM_VAPID_PUBLIC_KEY, getFcmMessaging } from '../config/firebase';
 import { registerFcmToken } from '../api/fcm';
+// V-fcm-3-tauri — Windows desktop shell needs the Tauri plugin to
+// raise a real Action-Center toast; WebView2's Web-Push path may
+// silently drop the notification.
+import { isTauriHost, showTauriNotification } from '../utils/tauriNotifier';
 
 const OPT_OUT_KEY = 'hrms:fcmOptOut';
 const LAST_TOKEN_KEY = 'hrms:fcmLastRegisteredToken';
@@ -119,6 +123,10 @@ async function registerCurrentDevice(): Promise<void> {
     const title = payload?.notification?.title || payload?.data?.title || 'Notification';
     const body  = payload?.notification?.body  || payload?.data?.body  || '';
     toast(title, { description: body });
+    // V-fcm-3-tauri — also raise a native Windows toast so the
+    // desktop-app operator sees the notification even when the app
+    // window isn't focused. No-op in browsers.
+    if (isTauriHost()) void showTauriNotification(title, body);
   });
 }
 
@@ -156,15 +164,23 @@ export async function refreshFcmToken(): Promise<void> {
  *   - a fresh login on this browser registers the current token,
  *   - a logout → re-login as a DIFFERENT user re-registers so the
  *     token migrates to the new user's row (backend upserts by token).
+ *
+ * V-fcm-3-user-pref — also respects the server-side per-user toggle
+ * on {@code currentUser.notificationsEnabled}. Undefined = ON (pre-
+ * V325 tenant / stale cached user). False = skip registration on this
+ * mount; toggling back on inside Profile calls {@link refreshFcmToken}
+ * explicitly so we don't need to re-run the hook.
  */
-export function useFcmToken(userId: string | undefined | null): void {
+export function useFcmToken(userId: string | undefined | null,
+                            notificationsEnabled: boolean | undefined = undefined): void {
   useEffect(() => {
     if (!userId) return;
+    if (notificationsEnabled === false) return;
     let cancelled = false;
     (async () => {
       try { if (!cancelled) await registerCurrentDevice(); }
       catch (err) { console.warn('V-fcm-2b: useFcmToken failed', err); }
     })();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, notificationsEnabled]);
 }

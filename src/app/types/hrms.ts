@@ -62,6 +62,10 @@ export interface User {
   /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
    *  indefinite freeze OR tenant not frozen at all. */
   tenantFrozenUntil?: string | null;
+  /** V-fcm-3-user-pref — server-side per-user push toggle. Read by
+   *  useFcmToken to decide whether to register the browser's FCM
+   *  token on this login. Undefined = ON (pre-V325 cached user). */
+  notificationsEnabled?: boolean;
   createdAt: string;
   lastLogin?: string;
   isActive: boolean;

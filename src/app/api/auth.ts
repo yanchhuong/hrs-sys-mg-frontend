@@ -56,6 +56,10 @@ export interface AuthUser {
   /** v-tenant-freeze-schedule — auto-thaw deadline (ISO). Null =
    *  indefinite freeze OR tenant not frozen at all. */
   tenantFrozenUntil?: string | null;
+  /** V-fcm-3-user-pref — server-side per-user push toggle. Profile
+   *  dialog renders a Switch that reads this and calls
+   *  {@link updateNotifications} to persist. */
+  notificationsEnabled?: boolean;
 }
 
 export interface LoginResponse {
@@ -152,6 +156,19 @@ export interface UpdateProfileRequest {
 
 export async function updateProfile(req: UpdateProfileRequest): Promise<AuthUser> {
   const user = await apiJson<AuthUser>('/api/v1/auth/me', { method: 'PATCH', json: req });
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  }
+  return user;
+}
+
+/** V-fcm-3-user-pref — flip the server-side per-user push toggle and
+ *  return the refreshed AuthUser so the caller can re-bind context. */
+export async function updateNotifications(enabled: boolean): Promise<AuthUser> {
+  const user = await apiJson<AuthUser>('/api/v1/auth/me/notifications', {
+    method: 'PUT',
+    json: { enabled },
+  });
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
