@@ -34,6 +34,9 @@ import { NAV_GROUPS, NAV_LEAVES } from '../config/nav';
 import { appIconColor } from '../utils/appColors';
 import { DesktopApiModeBadge } from './DesktopApiModeBadge';
 import { isTauri } from '../utils/runtime';
+// V-fcm-2b — silently registers this browser's Web-Push token with
+// the backend whenever a tenant user reaches the authenticated shell.
+import { useFcmToken } from '../hooks/useFcmToken';
 // Sidebar brand assets — wide wordmark when the sidebar is expanded,
 // square app icon when collapsed. Same files that back the landing
 // nav and the Tauri desktop shell so the identity stays coherent
@@ -75,6 +78,10 @@ function AutoTag() {
 
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { currentUser, currentEmployee, canView, isModuleAvailable, hasActiveAgency, logout } = useAuth();
+  // V-fcm-2b — register this device's push token once we know who's
+  // signed in. The hook silently no-ops on unsupported browsers,
+  // denied permission, or opted-out preference; nothing to render.
+  useFcmToken(currentUser?.id);
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);

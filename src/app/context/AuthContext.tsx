@@ -7,6 +7,9 @@ import * as rolesApi from '../api/roles';
 import * as employeesApi from '../api/employees';
 import * as platformApi from '../api/platform';
 import { USE_MOCKS } from '../api/client';
+// V-fcm-2b — logout must unregister the browser's push token so
+// subsequent tenant-broadcasts don't ping the ex-user's device.
+import { unregisterFcmToken } from '../api/fcm';
 import { Employee } from '../types/hrms';
 
 export interface LoginResult {
@@ -534,6 +537,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    // V-fcm-2b — best-effort unregister of the FCM token BEFORE we drop
+    // the JWT (unregister needs Authorization to succeed). Fire-and-
+    // forget: if the network fails, the backend prunes on the next
+    // failed send anyway.
+    try {
+      const lastToken = typeof localStorage !== 'undefined'
+        ? localStorage.getItem('hrms:fcmLastRegisteredToken') : null;
+      if (lastToken) {
+        void unregisterFcmToken(lastToken).catch(() => { /* silent */ });
+        try { localStorage.removeItem('hrms:fcmLastRegisteredToken'); } catch { /* ignore */ }
+      }
+    } catch { /* localStorage disabled — nothing to clean up */ }
+
     setCurrentUser(null);
     setGrants(new Set());
     setDisabledModules(null);
