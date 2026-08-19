@@ -238,7 +238,7 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.active}
                      onChange={e => setForm({ ...form, active: e.target.checked })} />
-              Active (shows in Members Type picker)
+              Active
             </label>
             <div className="flex items-center gap-2 pt-1">
               <Button onClick={() => void save()} disabled={saving}>
