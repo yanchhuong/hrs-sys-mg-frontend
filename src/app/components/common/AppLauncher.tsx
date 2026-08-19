@@ -37,7 +37,7 @@ function AppsDotsIcon({ className = 'h-5 w-5' }: { className?: string }) {
 // platform-managed labels resolve. Default seed there: 'hr',
 // 'payroll', 'admin', 'report', 'accounting' (V74 + post-V74
 // admin additions).
-type CategoryKey = 'accounting' | 'receivables' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare' | 'education';
+type CategoryKey = 'accounting' | 'receivables' | 'cashflow' | 'hr' | 'admin' | 'report' | 'healthcare' | 'education' | 'membership';
 interface CategoryDef {
   key: CategoryKey;
   labelKey: string;
@@ -110,6 +110,17 @@ const CATEGORIES: CategoryDef[] = [
     key: 'education', labelKey: 'apps.category.education',
     installedBadge: 'bg-blue-100 text-blue-700',
     ids: ['students', 'enrollments', 'attendances'],
+  },
+  {
+    // Membership business-base leaves (V-library-membership). Members
+    // gates on 'member'; Payment History is a read-only lens over
+    // sale_invoices + sale_payments and shares the 'member' gate
+    // (paired install with Members); Activity gates on 'reading'
+    // (independent toggle, feeds off the Books catalog + the
+    // activity picker on the Members page).
+    key: 'membership', labelKey: 'apps.category.membership',
+    installedBadge: 'bg-indigo-100 text-indigo-700',
+    ids: ['library-members', 'library-books', 'library-reading'],
   },
 ];
 

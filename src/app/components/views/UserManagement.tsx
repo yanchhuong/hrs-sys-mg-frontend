@@ -252,6 +252,25 @@ const MODULES: ModuleDef[] = [
   { key: 'enrollment',        label: 'Enrollment',        description: 'Student ↔ Course Schedule link + tuition invoice conversion',                 parent: 'education-group' },
   { key: 'class-attendance',  label: 'Attendance',        description: 'Per-session student attendance grid — the teacher\'s daily workspace',       parent: 'education-group' },
 
+  // Membership Business Base (V-library-membership). Rows mirror the
+  // sidebar leaves 1:1 so operators reading the matrix top-to-bottom
+  // see the same names they navigate:
+  //   Members         → member gate
+  //   Payment History → book gate (paired with the library-books nav
+  //                     leaf which used to reuse the member gate;
+  //                     switching to `book` gives Payment History
+  //                     first-class toggleability on this row)
+  //   Activity        → reading gate
+  // Books catalog management (StockItem lens type=book, exposed only
+  // via the inline "Add book" popup on Activity) shares the `book`
+  // gate — a librarian who can see Payment History can also seed
+  // titles for members to log against, which matches how the
+  // operator uses the surface.
+  { key: 'library-group',     label: 'Membership',        description: '',                                                                            header: true },
+  { key: 'member',            label: 'Members',           description: 'Member roster (Customer lens with kind=member) — profile, type, effective / expiry', parent: 'library-group' },
+  { key: 'book',              label: 'Payment History',   description: 'Membership invoices + receipts, and the book catalog behind the Activity picker', parent: 'library-group' },
+  { key: 'reading',           label: 'Activity',          description: 'Member activities — reading, meeting, conference, other',                       parent: 'library-group' },
+
   { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
   { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
   { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },
@@ -342,6 +361,13 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
       // Enrollment (register + tuition) and Attendance.
       case 'enrollment':       return action === 'view' || action === 'create' || action === 'update';
       case 'class-attendance': return action === 'view' || action === 'create' || action === 'update';
+      // Membership — Manager runs the membership desk: full V/C/U
+      // on Members (register + renew), Payment History (view +
+      // reconcile), and Activity. Matches the Encounters /
+      // Enrollment shape.
+      case 'member':           return action === 'view' || action === 'create' || action === 'update';
+      case 'book':             return action === 'view' || action === 'create' || action === 'update';
+      case 'reading':          return action === 'view' || action === 'create' || action === 'update';
       // Receivables — Manager can see everything but only Admin
       // creates / cancels / deletes plans by default. Matches V251
       // backend seed (manager -> view only on all four).
@@ -381,6 +407,13 @@ const defaultPermissionFor = (moduleKey: string, role: UserRole, action: Action)
     // stays with the office (Manager+).
     case 'enrollment':       return action === 'view';
     case 'class-attendance': return action === 'view' || action === 'update';
+    // Membership — Employees (front-desk / librarian assistants)
+    // can view members + start activities but not edit member
+    // profiles or the book catalog. Renewal (which mints an
+    // invoice) stays with Manager+ via the Members update grant.
+    case 'member':           return action === 'view';
+    case 'reading':          return action === 'view' || action === 'create';
+    case 'book':             return action === 'view';
     default:           return false;
   }
 };

@@ -1,10 +1,13 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { useI18n } from '../i18n/I18nContext';
 import { trackLandingView } from '../api/platformMetrics';
+// V-landing-reveal — wraps each section so it fades + slides into
+// place on scroll, giving the page a Webcash-style rhythm.
+import { Reveal } from './common/Reveal';
 import {
   Building2, Users, Clock, DollarSign, TimerIcon, BarChart3,
   Cloud, Fingerprint, Receipt, Check, Languages,
@@ -685,6 +688,63 @@ function MiniStat({
 }
 
 /** Numbers strip directly below the hero — short, scannable. */
+/**
+ * V-landing-reveal — metric stat with a count-up on first scroll-in.
+ *
+ * Parses the leading digits + trailing suffix out of the label so a
+ * value like "27+" animates "0 → 27" then adds the "+". A value with
+ * no leading number (e.g. "24/7") stays static. Single-fire so
+ * scrolling back up doesn't loop the animation.
+ */
+function CountUpStat({ value, label }: { value: string; label: string }) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [display, setDisplay] = React.useState(value);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const match = /^([\d,\.]+)(.*)$/.exec(value.trim());
+    if (!match) return;                                                // e.g. "24/7"
+    const target = Number(match[1].replace(/,/g, ''));
+    if (!Number.isFinite(target)) return;
+    const suffix = match[2];
+
+    // Start with a placeholder that has the same width, so the row
+    // doesn't reflow when the number changes.
+    setDisplay(`0${suffix}`);
+
+    if (typeof IntersectionObserver === 'undefined') { setDisplay(value); return; }
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        io.unobserve(el);
+        const start = performance.now();
+        const duration = 900;
+        const tick = (now: number) => {
+          const p = Math.min(1, (now - start) / duration);
+          // easeOutCubic — decelerating ramp reads as "counting up
+          // then settling" rather than a linear tick.
+          const eased = 1 - Math.pow(1 - p, 3);
+          const cur = Math.round(target * eased);
+          setDisplay(`${cur.toLocaleString()}${suffix}`);
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        return;
+      }
+    }, { rootMargin: '0px 0px -20% 0px', threshold: 0.4 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [value]);
+
+  return (
+    <div ref={ref}>
+      <dt className="text-3xl font-bold tracking-tight text-slate-900 tabular-nums">{display}</dt>
+      <dd className="mt-1 text-sm text-slate-600">{label}</dd>
+    </div>
+  );
+}
+
 function MetricsStrip({ lang }: { lang: Lang }) {
   const items = [
     { v: t(T.metrics.metric1Value, lang), l: t(T.metrics.metric1Label, lang) },
@@ -697,10 +757,7 @@ function MetricsStrip({ lang }: { lang: Lang }) {
       <Container>
         <dl className="grid grid-cols-2 gap-8 md:grid-cols-4">
           {items.map((it, i) => (
-            <div key={i}>
-              <dt className="text-3xl font-bold tracking-tight text-slate-900">{it.v}</dt>
-              <dd className="mt-1 text-sm text-slate-600">{it.l}</dd>
-            </div>
+            <CountUpStat key={i} value={it.v} label={it.l} />
           ))}
         </dl>
       </Container>
@@ -2214,33 +2271,20 @@ export function LandingPage({ onSignInClick, onDemoClick, navSlot }: LandingPage
   return (
     <div className="landing-typography min-h-screen bg-white text-slate-900 antialiased">
       <LandingNav lang={lang} setLang={setLang} onSignIn={onSignInClick} onDemo={onDemoClick} navSlot={navSlot} />
+      {/* V-landing-reveal — Hero renders as-is (already the top of the
+          fold), then every downstream section fades + slides into
+          place as the visitor scrolls past its ~85% top edge. Reveal
+          is single-fire so scrolling back up doesn't re-trigger it. */}
       <Hero lang={lang} onSignIn={onSignInClick} onDemo={onDemoClick} />
-      <MetricsStrip lang={lang} />
-      {/* ZeroInstallStrip (orange gradient "Whether you run a factory
-          or an office…" block) removed — the pitch it made overlapped
-          with the Industries section right below it, and the orange
-          canvas broke the rest of the page's Clarity-blue rhythm. The
-          component definition stays in this file in case we want it
-          back or slotted into another surface. */}
-      <Industries lang={lang} />
-      <PosShowcase lang={lang} />
-      <ModulesGrid lang={lang} />
-      {/* RealProduct (Payroll Preview screenshot section) removed —
-          the screenshot showed placeholder $0.00 rows which hurt
-          credibility, and the ModulesGrid above already conveys
-          the "we have Payroll" pitch. Component stays defined for
-          reuse if a cleaner screenshot lands later. */}
-      <HowItWorks lang={lang} />
-      <Deployment lang={lang} />
-      {/* Cambodia-specific labour-law sections (WorkingRule, TOS/NSSF
-          formulas, live calculators) moved to the standalone
-          {@code /cambodia} page — the marketing landing stays a
-          tighter enterprise pitch. The section components are still
-          defined in this file (exported) so the /cambodia route can
-          reuse them verbatim. */}
-      <Testimonials lang={lang} />
-      <Faq lang={lang} />
-      <CtaBanner lang={lang} onSignIn={onSignInClick} />
+      <Reveal variant="fade"><MetricsStrip lang={lang} /></Reveal>
+      <Reveal><Industries lang={lang} /></Reveal>
+      <Reveal variant="scale"><PosShowcase lang={lang} /></Reveal>
+      <Reveal><ModulesGrid lang={lang} /></Reveal>
+      <Reveal variant="left"><HowItWorks lang={lang} /></Reveal>
+      <Reveal variant="right"><Deployment lang={lang} /></Reveal>
+      <Reveal><Testimonials lang={lang} /></Reveal>
+      <Reveal variant="fade"><Faq lang={lang} /></Reveal>
+      <Reveal variant="scale"><CtaBanner lang={lang} onSignIn={onSignInClick} /></Reveal>
       <LandingFooter lang={lang} />
     </div>
   );

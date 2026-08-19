@@ -32,6 +32,7 @@ export const dict: Dict = {
   'apps.category.report':     { en: 'Report',               km: 'របាយការណ៍',         zh: '报表' },
   'apps.category.healthcare': { en: 'Healthcare',           km: 'សុខាភិបាល',         zh: '医疗' },
   'apps.category.education':  { en: 'Education',            km: 'ការអប់រំ',           zh: '教育' },
+  'apps.category.membership': { en: 'Membership',           km: 'សមាជិកភាព',         zh: '会员' },
   'apps.filter.all':          { en: 'All',                  km: 'ទាំងអស់',           zh: '全部' },
   'apps.filter.installed':    { en: 'Installed',            km: 'បានដំឡើង',          zh: '已安装' },
   'apps.filter.uninstalled':  { en: 'Not installed',        km: 'មិនបានដំឡើង',       zh: '未安装' },
@@ -117,6 +118,13 @@ export const dict: Dict = {
   'nav.classes':              { en: 'Classes',              km: 'ថ្នាក់រៀន',             zh: '班级' },
   'nav.enrollments':          { en: 'Enrollments',          km: 'ការចុះឈ្មោះ',           zh: '入学登记' },
   'nav.attendances':          { en: 'Attendance',           km: 'វត្តមាន',                zh: '出勤' },
+  // V-library-membership — new top-level Membership group.
+  // Renamed from "Library" — the domain is the membership card /
+  // subscription, not the shelved-books vertical.
+  'nav.library':              { en: 'Membership',           km: 'សមាជិកភាព',              zh: '会员制' },
+  'nav.libraryMembers':       { en: 'Members',              km: 'សមាជិក',                 zh: '会员' },
+  'nav.libraryBooks':         { en: 'Payment History',      km: 'ប្រវត្តិការទូទាត់',        zh: '付款历史' },
+  'nav.libraryReading':       { en: 'Activity',             km: 'សកម្មភាព',                zh: '活动' },
   'nav.approvals':            { en: 'Approvals',            km: 'ការអនុម័ត',             zh: '审批' },
   'nav.cases':                { en: 'Agency Cases',         km: 'ករណីភ្នាក់ងារ',          zh: '代理案例' },
   'nav.documentCenter':       { en: 'Document Center',      km: 'មជ្ឈមណ្ឌលឯកសារ',       zh: '文档中心' },

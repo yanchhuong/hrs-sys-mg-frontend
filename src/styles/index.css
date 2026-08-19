@@ -350,3 +350,54 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
     box-shadow: none !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+   V-landing-reveal — Webcash-style scroll polish.
+
+   1. Smooth scroll on the whole document — anchor jumps + programmatic
+      scrollIntoView glide instead of teleport. Landing had only .chip-row
+      set; promoting to html applies to every future in-page anchor.
+   2. Reveal-on-scroll — sections mount hidden + shifted, then transition
+      to their resting state when they enter the viewport. Driven by JS
+      that toggles [data-revealed="true"], so the transition is single-
+      fire (no repeated flicker on scroll-back-up).
+   3. Respect prefers-reduced-motion — a user with the OS toggle set to
+      "reduce motion" gets the resting state immediately with no anim.
+   ──────────────────────────────────────────────────────────────── */
+
+html { scroll-behavior: smooth; }
+
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 24px, 0);
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal[data-revealed="true"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+/* Variants — pick per-section via the `variant` prop on <Reveal>. */
+.reveal.reveal-left  { transform: translate3d(-32px, 0, 0); }
+.reveal.reveal-right { transform: translate3d(32px, 0, 0); }
+.reveal.reveal-fade  { transform: none; }
+.reveal.reveal-scale { transform: scale(0.96); }
+.reveal.reveal-left[data-revealed="true"],
+.reveal.reveal-right[data-revealed="true"],
+.reveal.reveal-scale[data-revealed="true"] {
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal,
+  .reveal.reveal-left,
+  .reveal.reveal-right,
+  .reveal.reveal-scale {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

@@ -29,7 +29,16 @@ export type PermissionModule =
   // Stock (V150)
   | 'stock' | 'movement' | 'adjustment'
   // Cash Flow (V156 / V158)
-  | 'transaction' | 'cashadvance';
+  | 'transaction' | 'cashadvance'
+  // Business-base verticals — Healthcare (V181), Education (V181),
+  // Membership (V-library-membership).
+  | 'encounter' | 'appointment' | 'medical-service'
+  | 'enrollment' | 'class-attendance'
+  | 'member' | 'book' | 'reading'
+  // Receivables (V251 / V287 / V288)
+  | 'payment_plan' | 'payment_collection' | 'property' | 'booking'
+  // Approval + templates + commission + consignment
+  | 'approval' | 'invoice_template' | 'commission' | 'consignment';
 
 /**
  * Permission actions split into two axes:

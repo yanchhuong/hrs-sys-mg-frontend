@@ -27,6 +27,10 @@ import {
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
   GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
   CreditCard, Home, Ticket, ArrowDownLeft,
+  // V-library-membership — Library vertical icons: Library for the
+  // top-level group + Members leaf, BookOpen (already imported) for
+  // Books, Activity for the broadened Activity page.
+  Library, BookMarked, UserSquare2, Activity,
   type LucideIcon,
 } from 'lucide-react';
 import { lazyWithReload } from '../utils/lazyWithReload';
@@ -88,6 +92,12 @@ const Encounters             = lazyView(() => import('../components/views/Encoun
 const Patients               = lazyView(() => import('../components/views/Patients'),               'Patients');
 const Students               = lazyView(() => import('../components/views/Students'),               'Students');
 const Enrollments            = lazyView(() => import('../components/views/Enrollments'),            'Enrollments');
+// V-library-membership — leaves under the top-level Membership group.
+// Books stays around so ReadingTracking's book picker + inline
+// creation can reach it, but it's not a sidebar leaf on its own.
+const Members                = lazyView(() => import('../components/views/library/Members'),        'Members');
+const PaymentHistory         = lazyView(() => import('../components/views/library/PaymentHistory'), 'PaymentHistory');
+const ReadingTracking        = lazyView(() => import('../components/views/library/ReadingTracking'),'ReadingTracking');
 const Attendances            = lazyView(() => import('../components/views/Attendances'),            'Attendances');
 const Appointments           = lazyView(() => import('../components/views/Appointments'),           'Appointments');
 const StockAdjustments       = lazyView(() => import('../components/views/StockAdjustments'),       'StockAdjustments');
@@ -163,6 +173,10 @@ export const NAV_GROUPS: NavGroup[] = [
   // has no School modules enabled; same collapsed-when-empty
   // behaviour as Healthcare.
   { id: 'education-group', labelKey: 'nav.education',    icon: GraduationCap },
+  // V-library-membership — Membership vertical. Auto-hides when the
+  // tenant doesn't have any of the three modules enabled; same
+  // collapsed-when-empty behaviour as the other vertical groups above.
+  { id: 'library-group',   labelKey: 'nav.library',      icon: UserSquare2 },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -311,6 +325,19 @@ export const NAV_LEAVES: NavLeaf[] = [
   // key from the HR 'attendance' module so the two toggles don't
   // collide (v-education-attendance-split-from-hr).
   { id: 'attendances',       labelKey: 'nav.attendances',            icon: CalendarClock,   module: 'class-attendance',   component: Attendances,              group: 'education-group' },
+  // V-library-membership — Library vertical leaves. Members reuses
+  // the customer primitive (kind='member'); Books reuses stock_items
+  // (type='book'); Reading Tracking is a new transactional table.
+  { id: 'library-members',   labelKey: 'nav.libraryMembers',         icon: UserSquare2,     module: 'member',             component: Members,                  group: 'library-group' },
+  // Payment History — the old Books leaf slot. Membership renewal
+  // invoices land in Sales → Invoices; this page consolidates the
+  // resulting payments for the membership vertical. Gates on `book`
+  // so the matrix row labeled "Payment History" directly controls
+  // this leaf's visibility (v-membership-permission-matrix); the
+  // `book` gate also covers the inline Add-book popup that lives on
+  // the Activity page.
+  { id: 'library-books',     labelKey: 'nav.libraryBooks',           icon: ReceiptText,     module: 'book',               component: PaymentHistory,           group: 'library-group' },
+  { id: 'library-reading',   labelKey: 'nav.libraryReading',         icon: Activity,        module: 'reading',            component: ReadingTracking,          group: 'library-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // v-agency-fe-9 — read-only view of the agency's tax
   // declaration pipeline for this tenant. Complements the
