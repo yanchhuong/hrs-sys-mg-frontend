@@ -36,9 +36,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
 import { Switch } from '../../ui/switch';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../../ui/select';
 // v-library-filter-strip — same DateInput the sale-side Invoices
 // page uses for the From/To range, kept identical so operators see
 // one filter grammar across the app.
