@@ -13,8 +13,10 @@ import { toast } from 'sonner';
 import { RefreshCw, Receipt, Search } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
+import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader } from '../../ui/card';
+import { DateInput } from '../../common/DateInput';
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '../../ui/table';
@@ -32,6 +34,9 @@ export function PaymentHistory() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [remarkFilter, setRemarkFilter] = useState<RemarkFilter>('all');
+  // v-library-filter-strip — inclusive From/To range on paymentDate.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo,   setDateTo]   = useState('');
   // V-library-payment-invoice-view — pop the Invoice View dialog on
   // an Invoice-No click. Whole row is passed so the dialog can seed
   // the member name / no without a second lookup.
@@ -49,6 +54,13 @@ export function PaymentHistory() {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
       if (remarkFilter !== 'all' && r.remark !== remarkFilter) return false;
+      // v-library-filter-strip — payment-date range, inclusive.
+      if (dateFrom || dateTo) {
+        const d = r.paymentDate ?? '';
+        if (!d) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo   && d > dateTo)   return false;
+      }
       if (!q) return true;
       return (
         (r.memberName ?? '').toLowerCase().includes(q)
@@ -59,7 +71,7 @@ export function PaymentHistory() {
         || (r.remark ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, remarkFilter]);
+  }, [rows, search, remarkFilter, dateFrom, dateTo]);
 
   const pagination = usePagination(filtered, 25);
 
@@ -100,8 +112,9 @@ export function PaymentHistory() {
 
       <Card>
         <CardHeader className="pb-3">
+          {/* v-library-filter-strip — Invoice-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {REMARK_FILTERS.map(f => (
                 <button
                   key={f.value}
@@ -117,6 +130,18 @@ export function PaymentHistory() {
               ))}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <Label className="text-xs text-gray-600">From</Label>
+              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
+              <Label className="text-xs text-gray-600">To</Label>
+              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                 <Input

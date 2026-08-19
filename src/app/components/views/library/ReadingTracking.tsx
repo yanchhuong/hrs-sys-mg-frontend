@@ -36,6 +36,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '../../ui/tooltip';
 import { SearchablePicker } from '../../common/SearchablePicker';
+import { DateInput } from '../../common/DateInput';
 import * as library from '../../../api/library';
 import { useAuth } from '../../../context/AuthContext';
 import { useConfirm } from '../../../context/ConfirmContext';
@@ -181,11 +182,20 @@ export function ReadingTracking() {
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ActivityType | 'all'>('all');
+  // v-library-filter-strip — inclusive From/To range on startDate.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo,   setDateTo]   = useState('');
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
       if (typeFilter !== 'all' && r.activityType !== typeFilter) return false;
+      if (dateFrom || dateTo) {
+        const d = r.startDate ?? '';
+        if (!d) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo   && d > dateTo)   return false;
+      }
       if (!q) return true;
       return (
         (r.memberName ?? '').toLowerCase().includes(q)
@@ -194,7 +204,7 @@ export function ReadingTracking() {
         || (r.notes ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, typeFilter]);
+  }, [rows, search, typeFilter, dateFrom, dateTo]);
 
   const pagination = usePagination(filteredRows, 25);
 
@@ -223,8 +233,9 @@ export function ReadingTracking() {
 
       <Card>
         <CardHeader className="pb-3">
+          {/* v-library-filter-strip — Invoice-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {(['all', ...ACTIVITY_TYPES.map(a => a.value)] as const).map(v => {
                 const meta = ACTIVITY_TYPES.find(a => a.value === v);
                 const label = v === 'all' ? 'All' : (meta?.label ?? v);
@@ -245,6 +256,18 @@ export function ReadingTracking() {
               })}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <Label className="text-xs text-gray-600">From</Label>
+              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
+              <Label className="text-xs text-gray-600">To</Label>
+              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                 <Input

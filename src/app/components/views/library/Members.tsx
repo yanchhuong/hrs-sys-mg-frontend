@@ -36,6 +36,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
 import { Switch } from '../../ui/switch';
+// v-library-filter-strip — same DateInput the sale-side Invoices
+// page uses for the From/To range, kept identical so operators see
+// one filter grammar across the app.
+import { DateInput } from '../../common/DateInput';
 import * as library from '../../../api/library';
 import { useAuth } from '../../../context/AuthContext';
 import { useConfirm } from '../../../context/ConfirmContext';
@@ -118,6 +122,11 @@ export function Members() {
   const [businesses, setBusinesses] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // v-library-filter-strip — inclusive From/To range on
+  // registrationDate. Empty string means "unbounded on that side"
+  // (matches the Invoices filter contract).
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo,   setDateTo]   = useState('');
   const [search, setSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -160,6 +169,15 @@ export function Members() {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      // v-library-filter-strip — date range on registrationDate,
+      // inclusive both ends; a member without a registrationDate is
+      // kept only when both bounds are empty.
+      if (dateFrom || dateTo) {
+        const d = r.registrationDate ?? '';
+        if (!d) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo   && d > dateTo)   return false;
+      }
       if (!q) return true;
       return (
         (r.name ?? '').toLowerCase().includes(q)
@@ -170,7 +188,7 @@ export function Members() {
         || (r.membershipType ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, statusFilter, search]);
+  }, [rows, statusFilter, search, dateFrom, dateTo]);
 
   const openNew = () => { setEditingId(null); setForm(EMPTY_FORM); setDialogOpen(true); };
   const openEdit = (m: library.Member) => {
@@ -457,8 +475,12 @@ export function Members() {
           list pages. Chips left, Search right. */}
       <Card>
         <CardHeader className="pb-3">
+          {/* v-library-filter-strip — Invoice-shape strip: status
+              chips left, From/To date range on registrationDate,
+              Clear ghost, Search right. One horizontal line;
+              overflow scrolls (see .filter-strip in index.css). */}
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {STATUS_FILTERS.map(f => (
                 <button
                   key={f.value}
@@ -474,6 +496,18 @@ export function Members() {
               ))}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <Label className="text-xs text-gray-600">From</Label>
+              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
+              <Label className="text-xs text-gray-600">To</Label>
+              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-auto">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                 <Input
