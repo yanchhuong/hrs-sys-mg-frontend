@@ -69,7 +69,7 @@ const CATEGORIES: CategoryDef[] = [
     key: 'hr', labelKey: 'apps.category.hr',
     installedBadge: 'bg-sky-100 text-sky-700',
     ids: [
-      'dashboard', 'employees',
+      'dashboard', 'employees', 'announcements',
       'attendance', 'overtime', 'all-leave', 'exception',
       'payroll', 'benefit-calculator', 'increase', 'deduction',
     ],
