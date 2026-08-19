@@ -67,11 +67,13 @@ export interface PlatformTenant {
   maxItemsOverride?: number | null;
 }
 
-/** Business Base identifiers (V181, v-business-base-plumbing).
- *  Multi-select — a School with a canteen picks ['school', 'pos'].
+/** Business Base identifiers (V181, v-business-base-plumbing;
+ *  membership added V-library-membership 2026-08-19).
+ *  Multi-select — a School with a canteen picks ['school', 'pos'];
+ *  a library / gym / co-working space picks ['membership', 'pos'].
  *  Common modules (User / Employee / Payment / Invoice / Expense
  *  etc.) are always on; only industry sidebar groups are Base-gated. */
-export type BusinessBase = 'pos' | 'school' | 'hospital';
+export type BusinessBase = 'pos' | 'school' | 'hospital' | 'membership';
 
 export interface CreateTenantRequest {
   name: string;

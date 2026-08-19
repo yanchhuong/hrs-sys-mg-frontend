@@ -804,11 +804,15 @@ export function Companies() {
                     </TooltipProvider>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1">
                   {([
-                    { key: 'pos'      as const, label: 'POS (Sale)', hint: 'Customers · Invoices · POS · Quotations · Vouchers' },
-                    { key: 'school'   as const, label: 'School',     hint: 'Students · Classes · Enrollments · Tuition Bills' },
-                    { key: 'hospital' as const, label: 'Hospital',   hint: 'Patients · Encounters · Medical Services · Medical Bills' },
+                    { key: 'pos'        as const, label: 'POS (Sale)', hint: 'Customers · Invoices · POS · Quotations · Vouchers' },
+                    { key: 'school'     as const, label: 'School',     hint: 'Students · Classes · Enrollments · Tuition Bills' },
+                    { key: 'hospital'   as const, label: 'Hospital',   hint: 'Patients · Encounters · Medical Services · Medical Bills' },
+                    // V-library-membership — libraries, gyms, co-working
+                    // spaces, clubs. Members are Customer(kind=member);
+                    // Payment History reuses Sale Invoice + Payment.
+                    { key: 'membership' as const, label: 'Membership', hint: 'Members · Payment History · Activity (reading / meeting / conference)' },
                   ]).map(t => {
                     const on = bases.includes(t.key);
                     return (
@@ -1113,9 +1117,11 @@ export function Companies() {
                       }
                       const one = b[0];
                       const cls =
-                        one === 'pos'      ? 'border-blue-300 text-blue-700 bg-blue-50'   :
-                        one === 'school'   ? 'border-indigo-300 text-indigo-700 bg-indigo-50' :
-                                             'border-teal-300 text-teal-700 bg-teal-50';
+                        one === 'pos'        ? 'border-blue-300 text-blue-700 bg-blue-50'   :
+                        one === 'school'     ? 'border-indigo-300 text-indigo-700 bg-indigo-50' :
+                        one === 'hospital'   ? 'border-teal-300 text-teal-700 bg-teal-50' :
+                        one === 'membership' ? 'border-fuchsia-300 text-fuchsia-700 bg-fuchsia-50' :
+                                               'border-gray-300 text-gray-700 bg-gray-50';
                       const label = one === 'pos' ? 'POS' : one.charAt(0).toUpperCase() + one.slice(1);
                       return <Badge variant="outline" className={`text-[10px] capitalize ${cls}`}>{label}</Badge>;
                     })()}
