@@ -16,6 +16,9 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader } from '../../ui/card';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../../ui/select';
 import { DateInput } from '../../common/DateInput';
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
@@ -114,20 +117,18 @@ export function PaymentHistory() {
         <CardHeader className="pb-3">
           {/* v-library-filter-strip — Invoice-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5 shrink-0">
-              {REMARK_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setRemarkFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors shrink-0 ${
-                    remarkFilter === f.value
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 shrink-0">
+              <Label className="text-xs text-gray-600">Type</Label>
+              <Select value={remarkFilter} onValueChange={(v) => setRemarkFilter(v as RemarkFilter)}>
+                <SelectTrigger className="h-8 w-44 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REMARK_FILTERS.map(f => (
+                    <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Label className="text-xs text-gray-600">From</Label>

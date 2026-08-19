@@ -235,25 +235,19 @@ export function ReadingTracking() {
         <CardHeader className="pb-3">
           {/* v-library-filter-strip — Invoice-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5 shrink-0">
-              {(['all', ...ACTIVITY_TYPES.map(a => a.value)] as const).map(v => {
-                const meta = ACTIVITY_TYPES.find(a => a.value === v);
-                const label = v === 'all' ? 'All' : (meta?.label ?? v);
-                const active = typeFilter === v;
-                return (
-                  <button
-                    key={v}
-                    onClick={() => setTypeFilter(v)}
-                    className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors shrink-0 ${
-                      active
-                        ? 'bg-blue-50 border-blue-300 text-blue-700'
-                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+            <div className="flex items-center gap-2 shrink-0">
+              <Label className="text-xs text-gray-600">Type</Label>
+              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ActivityType | 'all')}>
+                <SelectTrigger className="h-8 w-40 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {ACTIVITY_TYPES.map(a => (
+                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Label className="text-xs text-gray-600">From</Label>
