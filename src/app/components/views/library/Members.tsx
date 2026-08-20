@@ -826,7 +826,7 @@ export function Members() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 space-y-1.5">
                     <Label>Payment Method</Label>
                     <Select value={form.method} onValueChange={v => setForm({ ...form, method: v as Method })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
