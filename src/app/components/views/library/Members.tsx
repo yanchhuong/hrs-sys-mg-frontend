@@ -697,11 +697,11 @@ export function Members() {
                 )}
               </div>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Name <span className="text-red-500">*</span></Label>
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Gender</Label>
               <Select value={form.sex} onValueChange={v => setForm({ ...form, sex: v })}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
@@ -711,19 +711,19 @@ export function Members() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Phone</Label>
               <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Email</Label>
               <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Address</Label>
               <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Business</Label>
               {/* V-library-member-business-picker — searchable +
                   inline-create, same pattern as the Term / Book /
@@ -746,7 +746,7 @@ export function Members() {
                 options={businesses.map(b => ({ value: b, label: b }))}
               />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Membership Type</Label>
               {typeOptions.length > 0 ? (
                 <Select value={form.membershipType} onValueChange={pickType}>
@@ -763,7 +763,7 @@ export function Members() {
                        onChange={e => setForm({ ...form, membershipType: e.target.value })} />
               )}
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Status })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -774,17 +774,17 @@ export function Members() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Registration Date</Label>
               <Input type="date" value={form.registrationDate}
                      onChange={e => setForm({ ...form, registrationDate: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Effective Date</Label>
               <Input type="date" value={form.effectiveDate}
                      onChange={e => setForm({ ...form, effectiveDate: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Expiry Date</Label>
               <Input type="date" value={form.expiryDate}
                      onChange={e => setForm({ ...form, expiryDate: e.target.value })} />
@@ -811,12 +811,12 @@ export function Members() {
               </div>
               {form.recordPayment && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="space-y-1.5">
                     <Label>Amount</Label>
                     <Input type="number" step="0.01" min="0" value={form.amount}
                            onChange={e => setForm({ ...form, amount: e.target.value })} />
                   </div>
-                  <div>
+                  <div className="space-y-1.5">
                     <Label>Currency</Label>
                     <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v as Currency })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
