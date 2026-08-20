@@ -4,7 +4,8 @@ import { Button } from '../ui/button';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { NAV_LEAVES } from '../../config/nav';
-import { Plus, Minus, Loader2, Info } from 'lucide-react';
+import { Plus, Minus, Loader2, Info, Search } from 'lucide-react';
+import { Input } from '../ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { APP_TILE_COLOR } from '../../utils/appColors';
@@ -176,6 +177,10 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<InstallFilter>('all');
+  // v-app-launcher-search — quick filter over the leaf labels (as
+  // rendered in the tenant's language) + the raw nav ids. Case-
+  // insensitive; empty string keeps the full tree.
+  const [search, setSearch] = useState('');
   /** Module-key being toggled right now. Shows a spinner on the tile
    *  and locks every other tile so a slow request doesn't get
    *  dog-piled. Null = idle. */
@@ -221,15 +226,27 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
   /** Filtered tree — drops items whose install-state doesn't match
    *  the current pill selection; categories left empty drop too. */
   const tree = useMemo(() => {
-    if (filter === 'all') return fullTree;
-    return fullTree
+    const q = search.trim().toLowerCase();
+    const base = filter === 'all'
+      ? fullTree
+      : fullTree.map(c => ({
+          ...c,
+          items: c.items.filter(({ installed }) =>
+            filter === 'installed' ? installed : !installed),
+        }));
+    if (!q) return base.filter(c => c.items.length > 0);
+    // v-app-launcher-search — match by resolved label OR raw id;
+    // categories whose items all filter out drop from the render.
+    return base
       .map(c => ({
         ...c,
-        items: c.items.filter(({ installed }) =>
-          filter === 'installed' ? installed : !installed),
+        items: c.items.filter(({ leaf }) => {
+          const label = leaf.labelKey ? t(leaf.labelKey).toLowerCase() : '';
+          return label.includes(q) || leaf.id.toLowerCase().includes(q);
+        }),
       }))
       .filter(c => c.items.length > 0);
-  }, [fullTree, filter]);
+  }, [fullTree, filter, search, t]);
 
   const handleToggle = async (moduleKey: string, currentlyInstalled: boolean) => {
     if (pending) return;
@@ -292,11 +309,9 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
             </TooltipProvider>
           </div>
 
-          {/* Install-state filter — bare inline tabs, no wrapper
-              container. Active pill signals with blue text + a
-              matching blue count chip; inactive pills are quiet
-              grey with a subtle hover. */}
-          <div className="inline-flex items-center gap-3" role="tablist" aria-label="Install filter">
+          {/* Install-state filter + search — inline row. Pills on
+              the left, search input pushed right with ml-auto. */}
+          <div className="flex items-center gap-3 flex-wrap" role="tablist" aria-label="Install filter">
             {FILTERS.map(f => {
               const active = filter === f.key;
               const count = counts[f.key];
@@ -322,6 +337,15 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
                 </button>
               );
             })}
+            <div className="relative ml-auto">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search apps…"
+                className="h-7 pl-7 w-40 text-xs"
+              />
+            </div>
           </div>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-3 space-y-4">
