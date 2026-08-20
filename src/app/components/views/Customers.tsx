@@ -959,28 +959,36 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 genuinely useful mid-form. */}
             <DialogTitle className="flex items-center gap-1.5">
               {editing ? `Edit ${editing.name}` : T.newDialog}
-              {isPatient && (
-                <TooltipProvider delayDuration={120}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-gray-400 hover:text-gray-600"
-                        aria-label="Patient form description"
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-xs">
-                      Only the patient name is required. Add contact + clinical fields as available.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
+              {/* Every branch (Patient / Student / Business /
+                  Individual) surfaces its hint through the same Info
+                  tooltip pattern so the dialog header stays compact.
+                  The visible DialogDescription is sr-only below. */}
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-gray-400 hover:text-gray-600"
+                      aria-label="Form description"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    {isStudent
+                      ? 'Only the student name is required. Add contact + guardian details as available.'
+                      : isPatient
+                        ? 'Only the patient name is required. Add contact + clinical fields as available.'
+                        : form.type === 'business'
+                          ? 'Business customer — TIN and representative are required.'
+                          : 'Individual customer — only name is required.'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </DialogTitle>
-            {/* Keep an SR-only description for a11y — the tooltip on
-                the Info button surfaces the same copy visually. */}
-            <DialogDescription className={isPatient || isStudent ? 'sr-only' : ''}>
+            {/* SR-only across every branch now — the tooltip on the
+                Info button surfaces the same copy visually. */}
+            <DialogDescription className="sr-only">
               {isStudent
                 ? 'Only the student name is required. Add contact + guardian details as available.'
                 : isPatient
