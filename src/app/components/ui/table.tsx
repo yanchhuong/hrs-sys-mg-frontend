@@ -77,7 +77,16 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      // v-table-header-bg — subtle gray band on every list table
+      // header (Items, Members, Payment History, Vendors, Invoices,
+      // …) so column labels sit visually apart from row data. The
+      // `[&_tr:hover]:bg-transparent` override neutralises
+      // TableRow's built-in hover:bg-muted/50 — the header should
+      // not react to hover the way body rows do.
+      className={cn(
+        "bg-gray-50 [&_tr]:border-b [&_tr:hover]:bg-transparent",
+        className,
+      )}
       {...props}
     />
   );
