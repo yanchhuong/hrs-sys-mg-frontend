@@ -379,7 +379,7 @@ export function ReadingTracking() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Member <span className="text-red-500">*</span></Label>
               <Select value={form.customerId} onValueChange={v => setForm({ ...form, customerId: v })}>
                 <SelectTrigger><SelectValue placeholder="Pick a member" /></SelectTrigger>
@@ -394,7 +394,7 @@ export function ReadingTracking() {
             </div>
             {/* V-library-membership-activity — activity type first,
                 then a conditional Book picker OR free-text Subject. */}
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Activity Type <span className="text-red-500">*</span></Label>
               <div className="grid grid-cols-4 gap-2 mt-1">
                 {ACTIVITY_TYPES.map(a => {
@@ -473,17 +473,17 @@ export function ReadingTracking() {
                        onChange={e => setForm({ ...form, subject: e.target.value })} />
               </div>
             )}
-            <div>
+            <div className="space-y-1.5">
               <Label>Start Date</Label>
               <Input type="date" value={form.startDate}
                      onChange={e => setForm({ ...form, startDate: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>End Date</Label>
               <Input type="date" value={form.returnDate}
                      onChange={e => setForm({ ...form, returnDate: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Status })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -494,7 +494,7 @@ export function ReadingTracking() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Term</Label>
               {/* V-library-activity-term — same SearchablePicker
                   pattern as the Book field: filter by typing, and
@@ -520,7 +520,7 @@ export function ReadingTracking() {
                 options={terms.map(t => ({ value: t, label: t }))}
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={3} value={form.notes}
                         onChange={e => setForm({ ...form, notes: e.target.value })} />
