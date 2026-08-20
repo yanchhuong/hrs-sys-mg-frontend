@@ -270,11 +270,13 @@ export function StockAdjustments() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Quotations. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
+          {/* v-list-table-invoice-shape reverted here — Adjustment
+              shares the empty-state colSpan pattern with Movement;
+              adding the border wrapper produced a phantom row below
+              the empty message. Keep the plain Table shell to match
+              StockMovements pixel-for-pixel. */}
           <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">Date</TableHead>
                 <TableHead className="w-[120px]">Reference</TableHead>
@@ -356,9 +358,8 @@ export function StockAdjustments() {
                   })}
             </TableBody>
           </Table>
-          </div>
           {rows.length > 0 && (
-            <div className="px-1 py-0 border-t">
+            <div className="px-4 py-3 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
