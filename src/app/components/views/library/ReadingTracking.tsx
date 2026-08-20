@@ -419,7 +419,7 @@ export function ReadingTracking() {
               </div>
             </div>
             {form.activityType === 'reading' ? (
-              <div className="col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Book <span className="text-red-500">*</span></Label>
                 {/* V-library-activity-book-picker — searchable +
                     inline-create, same pattern as the Invoice Purpose
@@ -466,7 +466,7 @@ export function ReadingTracking() {
                 />
               </div>
             ) : (
-              <div className="col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Subject <span className="text-red-500">*</span></Label>
                 <Input placeholder="e.g. Q4 Board Meeting"
                        value={form.subject}
