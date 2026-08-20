@@ -185,8 +185,11 @@ export function PaymentHistory() {
               {rows.length === 0 ? 'No membership payments yet.' : 'No matches — try clearing the filter.'}
             </p>
           ) : (
+            // v-list-table-invoice-shape — border+scroll wrapper +
+            // sticky header, same shell as Invoices / Quotations.
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Member</TableHead>
@@ -251,9 +254,10 @@ export function PaymentHistory() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
           {pagination.totalPages > 1 && (
-            <div className="mt-4">
+            <div className="px-1 py-0 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}

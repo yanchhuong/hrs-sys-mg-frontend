@@ -164,14 +164,17 @@ export function Books() {
             </p>
           ) : (
             <>
+              {/* v-list-table-invoice-shape — border+scroll wrapper +
+                  sticky header, same shell as Invoices / Quotations. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead>Title</TableHead>
                     <TableHead>Author</TableHead>
                     <TableHead>ISBN</TableHead>
                     <TableHead>Notes</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-right w-[110px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -182,22 +185,36 @@ export function Books() {
                       <TableCell className="font-mono text-xs">{b.isbn ?? '—'}</TableCell>
                       <TableCell className="truncate max-w-[280px]">{b.notes ?? '—'}</TableCell>
                       <TableCell className="text-right">
-                        {canUpdate('book') && (
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(b)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {canDelete('book') && (
-                          <Button variant="ghost" size="icon" onClick={() => void remove(b)}>
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        )}
+                        <div className="inline-flex gap-1 justify-end">
+                          {canUpdate('book') && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(b)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDelete('book') && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(b)}>
+                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              <Pagination pagination={pagination} />
+              </div>
+              {pagination.totalPages > 1 && (
+                <div className="px-1 py-0 border-t">
+                  <Pagination
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    onPageChange={pagination.goToPage}
+                    startIndex={pagination.startIndex}
+                    endIndex={pagination.endIndex}
+                    totalItems={pagination.totalItems}
+                  />
+                </div>
+              )}
             </>
           )}
         </CardContent>

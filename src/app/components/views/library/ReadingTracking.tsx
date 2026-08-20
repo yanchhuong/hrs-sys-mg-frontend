@@ -282,8 +282,11 @@ export function ReadingTracking() {
               {rows.length === 0 ? 'No activities yet.' : 'No matches — try clearing the filter.'}
             </p>
           ) : (
+            // v-list-table-invoice-shape — border+scroll wrapper +
+            // sticky header, same shell as Invoices / Quotations.
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead>Type</TableHead>
@@ -293,7 +296,7 @@ export function ReadingTracking() {
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Duration</TableHead>
                   <TableHead>Term</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right w-[110px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -325,25 +328,28 @@ export function ReadingTracking() {
                           : <span className="text-gray-400">—</span>}
                       </TableCell>
                       <TableCell className="text-right">
-                        {canUpdate('reading') && (
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(r)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {canDelete('reading') && (
-                          <Button variant="ghost" size="icon" onClick={() => void remove(r)}>
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        )}
+                        <div className="inline-flex gap-1 justify-end">
+                          {canUpdate('reading') && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDelete('reading') && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(r)}>
+                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
           {pagination.totalPages > 1 && (
-            <div className="mt-4">
+            <div className="px-1 py-0 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}

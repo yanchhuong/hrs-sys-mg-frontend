@@ -526,8 +526,13 @@ export function Members() {
               {rows.length === 0 ? 'No members yet.' : 'No matches — try clearing the filter.'}
             </p>
           ) : (
+            // v-list-table-invoice-shape — border+scroll wrapper +
+            // sticky header + Actions column width. Same shell the
+            // sale-side Invoices / Quotations tables use so all list
+            // pages read as one system.
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead className="w-[120px]">Member ID</TableHead>
                   <TableHead>Name</TableHead>
@@ -540,7 +545,7 @@ export function Members() {
                   <TableHead>Effective</TableHead>
                   <TableHead>Expiry</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right w-[160px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -589,36 +594,39 @@ export function Members() {
                     </TableCell>
                     <TableCell>{statusBadge(m.status)}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon"
-                              title="Preview / print ID card"
-                              onClick={() => setIdCardTarget(m)}>
-                        <IdCard className="h-4 w-4 text-indigo-600" />
-                      </Button>
-                      {canUpdate('member') && (
-                        <Button variant="ghost" size="icon"
-                                title="Renew membership"
-                                onClick={() => setRenewTarget(m)}>
-                          <RefreshCcw className="h-4 w-4 text-emerald-600" />
+                      <div className="inline-flex gap-1 justify-end">
+                        <Button variant="ghost" size="sm" className="h-7 px-2"
+                                title="Preview / print ID card"
+                                onClick={() => setIdCardTarget(m)}>
+                          <IdCard className="h-3.5 w-3.5 text-indigo-600" />
                         </Button>
-                      )}
-                      {canUpdate('member') && (
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(m)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {canDelete('member') && (
-                        <Button variant="ghost" size="icon" onClick={() => void remove(m)}>
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      )}
+                        {canUpdate('member') && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2"
+                                  title="Renew membership"
+                                  onClick={() => setRenewTarget(m)}>
+                            <RefreshCcw className="h-3.5 w-3.5 text-emerald-600" />
+                          </Button>
+                        )}
+                        {canUpdate('member') && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(m)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDelete('member') && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(m)}>
+                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
           {pagination.totalPages > 1 && (
-            <div className="mt-4">
+            <div className="px-1 py-0 border-t">
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
