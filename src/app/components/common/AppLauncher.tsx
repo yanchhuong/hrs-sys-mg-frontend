@@ -309,9 +309,9 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
             </TooltipProvider>
           </div>
 
-          {/* Install-state filter + search — inline row. Pills on
-              the left, search input pushed right with ml-auto. */}
-          <div className="flex items-center gap-3 flex-wrap" role="tablist" aria-label="Install filter">
+          {/* Install-state filter + search — single inline row.
+              Pills left, search input pushed right with ml-auto. */}
+          <div className="flex items-center gap-3" role="tablist" aria-label="Install filter">
             {FILTERS.map(f => {
               const active = filter === f.key;
               const count = counts[f.key];
@@ -337,13 +337,13 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
                 </button>
               );
             })}
-            <div className="relative ml-auto">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <div className="relative ml-auto shrink-0">
+              <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search apps…"
-                className="h-7 pl-7 w-40 text-xs"
+                placeholder="Search…"
+                className="h-6 pl-6 w-28 text-xs"
               />
             </div>
           </div>
