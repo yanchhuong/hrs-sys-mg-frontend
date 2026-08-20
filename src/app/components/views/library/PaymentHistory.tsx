@@ -113,6 +113,28 @@ export function PaymentHistory() {
         </div>
       </div>
 
+      {/* v-library-payment-history-summary — hero band mirrors the
+          Members page (Total Records / Total Amount) so the three
+          Membership list pages share one visual rhythm. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-lg border bg-white p-4 flex items-center gap-3">
+          <div className="rounded-md bg-teal-100 text-teal-700 p-2"><Receipt className="h-5 w-5" /></div>
+          <div>
+            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Records</div>
+            <div className="text-2xl font-bold">{filtered.length.toLocaleString('en-US')}</div>
+          </div>
+        </div>
+        <div className="rounded-lg border bg-white p-4 flex items-center gap-3">
+          <div className="rounded-md bg-emerald-100 text-emerald-700 p-2"><Receipt className="h-5 w-5" /></div>
+          <div>
+            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Amount</div>
+            <div className="text-2xl font-bold">
+              $ {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           {/* v-library-filter-strip — Invoice-shape strip. */}

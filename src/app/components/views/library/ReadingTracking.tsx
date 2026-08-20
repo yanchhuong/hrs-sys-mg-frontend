@@ -529,7 +529,7 @@ export function ReadingTracking() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={() => void save()} disabled={saving}>
-              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Record'}
+              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Activity'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -161,8 +161,8 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <Label>Membership Type</Label>
+          <div className="col-span-2 space-y-1.5">
+            <Label>Membership Type <span className="text-red-500">*</span></Label>
             {activeTypes.length > 0 ? (
               <Select value={form.membershipType} onValueChange={pickType}>
                 <SelectTrigger><SelectValue placeholder="Pick a tier" /></SelectTrigger>
@@ -180,12 +180,12 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
                      onChange={e => setForm({ ...form, membershipType: e.target.value })} />
             )}
           </div>
-          <div>
-            <Label>Amount</Label>
+          <div className="space-y-1.5">
+            <Label>Amount <span className="text-red-500">*</span></Label>
             <Input type="number" step="0.01" min="0.01" value={form.amount}
                    onChange={e => setForm({ ...form, amount: e.target.value })} />
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Currency</Label>
             <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v as Currency })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -195,7 +195,7 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Payment Method</Label>
             <Select value={form.method} onValueChange={v => setForm({ ...form, method: v as Method })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -209,22 +209,22 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Payment Date</Label>
             <Input type="date" value={form.paymentDate}
                    onChange={e => setForm({ ...form, paymentDate: e.target.value })} />
           </div>
-          <div>
-            <Label>Effective Date</Label>
+          <div className="space-y-1.5">
+            <Label>Effective Date <span className="text-red-500">*</span></Label>
             <Input type="date" value={form.effectiveDate}
                    onChange={e => recalcExpiry(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1.5">
             <Label>Expiry Date</Label>
             <Input type="date" value={form.expiryDate}
                    onChange={e => setForm({ ...form, expiryDate: e.target.value })} />
           </div>
-          <div className="col-span-2">
+          <div className="col-span-2 space-y-1.5">
             <Label>Notes (optional)</Label>
             <Textarea rows={2} value={form.notes}
                       onChange={e => setForm({ ...form, notes: e.target.value })} />

@@ -202,18 +202,18 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
             <div className="text-xs font-semibold uppercase text-gray-600">
               {editingId ? 'Edit type' : 'New type'}
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Name <span className="text-red-500">*</span></Label>
               <Input placeholder="Gold / Silver / Family / …"
                      value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Price</Label>
                 <Input type="number" step="0.01" min="0" value={form.price}
                        onChange={e => setForm({ ...form, price: e.target.value })} />
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <Label>Currency</Label>
                 <Select value={form.currency} onValueChange={v => setForm({ ...form, currency: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -224,22 +224,22 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
                 </Select>
               </div>
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Duration (days) — optional</Label>
               <Input type="number" min="0" placeholder="30, 365, blank = bespoke"
                      value={form.durationDays}
                      onChange={e => setForm({ ...form, durationDays: e.target.value })} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} value={form.notes}
                         onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={form.active}
-                     onChange={e => setForm({ ...form, active: e.target.checked })} />
-              Active
-            </label>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <span className="text-sm font-medium">Active</span>
+              <Switch checked={form.active}
+                      onCheckedChange={v => setForm({ ...form, active: v })} />
+            </div>
             <div className="flex items-center gap-2 pt-1">
               <Button onClick={() => void save()} disabled={saving}>
                 {editingId
