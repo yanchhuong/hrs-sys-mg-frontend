@@ -437,10 +437,11 @@ export function Property() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-receivables-table-consistency — bare Table matches
-              Plans + Collections. */}
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Quotations. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                   <TableHead className="w-14">Image</TableHead>
                   <TableHead>Name</TableHead>
@@ -646,14 +647,17 @@ export function Property() {
                 })}
             </TableBody>
           </Table>
-          <Pagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            onPageChange={pagination.goToPage}
-            startIndex={pagination.startIndex}
-            endIndex={pagination.endIndex}
-            totalItems={pagination.totalItems}
-          />
+          </div>
+          <div className="px-1 py-0 border-t">
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
+          </div>
         </CardContent>
       </Card>
 
