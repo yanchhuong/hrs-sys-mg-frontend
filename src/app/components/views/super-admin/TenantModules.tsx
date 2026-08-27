@@ -478,11 +478,12 @@ export function TenantModules() {
                         tiles that survive the search + state filter
                         render here; hidden tiles still exist in state
                         and stay toggled. */}
-                    {/* v-tenant-modules-appstore-grid — 4-column
-                        vertical-card shelf per group, mirroring a
-                        mobile app store. Collapses to 3/2/2 on
-                        smaller viewports so nothing squishes. */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
+                    {/* v-tenant-modules-drawer-grid — mobile app-
+                        drawer density: 5+ tiles per row, no per-
+                        tile button, whole tile is clickable to
+                        install / uninstall. Toggles via draft
+                        state; Save panel below commits the batch. */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3 p-3">
                       {/* Inherit tiles first — Students (before Enrollment),
                           Patients (before Encounter). Read-only; state
                           mirrors the parent module so the operator sees
@@ -493,38 +494,33 @@ export function TenantModules() {
                           ?? tile.inheritsFrom.replace(/-/g, ' ');
                         const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
                         return (
-                          // v-tenant-modules-appstore-card — same
-                          // vertical card as real modules; the
-                          // action row shows a read-only "Inherits X"
-                          // chip instead of a button since these
-                          // tiles have no independent state.
+                          // v-tenant-modules-drawer-tile — matching
+                          // drawer density for inherit tiles.
+                          // Non-clickable (read-only) with a Link2
+                          // corner chip signalling their derived
+                          // state.
                           <div
                             key={tile.key}
                             title={`Inherits from ${parentLabel} — no independent toggle`}
-                            className="flex flex-col items-center gap-2 min-w-0"
+                            className="relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2"
                           >
-                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm border border-dashed ${
+                            <span className="absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-500 shadow-sm">
+                              <Link2 className="h-2.5 w-2.5" />
+                            </span>
+                            <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm border border-dashed ${
                               parentOn
                                 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 border-blue-200'
-                                : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300'
+                                : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300 grayscale'
                             }`}>
                               <Icon className="h-5 w-5" />
-                            </div>
-                            <div
-                              title={tile.label}
-                              className={`text-sm font-semibold text-center truncate w-full ${
-                                parentOn ? 'text-slate-900' : 'text-slate-500'
+                            </span>
+                            <span
+                              className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
+                                parentOn ? 'text-slate-900 font-medium' : 'text-slate-500'
                               }`}
                             >
                               {tile.label}
-                            </div>
-                            <div className={`h-7 w-full rounded-md flex items-center justify-center gap-1 text-[10px] font-medium ${
-                              parentOn
-                                ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                                : 'bg-slate-50 text-slate-500 border border-slate-200'
-                            }`}>
-                              <Link2 className="h-3 w-3" /> Inherits {parentLabel}
-                            </div>
+                            </span>
                           </div>
                         );
                       })}
@@ -539,50 +535,45 @@ export function TenantModules() {
                         const displayLabel = LABEL_OVERRIDES[key]
                           ?? (label && label.trim() ? label : prettifyKey(key));
                         return (
-                          // v-tenant-modules-appstore-card — vertical
-                          // card (icon on top, name below, full-width
-                          // action at the bottom) mirroring a mobile
-                          // app store shelf.
-                          <div
+                          // v-tenant-modules-drawer-tile — the whole
+                          // tile is the button. Installed apps show
+                          // a colorful icon; not-installed apps are
+                          // muted with a corner "+" hint. Hovering
+                          // reveals the install/uninstall verb.
+                          <button
                             key={key}
-                            className="flex flex-col items-center gap-2 min-w-0"
+                            type="button"
+                            onClick={() => handleToggle(key)}
+                            title={on ? `Uninstall ${displayLabel}` : `Install ${displayLabel}`}
+                            className="group relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            aria-label={on ? `Uninstall ${displayLabel} for ${selectedTenant.name}` : `Install ${displayLabel} for ${selectedTenant.name}`}
                           >
-                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${
+                            {/* Corner action chip — quiet by default,
+                                brightens on hover / focus so the toggle
+                                intent is discoverable without adding a
+                                permanent button. */}
+                            <span className={`absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full shadow-sm transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 ${
+                              on ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
+                            }`}>
+                              {on
+                                ? <Minus className="h-2.5 w-2.5" />
+                                : <Plus className="h-2.5 w-2.5" />}
+                            </span>
+                            <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${
                               on
                                 ? 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700'
-                                : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400'
+                                : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400 grayscale'
                             }`}>
                               <Icon className="h-5 w-5" />
-                            </div>
-                            <div
-                              title={displayLabel}
-                              className={`text-sm font-semibold text-center truncate w-full ${
-                                on ? 'text-slate-900' : 'text-slate-700'
+                            </span>
+                            <span
+                              className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
+                                on ? 'text-slate-900 font-medium' : 'text-slate-500'
                               }`}
                             >
                               {displayLabel}
-                            </div>
-                            {on ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleToggle(key)}
-                                className="h-7 w-full text-xs bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
-                                aria-label={`Uninstall ${displayLabel} for ${selectedTenant.name}`}
-                              >
-                                Uninstall
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                onClick={() => handleToggle(key)}
-                                className="h-7 w-full text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                                aria-label={`Install ${displayLabel} for ${selectedTenant.name}`}
-                              >
-                                Install
-                              </Button>
-                            )}
-                          </div>
+                            </span>
+                          </button>
                         );
                       })}
                     </div>
