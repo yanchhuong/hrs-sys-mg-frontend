@@ -478,7 +478,11 @@ export function TenantModules() {
                         tiles that survive the search + state filter
                         render here; hidden tiles still exist in state
                         and stay toggled. */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
+                    {/* v-tenant-modules-3col — 3 fixed columns per
+                        group so groups line up like an app-store
+                        shelf. Collapses to 2 on tablet and 1 on
+                        phone so long app names still breathe. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
                       {/* Inherit tiles first — Students (before Enrollment),
                           Patients (before Encounter). Read-only; state
                           mirrors the parent module so the operator sees
@@ -492,20 +496,23 @@ export function TenantModules() {
                           <div
                             key={tile.key}
                             title={`Inherits from ${parentLabel} — no independent toggle`}
-                            className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-dashed transition-colors ${
+                            className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-dashed transition-colors min-w-0 ${
                               parentOn
                                 ? 'border-emerald-200 bg-emerald-50/20'
                                 : 'border-slate-200 bg-slate-50/40'
                             }`}
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`shrink-0 h-9 w-9 rounded-md flex items-center justify-center ${
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <span className={`shrink-0 h-11 w-11 rounded-lg flex items-center justify-center ${
                                 parentOn ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                               }`}>
-                                <Icon className="h-4 w-4" />
+                                <Icon className="h-5 w-5" />
                               </span>
-                              <div className="min-w-0">
-                                <div className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}>
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  title={tile.label}
+                                  className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}
+                                >
                                   {tile.label}
                                 </div>
                                 <div className="text-[10px] uppercase tracking-wide text-slate-400 inline-flex items-center gap-0.5">
@@ -538,19 +545,22 @@ export function TenantModules() {
                         return (
                           <div
                             key={key}
-                            className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border transition-colors ${
+                            className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border transition-colors min-w-0 ${
                               on
                                 ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
                                 : 'border-slate-200 bg-white hover:border-slate-300'
                             }`}
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`shrink-0 h-9 w-9 rounded-md flex items-center justify-center ${
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {/* Cube tile — bigger square block so the
+                                  app identity reads at a glance, same
+                                  shape a mobile-app shelf uses. */}
+                              <span className={`shrink-0 h-11 w-11 rounded-lg flex items-center justify-center ${
                                 on ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                               }`}>
-                                <Icon className="h-4 w-4" />
+                                <Icon className="h-5 w-5" />
                               </span>
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 {/* BE label wins (module_assignments.label,
                                     edited via V253 and the SA Module
                                     Categories page). Only fall back to a
@@ -558,7 +568,10 @@ export function TenantModules() {
                                     is blank. LABEL_OVERRIDES is the last
                                     resort so the hardcoded map still fires
                                     for keys we deliberately alias. */}
-                                <div className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
+                                <div
+                                  title={displayLabel}
+                                  className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-600'}`}
+                                >
                                   {displayLabel}
                                 </div>
                                 <div className={`text-[10px] uppercase tracking-wide ${on ? 'text-emerald-700' : 'text-slate-400'}`}>
