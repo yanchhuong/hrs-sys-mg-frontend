@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
-import { Switch } from '../../ui/switch';
 import { Badge } from '../../ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
-import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, type LucideIcon } from 'lucide-react';
+import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, Plus, Minus, Check, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 import { NAV_LEAVES } from '../../../config/nav';
@@ -442,11 +441,34 @@ export function TenantModules() {
                           {on} / {total} enabled
                         </Badge>
                       </div>
-                      <Switch
-                        checked={allOn}
-                        onCheckedChange={() => handleCategoryToggle(cat)}
-                        aria-label={`Toggle entire ${cat.label} category for ${selectedTenant.name}`}
-                      />
+                      {/* v-tenant-modules-install-button — category
+                          bulk action mirrors the per-tile buttons.
+                          When fully installed shows Uninstall All;
+                          otherwise Install All flips every child on
+                          (partial-state is treated as "not fully
+                          installed" per the previous Switch's
+                          semantics). */}
+                      {allOn ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCategoryToggle(cat)}
+                          className="h-7 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+                          aria-label={`Uninstall all in ${cat.label} for ${selectedTenant.name}`}
+                        >
+                          <Minus className="h-3.5 w-3.5 mr-1" /> Uninstall all
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleCategoryToggle(cat)}
+                          className="h-7 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                          aria-label={`Install all in ${cat.label} for ${selectedTenant.name}`}
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" /> Install all
+                        </Button>
+                      )}
                     </div>
 
                     {/* Children — individual module toggles. Same per-row
@@ -470,48 +492,65 @@ export function TenantModules() {
                           <div
                             key={tile.key}
                             title={`Inherits from ${parentLabel} — no independent toggle`}
-                            className={`flex items-center justify-between px-3 py-2 rounded-md border border-dashed transition-colors ${
+                            className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-dashed transition-colors ${
                               parentOn
                                 ? 'border-emerald-200 bg-emerald-50/20'
                                 : 'border-slate-200 bg-slate-50/40'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center ${
-                                parentOn ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400 border border-slate-200 border-dashed'
+                              <span className={`shrink-0 h-9 w-9 rounded-md flex items-center justify-center ${
+                                parentOn ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                               }`}>
                                 <Icon className="h-4 w-4" />
                               </span>
-                              <span className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}>
-                                {tile.label}
-                              </span>
+                              <div className="min-w-0">
+                                <div className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}>
+                                  {tile.label}
+                                </div>
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400 inline-flex items-center gap-0.5">
+                                  <Link2 className="h-2.5 w-2.5" /> Inherits {parentLabel}
+                                </div>
+                              </div>
                             </div>
-                            <Switch checked={parentOn} disabled aria-label={`${tile.label} inherits from ${parentLabel}`} />
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-md shrink-0 ${
+                                parentOn
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {parentOn ? 'Installed' : 'Not installed'}
+                            </span>
                           </div>
                         );
                       })}
                       {visibleModules.map(({ key, label }) => {
-                        // v-tenant-modules-icons — pull the sidebar
-                        // glyph so each tile reads as its app, not
-                        // just a text switch.
+                        // v-tenant-modules-install-button — every tile
+                        // reads as an app-store card: icon + name on
+                        // the left, install/uninstall action on the
+                        // right. Draft-side only; the Save panel below
+                        // commits the batched changes.
                         const Icon = MODULE_ICON[key] ?? LayoutGrid;
                         const on = Boolean(draft[key]);
+                        const displayLabel = LABEL_OVERRIDES[key]
+                          ?? (label && label.trim() ? label : prettifyKey(key));
                         return (
                           <div
                             key={key}
-                            className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
+                            className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border transition-colors ${
                               on
-                                ? 'border-emerald-200 bg-emerald-50/40'
-                                : 'border-slate-200 bg-slate-50/60'
+                                ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center ${
-                                on ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400 border border-slate-200'
+                              <span className={`shrink-0 h-9 w-9 rounded-md flex items-center justify-center ${
+                                on ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                               }`}>
                                 <Icon className="h-4 w-4" />
                               </span>
-                              <span className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                              <div className="min-w-0">
                                 {/* BE label wins (module_assignments.label,
                                     edited via V253 and the SA Module
                                     Categories page). Only fall back to a
@@ -519,14 +558,37 @@ export function TenantModules() {
                                     is blank. LABEL_OVERRIDES is the last
                                     resort so the hardcoded map still fires
                                     for keys we deliberately alias. */}
-                                {LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key))}
-                              </span>
+                                <div className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
+                                  {displayLabel}
+                                </div>
+                                <div className={`text-[10px] uppercase tracking-wide ${on ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                  {on
+                                    ? <span className="inline-flex items-center gap-0.5"><Check className="h-2.5 w-2.5" /> Installed</span>
+                                    : 'Not installed'}
+                                </div>
+                              </div>
                             </div>
-                            <Switch
-                              checked={on}
-                              onCheckedChange={() => handleToggle(key)}
-                              aria-label={`Toggle ${key} for ${selectedTenant.name}`}
-                            />
+                            {on ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleToggle(key)}
+                                className="h-7 shrink-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+                                aria-label={`Uninstall ${displayLabel} for ${selectedTenant.name}`}
+                              >
+                                <Minus className="h-3.5 w-3.5 mr-1" /> Uninstall
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleToggle(key)}
+                                className="h-7 shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                aria-label={`Install ${displayLabel} for ${selectedTenant.name}`}
+                              >
+                                <Plus className="h-3.5 w-3.5 mr-1" /> Install
+                              </Button>
+                            )}
                           </div>
                         );
                       })}
