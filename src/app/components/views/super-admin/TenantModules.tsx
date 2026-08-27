@@ -503,12 +503,12 @@ export function TenantModules() {
                             title={`Inherits from ${parentLabel} — no independent toggle`}
                             className="flex flex-col items-center gap-2 min-w-0"
                           >
-                            <div className={`h-16 w-16 rounded-2xl flex items-center justify-center shadow-sm border border-dashed ${
+                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm border border-dashed ${
                               parentOn
                                 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 border-blue-200'
                                 : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300'
                             }`}>
-                              <Icon className="h-7 w-7" />
+                              <Icon className="h-5 w-5" />
                             </div>
                             <div
                               title={tile.label}
@@ -518,7 +518,7 @@ export function TenantModules() {
                             >
                               {tile.label}
                             </div>
-                            <div className={`h-8 w-full rounded-md flex items-center justify-center gap-1 text-[11px] font-medium ${
+                            <div className={`h-7 w-full rounded-md flex items-center justify-center gap-1 text-[10px] font-medium ${
                               parentOn
                                 ? 'bg-blue-50 text-blue-700 border border-blue-100'
                                 : 'bg-slate-50 text-slate-500 border border-slate-200'
@@ -547,12 +547,12 @@ export function TenantModules() {
                             key={key}
                             className="flex flex-col items-center gap-2 min-w-0"
                           >
-                            <div className={`h-16 w-16 rounded-2xl flex items-center justify-center shadow-sm ${
+                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${
                               on
                                 ? 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700'
                                 : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400'
                             }`}>
-                              <Icon className="h-7 w-7" />
+                              <Icon className="h-5 w-5" />
                             </div>
                             <div
                               title={displayLabel}
@@ -567,7 +567,7 @@ export function TenantModules() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleToggle(key)}
-                                className="h-8 w-full bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
+                                className="h-7 w-full text-xs bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
                                 aria-label={`Uninstall ${displayLabel} for ${selectedTenant.name}`}
                               >
                                 Uninstall
@@ -576,7 +576,7 @@ export function TenantModules() {
                               <Button
                                 size="sm"
                                 onClick={() => handleToggle(key)}
-                                className="h-8 w-full bg-blue-600 hover:bg-blue-700 text-white"
+                                className="h-7 w-full text-xs bg-blue-600 hover:bg-blue-700 text-white"
                                 aria-label={`Install ${displayLabel} for ${selectedTenant.name}`}
                               >
                                 Install
