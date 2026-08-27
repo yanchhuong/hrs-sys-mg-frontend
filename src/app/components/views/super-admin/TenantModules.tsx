@@ -6,7 +6,7 @@ import { Badge } from '../../ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
-import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, Plus, Minus, Check, type LucideIcon } from 'lucide-react';
+import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, Plus, Minus, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 import { NAV_LEAVES } from '../../../config/nav';
@@ -478,11 +478,11 @@ export function TenantModules() {
                         tiles that survive the search + state filter
                         render here; hidden tiles still exist in state
                         and stay toggled. */}
-                    {/* v-tenant-modules-3col — 3 fixed columns per
-                        group so groups line up like an app-store
-                        shelf. Collapses to 2 on tablet and 1 on
-                        phone so long app names still breathe. */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
+                    {/* v-tenant-modules-appstore-grid — 4-column
+                        vertical-card shelf per group, mirroring a
+                        mobile app store. Collapses to 3/2/2 on
+                        smaller viewports so nothing squishes. */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
                       {/* Inherit tiles first — Students (before Enrollment),
                           Patients (before Encounter). Read-only; state
                           mirrors the parent module so the operator sees
@@ -493,42 +493,38 @@ export function TenantModules() {
                           ?? tile.inheritsFrom.replace(/-/g, ' ');
                         const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
                         return (
+                          // v-tenant-modules-appstore-card — same
+                          // vertical card as real modules; the
+                          // action row shows a read-only "Inherits X"
+                          // chip instead of a button since these
+                          // tiles have no independent state.
                           <div
                             key={tile.key}
                             title={`Inherits from ${parentLabel} — no independent toggle`}
-                            className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-dashed transition-colors min-w-0 ${
-                              parentOn
-                                ? 'border-emerald-200 bg-emerald-50/20'
-                                : 'border-slate-200 bg-slate-50/40'
-                            }`}
+                            className="flex flex-col items-center gap-2 min-w-0"
                           >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <span className={`shrink-0 h-11 w-11 rounded-lg flex items-center justify-center ${
-                                parentOn ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                              }`}>
-                                <Icon className="h-5 w-5" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <div
-                                  title={tile.label}
-                                  className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}
-                                >
-                                  {tile.label}
-                                </div>
-                                <div className="text-[10px] uppercase tracking-wide text-slate-400 inline-flex items-center gap-0.5">
-                                  <Link2 className="h-2.5 w-2.5" /> Inherits {parentLabel}
-                                </div>
-                              </div>
+                            <div className={`h-16 w-16 rounded-2xl flex items-center justify-center shadow-sm border border-dashed ${
+                              parentOn
+                                ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 border-blue-200'
+                                : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300'
+                            }`}>
+                              <Icon className="h-7 w-7" />
                             </div>
-                            <span
-                              className={`text-[11px] px-2 py-0.5 rounded-md shrink-0 ${
-                                parentOn
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-slate-100 text-slate-500'
+                            <div
+                              title={tile.label}
+                              className={`text-sm font-semibold text-center truncate w-full ${
+                                parentOn ? 'text-slate-900' : 'text-slate-500'
                               }`}
                             >
-                              {parentOn ? 'Installed' : 'Not installed'}
-                            </span>
+                              {tile.label}
+                            </div>
+                            <div className={`h-8 w-full rounded-md flex items-center justify-center gap-1 text-[11px] font-medium ${
+                              parentOn
+                                ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                                : 'bg-slate-50 text-slate-500 border border-slate-200'
+                            }`}>
+                              <Link2 className="h-3 w-3" /> Inherits {parentLabel}
+                            </div>
                           </div>
                         );
                       })}
@@ -543,63 +539,47 @@ export function TenantModules() {
                         const displayLabel = LABEL_OVERRIDES[key]
                           ?? (label && label.trim() ? label : prettifyKey(key));
                         return (
+                          // v-tenant-modules-appstore-card — vertical
+                          // card (icon on top, name below, full-width
+                          // action at the bottom) mirroring a mobile
+                          // app store shelf.
                           <div
                             key={key}
-                            className={`group flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border transition-colors min-w-0 ${
-                              on
-                                ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
-                                : 'border-slate-200 bg-white hover:border-slate-300'
-                            }`}
+                            className="flex flex-col items-center gap-2 min-w-0"
                           >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              {/* Cube tile — bigger square block so the
-                                  app identity reads at a glance, same
-                                  shape a mobile-app shelf uses. */}
-                              <span className={`shrink-0 h-11 w-11 rounded-lg flex items-center justify-center ${
-                                on ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                              }`}>
-                                <Icon className="h-5 w-5" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                {/* BE label wins (module_assignments.label,
-                                    edited via V253 and the SA Module
-                                    Categories page). Only fall back to a
-                                    key-derived title case when the BE row
-                                    is blank. LABEL_OVERRIDES is the last
-                                    resort so the hardcoded map still fires
-                                    for keys we deliberately alias. */}
-                                <div
-                                  title={displayLabel}
-                                  className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-600'}`}
-                                >
-                                  {displayLabel}
-                                </div>
-                                <div className={`text-[10px] uppercase tracking-wide ${on ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                  {on
-                                    ? <span className="inline-flex items-center gap-0.5"><Check className="h-2.5 w-2.5" /> Installed</span>
-                                    : 'Not installed'}
-                                </div>
-                              </div>
+                            <div className={`h-16 w-16 rounded-2xl flex items-center justify-center shadow-sm ${
+                              on
+                                ? 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700'
+                                : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400'
+                            }`}>
+                              <Icon className="h-7 w-7" />
+                            </div>
+                            <div
+                              title={displayLabel}
+                              className={`text-sm font-semibold text-center truncate w-full ${
+                                on ? 'text-slate-900' : 'text-slate-700'
+                              }`}
+                            >
+                              {displayLabel}
                             </div>
                             {on ? (
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="outline"
                                 onClick={() => handleToggle(key)}
-                                className="h-7 shrink-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+                                className="h-8 w-full bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
                                 aria-label={`Uninstall ${displayLabel} for ${selectedTenant.name}`}
                               >
-                                <Minus className="h-3.5 w-3.5 mr-1" /> Uninstall
+                                Uninstall
                               </Button>
                             ) : (
                               <Button
                                 size="sm"
-                                variant="outline"
                                 onClick={() => handleToggle(key)}
-                                className="h-7 shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                className="h-8 w-full bg-blue-600 hover:bg-blue-700 text-white"
                                 aria-label={`Install ${displayLabel} for ${selectedTenant.name}`}
                               >
-                                <Plus className="h-3.5 w-3.5 mr-1" /> Install
+                                Install
                               </Button>
                             )}
                           </div>
