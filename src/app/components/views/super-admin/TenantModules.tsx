@@ -7,9 +7,29 @@ import { Badge } from '../../ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
-import { Layers, Save, RotateCcw, Building2, Link2, Search, X } from 'lucide-react';
+import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
+import { NAV_LEAVES } from '../../../config/nav';
+
+/**
+ * v-tenant-modules-icons — module → nav-leaf icon lookup so every
+ * tile carries the same identity glyph the tenant sees in their
+ * sidebar + AppLauncher. Falls back to a neutral grid icon when a
+ * module has no leaf (settings-only keys). Prefers non-derived
+ * leaves so "Students" (inherits `enrollment`) doesn't hijack the
+ * Enrollment glyph.
+ */
+const MODULE_ICON: Record<string, LucideIcon> = (() => {
+  const map: Record<string, LucideIcon> = {};
+  for (const leaf of NAV_LEAVES) {
+    if (!leaf.module || !leaf.icon) continue;
+    // First leaf per module wins so we don't overwrite the canonical
+    // one with a derived view.
+    if (!map[leaf.module]) map[leaf.module] = leaf.icon;
+  }
+  return map;
+})();
 
 /**
  * v-tenant-modules-menu-alignment — the "Modules & Apps" grid renders
@@ -445,6 +465,7 @@ export function TenantModules() {
                         const parentOn = Boolean(draft[tile.inheritsFrom]);
                         const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
                           ?? tile.inheritsFrom.replace(/-/g, ' ');
+                        const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
                         return (
                           <div
                             key={tile.key}
@@ -455,8 +476,12 @@ export function TenantModules() {
                                 : 'border-slate-200 bg-slate-50/40'
                             }`}
                           >
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <Link2 className={`h-3 w-3 shrink-0 ${parentOn ? 'text-emerald-500' : 'text-slate-400'}`} />
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center ${
+                                parentOn ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400 border border-slate-200 border-dashed'
+                              }`}>
+                                <Icon className="h-4 w-4" />
+                              </span>
                               <span className={`text-sm truncate ${parentOn ? 'text-slate-900' : 'text-slate-500'}`}>
                                 {tile.label}
                               </span>
@@ -465,34 +490,46 @@ export function TenantModules() {
                           </div>
                         );
                       })}
-                      {visibleModules.map(({ key, label }) => (
-                        <div
-                          key={key}
-                          className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
-                            draft[key]
-                              ? 'border-emerald-200 bg-emerald-50/40'
-                              : 'border-slate-200 bg-slate-50/60'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className={`text-sm truncate ${draft[key] ? 'text-slate-900' : 'text-slate-500'}`}>
-                              {/* BE label wins (module_assignments.label,
-                                  edited via V253 and the SA Module
-                                  Categories page). Only fall back to a
-                                  key-derived title case when the BE row
-                                  is blank. LABEL_OVERRIDES is the last
-                                  resort so the hardcoded map still fires
-                                  for keys we deliberately alias. */}
-                              {LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key))}
-                            </span>
+                      {visibleModules.map(({ key, label }) => {
+                        // v-tenant-modules-icons — pull the sidebar
+                        // glyph so each tile reads as its app, not
+                        // just a text switch.
+                        const Icon = MODULE_ICON[key] ?? LayoutGrid;
+                        const on = Boolean(draft[key]);
+                        return (
+                          <div
+                            key={key}
+                            className={`flex items-center justify-between px-3 py-2 rounded-md border transition-colors ${
+                              on
+                                ? 'border-emerald-200 bg-emerald-50/40'
+                                : 'border-slate-200 bg-slate-50/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className={`shrink-0 h-7 w-7 rounded-md flex items-center justify-center ${
+                                on ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400 border border-slate-200'
+                              }`}>
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <span className={`text-sm truncate ${on ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                                {/* BE label wins (module_assignments.label,
+                                    edited via V253 and the SA Module
+                                    Categories page). Only fall back to a
+                                    key-derived title case when the BE row
+                                    is blank. LABEL_OVERRIDES is the last
+                                    resort so the hardcoded map still fires
+                                    for keys we deliberately alias. */}
+                                {LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key))}
+                              </span>
+                            </div>
+                            <Switch
+                              checked={on}
+                              onCheckedChange={() => handleToggle(key)}
+                              aria-label={`Toggle ${key} for ${selectedTenant.name}`}
+                            />
                           </div>
-                          <Switch
-                            checked={Boolean(draft[key])}
-                            onCheckedChange={() => handleToggle(key)}
-                            aria-label={`Toggle ${key} for ${selectedTenant.name}`}
-                          />
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                   );
