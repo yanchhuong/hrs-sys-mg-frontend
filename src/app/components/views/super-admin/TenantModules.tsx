@@ -227,12 +227,12 @@ export function TenantModules() {
    * Matches the most common pattern users expect from a "select all"
    * checkbox in spreadsheet UIs.
    */
-  const handleCategoryToggle = (cat: platformApi.ModuleCategory) => {
-    // Bulk-flip skips hidden modules so the operator can't toggle
-    // something they can't see — matches the tile grid's own filter.
-    const keys = flattenModules(cat.modules)
-      .filter(n => !HIDDEN_MODULE_KEYS.has(n.key))
-      .map(n => n.key);
+  const handleCategoryToggle = (keys: string[]) => {
+    // v-tenant-modules-category-visible-count — caller passes the
+    // currently-visible (post-filter) keys so the bulk flip only
+    // touches what the operator sees. Callers must pass a non-empty
+    // list; the render skips categories with no visible tiles.
+    if (keys.length === 0) return;
     const allOn = keys.every(k => Boolean(draft[k]));
     const next = !allOn;
     setDraft(d => {
@@ -392,10 +392,6 @@ export function TenantModules() {
                   const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
                   const moduleKeys = modules.map(n => n.key);
                   const inheritTiles = INHERIT_TILES[cat.key] ?? [];
-                  const total = moduleKeys.length;
-                  const on = moduleKeys.filter(k => draft[k]).length;
-                  const allOn = on === total && total > 0;
-                  const noneOn = on === 0;
                   // Apply search + state filter to the tile lists.
                   const visibleInheritTiles = inheritTiles.filter(t => {
                     const parentOn = Boolean(draft[t.inheritsFrom]);
@@ -407,6 +403,22 @@ export function TenantModules() {
                   });
                   // Skip categories where the filter left nothing to render.
                   if (visibleInheritTiles.length === 0 && visibleModules.length === 0) continue;
+                  // v-tenant-modules-category-visible-count — the
+                  // header badge + Install all / Uninstall all button
+                  // must reflect what the operator actually SEES after
+                  // the state filter. Basing them on the full category
+                  // (hidden tiles included) gave the confusing case
+                  // where every visible tile was installed but the
+                  // button still said "Install all" because there were
+                  // filtered-out uninstalled ones. Only the visible
+                  // (non-inherit) module tiles participate in the
+                  // toggle — inherit tiles mirror their parent's state
+                  // and have no independent flip.
+                  const visibleKeys = visibleModules.map(m => m.key);
+                  const total = visibleKeys.length;
+                  const on = visibleKeys.filter(k => draft[k]).length;
+                  const allOn = on === total && total > 0;
+                  const noneOn = on === 0;
                   rendered.push(
                   <div
                     key={cat.key}
@@ -452,7 +464,7 @@ export function TenantModules() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleCategoryToggle(cat)}
+                          onClick={() => handleCategoryToggle(visibleKeys)}
                           className="h-7 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
                           aria-label={`Uninstall all in ${cat.label} for ${selectedTenant.name}`}
                         >
@@ -462,7 +474,7 @@ export function TenantModules() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleCategoryToggle(cat)}
+                          onClick={() => handleCategoryToggle(visibleKeys)}
                           className="h-7 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                           aria-label={`Install all in ${cat.label} for ${selectedTenant.name}`}
                         >
