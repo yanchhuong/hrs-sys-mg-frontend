@@ -18,7 +18,7 @@ import {
 } from '../../ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
-  Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUpDown, HardDrive, UsersRound,
+  Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUp, ArrowDown, ArrowUpDown, HardDrive, UsersRound,
   AlertTriangle, Shield, Calendar, FileText, Info, Snowflake, Sun,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
@@ -289,7 +289,18 @@ export function Companies() {
    *  actually engage on small tenants (nine companies used to fit in
    *  one page so the pager row never rendered). */
   const [pageSize, setPageSize] = useState<number>(10);
-  const pager = usePagination(filtered, pageSize);
+
+  /** Click-to-sort on Company / Plan / Status / MRR / Created.
+   *  `null` = original server order. Cycle: unsorted → asc → desc →
+   *  unsorted; switching column resets to asc. Same shape as the
+   *  Users page (CrossTenantUsers.tsx). */
+  type SortKey = 'name' | 'planTier' | 'status' | 'mrr' | 'createdAt';
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
+  const cycleSort = (key: SortKey) => setSort(prev => {
+    if (!prev || prev.key !== key) return { key, dir: 'asc' };
+    if (prev.dir === 'asc') return { key, dir: 'desc' };
+    return null;
+  });
 
   /** v-companies-live-plans — pull real plan prices from the BE so
    *  the MRR column reflects SA edits in the Plans page instead of
@@ -315,6 +326,34 @@ export function Companies() {
     if (live) return live.monthlyPriceCents / 100;
     return PLAN_LIMITS[tier as PlanTier]?.monthlyPriceUsd ?? 0;
   };
+
+  /** Apply the click-to-sort order after all filters have run. Placed
+   *  AFTER priceOf so the MRR sort can read the live-plans price map
+   *  it depends on. Rank enums by hierarchy so asc/desc reads intuitively.
+   *  createdAt sorts on the ISO string via new Date().getTime(). */
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    // planTier: cheap → premium; asc puts free first.
+    const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, business: 2, enterprise: 3 };
+    // status: healthy → terminal; asc puts active first, cancelled last.
+    const STATUS_RANK: Record<string, number> = { active: 0, trial: 1, frozen: 2, suspended: 3, cancelled: 4 };
+    const rows = [...filtered];
+    rows.sort((a, b) => {
+      switch (sort.key) {
+        case 'name':      return sign * a.name.localeCompare(b.name);
+        case 'planTier':  return sign * ((PLAN_RANK[a.planTier]   ?? 99) - (PLAN_RANK[b.planTier]   ?? 99));
+        case 'status':    return sign * ((STATUS_RANK[a.status]   ?? 99) - (STATUS_RANK[b.status]   ?? 99));
+        case 'mrr':       return sign * (priceOf(a.planTier) - priceOf(b.planTier));
+        case 'createdAt': return sign * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      }
+    });
+    return rows;
+    // priceOf reads plansByTier; keep it in the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sort, plansByTier]);
+
+  const pager = usePagination(sorted, pageSize);
 
   /** V305 — map the form's three-state override value back to the
    *  API's three-state PATCH:
@@ -1068,15 +1107,25 @@ export function Companies() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Company</TableHead>
+                <TableHead>
+                  <SortHeader label="Company" col="name" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>Industry</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>
+                  <SortHeader label="Plan" col="planTier" sort={sort} onCycle={cycleSort} />
+                </TableHead>
+                <TableHead>
+                  <SortHeader label="Status" col="status" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>Schedule</TableHead>
                 <TableHead className="min-w-[220px]">Usage</TableHead>
                 <TableHead className="w-[150px]">Storage</TableHead>
-                <TableHead className="text-right">MRR</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead className="text-right">
+                  <SortHeader label="MRR" col="mrr" sort={sort} onCycle={cycleSort} />
+                </TableHead>
+                <TableHead>
+                  <SortHeader label="Created" col="createdAt" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1585,5 +1634,34 @@ function ImpactRow({ label, used, oldCap, newCap, format }: {
         </Badge>
       )}
     </div>
+  );
+}
+
+/** Header-cell button that cycles the parent's sort state. Idle
+ *  shows a two-way arrow in grey; active column shows up/down in
+ *  blue. Kept local — mirrors the shape in CrossTenantUsers.tsx.
+ *  Extract into components/common/ when a third caller shows up. */
+type CompaniesSortKey = 'name' | 'planTier' | 'status' | 'mrr' | 'createdAt';
+function SortHeader({ label, col, sort, onCycle }: {
+  label: string;
+  col: CompaniesSortKey;
+  sort: { key: CompaniesSortKey; dir: 'asc' | 'desc' } | null;
+  onCycle: (c: CompaniesSortKey) => void;
+}) {
+  const active = sort?.key === col;
+  const dir = active ? sort?.dir : null;
+  return (
+    <button
+      type="button"
+      onClick={() => onCycle(col)}
+      className="inline-flex items-center gap-1 hover:text-gray-900 select-none"
+      aria-label={`Sort by ${label} (${dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'unsorted'})`}
+      title={`Sort by ${label}`}
+    >
+      {label}
+      {dir === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-blue-600" />}
+      {dir === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-blue-600" />}
+      {dir === null && <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />}
+    </button>
   );
 }
