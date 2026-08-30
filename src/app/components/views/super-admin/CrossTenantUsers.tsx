@@ -12,7 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff } from 'lucide-react';
+import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
@@ -65,6 +65,9 @@ export function CrossTenantUsers() {
    *  narrow the returned list to users whose last_seen_at falls inside
    *  or outside the server's 5-min online window. */
   const [presence, setPresence] = useState<'all' | 'online' | 'offline'>('all');
+  /** Sort direction for the User (name) column. `null` = original
+   *  server order. Click cycles null → asc → desc → null. */
+  const [nameSort, setNameSort] = useState<'asc' | 'desc' | null>(null);
   const [resetTarget, setResetTarget] = useState<platformApi.PlatformUser | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<platformApi.PlatformUser | null>(null);
   // Merge dialog state — surfaces every user sharing the same email and lets
@@ -243,7 +246,7 @@ export function CrossTenantUsers() {
   const filtered = useMemo(() => {
     // Server-side filtering; keep client filter as a no-op safety net.
     const q = search.trim().toLowerCase();
-    return users.filter(u => {
+    const rows = users.filter(u => {
       if (roleTab !== 'all' && u.role !== roleTab) return false;
       if (companyFilter !== 'all' && u.tenantId !== companyFilter) return false;
       if (q) {
@@ -252,7 +255,15 @@ export function CrossTenantUsers() {
       }
       return true;
     });
-  }, [users, search, companyFilter, roleTab]);
+    // Client-side sort on the User column when the operator clicked
+    // the header. `null` means "keep server order". Use localeCompare
+    // so Khmer / Chinese names sort predictably next to Latin ones.
+    if (nameSort) {
+      const sign = nameSort === 'asc' ? 1 : -1;
+      rows.sort((a, b) => sign * displayName(a).localeCompare(displayName(b)));
+    }
+    return rows;
+  }, [users, search, companyFilter, roleTab, nameSort]);
 
   const pager = usePagination(filtered, 10);
 
@@ -459,7 +470,28 @@ export function CrossTenantUsers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
+                {/* Sortable User column — click cycles null → asc →
+                    desc → null. Arrow reflects state: two-way arrow
+                    when idle, up/down when sorted. */}
+                <TableHead>
+                  <button
+                    type="button"
+                    onClick={() => setNameSort(prev =>
+                      prev === null ? 'asc' : prev === 'asc' ? 'desc' : null,
+                    )}
+                    className="inline-flex items-center gap-1 hover:text-gray-900 select-none"
+                    aria-label={`Sort by user name (${
+                      nameSort === 'asc' ? 'ascending' :
+                      nameSort === 'desc' ? 'descending' : 'unsorted'
+                    })`}
+                    title="Sort by user name"
+                  >
+                    User
+                    {nameSort === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-blue-600" />}
+                    {nameSort === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-blue-600" />}
+                    {nameSort === null && <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />}
+                  </button>
+                </TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
