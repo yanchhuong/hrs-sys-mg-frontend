@@ -68,7 +68,7 @@ export function CrossTenantUsers() {
   /** Active sort — one column at a time. `null` = original server
    *  order. Click cycles: unsorted → asc → desc → unsorted. Sorting
    *  a different column resets to asc on that column. */
-  type SortKey = 'name' | 'role' | 'online' | 'lastLogin';
+  type SortKey = 'name' | 'company' | 'role' | 'online' | 'lastLogin';
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
   const cycleSort = (key: SortKey) => setSort(prev => {
     if (!prev || prev.key !== key) return { key, dir: 'asc' };
@@ -271,6 +271,12 @@ export function CrossTenantUsers() {
       const sign = sort.dir === 'asc' ? 1 : -1;
       if (sort.key === 'name') {
         rows.sort((a, b) => sign * displayName(a).localeCompare(displayName(b)));
+      } else if (sort.key === 'company') {
+        // Mirror the visible cell fallback so sort matches what the
+        // operator sees: tenantName (trimmed) → tenantSlug → empty.
+        const label = (u: platformApi.PlatformUser) =>
+          (u.tenantName?.trim() || u.tenantSlug || '').toLowerCase();
+        rows.sort((a, b) => sign * label(a).localeCompare(label(b)));
       } else if (sort.key === 'role') {
         // Rank the hierarchy so asc puts admins first, then managers,
         // then employees. Unknown roles land after all three.
@@ -498,7 +504,9 @@ export function CrossTenantUsers() {
                 <TableHead>
                   <SortHeader label="User" col="name" sort={sort} onCycle={cycleSort} />
                 </TableHead>
-                <TableHead>Company</TableHead>
+                <TableHead>
+                  <SortHeader label="Company" col="company" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>
                   <SortHeader label="Role" col="role" sort={sort} onCycle={cycleSort} />
                 </TableHead>
@@ -928,7 +936,7 @@ export function CrossTenantUsers() {
 /** Header-cell button that cycles the parent's sort state. Idle
  *  shows a two-way arrow in grey; active column shows up/down in
  *  blue. Kept local — used only by the users table above. */
-type UsersSortKey = 'name' | 'role' | 'online' | 'lastLogin';
+type UsersSortKey = 'name' | 'company' | 'role' | 'online' | 'lastLogin';
 function SortHeader({
   label, col, sort, onCycle,
 }: {
