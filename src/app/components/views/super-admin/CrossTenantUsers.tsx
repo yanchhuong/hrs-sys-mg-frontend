@@ -68,7 +68,7 @@ export function CrossTenantUsers() {
   /** Active sort — one column at a time. `null` = original server
    *  order. Click cycles: unsorted → asc → desc → unsorted. Sorting
    *  a different column resets to asc on that column. */
-  type SortKey = 'name' | 'lastLogin';
+  type SortKey = 'name' | 'role' | 'online' | 'lastLogin';
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
   const cycleSort = (key: SortKey) => setSort(prev => {
     if (!prev || prev.key !== key) return { key, dir: 'asc' };
@@ -271,6 +271,14 @@ export function CrossTenantUsers() {
       const sign = sort.dir === 'asc' ? 1 : -1;
       if (sort.key === 'name') {
         rows.sort((a, b) => sign * displayName(a).localeCompare(displayName(b)));
+      } else if (sort.key === 'role') {
+        // Rank the hierarchy so asc puts admins first, then managers,
+        // then employees. Unknown roles land after all three.
+        const rank: Record<string, number> = { admin: 0, manager: 1, employee: 2 };
+        rows.sort((a, b) => sign * ((rank[a.role] ?? 99) - (rank[b.role] ?? 99)));
+      } else if (sort.key === 'online') {
+        // asc = online users first (true ranked ahead of false).
+        rows.sort((a, b) => sign * (Number(b.online) - Number(a.online)));
       } else if (sort.key === 'lastLogin') {
         rows.sort((a, b) => sign * ((a.lastLogin ?? '').localeCompare(b.lastLogin ?? '')));
       }
@@ -491,9 +499,13 @@ export function CrossTenantUsers() {
                   <SortHeader label="User" col="name" sort={sort} onCycle={cycleSort} />
                 </TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead>
+                  <SortHeader label="Role" col="role" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Online</TableHead>
+                <TableHead>
+                  <SortHeader label="Online" col="online" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>
                   <SortHeader label="Last Login" col="lastLogin" sort={sort} onCycle={cycleSort} />
                 </TableHead>
@@ -916,13 +928,14 @@ export function CrossTenantUsers() {
 /** Header-cell button that cycles the parent's sort state. Idle
  *  shows a two-way arrow in grey; active column shows up/down in
  *  blue. Kept local — used only by the users table above. */
+type UsersSortKey = 'name' | 'role' | 'online' | 'lastLogin';
 function SortHeader({
   label, col, sort, onCycle,
 }: {
   label: string;
-  col: 'name' | 'lastLogin';
-  sort: { key: 'name' | 'lastLogin'; dir: 'asc' | 'desc' } | null;
-  onCycle: (c: 'name' | 'lastLogin') => void;
+  col: UsersSortKey;
+  sort: { key: UsersSortKey; dir: 'asc' | 'desc' } | null;
+  onCycle: (c: UsersSortKey) => void;
 }) {
   const active = sort?.key === col;
   const dir = active ? sort?.dir : null;
