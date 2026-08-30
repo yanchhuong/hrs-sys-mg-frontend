@@ -65,9 +65,16 @@ export function CrossTenantUsers() {
    *  narrow the returned list to users whose last_seen_at falls inside
    *  or outside the server's 5-min online window. */
   const [presence, setPresence] = useState<'all' | 'online' | 'offline'>('all');
-  /** Sort direction for the User (name) column. `null` = original
-   *  server order. Click cycles null → asc → desc → null. */
-  const [nameSort, setNameSort] = useState<'asc' | 'desc' | null>(null);
+  /** Active sort — one column at a time. `null` = original server
+   *  order. Click cycles: unsorted → asc → desc → unsorted. Sorting
+   *  a different column resets to asc on that column. */
+  type SortKey = 'name' | 'lastLogin';
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
+  const cycleSort = (key: SortKey) => setSort(prev => {
+    if (!prev || prev.key !== key) return { key, dir: 'asc' };
+    if (prev.dir === 'asc') return { key, dir: 'desc' };
+    return null;
+  });
   const [resetTarget, setResetTarget] = useState<platformApi.PlatformUser | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<platformApi.PlatformUser | null>(null);
   // Merge dialog state — surfaces every user sharing the same email and lets
@@ -255,15 +262,21 @@ export function CrossTenantUsers() {
       }
       return true;
     });
-    // Client-side sort on the User column when the operator clicked
-    // the header. `null` means "keep server order". Use localeCompare
-    // so Khmer / Chinese names sort predictably next to Latin ones.
-    if (nameSort) {
-      const sign = nameSort === 'asc' ? 1 : -1;
-      rows.sort((a, b) => sign * displayName(a).localeCompare(displayName(b)));
+    // Client-side sort when a column header is active. `null` keeps
+    // server order. Name uses localeCompare so Khmer / Chinese names
+    // sort predictably alongside Latin; lastLogin sorts by ISO
+    // timestamp string (null treated as oldest so descending puts
+    // never-logged-in users at the bottom).
+    if (sort) {
+      const sign = sort.dir === 'asc' ? 1 : -1;
+      if (sort.key === 'name') {
+        rows.sort((a, b) => sign * displayName(a).localeCompare(displayName(b)));
+      } else if (sort.key === 'lastLogin') {
+        rows.sort((a, b) => sign * ((a.lastLogin ?? '').localeCompare(b.lastLogin ?? '')));
+      }
     }
     return rows;
-  }, [users, search, companyFilter, roleTab, nameSort]);
+  }, [users, search, companyFilter, roleTab, sort]);
 
   const pager = usePagination(filtered, 10);
 
@@ -470,33 +483,20 @@ export function CrossTenantUsers() {
           <Table>
             <TableHeader>
               <TableRow>
-                {/* Sortable User column — click cycles null → asc →
-                    desc → null. Arrow reflects state: two-way arrow
-                    when idle, up/down when sorted. */}
+                {/* Sortable columns — click the header to cycle
+                    unsorted → asc → desc → unsorted. Only one column
+                    can be sorted at a time; clicking a different
+                    column resets to asc on that column. */}
                 <TableHead>
-                  <button
-                    type="button"
-                    onClick={() => setNameSort(prev =>
-                      prev === null ? 'asc' : prev === 'asc' ? 'desc' : null,
-                    )}
-                    className="inline-flex items-center gap-1 hover:text-gray-900 select-none"
-                    aria-label={`Sort by user name (${
-                      nameSort === 'asc' ? 'ascending' :
-                      nameSort === 'desc' ? 'descending' : 'unsorted'
-                    })`}
-                    title="Sort by user name"
-                  >
-                    User
-                    {nameSort === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-blue-600" />}
-                    {nameSort === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-blue-600" />}
-                    {nameSort === null && <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />}
-                  </button>
+                  <SortHeader label="User" col="name" sort={sort} onCycle={cycleSort} />
                 </TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Online</TableHead>
-                <TableHead>Last Login</TableHead>
+                <TableHead>
+                  <SortHeader label="Last Login" col="lastLogin" sort={sort} onCycle={cycleSort} />
+                </TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -910,5 +910,34 @@ export function CrossTenantUsers() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Header-cell button that cycles the parent's sort state. Idle
+ *  shows a two-way arrow in grey; active column shows up/down in
+ *  blue. Kept local — used only by the users table above. */
+function SortHeader({
+  label, col, sort, onCycle,
+}: {
+  label: string;
+  col: 'name' | 'lastLogin';
+  sort: { key: 'name' | 'lastLogin'; dir: 'asc' | 'desc' } | null;
+  onCycle: (c: 'name' | 'lastLogin') => void;
+}) {
+  const active = sort?.key === col;
+  const dir = active ? sort?.dir : null;
+  return (
+    <button
+      type="button"
+      onClick={() => onCycle(col)}
+      className="inline-flex items-center gap-1 hover:text-gray-900 select-none"
+      aria-label={`Sort by ${label} (${dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'unsorted'})`}
+      title={`Sort by ${label}`}
+    >
+      {label}
+      {dir === 'asc' && <ArrowUp className="h-3.5 w-3.5 text-blue-600" />}
+      {dir === 'desc' && <ArrowDown className="h-3.5 w-3.5 text-blue-600" />}
+      {dir === null && <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />}
+    </button>
   );
 }
