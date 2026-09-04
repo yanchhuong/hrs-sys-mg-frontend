@@ -21,8 +21,8 @@ export interface ConsignmentSettlement {
   settlementNo: string;
   consignmentId: string;
   consignmentNo: string | null;
-  supplierId: string;
-  supplierName: string | null;
+  consigneeId: string;
+  consigneeName: string | null;
   settlementDate: string;
   periodFrom: string;
   periodTo: string;

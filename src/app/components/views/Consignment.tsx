@@ -27,7 +27,7 @@ import { SearchablePicker, type PickerOption } from '../common/SearchablePicker'
 import { formatNumber, formatUSD } from '../../utils/format';
 import * as consignmentsApi from '../../api/consignments';
 import * as settlementsApi from '../../api/consignmentSettlements';
-import * as vendorsApi from '../../api/vendors';
+import * as customersApi from '../../api/customers';
 import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
 import { useI18n } from '../../i18n/I18nContext';
@@ -92,7 +92,7 @@ const SETTLE_TONE: Record<settlementsApi.SettlementStatus, string> = {
 
 function ConsignmentReport() {
   const [rows, setRows] = useState<consignmentsApi.Consignment[]>([]);
-  const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
+  const [consignees, setConsignees] = useState<customersApi.Customer[]>([]);
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -127,13 +127,13 @@ function ConsignmentReport() {
     try {
       const [r, v, w, i, s] = await Promise.all([
         consignmentsApi.list({ size: 200 }),
-        vendorsApi.list({ size: 500 }).catch(() => ({ content: [] as vendorsApi.Vendor[] } as any)),
+        customersApi.list({ size: 500, kind: 'customer', type: 'business' }).catch(() => ({ content: [] as customersApi.Customer[] } as any)),
         warehousesApi.list().catch(() => [] as warehousesApi.Warehouse[]),
         itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
         settlementsApi.list({ size: 500 }).catch(() => ({ content: [] as settlementsApi.ConsignmentSettlement[] } as any)),
       ]);
       setRows(r.content ?? []);
-      setVendors(v.content ?? []);
+      setConsignees(v.content ?? []);
       setWarehouses(w ?? []);
       setItems(i.content ?? []);
       setItemsLoaded(true);
@@ -162,7 +162,7 @@ function ConsignmentReport() {
     const term = search.trim().toLowerCase();
     return rows.filter(c => {
       if (term) {
-        const hay = `${c.consignmentNo} ${c.supplierName ?? ''} ${c.warehouseName ?? ''} ${c.notes ?? ''}`.toLowerCase();
+        const hay = `${c.consignmentNo} ${c.consigneeName ?? ''} ${c.warehouseName ?? ''} ${c.notes ?? ''}`.toLowerCase();
         if (!hay.includes(term)) return false;
       }
       // startDate is 'YYYY-MM-DD' — lex-compare works.
@@ -173,27 +173,43 @@ function ConsignmentReport() {
   }, [rows, search, dateFrom, dateTo]);
 
   const totals = useMemo(() => filteredRows.reduce((a, c) => {
-    let qty = 0, gross = 0, comm = 0;
+    let qty = 0, sold = 0, gross = 0, soldGross = 0, comm = 0, paidComm = 0;
     for (const it of c.items) {
       const q     = it.receivedQty ?? 0;
+      const s     = Math.min(q, it.soldQty ?? 0);
       const price = it.sellingPrice ?? 0;
       const g     = q * price;
-      qty   += q;
-      gross += g;
+      const sg    = s * price;
+      qty       += q;
+      sold      += s;
+      gross     += g;
+      soldGross += sg;
       // Commission is what we keep — line gross × pct% for percent
       // lines, flat × qty for amount lines. Matches the row math
       // shown in the dialog's Line total column.
-      if (it.commissionType === 'percent') comm += g * (it.commissionValue ?? 0) / 100;
-      else if (it.commissionType === 'amount') comm += q * (it.commissionValue ?? 0);
+      //   Total Comm. = commission over all received (max forecast)
+      //   Paid Comm.  = commission over sold only (what we've actually kept)
+      if (it.commissionType === 'percent') {
+        const pct = (it.commissionValue ?? 0) / 100;
+        comm     += g  * pct;
+        paidComm += sg * pct;
+      } else if (it.commissionType === 'amount') {
+        const cpu = it.commissionValue ?? 0;
+        comm     += q * cpu;
+        paidComm += s * cpu;
+      }
     }
     return {
-      count:  a.count + 1,
-      active: a.active + (c.status === 'active' || c.status === 'partially_settled' ? 1 : 0),
-      qty:    a.qty + qty,
-      gross:  a.gross + gross,
-      comm:   a.comm + comm,
+      count:     a.count + 1,
+      active:    a.active + (c.status === 'active' || c.status === 'partially_settled' ? 1 : 0),
+      qty:       a.qty + qty,
+      sold:      a.sold + sold,
+      gross:     a.gross + gross,
+      soldGross: a.soldGross + soldGross,
+      comm:      a.comm + comm,
+      paidComm:  a.paidComm + paidComm,
     };
-  }, { count: 0, active: 0, qty: 0, gross: 0, comm: 0 }), [filteredRows]);
+  }, { count: 0, active: 0, qty: 0, sold: 0, gross: 0, soldGross: 0, comm: 0, paidComm: 0 }), [filteredRows]);
 
   const doDelete = async (c: consignmentsApi.Consignment) => {
     try {
@@ -211,12 +227,16 @@ function ConsignmentReport() {
       <div className="stat-strip stat-cols-5">
         <StatCard label="Consignments"   value={formatNumber(totals.count)}    icon={Handshake}   tone="purple" />
         <StatCard label="Active"         value={formatNumber(totals.active)}   icon={ReceiptText} tone="blue" />
-        <StatCard label="Order Qty"      value={formatNumber(totals.qty)}      icon={Package}     tone="green"
-          hint="Total units consigned across all lines — each posts as an OUT (−) stock movement on save" />
-        <StatCard label="Total Retail"   value={formatUSD(totals.gross)}       icon={DollarSign}  tone="amber"
-          hint="Sum of Order QTY × Retail Price across all lines" />
-        <StatCard label="Total Comm."    value={formatUSD(totals.comm)}        icon={Wallet}      tone="orange"
-          hint="What we keep — the supplier is owed Total Retail minus this" />
+        <StatCard label="Sold / Total Qty" value={`${formatNumber(totals.sold)} / ${formatNumber(totals.qty)}`} icon={Package} tone="green"
+          hint="Units sold so far vs total units consigned across all lines" />
+        <StatCard label="Gross / Total Retail"
+          value={`${formatUSD(totals.soldGross)} / ${formatUSD(totals.gross)}`}
+          icon={DollarSign} tone="amber"
+          hint="Gross sales realized so far (Σ Sold × Retail) vs total shelf value (Σ Qty × Retail)" />
+        <StatCard label="Paid / Total Comm."
+          value={`${formatUSD(totals.paidComm)} / ${formatUSD(totals.comm)}`}
+          icon={Wallet} tone="orange"
+          hint="Commission we've already earned on sold units vs the max at full sell-through" />
       </div>
 
       <Card>
@@ -228,7 +248,7 @@ function ConsignmentReport() {
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by No, supplier, warehouse, or notes…"
+              placeholder="Search by No, consignee, warehouse, or notes…"
               className="h-9 w-64 text-sm"
             />
             <Label className="text-xs text-gray-500">From</Label>
@@ -268,7 +288,7 @@ function ConsignmentReport() {
           {filteredRows.length === 0 ? (
             <div className="text-center py-10 text-gray-500 text-sm">
               {rows.length === 0
-                ? <>No consignments yet. Click <b>New consignment</b> to record a supplier agreement.</>
+                ? <>No consignments yet. Click <b>New consignment</b> to record a consignee agreement.</>
                 : <>No consignments match the current filter.</>}
             </div>
           ) : (
@@ -276,7 +296,7 @@ function ConsignmentReport() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Consignment No</TableHead>
-                  <TableHead>Supplier</TableHead>
+                  <TableHead>Consignee</TableHead>
                   <TableHead>Warehouse</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Order Qty</TableHead>
@@ -289,15 +309,26 @@ function ConsignmentReport() {
               </TableHeader>
               <TableBody>
                 {filteredRows.map(c => {
-                  let qty = 0, gross = 0, comm = 0;
+                  let qty = 0, sold = 0, gross = 0, soldGross = 0, comm = 0, paidComm = 0;
                   for (const it of c.items) {
                     const q     = it.receivedQty ?? 0;
+                    const s     = Math.min(q, it.soldQty ?? 0);
                     const price = it.sellingPrice ?? 0;
                     const g     = q * price;
-                    qty   += q;
-                    gross += g;
-                    if (it.commissionType === 'percent') comm += g * (it.commissionValue ?? 0) / 100;
-                    else if (it.commissionType === 'amount') comm += q * (it.commissionValue ?? 0);
+                    const sg    = s * price;
+                    qty       += q;
+                    sold      += s;
+                    gross     += g;
+                    soldGross += sg;
+                    if (it.commissionType === 'percent') {
+                      const pct = (it.commissionValue ?? 0) / 100;
+                      comm     += g  * pct;
+                      paidComm += sg * pct;
+                    } else if (it.commissionType === 'amount') {
+                      const cpu = it.commissionValue ?? 0;
+                      comm     += q * cpu;
+                      paidComm += s * cpu;
+                    }
                   }
                   // Row actions gate: only draft consignments are
                   // mutable. Once a consignment goes active (which
@@ -310,7 +341,7 @@ function ConsignmentReport() {
                   return (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium tabular-nums">{c.consignmentNo}</TableCell>
-                      <TableCell>{c.supplierName ?? '—'}</TableCell>
+                      <TableCell>{c.consigneeName ?? '—'}</TableCell>
                       <TableCell>{c.warehouseName ?? '—'}</TableCell>
                       <TableCell className="text-xs text-gray-600">{c.startDate}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatNumber(qty)}</TableCell>
@@ -395,14 +426,14 @@ function ConsignmentReport() {
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           editing={editing}
-          vendors={vendors}
+          consignees={consignees}
           warehouses={warehouses}
           items={items}
           itemsLoaded={itemsLoaded}
           // Quick-add vendors from inside the picker land here so the
           // picker sees the new row immediately + it survives beyond
           // this dialog's lifetime (next open uses the updated list).
-          onVendorAdded={v => setVendors(prev => [...prev, v])}
+          onConsigneeAdded={v => setConsignees(prev => [...prev, v])}
           onSaved={async () => { setDialogOpen(false); await load(); }}
         />
       )}
@@ -418,11 +449,11 @@ function ConsignmentReport() {
           onOpenChange={(o) => !o && setCopyFrom(null)}
           editing={null}
           copyFrom={copyFrom}
-          vendors={vendors}
+          consignees={consignees}
           warehouses={warehouses}
           items={items}
           itemsLoaded={itemsLoaded}
-          onVendorAdded={v => setVendors(prev => [...prev, v])}
+          onConsigneeAdded={v => setConsignees(prev => [...prev, v])}
           onSaved={async () => { setCopyFrom(null); await load(); }}
         />
       )}
@@ -436,11 +467,11 @@ function ConsignmentReport() {
           open={!!viewing}
           onOpenChange={(o) => !o && setViewing(null)}
           editing={viewing}
-          vendors={vendors}
+          consignees={consignees}
           warehouses={warehouses}
           items={items}
           itemsLoaded={itemsLoaded}
-          onVendorAdded={v => setVendors(prev => [...prev, v])}
+          onConsigneeAdded={v => setConsignees(prev => [...prev, v])}
           onSaved={async () => { setViewing(null); }}
           readOnly
         />
@@ -600,8 +631,8 @@ function printConsignmentNote(
           <div style="margin-top:4px"><span class="badge">${escapeHtml(consignmentsApi.CONSIGNMENT_STATUS_LABELS[c.status])}</span></div>
         </div>
         <div>
-          <div class="label">Supplier to</div>
-          <div class="value">${escapeHtml(c.supplierName ?? '—')}</div>
+          <div class="label">To Consignee</div>
+          <div class="value">${escapeHtml(c.consigneeName ?? '—')}</div>
         </div>
         <div>
           <div class="label">Warehouse</div>
@@ -783,8 +814,8 @@ function printSettlementNote(
           <div style="margin-top:4px"><span class="badge">${escapeHtml(settlementsApi.SETTLEMENT_STATUS_LABELS[s.status])}</span></div>
         </div>
         <div>
-          <div class="label">Supplier</div>
-          <div class="value">${escapeHtml(s.supplierName ?? '—')}</div>
+          <div class="label">Consignee</div>
+          <div class="value">${escapeHtml(s.consigneeName ?? '—')}</div>
         </div>
         <div>
           <div class="label">Settlement date</div>
@@ -822,7 +853,7 @@ function printSettlementNote(
         <div class="total-row"><span>Gross sales</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.grossSales ?? 0)}</span></div>
         <div class="total-row"><span>Commission (kept by us)</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.commissionAmount ?? 0)}</span></div>
         <div class="total-row"><span>Deductions</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.deductionAmount ?? 0)}</span></div>
-        <div class="total-row net" style="grid-column:1 / -1"><span>Net owed to supplier</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.netAmount ?? 0)}</span></div>
+        <div class="total-row net" style="grid-column:1 / -1"><span>Net owed to consignee</span><span style="font-family:'JetBrains Mono',monospace">${formatUSD(s.netAmount ?? 0)}</span></div>
       </div>
     </section>
 
@@ -836,7 +867,7 @@ function printSettlementNote(
       </div>
       <div>
         <div class="sig-line"></div>
-        <div class="label">Received by (Supplier)</div>
+        <div class="label">Received by (Consignee)</div>
         <div class="sig-date"><span>Date:</span><div class="sig-date-line"></div></div>
       </div>
     </section>
@@ -890,7 +921,7 @@ const EMPTY_ITEM: FormItem = {
 };
 
 function ConsignmentDialog({
-  open, onOpenChange, editing, copyFrom, vendors, warehouses, items, itemsLoaded, onVendorAdded, onSaved,
+  open, onOpenChange, editing, copyFrom, consignees, warehouses, items, itemsLoaded, onConsigneeAdded, onSaved,
   readOnly = false,
 }: {
   open: boolean;
@@ -903,11 +934,11 @@ function ConsignmentDialog({
    *  the operator must pick one. Consignment number is auto-minted on
    *  save like any other new consignment. */
   copyFrom?: consignmentsApi.Consignment | null;
-  vendors: vendorsApi.Vendor[];
+  consignees: customersApi.Customer[];
   warehouses: warehousesApi.Warehouse[];
   items: itemsApi.Item[];
   itemsLoaded: boolean;
-  onVendorAdded: (v: vendorsApi.Vendor) => void;
+  onConsigneeAdded: (v: customersApi.Customer) => void;
   onSaved: () => Promise<void> | void;
   /** View mode — the whole form body is wrapped in a disabled
    *  {@code <fieldset>} so every input/select/button natively
@@ -923,7 +954,7 @@ function ConsignmentDialog({
     for (const it of items) m.set(it.id, it);
     return m;
   }, [items]);
-  const [supplierId, setSupplierId] = useState('');
+  const [consigneeId, setConsigneeId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [status, setStatus] = useState<consignmentsApi.ConsignmentStatus>('draft');
   const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -942,11 +973,11 @@ function ConsignmentDialog({
   // onCreate promise to the sub-dialog: opening the dialog stashes
   // the promise handlers; Cancel rejects them so the picker stays
   // open without a phantom selection.
-  const [newSupplierOpen, setNewSupplierOpen] = useState(false);
-  const [newSupplierName, setNewSupplierName] = useState('');
-  const [newSupplierPhone, setNewSupplierPhone] = useState('');
-  const [newSupplierSaving, setNewSupplierSaving] = useState(false);
-  const pendingSupplierCreateRef: MutableRefObject<{
+  const [newConsigneeOpen, setNewConsigneeOpen] = useState(false);
+  const [newConsigneeName, setNewConsigneeName] = useState('');
+  const [newConsigneePhone, setNewConsigneePhone] = useState('');
+  const [newConsigneeSaving, setNewConsigneeSaving] = useState(false);
+  const pendingConsigneeCreateRef: MutableRefObject<{
     resolve: (v: PickerOption) => void;
     reject:  (e: Error) => void;
   } | null> = useRef(null);
@@ -960,7 +991,7 @@ function ConsignmentDialog({
   useEffect(() => {
     if (!open) return;
     if (editing) {
-      setSupplierId(editing.supplierId);
+      setConsigneeId(editing.consigneeId);
       setWarehouseId(editing.warehouseId ?? '');
       setStatus(editing.status);
       setStartDate(editing.startDate);
@@ -1016,7 +1047,7 @@ function ConsignmentDialog({
       // line from the source but WITHOUT its supplier (operator picks
       // fresh) and without any of the settlement accumulators. The
       // consignment number is server-auto-minted on save.
-      setSupplierId('');
+      setConsigneeId('');
       setWarehouseId(copyFrom.warehouseId ?? '');
       // Same 'active' default as blank-create so the primary Create
       // button commits a live agreement (matches operator intent when
@@ -1063,7 +1094,7 @@ function ConsignmentDialog({
       }) : [{ ...EMPTY_ITEM }]);
       void consignmentsApi.nextNumber().then(r => setNextNumber(r.consignmentNo)).catch(() => setNextNumber(''));
     } else {
-      setSupplierId('');
+      setConsigneeId('');
       setWarehouseId('');
       // Create-mode default is 'active' — Draft is now an explicit
       // footer button, so if the operator hits the primary Create
@@ -1134,7 +1165,7 @@ function ConsignmentDialog({
   };
 
   const save = async (statusOverride?: consignmentsApi.ConsignmentStatus) => {
-    if (!supplierId) { toast.error('Supplier is required'); return; }
+    if (!consigneeId) { toast.error('Consignee is required'); return; }
     if (!startDate) { toast.error('Start date is required'); return; }
     const cleanLines = lines.filter(l => l.stockItemId);
     if (cleanLines.length === 0) { toast.error('At least one line item is required'); return; }
@@ -1150,7 +1181,7 @@ function ConsignmentDialog({
     setSaving(true);
     try {
       const req: consignmentsApi.ConsignmentRequest = {
-        supplierId,
+        consigneeId,
         warehouseId: warehouseId || null,
         // statusOverride wins so the Draft button can commit as
         // 'draft' without racing setState.
@@ -1315,32 +1346,32 @@ function ConsignmentDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Supplier <span className="text-red-500">*</span></Label>
+            <Label className="text-xs">Consignee <span className="text-red-500">*</span></Label>
             {/* Search-as-you-type picker with inline "+ Create" — same
                 UX as the POS page's Customer picker so operators build
-                the vendor list without leaving the consignment flow. */}
+                the consignee list without leaving the consignment flow. */}
             <SearchablePicker
               className="h-9"
-              placeholder="Select supplier…"
+              placeholder="Select consignee…"
               searchPlaceholder="Search name / phone…"
-              emptyResultsLabel="No supplier matches — type a name to create."
+              emptyResultsLabel="No consignee matches — type a name to create."
               allowClear={false}
-              value={supplierId}
-              onChange={setSupplierId}
+              value={consigneeId}
+              onChange={setConsigneeId}
               onCreate={async (name) => new Promise<PickerOption>((resolve, reject) => {
                 // Bridge the picker's onCreate to the quick-add
                 // sub-dialog: stash the promise handlers so Save can
                 // resolve them and Cancel can reject them cleanly.
-                pendingSupplierCreateRef.current = { resolve, reject };
-                setNewSupplierName(name);
-                setNewSupplierPhone('');
-                setNewSupplierOpen(true);
+                pendingConsigneeCreateRef.current = { resolve, reject };
+                setNewConsigneeName(name);
+                setNewConsigneePhone('');
+                setNewConsigneeOpen(true);
               })}
-              createLabel={q => `Add "${q}" as a new supplier`}
-              options={vendors.map(v => {
+              createLabel={q => `Add "${q}" as a new consignee`}
+              options={consignees.map(v => {
                 const phone = (v.phone ?? '').trim();
                 // Last-4 phone tail as secondary — two same-name
-                // suppliers still distinguishable. Full phone stays in
+                // consignees still distinguishable. Full phone stays in
                 // the search haystack so typing "01234" still matches.
                 const phoneTail = phone.length >= 4 ? '••' + phone.slice(-4) : phone || undefined;
                 return {
@@ -1730,30 +1761,30 @@ function ConsignmentDialog({
             the SearchablePicker closes with the new option selected,
             rejects it on cancel so no phantom selection lingers. */}
         <Dialog
-          open={newSupplierOpen}
+          open={newConsigneeOpen}
           onOpenChange={o => {
-            if (!o && pendingSupplierCreateRef.current) {
-              pendingSupplierCreateRef.current.reject(new Error('cancelled'));
-              pendingSupplierCreateRef.current = null;
+            if (!o && pendingConsigneeCreateRef.current) {
+              pendingConsigneeCreateRef.current.reject(new Error('cancelled'));
+              pendingConsigneeCreateRef.current = null;
             }
-            setNewSupplierOpen(o);
+            setNewConsigneeOpen(o);
           }}
         >
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle>Add supplier</DialogTitle>
+              <DialogTitle>Add consignee</DialogTitle>
               <DialogDescription className="sr-only">
-                Create a new supplier so this consignment can reference it.
+                Create a new consignee so this consignment can reference it.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 text-sm">
               <div>
                 <Label className="text-xs">Name</Label>
                 <Input
-                  value={newSupplierName}
-                  onChange={e => setNewSupplierName(e.target.value)}
+                  value={newConsigneeName}
+                  onChange={e => setNewConsigneeName(e.target.value)}
                   className="h-9 mt-1"
-                  placeholder="Supplier name"
+                  placeholder="Consignee name"
                   maxLength={255}
                   autoFocus
                 />
@@ -1761,8 +1792,8 @@ function ConsignmentDialog({
               <div>
                 <Label className="text-xs">Phone (optional)</Label>
                 <Input
-                  value={newSupplierPhone}
-                  onChange={e => setNewSupplierPhone(e.target.value)}
+                  value={newConsigneePhone}
+                  onChange={e => setNewConsigneePhone(e.target.value)}
                   className="h-9 mt-1"
                   placeholder="012 345 678"
                   inputMode="tel"
@@ -1774,51 +1805,55 @@ function ConsignmentDialog({
               <Button
                 variant="outline"
                 onClick={() => {
-                  if (pendingSupplierCreateRef.current) {
-                    pendingSupplierCreateRef.current.reject(new Error('cancelled'));
-                    pendingSupplierCreateRef.current = null;
+                  if (pendingConsigneeCreateRef.current) {
+                    pendingConsigneeCreateRef.current.reject(new Error('cancelled'));
+                    pendingConsigneeCreateRef.current = null;
                   }
-                  setNewSupplierOpen(false);
+                  setNewConsigneeOpen(false);
                 }}
-                disabled={newSupplierSaving}
+                disabled={newConsigneeSaving}
               >
                 Cancel
               </Button>
               <Button
                 onClick={async () => {
-                  const name = newSupplierName.trim();
+                  const name = newConsigneeName.trim();
                   if (!name) { toast.error('Name is required'); return; }
-                  setNewSupplierSaving(true);
+                  setNewConsigneeSaving(true);
                   try {
-                    const created = await vendorsApi.create({
-                      // Individual is the safer default — vendors marked
-                      // 'business' require a TIN, which the quick-add
-                      // flow doesn't collect. Operator can promote via
-                      // the Vendors page later if needed.
-                      type: 'individual',
+                    const created = await customersApi.create({
+                      // Business is the operator-friendly default —
+                      // most consignees are shops or partnerships. TIN
+                      // isn't required for `non_taxable` businessType
+                      // so quick-add doesn't have to collect one. Kind
+                      // stays 'customer' so the row lands on the Sale
+                      // > Customer list, not Patient or Student.
+                      type: 'business',
+                      businessType: 'non_taxable',
+                      kind: 'customer',
                       name,
-                      phone: newSupplierPhone.trim() || undefined,
+                      phone: newConsigneePhone.trim() || undefined,
                     });
-                    onVendorAdded(created);
-                    setSupplierId(created.id);
+                    onConsigneeAdded(created);
+                    setConsigneeId(created.id);
                     toast.success(`Added ${created.name}`);
-                    pendingSupplierCreateRef.current?.resolve({
+                    pendingConsigneeCreateRef.current?.resolve({
                       value: created.id,
                       label: created.name,
                       secondary: created.phone ?? undefined,
                     });
-                    pendingSupplierCreateRef.current = null;
-                    setNewSupplierOpen(false);
+                    pendingConsigneeCreateRef.current = null;
+                    setNewConsigneeOpen(false);
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : 'Failed to add supplier');
+                    toast.error(e instanceof Error ? e.message : 'Failed to add consignee');
                   } finally {
-                    setNewSupplierSaving(false);
+                    setNewConsigneeSaving(false);
                   }
                 }}
-                disabled={newSupplierSaving || !newSupplierName.trim()}
+                disabled={newConsigneeSaving || !newConsigneeName.trim()}
               >
-                {newSupplierSaving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                Add supplier
+                {newConsigneeSaving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                Add consignee
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1835,7 +1870,7 @@ function ConsignmentDialog({
 function ConsignmentSettlementView() {
   const [rows, setRows] = useState<settlementsApi.ConsignmentSettlement[]>([]);
   const [consignments, setConsignments] = useState<consignmentsApi.Consignment[]>([]);
-  const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
+  const [consignees, setConsignees] = useState<customersApi.Customer[]>([]);
   // Item catalog powers the "line items" display in the New /
   // Edit Settlement dialog once a consignment is picked — the
   // consignment DTO only carries stockItemId + prices; names come
@@ -1848,7 +1883,7 @@ function ConsignmentSettlementView() {
   const [deleteTarget, setDeleteTarget] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   // Client-side filters — same shape as the Consignment tab's
   // filter row. Search matches settlementNo / consignmentNo /
-  // supplierName / notes. Date range checks settlementDate.
+  // consigneeName / notes. Date range checks settlementDate.
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -1859,12 +1894,12 @@ function ConsignmentSettlementView() {
       const [s, c, v, i] = await Promise.all([
         settlementsApi.list({ size: 200 }),
         consignmentsApi.list({ size: 200 }),
-        vendorsApi.list({ size: 500 }).catch(() => ({ content: [] as vendorsApi.Vendor[] } as any)),
+        customersApi.list({ size: 500, kind: 'customer', type: 'business' }).catch(() => ({ content: [] as customersApi.Customer[] } as any)),
         itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
       ]);
       setRows(s.content ?? []);
       setConsignments(c.content ?? []);
-      setVendors(v.content ?? []);
+      setConsignees(v.content ?? []);
       setItems(i.content ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load settlements');
@@ -1878,7 +1913,7 @@ function ConsignmentSettlementView() {
     const term = search.trim().toLowerCase();
     return rows.filter(r => {
       if (term) {
-        const hay = `${r.settlementNo} ${r.consignmentNo ?? ''} ${r.supplierName ?? ''} ${r.notes ?? ''}`.toLowerCase();
+        const hay = `${r.settlementNo} ${r.consignmentNo ?? ''} ${r.consigneeName ?? ''} ${r.notes ?? ''}`.toLowerCase();
         if (!hay.includes(term)) return false;
       }
       if (dateFrom && r.settlementDate < dateFrom) return false;
@@ -1895,6 +1930,50 @@ function ConsignmentSettlementView() {
       r.status === 'draft' || r.status === 'pending' ? (r.netAmount ?? 0) : 0
     ),
   }), { count: 0, gross: 0, commission: 0, outstanding: 0 }), [filteredRows]);
+
+  /* Derived Sold / Remain / Remark for the settlement table.
+   * Both Sold and Remain reflect the parent consignment's CURRENT
+   * state — same numbers the View dialog sums under its Prev + Avail
+   * columns:
+   *   Sold   = Σ Prev  = Σ parent.items[].soldQty
+   *   Remain = Σ Avail = Σ parent.items[].(receivedQty − soldQty)
+   * Chosen over per-settlement lineBreakdown because the operator
+   * reads this table as a snapshot of the batch, not per-payout: a
+   * row where the operator entered 0 in "Sold this time" but the
+   * parent already had prior sold_qty=5 must show 5 here, not 0.
+   *
+   * Remark:
+   *   parent.status === 'partially_settled'  → "Partial"
+   *   parent.status === 'settled' AND remainder > 0
+   *     → "Return Stock" (BE only leaves that gap when the
+   *        operator picked disposition='return' on the closing
+   *        settlement, which pushed the unsold units back to
+   *        stock and set consignment→settled)
+   *   otherwise blank (full sell-through, or still draft/active).
+   */
+  const consignmentById = useMemo(() => {
+    const m = new Map<string, consignmentsApi.Consignment>();
+    for (const c of consignments) m.set(c.id, c);
+    return m;
+  }, [consignments]);
+  const rowMeta = (r: settlementsApi.ConsignmentSettlement) => {
+    const parent = consignmentById.get(r.consignmentId);
+    let sold = 0, remain = 0;
+    let remark: '' | 'Partial' | 'Return Stock' = '';
+    if (parent) {
+      let received = 0;
+      for (const it of parent.items ?? []) {
+        const q = Number(it.receivedQty ?? 0);
+        const s = Math.min(q, Number(it.soldQty ?? 0));
+        received += q;
+        sold     += s;
+      }
+      remain = Math.max(0, received - sold);
+      if (parent.status === 'partially_settled') remark = 'Partial';
+      else if (parent.status === 'settled' && received > sold) remark = 'Return Stock';
+    }
+    return { sold, remain, remark };
+  };
 
   const doDelete = async (r: settlementsApi.ConsignmentSettlement) => {
     try {
@@ -1913,9 +1992,9 @@ function ConsignmentSettlementView() {
         <StatCard label="Settlements"      value={formatNumber(totals.count)}       icon={ReceiptText} tone="blue" />
         <StatCard label="Gross Sales"      value={formatUSD(totals.gross)}          icon={DollarSign}  tone="green" />
         <StatCard label="Commission Kept"  value={formatUSD(totals.commission)}     icon={Wallet}      tone="amber"
-          hint="Portion of gross that stays with us — the supplier gets net" />
+          hint="Portion of gross that stays with us — the consignee gets net" />
         <StatCard label="Outstanding"      value={formatUSD(totals.outstanding)}    icon={Wallet}      tone="orange"
-          hint="Net owed to suppliers on draft + pending settlements" />
+          hint="Net owed to consignees on draft + pending settlements" />
       </div>
 
       <Card>
@@ -1927,7 +2006,7 @@ function ConsignmentSettlementView() {
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by No, consignment, supplier, or notes…"
+              placeholder="Search by No, consignment, consignee, or notes…"
               className="h-9 w-64 text-sm"
             />
             <Label className="text-xs text-gray-500">From</Label>
@@ -1981,13 +2060,17 @@ function ConsignmentSettlementView() {
                 : <>No settlements match the current filter.</>}
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Settlement No</TableHead>
                   <TableHead>Consignment</TableHead>
-                  <TableHead>Supplier</TableHead>
+                  <TableHead>Consignee</TableHead>
                   <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Sold</TableHead>
+                  <TableHead className="text-right">Remain</TableHead>
+                  <TableHead>Remark</TableHead>
                   <TableHead className="text-right">Gross</TableHead>
                   <TableHead className="text-right">Commission</TableHead>
                   <TableHead className="text-right">Deductions</TableHead>
@@ -2005,13 +2088,25 @@ function ConsignmentSettlementView() {
                   // Editing or deleting past that point would leave
                   // the parent's accumulators in a nonsense state.
                   const canMutate = r.status === 'draft';
+                  const meta = rowMeta(r);
                   return (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium tabular-nums">{r.settlementNo}</TableCell>
                     <TableCell className="tabular-nums text-xs">{r.consignmentNo ?? '—'}</TableCell>
-                    <TableCell>{r.supplierName ?? '—'}</TableCell>
+                    <TableCell>{r.consigneeName ?? '—'}</TableCell>
                     <TableCell className="text-xs text-gray-600">
                       {r.periodFrom} → {r.periodTo}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{meta.sold || '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{meta.remain || '—'}</TableCell>
+                    <TableCell>
+                      {meta.remark
+                        ? <Badge className={
+                            meta.remark === 'Partial'
+                              ? 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+                              : 'bg-sky-100 text-sky-800 hover:bg-sky-100'
+                          }>{meta.remark}</Badge>
+                        : <span className="text-gray-400">—</span>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatUSD(r.grossSales)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatUSD(r.commissionAmount)}</TableCell>
@@ -2054,6 +2149,7 @@ function ConsignmentSettlementView() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -2064,7 +2160,7 @@ function ConsignmentSettlementView() {
           onOpenChange={setDialogOpen}
           editing={editing}
           consignments={consignments}
-          vendors={vendors}
+          consignees={consignees}
           items={items}
           onSaved={async () => { setDialogOpen(false); await load(); }}
         />
@@ -2081,7 +2177,7 @@ function ConsignmentSettlementView() {
           onOpenChange={(o) => !o && setViewing(null)}
           editing={viewing}
           consignments={consignments}
-          vendors={vendors}
+          consignees={consignees}
           items={items}
           onSaved={async () => { setViewing(null); }}
           readOnly
@@ -2122,7 +2218,7 @@ function SettlementDialog({
   onOpenChange: (v: boolean) => void;
   editing: settlementsApi.ConsignmentSettlement | null;
   consignments: consignmentsApi.Consignment[];
-  vendors: vendorsApi.Vendor[];
+  consignees: customersApi.Customer[];
   items: itemsApi.Item[];
   onSaved: () => Promise<void> | void;
   /** View mode — wraps the form body in a disabled fieldset so every
@@ -2259,30 +2355,76 @@ function SettlementDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignmentId, consignments]);
 
+  // Live-sync Gross Sales + Commission from the Sold column as the
+  // operator types. Create-only so an edit session doesn't clobber the
+  // persisted amounts on the first re-render; the "Fill Gross + Comm.
+  // from Sold" button is still the manual re-sync path in Edit mode.
+  useEffect(() => {
+    if (!open || !consignmentId || editing) return;
+    const picked = consignments.find(x => x.id === consignmentId);
+    if (!picked) return;
+    let sumGross = 0, sumComm = 0;
+    for (const it of picked.items) {
+      const sold  = Number(soldByLine[it.id] ?? '0') || 0;
+      const price = it.sellingPrice ?? 0;
+      let commPerUnit = 0;
+      if (it.commissionType === 'amount')       commPerUnit = it.commissionValue ?? 0;
+      else if (it.commissionType === 'percent') commPerUnit = price * (it.commissionValue ?? 0) / 100;
+      sumGross += sold * price;
+      sumComm  += sold * commPerUnit;
+    }
+    setGrossSales(sumGross.toFixed(2));
+    setCommissionAmount(sumComm.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soldByLine, consignmentId, editing, open]);
+
   const netAmount =
     (Number(grossSales) || 0)
     - (Number(commissionAmount) || 0)
     - (Number(deductionAmount) || 0);
 
-  const supplierName = useMemo(() => {
+  const consigneeName = useMemo(() => {
     const c = consignments.find(x => x.id === consignmentId);
     if (!c) return null;
-    return c.supplierName ?? vendors.find(v => v.id === c.supplierId)?.name ?? null;
-  }, [consignmentId, consignments, vendors]);
+    return c.consigneeName ?? consignees.find(v => v.id === c.consigneeId)?.name ?? null;
+  }, [consignmentId, consignments, consignees]);
 
   const save = async (statusOverride?: settlementsApi.SettlementStatus) => {
     if (!consignmentId) { toast.error('Consignment is required'); return; }
     if (!settlementDate) { toast.error('Settlement date is required'); return; }
-    setSaving(true);
     // statusOverride wins so the Draft button can commit as
     // 'draft' without racing setState with the visible Status
     // dropdown (edit mode).
     const effectiveStatus = statusOverride ?? status;
+
+    // Guard: block a settlement that has line-item totals but no
+    // Gross Sales entered. Draft saves can still park a zero-gross
+    // record for later editing, but 'paid' and 'pending' commits with
+    // sold units in the table must carry a matching Gross Sales value
+    // (or the operator explicitly zeros the sold columns first).
+    const pickedForCheck = consignments.find(x => x.id === consignmentId);
+    if (pickedForCheck && effectiveStatus !== 'draft') {
+      const totalsSum = pickedForCheck.items.reduce((s, it) => {
+        const sold  = Number(soldByLine[it.id] ?? '0') || 0;
+        const price = it.sellingPrice ?? 0;
+        return s + sold * price;
+      }, 0);
+      const grossEntered = Number(grossSales) || 0;
+      if (totalsSum > 0 && grossEntered <= 0) {
+        toast.error(
+          `Gross sales can't be 0 while line-item Totals is ${formatUSD(totalsSum)}. ` +
+          'Use "Fill Gross + Comm. from Sold" or type a value.'
+        );
+        return;
+      }
+    }
+
+    setSaving(true);
     try {
       // Per-line breakdown — BE bumps parent items' sold_qty when
       // status='paid'. Only sends rows the operator actually filled
       // (sold > 0) to keep the payload lean.
-      const picked = consignments.find(x => x.id === consignmentId);
+      const picked = pickedForCheck;
       const lines = picked
         ? picked.items
             .map(it => ({
@@ -2366,7 +2508,7 @@ function SettlementDialog({
                   <button
                     type="button"
                     className="text-gray-400 hover:text-gray-600 transition"
-                    title="One period's payout to the supplier — net = gross − commission − deductions."
+                    title="One period's payout to the consignee — net = gross − commission − deductions."
                     aria-label="Settlement formula info"
                   >
                     <Info className="h-3.5 w-3.5" />
@@ -2451,11 +2593,11 @@ function SettlementDialog({
                   || c.id === consignmentId)
                 .map(c =>
                 <option key={c.id} value={c.id}>
-                  {c.consignmentNo} — {c.supplierName ?? 'Unknown supplier'}
+                  {c.consignmentNo} — {c.consigneeName ?? 'Unknown consignee'}
                 </option>)}
             </select>
-            {supplierName && (
-              <div className="text-[10px] text-gray-500">Supplier: <span className="font-medium text-gray-700">{supplierName}</span></div>
+            {consigneeName && (
+              <div className="text-[10px] text-gray-500">Consignee: <span className="font-medium text-gray-700">{consigneeName}</span></div>
             )}
           </div>
 
@@ -2499,7 +2641,7 @@ function SettlementDialog({
               className="h-9 text-right tabular-nums" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Net owed to supplier</Label>
+            <Label className="text-xs">Net owed to consignee</Label>
             <div className="h-9 rounded-md border border-input bg-gray-50 px-2 flex items-center justify-end text-lg font-bold text-emerald-700 tabular-nums">
               {formatUSD(netAmount < 0 ? 0 : netAmount)}
             </div>
@@ -2699,7 +2841,7 @@ function SettlementDialog({
                     className="mt-0.5"
                   />
                   <span>
-                    <strong>Return Stock</strong> — supplier takes the {remaining.toLocaleString('en-US')} unsold unit{remaining === 1 ? '' : 's'} back. Consignment closes after this settlement.
+                    <strong>Return Stock</strong> — consignee returns the {remaining.toLocaleString('en-US')} unsold unit{remaining === 1 ? '' : 's'} back to us. Consignment closes after this settlement.
                   </span>
                 </label>
               </div>

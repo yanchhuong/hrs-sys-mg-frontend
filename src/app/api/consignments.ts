@@ -41,8 +41,8 @@ export interface ConsignmentItem {
 export interface Consignment {
   id: string;
   consignmentNo: string;
-  supplierId: string;
-  supplierName: string | null;
+  consigneeId: string;
+  consigneeName: string | null;
   warehouseId: string | null;
   warehouseName: string | null;
   status: ConsignmentStatus;
@@ -74,7 +74,7 @@ export interface ConsignmentItemRequest {
 export interface ConsignmentRequest {
   /** Optional on create — server auto-mints when omitted. */
   consignmentNo?: string;
-  supplierId: string;
+  consigneeId: string;
   warehouseId?: string | null;
   status?: ConsignmentStatus;
   startDate: string;
@@ -87,7 +87,7 @@ export interface ConsignmentRequest {
 
 export interface ListParams {
   status?: ConsignmentStatus;
-  supplierId?: string;
+  consigneeId?: string;
   page?: number;
   size?: number;
 }
@@ -95,7 +95,7 @@ export interface ListParams {
 export async function list(params: ListParams = {}): Promise<Page<Consignment>> {
   const query: Record<string, string> = {};
   if (params.status) query.status = params.status;
-  if (params.supplierId) query.supplierId = params.supplierId;
+  if (params.consigneeId) query.consigneeId = params.consigneeId;
   if (params.page != null) query.page = String(params.page);
   if (params.size != null) query.size = String(params.size);
   return apiJson('/api/v1/consignments', { query });
