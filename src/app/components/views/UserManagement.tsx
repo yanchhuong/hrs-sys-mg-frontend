@@ -142,7 +142,14 @@ const MODULES: ModuleDef[] = [
   { key: 'increase',          label: 'Increase',          description: 'Salary increases and bonuses',                                parent: 'payroll-mgmt' },
   { key: 'deduction',         label: 'Deduction',         description: 'Salary deductions',                                           parent: 'payroll-mgmt' },
 
-  { key: 'reports',           label: 'Reports',           description: 'Attendance & payroll reporting' },
+  // v-reports-header-only — the Reports row is a section header,
+  // matching the sidebar's REPORTS group. Its children (Attendance
+  // Report / Payroll Report / Compliance / Sale Ledger / Purchase
+  // Ledger / Profit & Loss) each own their own permission key, so
+  // there's nothing to independently toggle at the parent level.
+  // Legacy `reports:view` grants still open the leaves via the
+  // parent-cascade helper in ReportController.
+  { key: 'reports',           label: 'Reports',           description: '', header: true },
   { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
   { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
   { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
@@ -271,10 +278,27 @@ const MODULES: ModuleDef[] = [
   { key: 'book',              label: 'Payment History',   description: 'Membership invoices + receipts, and the book catalog behind the Activity picker', parent: 'library-group' },
   { key: 'reading',           label: 'Activity',          description: 'Member activities — reading, meeting, conference, other',                       parent: 'library-group' },
 
-  { key: 'settings-group',    label: 'Settings',          description: '',                                                            header: true },
-  { key: 'settings',          label: 'General Settings',  description: 'System and policy settings',                                  parent: 'settings-group' },
-  { key: 'user-management',   label: 'User Management',   description: 'Users, roles, permissions',                                   parent: 'settings-group' },
-  { key: 'telegram',          label: 'Telegram Bot',      description: 'Register a Telegram bot to deliver invoices to customers',   parent: 'settings-group' },
+  // Settings group — matrix rows mirror the sidebar leaves 1:1 so the
+  // admin reading this section sees the same names they navigate to.
+  // Attendance / Employee / Payroll settings share the `settings` gate
+  // in nav.ts (each has an additional `requireAlso` on their domain
+  // module); the inherit-row pattern keeps them visible in the matrix
+  // as read-only siblings of General Settings rather than adding
+  // three duplicate checkbox rows the operator can't independently
+  // toggle. Matches the patients-visible / students-visible playbook.
+  // Settings group — the matrix rows are exactly the sidebar leaves
+  // from nav.ts (NAV_LEAVES ids 'settings' / 'attendance-settings' /
+  // 'employee-settings' / 'user-management' / 'payroll-categories').
+  // Telegram Bot dropped 2026 — no sidebar leaf remains, so a matrix
+  // row for it would be dead configuration. The `telegram` module
+  // gate itself still exists on the BE for the register-bot endpoints;
+  // admin roles inherit it via HIDDEN_MODULES_FOR_ADMIN_SEED below.
+  { key: 'settings-group',      label: 'Settings',           description: '',                                                            header: true },
+  { key: 'settings',            label: 'General Settings',   description: 'System and policy settings',                                  parent: 'settings-group' },
+  { key: 'attendance-settings', label: 'Attendance Settings',description: 'Punch clock / geofence / late-grace policy',                  parent: 'settings-group', inheritsFromLabel: 'General Settings' },
+  { key: 'employee-settings',   label: 'Employee Settings',  description: 'Employee master-data defaults + onboarding fields',           parent: 'settings-group', inheritsFromLabel: 'General Settings' },
+  { key: 'user-management',     label: 'User Management',    description: 'Users, roles, permissions',                                   parent: 'settings-group' },
+  { key: 'payroll-categories',  label: 'Payroll Categories', description: 'Salary category catalog + monthly gross flags',               parent: 'settings-group', inheritsFromLabel: 'General Settings' },
 ];
 
 /** Map an inherited row's key → the module key whose checkbox state
@@ -291,6 +315,14 @@ const INHERIT_PARENT_KEY: Record<string, string> = {
   // kind filter, so the same gate applies to both surfaces.
   'patients-visible': 'encounter',
   'students-visible': 'enrollment',
+  // Settings sub-tabs — all three sidebar leaves (Attendance /
+  // Employee / Payroll settings) route through the same `settings`
+  // module gate in nav.ts. Displaying them as inherit rows lets the
+  // matrix mirror the sidebar without inventing three phantom
+  // module keys the BE wouldn't recognise.
+  'attendance-settings': 'settings',
+  'employee-settings':   'settings',
+  'payroll-categories':  'settings',
 };
 
 /**
@@ -300,7 +332,7 @@ const INHERIT_PARENT_KEY: Record<string, string> = {
  * Contracts endpoints still gate on it). Custom roles created from the
  * Admin base seed full grants on these so they don't silently 403.
  */
-const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts', 'medical-service'] as const;
+const HIDDEN_MODULES_FOR_ADMIN_SEED = ['contracts', 'medical-service', 'telegram'] as const;
 
 // Default permissions per role. The Permission Matrix UI calls this for
 // every (module, role, action) combo so "Reset to Defaults" produces a
@@ -609,13 +641,33 @@ export function UserManagement() {
     // bug ("why are these checkboxes disabled?"). Since editing them
     // did nothing anyway (they mirror the parent module), drop them
     // from the matrix entirely. The parent row (Invoice / Bill /
-    // Encounter / Enrollment) is where the admin makes the change,
-    // and the sidebar-leaf visibility that these rows tracked stays
-    // gated by that parent module in nav.ts.
-    const kept = MODULES.filter(m =>
-      !m.inheritsFromLabel
-      && (m.header || installed(m.key))
-    );
+    // Encounter / Enrollment) is where the admin makes the change.
+    //
+    // Settings sub-tabs (Attendance / Employee Settings, Payroll
+    // Categories) are the exception: admins expect the matrix to
+    // mirror the sidebar 1:1 there, so those inherit rows stay
+    // visible even though editing them just mirrors General Settings.
+    // If we ever ship more shared-gate sidebar leaves, add their key
+    // here so they get the same allow-list treatment.
+    const SHOW_INHERIT_ROWS = new Set<string>([
+      'attendance-settings',
+      'employee-settings',
+      'payroll-categories',
+    ]);
+    const kept = MODULES.filter(m => {
+      // Headers always survive pass 1 — pruned in pass 2 if orphaned.
+      if (m.header) return true;
+      // Inherit rows are display-only, so their own key isn't in the
+      // installed catalog. Follow the parent's installed state
+      // instead — if General Settings is on for this tenant, the
+      // three Settings sub-tabs come along.
+      if (m.inheritsFromLabel) {
+        if (!SHOW_INHERIT_ROWS.has(m.key)) return false;
+        const parentKey = INHERIT_PARENT_KEY[m.key];
+        return parentKey ? installed(parentKey) : false;
+      }
+      return installed(m.key);
+    });
     // Second pass: drop a header if the next non-header before another
     // header is missing — i.e. no children survived the install filter.
     const result: ModuleDef[] = [];
@@ -1014,17 +1066,41 @@ export function UserManagement() {
     );
   };
 
+  /** V-menu-view-implicit — VCUD interlock:
+   *   • Turning ON create / update / delete auto-turns ON view. You
+   *     can't create / edit / delete a page you can't see; leaving
+   *     `view` off used to render the sidebar leaf while every API
+   *     call 403'd, matching what admins misread as "role has the
+   *     grant but the page is broken".
+   *   • Turning OFF view auto-turns OFF create / update / delete —
+   *     hiding the page but keeping write grants leaves API-only
+   *     holes.
+   *   • Toggling a scope axis (scope_owner / scope_member / scope_all)
+   *     is independent; nothing implicit fires there. */
   const togglePermission = (moduleKey: string, role: UserRole, action: Action) => {
-    setPermissions(prev => ({
-      ...prev,
-      [moduleKey]: {
-        ...prev[moduleKey],
-        [role]: {
-          ...prev[moduleKey][role],
-          [action]: !prev[moduleKey][role][action],
+    setPermissions(prev => {
+      const before = prev[moduleKey][role];
+      const nextVal = !before[action];
+      const next = { ...before, [action]: nextVal };
+      // Only apply the interlock on the Menu Access axis; scope
+      // toggles fall through as-is.
+      if (action === 'view' || action === 'create' || action === 'update' || action === 'delete') {
+        if (action === 'view' && !nextVal) {
+          next.create = false;
+          next.update = false;
+          next.delete = false;
+        } else if (action !== 'view' && nextVal) {
+          next.view = true;
+        }
+      }
+      return {
+        ...prev,
+        [moduleKey]: {
+          ...prev[moduleKey],
+          [role]: next,
         },
-      },
-    }));
+      };
+    });
   };
 
   const toggleAllForRoleModule = (moduleKey: string, role: UserRole, value: boolean) => {
@@ -1886,16 +1962,19 @@ export function UserManagement() {
                           </TableRow>
                         );
                       }
-                      // Inherited rows — render with the SAME Menu Access +
-                      // Data Access columns as a regular module so the row
-                      // carries equal visual weight, but pull each
-                      // checkbox's state from the parent module's
-                      // permissions and disable interaction (the parent
-                      // row is where the admin makes the edit). The label
-                      // cell also carries an "Inherits from X" badge so
-                      // the relationship is unambiguous.
+                      // Inherited rows — the sidebar leaf exists but the
+                      // permission lives on the parent module (e.g.
+                      // Attendance Settings routes through the `settings`
+                      // gate). We show the row so the matrix visually
+                      // mirrors the sidebar 1:1, but drop the checkbox
+                      // columns entirely — earlier iterations rendered
+                      // disabled-but-checked boxes that admins misread as
+                      // "did I click that too?". Now the row is clearly
+                      // informational: label + tooltip + "Inherits from X"
+                      // badge, and a single "same as X" caption spanning
+                      // every role column.
                       if (mod.inheritsFromLabel) {
-                        const parentKey = INHERIT_PARENT_KEY[mod.key] ?? mod.key;
+                        const nonAdminRoles = roles.filter(r => r.key !== 'admin');
                         return (
                           <TableRow key={mod.key} className="bg-blue-50/30">
                             <TableCell>
@@ -1921,51 +2000,15 @@ export function UserManagement() {
                                 </p>
                               </div>
                             </TableCell>
-                            {roles.filter(r => r.key !== 'admin').map(role => {
-                              const parentState = permissions[parentKey]?.[role.key];
-                              const hasAnyMenuAccess = MENU_ACTIONS.some(a => parentState?.[a]);
-                              return (
-                                <TableCell key={role.key} className="border-l">
-                                  <div
-                                    className="flex items-center justify-center gap-4 opacity-60"
-                                    title={`Read-only — driven by ${mod.inheritsFromLabel}`}
-                                  >
-                                    {MENU_ACTIONS.map(action => (
-                                      <div key={action} className="w-6 flex justify-center">
-                                        <Checkbox
-                                          checked={!!parentState?.[action]}
-                                          disabled
-                                          aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]} (inherited)`}
-                                        />
-                                      </div>
-                                    ))}
-                                    {hasAnyMenuAccess ? (
-                                      SCOPE_ACTIONS.map((action, idx) => (
-                                        <div
-                                          key={action}
-                                          className={`w-6 flex justify-center ${idx === 0 ? 'border-l pl-2 ml-1' : ''}`}
-                                        >
-                                          <Checkbox
-                                            checked={!!parentState?.[action]}
-                                            disabled
-                                            aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]} (inherited)`}
-                                          />
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <>
-                                        <div className="w-6 border-l ml-1" />
-                                        <div className="w-6" />
-                                        <div className="w-6" />
-                                      </>
-                                    )}
-                                  </div>
-                                  <div className="flex justify-center mt-2">
-                                    <span className="text-[10px] text-gray-400 italic">inherited</span>
-                                  </div>
-                                </TableCell>
-                              );
-                            })}
+                            {nonAdminRoles.map(role => (
+                              <TableCell key={role.key} className="border-l">
+                                <div className="flex items-center justify-center h-full">
+                                  <span className="text-[11px] text-gray-400 italic">
+                                    same as {mod.inheritsFromLabel}
+                                  </span>
+                                </div>
+                              </TableCell>
+                            ))}
                           </TableRow>
                         );
                       }
