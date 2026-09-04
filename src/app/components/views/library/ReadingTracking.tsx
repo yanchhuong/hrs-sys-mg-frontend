@@ -79,7 +79,7 @@ const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.El
 ];
 
 export function ReadingTracking() {
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canView, canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
   const confirm = useConfirm();
   const [rows, setRows] = useState<library.ReadingRecord[]>([]);
@@ -223,7 +223,14 @@ export function ReadingTracking() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {canCreate('reading') && (
+          {/* v-activity-view-only — the New Activity flow pops the
+              member + book pickers, so it needs `member:view` (to
+              list members) and `book:view` (to seed the reading
+              picker). A role granted `reading:*` but not those two
+              still opens the page in read-only mode; hide the
+              button rather than lead the operator into a 403 chain
+              inside the dialog. */}
+          {canCreate('reading') && canView('member') && canView('book') && (
             <Button onClick={openNew}>
               <Plus className="h-4 w-4 mr-1.5" /> New Activity
             </Button>
@@ -329,7 +336,12 @@ export function ReadingTracking() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1 justify-end">
-                          {canUpdate('reading') && (
+                          {/* Edit needs member + book pickers too, so gate
+                              the pencil on the same combo as the New
+                              Activity button. Delete only touches the
+                              reading row — no cross-module fetch — so it
+                              stays on the base `reading:delete` gate. */}
+                          {canUpdate('reading') && canView('member') && canView('book') && (
                             <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)}>
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>

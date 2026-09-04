@@ -337,6 +337,11 @@ export const NAV_LEAVES: NavLeaf[] = [
   // `book` gate also covers the inline Add-book popup that lives on
   // the Activity page.
   { id: 'library-books',     labelKey: 'nav.libraryBooks',           icon: ReceiptText,     module: 'book',               component: PaymentHistory,           group: 'library-group' },
+  // v-activity-view-only — Activity leaf shows whenever `reading:view`
+  // is granted. Missing `member:view` / `book:view` no longer hides
+  // the leaf; instead the page renders in read-only mode (list works,
+  // "+ New Activity" is disabled) so a role granted read-only reading
+  // access still lands on a usable page.
   { id: 'library-reading',   labelKey: 'nav.libraryReading',         icon: Activity,        module: 'reading',            component: ReadingTracking,          group: 'library-group' },
   { id: 'approvals',         labelKey: 'nav.approvals',              icon: ClipboardCheck,  module: 'approval',           component: Approvals },
   // v-agency-fe-9 — read-only view of the agency's tax
