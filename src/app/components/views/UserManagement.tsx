@@ -729,6 +729,9 @@ export function UserManagement() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  // Which of the two Add-User paths the admin is on: link an existing
+  // Employee, or create a standalone login with no Employee row.
+  const [linkEmployee, setLinkEmployee] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
     username: '',
@@ -743,6 +746,7 @@ export function UserManagement() {
   const handleOpenDialog = (user?: User) => {
     if (user) {
       setEditingUser(user);
+      setLinkEmployee(!!user.employeeId);
       setFormData({
         email: user.email,
         username: user.username ?? '',
@@ -755,6 +759,7 @@ export function UserManagement() {
       });
     } else {
       setEditingUser(null);
+      setLinkEmployee(true);
       setFormData({
         email: '',
         username: '',
@@ -770,12 +775,13 @@ export function UserManagement() {
   };
 
   const handleSaveUser = async () => {
-    // Administrator is the company-owner role — it doesn't need to be
-    // tied to an Employee record (the owner may not appear in the
-    // Employees table yet). Every other role is a person on payroll,
-    // so Employee stays required for them.
-    const employeeRequired = formData.role !== 'admin';
-    if (!formData.email || (employeeRequired && !formData.employeeId) || (!editingUser && !formData.password)) {
+    // Linking an Employee is a deliberate choice, not a role
+    // consequence: an admin adds either a login FOR an existing
+    // employee, or a standalone login (contractor, auditor, an owner
+    // not yet on the Employees table). The backend takes a null
+    // employeeId for every role, so the only rule left is "if you
+    // chose the linked path, actually pick someone".
+    if (!formData.email || (linkEmployee && !formData.employeeId) || (!editingUser && !formData.password)) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -859,7 +865,7 @@ export function UserManagement() {
         await usersApi.create({
           email: formData.email,
           role: formData.role as usersApi.UserRole,
-          employeeId: formData.employeeId || undefined,
+          employeeId: linkEmployee ? (formData.employeeId || undefined) : undefined,
           departmentId: formData.departmentId || undefined,
           initialPassword: formData.password || undefined,
           // V146 — optional. Lowercased before send to match the
@@ -1431,14 +1437,52 @@ export function UserManagement() {
                         </div>
                       </div>
 
+                      {/* Two ways to add a user: for someone already on
+                          the Employees table, or a standalone login
+                          (contractor, auditor, an owner not yet hired
+                          in). Switching to standalone clears the link
+                          so a half-filled pick can't leak into save. */}
+                      <div className="space-y-2">
+                        <Label>Create user for</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant={linkEmployee ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setLinkEmployee(true)}
+                          >
+                            An existing employee
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={!linkEmployee ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => {
+                              setLinkEmployee(false);
+                              setFormData(prev => ({ ...prev, employeeId: '' }));
+                            }}
+                          >
+                            No employee
+                          </Button>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="employeeId">
-                            Employee{formData.role !== 'admin' ? ' *' : ''}
-                            {formData.role === 'admin' && (
-                              <span className="ml-1 text-xs font-normal text-gray-500">(optional)</span>
+                            Employee{linkEmployee ? ' *' : ''}
+                            {!linkEmployee && (
+                              <span className="ml-1 text-xs font-normal text-gray-500">
+                                (not linked)
+                              </span>
                             )}
                           </Label>
+                          {!linkEmployee ? (
+                            <p className="text-xs text-gray-500 py-2">
+                              This login isn't tied to an Employee record.
+                            </p>
+                          ) : (
+                          <>
                           <UserEmployeePicker
                             employees={employees}
                             deptName={deptName}
@@ -1484,6 +1528,8 @@ export function UserManagement() {
                               </p>
                             );
                           })()}
+                          </>
+                          )}
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="departmentId">Department / Group / Team</Label>
@@ -2260,9 +2306,15 @@ function UserEmployeePicker({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between font-normal"
+          className="w-full justify-between font-normal overflow-hidden"
+          title={selected ? selectedLabel : undefined}
         >
-          <span className={selected ? '' : 'text-gray-400'}>{selectedLabel}</span>
+          {/* min-w-0 lets the label shrink inside the flex row; without
+              it a long "Name — EMPNO · Dept" runs past the trigger and
+              overlaps the Department field beside it. */}
+          <span className={`min-w-0 truncate ${selected ? '' : 'text-gray-400'}`}>
+            {selectedLabel}
+          </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
