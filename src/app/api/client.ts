@@ -6,6 +6,8 @@
  * by `auth.logout()`. A 401 response clears the token so the caller can re-auth.
  */
 
+import { migrateLegacyApiBaseOverride } from '../utils/runtime';
+
 /**
  * Resolves the API base in this order (highest precedence first):
  *   1. `localStorage['hrms:apiBaseOverride']` — set by the shipped
@@ -19,6 +21,13 @@ function readApiBaseOverride(): string | null {
   try { return typeof localStorage !== 'undefined' ? localStorage.getItem(API_BASE_KEY) : null; }
   catch { return null; }
 }
+// Rewrite a persisted override left over from a retired online URL
+// BEFORE API_BASE is read below. Order matters: API_BASE is evaluated
+// once at module import, and the stored override outranks
+// VITE_API_BASE — so an old desktop install would otherwise keep
+// using the previous host forever and never pick up a new build's
+// value. Safe on web (nothing persisted → no-op).
+migrateLegacyApiBaseOverride();
 export const API_BASE: string =
   readApiBaseOverride()
   ?? (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE

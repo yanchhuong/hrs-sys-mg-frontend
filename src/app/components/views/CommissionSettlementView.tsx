@@ -131,6 +131,12 @@ export function CommissionSettlementView() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Settlement No</TableHead>
+                  {/* The payment reference captured on the create /
+                      status dialogs (a bank TRX-… or receipt number).
+                      It was stored and shown only inside the detail
+                      dialog, so reconciling a bank statement against
+                      this list meant opening every row. */}
+                  <TableHead>Refer No.</TableHead>
                   <TableHead>Seller</TableHead>
                   <TableHead>Period</TableHead>
                   <TableHead className="text-right">Invoices</TableHead>
@@ -147,6 +153,9 @@ export function CommissionSettlementView() {
                   return (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.settlementNo}</TableCell>
+                      <TableCell className="text-xs tabular-nums text-gray-600">
+                        {r.referenceNo || '—'}
+                      </TableCell>
                       <TableCell>{userName.get(r.sellerId) ?? r.sellerId.slice(0, 8)}</TableCell>
                       <TableCell className="text-xs text-gray-600">
                         {r.periodStart} → {r.periodEnd}

@@ -13,6 +13,8 @@ import { saleLedger } from '../../api/ledgerReports';
 import type { LedgerReportResponse } from '../../api/ledgerReports';
 import { commission, commissionFor } from '../../api/commission';
 import type { CommissionProgram } from '../../api/commission';
+import { commissionSettlement } from '../../api/commissionSettlement';
+import type { SettlementHeader } from '../../api/commissionSettlement';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { CommissionSettings } from './CommissionSettings';
 import { CommissionSettlementView } from './CommissionSettlementView';
@@ -52,6 +54,7 @@ function CommissionReport() {
   const [to, setTo]   = useState<string>(today);
   const [report, setReport] = useState<LedgerReportResponse | null>(null);
   const [plans, setPlans]   = useState<CommissionProgram[]>([]);
+  const [settlements, setSettlements] = useState<SettlementHeader[]>([]);
   /** Tenant currency settings — needed to fold Received / Refund
    *  KHR into USD when computing AR. Falls back to 4100 KHR/USD
    *  (server default) so the report still renders on new tenants
@@ -63,13 +66,19 @@ function CommissionReport() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rep, ps, cs] = await Promise.all([
+      const [rep, ps, cs, st] = await Promise.all([
         saleLedger({ from, to }),
         commission.list().catch(() => [] as CommissionProgram[]),
         currencyApi.get().catch(() => null),
+        // Feeds the "Settle No." column. ADMIN/MANAGER-only
+        // server-side, so degrade to empty rather than failing the
+        // whole report for a narrower role — the sales and commission
+        // figures are still correct without it.
+        commissionSettlement.list().catch(() => [] as SettlementHeader[]),
       ]);
       setReport(rep);
       setPlans(ps);
+      setSettlements(st);
       // Only USD-primary tenants can convert KHR down to USD via
       // secondaryRate. On single-currency or KHR-primary setups
       // we fall back to the built-in 4100 and note the KHR
@@ -86,6 +95,31 @@ function CommissionReport() {
   }, [from, to]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /**
+   * sellerId → settlement numbers covering this seller within the
+   * displayed range.
+   *
+   * Matched on period OVERLAP, not equality: a settlement run rarely
+   * lines up exactly with whatever From/To the operator has typed, so
+   * requiring identical dates would show "—" on rows that are in fact
+   * already settled — the opposite of what this column is for.
+   *
+   * CANCELLED runs are excluded: they no longer claim their invoices,
+   * so showing their number would imply the commission is settled
+   * when it is payable again.
+   */
+  const settledBySeller = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of settlements) {
+      if (s.status === 'CANCELLED') continue;
+      if (s.periodEnd < from || s.periodStart > to) continue;   // no overlap
+      const cur = m.get(s.sellerId) ?? [];
+      cur.push(s.settlementNo);
+      m.set(s.sellerId, cur);
+    }
+    return m;
+  }, [settlements, from, to]);
 
   const sellerGroups = useMemo(() => {
     if (!report) return [];
@@ -232,6 +266,12 @@ function CommissionReport() {
                   <TableHead className="text-right">Refund (−)</TableHead>
                   <TableHead className="text-right">AR</TableHead>
                   <TableHead className="text-right">Commission</TableHead>
+                  {/* Which settlement run already covers this seller
+                      in the displayed range. Without it the operator
+                      can't tell an unpaid seller from one who was
+                      settled last week, and the Commission figure
+                      alone reads as still-owed either way. */}
+                  <TableHead>Settle No.</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -264,6 +304,30 @@ function CommissionReport() {
                       {s.commission > 0
                         ? <span className="font-medium text-emerald-700">{formatUSD(s.commission)}</span>
                         : <span className="text-gray-300">—</span>}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {(() => {
+                        const nos = settledBySeller.get(s.sellerId);
+                        if (!nos?.length) {
+                          return (
+                            <span
+                              className="text-gray-400"
+                              title="No settlement run covers this seller in the selected range"
+                            >
+                              Unsettled
+                            </span>
+                          );
+                        }
+                        // More than one run can overlap a wide range —
+                        // list them all rather than picking one, or the
+                        // operator would chase a payout that's split
+                        // across two runs.
+                        return (
+                          <span className="text-gray-700" title={nos.join(', ')}>
+                            {nos.join(', ')}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -516,7 +516,17 @@ function LandingNav({
           <Button variant="ghost" size="sm" asChild className="hidden md:inline-flex">
             <a href={REQUIREMENT_SURVEY_PATH}>{t(T.hero.contactUs, lang)}</a>
           </Button>
-          <Button variant="ghost" size="sm" onClick={onSignIn} className="hidden sm:inline-flex">
+          {/* Solid blue rather than ghost. Sign in is a primary
+              destination for returning customers — as plain text it
+              read as a tertiary link next to Get started. Outline
+              keeps it distinguishable from the filled Get started so
+              the two don't look like duplicates of one control. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSignIn}
+            className="hidden border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white sm:inline-flex"
+          >
             {t(T.nav.signIn, lang)}
           </Button>
           <Button size="sm" onClick={onSignIn}>
@@ -551,36 +561,63 @@ function LandingNav({
 function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; onDemo?: (email: string) => void }) {
   return (
     <section id="top" className="relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-indigo-50" aria-hidden />
+      {/* Blue gradient + white dot grid, same treatment as the closing
+          CtaBanner so the page opens and closes on the brand colour
+          instead of fading in from near-white. Everything inside the
+          hero is inverted for this ground — see the light-on-dark
+          text and control classes below. */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-indigo-700" aria-hidden />
       <div
-        className="absolute -top-24 right-0 -z-0 h-[480px] w-[480px] rounded-full bg-gradient-to-tr from-blue-200/40 to-indigo-200/40 blur-3xl"
+        className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_30%_50%,white_1px,transparent_1px),radial-gradient(circle_at_70%_50%,white_1px,transparent_1px)] [background-size:24px_24px]"
+        aria-hidden
+      />
+      {/* Soft highlight so the flat gradient has some depth. Lifted to
+          white/10 — the old blue-200/40 glow is invisible on blue. */}
+      <div
+        className="absolute -top-24 right-0 -z-0 h-[480px] w-[480px] rounded-full bg-white/10 blur-3xl"
         aria-hidden
       />
       <Container className="relative grid items-center gap-12 py-20 lg:grid-cols-2 lg:py-28">
         <div>
-          <Badge variant="secondary" className="mb-5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+          <Badge variant="secondary" className="mb-5 border-white/20 bg-white/15 text-white hover:bg-white/15">
             {t(T.hero.eyebrow, lang)}
           </Badge>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
             {t(T.hero.title1, lang)}{' '}
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            {/* Was a blue→indigo bg-clip-text gradient, which renders
+                as near-invisible dark blue on a blue ground. A solid
+                light tint keeps the two-tone emphasis readable. */}
+            <span className="text-blue-200">
               {t(T.hero.title2, lang)}
             </span>
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-blue-100">
             {t(T.hero.subtitle, lang)}
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button size="lg" onClick={onSignIn} className="h-12 px-6 text-base">
+            {/* White fill / blue label — the CtaBanner's primary
+                button pattern. A blue fill would disappear into the
+                new ground. */}
+            <Button
+              size="lg"
+              onClick={onSignIn}
+              className="h-12 bg-white px-6 text-base text-blue-700 hover:bg-blue-50"
+            >
               {t(T.hero.ctaPrimary, lang)}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            {/* The shared DemoDropdown trigger is pale emerald, which
+                is right in the header's white nav but washes out on
+                the blue hero. Overridden with `!` because Tailwind
+                resolves same-property conflicts by stylesheet order,
+                not by class-attribute order — without it the base
+                emerald classes could win unpredictably. */}
             {onDemo && (
               <DemoDropdown
                 lang={lang}
                 onPick={onDemo}
                 size="lg"
-                triggerClassName="h-12 px-6 text-base"
+                triggerClassName="h-12 px-6 text-base !border-white/40 !bg-white/10 !text-white hover:!bg-white/20"
               />
             )}
             {/* Route straight to the Requirement Survey form — the
@@ -589,22 +626,27 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
               size="lg"
               variant="outline"
               asChild
-              className="h-12 px-6 text-base border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              className="h-12 border-white/40 bg-white/10 px-6 text-base text-white hover:bg-white/20 hover:text-white"
             >
               <a href={REQUIREMENT_SURVEY_PATH}>
                 <Mail className="mr-2 h-4 w-4" />
                 {t(T.hero.contactUs, lang)}
               </a>
             </Button>
-            <Button size="lg" variant="outline" asChild className="h-12 px-6 text-base">
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="h-12 border-white/40 bg-transparent px-6 text-base text-white hover:bg-white/10 hover:text-white"
+            >
               <a href="#how">{t(T.hero.ctaSecondary, lang)}</a>
             </Button>
           </div>
-          <p className="mt-5 text-sm text-slate-500">{t(T.hero.trustNote, lang)}</p>
+          <p className="mt-5 text-sm text-blue-200">{t(T.hero.trustNote, lang)}</p>
 
           {/* Industry chips — visual reinforcement of the "factory + company + all sizes" pitch. */}
           <div className="mt-8 flex flex-wrap items-center gap-2.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-200">
               {t(T.hero.chipsLabel, lang)}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm">
@@ -628,7 +670,9 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
 
         {/* Stylised dashboard preview — pure CSS, no screenshot dependencies. */}
         <div className="relative">
-          <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-blue-200/30 to-indigo-200/30 blur-2xl" aria-hidden />
+          {/* White glow — the old blue-200/30 halo was invisible now
+              that the hero ground is blue. */}
+          <div className="absolute -inset-4 rounded-3xl bg-white/15 blur-2xl" aria-hidden />
           <Card className="relative overflow-hidden border-slate-200/70 shadow-2xl">
             <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-4 py-3">
               <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
