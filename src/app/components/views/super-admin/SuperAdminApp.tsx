@@ -16,6 +16,7 @@ import { ModuleCategories } from './ModuleCategories';
 import { PlatformTelegram } from './PlatformTelegram';
 import { RequirementSurveys } from './RequirementSurveys';
 import { Agencies } from './Agencies';
+import { MobileAppKeys } from './MobileAppKeys';
 
 export function SuperAdminApp() {
   const [view, setView] = useState<SuperAdminView>('dashboard');
@@ -28,6 +29,7 @@ export function SuperAdminApp() {
       case 'users':              return <CrossTenantUsers />;
       case 'sync':               return <SyncMonitor />;
       case 'tenant_modules':     return <TenantModules />;
+      case 'mobile_app_keys':    return <MobileAppKeys />;
       case 'module_categories':  return <ModuleCategories />;
       case 'activity':           return <ActivityLog />;
       case 'backups':            return <Backups />;

@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../../ui/dropdown-menu';
 import {
-  Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal,
+  Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal, Smartphone,
   ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
   ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot, ClipboardList,
   Briefcase,
@@ -19,7 +19,7 @@ import { useI18n } from '../../../i18n/I18nContext';
 
 export type SuperAdminView =
   | 'dashboard' | 'companies' | 'plans' | 'users' | 'sync' | 'tenant_modules' | 'surveys'
-  | 'agencies'
+  | 'agencies' | 'mobile_app_keys'
   // Settings sub-menu
   | 'activity' | 'backups' | 'policy' | 'payroll_categories' | 'holidays' | 'system_holidays' | 'module_categories'
   | 'platform_telegram';
@@ -81,6 +81,13 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
       label: t('nav.platform.sync'), description: t('nav.platform.sync.desc') },
     { kind: 'leaf', id: 'tenant_modules', icon: SlidersHorizontal,
       label: t('nav.platform.tenantmodules'), description: t('nav.platform.tenantmodules.desc') },
+    // V342 — which tenant each mobile build talks to, plus the email
+    // domain map the public build resolves logins through. Sits at
+    // top level next to Connect & Sync: both are distribution-level
+    // plumbing rather than per-tenant configuration.
+    { kind: 'leaf', id: 'mobile_app_keys', icon: Smartphone,
+      label: 'Mobile App Keys',
+      description: 'Public vs per-tenant app builds and login email domains' },
     // V170 — inbound landing-form inquiries. Top-level leaf so it's a
     // first-class part of the sales workflow, not buried under Settings.
     { kind: 'leaf', id: 'surveys', icon: ClipboardList,
