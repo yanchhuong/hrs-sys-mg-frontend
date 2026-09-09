@@ -1574,7 +1574,9 @@ function InvoiceFormDialog({
   });
 
   const validate = (): boolean => {
+    if (!invoiceNo) { toast.error('Invoice No. is required'); return false; }
     if (!customerId) { toast.error('Customer is required'); return false; }
+    if (!issueDate) { toast.error('Issue date is required'); return false; }
     if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return false; }
     if (items.length === 0 || items.some(it => !it.name.trim())) {
       toast.error('Each line item needs a name');
@@ -1811,9 +1813,9 @@ function InvoiceFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">
-                {kind === 'credit_note' ? 'Credit Note No.'
-                  : kind === 'debit_note' ? 'Debit Note No.'
-                  : 'Invoice No.'}
+                {kind === 'credit_note' ? 'Credit Note No. *'
+                  : kind === 'debit_note' ? 'Debit Note No. *'
+                  : 'Invoice No. *'}
               </Label>
               <Input
                 value={invoiceNo}
@@ -1833,7 +1835,7 @@ function InvoiceFormDialog({
 
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Issue date</Label>
+              <Label className="text-xs">Issue date *</Label>
               <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
