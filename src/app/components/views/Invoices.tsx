@@ -797,7 +797,7 @@ export function Invoices({
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <TableRowsSkeleton rows={8} columns={7} />
+            <TableRowsSkeleton rows={8} columns={8} />
           ) : groupedRows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               {rows.length === 0 ? 'No invoices yet.' : 'No invoices match your filters.'}
@@ -819,6 +819,7 @@ export function Invoices({
                     <TableHead>Customer</TableHead>
                     <TableHead>Issue Date</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right w-[100px]">Exchange Rate</TableHead>
                     <TableHead className="text-right w-[110px]">Received (USD)</TableHead>
                     <TableHead className="text-right w-[110px]">Received (KHR)</TableHead>
                     <TableHead className="text-right">
@@ -886,6 +887,9 @@ export function Invoices({
                         {inv.kind === 'credit_note'
                           ? `− ${fmtMoney(inv.total, inv.currency)}`
                           : fmtMoney(inv.total, inv.currency)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-gray-600">
+                        {inv.exchangeRate ? inv.exchangeRate.toLocaleString('en-US') : '—'}
                       </TableCell>
                       {/* Paid display rules:
                           - Adjustment with zero paid → em-dash (no
@@ -1060,6 +1064,10 @@ export function Invoices({
                         <TableCell className="text-right text-sm font-semibold tabular-nums">
                           {fmtMoney(t.total, t.currency)}
                         </TableCell>
+                        {/* Exchange Rate has no meaningful sum across rows —
+                            filler to keep the Received/AR cells aligned
+                            under their own headers. */}
+                        <TableCell />
                         <TableCell className="text-right text-sm font-semibold tabular-nums text-emerald-700">
                           {fmtMoney(t.paidUsd, 'USD')}
                         </TableCell>
