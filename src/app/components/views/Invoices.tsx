@@ -1899,7 +1899,7 @@ function InvoiceFormDialog({
                 which clipped 4-digit thousands). Specification gives
                 up one slot to Total. */}
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
-              <div className="col-span-3">Item</div>
+              <div className="col-span-3">Item Name</div>
               <div className="col-span-2">Specification</div>
               <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
@@ -3042,7 +3042,7 @@ function InvoiceDetailDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
+                    <TableHead>Item Name</TableHead>
                     <TableHead>Specification</TableHead>
                     <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
