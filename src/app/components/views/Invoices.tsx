@@ -1785,7 +1785,7 @@ function InvoiceFormDialog({
               comes back as a 409 naming the number. */}
           <div className="grid grid-cols-[1fr_280px] gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Customer *</Label>
+              <Label className="text-xs">Customer <span className="text-red-600">*</span></Label>
               <SearchablePicker
                 value={customerId}
                 onChange={setCustomerId}
@@ -1813,9 +1813,9 @@ function InvoiceFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">
-                {kind === 'credit_note' ? 'Credit Note No. *'
-                  : kind === 'debit_note' ? 'Debit Note No. *'
-                  : 'Invoice No. *'}
+                {kind === 'credit_note' ? <>Credit Note No. <span className="text-red-600">*</span></>
+                  : kind === 'debit_note' ? <>Debit Note No. <span className="text-red-600">*</span></>
+                  : <>Invoice No. <span className="text-red-600">*</span></>}
               </Label>
               <Input
                 value={invoiceNo}
@@ -1835,7 +1835,7 @@ function InvoiceFormDialog({
 
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Issue date *</Label>
+              <Label className="text-xs">Issue date <span className="text-red-600">*</span></Label>
               <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
