@@ -36,7 +36,7 @@ import {
   Clock, CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
   CheckCircle2, XCircle, AlertTriangle, LogIn, LogOut, Users,
   ChevronLeft, ChevronRight, Pencil, Download, AlertCircle, BarChart3,
-  Search, X, UserMinus, Settings as SettingsIcon,
+  Search, X, UserMinus, Settings as SettingsIcon, MapPin,
 } from 'lucide-react';
 import { OfficesDialog } from '../common/OfficesDialog';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isToday as isTodayFn, addMonths, subMonths } from 'date-fns';
@@ -54,10 +54,10 @@ import {
 import { makeDeptName } from '../../utils/deptName';
 import { downloadAttendanceTemplate } from '../../utils/attendanceTemplate';
 import { parseAttendanceExcel } from '../../utils/attendanceParser';
-import { loadScanRule } from '../../utils/scanRule';
+import { fetchScanRule } from '../../utils/scanRule';
 
 type ViewMode = 'daily' | 'monthly';
-type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'early_leave' | 'absent' | 'present' | 'leave';
+type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'early_leave' | 'absent' | 'present' | 'leave' | 'exception';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; textColor: string; shortLabel: string }> = {
   present: { label: 'Present', color: 'bg-green-500', bgColor: 'bg-green-50', textColor: 'text-green-700', shortLabel: 'P' },
@@ -67,7 +67,26 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: str
   no_checkout: { label: 'No Check-out', color: 'bg-purple-500', bgColor: 'bg-purple-50', textColor: 'text-purple-700', shortLabel: 'NO' },
   leave: { label: 'Leave', color: 'bg-blue-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700', shortLabel: 'LV' },
   early_leave: { label: 'Early Leave', color: 'bg-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', shortLabel: 'EL' },
+  exception: { label: 'Exception', color: 'bg-violet-500', bgColor: 'bg-violet-50', textColor: 'text-violet-700', shortLabel: 'EX' },
 };
+
+/**
+ * Leave categories that are permission to be away from the office
+ * rather than leave drawn from the employee's entitlement.
+ *
+ *   exception — special permission: work from home, working off-site,
+ *               attending an event. The employee IS working, so
+ *               nothing is deducted.
+ *   maternity — statutory, likewise not taken from the annual
+ *               allowance.
+ *
+ * Annual / sick / special are real leave and do come out of the
+ * balance: AlRemainService#sumApprovedAnnualLeaveDays counts only
+ * category='annual'. Mirrors AttendanceService#isExceptionCategory.
+ */
+const EXCEPTION_CATEGORIES = new Set(['exception', 'maternity']);
+const isExceptionCategory = (category?: string | null) =>
+  !!category && EXCEPTION_CATEGORIES.has(category.toLowerCase());
 
 // Adapts a backend AttendanceEntry to the front-end Attendance shape used
 // throughout the UI. The fingerprint sync writes morning/noon punches; carry
@@ -77,7 +96,7 @@ function adaptApiAttendance(
   checkOutCutoffMinutes: number,
 ): AttendanceType {
   const status = ([
-    'present', 'late', 'early_leave', 'absent',
+    'present', 'late', 'early_leave', 'absent', 'exception',
     'no_checkin', 'no_checkout', 'leave',
   ] as const).includes(a.status as AttendanceStatus)
     ? (a.status as AttendanceStatus)
@@ -174,7 +193,10 @@ interface Props {
 export function Attendance({ onNavigate }: Props = {}) {
   const { t } = useI18n();
   const { formatDate } = useDateFormat();
-  const { currentUser, isModuleEnabled, isModuleAvailable } = useAuth();
+  const { currentUser, isModuleEnabled, isModuleAvailable, canCreate } = useAuth();
+  // Tenant admin / platform super admin — they administer attendance and
+  // may always record a leave day with a remark.
+  const isAdminRole = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   // Default filter to TODAY so the page lands on a date that has data right
   // after a fingerprint sync. Hardcoding the seed date meant April 28's
@@ -408,9 +430,15 @@ export function Attendance({ onNavigate }: Props = {}) {
       const rows = dateFrom && dateTo
         ? await attendanceApi.listRange({ from: dateFrom, to: dateTo, size: 500 })
         : (await attendanceApi.list({ date: dateFrom || format(new Date(), 'yyyy-MM-dd'), size: 500 })).data;
-      const rule = loadScanRule();
-      const m = /^(\d{1,2}):(\d{2})/.exec(rule.eveningOut);
-      const cutoff = m ? Number(m[1]) * 60 + Number(m[2]) : 17 * 60;
+      // The scan rule now lives on the server (attendance_rules), so
+      // this is a fetch rather than a localStorage read. Falling back
+      // to 17:00 keeps the check-out cutoff sane if it can't be read.
+      let cutoff = 17 * 60;
+      try {
+        const { rule } = await fetchScanRule();
+        const m = /^(\d{1,2}):(\d{2})/.exec(rule.eveningOut);
+        if (m) cutoff = Number(m[1]) * 60 + Number(m[2]);
+      } catch { /* keep the default cutoff */ }
       setAttendance(rows.map(r => adaptApiAttendance(r, cutoff)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
@@ -784,10 +812,22 @@ export function Attendance({ onNavigate }: Props = {}) {
         // the reason, with "(pending approval)" when the leave isn't
         // approved yet.
         if (leave) {
-          const remark = `Leave: ${leave.type}`
+          // Exception is NOT leave. It's permission to work away from
+          // the office and costs the employee nothing from their
+          // balance, so it must not be presented — or counted — as
+          // Leave. The category decides; leave.type is only the
+          // duration (full / half day).
+          const isExc = isExceptionCategory((leave as { category?: string | null }).category);
+          const kind = isExc ? 'Exception' : 'Leave';
+          const remark = `${kind}: ${(leave as { category?: string | null }).category ?? leave.type}`
             + (leave.reason ? ` — ${leave.reason}` : '')
             + (leave.status === 'pending' ? ' (pending approval)' : '');
-          row = { ...row, status: 'leave' as AttendanceStatus, notes: remark };
+          row = {
+            ...row,
+            status: (isExc ? 'exception' : 'leave') as AttendanceStatus,
+            notes: remark,
+            leaveCategory: (leave as { category?: string | null }).category ?? null,
+          };
         }
 
         rows.push(row);
@@ -801,12 +841,15 @@ export function Attendance({ onNavigate }: Props = {}) {
   const summary = useMemo(() => {
     const totalEmployees = employees
       .filter(e => e.status === 'active' && e.attendanceYn !== false && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees))).length;
-    const present = dailyRows.filter(r => r.status === 'present' || r.status === 'early_leave').length;
+    // 'early_leave' is deliberately NOT counted as present: a day that
+    // came in short of the expected hours isn't a clean attendance.
+    // It rolls into the combined Late & Early Leave bucket instead.
+    const present = dailyRows.filter(r => r.status === 'present').length;
     const absent = dailyRows.filter(r => r.status === 'absent').length;
-    const late = dailyRows.filter(r => r.status === 'late').length;
-    // Early Out = employee left before the scheduled out time.
-    // Server-set status drives this — same predicate the FE uses for
-    // the Late chip.
+    // Combined bucket — arrived after the late cutoff OR left before the
+    // scheduled out time / below the minimum hours. Both are exceptions
+    // to the office rule, and the roster shows them as one tab.
+    const late = dailyRows.filter(r => r.status === 'late' || r.status === 'early_leave').length;
     const earlyLeave = dailyRows.filter(r => r.status === 'early_leave').length;
     // "No Check-in" / "No Check-out" are surfaced by field presence rather
     // than the strict status enum, so an absent employee (all punch slots
@@ -819,10 +862,16 @@ export function Attendance({ onNavigate }: Props = {}) {
     // mirror for the out side (half-noon leave → morning_out).
     const hasAnyIn  = (r: typeof dailyRows[number]) => !!r.morningIn || !!r.noonIn;
     const hasAnyOut = (r: typeof dailyRows[number]) => !!r.morningOut || !!r.noonOut;
-    const noCheckin  = dailyRows.filter(r => !hasAnyIn(r)  && r.status !== 'leave').length;
-    const noCheckout = dailyRows.filter(r => !hasAnyOut(r) && r.status !== 'leave').length;
+    // Exception days are excluded alongside leave: the employee had
+    // permission to be away from the scanner, so a missing punch there
+    // isn't an exception to chase.
+    const offScanner = (st: string) => st === 'leave' || st === 'exception';
+    const noCheckin  = dailyRows.filter(r => !hasAnyIn(r)  && !offScanner(r.status)).length;
+    const noCheckout = dailyRows.filter(r => !hasAnyOut(r) && !offScanner(r.status)).length;
     const leave = dailyRows.filter(r => r.status === 'leave').length;
-    return { totalEmployees, present, absent, late, earlyLeave, noCheckin, noCheckout, leave };
+    // Separate bucket — an Exception day is worked, not taken as leave.
+    const exception = dailyRows.filter(r => r.status === 'exception').length;
+    return { totalEmployees, present, absent, late, earlyLeave, noCheckin, noCheckout, leave, exception };
   }, [dailyRows, employees, isTenantWide, matchesScope, scopeMode]);
 
   // Filtered records — built on top of the roster-driven dailyRows so employees
@@ -837,9 +886,15 @@ export function Attendance({ onNavigate }: Props = {}) {
         // Treat noon_in as a valid check-in too — half-morning leave
         // employees only punch in the afternoon and would otherwise
         // wrongly appear in this bucket.
-        records = records.filter(r => !r.morningIn && !r.noonIn && r.status !== 'leave');
+        records = records.filter(r =>
+          !r.morningIn && !r.noonIn && r.status !== 'leave' && r.status !== 'exception');
       } else if (activeFilter === 'no_checkout') {
-        records = records.filter(r => !r.morningOut && !r.noonOut && r.status !== 'leave');
+        records = records.filter(r =>
+          !r.morningOut && !r.noonOut && r.status !== 'leave' && r.status !== 'exception');
+      } else if (activeFilter === 'late') {
+        // Merged bucket: the tab reads "Late & Early Leave", so it has
+        // to select both server statuses, not just 'late'.
+        records = records.filter(r => r.status === 'late' || r.status === 'early_leave');
       } else {
         records = records.filter(r => r.status === activeFilter);
       }
@@ -1187,9 +1242,11 @@ export function Attendance({ onNavigate }: Props = {}) {
           && a.date === dateStr);
         if (record) {
           empRecords[dateStr] = record.status;
-          if (record.status === 'present' || record.status === 'early_leave') presentCount++;
+          if (record.status === 'present' || record.status === 'exception') presentCount++;
           else if (record.status === 'absent' || record.status === 'no_checkin') absentCount++;
-          else if (record.status === 'late') { lateCount++; presentCount++; }
+          // Late and early-leave are both rule exceptions and share one
+          // tally. They still count as a day attended.
+          else if (record.status === 'late' || record.status === 'early_leave') { lateCount++; presentCount++; }
           else if (record.status === 'no_checkout') presentCount++;
           // 'leave' status on attendance is superseded by the dedicated
           // leaves aggregation below — don't double-count.
@@ -1238,10 +1295,10 @@ export function Attendance({ onNavigate }: Props = {}) {
     { key: 'present', label: 'Present', count: summary.present, icon: <CheckCircle2 className="h-4 w-4" /> },
     { key: 'no_checkin', label: 'No Check-in', count: summary.noCheckin, icon: <AlertTriangle className="h-4 w-4" /> },
     { key: 'no_checkout', label: 'No Check-out', count: summary.noCheckout, icon: <AlertCircle className="h-4 w-4" /> },
-    { key: 'late', label: 'Late', count: summary.late, icon: <Clock className="h-4 w-4" /> },
-    { key: 'early_leave', label: 'Early Out', count: summary.earlyLeave, icon: <LogOut className="h-4 w-4" /> },
+    { key: 'late', label: 'Late / Early Out', count: summary.late, icon: <Clock className="h-4 w-4" /> },
     { key: 'absent', label: 'Absent', count: summary.absent, icon: <XCircle className="h-4 w-4" /> },
     { key: 'leave', label: 'Leave', count: summary.leave, icon: <CalendarIcon className="h-4 w-4" /> },
+    { key: 'exception', label: 'Exception', count: summary.exception, icon: <MapPin className="h-4 w-4" /> },
   ];
 
   const getStatusBadge = (status: string) => {
@@ -1268,9 +1325,17 @@ export function Attendance({ onNavigate }: Props = {}) {
       record.morningIn || '', record.morningOut || '',
       record.noonIn || '',    record.noonOut || '',
     ));
-    // Default category + end date for the auto-created LeaveRequest
-    // when status='leave'. Admin can override before saving.
-    setEditLeaveCategory('annual');
+    // Seed the category from the record's own leave/exception row.
+    // This used to hardcode 'annual', so re-saving an Exception day
+    // converted it to Annual leave — which DOES deduct from the
+    // employee's balance.
+    const rowCategory = (record as { leaveCategory?: string | null }).leaveCategory;
+    setEditLeaveCategory(
+      rowCategory === 'sick' || rowCategory === 'special'
+        || rowCategory === 'maternity' || rowCategory === 'exception'
+        ? rowCategory
+        : 'annual',
+    );
     setEditLeaveEndDate(record.date);
     // Pre-fill the optional "Apply OT" branch from the row.
     //   • Free-style days (weekend / holiday) → suggest the full
@@ -1508,12 +1573,22 @@ export function Attendance({ onNavigate }: Props = {}) {
     }
 
     const isSynthetic = editRecord.id.startsWith('synthetic:');
-    // Only forward the leave sub-type when the admin actually picked
-    // "leave" — for any other status the backend ignores it anyway.
-    const leaveTypePatch = editStatus === 'leave'
+    // "Exception" is not a distinct attendance status server-side — it
+    // is a leave/exception record whose CATEGORY is 'exception'. The
+    // attendance row stores 'leave' either way and the category decides
+    // how it renders. Sending status='exception' on its own did
+    // nothing: AttendanceService only runs ensureApprovedLeaveFor()
+    // when status == 'leave', so the underlying record kept its old
+    // category and the roster overlay went on showing "Leave".
+    const isExceptionPick = editStatus === 'exception';
+    const statusToSave: AttendanceStatus = isExceptionPick
+      ? ('leave' as AttendanceStatus)
+      : editStatus;
+    const carriesLeave = editStatus === 'leave' || isExceptionPick;
+    const leaveTypePatch = carriesLeave
       ? {
           leaveType: editLeaveType,
-          leaveCategory: editLeaveCategory,
+          leaveCategory: isExceptionPick ? 'exception' : editLeaveCategory,
           // Blank → server defaults to leave's start date (single-day row).
           leaveEndDate: editLeaveEndDate || undefined,
         }
@@ -1532,7 +1607,7 @@ export function Attendance({ onNavigate }: Props = {}) {
           morningOut: editMorningOut || null,
           noonIn: editNoonIn || null,
           noonOut: editNoonOut || null,
-          status: editStatus,
+          status: statusToSave,
           notes: editRemark || null,
           ...leaveTypePatch,
         });
@@ -1544,7 +1619,7 @@ export function Attendance({ onNavigate }: Props = {}) {
           ...(editMorningOut ? { morningOut: editMorningOut } : {}),
           ...(editNoonIn     ? { noonIn:     editNoonIn     } : {}),
           ...(editNoonOut    ? { noonOut:    editNoonOut    } : {}),
-          status: editStatus,
+          status: statusToSave,
           notes: editRemark || undefined,
           ...leaveTypePatch,
         } as any);
@@ -1821,8 +1896,16 @@ export function Attendance({ onNavigate }: Props = {}) {
               <TabsList className="w-max">
                 <TabsTrigger value="all">
                   All
+                  {/* Row count, NOT the sum of the buckets. The buckets
+                      deliberately overlap — "No Check-in" and
+                      "No Check-out" are field-based views that also
+                      match Absent rows — so adding them up double- and
+                      triple-counted rows: a single absentee scored 3
+                      (absent + no check-in + no check-out) and two rows
+                      reported as 4. Each bucket still counts rows that
+                      match it; one row can legitimately be in several. */}
                   <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">
-                    {summary.present + summary.absent + summary.late + summary.noCheckin + summary.noCheckout + summary.leave}
+                    {dailyRows.length}
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="present">
@@ -1838,7 +1921,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="late">
-                  Late
+                  Late / Early Out
                   <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
                     {summary.late}
                   </Badge>
@@ -1856,7 +1939,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="leave">
-                  On Leave
+                  Leave
                   <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-800 hover:bg-blue-100">
                     {summary.leave}
                   </Badge>
@@ -2353,7 +2436,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                   <div className="flex items-center gap-1 flex-wrap">
                     {([
                       { key: 'all', label: 'All' },
-                      { key: 'late', label: 'Late' },
+                      { key: 'late', label: 'Late / Early Out' },
                       { key: 'absent', label: 'Absent' },
                       { key: 'late_or_absent', label: 'Late or Absent' },
                     ] as const).map(chip => (
@@ -2398,7 +2481,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       <TableHead className="text-center">Remain</TableHead>
                       <TableHead className="text-center">Present</TableHead>
                       <TableHead className="text-center">Absent</TableHead>
-                      <TableHead className="text-center">Late</TableHead>
+                      <TableHead className="text-center">Late / EO</TableHead>
                       <TableHead className="w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -2607,7 +2690,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                     <span className="font-medium text-red-600">{monthlyData.reduce((s, d) => s + d.absentCount, 0)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Total Late</span>
+                    <span className="text-sm text-gray-500">Total Late / Early Out</span>
                     <span className="font-medium text-yellow-600">{monthlyData.reduce((s, d) => s + d.lateCount, 0)}</span>
                   </div>
                 </CardContent>
@@ -2798,9 +2881,23 @@ export function Attendance({ onNavigate }: Props = {}) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                    <SelectItem key={key} value={key}>{config.label}</SelectItem>
-                  ))}
+                  {Object.entries(STATUS_CONFIG)
+                    // Marking a day as Leave spawns a LeaveRequest
+                    // server-side, so a non-admin needs the Leave grant —
+                    // attendance:update alone isn't enough. Hidden rather
+                    // than disabled: an option you can never pick is noise.
+                    //
+                    // Admins always keep it. canCreate() would not do on
+                    // its own: it fails closed when the tenant hasn't
+                    // enabled the separate 'all-leave' MODULE, which would
+                    // strip Leave from the admin's own dialog on any
+                    // attendance-only tenant. Marking leave here is part of
+                    // administering attendance, so the role grant is the
+                    // right gate, not module enablement.
+                    .filter(([key]) => key !== 'leave' || isAdminRole || canCreate('all-leave'))
+                    .map(([key, config]) => (
+                      <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

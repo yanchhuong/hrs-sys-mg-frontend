@@ -199,6 +199,12 @@ export interface Attendance {
   workHours?: number;
   status: AttendanceStatus;
   notes?: string;
+  /** Category of the leave/exception record covering this day —
+   *  annual / sick / special / maternity / exception. Set by the
+   *  roster's leave overlay, not by the attendance row itself: the
+   *  attendance table has no such column. Needed because Exception
+   *  and Leave are the same attendance status but different things. */
+  leaveCategory?: string | null;
 }
 
 export interface OTRequest {

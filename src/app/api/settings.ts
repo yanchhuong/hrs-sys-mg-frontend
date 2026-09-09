@@ -23,6 +23,9 @@ export interface AttendanceRule {
   autoMarkAbsent: boolean;
   department?: string;
   shiftType?: string;
+  /** V344 — persisted scan mode. `mode` above is the legacy field name
+   *  the mock data used; `scanMode` is what the server reads/writes. */
+  scanMode?: 'two' | 'four';
 }
 
 export async function listAttendanceRules(): Promise<AttendanceRule[]> {

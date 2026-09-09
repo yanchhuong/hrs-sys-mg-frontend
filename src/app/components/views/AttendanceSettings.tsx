@@ -39,7 +39,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   ScanMode, ScanRule, DEFAULT_SCAN_RULE,
-  loadScanRule, saveScanRule,
+  fetchScanRule, persistScanRule, requiredHoursFor,
   evaluate, previewScenarios, EvaluatedSession,
 } from '../../utils/scanRule';
 import { FlexibleWorkCard } from '../common/FlexibleWorkCard';
@@ -89,7 +89,37 @@ export function AttendanceSettings() {
   const [shifts] = useState<AttendanceRule[]>(mockAttendanceRules);
   const [otSettings, setOtSettings] = useState<OTSettings>(USE_MOCKS ? defaultOTSettings : { ...defaultOTSettings });
   const [, setLoadingOt] = useState(false);
-  const [scanRule, setScanRule] = useState<ScanRule>(() => loadScanRule());
+  const [scanRule, setScanRule] = useState<ScanRule>(DEFAULT_SCAN_RULE);
+  // Server id of the tenant's AttendanceRule row. Null until the first
+  // save creates it — which is the normal state for every tenant today,
+  // because the Scan tab only ever wrote to localStorage.
+  const [scanRuleId, setScanRuleId] = useState<string | null>(null);
+  const [scanRuleLoading, setScanRuleLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { rule, ruleId } = await fetchScanRule();
+        if (cancelled) return;
+        setScanRule(rule);
+        setScanRuleId(ruleId);
+      } catch {
+        // Endpoint unreachable / no permission — keep the defaults on
+        // screen rather than blanking the tab. Saving will surface the
+        // real error.
+      } finally {
+        if (!cancelled) setScanRuleLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleScanRuleSave = async (draft: ScanRule) => {
+    const { rule, ruleId } = await persistScanRule(draft, scanRuleId);
+    setScanRule(rule);
+    setScanRuleId(ruleId);
+  };
   const [activeTab, setActiveTab] = useState('scan');
   const [otSubTab, setOtSubTab] = useState('workday');
   const [deptAssignDialogOpen, setDeptAssignDialogOpen] = useState(false);
@@ -426,7 +456,8 @@ export function AttendanceSettings() {
         <TabsContent value="scan" className="space-y-6">
           <ScanRuleCard
             rule={scanRule}
-            onChange={(next) => setScanRule(next)}
+            loading={scanRuleLoading}
+            onSave={handleScanRuleSave}
           />
         </TabsContent>
 
@@ -1403,12 +1434,15 @@ function TimeField({
  */
 function ScanRuleCard({
   rule,
-  onChange,
+  loading,
+  onSave,
 }: {
   rule: ScanRule;
-  onChange: (next: ScanRule) => void;
+  loading?: boolean;
+  onSave: (next: ScanRule) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ScanRule>(rule);
+  const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft(rule); }, [rule]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(rule);
@@ -1420,17 +1454,38 @@ function ScanRuleCard({
     return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
   };
 
-  const handleSave = () => {
-    const saved = saveScanRule(draft);
-    onChange(saved);
-    toast.success(
-      draft.mode === 'two' ? 'Scan rule saved: 2 scans per day' : 'Scan rule saved: 4 scans per day',
-    );
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft);
+      // Say the required hours out loud: it's derived from the times
+      // rather than typed, and it's what the engine compares worked
+      // hours against, so a surprising value should be visible now and
+      // not at month end.
+      const scans = draft.mode === 'two' ? '2 scans' : '4 scans';
+      toast.success(
+        `Scan rule saved — ${scans} per day, ${requiredHoursFor(draft)}h required`,
+      );
+    } catch (e) {
+      // This used to be a localStorage write that could not fail. Now
+      // it's a round trip, so a failure has to be reported instead of
+      // leaving the admin believing the rule is live.
+      toast.error(e instanceof Error ? e.message : 'Could not save the scan rule');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleReset = () => {
-    const saved = saveScanRule(DEFAULT_SCAN_RULE);
-    onChange(saved);
+  const handleReset = async () => {
+    setSaving(true);
+    try {
+      await onSave({ ...DEFAULT_SCAN_RULE });
+      toast.success('Scan rule reset to defaults');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not reset the scan rule');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
