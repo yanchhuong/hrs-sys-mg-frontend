@@ -96,9 +96,12 @@ const KIND_BADGE_CLASS: Record<invoicesApi.InvoiceKind, string> = {
 };
 const STATUS_BADGE_CLASS: Record<invoicesApi.InvoiceStatus, string> = {
   draft:     'border-slate-300 text-slate-700 bg-slate-50',
+  // Spec palette, shared with the mobile app: Progress blue (issued,
+  // nothing received), Partial Paid orange (money in, not all of it),
+  // Paid red (settled — same ink as the PAID stamp).
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
-  partially: 'border-amber-300 text-amber-700 bg-amber-50',
-  paid:      'border-emerald-300 text-emerald-700 bg-emerald-50',
+  partially: 'border-orange-300 text-orange-700 bg-orange-50',
+  paid:      'border-red-300 text-red-700 bg-red-50',
   // Refunded = settled Credit Note (we refunded the customer). Rose
   // hue distinguishes the cash-out direction from a regular Paid
   // collection (emerald) while still reading as a positive terminal
@@ -1773,9 +1776,11 @@ function InvoiceFormDialog({
               right. The number input is pre-filled by /next-number
               when the dialog opens — HR can keep the sequential default
               or type their own (e.g. matching a paper invoice). Edit
-              mode hydrates the existing row's number; changes flow
-              through PUT and the unique (tenant, invoice_no)
-              constraint catches conflicts. */}
+              mode shows the number read-only: InvoiceService.update
+              never writes invoiceNo, so an editable box there would
+              accept a change, drop it, and still report success. On
+              create the number is re-checked server-side and a clash
+              comes back as a 409 naming the number. */}
           <div className="grid grid-cols-[1fr_280px] gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Customer *</Label>
@@ -1815,7 +1820,14 @@ function InvoiceFormDialog({
                 onChange={e => setInvoiceNo(e.target.value)}
                 className="tabular-nums"
                 placeholder="Auto-generated"
+                readOnly={isEdit}
+                disabled={isEdit}
               />
+              <p className="text-[11px] text-muted-foreground">
+                {isEdit
+                  ? 'A invoice keeps the number it was issued with.'
+                  : 'Prefilled with the next free number — change it if you need a specific one.'}
+              </p>
             </div>
           </div>
 
@@ -2090,14 +2102,23 @@ function InvoiceFormDialog({
                       onChange={raw => {
                         const total = Number(raw);
                         const qty = Number(it.quantity) || 0;
-                        // Keep enough precision on the back-computed
-                        // unitPrice so that for divisible totals the
-                        // displayed lineTotal lands exactly back on what
-                        // the user typed (e.g. qty=3, total=100 → uP
-                        // = 33.3333 → display = 99.9999). Stored as a
-                        // string so React doesn't rerun toFixed weirdly.
+                        // Round to the cent, because that is all the
+                        // column can hold: unit_price is numeric(14,2).
+                        //
+                        // Sending full precision looked better on screen
+                        // but wrote a row that contradicted itself. With
+                        // qty=3 and total=100 the client sent unitPrice
+                        // 33.333333333333336; Postgres rounded that to
+                        // 33.33 while the server computed line_total from
+                        // the unrounded value and stored 100.00 — yet
+                        // 3 x 33.33 is 99.99. Reopening the dialog
+                        // recomputed the line from the stored 33.33, so a
+                        // no-op re-save silently rewrote the invoice down
+                        // to 99.99. Rounding here surfaces that cent
+                        // immediately instead, and the stored row agrees
+                        // with itself.
                         const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
-                          ? String(total / qty)
+                          ? (total / qty).toFixed(2)
                           : it.unitPrice;
                         updateItem(idx, {
                           unitPrice: nextUnitPrice,

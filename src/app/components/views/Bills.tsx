@@ -86,10 +86,16 @@ const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
   // Amber for pending — reads as "waiting on approvers" without
   // leaning on red (which we reserve for void). V177.
   pending:   'border-amber-300 text-amber-700 bg-amber-50',
-  draft:     'border-blue-300 text-blue-700 bg-blue-50',
+  // Draft moved off blue: it, progress and partially were ALL blue, so
+  // three different lifecycle states rendered identically. Slate now
+  // matches the Invoices draft chip.
+  draft:     'border-slate-300 text-slate-700 bg-slate-50',
+  // Spec palette, shared with the mobile app: Progress blue (issued,
+  // nothing paid out), Partial Paid orange (money out, not all of it),
+  // Paid red (settled — same ink as the PAID stamp).
   progress:  'border-blue-300 text-blue-700 bg-blue-50',
-  partially: 'border-blue-300 text-blue-700 bg-blue-50',
-  paid:      'border-emerald-300 text-emerald-700 bg-emerald-50',
+  partially: 'border-orange-300 text-orange-700 bg-orange-50',
+  paid:      'border-red-300 text-red-700 bg-red-50',
   // Returned = settled purchase Credit Note (vendor refunded us).
   // Sky hue separates the cash-in-from-vendor direction from a
   // regular Paid bill (emerald = we paid the vendor).
@@ -1498,12 +1504,24 @@ function BillFormDialog({
                   : kind === 'debit_note' ? 'Debit Note No.'
                   : 'Bill No.'}
               </Label>
+              {/* Read-only in Edit mode: BillService.update never
+                  writes billNo, so an editable box there would accept a
+                  change, drop it, and still report success. On create
+                  the number is re-checked server-side and a clash comes
+                  back as a 409 naming the number. */}
               <Input
                 value={billNo}
                 onChange={e => setInvoiceNo(e.target.value)}
                 className="tabular-nums"
                 placeholder="Auto-generated"
+                readOnly={isEdit}
+                disabled={isEdit}
               />
+              <p className="text-[11px] text-muted-foreground">
+                {isEdit
+                  ? 'A bill keeps the number it was issued with.'
+                  : 'Prefilled with the next free number — change it if you need a specific one.'}
+              </p>
             </div>
           </div>
 

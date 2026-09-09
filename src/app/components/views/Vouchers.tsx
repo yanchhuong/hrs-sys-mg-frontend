@@ -849,7 +849,24 @@ function VoucherFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Voucher No.</Label>
-              <Input value={voucherNo} onChange={e => setVoucherNo(e.target.value)} className="tabular-nums" />
+              {/* Read-only in Edit mode: GeneralVoucherService.update
+                  never writes voucherNo, so an editable box there would
+                  accept a change, drop it, and still report success. On
+                  create the number is re-checked server-side and a clash
+                  comes back as a 409 naming the number. */}
+              <Input
+                value={voucherNo}
+                onChange={e => setVoucherNo(e.target.value)}
+                className="tabular-nums"
+                placeholder="Auto-generated"
+                readOnly={isEdit}
+                disabled={isEdit}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {isEdit
+                  ? 'A voucher keeps the number it was issued with.'
+                  : 'Prefilled with the next free number — change it if you need a specific one.'}
+              </p>
             </div>
           </div>
 
