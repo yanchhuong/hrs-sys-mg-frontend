@@ -156,12 +156,17 @@ const fmtMoney = (n: number, currency: string): string => {
 };
 
 // Labels + colors mirror the mobile app's quotation screens exactly
-// (Draft/Accepted/Closed, gray/green/red) so the same quotation reads
-// the same way on both surfaces — and so the "Close" status doesn't
-// read identically to the "Close" action button next to it.
+// so the same quotation reads the same way on both surfaces, and so
+// the "Closed" status doesn't read identically to the "Close" action
+// button next to it. 'progress' stays "Progress" (not "Draft") on
+// purpose — QuotationService.create() (backend) hardcodes every new
+// quotation to status=progress, so it IS the open/editable state from
+// creation onward. There is no separate draft step to distinguish it
+// from, and "Progress" is the same word + color Invoices already use
+// for their own 'progress' status (issued, unpaid).
 const STATUS_LABEL: Record<quotationsApi.QuotationStatus, string> = {
   pending:  'Pending',
-  progress: 'Draft',
+  progress: 'Progress',
   done:     'Accepted',
   close:    'Closed',
 };
@@ -170,8 +175,8 @@ const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
   // Amber for pending — reads as "waiting" without leaning on red
   // (which would imply rejection). V176.
   pending:  'border-amber-300 text-amber-700 bg-amber-50',
-  // Gray: open, editable.
-  progress: 'border-slate-300 text-slate-700 bg-slate-50',
+  // Blue: open, editable — matches Invoices' own 'progress' color.
+  progress: 'border-blue-300 text-blue-700 bg-blue-50',
   // Green: won — matches the invoice Paid green.
   done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
   // Red: frozen negative — matches the invoice Void/Overdue red.
@@ -183,7 +188,7 @@ const STATUS_FILTERS: ReadonlyArray<{ value: quotationsApi.QuotationStatus | 'al
   // Pending sits first after All so operators spot chain-gated
   // quotes without hunting. V176.
   { value: 'pending',  label: 'Pending' },
-  { value: 'progress', label: 'Draft' },
+  { value: 'progress', label: 'Progress' },
   { value: 'done',     label: 'Accepted' },
   { value: 'close',    label: 'Closed' },
 ];
@@ -398,7 +403,7 @@ export function Quotations() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <TableRowsSkeleton rows={8} columns={7} />
+            <TableRowsSkeleton rows={8} columns={8} />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">No quotations yet.</p>
           ) : (
@@ -412,6 +417,7 @@ export function Quotations() {
                   <TableHead className="w-28">Issue Date</TableHead>
                   <TableHead className="w-28">Expiry</TableHead>
                   <TableHead className="text-right w-32">Total</TableHead>
+                  <TableHead className="text-right w-28">Exchange Rate</TableHead>
                   <TableHead className="w-28">Status</TableHead>
                   <TableHead className="w-40 text-right">Actions</TableHead>
                 </TableRow>
@@ -433,6 +439,9 @@ export function Quotations() {
                       <TableCell className="text-sm">{formatDate(q.issueDate)}</TableCell>
                       <TableCell className="text-sm">{q.expiryDate ?? '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(q.total, q.currency)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-gray-600">
+                        {q.exchangeRate ? q.exchangeRate.toLocaleString('en-US') : '—'}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={STATUS_BADGE_CLASS[q.status]}>
                           {STATUS_LABEL[q.status]}
@@ -1881,6 +1890,22 @@ function QuotationDetailDialog({
                 </div>
                 )}
                 <div className="flex justify-end gap-6 font-semibold border-t pt-1 mt-1"><span>Total {quotation.currency}</span><span className="tabular-nums w-32 text-right">{fmtMoney(quotation.total, quotation.currency)}</span></div>
+                {/* Secondary-currency total — same rate-tagged row the
+                    Edit form and Invoice detail both show, using the
+                    exchange rate stamped on the quotation itself
+                    rather than the tenant's live setting, since a
+                    saved quote should keep the rate it was created at. */}
+                {currencySettings?.secondaryCurrency && quotation.currency !== currencySettings.secondaryCurrency && (quotation.exchangeRate || 0) > 0 && (
+                  <div className="flex justify-end gap-6 text-gray-700">
+                    <span>
+                      Total {currencySettings.secondaryCurrency}
+                      {' '}<span className="text-[10px] text-gray-400">@ {quotation.exchangeRate}</span>
+                    </span>
+                    <span className="tabular-nums w-32 text-right">
+                      {currencySettings.secondaryCurrency} {(quotation.total * (quotation.exchangeRate || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
