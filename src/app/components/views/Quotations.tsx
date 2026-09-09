@@ -155,13 +155,27 @@ const fmtMoney = (n: number, currency: string): string => {
   return n < 0 ? `− ${body}` : body;
 };
 
+// Labels + colors mirror the mobile app's quotation screens exactly
+// (Draft/Accepted/Closed, gray/green/red) so the same quotation reads
+// the same way on both surfaces — and so the "Close" status doesn't
+// read identically to the "Close" action button next to it.
+const STATUS_LABEL: Record<quotationsApi.QuotationStatus, string> = {
+  pending:  'Pending',
+  progress: 'Draft',
+  done:     'Accepted',
+  close:    'Closed',
+};
+
 const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
   // Amber for pending — reads as "waiting" without leaning on red
   // (which would imply rejection). V176.
   pending:  'border-amber-300 text-amber-700 bg-amber-50',
-  progress: 'border-blue-300 text-blue-700 bg-blue-50',
+  // Gray: open, editable.
+  progress: 'border-slate-300 text-slate-700 bg-slate-50',
+  // Green: won — matches the invoice Paid green.
   done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
-  close:    'border-slate-300 text-slate-700 bg-slate-50',
+  // Red: frozen negative — matches the invoice Void/Overdue red.
+  close:    'border-rose-300 text-rose-700 bg-rose-50',
 };
 
 const STATUS_FILTERS: ReadonlyArray<{ value: quotationsApi.QuotationStatus | 'all'; label: string }> = [
@@ -169,9 +183,9 @@ const STATUS_FILTERS: ReadonlyArray<{ value: quotationsApi.QuotationStatus | 'al
   // Pending sits first after All so operators spot chain-gated
   // quotes without hunting. V176.
   { value: 'pending',  label: 'Pending' },
-  { value: 'progress', label: 'Progress' },
-  { value: 'done',     label: 'Done' },
-  { value: 'close',    label: 'Close' },
+  { value: 'progress', label: 'Draft' },
+  { value: 'done',     label: 'Accepted' },
+  { value: 'close',    label: 'Closed' },
 ];
 
 /** Taxation matrix — mirrors the Invoice page so a quote can use the
@@ -420,8 +434,8 @@ export function Quotations() {
                       <TableCell className="text-sm">{q.expiryDate ?? '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(q.total, q.currency)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[q.status]}`}>
-                          {q.status}
+                        <Badge variant="outline" className={STATUS_BADGE_CLASS[q.status]}>
+                          {STATUS_LABEL[q.status]}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -1647,8 +1661,8 @@ function QuotationDetailDialog({
                   <span className="text-xs text-gray-500">Loading quotation…</span>
                 ) : (
                   <>
-                    <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[quotation.status]}`}>
-                      {quotation.status}
+                    <Badge variant="outline" className={STATUS_BADGE_CLASS[quotation.status]}>
+                      {STATUS_LABEL[quotation.status]}
                     </Badge>
                     <span className="text-xs text-gray-500">{formatDate(quotation.issueDate)}</span>
                     {quotation.expiryDate && (
