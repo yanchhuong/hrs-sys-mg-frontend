@@ -81,9 +81,15 @@ export const mockHolidays: Holiday[] = [
 // Generated attendance exceptions across many employees
 // ---------------------------------------------------------------------------
 _s = 321;
-const exceptionTypes: AttendanceException['type'][] = ['missed_punch', 'late_arrival', 'early_leave', 'manual_correction'];
+// Mock generator only ever produces these 4 "true exception" types —
+// full/half_morning/half_noon (the rest of AttendanceException['type'])
+// are leave-day categorizations this generator doesn't model, so the
+// reasons lookup below is typed to match what's actually generated
+// rather than the full union.
+type GeneratedExceptionType = 'missed_punch' | 'late_arrival' | 'early_leave' | 'manual_correction';
+const exceptionTypes: GeneratedExceptionType[] = ['missed_punch', 'late_arrival', 'early_leave', 'manual_correction'];
 const exceptionStatuses: AttendanceException['status'][] = ['pending', 'approved', 'approved', 'rejected'];
-const exceptionReasons: Record<AttendanceException['type'], string[]> = {
+const exceptionReasons: Record<GeneratedExceptionType, string[]> = {
   missed_punch: ['Forgot to check out', 'Forgot to check in', 'Biometric scanner offline', 'Phone died - could not punch'],
   late_arrival: ['Traffic delay', 'Doctor appointment', 'Family emergency', 'Public transport delay'],
   early_leave: ['Medical appointment', 'Family urgency', 'Childcare pickup', 'Feeling unwell'],

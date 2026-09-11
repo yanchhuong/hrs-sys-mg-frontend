@@ -12,7 +12,7 @@
  */
 import { loadXlsx } from './xlsxLoader';
 import type { Vendor, VendorRequest } from '../api/vendors';
-import type { BillKind, BillTaxType, BillItemRequest } from '../api/bills';
+import type { BillKind, BillTaxType, BillRequest } from '../api/bills';
 
 /* -------------------------------------------------------------------------
  * Public shapes
@@ -409,28 +409,12 @@ export function downloadBillTemplate(): void {
  * Adapter → API request. The dialog calls this per row at submit time.
  * ------------------------------------------------------------------------- */
 
-export function toBillRequest(bill: ParsedBill, vendorIdOverride?: string): {
-  kind: BillKind;
-  billNo?: string;
-  vendorId: string;
-  issueDate?: string;
-  dueDate?: string | null;
-  currency?: string;
-  taxType?: BillTaxType | null;
-  discountType: 'amount';
-  discountValue: number;
-  notes?: string | null;
-  items: BillItemRequest[];
-} {
+export function toBillRequest(bill: ParsedBill, vendorIdOverride?: string): BillRequest {
   const vid = vendorIdOverride ?? bill.vendorId;
   if (!vid) throw new Error('Vendor not resolved — importer should have blocked this row.');
   return {
     kind: bill.data.kind!,
     billNo: bill.data.billNo,
-    // Backend BillRequest.java field is `vendorId` — the TS
-    // BillRequest interface still names it `customerId` (legacy
-    // typo), but the existing BillFormDialog already sends
-    // `vendorId` and the server binds by name. Match that.
     vendorId: vid,
     issueDate: bill.data.issueDate,
     dueDate: bill.data.dueDate ?? null,

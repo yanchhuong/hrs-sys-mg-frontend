@@ -67,7 +67,7 @@ export interface Bill {
   billNo: string;
   kind: BillKind;
   parentBillId?: string | null;
-  customerId: string;
+  vendorId: string;
   issueDate: string;
   dueDate?: string | null;
   currency: string;
@@ -121,7 +121,7 @@ export interface BillRequest {
    *  auto-generates; supplied → taken verbatim. Must be unique per
    *  tenant (DB enforces). */
   billNo?: string;
-  customerId: string;
+  vendorId: string;
   issueDate?: string;
   dueDate?: string | null;
   currency?: string;
@@ -149,7 +149,7 @@ export interface BillRequest {
 
 export interface ListParams {
   kind?: BillKind | '';
-  customerId?: string | '';
+  vendorId?: string | '';
   page?: number;
   size?: number;
 }
@@ -165,7 +165,7 @@ export interface PagedResponse<T> {
 export async function list(params: ListParams = {}): Promise<PagedResponse<Bill>> {
   const q: Record<string, string | number> = {};
   if (params.kind) q.kind = params.kind;
-  if (params.customerId) q.customerId = params.customerId;
+  if (params.vendorId) q.vendorId = params.vendorId;
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   return apiJson('/api/v1/bills', { query: q });

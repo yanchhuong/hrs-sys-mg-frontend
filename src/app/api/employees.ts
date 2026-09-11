@@ -9,6 +9,12 @@ export type ClinicalRole = 'doctor' | 'cashier' | 'staff' | 'teacher';
 
 export interface Employee {
   id: string;
+  /** Not populated here — `id` above is already the backend UUID for
+   *  this API's own Employee shape. Declared only so the common
+   *  `e.apiId ?? e.id` idiom (written against types/hrms.ts's
+   *  mock-friendly Employee, where `id` is the human code and
+   *  `apiId` is the UUID) type-checks against this shape too. */
+  apiId?: string;
   empNo: string;
   name: string;
   khmerName?: string | null;

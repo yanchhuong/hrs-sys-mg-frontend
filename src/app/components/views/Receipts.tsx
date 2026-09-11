@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet,
+  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock,
 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
@@ -890,7 +890,7 @@ function ReceiptFormDialog({
                       onChange={slot.set}
                       placeholder="— none —"
                       emptyLabel="— none —"
-                      searchPlaceholder="Search users by email or role…"
+                      searchPlaceholder="Search users by name, email, or role…"
                       options={users
                         .filter(u => u.isActive)
                         .filter(u => u.id !== approver1 || slot.value === approver1)
@@ -898,9 +898,12 @@ function ReceiptFormDialog({
                         .filter(u => u.id !== approver3 || slot.value === approver3)
                         .map(u => ({
                           value: u.id,
-                          label: u.email,
+                          // V140 — prefer the display name; null falls
+                          // back to email, same precedence User.name's
+                          // own doc comment declares.
+                          label: u.name || u.email,
                           secondary: u.role,
-                          searchKey: `${u.email} ${u.role}`,
+                          searchKey: `${u.name ?? ''} ${u.email} ${u.role}`,
                         }))}
                     />
                   </div>
@@ -922,6 +925,9 @@ function ReceiptFormDialog({
           {/* All three save paths land on Draft — Receipts are
               recorded as drafts during data entry and promoted to
               Issued explicitly from the row's View Details popup. */}
+          <Button onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Draft')}
+          </Button>
           {!isEdit && (
             <>
               <Button variant="outline" onClick={submitAndNew} disabled={saving}
@@ -930,13 +936,10 @@ function ReceiptFormDialog({
               </Button>
               <Button variant="outline" onClick={submitAndClose} disabled={saving}
                       title="Save as Draft and close the dialog">
-                {saving ? 'Saving…' : 'Save & close'}
+                {saving ? 'Saving…' : 'Save & Close'}
               </Button>
             </>
           )}
-          <Button onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save')}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1103,12 +1106,36 @@ function ReceiptPaymentsPanel({
   const [rows, setRows] = useState<receiptPaymentsApi.ReceiptPayment[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // Status of every distinct cash advance funding a payment on this
+  // receipt — a payment can no longer be removed once its advance has
+  // been settled (the settlement already reconciled against whatever
+  // payments existed at that moment; deleting one afterwards would
+  // silently desync the live balance from the transaction that already
+  // posted). Mirrors the same rule ReceiptPaymentService.delete() now
+  // enforces server-side.
+  const [advanceStatusById, setAdvanceStatusById] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
-    try { setRows(await receiptPaymentsApi.listForReceipt(receiptId)); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to load payments'); }
-    finally { setLoading(false); }
+    try {
+      const paid = await receiptPaymentsApi.listForReceipt(receiptId);
+      setRows(paid);
+      const advanceIds = Array.from(new Set(
+        paid.filter(r => r.method === 'cash_advance' && r.cashAdvanceId).map(r => r.cashAdvanceId!),
+      ));
+      if (advanceIds.length > 0) {
+        const statuses = await Promise.all(advanceIds.map(id =>
+          cashAdvancesApi.get(id).then(a => [id, a.status] as const).catch(() => [id, ''] as const),
+        ));
+        setAdvanceStatusById(Object.fromEntries(statuses));
+      } else {
+        setAdvanceStatusById({});
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load payments');
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [receiptId]);
 
@@ -1184,7 +1211,10 @@ function ReceiptPaymentsPanel({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map(r => (
+            {rows.map(r => {
+              const advanceStatus = r.cashAdvanceId ? advanceStatusById[r.cashAdvanceId] : undefined;
+              const locked = r.method === 'cash_advance' && advanceStatus === 'settled';
+              return (
               <TableRow key={r.id}>
                 <TableCell className="text-xs">{formatDate(r.paymentDate)}</TableCell>
                 <TableCell className="text-xs capitalize">
@@ -1212,14 +1242,28 @@ function ReceiptPaymentsPanel({
                 </TableCell>
                 {!readOnly && (
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
-                            onClick={() => void handleDelete(r.id)} title="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {locked ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex h-7 w-7 items-center justify-center text-gray-300">
+                            <Lock className="h-3.5 w-3.5" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          This cash advance is already settled — the payment can no longer be removed.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
+                              onClick={() => void handleDelete(r.id)} title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </TableCell>
                 )}
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       )}
@@ -1284,6 +1328,7 @@ function RecordReceiptPaymentDialog({
    *  opens so the receipt page paint isn't blocked. */
   const [openAdvances, setOpenAdvances] = useState<cashAdvancesApi.CashAdvance[]>([]);
   const [cashAdvanceId, setCashAdvanceId] = useState('');
+  const selectedAdvance = openAdvances.find(a => a.id === cashAdvanceId);
 
   useEffect(() => {
     if (!open) return;
@@ -1331,7 +1376,7 @@ function RecordReceiptPaymentDialog({
         currency: payCurrency,
         method,
         direction,
-        referenceNo: referenceNo.trim() || undefined,
+        referenceNo: method === 'cash_advance' ? selectedAdvance?.advanceNo : (referenceNo.trim() || undefined),
         cashAdvanceId: method === 'cash_advance' ? cashAdvanceId : undefined,
         notes: notes.trim() || undefined,
       });
@@ -1443,8 +1488,16 @@ function RecordReceiptPaymentDialog({
           )}
           <div className="space-y-1.5">
             <Label className="text-xs">Reference No</Label>
-            <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)}
-                   placeholder="Cheque #, bank ref, auth code" />
+            {/* Cash-advance-funded payments reference the advance
+                itself, not a bank/cheque ref — pinned to its advanceNo
+                and locked so it can't drift from what's actually
+                funding this payment. */}
+            <Input
+              value={method === 'cash_advance' ? (selectedAdvance?.advanceNo ?? '') : referenceNo}
+              onChange={e => setReferenceNo(e.target.value)}
+              disabled={method === 'cash_advance'}
+              placeholder={method === 'cash_advance' ? 'Pick an advance above' : 'Cheque #, bank ref, auth code'}
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>

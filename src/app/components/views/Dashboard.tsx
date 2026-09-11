@@ -192,7 +192,10 @@ function PosDashboardBundle() {
     return n.toLocaleString();
   };
 
-  const trend = data?.trend ?? [];
+  // Same DashboardSummary.trend union as the other dashboard widgets
+  // below — narrowed to this widget's own shape (see Accounting /
+  // Payroll dashboards further down for the same idiom).
+  const trend = (data?.trend ?? []) as { date: string; sales: number | string; orders: number }[];
   // Y-scale for the mini bar chart — normalize to the peak so a
   // typical mid-week bar reads as ~half-height even on a flat week.
   const maxSales = useMemo(() => trend.reduce(
@@ -621,9 +624,10 @@ function PayrollDashboardBundle() {
 /* ============================================================== */
 
 const ACTIVITY_SOURCE_TONE: Record<string, string> = {
-  accounting: 'text-blue-600 bg-blue-50',
-  payroll:    'text-violet-600 bg-violet-50',
-  pos:        'text-emerald-600 bg-emerald-50',
+  accounting:   'text-blue-600 bg-blue-50',
+  payroll:      'text-violet-600 bg-violet-50',
+  pos:          'text-emerald-600 bg-emerald-50',
+  'cash flow':  'text-amber-600 bg-amber-50',
 };
 
 /** V316 — Management category widgets. A cross-category roll-up

@@ -108,6 +108,15 @@ export interface FetchOptions extends Omit<RequestInit, 'body'> {
   auth?: boolean;
 }
 
+/** apiFetch's own options. FetchOptions omits `body` because apiJson
+ *  callers always serialise through `json` instead — but apiFetch is
+ *  also the raw escape hatch multipart/FormData uploads use, which
+ *  must send a real body without JSON-encoding it, so `body` is
+ *  added back here. */
+export interface RawFetchOptions extends FetchOptions {
+  body?: RequestInit['body'];
+}
+
 export function buildQuery(query?: FetchOptions['query']): string {
   if (!query) return '';
   const params = new URLSearchParams();
@@ -164,7 +173,7 @@ export function apiPath(path: string): string {
     : path;
 }
 
-export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<Response> {
+export async function apiFetch(path: string, opts: RawFetchOptions = {}): Promise<Response> {
   const { json, query, auth = true, headers, ...rest } = opts;
   const url = buildUrl(path, query);
   const merged: Record<string, string> = { ...(headers as Record<string, string> ?? {}) };
@@ -185,7 +194,7 @@ export async function apiFetch(path: string, opts: FetchOptions = {}): Promise<R
     return await fetch(url, {
       ...rest,
       headers: merged,
-      body: json !== undefined ? JSON.stringify(json) : (rest as { body?: BodyInit }).body,
+      body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
   } catch (err) {
     // v-api-unreachable-redirect — network-layer failure ("Failed to

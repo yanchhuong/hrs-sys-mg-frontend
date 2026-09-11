@@ -366,7 +366,7 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
           {type === 'BIRTHDAY' && (
             <div>
               <Label className="text-xs">Reward item (SKU)</Label>
-              <ItemPicker value={rewardItemId} onChange={setRewardItemId} items={items} />
+              <MultiItemPicker value={rewardItemIds} onChange={setRewardItemIds} items={items} />
               <p className="text-[10px] text-gray-500 mt-1">
                 Fires on the customer's birth day (checked at POS checkout).
               </p>

@@ -77,8 +77,11 @@ export function Encounters() {
       setDoctors(empRes.content ?? []);
       // Author column: fetched separately so a 403 on user-management
       // doesn't blank the encounter list itself.
+      // users.ts's PagedResponse is the {data, page, size, ...} common
+      // shape, not Spring's native Page ({content, ...}) that most
+      // other endpoints here use.
       usersApi.list({ size: 500 })
-        .then(r => setUsers(r.content ?? []))
+        .then(r => setUsers(r.data ?? []))
         .catch(() => setUsers([]));
       // Per-encounter payments totals, split by currency. Batched so
       // a page of encounters is one round-trip. Soft-fail: a 403 on

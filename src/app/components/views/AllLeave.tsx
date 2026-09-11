@@ -39,7 +39,8 @@ import {
   format, isWithinInterval, parseISO, eachDayOfInterval,
 } from 'date-fns';
 import { toast } from 'sonner';
-import { AttendanceException, Employee } from '../../types/hrms';
+import { Employee } from '../../types/hrms';
+import { AttendanceException } from '../../types/timework';
 import * as leaveApi from '../../api/leave';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';

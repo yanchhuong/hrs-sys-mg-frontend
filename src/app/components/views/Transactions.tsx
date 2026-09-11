@@ -394,7 +394,7 @@ export function Transactions() {
                         ? 'text-gray-400 italic'
                         : (r.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')
                     }`} title={isChildSpend(r) ? 'Funded from a Cash Advance — already counted at disbursement' : undefined}>
-                      {r.direction === 'out' ? '− ' : ''}{fmtMoney(Number(r.amount), r.currency)}
+                      {!isChildSpend(r) && r.direction === 'out' ? '− ' : ''}{fmtMoney(Number(r.amount), r.currency)}
                     </TableCell>
                   </TableRow>
                   );

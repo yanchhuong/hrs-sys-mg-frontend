@@ -110,8 +110,8 @@ export function AllDocumentsTab() {
     }
     const dir = sortDir === 'asc' ? 1 : -1;
     const sorted = [...rows].sort((a, b) => {
-      const av = (a as Record<string, unknown>)[sortKey] ?? '';
-      const bv = (b as Record<string, unknown>)[sortKey] ?? '';
+      const av = (a as unknown as Record<string, unknown>)[sortKey] ?? '';
+      const bv = (b as unknown as Record<string, unknown>)[sortKey] ?? '';
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });

@@ -90,7 +90,9 @@ export function AgencySettingsClientsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const counts = useMemo(() => {
-    const c: Record<StatusTab, number> = { all: rows.length, pending: 0, active: 0, declined: 0, disengaged: 0 };
+    const c: Record<StatusTab, number> = {
+      all: rows.length, pending: 0, active: 0, declined: 0, disengaged: 0, disconnect_pending: 0,
+    };
     for (const r of rows) c[r.status as StatusTab] += 1;
     return c;
   }, [rows]);

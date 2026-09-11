@@ -320,6 +320,7 @@ const urlFor = (scope: AccountingScope) =>
   : scope === 'pos'       ? '/api/v1/pos/settings'
   : scope === 'payroll'   ? '/api/v1/payroll/settings'
   : scope === 'hospital'  ? '/api/v1/hospital/settings'
+  : scope === 'payment_plan' ? '/api/v1/payment-plans/settings'
   :                        '/api/v1/vouchers/settings';
 
 export async function get(scope: AccountingScope): Promise<AccountingSettings> {

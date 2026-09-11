@@ -126,7 +126,7 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-5 w-5 text-indigo-600" />
-            Library Settings
+            Member Settings
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>

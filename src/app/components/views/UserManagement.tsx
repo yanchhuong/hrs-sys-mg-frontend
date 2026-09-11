@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { memo, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockUsers, mockEmployees, mockDepartments } from '../../data/mockData';
 import { Employee, User, UserRole } from '../../types/hrms';
@@ -730,13 +730,19 @@ export function UserManagement() {
           for (const mod of MODULES) {
             if (!next[mod.key]) next[mod.key] = {};
             if (!next[mod.key][r.key]) {
-              next[mod.key][r.key] = { view: false, create: false, update: false, delete: false };
+              next[mod.key][r.key] = {
+                view: false, create: false, update: false, delete: false,
+                scope_owner: false, scope_member: false, scope_all: false,
+              };
             }
           }
           for (const p of grid) {
             const m = next[p.module];
             if (!m) continue;
-            if (!m[r.key]) m[r.key] = { view: false, create: false, update: false, delete: false };
+            if (!m[r.key]) m[r.key] = {
+              view: false, create: false, update: false, delete: false,
+              scope_owner: false, scope_member: false, scope_all: false,
+            };
             m[r.key][p.action as Action] = !!p.granted;
           }
         }
@@ -765,7 +771,12 @@ export function UserManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const roles: RoleDef[] = [...BUILT_IN_ROLES, ...customRoles];
+  // Memoized so this stays referentially stable across renders that
+  // don't touch customRoles — ModuleRow (below) is memoized and reads
+  // a filtered slice of this list, so a fresh array reference on
+  // every render would defeat that memo on every permission toggle.
+  const roles: RoleDef[] = useMemo(() => [...BUILT_IN_ROLES, ...customRoles], [customRoles]);
+  const nonAdminRoles = useMemo(() => roles.filter(r => r.key !== 'admin'), [roles]);
 
   // Custom role dialog state
   const [customRoleDialogOpen, setCustomRoleDialogOpen] = useState(false);
@@ -1083,7 +1094,13 @@ export function UserManagement() {
    *     holes.
    *   • Toggling a scope axis (scope_owner / scope_member / scope_all)
    *     is independent; nothing implicit fires there. */
-  const togglePermission = (moduleKey: string, role: UserRole, action: Action) => {
+  // `role` is a permission-matrix key, not a fixed UserRole — this
+  // page also manages custom roles (arbitrary slugifyRoleKey strings),
+  // and PermissionMatrix itself already indexes by plain string.
+  // useCallback (setPermissions is the only external reference, and
+  // state setters are stable) so ModuleRow's memo isn't defeated by a
+  // fresh function identity on every render.
+  const togglePermission = useCallback((moduleKey: string, role: string, action: Action) => {
     setPermissions(prev => {
       const before = prev[moduleKey][role];
       const nextVal = !before[action];
@@ -1107,9 +1124,10 @@ export function UserManagement() {
         },
       };
     });
-  };
+  }, []);
 
-  const toggleAllForRoleModule = (moduleKey: string, role: UserRole, value: boolean) => {
+  // Same permission-matrix key story as togglePermission above.
+  const toggleAllForRoleModule = useCallback((moduleKey: string, role: string, value: boolean) => {
     // "Grant all" / "Clear" only flips the Menu Access axis. Data Access
     // (O/M/A) is independent and stays as the admin set it so a quick
     // Clear doesn't wipe out a deliberate scope configuration.
@@ -1123,7 +1141,7 @@ export function UserManagement() {
         },
       },
     }));
-  };
+  }, []);
 
   const handleSavePermissions = async () => {
     if (USE_MOCKS) {
@@ -1207,10 +1225,14 @@ export function UserManagement() {
     // and "blank" we send undefined and seed perms ourselves below.
     const baseRole: 'employee' | 'manager' | undefined =
       newRoleBase === 'employee' || newRoleBase === 'manager' ? newRoleBase : undefined;
-    const fullAccess: Record<Action, boolean> =
-      { view: true, create: true, update: true, delete: true };
-    const noAccess: Record<Action, boolean> =
-      { view: false, create: false, update: false, delete: false };
+    const fullAccess: Record<Action, boolean> = {
+      view: true, create: true, update: true, delete: true,
+      scope_owner: true, scope_member: true, scope_all: true,
+    };
+    const noAccess: Record<Action, boolean> = {
+      view: false, create: false, update: false, delete: false,
+      scope_owner: false, scope_member: false, scope_all: false,
+    };
 
     if (USE_MOCKS) {
       const def: RoleDef = {
@@ -1989,164 +2011,16 @@ export function UserManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleModules.map((mod) => {
-                      // Section headers (Time Tracking, Payroll Management,
-                      // Settings) span every column — they're sidebar group
-                      // labels, not permission gates. Children render
-                      // indented underneath with the regular checkbox row.
-                      if (mod.header) {
-                        // 1 label cell + N role cells, computed dynamically
-                        // so adding a new role doesn't break the colSpan.
-                        const cols = 1 + roles.filter(r => r.key !== 'admin').length;
-                        return (
-                          <TableRow key={mod.key} className="bg-gray-50 hover:bg-gray-50">
-                            <TableCell colSpan={cols} className="py-2">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                {mod.label}
-                              </p>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-                      // Inherited rows — the sidebar leaf exists but the
-                      // permission lives on the parent module (e.g.
-                      // Attendance Settings routes through the `settings`
-                      // gate). We show the row so the matrix visually
-                      // mirrors the sidebar 1:1, but drop the checkbox
-                      // columns entirely — earlier iterations rendered
-                      // disabled-but-checked boxes that admins misread as
-                      // "did I click that too?". Now the row is clearly
-                      // informational: label + tooltip + "Inherits from X"
-                      // badge, and a single "same as X" caption spanning
-                      // every role column.
-                      if (mod.inheritsFromLabel) {
-                        const nonAdminRoles = roles.filter(r => r.key !== 'admin');
-                        return (
-                          <TableRow key={mod.key} className="bg-blue-50/30">
-                            <TableCell>
-                              <div style={{ paddingLeft: 20 }}>
-                                <p className="font-medium text-sm flex items-center gap-2 flex-wrap">
-                                  <span className="text-gray-300">└</span>
-                                  <TooltipProvider delayDuration={120}>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
-                                          {mod.label}
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-                                        <strong>{mod.label}</strong>
-                                        {mod.description ? ` — ${mod.description}` : ''}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  <span className="text-[10px] text-blue-700 bg-white border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap font-normal">
-                                    Inherits from <strong>{mod.inheritsFromLabel}</strong>
-                                  </span>
-                                </p>
-                              </div>
-                            </TableCell>
-                            {nonAdminRoles.map(role => (
-                              <TableCell key={role.key} className="border-l">
-                                <div className="flex items-center justify-center h-full">
-                                  <span className="text-[11px] text-gray-400 italic">
-                                    same as {mod.inheritsFromLabel}
-                                  </span>
-                                </div>
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        );
-                      }
-                      return (
-                      <TableRow key={mod.key}>
-                        <TableCell>
-                          {/* Sub-modules render with a left pad + tree
-                              prefix so the admin can see at a glance
-                              that 'Attendance Report' belongs under
-                              'Reports'. Cascading isn't applied —
-                              independent permission per sub-module
-                              is the whole point of splitting them. */}
-                          <div style={mod.parent ? { paddingLeft: 20 } : undefined}>
-                            <p className="font-medium text-sm">
-                              {mod.parent && <span className="text-gray-300 mr-1">└</span>}
-                              <TooltipProvider delayDuration={120}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
-                                      {mod.label}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-                                    <strong>{mod.label}</strong>
-                                    {mod.description ? ` — ${mod.description}` : ''}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </p>
-                          </div>
-                        </TableCell>
-                        {roles.filter(r => r.key !== 'admin').map(role => {
-                          const roleState = permissions[mod.key]?.[role.key];
-                          // "All" for the Grant all / Clear toggle is now only
-                          // about Menu Access — Data Access has its own axis
-                          // that the admin configures per module / role.
-                          const allMenuOn = MENU_ACTIONS.every(a => roleState?.[a]);
-                          const hasAnyMenuAccess = MENU_ACTIONS.some(a => roleState?.[a]);
-                          return (
-                            <TableCell key={role.key} className="border-l">
-                              <div className="flex items-center justify-center gap-4">
-                                {MENU_ACTIONS.map(action => (
-                                  <div key={action} className="w-6 flex justify-center" title={`${role.name}: ${ACTION_LABELS[action]}`}>
-                                    <Checkbox
-                                      checked={!!roleState?.[action]}
-                                      onCheckedChange={() => togglePermission(mod.key, role.key, action)}
-                                      aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]}`}
-                                    />
-                                  </div>
-                                ))}
-                                {/* Data Access checkboxes — editable. Visible
-                                    only when the role has at least one menu
-                                    grant on this module (scope without
-                                    access is meaningless). Width is reserved
-                                    when hidden so the column stays aligned. */}
-                                {hasAnyMenuAccess ? (
-                                  SCOPE_ACTIONS.map((action, idx) => (
-                                    <div
-                                      key={action}
-                                      className={`w-6 flex justify-center ${idx === 0 ? 'border-l pl-2 ml-1' : ''}`}
-                                      title={`${role.name}: ${ACTION_LABELS[action]}`}
-                                    >
-                                      <Checkbox
-                                        checked={!!roleState?.[action]}
-                                        onCheckedChange={() => togglePermission(mod.key, role.key, action)}
-                                        aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]}`}
-                                      />
-                                    </div>
-                                  ))
-                                ) : (
-                                  <>
-                                    <div className="w-6 border-l ml-1" />
-                                    <div className="w-6" />
-                                    <div className="w-6" />
-                                  </>
-                                )}
-                              </div>
-                              <div className="flex justify-center mt-2">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAllForRoleModule(mod.key, role.key, !allMenuOn)}
-                                  className="text-[10px] text-blue-600 hover:underline"
-                                >
-                                  {allMenuOn ? 'Clear' : 'Grant all'}
-                                </button>
-                              </div>
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                      );
-                    })}
+                    {visibleModules.map((mod) => (
+                      <ModuleRow
+                        key={mod.key}
+                        mod={mod}
+                        nonAdminRoles={nonAdminRoles}
+                        modulePermissions={permissions[mod.key]}
+                        onToggle={togglePermission}
+                        onToggleAll={toggleAllForRoleModule}
+                      />
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -2317,6 +2191,176 @@ export function UserManagement() {
     </div>
   );
 }
+
+/**
+ * One row of the Permission Matrix table. Memoized: `permissions` is a
+ * single flat object for the whole matrix (~40-50 modules × ~6 roles),
+ * and toggling one checkbox used to reconcile every row in the table.
+ * `modulePermissions` (permissions[mod.key]) keeps its reference for
+ * every module untouched by a given toggle (see togglePermission's
+ * shallow-copy shape), so memo correctly skips rows whose own module
+ * didn't change. `onToggle`/`onToggleAll`/`nonAdminRoles` are stable
+ * references from the parent for the same reason.
+ */
+const ModuleRow = memo(function ModuleRow({
+  mod, nonAdminRoles, modulePermissions, onToggle, onToggleAll,
+}: {
+  mod: ModuleDef;
+  nonAdminRoles: RoleDef[];
+  modulePermissions: Record<string, Record<Action, boolean>> | undefined;
+  onToggle: (moduleKey: string, role: string, action: Action) => void;
+  onToggleAll: (moduleKey: string, role: string, value: boolean) => void;
+}) {
+  // Section headers (Time Tracking, Payroll Management, Settings) span
+  // every column — they're sidebar group labels, not permission gates.
+  // Children render indented underneath with the regular checkbox row.
+  if (mod.header) {
+    // 1 label cell + N role cells, computed dynamically so adding a
+    // new role doesn't break the colSpan.
+    const cols = 1 + nonAdminRoles.length;
+    return (
+      <TableRow className="bg-gray-50 hover:bg-gray-50">
+        <TableCell colSpan={cols} className="py-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {mod.label}
+          </p>
+        </TableCell>
+      </TableRow>
+    );
+  }
+  // Inherited rows — the sidebar leaf exists but the permission lives
+  // on the parent module (e.g. Attendance Settings routes through the
+  // `settings` gate). We show the row so the matrix visually mirrors
+  // the sidebar 1:1, but drop the checkbox columns entirely — earlier
+  // iterations rendered disabled-but-checked boxes that admins
+  // misread as "did I click that too?". Now the row is clearly
+  // informational: label + tooltip + "Inherits from X" badge, and a
+  // single "same as X" caption spanning every role column.
+  if (mod.inheritsFromLabel) {
+    return (
+      <TableRow className="bg-blue-50/30">
+        <TableCell>
+          <div style={{ paddingLeft: 20 }}>
+            <p className="font-medium text-sm flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">└</span>
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
+                      {mod.label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                    <strong>{mod.label}</strong>
+                    {mod.description ? ` — ${mod.description}` : ''}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <span className="text-[10px] text-blue-700 bg-white border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap font-normal">
+                Inherits from <strong>{mod.inheritsFromLabel}</strong>
+              </span>
+            </p>
+          </div>
+        </TableCell>
+        {nonAdminRoles.map(role => (
+          <TableCell key={role.key} className="border-l">
+            <div className="flex items-center justify-center h-full">
+              <span className="text-[11px] text-gray-400 italic">
+                same as {mod.inheritsFromLabel}
+              </span>
+            </div>
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  }
+  return (
+    <TableRow>
+      <TableCell>
+        {/* Sub-modules render with a left pad + tree prefix so the
+            admin can see at a glance that 'Attendance Report' belongs
+            under 'Reports'. Cascading isn't applied — independent
+            permission per sub-module is the whole point of splitting
+            them. */}
+        <div style={mod.parent ? { paddingLeft: 20 } : undefined}>
+          <p className="font-medium text-sm">
+            {mod.parent && <span className="text-gray-300 mr-1">└</span>}
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2">
+                    {mod.label}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                  <strong>{mod.label}</strong>
+                  {mod.description ? ` — ${mod.description}` : ''}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </p>
+        </div>
+      </TableCell>
+      {nonAdminRoles.map(role => {
+        const roleState = modulePermissions?.[role.key];
+        // "All" for the Grant all / Clear toggle is now only about
+        // Menu Access — Data Access has its own axis that the admin
+        // configures per module / role.
+        const allMenuOn = MENU_ACTIONS.every(a => roleState?.[a]);
+        const hasAnyMenuAccess = MENU_ACTIONS.some(a => roleState?.[a]);
+        return (
+          <TableCell key={role.key} className="border-l">
+            <div className="flex items-center justify-center gap-4">
+              {MENU_ACTIONS.map(action => (
+                <div key={action} className="w-6 flex justify-center" title={`${role.name}: ${ACTION_LABELS[action]}`}>
+                  <Checkbox
+                    checked={!!roleState?.[action]}
+                    onCheckedChange={() => onToggle(mod.key, role.key, action)}
+                    aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]}`}
+                  />
+                </div>
+              ))}
+              {/* Data Access checkboxes — editable. Visible only when
+                  the role has at least one menu grant on this module
+                  (scope without access is meaningless). Width is
+                  reserved when hidden so the column stays aligned. */}
+              {hasAnyMenuAccess ? (
+                SCOPE_ACTIONS.map((action, idx) => (
+                  <div
+                    key={action}
+                    className={`w-6 flex justify-center ${idx === 0 ? 'border-l pl-2 ml-1' : ''}`}
+                    title={`${role.name}: ${ACTION_LABELS[action]}`}
+                  >
+                    <Checkbox
+                      checked={!!roleState?.[action]}
+                      onCheckedChange={() => onToggle(mod.key, role.key, action)}
+                      aria-label={`${mod.label} ${role.name} ${ACTION_LABELS[action]}`}
+                    />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="w-6 border-l ml-1" />
+                  <div className="w-6" />
+                  <div className="w-6" />
+                </>
+              )}
+            </div>
+            <div className="flex justify-center mt-2">
+              <button
+                type="button"
+                onClick={() => onToggleAll(mod.key, role.key, !allMenuOn)}
+                className="text-[10px] text-blue-600 hover:underline"
+              >
+                {allMenuOn ? 'Clear' : 'Grant all'}
+              </button>
+            </div>
+          </TableCell>
+        );
+      })}
+    </TableRow>
+  );
+});
 
 /**
  * Searchable employee picker for the Create/Edit User dialog. Mirrors the

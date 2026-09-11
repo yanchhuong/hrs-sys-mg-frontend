@@ -14,7 +14,13 @@ export type ContractStatus = 'active' | 'expiring' | 'expired';
 
 export type OTStatus = 'pending' | 'approved' | 'rejected' | 'paid';
 
-export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'absent' | 'no_checkin' | 'no_checkout' | 'leave';
+// 'exception' is a client-derived status: Attendance.tsx's dailyRows
+// builder assigns it (in place of 'leave') when the covering leave
+// record's category is exception/maternity — see leaveCategory below
+// and isExceptionCategory in Attendance.tsx. Several call sites were
+// already relying on this via `as AttendanceStatus` casts before the
+// type declared it.
+export type AttendanceStatus = 'present' | 'late' | 'early_leave' | 'absent' | 'no_checkin' | 'no_checkout' | 'leave' | 'exception';
 
 export interface User {
   id: string;
@@ -211,6 +217,9 @@ export interface OTRequest {
   id: string;
   employeeId: string;
   date: string;
+  /** End date — equal to `date` for same-day OT, one day later for a
+   *  cross-midnight night shift (V59, backend OtRequestDto.endDate). */
+  endDate?: string | null;
   /** HH:mm. Optional for legacy rows that only carried total hours. */
   startHour?: string;
   /** HH:mm. Optional for legacy rows that only carried total hours. */
@@ -219,7 +228,14 @@ export interface OTRequest {
   reason: string;
   status: OTStatus;
   requestedAt: string;
+  /** Display name of the original submitter, resolved server-side —
+   *  covers on-behalf rows the frontend has no local roster join for. */
+  submittedByName?: string;
   approvedBy?: string;
+  /** Display name of the approver, resolved server-side (approvedBy
+   *  is a user UUID, not an employee id, so the FE can't look it up
+   *  locally — see backend OtRequestDto.approvedByName). */
+  approvedByName?: string;
   approvedAt?: string;
   isWeekend: boolean;
   isHoliday: boolean;
@@ -238,6 +254,9 @@ export interface PayrollItem {
   employeeName?: string;
   month: string;
   baseSalary: number;
+  /** Days worked this month (V278). Null on legacy rows; editable
+   *  while the owning batch is still 'draft'. */
+  workDays?: number | null;
   positionAllowance?: number;
   evaluationAllowance?: number;
   otHours: number;
@@ -275,6 +294,9 @@ export interface Contract {
   notes?: string;
   renewedFrom?: string;
   renewedTo?: string;
+  /** Backend ContractDto field — reason recorded when a contract is
+   *  terminated early. Null/undefined otherwise. */
+  terminationReason?: string | null;
   createdAt: string;
 }
 
@@ -284,4 +306,6 @@ export interface Department {
   managerId?: string;
   employeeCount?: number;
   description?: string;
+  /** Backend DepartmentDto field — null/undefined for a top-level dept/group. */
+  parentId?: string | null;
 }

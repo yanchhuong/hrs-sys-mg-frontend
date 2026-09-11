@@ -19,7 +19,7 @@ export interface CheckStatus {
 }
 
 export async function checkStatus(lat?: number, lng?: number): Promise<CheckStatus> {
-  const query: Record<string, unknown> = {};
+  const query: Record<string, number> = {};
   if (lat != null && lng != null) {
     query.lat = lat;
     query.lng = lng;

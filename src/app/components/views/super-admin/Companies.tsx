@@ -107,6 +107,12 @@ function toTenant(c: Company): platformApi.PlatformTenant {
     createdAt: c.createdAt,
     updatedAt: c.lastActiveAt,
     appLauncherEnabled: c.appLauncherEnabled ?? true,
+    // v-tenant-freeze / v-tenant-freeze-schedule — mock Company predates
+    // both features, so a mock-mode tenant is always "never frozen".
+    frozenAt: null,
+    frozenReason: null,
+    frozenById: null,
+    frozenUntil: null,
   };
 }
 

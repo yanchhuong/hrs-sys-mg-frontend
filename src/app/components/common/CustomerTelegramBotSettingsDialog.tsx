@@ -20,6 +20,16 @@ import * as telegramApi from '../../api/telegram';
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Noun for the people this bot talks to, so the Students lens reads
+   * "Student Telegram Bot" instead of "Customer".
+   *
+   * Cosmetic only — there is ONE bot per tenant (`telegram.getBot()`
+   * has no kind parameter), and every lens configures that same row.
+   * The dialog says so explicitly rather than letting a re-labelled
+   * title imply a second, separate bot.
+   */
+  audienceLabel?: string;
 }
 
 /**
@@ -33,7 +43,7 @@ interface Props {
  * pasting a fresh secret is the only way to rotate; the form stays
  * empty after load to make that requirement obvious.</p>
  */
-export function CustomerTelegramBotSettingsDialog({ open, onOpenChange }: Props) {
+export function CustomerTelegramBotSettingsDialog({ open, onOpenChange, audienceLabel = 'Customer' }: Props) {
   const [bot, setBot] = useState<telegramApi.TelegramBot | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -107,7 +117,7 @@ export function CustomerTelegramBotSettingsDialog({ open, onOpenChange }: Props)
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Send className="h-4 w-4 text-sky-600" />
-              Customer Telegram Bot
+              {audienceLabel} Telegram Bot
               {/* The verbose "what is this?" copy is hidden behind an
                   Info hover so the dialog stays compact for the
                   return visit (operator already knows the gist), while
@@ -130,10 +140,13 @@ export function CustomerTelegramBotSettingsDialog({ open, onOpenChange }: Props)
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs">
-                    Register the bot customers use to receive invoices,
-                    quotations, and reminders. Create the bot in Telegram
+                    Register the bot {audienceLabel.toLowerCase()}s use to receive
+                    invoices, quotations, and reminders. Create the bot in Telegram
                     with <strong>@BotFather</strong>, paste the username and
                     token here.
+                    {' '}One bot serves the whole tenant — customers and students
+                    link to the same one, so registering it here also registers it
+                    for the other lists.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

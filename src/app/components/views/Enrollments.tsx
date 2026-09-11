@@ -569,7 +569,14 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                   })}
                 </TableBody>
               </Table>
-              <Pagination {...pagination} />
+              <Pagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                onPageChange={pagination.goToPage}
+                startIndex={pagination.startIndex}
+                endIndex={pagination.endIndex}
+                totalItems={pagination.totalItems}
+              />
             </>
           )}
         </CardContent>

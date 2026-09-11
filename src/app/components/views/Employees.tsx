@@ -1682,7 +1682,7 @@ export function Employees() {
                           // prepend it as a synthetic option so the trigger
                           // still shows the real value instead of "None".
                           if (employee.position && !filtered.some(o => o.value === employee.position)) {
-                            filtered.unshift({ value: employee.position, label: employee.position });
+                            filtered.unshift({ value: employee.position, label: employee.position, secondary: undefined });
                           }
                           return filtered;
                         })()}

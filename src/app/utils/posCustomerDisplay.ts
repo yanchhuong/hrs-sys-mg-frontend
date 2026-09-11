@@ -18,6 +18,8 @@
  * one-cashier setups (the POS reality) don't need more.
  */
 
+import type { PosPaymentMethod } from '../api/pos';
+
 export const POS_DISPLAY_CHANNEL = 'pos-customer-display';
 export const POS_DISPLAY_PATH    = '/pos/display';
 
@@ -77,7 +79,7 @@ export interface DisplayState {
    *  display shows the bank's QR fullscreen so the customer can
    *  scan to pay. Other methods keep the order view visible. */
   checkout: {
-    method: 'cash' | 'card' | 'khqr' | 'bank';
+    method: PosPaymentMethod;
     banks: { id: string; bankName: string; accountName: string; accountNumber: string; qrDataUrl: string }[];
   } | null;
   /** Set when checkout just completed — display switches to the

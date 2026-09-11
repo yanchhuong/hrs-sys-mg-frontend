@@ -911,7 +911,7 @@ export function PublicShopPage() {
             <div className="mt-1 flex items-center gap-3 text-xs sm:text-sm text-white/85 flex-wrap">
               <span className="inline-flex items-center gap-1">
                 <Store className="h-3.5 w-3.5" />
-                {counts.all} {counts.all === 1 ? 'Product' : 'Products'}
+                {counts.get('all') ?? 0} {counts.get('all') === 1 ? 'Product' : 'Products'}
               </span>
               {data.country && (
                 <span className="inline-flex items-center gap-1">

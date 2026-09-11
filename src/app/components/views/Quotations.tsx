@@ -1408,7 +1408,9 @@ function QuotationFormDialog({
                         .filter(u => u.id !== approver3 || slot.value === approver3)
                         .map(u => (
                           <SelectItem key={u.id} value={u.id}>
-                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
+                            {/* V140 — prefer the display name; null
+                                falls back to email. */}
+                            {u.name || u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
                           </SelectItem>
                         ))}
                     </SelectContent>

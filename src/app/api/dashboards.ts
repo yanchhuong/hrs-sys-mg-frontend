@@ -117,7 +117,7 @@ export interface DashboardSummary {
    *  {@code source} + {@code kind} let the FE colour + icon the row. */
   activity?: {
     id: string;
-    source: 'accounting' | 'payroll' | 'pos';
+    source: 'accounting' | 'payroll' | 'pos' | 'cash flow';
     kind?: string;
     docNo: string;
     date: string | null;

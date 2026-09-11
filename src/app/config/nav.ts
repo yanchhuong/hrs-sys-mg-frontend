@@ -44,11 +44,15 @@ import { lazyWithReload } from '../utils/lazyWithReload';
 // open across a deploy gets one reload instead of a broken screen.
 // App.tsx wraps ViewComponent in a <Suspense> boundary; Layout
 // doesn't need one because it never mounts the view directly.
+// Record<string, unknown> (not ComponentType<any>) because a view
+// module is free to export other named things alongside its component
+// (e.g. AllLeave.tsx also exports shared category style/label maps) —
+// only the one export named below needs to actually be a component.
 const lazyView = <T extends string>(
-  loader: () => Promise<Record<string, ComponentType<any>>>,
+  loader: () => Promise<Record<string, unknown>>,
   name: T,
 ): ComponentType<any> =>
-  lazyWithReload(() => loader().then(m => ({ default: m[name] })));
+  lazyWithReload(() => loader().then(m => ({ default: m[name] as ComponentType<any> })));
 
 const Dashboard              = lazyView(() => import('../components/views/Dashboard'),              'Dashboard');
 const Employees              = lazyView(() => import('../components/views/Employees'),              'Employees');

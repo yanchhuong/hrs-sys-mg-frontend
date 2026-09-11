@@ -2211,7 +2211,7 @@ function ConsignmentSettlementView() {
 /* ------------------------------------------------------------------ */
 
 function SettlementDialog({
-  open, onOpenChange, editing, consignments, vendors, items, onSaved,
+  open, onOpenChange, editing, consignments, consignees, items, onSaved,
   readOnly = false,
 }: {
   open: boolean;

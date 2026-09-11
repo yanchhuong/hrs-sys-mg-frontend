@@ -445,7 +445,7 @@ function CreateBookingDialogContent({
    *  for the grouped picker render. Groups whose active options are
    *  all inactive are dropped from the list. */
   const pickedItemOptionsByGroup = useMemo(() => {
-    if (!pickedItem) return { ungrouped: [] as itemsApi.PaymentPlanItemOption[], groups: [] as { group: itemsApi.PaymentPlanItemOptionGroup; options: itemsApi.PaymentPlanItemOption[] }[] };
+    if (!pickedItem) return { ungrouped: [] as paymentPlanItemsApi.PaymentPlanItemOption[], groups: [] as { group: paymentPlanItemsApi.PaymentPlanItemOptionGroup; options: paymentPlanItemsApi.PaymentPlanItemOption[] }[] };
     const ungrouped = (pickedItem.options ?? []).filter(o => o.active);
     const groups = (pickedItem.optionGroups ?? [])
       .filter(g => g.active)
@@ -1214,10 +1214,10 @@ function BookingDetailDialog({
 function OptionPickRow({
   o, checked, disabled, mode, itemId, onToggle,
 }: {
-  o: itemsApi.PaymentPlanItemOption;
+  o: paymentPlanItemsApi.PaymentPlanItemOption;
   checked: boolean;
   disabled: boolean;
-  mode: itemsApi.PaymentPlanItemSelectMode;
+  mode: paymentPlanItemsApi.PaymentPlanItemSelectMode;
   itemId: string;
   onToggle: () => void;
 }) {

@@ -324,6 +324,21 @@ export function Payroll() {
   // render to avoid leaking foreign keys into the UI. Stale UUIDs (dept
   // deleted) collapse to '' rather than show through.
   const deptName = makeDeptName(deptList, '');
+  // Employee id can arrive as either the human empNo or the backend
+  // UUID depending on the caller, so both point at the same record.
+  // Shared by the batch-row author/approver lookups and the batch
+  // detail table below — each used to run its own O(n) .find() per
+  // row (per name, per row, on every render), which multiplied into a
+  // real O(rows × employees) cost with a few hundred employees.
+  const employeesByAnyId = useMemo(() => {
+    const m = new Map<string, Employee>();
+    for (const e of employees) {
+      m.set(e.id, e);
+      const apiId = (e as Employee).apiId;
+      if (apiId) m.set(apiId, e);
+    }
+    return m;
+  }, [employees]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [batchStatusTab, setBatchStatusTab] = useState<'all' | PayrollBatchStatus>('all');
@@ -2813,16 +2828,16 @@ export function Payroll() {
                   // batch.uploadedBy / approvedBy is a USER UUID, not an
                   // employee id — `employees.find()` couldn't match it.
                   const uploaderName = batch.uploadedByName
-                    ?? employees.find(e => e.id === batch.uploadedBy || (e as Employee).apiId === batch.uploadedBy)?.name
+                    ?? employeesByAnyId.get(batch.uploadedBy)?.name
                     ?? '—';
                   const approverName = batch.approvedByName
-                    ?? (batch.approvedBy ? employees.find(e => e.id === batch.approvedBy || (e as Employee).apiId === batch.approvedBy)?.name : undefined)
+                    ?? (batch.approvedBy ? employeesByAnyId.get(batch.approvedBy)?.name : undefined)
                     ?? null;
                   const completerName = batch.completedByName
-                    ?? (batch.completedBy ? employees.find(e => e.id === batch.completedBy || (e as Employee).apiId === batch.completedBy)?.name : undefined)
+                    ?? (batch.completedBy ? employeesByAnyId.get(batch.completedBy)?.name : undefined)
                     ?? null;
                   const rejecterName = batch.rejectedByName
-                    ?? (batch.rejectedBy ? employees.find(e => e.id === batch.rejectedBy || (e as Employee).apiId === batch.rejectedBy)?.name : undefined)
+                    ?? (batch.rejectedBy ? employeesByAnyId.get(batch.rejectedBy)?.name : undefined)
                     ?? null;
                   const rowTone =
                     batch.status === 'pending'  ? 'bg-yellow-50/40' :
@@ -3118,7 +3133,7 @@ export function Payroll() {
                     ? 'bg-green-100 text-green-800 hover:bg-green-100'
                     : selectedBatch.status === 'draft'
                     ? 'bg-slate-100 text-slate-700 hover:bg-slate-100'
-                    : selectedBatch.status === 'processed'
+                    : selectedBatch.status === 'done'
                     ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
                     : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
                 }>
@@ -3168,12 +3183,12 @@ export function Payroll() {
                 setSelectedRowIds(next);
               };
 
-              // Resolve each row to its employee once.
+              // Resolve each row to its employee once, via the shared
+              // O(1) lookup above instead of an O(employees) .find()
+              // per row.
               const empByRowId = new Map<string, Employee | undefined>();
               detailRows.forEach(r => {
-                empByRowId.set(r.id, employees.find(
-                  e => e.id === r.employeeId || (e as Employee).apiId === r.employeeId,
-                ));
+                empByRowId.set(r.id, employeesByAnyId.get(r.employeeId));
               });
 
               // Yes = already dispatched on that channel. Yes rows are

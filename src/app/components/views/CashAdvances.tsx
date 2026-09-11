@@ -25,6 +25,9 @@ import * as cashAdvancePurposesApi from '../../api/cashAdvancePurposes';
 import * as employeesApi from '../../api/employees';
 import * as currencyApi from '../../api/currencySettings';
 import * as usersApi from '../../api/users';
+import * as receiptsApi from '../../api/receipts';
+import * as receiptPaymentsApi from '../../api/receiptPayments';
+import * as vendorsApi from '../../api/vendors';
 import {
   ArrowLeftRight, Banknote, Check, Info, Plus, RefreshCw, Search, Settings, Trash2, X,
 } from 'lucide-react';
@@ -325,6 +328,7 @@ export function CashAdvances() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           purposes={purposes}
+          onPurposesChanged={loadPurposes}
           onSaved={() => { setCreateOpen(false); void load(); }}
         />
       )}
@@ -351,7 +355,7 @@ export function CashAdvances() {
    ==================================================================== */
 
 function CashAdvanceFormDialog({
-  open, onOpenChange, onSaved, editing, purposes,
+  open, onOpenChange, onSaved, editing, purposes, onPurposesChanged,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -361,10 +365,33 @@ function CashAdvanceFormDialog({
    *  enabled rows are surfaced — the operator can still type a
    *  free-text value that isn't on the list. */
   purposes: cashAdvancePurposesApi.CashAdvancePurpose[];
+  /** Re-read the presets after the picker creates one inline, so the
+   *  parent list (and the next open of this dialog) sees it. */
+  onPurposesChanged: () => Promise<void>;
 }) {
   const [employees, setEmployees] = useState<employeesApi.Employee[]>([]);
   const [employeeId, setEmployeeId] = useState(editing?.employeeId ?? '');
   const [purpose, setPurpose] = useState(editing?.purpose ?? '');
+  /**
+   * Picker options = enabled presets, plus the currently-held value
+   * when it isn't one of them.
+   *
+   * That last part matters: SearchablePicker resolves its trigger
+   * label by finding `value` in `options`, so editing an advance
+   * whose purpose was typed free-hand (or whose preset was since
+   * disabled or deleted) would render an empty-looking field over a
+   * purpose that is in fact still set — and saving would look like it
+   * had silently dropped it.
+   */
+  const purposeOptions = useMemo(() => {
+    const enabled = purposes.filter(p => p.enabled);
+    const opts = enabled.map(p => ({ value: p.label, label: p.label }));
+    const held = purpose.trim();
+    if (held && !enabled.some(p => p.label === held)) {
+      opts.unshift({ value: held, label: held });
+    }
+    return opts;
+  }, [purposes, purpose]);
   const [amount, setAmount] = useState(String(editing?.advanceAmount ?? ''));
   const [currency, setCurrency] = useState(editing?.currency ?? 'USD');
   const [remarks, setRemarks] = useState(editing?.remarks ?? '');
@@ -500,30 +527,52 @@ function CashAdvanceFormDialog({
               }))}
             />
           </div>
+          {/* Purpose — the same SearchablePicker the Bill / Invoice /
+              Receipt forms use, replacing the old `datalist` over a
+              plain Input. The datalist shape looked like a combobox
+              but wasn't one: no visible dropdown affordance, browser-
+              dependent rendering, no inline "add this" step, and
+              nothing telling the operator whether what they typed was
+              a preset or a brand-new value. */}
           <div className="space-y-1">
             <Label className="text-xs">Purpose</Label>
-            <div className="flex items-center gap-2">
-              {/* List input gets a `datalist` so the operator sees
-                  the preset options as suggestions while still being
-                  able to type a free-text purpose — the simplest
-                  Combobox shape that doesn't require a popover. */}
-              <Input
-                list="cash-advance-purpose-presets"
-                value={purpose}
-                onChange={e => setPurpose(e.target.value)}
-                placeholder="Pick from list or type a new purpose"
-              />
-              <datalist id="cash-advance-purpose-presets">
-                {purposes.filter(p => p.enabled).map(p => (
-                  <option key={p.id} value={p.label} />
-                ))}
-              </datalist>
-            </div>
-            {purposes.filter(p => p.enabled).length === 0 && (
-              <p className="text-[11px] text-gray-500">
-                No presets yet — manage them via the gear icon on the Cash Advance page.
-              </p>
-            )}
+            <SearchablePicker
+              value={purpose}
+              onChange={setPurpose}
+              // Required field (see save()'s !purpose.trim() guard),
+              // so no None row — the trigger shows the placeholder.
+              allowClear={false}
+              placeholder='Pick or type a purpose — e.g. "Site visit"'
+              searchPlaceholder="Search or type a new purpose…"
+              emptyResultsLabel="No match — type a new purpose to add."
+              createLabel={q => `Add "${q}" as a new purpose`}
+              emptyOptionsHint={
+                <p className="px-2 py-1.5 text-[11px] text-gray-500">
+                  No presets yet — type one and it&rsquo;s saved for next time,
+                  or manage the whole list from the gear icon on the Cash
+                  Advance page.
+                </p>
+              }
+              onCreate={async label => {
+                const trimmed = label.trim();
+                // Bill purposes materialise as options by themselves
+                // (listPurposes reads distinct used values), but cash
+                // advance presets are a real table — so persist, to
+                // land in the same place: what you typed once is there
+                // next time. `advance.purpose` stays free text, so a
+                // failed POST still lets the advance be created with
+                // the typed value.
+                try {
+                  const created = await cashAdvancePurposesApi.create({ label: trimmed });
+                  await onPurposesChanged();
+                  return { value: created.label, label: created.label };
+                } catch {
+                  toast.error(`Saved "${trimmed}" on this advance, but couldn't add it to the presets`);
+                  return { value: trimmed, label: trimmed };
+                }
+              }}
+              options={purposeOptions}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -601,7 +650,7 @@ function CashAdvanceFormDialog({
                       onChange={slot.set}
                       placeholder="— none —"
                       emptyLabel="— none —"
-                      searchPlaceholder="Search users by email or role…"
+                      searchPlaceholder="Search users by name, email, or role…"
                       options={users
                         .filter(u => u.isActive)
                         // Exclude users already picked in other slots.
@@ -610,9 +659,12 @@ function CashAdvanceFormDialog({
                         .filter(u => u.id !== approver3 || slot.value === approver3)
                         .map(u => ({
                           value: u.id,
-                          label: u.email,
+                          // V140 — prefer the display name; null falls
+                          // back to email, same precedence User.name's
+                          // own doc comment declares.
+                          label: u.name || u.email,
                           secondary: u.role,
-                          searchKey: `${u.email} ${u.role}`,
+                          searchKey: `${u.name ?? ''} ${u.email} ${u.role}`,
                         }))}
                     />
                   </div>
@@ -651,7 +703,78 @@ function CashAdvanceDetailDialog({
   const [newReceiptNo, setNewReceiptNo] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [newNotes, setNewNotes] = useState('');
+
+  // Receipt No options — feeds the same SearchablePicker the create
+  // dialog uses for Purpose. Not a real FK: this manual row's
+  // receiptNo stays free text, the list is purely so the operator can
+  // pick an existing Expense's number instead of retyping it.
+  // Progress-only (still outstanding) — matches Receipts.tsx's own
+  // STATUS_LABEL collapse of legacy 'draft'/'issued' into "progress";
+  // pending/paid/void are excluded since there's nothing left to do
+  // with those from here.
+  const [receipts, setReceipts] = useState<receiptsApi.Receipt[]>([]);
+  const [vendorNameById, setVendorNameById] = useState<Record<string, string>>({});
+  /** Free-text references typed into the picker this session. Held so
+   *  the trigger can render them — SearchablePicker resolves its label
+   *  by finding `value` in `options`, so a manual reference that isn't
+   *  an option would show as an empty field. Not persisted: a manual
+   *  line's receiptNo is free text, not an FK. */
+  const [manualReceiptNos, setManualReceiptNos] = useState<string[]>([]);
+
+  /**
+   * Receipt-No picker options: every outstanding expense (vendor as
+   * the secondary line, outstanding balance as a trailing chip), then
+   * any manual reference typed this session, then — defensively — the
+   * held value if it's neither. Ordered so the rows that actually do
+   * something (settle a real expense) come first.
+   *
+   * Lives up here with the other hooks, ABOVE this component's
+   * `if (!advance) return null` bail-out. Below it, the hook only runs
+   * once the fetch lands, which changes the hook count between renders
+   * and throws "Rendered more hooks than during the previous render".
+   */
+  const receiptNoOptions = useMemo(() => {
+    const opts = receipts.map(r => {
+      const vendor = vendorNameById[r.vendorId] ?? 'Unknown vendor';
+      const remaining = Math.max(0, Number(r.amount) - Math.abs(Number(r.paidAmount)));
+      return {
+        value: r.receiptNo,
+        label: r.receiptNo,
+        secondary: vendor,
+        trailing: (
+          <span className="text-[11px] tabular-nums text-gray-500">
+            {fmtMoney(remaining, r.currency)} left
+          </span>
+        ),
+        searchKey: `${r.receiptNo} ${vendor}`,
+      };
+    });
+    const known = new Set(opts.map(o => o.value));
+    for (const m of manualReceiptNos) {
+      if (!known.has(m)) { opts.push({ value: m, label: m, secondary: 'manual reference' } as typeof opts[number]); known.add(m); }
+    }
+    const held = newReceiptNo.trim();
+    if (held && !known.has(held)) {
+      opts.push({ value: held, label: held, secondary: 'manual reference' } as typeof opts[number]);
+    }
+    return opts;
+  }, [receipts, vendorNameById, manualReceiptNos, newReceiptNo]);
+
+  const loadReceiptOptions = async () => {
+    try {
+      const [receiptPage, vendorPage] = await Promise.all([
+        receiptsApi.list({ size: 200 }),
+        vendorsApi.list({ size: 500 }),
+      ]);
+      setReceipts(receiptPage.content.filter(
+        r => r.status === 'progress' || r.status === 'draft' || r.status === 'issued',
+      ));
+      setVendorNameById(Object.fromEntries(vendorPage.content.map(v => [v.id, v.name])));
+    } catch {
+      // Datalist just stays empty — free-text entry still works.
+    }
+  };
+  useEffect(() => { void loadReceiptOptions(); }, []);
 
   const load = async () => {
     try {
@@ -686,7 +809,48 @@ function CashAdvanceDetailDialog({
     }
   };
 
+  // Picking a REAL receipt from the picker (as opposed to typing a
+  // free-text reference) means the operator wants to actually settle
+  // that Expense from this advance — the same thing Receipts.tsx's own
+  // "Record Payment → Method = Cash Advance" dialog does, just
+  // initiated from here. So this row routes to the real
+  // receiptPayments.create() (method='cash_advance') instead of the
+  // free-text cashAdvancesApi.addExpense() whenever the typed Receipt
+  // No exactly matches one of the fetched receipts — that's what
+  // actually moves the Expense's own status toward Paid, which a
+  // disconnected manual note never could.
+  const matchedReceipt = receipts.find(r => r.receiptNo === newReceiptNo.trim());
+
   const submitExpense = async () => {
+    if (matchedReceipt) {
+      if (!newAmount) { toast.error('Amount required'); return; }
+      setBusy(true);
+      try {
+        await receiptPaymentsApi.create({
+          receiptId: matchedReceipt.id,
+          amount: Number(newAmount) || 0,
+          currency: advance.currency === 'KHR' ? 'KHR' : 'USD',
+          method: 'cash_advance',
+          direction: 'debit',
+          cashAdvanceId: advance.id,
+          paymentDate: newDate,
+          // Same rule as Receipts.tsx's own Record Payment dialog:
+          // a cash-advance-funded payment references the advance
+          // itself, not a bank/cheque ref.
+          referenceNo: advance.advanceNo,
+        });
+        setNewReceiptNo(''); setNewAmount('');
+        toast.success('Payment recorded');
+        await load();
+        await loadReceiptOptions();
+        onChanged();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to record payment');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!newCategory || !newAmount) { toast.error('Category and amount required'); return; }
     setBusy(true);
     try {
@@ -696,9 +860,8 @@ function CashAdvanceDetailDialog({
         amount: Number(newAmount) || 0,
         currency: advance.currency,
         expenseDate: newDate,
-        notes: newNotes || undefined,
       });
-      setNewReceiptNo(''); setNewAmount(''); setNewNotes('');
+      setNewReceiptNo(''); setNewAmount('');
       toast.success('Expense recorded');
       await load();
       onChanged();
@@ -762,9 +925,9 @@ function CashAdvanceDetailDialog({
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[100px]">Date</TableHead>
-                  <TableHead>Category</TableHead>
                   <TableHead>Receipt No</TableHead>
                   <TableHead className="text-right w-[120px]">Amount</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead className="w-[50px]" />
                 </TableRow>
               </TableHeader>
@@ -780,8 +943,20 @@ function CashAdvanceDetailDialog({
                   return (
                   <TableRow key={e.id} className={isSettlement ? 'bg-emerald-50/30' : ''}>
                     <TableCell className="text-xs">{formatDate(e.expenseDate)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{e.receiptNo ?? '—'}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${isSettlement ? 'text-emerald-700 font-semibold' : ''}`}>
+                      {Number(e.amount) < 0 ? '− ' : ''}{fmtMoney(Math.abs(Number(e.amount)), e.currency)}
+                    </TableCell>
                     <TableCell className="text-sm">
-                      <span className="capitalize">{e.expenseCategory.replace(/_/g, ' ')}</span>
+                      {/* A settlement row's own "category" is literally
+                          refund/reimbursement — not a spending category
+                          at all, so showing it under a Category header
+                          reads oddly next to real ones like Hotel/Taxi.
+                          The settlement badge alone already says what
+                          this row is. */}
+                      {!isSettlement && (
+                        <span className="capitalize">{e.expenseCategory.replace(/_/g, ' ')}</span>
+                      )}
                       {e.source === 'receipt' && (
                         <Badge variant="outline" className="ml-1.5 bg-amber-50 text-amber-700 border-amber-200">
                           from receipt
@@ -792,10 +967,6 @@ function CashAdvanceDetailDialog({
                           settlement
                         </Badge>
                       )}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">{e.receiptNo ?? '—'}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${isSettlement ? 'text-emerald-700 font-semibold' : ''}`}>
-                      {Number(e.amount) < 0 ? '− ' : ''}{fmtMoney(Math.abs(Number(e.amount)), e.currency)}
                     </TableCell>
                     <TableCell>
                       {/* Manual rows can be removed from the advance;
@@ -820,12 +991,78 @@ function CashAdvanceDetailDialog({
             </Table>
           </div>
 
-          {/* Add-receipt inline row */}
+          {/* Add-receipt inline row — field order matches the table
+              above (Date, Receipt No, Amount, Category). No per-row
+              Notes here — remarks are common to the whole advance,
+              see the Remarks card below instead of a note per line. */}
           {canAddExpense && (
             <div className="grid grid-cols-12 gap-2 items-end pt-1">
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[11px]">Date</Label>
+                <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-9 text-sm" />
+              </div>
               <div className="col-span-3 space-y-1">
+                <Label className="text-[11px]">Receipt No</Label>
+                {/* Same SearchablePicker as Purpose. This field carries
+                    a real branch, which the old datalist hid: picking
+                    an existing expense routes the submit through a
+                    receipt-payment (Category stops applying and
+                    disables), while a typed reference only adds a
+                    manual note. The picker makes that visible — a
+                    matched row shows its vendor and outstanding
+                    balance, a novel one arrives via an explicit
+                    "Use … as a manual reference" step. */}
+                <SearchablePicker
+                  value={newReceiptNo}
+                  onChange={v => {
+                    setNewReceiptNo(v);
+                    // Picking a real receipt pre-fills its own date +
+                    // outstanding balance. A manual reference (or a
+                    // clear) leaves Date/Amount alone.
+                    const match = receipts.find(r => r.receiptNo === v);
+                    if (match) {
+                      setNewDate(match.issueDate.slice(0, 10));
+                      const remaining = Math.max(0, Number(match.amount) - Math.abs(Number(match.paidAmount)));
+                      setNewAmount(remaining.toFixed(2));
+                    }
+                  }}
+                  // Optional field, so the None row stays. The trigger
+                  // shows a greyed hint rather than "None" — with
+                  // allowClear on, `placeholder` never reaches the
+                  // trigger, so the hint goes in triggerEmptyLabel.
+                  emptyLabel="None"
+                  triggerEmptyLabel="Pick or type…"
+                  searchPlaceholder="Search or type a receipt no…"
+                  emptyResultsLabel="No match — type a number to use it as a manual reference."
+                  createLabel={q => `Use "${q}" as a manual reference`}
+                  emptyOptionsHint={
+                    <p className="px-2 py-1.5 text-[11px] text-gray-500">
+                      No outstanding expenses to settle — type a reference to
+                      record this as a manual receipt line.
+                    </p>
+                  }
+                  // A typed value isn't persisted anywhere: receiptNo
+                  // on a manual expense line is free text, not an FK.
+                  // Adopting it locally is the whole job.
+                  onCreate={async label => {
+                    const trimmed = label.trim();
+                    setManualReceiptNos(prev =>
+                      prev.includes(trimmed) ? prev : [...prev, trimmed]);
+                    return { value: trimmed, label: trimmed };
+                  }}
+                  // Wider than the 3-col cell so vendor + balance stay
+                  // readable instead of clipping.
+                  contentClassName="min-w-80"
+                  options={receiptNoOptions}
+                />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-[11px]">Amount</Label>
+                <Input type="number" min={0} step="0.01" value={newAmount} onChange={e => setNewAmount(e.target.value)} className="h-9 text-sm text-right" />
+              </div>
+              <div className="col-span-4 space-y-1">
                 <Label className="text-[11px]">Category</Label>
-                <Select value={newCategory} onValueChange={setNewCategory}>
+                <Select value={newCategory} onValueChange={setNewCategory} disabled={!!matchedReceipt}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {COMMON_EXPENSE_CATEGORIES.map(c => (
@@ -833,22 +1070,6 @@ function CashAdvanceDetailDialog({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Receipt No</Label>
-                <Input value={newReceiptNo} onChange={e => setNewReceiptNo(e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Amount</Label>
-                <Input type="number" min={0} step="0.01" value={newAmount} onChange={e => setNewAmount(e.target.value)} className="h-9 text-sm text-right" />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Date</Label>
-                <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Notes</Label>
-                <Input value={newNotes} onChange={e => setNewNotes(e.target.value)} className="h-9 text-sm" />
               </div>
               <div className="col-span-1">
                 <Button size="sm" className="h-9 w-full" disabled={busy} onClick={() => void submitExpense()}>
@@ -858,6 +1079,15 @@ function CashAdvanceDetailDialog({
             </div>
           )}
         </div>
+
+        {/* Remarks — one common note for the whole advance (set at
+            creation), shown here instead of a note per expense row. */}
+        {advance.remarks && (
+          <div className="rounded-md border p-3 space-y-1">
+            <div className="text-xs uppercase tracking-wide text-gray-500">Remarks</div>
+            <div className="text-sm whitespace-pre-wrap">{advance.remarks}</div>
+          </div>
+        )}
 
         <DialogFooter className="gap-2 flex-wrap">
           {canCancel && (

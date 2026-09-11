@@ -26,6 +26,8 @@ interface Props {
   /** Show the clear (×) button when a value is set. Off by default so
    *  a required date input can hide it. */
   clearable?: boolean;
+  /** Native hover tooltip on the trigger button — e.g. "From date". */
+  title?: string;
 }
 
 /** Turn a date-fns pattern into a placeholder skeleton by lowercasing
@@ -69,7 +71,7 @@ function toIsoLocal(d: Date): string {
  */
 export function DateInput({
   value, onChange, placeholder,
-  min, max, className, disabled, clearable = true,
+  min, max, className, disabled, clearable = true, title,
 }: Props) {
   const { formatDate, pattern } = useDateFormat();
   const [open, setOpen] = useState(false);
@@ -90,6 +92,7 @@ export function DateInput({
           type="button"
           variant="outline"
           disabled={disabled}
+          title={title}
           className={`group h-9 w-36 justify-between font-normal text-sm ${!value ? 'text-gray-400' : ''} ${className ?? ''}`}
         >
           <span className="tabular-nums truncate">

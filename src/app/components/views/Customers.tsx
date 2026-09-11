@@ -123,6 +123,8 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastLoadFail: 'Failed to load students',
     exportFilename: 'Students',
     exportSheet:    'Students',
+    /** Singular noun for the Telegram bot dialog's title. */
+    botLabel:       'Student',
   } : isPatient ? {
     pageTitle:     'Patients',
     addButton:     'Add Patient',
@@ -136,6 +138,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastLoadFail: 'Failed to load patients',
     exportFilename: 'Patients',
     exportSheet:    'Patients',
+    botLabel:       'Patient',
   } : {
     pageTitle:     null,          // fall through to t('nav.customers')
     addButton:     'Add Customer',
@@ -149,6 +152,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
     toastLoadFail: 'Failed to load customers',
     exportFilename: 'Customers',
     exportSheet:    'Customers',
+    botLabel:       'Customer',
   };
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete, canView } = useAuth();
@@ -167,13 +171,20 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   // Telegram column visibility + permissions. Hidden entirely when
   // the tenant lacks telegram.view so non-telegram users see the
   // original table shape.
-  // v-hide-telegram-from-clinical-school — the Telegram customer-bot
-  // surfaces (Link column + bot-config gear) are Sale-side affordances;
-  // Patient / Student lenses hide them entirely so a hospital's roster
-  // page doesn't advertise a customer-touchpoint that isn't part of
-  // the clinical / school workflow. Role permissions unchanged — this
-  // is a per-lens display gate only.
-  const telegramInLens    = !isPatient && !isStudent;
+  // v-hide-telegram-from-clinical-school — the Telegram bot surfaces
+  // (Link column + bot-config gear) started as Sale-only affordances,
+  // hidden from the Patient and Student lenses so a clinical roster
+  // didn't advertise a customer touchpoint.
+  //
+  // Students now keep them: a school's whole reason to hold a student
+  // record is to reach them (and their guardian) with invoices and
+  // reminders, which is exactly what this bot does. Patients stay
+  // hidden — pushing clinical documents down a chat channel is a
+  // different decision, and nobody has asked for it.
+  //
+  // Role permissions unchanged — this is a per-lens display gate only,
+  // and there is still ONE bot per tenant behind it.
+  const telegramInLens    = !isPatient;
   const canViewTelegram   = telegramInLens && canView('telegram');
   const canShareTelegram  = telegramInLens && canCreate('telegram');
   const canUnlinkTelegram = telegramInLens && canDelete('telegram');
@@ -894,6 +905,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                             linked={linkedById.get(c.id) ?? null}
                             canShare={canShareTelegram}
                             canUnlink={canUnlinkTelegram}
+                            audienceLabel={T.botLabel.toLowerCase()}
                             onChanged={() => { void load(); }}
                           />
                         </TableCell>
@@ -1402,6 +1414,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
         <CustomerTelegramBotSettingsDialog
           open={botSettingsOpen}
           onOpenChange={setBotSettingsOpen}
+          audienceLabel={T.botLabel}
         />
       )}
     </div>
@@ -1426,12 +1439,16 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
  * {@code canUnlink} on telegram.delete; we just respect them.
  */
 function TelegramCell({
-  customer, linked, canShare, canUnlink, onChanged,
+  customer, linked, canShare, canUnlink, audienceLabel = 'customer', onChanged,
 }: {
   customer: customersApi.Customer;
   linked: telegramApi.TelegramCustomer | null;
   canShare: boolean;
   canUnlink: boolean;
+  /** Lowercase lens noun ("customer" / "student") for the unlink
+   *  confirmation, so a school page doesn't call its students
+   *  customers. */
+  audienceLabel?: string;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1547,9 +1564,9 @@ function TelegramCell({
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {linked?.telegramUsername
-                  ? <>The chat <span className="tabular-nums">@{linked.telegramUsername}</span> will no longer receive invoices from this customer.</>
-                  : <>This chat will no longer receive invoices from this customer.</>}
-                {' '}You can re-share a fresh link later — the customer will need to click <strong>Start</strong> on Telegram again to reconnect.
+                  ? <>The chat <span className="tabular-nums">@{linked.telegramUsername}</span> will no longer receive invoices from this {audienceLabel}.</>
+                  : <>This chat will no longer receive invoices from this {audienceLabel}.</>}
+                {' '}You can re-share a fresh link later — the {audienceLabel} will need to click <strong>Start</strong> on Telegram again to reconnect.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

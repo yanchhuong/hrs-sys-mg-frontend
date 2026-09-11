@@ -81,7 +81,12 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
     try {
       const saved = await employeesApi.update(emp.id, {
         ...(emp as unknown as employeesApi.CreateEmployeeRequest),
-        clinicalRole: next,
+        // Untag goes over the wire as '' — EmployeeService.update
+        // reads `if (req.clinicalRole() != null)`, so a literal null
+        // means "leave this field alone" and the remove button looked
+        // like it worked while the tag stayed put. '' clears the
+        // column via normalizeClinicalRole().
+        clinicalRole: next ?? ('' as unknown as employeesApi.ClinicalRole),
       });
       setEmployees(list => list.map(e => e.id === emp.id ? saved : e));
       onChanged?.();

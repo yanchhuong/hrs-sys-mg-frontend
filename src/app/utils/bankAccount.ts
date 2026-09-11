@@ -10,6 +10,8 @@
  * transparently migrates that legacy row into a one-item array on
  * read, so users don't lose their setup when the dialog upgrades.
  */
+import type { AccountingScope } from '../api/accountingSettings';
+
 export interface BankAccount {
   id: string;
   bankName: string;
@@ -51,7 +53,12 @@ export const EMPTY_BANK_ACCOUNT: BankAccount = {
 };
 
 const TENANT_KEY = 'hrms:tenantSlug';
-type Scope = 'sale' | 'purchase' | 'receipt';
+// AccountingSettingsDialog is one generic dialog shared by every
+// settings scope, and it unconditionally loads/saves a bank-card
+// bucket per scope regardless of which tab is open — so this needs
+// to cover the same full set, not just the original sale/purchase/
+// receipt trio.
+type Scope = AccountingScope;
 
 function storageKey(scope: Scope): string {
   const tenant = (typeof localStorage !== 'undefined' && localStorage.getItem(TENANT_KEY)) || 'default';

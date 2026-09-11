@@ -1250,7 +1250,7 @@ function ParentPicker({
   value: string;
   onChange: (v: string) => void;
   excludeIds: Set<string>;
-  allowedTypes: ('department' | 'group')[];
+  allowedTypes: DeptGroupType[];
 }) {
   const [open, setOpen] = useState(false);
   const eligible = items.filter(i =>

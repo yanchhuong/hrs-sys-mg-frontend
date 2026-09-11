@@ -72,6 +72,19 @@ export function Contracts() {
     return differenceInDays(new Date(endDate), new Date());
   };
 
+  // Contract has no renewalHistory field — renewals are modeled as a
+  // linked chain via renewedTo (predecessor -> successor), so the
+  // count for a given contract is how many predecessors lead to it.
+  const renewalCount = (contractId: string): number => {
+    let count = 0;
+    let current = mockContracts.find(c => c.renewedTo === contractId);
+    while (current) {
+      count++;
+      current = mockContracts.find(c => c.renewedTo === current!.id);
+    }
+    return count;
+  };
+
   const contractsPagination = usePagination(filteredContracts, 10);
 
   useEffect(() => {
@@ -208,7 +221,7 @@ export function Contracts() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{contract.renewalHistory.length}</Badge>
+                      <Badge variant="outline">{renewalCount(contract.id)}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">

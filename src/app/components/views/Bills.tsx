@@ -79,9 +79,13 @@ const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
   debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
 };
 /** V98 simplified the Bill workflow to Progress / Paid (+ Void
- *  terminal). Legacy draft / partially / overdue values still appear
- *  in unmigrated data; the badge map shares the Progress style so
- *  the visible status reads consistently. */
+ *  terminal). Legacy draft / partially values still appear in
+ *  unmigrated data; the badge map shares the Progress style so the
+ *  visible status reads consistently. `overdue` is its own visible
+ *  state (not collapsed into Progress) — it's a real, server-derived
+ *  read-time label (a progress row whose due_date has elapsed and
+ *  isn't fully paid, see bills.ts), and hiding it made a bill that's
+ *  actually late look identical to one still comfortably on time. */
 const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
   // Amber for pending — reads as "waiting on approvers" without
   // leaning on red (which we reserve for void). V177.
@@ -100,7 +104,10 @@ const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
   // Sky hue separates the cash-in-from-vendor direction from a
   // regular Paid bill (emerald = we paid the vendor).
   returned:  'border-sky-300 text-sky-700 bg-sky-50',
-  overdue:   'border-blue-300 text-blue-700 bg-blue-50',
+  // Same treatment Invoices.tsx already gives overdue — a shade
+  // darker than Partial Paid's orange so a late bill still reads as
+  // more urgent than one that's merely partially settled.
+  overdue:   'border-orange-400 text-orange-800 bg-orange-50',
   void:      'border-red-300 text-red-700 bg-red-50',
 };
 const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
@@ -110,7 +117,7 @@ const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
   partially: 'progress',
   paid:      'paid',
   returned:  'returned',
-  overdue:   'progress',
+  overdue:   'overdue',
   void:      'void',
 };
 
@@ -2009,7 +2016,7 @@ function BillFormDialog({
                       onChange={slot.set}
                       placeholder="— none —"
                       emptyLabel="— none —"
-                      searchPlaceholder="Search users by email or role…"
+                      searchPlaceholder="Search users by name, email, or role…"
                       options={users
                         .filter(u => u.isActive)
                         .filter(u => u.id !== approver1 || slot.value === approver1)
@@ -2017,9 +2024,12 @@ function BillFormDialog({
                         .filter(u => u.id !== approver3 || slot.value === approver3)
                         .map(u => ({
                           value: u.id,
-                          label: u.email,
+                          // V140 — prefer the display name; null falls
+                          // back to email, same precedence User.name's
+                          // own doc comment declares.
+                          label: u.name || u.email,
                           secondary: u.role,
-                          searchKey: `${u.email} ${u.role}`,
+                          searchKey: `${u.name ?? ''} ${u.email} ${u.role}`,
                         }))}
                     />
                   </div>

@@ -440,7 +440,7 @@ export function Vouchers() {
                   {fairValueTotals.map(([currency, sum], idx) => (
                     <TableRow key={currency} className="bg-slate-50">
                       <TableCell colSpan={4} className="text-right text-sm font-medium text-gray-600">
-                        {idx === 0 ? 'Total fair value' : ''}
+                        {idx === 0 ? 'Total' : ''}
                       </TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
                         {fmtMoney(sum, currency)}
@@ -943,8 +943,10 @@ function VoucherFormDialog({
                 allowClear
                 options={users.map(u => ({
                   value: u.id,
-                  label: u.email,
-                  searchKey: `${u.email} ${u.role}`,
+                  // V140 — prefer the display name; null falls back
+                  // to email.
+                  label: u.name || u.email,
+                  searchKey: `${u.name ?? ''} ${u.email} ${u.role}`,
                 }))}
               />
             </div>
@@ -1295,7 +1297,9 @@ function VoucherFormDialog({
                         .filter(u => u.id !== chainApprover3 || slot.value === chainApprover3)
                         .map(u => (
                           <SelectItem key={u.id} value={u.id}>
-                            {u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
+                            {/* V140 — prefer the display name; null
+                                falls back to email. */}
+                            {u.name || u.email} <span className="text-[10px] text-gray-500">· {u.role}</span>
                           </SelectItem>
                         ))}
                     </SelectContent>

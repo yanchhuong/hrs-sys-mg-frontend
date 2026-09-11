@@ -698,6 +698,23 @@ export function Attendance({ onNavigate }: Props = {}) {
     return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode, employees));
   }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
 
+  // Employee lookup shared by every roster-derived memo below (daily
+  // filters, scan history, export). Attendance rows can key
+  // employeeId by either the human empNo (e.id) or the backend UUID
+  // (e.apiId) depending on mode, so both point at the same record.
+  // Built once per employees list instead of each caller doing its
+  // own O(n) .find() per row — with ~500 employees that turned a
+  // keystroke in the roster search into an O(rows × employees) scan.
+  const employeesById = useMemo(() => {
+    const m = new Map<string, Employee>();
+    for (const e of employees) {
+      m.set(e.id, e);
+      const apiId = (e as { apiId?: string }).apiId;
+      if (apiId) m.set(apiId, e);
+    }
+    return m;
+  }, [employees]);
+
   // Roster-driven rows: one row per active employee per day in the range.
   // A day with no attendance record shows a synthetic row marked `absent`
   // with empty punches, which the fingerprint import flow then fills in.
@@ -910,8 +927,10 @@ export function Attendance({ onNavigate }: Props = {}) {
     // try both `e.id` (empNo / 4-digit) and `(e as any).apiId` (UUID) when
     // resolving the row to its employee — otherwise the lookup always misses
     // and the filters appear to do nothing.
-    const findEmp = (employeeId: string) =>
-      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+    // O(1) via the shared employeesById Map — was an O(n) .find() per
+    // row, which made this re-scan the whole employee list on every
+    // keystroke (this block is a useMemo keyed on the search text).
+    const findEmp = (employeeId: string) => employeesById.get(employeeId);
 
     if (departmentFilter !== 'all') {
       records = records.filter(r => {
@@ -946,7 +965,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     return records;
     // deptName is derived from deptList, tracked via employees.length/deptList upstream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyRows, employees, activeFilter, hoursFilter, departmentFilter, dailySearch]);
+  }, [dailyRows, employees, employeesById, activeFilter, hoursFilter, departmentFilter, dailySearch]);
 
   // Pagination for daily records
   const dailyPagination = usePagination(filteredRecords, 10);
@@ -966,8 +985,10 @@ export function Attendance({ onNavigate }: Props = {}) {
       toast.error('No attendance rows to export under the current filters');
       return;
     }
-    const findEmp = (employeeId: string) =>
-      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+    // O(1) via the shared employeesById Map — was an O(n) .find() per
+    // row, which made this re-scan the whole employee list on every
+    // keystroke (this block is a useMemo keyed on the search text).
+    const findEmp = (employeeId: string) => employeesById.get(employeeId);
 
     // Per-status counts for the summary sheet — mirrors the filter chips.
     const statusCounts: Record<string, number> = {};
@@ -1088,8 +1109,10 @@ export function Attendance({ onNavigate }: Props = {}) {
   // those are aggregate concepts that don't apply to a single tap), then
   // sorts newest-first so the latest activity bubbles to the top.
   const scanEvents = useMemo(() => {
-    const findEmp = (employeeId: string) =>
-      employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
+    // O(1) via the shared employeesById Map — was an O(n) .find() per
+    // row, which made this re-scan the whole employee list on every
+    // keystroke (this block is a useMemo keyed on the search text).
+    const findEmp = (employeeId: string) => employeesById.get(employeeId);
 
     let rows = dailyRows;
     if (departmentFilter !== 'all') {
@@ -1159,7 +1182,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     });
     return events;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyRows, employees, departmentFilter, dailySearch]);
+  }, [dailyRows, employees, employeesById, departmentFilter, dailySearch]);
 
   const scanPagination = usePagination(scanEvents, 20);
 
@@ -1226,20 +1249,28 @@ export function Attendance({ onNavigate }: Props = {}) {
       addLeave(lv.employeeId, days, { date: lv.date, reason, category, deducts });
     }
 
+    // O(1) lookup instead of an O(attendance) .find() per (employee,
+    // day) below — with ~500 employees × ~22 weekdays that was
+    // rescanning the whole attendance array up to ~11,000 times per
+    // month/scope change. Same `date|employeeId` convention as the
+    // daily roster's byKey a few hundred lines up.
+    const attendanceByDateEmp = new Map<string, AttendanceType>();
+    for (const a of attendance) attendanceByDateEmp.set(`${a.date}|${a.employeeId}`, a);
+
     return employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
       .map(emp => {
       const empRecords: Record<string, AttendanceStatus> = {};
       let presentCount = 0, absentCount = 0, lateCount = 0;
+      const apiId = (emp as any).apiId;
 
       days.forEach(day => {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
         if (dayOfWeek === 0 || dayOfWeek === 6) return;
 
-        const record = attendance.find(a =>
-          (a.employeeId === emp.id || a.employeeId === (emp as any).apiId)
-          && a.date === dateStr);
+        const record = attendanceByDateEmp.get(`${dateStr}|${emp.id}`)
+          ?? (apiId ? attendanceByDateEmp.get(`${dateStr}|${apiId}`) : undefined);
         if (record) {
           empRecords[dateStr] = record.status;
           if (record.status === 'present' || record.status === 'exception') presentCount++;
@@ -1258,7 +1289,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       const leaveAgg =
         leavesByEmp.get(emp.id)
         ?? ((emp as any).apiId ? leavesByEmp.get((emp as any).apiId) : undefined)
-        ?? { days: 0, rows: [] as { date: string; reason: string }[] };
+        ?? { days: 0, rows: [] as LeaveRow[] };
       const leaveCount = leaveAgg.days;
       const leaveRecords = leaveAgg.rows;
 

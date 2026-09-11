@@ -103,8 +103,10 @@ export function PaymentPlans() {
       // stayed empty regardless of how many customers existed.
       .then(r => setCustomers(Array.isArray(r?.content) ? r.content : []))
       .catch(() => setCustomers([]));
+    // Same PagedResponse shape as customers above — `content`, not
+    // `data`. This picker was silently empty for the same reason.
     void invoicesApi.list({ size: 500 })
-      .then(r => setInvoices(Array.isArray(r?.data) ? r.data : []))
+      .then(r => setInvoices(Array.isArray(r?.content) ? r.content : []))
       .catch(() => setInvoices([]));
     void paymentPlanItemsApi.list()
       .then(setAllItems)
@@ -430,12 +432,17 @@ function CreatePlanDialogContent({
   const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Invoice has no resolved customer name of its own — look it up
+  // from the customers list already loaded for the picker above.
+  const customerNameById = useMemo(
+    () => new Map(customers.map(c => [c.id, c.name])), [customers]);
+
   // Auto-fill total from picked invoice.
   useEffect(() => {
     if (!invoiceId) return;
     const inv = invoices.find(i => i.id === invoiceId);
     if (inv) {
-      setTotalAmount(String(inv.total ?? inv.grandTotal ?? ''));
+      setTotalAmount(String(inv.total ?? ''));
       if (inv.customerId) setCustomerId(inv.customerId);
     }
   }, [invoiceId, invoices]);
@@ -749,7 +756,7 @@ function CreatePlanDialogContent({
                   translate back to empty on write. */}
               <SelectItem value="none">— Standalone —</SelectItem>
               {(Array.isArray(invoices) ? invoices : []).slice(0, 100).map(i => (
-                <SelectItem key={i.id} value={i.id}>{i.invoiceNo}{i.customerName ? ` · ${i.customerName}` : ''}</SelectItem>
+                <SelectItem key={i.id} value={i.id}>{i.invoiceNo}{customerNameById.get(i.customerId) ? ` · ${customerNameById.get(i.customerId)}` : ''}</SelectItem>
               ))}
             </SelectContent>
           </Select>

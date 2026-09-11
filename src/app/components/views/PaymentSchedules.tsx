@@ -109,7 +109,7 @@ export function PaymentSchedules() {
               </SelectContent>
             </Select>
             <div className="shrink-0">
-              <DateRangeFilter onFilterChange={setDateFilter} />
+              <DateRangeFilter onFilterChange={(start, end) => setDateFilter({ start, end })} />
             </div>
           </div>
         </CardHeader>
