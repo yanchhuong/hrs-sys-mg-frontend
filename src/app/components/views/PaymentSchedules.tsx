@@ -114,8 +114,11 @@ export function PaymentSchedules() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>#</TableHead>
                 <TableHead>Due Date</TableHead>
@@ -126,9 +129,9 @@ export function PaymentSchedules() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (<TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">Loading…</TableCell></TableRow>)}
+              {loading && (<TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">Loading…</TableCell></TableRow>)}
               {!loading && pagination.paginatedItems.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">No rows for these filters.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">No rows for these filters.</TableCell></TableRow>
               )}
               {pagination.paginatedItems.map(s => (
                 <TableRow key={s.id} className={s.isOverdue ? 'bg-red-50/50' : ''}>
@@ -142,6 +145,7 @@ export function PaymentSchedules() {
               ))}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

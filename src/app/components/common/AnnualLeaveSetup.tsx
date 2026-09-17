@@ -123,6 +123,13 @@ export function AnnualLeaveSetup({ open, onOpenChange, defaultYear, employees, o
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {tiers.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-sm text-gray-500 py-8">
+                          No tiers yet — add one to start the schedule.
+                        </TableCell>
+                      </TableRow>
+                    )}
                     {tiers.map((t, idx) => (
                       <TableRow key={idx}>
                         <TableCell>

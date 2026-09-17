@@ -620,6 +620,13 @@ export function Backups() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {schedules.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
+                    No backup schedules yet.
+                  </TableCell>
+                </TableRow>
+              )}
               {schedules.map(s => {
                 const company = companyById.get(s.tenantId);
                 const policy = BACKUP_PLAN_POLICY[company?.planTier ?? 'free'];

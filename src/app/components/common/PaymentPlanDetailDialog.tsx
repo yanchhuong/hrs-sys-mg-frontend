@@ -274,6 +274,13 @@ export function PaymentPlanDetailDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {(plan.schedules ?? []).length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={12} className="text-center text-sm text-gray-500 py-8">
+                          No installments scheduled yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
                     {(plan.schedules ?? []).map(s => {
                       // 'pending' → 'Schedule' at the display layer;
                       // 'overdue', 'partial', 'paid' pass through.

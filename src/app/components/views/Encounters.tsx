@@ -226,13 +226,19 @@ export function Encounters() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        {/* Default CardContent padding, not p-0 — the bordered scroller
+            below needs the 24px side gutter to read as an inset panel.
+            With p-0 it sits flush against the Card's own border, and
+            CardContent's [&:last-child]:pb-6 survives twMerge, leaving
+            a stray band under the table. Matches the Items page. */}
+        <CardContent>
           {/* Header stays visible even on empty state so the column
               layout communicates schema at a glance. Empty-state /
               loading rows span every column via colSpan so the
               body still parses as a real table. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead className="w-[140px]">Encounter No.</TableHead>
                 <TableHead className="w-[110px]">Start date</TableHead>
@@ -339,6 +345,7 @@ export function Encounters() {
               )}
             </TableBody>
           </Table>
+          </div>
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">
               <Pagination

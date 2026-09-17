@@ -184,8 +184,11 @@ export function Contracts() {
           <CardTitle>All Contracts</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
+              header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Position</TableHead>
@@ -198,6 +201,13 @@ export function Contracts() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {contractsPagination.paginatedItems.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
+                    No contracts match these filters.
+                  </TableCell>
+                </TableRow>
+              )}
               {contractsPagination.paginatedItems.map((contract) => {
                 const employee = mockEmployees.find(e => e.id === contract.employeeId);
                 const daysLeft = getDaysUntilExpiry(contract.endDate);
@@ -243,6 +253,7 @@ export function Contracts() {
               })}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={contractsPagination.currentPage}
             totalPages={contractsPagination.totalPages}

@@ -1562,8 +1562,11 @@ export function Employees() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
+              header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 {canViewHrTelegram && (
                   <TableHead className="w-[200px]">Link</TableHead>
@@ -1586,6 +1589,13 @@ export function Employees() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {employeePagination.paginatedItems.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={canViewHrTelegram ? 16 : 15} className="text-center text-sm text-gray-500 py-8">
+                    No employees match these filters.
+                  </TableCell>
+                </TableRow>
+              )}
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
                   {/* First column: Telegram link state + actions.
@@ -1812,6 +1822,7 @@ export function Employees() {
               ))}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={employeePagination.currentPage}
             totalPages={employeePagination.totalPages}

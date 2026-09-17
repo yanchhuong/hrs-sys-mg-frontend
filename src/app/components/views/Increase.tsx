@@ -914,9 +914,14 @@ export function Increase() {
       </div>
 
       <Card>
-        <CardContent className="p-0">
+        {/* Default padding, not p-0 — the bordered scroller needs the
+            side gutter to read as an inset panel (see Items). */}
+        <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead className="w-[120px]">Type</TableHead>
@@ -995,6 +1000,7 @@ export function Increase() {
               })}
             </TableBody>
           </Table>
+          </div>
 
           {/* Card body is p-0 so the table goes edge-to-edge; the
               pagination still needs a little chrome around it. */}

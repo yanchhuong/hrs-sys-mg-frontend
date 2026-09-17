@@ -1615,6 +1615,13 @@ function VoucherDetailDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {voucher.items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
+                        No items on this voucher.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {voucher.items.map(it => (
                     <TableRow key={it.id}>
                       <TableCell>{it.name}</TableCell>

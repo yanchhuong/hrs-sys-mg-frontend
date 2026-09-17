@@ -1446,7 +1446,7 @@ function AttendanceEmployeeDialog({
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
             <Table>
-              <TableHeader className="sticky top-0 bg-white">
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Status</TableHead>
@@ -1733,7 +1733,7 @@ function PayrollDeptDialog({
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
             <Table>
-              <TableHeader className="sticky top-0 bg-white">
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>Month</TableHead>

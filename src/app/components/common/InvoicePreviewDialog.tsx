@@ -142,6 +142,13 @@ export function InvoicePreviewDialog({ open, onOpenChange, invoiceId, onNavigate
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {invoice.items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-sm text-gray-500 py-8">
+                        No line items on this invoice.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {invoice.items.map(li => (
                     <TableRow key={li.id}>
                       <TableCell className="text-sm">

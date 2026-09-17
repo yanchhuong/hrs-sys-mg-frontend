@@ -116,6 +116,26 @@ export function Attendances() {
     return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [pagination.paginatedItems]);
 
+  // The session list renders one <Table> per day-group, so the header
+  // row is repeated. Kept in a single constant here so the empty-state
+  // table (which must still show the columns) and the per-day tables
+  // can never drift apart. 8 columns — colSpan on the empty row below
+  // must match.
+  const sessionTableHeader = (
+    <TableHeader>
+      <TableRow>
+        <TableHead className="w-[130px]">Time</TableHead>
+        <TableHead>Course</TableHead>
+        <TableHead className="w-[140px]">Classroom</TableHead>
+        <TableHead className="w-[140px]">Teacher</TableHead>
+        <TableHead className="w-[110px] text-right">Attendance</TableHead>
+        <TableHead className="w-[130px]">Status</TableHead>
+        <TableHead className="w-[130px]">Registror</TableHead>
+        <TableHead className="w-[70px] text-right">Action</TableHead>
+      </TableRow>
+    </TableHeader>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -211,10 +231,19 @@ export function Attendances() {
             {loading && rows.length === 0 ? (
               <TableRowsSkeleton rows={8} columns={6} />
             ) : rows.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">
-                No sessions in this range. Adjust the date filters or add a Course Schedule with
-                learn times overlapping the window.
-              </p>
+              /* Empty state lives inside a table so the column headers
+                 stay visible, same as the other list pages. */
+              <Table>
+                {sessionTableHeader}
+                <TableBody>
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
+                      No sessions in this range. Adjust the date filters or add a Course Schedule with
+                      learn times overlapping the window.
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             ) : (
               <div className="space-y-4">
                 {grouped.map(([date, dayRows]) => (
@@ -223,18 +252,7 @@ export function Attendances() {
                       {formatDate(date)}
                     </div>
                     <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[130px]">Time</TableHead>
-                          <TableHead>Course</TableHead>
-                          <TableHead className="w-[140px]">Classroom</TableHead>
-                          <TableHead className="w-[140px]">Teacher</TableHead>
-                          <TableHead className="w-[110px] text-right">Attendance</TableHead>
-                          <TableHead className="w-[130px]">Status</TableHead>
-                          <TableHead className="w-[130px]">Registror</TableHead>
-                          <TableHead className="w-[70px] text-right">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
+                      {sessionTableHeader}
                       <TableBody>
                         {dayRows.map(s => (
                           <TableRow key={s.id}>

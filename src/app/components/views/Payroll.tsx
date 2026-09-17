@@ -2967,6 +2967,13 @@ export function Payroll() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {payrollRecords.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
+                      No payroll records yet.
+                    </TableCell>
+                  </TableRow>
+                )}
                 {payrollRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>{format(new Date(record.month + '-01'), 'MM/yyyy')}</TableCell>

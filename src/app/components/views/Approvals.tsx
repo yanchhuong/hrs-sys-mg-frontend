@@ -180,9 +180,12 @@ export function Approvals() {
             </Tabs>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        {/* Default padding, not p-0 — the bordered scroller needs the
+            side gutter to read as an inset panel (see Items). */}
+        <CardContent>
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead className="w-[140px]">Type</TableHead>
                 <TableHead>Summary</TableHead>
@@ -249,6 +252,7 @@ export function Approvals() {
               ))}
             </TableBody>
           </Table>
+          </div>
           {filtered.length > 0 && (
             <div className="px-4 py-3 border-t">
               <Pagination
@@ -550,8 +554,15 @@ function ApprovalDetailDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      {/* Header + footer are pinned and only the body scrolls, so the
+          Approve / Reject buttons stay reachable no matter how long the
+          document preview or the approval chain gets — previously the
+          whole dialog was one scroll block and the decision buttons sat
+          below the fold. shadcn's DialogContent bakes in `sm:max-w-lg`,
+          so the width needs the `sm:` variant too or it silently loses
+          on desktop (same trick as PaymentPlanDetailDialog). */}
+      <DialogContent className="max-w-4xl w-[95vw] sm:max-w-4xl max-h-[92vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 pt-4 pb-3 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">{sourceLabel(current.sourceType)}</Badge>
             <StatusBadge status={current.status} viewerRole={current.viewerRole} />
@@ -565,6 +576,7 @@ function ApprovalDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
         {/* Source snapshot */}
         <Card className="border-gray-200">
           <CardContent className="p-4 space-y-2">
@@ -737,8 +749,9 @@ function ApprovalDetailDialog({
             />
           </div>
         )}
+        </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="px-6 py-3 border-t gap-2 shrink-0">
           {canAct ? (
             <>
               <Button variant="outline" onClick={() => act('rejected')} disabled={busy} className="text-rose-700 border-rose-200 hover:bg-rose-50">
@@ -858,7 +871,11 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
       </div>
 
       {/* Items */}
-      <div className="border rounded-md overflow-hidden">
+      {/* overflow-x-auto, not overflow-hidden: the 6-column items table
+          is wider than the dialog on narrow viewports, and hidden
+          silently clipped the rightmost Total column with no way to
+          reach it. */}
+      <div className="border rounded-md overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -964,7 +981,11 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
         <span className="font-medium">{ccy}</span>
       </div>
 
-      <div className="border rounded-md overflow-hidden">
+      {/* overflow-x-auto, not overflow-hidden: the 6-column items table
+          is wider than the dialog on narrow viewports, and hidden
+          silently clipped the rightmost Total column with no way to
+          reach it. */}
+      <div className="border rounded-md overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -1070,7 +1091,11 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
         )}
       </div>
 
-      <div className="border rounded-md overflow-hidden">
+      {/* overflow-x-auto, not overflow-hidden: the 6-column items table
+          is wider than the dialog on narrow viewports, and hidden
+          silently clipped the rightmost Total column with no way to
+          reach it. */}
+      <div className="border rounded-md overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

@@ -415,6 +415,13 @@ export function PlatformDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {stats.legacyCompanies.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
+                    No tenants yet.
+                  </TableCell>
+                </TableRow>
+              )}
               {stats.legacyCompanies.map(c => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>

@@ -476,9 +476,13 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
           {/* Per-employee preview. Header is sticky so column labels
               stay visible while HR scrolls a long employee list — no
               need for a side-scroll arrow. */}
-          <div className="border rounded-md overflow-hidden">
+          {/* overflow-auto + a height cap, not overflow-hidden: sticky
+              binds to the nearest scrolling ancestor, so without a
+              scroller of its own the header below never actually
+              stuck — it just clipped. */}
+          <div className="border rounded-md overflow-auto max-h-[60vh]">
             <Table>
-              <TableHeader className="sticky top-0 z-10 bg-gray-50">
+              <TableHeader className="sticky top-0 z-10 bg-white shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead className="w-44">Employee</TableHead>
                   <TableHead className="text-right">Basic</TableHead>

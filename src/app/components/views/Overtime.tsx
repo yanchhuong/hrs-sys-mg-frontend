@@ -1057,8 +1057,11 @@ export function Overtime() {
         <CardContent>
           {viewMode === 'by-request' ? (
           <>
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Dept/Group</TableHead>
@@ -1080,7 +1083,7 @@ export function Overtime() {
             <TableBody>
               {overtimePagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={15} className="text-center text-sm text-gray-500 py-8">
                     No OT requests in this status.
                   </TableCell>
                 </TableRow>
@@ -1279,6 +1282,7 @@ export function Overtime() {
               })}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={overtimePagination.currentPage}
             totalPages={overtimePagination.totalPages}
@@ -1290,8 +1294,11 @@ export function Overtime() {
           </>
           ) : (
           <>
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead className="text-right">Workday OT (×1)</TableHead>
@@ -1304,7 +1311,7 @@ export function Overtime() {
             <TableBody>
               {byEmployeePagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">
+                  <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
                     No approved OT to aggregate.
                   </TableCell>
                 </TableRow>
@@ -1347,6 +1354,7 @@ export function Overtime() {
               })()}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={byEmployeePagination.currentPage}
             totalPages={byEmployeePagination.totalPages}

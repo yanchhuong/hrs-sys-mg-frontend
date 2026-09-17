@@ -457,14 +457,12 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
           </div>
         </CardHeader>
         <CardContent>
-          {loading && filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No enrollments yet.</p>
-          ) : (
-            <>
+          {/* v-list-table-invoice-shape — the table always renders so the
+              column headers stay visible; loading and empty states are
+              in-table rows spanning every column. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead className="w-[90px]">No.</TableHead>
                     <TableHead>Student</TableHead>
@@ -481,6 +479,13 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {filtered.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={12} className="text-center text-sm text-gray-500 py-8">
+                        {loading ? 'Loading…' : 'No enrollments yet.'}
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {pagination.paginatedItems.map(r => {
                     const badge = STATUS_BADGES[r.status];
                     const sched = scheduleById(r.courseScheduleId);
@@ -569,6 +574,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                   })}
                 </TableBody>
               </Table>
+              </div>
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}
@@ -577,8 +583,6 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                 endIndex={pagination.endIndex}
                 totalItems={pagination.totalItems}
               />
-            </>
-          )}
         </CardContent>
       </Card>
 

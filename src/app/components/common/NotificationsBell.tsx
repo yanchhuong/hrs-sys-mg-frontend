@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '../ui/button';
@@ -22,7 +22,12 @@ const DOC_TYPES = new Set<string>(['invoice', 'bill', 'expense']);
  * 60s, and a fresh list when the popover opens. No web-socket — the
  * announcement velocity in a typical tenant doesn't justify it.</p>
  */
-export function NotificationsBell() {
+export function NotificationsBell({ onNavigate }: {
+  /** Switch the app to another view. Optional so the bell still
+   *  renders standalone (e.g. in a shell that doesn't route), in
+   *  which case an approval ping just marks itself read. */
+  onNavigate?: (view: string) => void;
+} = {}) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<api.Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,6 +78,14 @@ export function NotificationsBell() {
     // dialog isn't hidden behind it.
     if (n.entityId && n.entityType && DOC_TYPES.has(n.entityType)) {
       setReplyingTo({ type: n.entityType as PortfolioDocType, id: n.entityId });
+      setOpen(false);
+      return;
+    }
+    // An approval ping is only useful if it takes you to the thing
+    // you're being asked to decide — drop the user on the Approvals
+    // inbox rather than leaving them to find it in the sidebar.
+    if (n.entityType === 'approval' && onNavigate) {
+      onNavigate('approvals');
       setOpen(false);
     }
   };
@@ -175,6 +188,10 @@ function TypeIcon({ type }: { type: api.NotificationType }) {
     case 'encounter_assigned':   return <Stethoscope   className={`${cls} text-emerald-600`} />;
     case 'appointment_assigned': return <CalendarClock className={`${cls} text-emerald-600`} />;
     case 'doc_comment':          return <MessageCircle className={`${cls} text-blue-600`} />;
+    case 'approval_requested':   return <ClipboardCheck className={`${cls} text-amber-600`} />;
+    case 'approval_approved':    return <CircleCheck   className={`${cls} text-emerald-600`} />;
+    case 'approval_rejected':    return <CircleX       className={`${cls} text-rose-600`} />;
+    case 'reminder_sent':        return <Send          className={`${cls} text-sky-600`} />;
     case 'OTHERS':
     default:                     return <Inbox         className={`${cls} text-gray-500`} />;
   }

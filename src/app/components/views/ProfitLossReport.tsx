@@ -262,6 +262,13 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {report.monthly.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-sm text-gray-500 py-8">
+                      No activity in this period.
+                    </TableCell>
+                  </TableRow>
+                )}
                 {report.monthly.map(m => {
                   const incPct = (Math.abs(m.income)  / maxBar) * 100;
                   const expPct = (Math.abs(m.expense) / maxBar) * 100;
@@ -421,6 +428,13 @@ function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }:
         </TableRow>
       </TableHeader>
       <TableBody>
+        {lines.length === 0 && (
+          <TableRow>
+            <TableCell colSpan={5} className="text-center text-sm text-gray-500 py-8">
+              No entries in this period.
+            </TableCell>
+          </TableRow>
+        )}
         {lines.map(l => (
           <TableRow
             key={l.id}

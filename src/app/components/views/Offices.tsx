@@ -201,13 +201,13 @@ export function Offices({ embedded = false }: Props = {}) {
         <CardContent>
           {loading ? (
             <TableRowsSkeleton rows={6} columns={5} />
-          ) : rows.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-400">
-              No offices yet. Click <strong>Add Office</strong> to create the first one.
-            </div>
           ) : (
+            // v-list-table-invoice-shape — border+scroll wrapper + sticky
+            // header, same shell as Invoices / Vendors. The empty state
+            // lives inside the table so the headers stay visible.
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Coordinates</TableHead>
@@ -218,6 +218,13 @@ export function Offices({ embedded = false }: Props = {}) {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {rows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
+                      No offices yet. Click <strong>Add Office</strong> to create the first one.
+                    </TableCell>
+                  </TableRow>
+                )}
                 {rows.map(o => (
                   <TableRow key={o.id}>
                     <TableCell className="font-medium">{o.name}</TableCell>
@@ -268,6 +275,7 @@ export function Offices({ embedded = false }: Props = {}) {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

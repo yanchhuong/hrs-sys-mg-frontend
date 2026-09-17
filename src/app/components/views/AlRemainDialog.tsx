@@ -280,7 +280,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                     <TableBody>
                       {preview.items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={9 + preview.monthList.length} className="text-center text-sm text-gray-500 py-6">
+                          <TableCell colSpan={10 + preview.monthList.length} className="text-center text-sm text-gray-500 py-8">
                             No active employees for this window.
                           </TableCell>
                         </TableRow>

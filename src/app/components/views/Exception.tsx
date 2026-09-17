@@ -489,10 +489,13 @@ export function Exception() {
             between the view-mode pill row and the table header stays
             tight — matches the Increase / Deduction / Movement /
             Adjustment pages. */}
-        <CardContent className="p-0">
+        {/* Default padding, not p-0 — the bordered scroller needs the
+            side gutter to read as an inset panel (see Items). */}
+        <CardContent>
           {mode === 'employee' ? (
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>Dept/Group</TableHead>
@@ -573,9 +576,11 @@ export function Exception() {
                 })}
               </TableBody>
             </Table>
+            </div>
           ) : (
+            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>Dept/Group</TableHead>
@@ -656,6 +661,7 @@ export function Exception() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
           {/* Pagination gets its own padded chrome since CardContent
               is p-0. Matches Increase / Deduction / Movement layout. */}

@@ -471,9 +471,12 @@ to $500/mo, not $167.`}
                 };
                 const totalCols = 5 + monthKeys.length; // checkbox + Employee + monthly columns + Basis + Daily + Seniority
                 return (
-                  <div className="border rounded-md overflow-x-auto">
+                  // Height cap so the sticky header below has a scrolling
+                  // ancestor to stick to — overflow-x-auto alone never
+                  // scrolls vertically, so the header scrolled away.
+                  <div className="border rounded-md overflow-auto max-h-[60vh]">
                     <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-gray-50">
+                      <TableHeader className="sticky top-0 z-10 bg-white shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                         <TableRow>
                           <TableHead className="w-10"></TableHead>
                           <TableHead>Employee</TableHead>

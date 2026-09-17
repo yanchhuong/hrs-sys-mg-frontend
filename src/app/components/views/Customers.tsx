@@ -637,12 +637,15 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
         <CardContent>
           {loading && filtered.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No customers yet.</p>
           ) : (
             <>
+              {/* v-list-table-invoice-shape — border+scroll wrapper +
+                  sticky header, same shell as Invoices / Vendors. The
+                  empty state lives inside the table so the headers
+                  stay visible. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     {/* Type + Name merged — the leading icon (B for
                         business / person for individual) carries the
@@ -692,6 +695,16 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {filtered.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={(isStudent ? 9 : isPatient ? 10 : 8) + (canViewTelegram ? 1 : 0)}
+                        className="text-center text-sm text-gray-500 py-8"
+                      >
+                        No customers yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {pagination.paginatedItems.map(c => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">
@@ -938,6 +951,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                   ))}
                 </TableBody>
               </Table>
+              </div>
               {pagination.totalPages > 1 && (
                 <div className="mt-4">
                   <Pagination

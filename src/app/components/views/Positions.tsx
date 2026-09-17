@@ -365,8 +365,11 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
           </div>
         </CardHeader>
         <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
+              header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Position</TableHead>
                 <TableHead>Department</TableHead>
@@ -445,6 +448,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
               )}
             </TableBody>
           </Table>
+          </div>
 
           {filtered.length > 10 && (
             <div className="mt-4">

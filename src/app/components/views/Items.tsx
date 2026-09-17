@@ -1722,14 +1722,15 @@ export function Items() {
                 </div>
               ))}
             </div>
-          ) : rows.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-400">
-              No items yet.{canAdd && <> Click <strong>Add Item</strong> to create the first one.</>}
-            </div>
           ) : (
             <>
+              {/* v-list-table-invoice-shape — border+scroll wrapper +
+                  sticky header, same shell as Invoices / Vendors. The
+                  empty state lives inside the table so the headers
+                  stay visible. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
                     {barcodeFeatureOn && (
@@ -1753,6 +1754,16 @@ export function Items() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {rows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={13 + (barcodeFeatureOn ? 1 : 0) + (warehouseFeatureOn ? 1 : 0)}
+                        className="text-center text-sm text-gray-500 py-8"
+                      >
+                        No items yet.{canAdd && <> Click <strong>Add Item</strong> to create the first one.</>}
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {pagination.paginatedItems.map(it => {
                     const onHand = Number(it.stockQty ?? 0);
                     const minStock = Number(it.minStock ?? 0);
@@ -2039,6 +2050,7 @@ export function Items() {
                   })}
                 </TableBody>
               </Table>
+              </div>
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}

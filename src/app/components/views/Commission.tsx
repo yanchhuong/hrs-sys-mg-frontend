@@ -250,13 +250,13 @@ function CommissionReport() {
           </div>
         </CardHeader>
         <CardContent>
-          {sellerGroups.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-sm">
-              No sale invoices in this range.
-            </div>
-          ) : (
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. The
+              empty state lives inside the table so the column headers
+              stay visible on an empty range. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Seller</TableHead>
                   <TableHead className="text-right">Invoices</TableHead>
@@ -275,6 +275,13 @@ function CommissionReport() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {sellerGroups.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
+                      No sale invoices in this range.
+                    </TableCell>
+                  </TableRow>
+                )}
                 {sellerGroups.map(s => (
                   <TableRow key={s.sellerId}>
                     <TableCell>
@@ -333,7 +340,7 @@ function CommissionReport() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </div>
         </CardContent>
       </Card>
 

@@ -201,8 +201,9 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Device User ID</TableHead>
                 <TableHead className="text-center">Occurrences</TableHead>
@@ -270,6 +271,7 @@ export function DeviceUsers({ embedded = false }: Props = {}) {
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 

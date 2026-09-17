@@ -464,7 +464,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               )}
               {/* Notification bell (V127). Hidden for super_admin —
                   they don't subscribe to tenant announcements. */}
-              {currentUser?.role !== 'super_admin' && <NotificationsBell />}
+              {currentUser?.role !== 'super_admin' && <NotificationsBell onNavigate={onViewChange} />}
               {isTauri() && <DesktopApiModeBadge />}
               <LanguageSwitcher />
               <Badge variant="secondary" className={getRoleBadgeColor(currentUser?.role || '')}>

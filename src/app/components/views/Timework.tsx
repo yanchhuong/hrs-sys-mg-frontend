@@ -55,8 +55,11 @@ export function Timework() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* v-list-table-invoice-shape — border+scroll wrapper +
+                  sticky header, same shell as Invoices / Vendors. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Start Time</TableHead>
@@ -68,6 +71,13 @@ export function Timework() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {timetablePagination.paginatedItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
+                        No timetables yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {timetablePagination.paginatedItems.map((tt) => (
                     <TableRow key={tt.id}>
                       <TableCell className="font-medium">{tt.name}</TableCell>
@@ -93,6 +103,7 @@ export function Timework() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
               <Pagination
                 currentPage={timetablePagination.currentPage}
                 totalPages={timetablePagination.totalPages}

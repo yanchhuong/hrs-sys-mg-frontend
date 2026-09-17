@@ -245,9 +245,13 @@ export function Appointments() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
+          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
+              header, same shell as Items / Invoices. Default CardContent
+              padding (not p-0) so the panel sits inset from the card. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead className="w-[70px]">Queue #</TableHead>
                 <TableHead className="w-[150px]">Scheduled</TableHead>
@@ -263,7 +267,7 @@ export function Appointments() {
                 <TableBodySkeletonRows rows={6} columns={7} />
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-gray-500">
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
                     {search || statusFilter !== 'all' || doctorFilter !== 'all'
                       ? 'No appointments match your filter.'
                       : 'No appointments yet — click Book Appointment to add the first one.'}
@@ -386,6 +390,7 @@ export function Appointments() {
               )}
             </TableBody>
           </Table>
+          </div>
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">
               <Pagination

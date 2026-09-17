@@ -2074,10 +2074,10 @@ export function Attendance({ onNavigate }: Props = {}) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               {dailyViewMode === 'roster' ? (
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Dept</TableHead>
@@ -2316,7 +2316,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                    sync caught a punch the roster column would mask if a
                    later scan overwrote it. */
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead>Dept</TableHead>
@@ -2392,6 +2392,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                   </TableBody>
                 </Table>
               )}
+              </div>
               <Pagination
                 currentPage={dailyViewMode === 'roster' ? dailyPagination.currentPage : scanPagination.currentPage}
                 totalPages={dailyViewMode === 'roster' ? dailyPagination.totalPages : scanPagination.totalPages}
@@ -2400,7 +2401,6 @@ export function Attendance({ onNavigate }: Props = {}) {
                 endIndex={dailyViewMode === 'roster' ? dailyPagination.endIndex : scanPagination.endIndex}
                 totalItems={dailyViewMode === 'roster' ? dailyPagination.totalItems : scanPagination.totalItems}
               />
-              </div>
             </CardContent>
           </Card>
         </>
@@ -2503,8 +2503,9 @@ export function Attendance({ onNavigate }: Props = {}) {
                     return true;
                   });
                   return (
+                <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead className="text-center">Total AL</TableHead>
@@ -2581,6 +2582,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       ))}
                   </TableBody>
                 </Table>
+                </div>
                   );
                 })()}
               </CardContent>

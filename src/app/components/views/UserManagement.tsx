@@ -1710,8 +1710,11 @@ export function UserManagement() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* v-list-table-invoice-shape — border+scroll wrapper +
+                  sticky header, same shell as Invoices / Vendors. */}
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead>Display Name</TableHead>
                     <TableHead>User ID</TableHead>
@@ -1725,6 +1728,13 @@ export function UserManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {usersPagination.paginatedItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
+                        No users match these filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {usersPagination.paginatedItems.map((user) => {
                     const employee = employees.find(
                       e => e.id === user.employeeId || (e as Employee).apiId === user.employeeId
@@ -1843,6 +1853,7 @@ export function UserManagement() {
                   })}
                 </TableBody>
               </Table>
+              </div>
               <Pagination
                 currentPage={usersPagination.currentPage}
                 totalPages={usersPagination.totalPages}

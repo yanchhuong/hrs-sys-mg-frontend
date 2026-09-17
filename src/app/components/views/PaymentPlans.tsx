@@ -250,8 +250,11 @@ export function PaymentPlans() {
             </TabsList>
           </Tabs>
 
+          {/* v-list-table-invoice-shape — border+scroll wrapper +
+              sticky header, same shell as Invoices / Vendors. */}
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Plan #</TableHead>
                 <TableHead>Customer / Invoice</TableHead>
@@ -270,10 +273,10 @@ export function PaymentPlans() {
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-400 py-10">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-500 py-8">Loading…</TableCell></TableRow>
               )}
               {!loading && pagination.paginatedItems.length === 0 && (
-                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-400 py-10">
+                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-500 py-8">
                   {plans.length === 0 ? 'No plans yet. Click "New Plan" to start.' : 'No plans match the filters.'}
                 </TableCell></TableRow>
               )}
@@ -381,6 +384,7 @@ export function PaymentPlans() {
               })}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

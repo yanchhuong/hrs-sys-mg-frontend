@@ -208,7 +208,10 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                   </div>
                   <div className="rounded-md border max-h-56 overflow-y-auto">
                     <table className="w-full text-xs">
-                      <thead className="bg-gray-50 text-gray-500">
+                      {/* sticky: the wrapper above caps at max-h-56 and
+                          scrolls, so without this the column labels
+                          scroll away from the attached docs. */}
+                      <thead className="bg-gray-50 text-gray-500 sticky top-0 z-10">
                         <tr>
                           <th className="text-left font-medium px-3 py-1.5">Type</th>
                           <th className="text-left font-medium px-3 py-1.5">Doc no.</th>

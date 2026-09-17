@@ -645,8 +645,9 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
@@ -787,6 +788,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
               )}
             </TableBody>
           </Table>
+          </div>
           <Pagination
             currentPage={depsPagination.currentPage}
             totalPages={depsPagination.totalPages}
