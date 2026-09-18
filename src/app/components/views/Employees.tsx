@@ -130,14 +130,27 @@ function hasUnsavedChanges(
 // ID document type
 // ---------------------------------------------------------------------------
 /**
- * V302 — `nationalityType` is the single source of truth for which ID
- * document an employee carries; `tidType` is only the shorthand stored
- * alongside it ('TID' = national ID, 'PA' = passport). The Profile tab
- * used to expose both as independent selects, which let HR save a row
- * claiming "National ID" and "PA" at the same time. Every label is now
- * derived from `nationalityType` through these helpers, so the roster
- * cell, the details drawer and the persisted column cannot disagree.
- * Unset (legacy rows) reads as national_id / 'TID'.
+ * v-id-type-single-source (V352) — `nationalityType` is the single
+ * source of truth for which ID document an employee carries; `tidType`
+ * is the shorthand stored alongside it ('TID' = national ID,
+ * 'PA' = passport). The Profile tab used to expose both as independent
+ * selects, which let HR save a row claiming "National ID" and "PA" at
+ * the same time. Every label is now derived from `nationalityType`
+ * through these helpers, and every save writes the pair together, so
+ * the roster cell, the details drawer and the persisted column cannot
+ * disagree. Unset (legacy rows) reads as national_id / 'TID'.
+ *
+ * NOTE on the column's history: V301 introduced `tid_type` meaning
+ * something else — 'PA' = personal account, 'TID' = tax id, a document
+ * family for the NUMBER, orthogonal to nationality. This change
+ * reinterprets those two values as passport / national ID, per the
+ * one-control request. That is safe only because no row ever used the
+ * original meaning (census 2026-09-18: 244 of 246 rows have both
+ * columns NULL; the two that are set are already consistent with the
+ * new reading). Anyone finding `tid_type = 'PA'` on a row with a
+ * non-passport nationality should treat it as V301-era data and resolve
+ * it by hand, not assume passport. V301's COMMENT ON COLUMN still
+ * states the old meaning and wants rewriting.
  */
 type NationalityType = NonNullable<Employee['nationalityType']>;
 
@@ -901,6 +914,22 @@ export function Employees() {
         empNo,
         departmentId: department && department !== '-' ? department : null,
         status,
+        // The ID pair is DERIVED here, never echoed back from the loaded
+        // row. Spreading `rest` alone would re-persist whatever the row
+        // already held: the select renders the `?? 'national_id'` default
+        // without writing state, so on a legacy row the operator reads
+        // "National ID", saves, and a stored 'PA' survives untouched —
+        // the contradiction the merged control exists to end. Deriving
+        // makes every save self-healing, so rows repair through normal
+        // use instead of needing a backfill.
+        nationalityType: editedEmployee.nationalityType ?? 'national_id',
+        tidType: tidTypeFor(editedEmployee.nationalityType),
+        // Matches handleQuickFieldUpdate: a visa date is only meaningful
+        // on a passport row, so a stale one is cleared rather than left
+        // orphaned for the next writer to trip over.
+        visaExpireDate: editedEmployee.nationalityType === 'passport'
+          ? (editedEmployee.visaExpireDate ?? null)
+          : null,
       };
       // The mutating endpoint is keyed by the backend UUID, not the human empNo.
       const targetId = apiId ?? empNo;
@@ -2326,7 +2355,7 @@ export function Employees() {
                           <p>{selectedEmployee.nffNo || '—'}</p>
                         )}
                       </FieldRow>
-                      {/* V302 — one ID control instead of two. The old
+                      {/* v-id-type-single-source (V352) — one ID control instead of two. The old
                           "ID Type" row edited nationalityType while the
                           TID row edited tidType, so HR could save
                           "National ID" and "PA" on the same employee.

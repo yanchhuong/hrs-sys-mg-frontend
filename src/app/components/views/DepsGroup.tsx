@@ -216,6 +216,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         currentAddress: e.currentAddress ?? undefined,
         nffNo: e.nffNo ?? undefined,
         tid: e.tid ?? undefined,
+        // Carried only so the move-department PUT can round-trip them —
+        // see the body below. Nothing on this screen renders them.
+        tidType: (e.tidType ?? undefined) as 'PA' | 'TID' | undefined,
+        nationalityType: (e.nationalityType ?? undefined) as 'national_id' | 'passport' | undefined,
+        visaExpireDate: e.visaExpireDate ?? undefined,
         contractExpireDate: e.contractExpireDate ?? undefined,
       })));
     } catch (err) {
@@ -490,6 +495,13 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         currentAddress: emp.currentAddress,
         nffNo: emp.nffNo,
         tid: emp.tid,
+        // The comment above says 'round-trip the existing record' — this
+        // list predates V300/V301 and never got them, so moving a
+        // passport holder between departments cleared their ID type and
+        // deleted their visa expiry. Full-replace PUT: omitted = NULL.
+        tidType: emp.tidType ?? null,
+        nationalityType: emp.nationalityType ?? null,
+        visaExpireDate: emp.visaExpireDate ?? null,
         contractExpireDate: emp.contractExpireDate,
         resignDate: emp.resignDate,
         status: emp.status,

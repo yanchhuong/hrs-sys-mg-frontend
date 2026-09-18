@@ -66,6 +66,15 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     currentAddress: e.currentAddress ?? undefined,
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
+    // Carried purely so the PUT bodies below can round-trip them. The
+    // employees endpoint is a full replace — EmployeeService assigns
+    // tidType / nationalityType / visaExpireDate unconditionally, so a
+    // key this screen omits is persisted as NULL. Editing one Exception
+    // remark used to erase a foreign employee's passport flag and visa
+    // expiry. Nothing on this screen renders them.
+    tidType: (e.tidType ?? undefined) as 'PA' | 'TID' | undefined,
+    nationalityType: (e.nationalityType ?? undefined) as 'national_id' | 'passport' | undefined,
+    visaExpireDate: e.visaExpireDate ?? undefined,
     contractExpireDate: e.contractExpireDate ?? undefined,
     resignDate: e.resignDate ?? undefined,
     attendanceYn: e.attendanceYn ?? true,
@@ -265,6 +274,10 @@ export function Exception() {
         currentAddress: editEmp.currentAddress,
         nffNo: editEmp.nffNo,
         tid: editEmp.tid,
+        // Full-replace PUT — omitting these nulls them server-side.
+        tidType: editEmp.tidType ?? null,
+        nationalityType: editEmp.nationalityType ?? null,
+        visaExpireDate: editEmp.visaExpireDate ?? null,
         contractExpireDate: editEmp.contractExpireDate,
         resignDate: editEmp.resignDate,
         status: editEmp.status,
@@ -320,6 +333,10 @@ export function Exception() {
         currentAddress: emp.currentAddress,
         nffNo: emp.nffNo,
         tid: emp.tid,
+        // Full-replace PUT — omitting these nulls them server-side.
+        tidType: emp.tidType ?? null,
+        nationalityType: emp.nationalityType ?? null,
+        visaExpireDate: emp.visaExpireDate ?? null,
         contractExpireDate: emp.contractExpireDate,
         resignDate: emp.resignDate,
         status: emp.status,
