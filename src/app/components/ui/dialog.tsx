@@ -78,9 +78,8 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {!hideClose && (
-          // v-dialog-close-frameless + v-dialog-close-sticky — ONE close
-          // affordance, drawn the same way everywhere: a bare X, no frame,
-          // that never scrolls out of reach.
+          // v-dialog-close-frameless — ONE close affordance, drawn the same
+          // way everywhere: a bare X, no frame.
           //
           // FRAMELESS. v-dialog-close-mobile had given this a
           // `bg-background rounded-full ring-1 ring-border` pill to fix an X
@@ -96,29 +95,28 @@ const DialogContent = React.forwardRef<
           // dialog with top padding — not by restoring the pill, which is
           // what broke consistency.
           //
-          // STICKY, and the FIRST child. DialogContent is both the scroll
-          // container (max-h + overflow-y-auto above) and the positioning
-          // parent, and an `absolute` child of a scrolling box scrolls away
-          // with the content. On any dialog taller than the viewport —
-          // invoice detail, bill detail, a long survey — the X left the
-          // screen as soon as the user scrolled. That was survivable while
-          // those dialogs also had a footer Close; it is not, now that the X
-          // is the only way out.
+          // POSITIONING: `absolute`, deliberately, and it must stay that way.
           //
-          // The offsets keep the button from MOVING when content scrolls:
-          //   • the wrapper is h-0 so it claims no height, and -mb-4 cancels
-          //     the grid's gap-4 — everything below sits where it did
-          //   • unscrolled it sits at the p-6 padding edge (24px); top-6 pins
-          //     it at that same 24px once scrolling starts, so there is no
-          //     jump at the moment it becomes stuck
-          //   • -mt-3 / -mr-3 pull it back to 12px from the frame, i.e. the
-          //     top-3 right-3 it has always rendered at
-          <div className="sticky top-6 z-50 -mb-4 flex h-0 justify-end">
-            <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:text-muted-foreground -mt-3 -mr-3 inline-flex h-8 w-8 items-center justify-center rounded-md opacity-70 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
-              <XIcon />
-              <span className="sr-only">Close</span>
-            </DialogPrimitive.Close>
-          </div>
+          // A sticky variant was tried to stop the X scrolling away on
+          // dialogs tall enough to scroll (DialogContent is BOTH the scroll
+          // container and the positioning parent, so an absolute child
+          // scrolls with the content). It has to be reverted: sticky offsets
+          // are measured from the scrollport, so any wrapper that pins the
+          // button correctly under this component's own `p-6` / `gap-4` is
+          // wrong for the 55+ dialogs that pass `p-0 gap-0` — there the
+          // button lands at -12px and is clipped off the top edge. `absolute
+          // top-3 right-3` resolves against the padding box, so it is
+          // padding-agnostic and correct for every caller.
+          //
+          // The scroll-away problem is real but is NOT fixable here. Fix it
+          // per dialog, using the pattern ~55 dialogs in this app already
+          // use: `flex flex-col` on DialogContent with an inner
+          // `overflow-y-auto` body, so the FRAME stops scrolling and this
+          // button stays pinned to it.
+          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:text-muted-foreground absolute top-3 right-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-md opacity-70 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+            <XIcon />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
         )}
         {children}
       </DialogPrimitive.Content>
