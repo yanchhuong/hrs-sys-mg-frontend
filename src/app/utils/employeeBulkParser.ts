@@ -1,5 +1,6 @@
 import { loadXlsx } from './xlsxLoader';
 import { Employee } from '../types/hrms';
+import { parseIdTypeCell, formatIdTypeCell, visaExpireFor } from './idType';
 
 export interface ParsedEmployeeRow {
   rowNumber: number;
@@ -38,6 +39,27 @@ const COLUMN_MAP: Record<string, keyof Employee> = {
   'Address': 'currentAddress',
   'NFF No': 'nffNo',
   'TID': 'tid',
+  // ID document type (V352). 'nationalityType' is the source of truth and
+  // the only one of the three ID columns a sheet may carry: 'tidType' is
+  // derived at request-build time, because a file able to set the two
+  // independently is exactly how a row ends up claiming "National ID" and
+  // "PA" at once — the bug the merged UI control was built to kill.
+  // 'TID Type' is deliberately NOT an alias. A roster carrying that header
+  // predates V352, where 'PA' meant "personal account" and said nothing
+  // about nationality, so reading it here would silently reclassify
+  // tax-id rows as passport holders — the one case idType.ts says to
+  // resolve by hand. 'Nationality' is out for the mirror-image reason: it
+  // holds a country ("Cambodian"), not a document type.
+  // NO ALIASES. 'Identity Type' and especially 'Document Type' are
+  // generic HR headers that existing rosters already use for something
+  // else entirely ('Contract', 'NDA', 'Work Permit'). Mapping them
+  // here turned a file that imported cleanly yesterday into one where
+  // EVERY row fails on a column the operator never touched.
+  'ID Type': 'nationalityType',
+  // Only meaningful alongside 'ID Type' = Passport; the export writes it
+  // through visaExpireFor so a stale date never round-trips.
+  'Visa Expire': 'visaExpireDate',
+  'Visa Expire Date': 'visaExpireDate',
   'Contract Expire': 'contractExpireDate',
   'Contract Expire Date': 'contractExpireDate',
   'Bank Name': 'bankName',
@@ -174,15 +196,27 @@ export function parseEmployeesExcel(
               if (!Number.isFinite(n)) rowErrors.push(`Base Salary "${value}" is not a number`);
               else if (n < 0) rowErrors.push('Base Salary cannot be negative');
               else (parsed as any)[key] = n;
-            } else if (key === 'joinDate' || key === 'dateOfBirth' || key === 'contractExpireDate') {
+            } else if (key === 'joinDate' || key === 'dateOfBirth'
+                       || key === 'contractExpireDate' || key === 'visaExpireDate') {
               const iso = normaliseDate(value, XLSX);
               if (iso === null) {
                 // Present but unparseable — emit a visible error rather than
                 // sending garbage to the backend (which would 400 the POST).
                 const label = key === 'joinDate' ? 'Join Date'
                   : key === 'dateOfBirth' ? 'Date of Birth'
+                  : key === 'visaExpireDate' ? 'Visa Expire'
                   : 'Contract Expire';
-                rowErrors.push(`${label} "${value}" is not a valid date (use YYYY-MM-DD or DD-MM-YYYY)`);
+                const msg = `${label} "${value}" is not a valid date (use YYYY-MM-DD or DD-MM-YYYY)`;
+                // Visa Expire is a column this release STARTED reading, so
+                // rosters already carrying it were never written to be
+                // parseable — 'N/A', '-', 'TBD', 'see passport' are all
+                // normal in the wild. Failing those rows would block an
+                // import that worked yesterday, over a field the operator
+                // did not add. Warn and skip the value instead. The other
+                // three dates have always been read, so their hard error
+                // stays: changing it would hide real typos.
+                if (key === 'visaExpireDate') rowWarnings.push(`${msg} — ignored`);
+                else rowErrors.push(msg);
               } else if (iso !== undefined) {
                 (parsed as any)[key] = iso;
               }
@@ -196,6 +230,23 @@ export function parseEmployeesExcel(
             } else if (key === 'gender') {
               const v = String(value).toLowerCase();
               (parsed as any)[key] = v === 'male' || v === 'female' ? v : undefined;
+            } else if (key === 'nationalityType') {
+              // parseIdTypeCell returns undefined for "no value here", and an
+              // import must leave the column alone in that case rather than
+              // default to national_id: PUT /employees is a full replace of
+              // the three ID columns, so a default would stamp a document
+              // type onto every row of a file that never had the column, and
+              // would demote every passport holder on a re-import of an
+              // export that predates the column. The drawer can default —
+              // a human sees the select before saving — an upload cannot.
+              // Unparseable is an error, not a guess: picking the wrong side
+              // silently rewrites which document the person was hired on.
+              const nt = parseIdTypeCell(value);
+              if (nt === null) {
+                rowErrors.push(`ID Type "${value}" is not valid (use National ID or Passport)`);
+              } else if (nt !== undefined) {
+                (parsed as any)[key] = nt;
+              }
             } else {
               (parsed as any)[key] = String(value).trim();
             }
@@ -244,6 +295,16 @@ export function parseEmployeesExcel(
           }
 
           // Soft warnings
+          // A visa date only persists on a Passport row — visaExpireFor()
+          // drops it otherwise, which is correct but was invisible: HR
+          // copies the template example down (it ships 'National ID'),
+          // fills Visa Expire for 80 expats, every row imports 'success'
+          // and all 80 dates land NULL. Say so before they press Import.
+          if (parsed.visaExpireDate && parsed.nationalityType !== 'passport') {
+            rowWarnings.push(parsed.nationalityType
+              ? 'Visa Expire is only saved when ID Type is Passport — this date will be dropped'
+              : 'Visa Expire needs an ID Type of Passport to be saved — set it or this date is dropped');
+          }
           if (parsed.bankName && !parsed.bankAccount) rowWarnings.push('Bank selected but Account Number missing');
           if (!parsed.contactNumber) rowWarnings.push('No contact number provided');
 
@@ -286,7 +347,8 @@ export function parseEmployeesExcel(
 const EXPORT_HEADERS = [
   'Employee ID', 'Name', 'Khmer Name', 'Email', 'Position', 'Department',
   'Join Date', 'Base Salary', 'Gender', 'Date of Birth', 'Contact Number',
-  'Place of Birth', 'Current Address', 'NFF No', 'TID', 'Contract Expire',
+  'Place of Birth', 'Current Address', 'NFF No', 'ID Type', 'TID', 'Visa Expire',
+  'Contract Expire',
   'Bank Name', 'Account Number',
   'Manager 1 ID',
 ] as const;
@@ -297,7 +359,12 @@ export function downloadEmployeeTemplate() {
     const example = [
       'EMP128', 'Dara Sok', 'តារា សុខ', 'dara@company.com', 'Junior Developer', 'Engineering',
       '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
-      'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
+      // The TID cell is the bare number: the prefix is rendered from ID
+      // Type ("National ID 000128"), so a 'TID000128' example teaches HR to
+      // bake it in and the roster prints it twice. Visa Expire is blank
+      // because this example row is a National ID holder.
+      'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'National ID', '000128', '',
+      '2028-04-22',
       'ABA', '000-123-456',
       // The manager is named by their Employee ID, not their name. Only
       // the direct leader is imported — the levels above are derived
@@ -361,7 +428,15 @@ export function exportEmployeesToExcel(
       e.placeOfBirth ?? '',
       e.currentAddress ?? '',
       e.nffNo ?? '',
+      // Without this cell the round trip was lossy in the worst direction:
+      // export → edit → bulk upload read every passport holder back as a
+      // National ID row and dropped their visa expiry. Blank stays blank
+      // (see formatIdTypeCell) so an unset row doesn't acquire a type by
+      // passing through Excel, and visaExpireFor drops a date stranded on a
+      // row that has since flipped back to National ID.
+      formatIdTypeCell(e.nationalityType),
       e.tid ?? '',
+      visaExpireFor(e.nationalityType, e.visaExpireDate) ?? '',
       e.contractExpireDate ?? '',
       e.bankName ?? '',
       e.bankAccount ?? '',

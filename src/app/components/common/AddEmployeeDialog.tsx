@@ -10,6 +10,9 @@ import { User, Briefcase, CreditCard, UserPlus, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
+import {
+  ID_TYPE_OPTIONS, tidTypeFor, visaExpireFor, type NationalityType,
+} from '../../utils/idType';
 import { Employee } from '../../types/hrms';
 import { mockEmployees } from '../../data/mockData';
 import * as employeesApi from '../../api/employees';
@@ -43,6 +46,11 @@ const blank: Partial<Employee> = {
   contactNumber: '',
   baseSalary: 0,
   gender: undefined,
+  // Seeded so mock mode hands the parent the same shape live mode
+  // persists; the select below shows this default to the operator
+  // before they save, which is why defaulting is safe here and not in
+  // the spreadsheet import (see utils/idType → parseIdTypeCell).
+  nationalityType: 'national_id',
   bankName: '',
   bankAccount: '',
 };
@@ -59,6 +67,11 @@ export function AddEmployeeDialog({
   const patch = (p: Partial<Employee>) => setForm({ ...form, ...p });
 
   const reset = () => { setForm(blank); setTab('personal'); setSubmitting(false); };
+
+  // One read of the chosen ID type for the select, the Visa Expire
+  // gate and the payload, so the control and what gets stored can't
+  // describe different documents.
+  const idType: NationalityType = form.nationalityType ?? 'national_id';
 
   // Reports-To options: active employees minus the one being created. In
   // mock mode fall back to bundled mocks.
@@ -137,6 +150,18 @@ export function AddEmployeeDialog({
         currentAddress: form.currentAddress?.trim() || undefined,
         nffNo: form.nffNo?.trim() || undefined,
         tid: form.tid?.trim() || undefined,
+        // v-id-type-single-source (V352) — the ID trio always travels
+        // together. POST /employees is a full replace for these three
+        // columns, so a key omitted here lands as NULL: every new hire
+        // used to start with nationalityType and tidType unset, which is
+        // why onboarding a passport holder took a second pass through the
+        // details drawer. tidType is derived, never collected, so the
+        // stored shorthand cannot contradict the type on screen.
+        nationalityType: idType,
+        tidType: tidTypeFor(idType),
+        // National ID rows must not carry a visa date — the operator may
+        // have typed one, then switched the select back.
+        visaExpireDate: visaExpireFor(idType, form.visaExpireDate),
         contractExpireDate: form.contractExpireDate || undefined,
         status: form.status || 'active',
       } as employeesApi.CreateEmployeeRequest);
@@ -445,14 +470,63 @@ export function AddEmployeeDialog({
                   placeholder="NFF000128"
                 />
               </Field>
+              {/* v-id-type-single-source (V352) — same merged control as the
+                  details drawer (Employees.tsx → "TID" FieldRow): type and
+                  number on one line, written in one patch. Kept identical on
+                  purpose — a separate ID-type picker is exactly what let a
+                  row claim "National ID" and "PA" at once. The select is
+                  shrink-0 and Input is min-w-0 (its own base class), so in
+                  this half-width grid cell "National ID" stays readable and
+                  the number field absorbs the rest instead of the label
+                  clipping. */}
               <Field label="TID">
-                <Input
-                  value={form.tid ?? ''}
-                  onChange={(e) => patch({ tid: e.target.value })}
-                  placeholder="TID000128"
-                />
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={idType}
+                    onChange={(e) => {
+                      const next = e.target.value as NationalityType;
+                      patch({
+                        nationalityType: next,
+                        // Drop a date typed before the operator switched back
+                        // to National ID: visaExpireFor() would strip it from
+                        // the payload anyway, but the field has to stop
+                        // showing it too, or it reads as saved.
+                        visaExpireDate: next === 'passport' ? form.visaExpireDate : undefined,
+                      });
+                    }}
+                    className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm"
+                    aria-label="ID type"
+                  >
+                    {ID_TYPE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <Input
+                    value={form.tid ?? ''}
+                    onChange={(e) => patch({ tid: e.target.value })}
+                    // Bare digits on purpose. The prefix is RENDERED from the
+                    // type select beside this input, so an example of
+                    // "TID000128" teaches HR to type it in as well and the
+                    // roster then prints it twice ("TID TID000128"). The
+                    // spreadsheet template ships the same bare example.
+                    placeholder="000128"
+                  />
+                </div>
               </Field>
             </div>
+            {/* Passport-only, matching the drawer's gate: a visa expiry on a
+                national-ID row has nothing to expire. */}
+            {idType === 'passport' && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Visa Expire">
+                  <Input
+                    type="date"
+                    value={form.visaExpireDate ?? ''}
+                    onChange={(e) => patch({ visaExpireDate: e.target.value })}
+                  />
+                </Field>
+              </div>
+            )}
           </TabsContent>
 
           {/* Banking */}

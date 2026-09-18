@@ -15,6 +15,7 @@ import { mockEmployees } from '../../data/mockData';
 import {
   parseEmployeesExcel, downloadEmployeeTemplate, ParsedEmployeeData, ParsedEmployeeRow,
 } from '../../utils/employeeBulkParser';
+import { tidTypeFor, visaExpireFor } from '../../utils/idType';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
@@ -93,6 +94,30 @@ function buildCreateRequest(
     currentAddress: d.currentAddress,
     nffNo: d.nffNo,
     tid: d.tid,
+    // v-id-type-single-source — the three ID columns travel as one package.
+    // EmployeeService.create assigns tid_type / nationality_type /
+    // visa_expire_date straight off the request with no "only if present"
+    // guard, so a key we leave out lands as NULL, not as a default. Sending
+    // tid alone is what left every bulk-imported foreigner looking local.
+    //
+    // Unset must STAY unset. tidTypeFor(undefined) answers 'TID' — the right
+    // thing to *show* for a row nobody classified, the wrong thing to
+    // *persist*: it would stamp "National ID" onto every row of a file that
+    // never carried the column, and on a re-import silently demote passport
+    // holders whose type simply wasn't exported. So the pair is written only
+    // when the spreadsheet actually said something.
+    //
+    // Explicit nulls rather than omitted keys: server-side they are
+    // identical (Jackson maps an absent field to null, and
+    // normalizeTidType/normalizeNationalityType map null to null), and the
+    // null is visible on the wire when someone debugs a row that imported
+    // with no ID type.
+    nationalityType: d.nationalityType ?? null,
+    tidType: d.nationalityType ? tidTypeFor(d.nationalityType) : null,
+    // Already null-safe for the unset case — visaExpireFor only lets a date
+    // through on passport — so an orphan visa date can't ride along on a
+    // national-ID or untyped row.
+    visaExpireDate: visaExpireFor(d.nationalityType, d.visaExpireDate),
     contractExpireDate: d.contractExpireDate,
   };
 }
@@ -218,8 +243,16 @@ export function BulkUploadEmployeesDialog({
 
     // ----- Mock mode: no backend — just hand rows back to the parent. -----
     if (USE_MOCKS) {
+      // Mirror buildCreateRequest's ID handling rather than passing
+      // r.data through raw. This path never touches the server, so it is
+      // the ONLY thing a mock-mode demo or QA pass ever sees — and it
+      // used to keep a visa date on a National ID row that live mode
+      // drops, so testing here would certify the silent-loss bug as
+      // absent. Same rules, same outcome, both modes.
       const newRows: Employee[] = rowsToImport.map(r => ({
         ...r.data,
+        tidType: r.data.nationalityType ? tidTypeFor(r.data.nationalityType) : undefined,
+        visaExpireDate: visaExpireFor(r.data.nationalityType, r.data.visaExpireDate) ?? undefined,
         status: r.data.status ?? 'active',
       } as Employee));
       onImported(newRows);

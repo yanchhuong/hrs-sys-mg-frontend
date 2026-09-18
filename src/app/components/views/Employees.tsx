@@ -81,6 +81,10 @@ import { notify } from '../../utils/notify';
 import { makeDeptName } from '../../utils/deptName';
 import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
 import { managerLadder, LADDER_LABELS } from '../../utils/managerLadder';
+import {
+  ID_TYPE_OPTIONS, idTypeLabel, tidTypeFor, visaExpireFor,
+  type NationalityType,
+} from '../../utils/idType';
 import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
@@ -126,39 +130,11 @@ function hasUnsavedChanges(
   return JSON.stringify(original) !== JSON.stringify(edited);
 }
 
-// ---------------------------------------------------------------------------
-// ID document type
-// ---------------------------------------------------------------------------
-/**
- * v-id-type-single-source (V352) — `nationalityType` is the single
- * source of truth for which ID document an employee carries; `tidType`
- * is the shorthand stored alongside it ('TID' = national ID,
- * 'PA' = passport). The Profile tab used to expose both as independent
- * selects, which let HR save a row claiming "National ID" and "PA" at
- * the same time. Every label is now derived from `nationalityType`
- * through these helpers, and every save writes the pair together, so
- * the roster cell, the details drawer and the persisted column cannot
- * disagree. Unset (legacy rows) reads as national_id / 'TID'.
- *
- * NOTE on the column's history: V301 introduced `tid_type` meaning
- * something else — 'PA' = personal account, 'TID' = tax id, a document
- * family for the NUMBER, orthogonal to nationality. This change
- * reinterprets those two values as passport / national ID, per the
- * one-control request. That is safe only because no row ever used the
- * original meaning (census 2026-09-18: 244 of 246 rows have both
- * columns NULL; the two that are set are already consistent with the
- * new reading). Anyone finding `tid_type = 'PA'` on a row with a
- * non-passport nationality should treat it as V301-era data and resolve
- * it by hand, not assume passport. V301's COMMENT ON COLUMN still
- * states the old meaning and wants rewriting.
- */
-type NationalityType = NonNullable<Employee['nationalityType']>;
-
-const tidTypeFor = (n: NationalityType | undefined): 'PA' | 'TID' =>
-  n === 'passport' ? 'PA' : 'TID';
-
-const idTypeLabel = (n: NationalityType | undefined): string =>
-  n === 'passport' ? 'Passport' : 'National ID';
+// ID document type: the helpers moved to utils/idType so the create
+// dialog, this drawer and the spreadsheet import cannot drift apart —
+// see that file for why nationalityType is the source of truth and for
+// the V301 history of `tid_type`. Still outstanding there: V301's
+// COMMENT ON COLUMN documents the pre-V352 meaning and wants rewriting.
 
 // ---------------------------------------------------------------------------
 // Documents tab
@@ -914,22 +890,42 @@ export function Employees() {
         empNo,
         departmentId: department && department !== '-' ? department : null,
         status,
-        // The ID pair is DERIVED here, never echoed back from the loaded
-        // row. Spreading `rest` alone would re-persist whatever the row
-        // already held: the select renders the `?? 'national_id'` default
-        // without writing state, so on a legacy row the operator reads
-        // "National ID", saves, and a stored 'PA' survives untouched —
-        // the contradiction the merged control exists to end. Deriving
-        // makes every save self-healing, so rows repair through normal
-        // use instead of needing a backfill.
-        nationalityType: editedEmployee.nationalityType ?? 'national_id',
-        tidType: tidTypeFor(editedEmployee.nationalityType),
-        // Matches handleQuickFieldUpdate: a visa date is only meaningful
-        // on a passport row, so a stale one is cleared rather than left
-        // orphaned for the next writer to trip over.
-        visaExpireDate: editedEmployee.nationalityType === 'passport'
-          ? (editedEmployee.visaExpireDate ?? null)
-          : null,
+        // The ID trio is derived ONLY once the employee has actually been
+        // classified — i.e. nationalityType is set. Then tidType follows
+        // from it and a visa date is kept only on a passport row, so the
+        // two columns cannot be saved disagreeing.
+        //
+        // When nationalityType is UNSET we deliberately echo the stored
+        // values instead. An earlier version of this defaulted to
+        // national_id and derived 'TID' from it, which read as
+        // "self-healing" but silently destroyed the only evidence that
+        // distinguishes the two meanings 'PA' has ever had: V301 defined
+        // it as *personal account*, V352 redefines it as *passport* (see
+        // utils/idType.ts). A row holding nationality NULL + tid_type
+        // 'PA' is exactly the ambiguous case that must be resolved BY A
+        // HUMAN — and it would have been overwritten by someone editing
+        // that employee's phone number, before anyone could look at it.
+        //
+        // Resolving one is still a single gesture: pick a value in the ID
+        // type select. That fires its onChange, which sets nationalityType,
+        // and this branch then derives the rest on save.
+        ...(editedEmployee.nationalityType
+          ? {
+              nationalityType: editedEmployee.nationalityType,
+              tidType: tidTypeFor(editedEmployee.nationalityType),
+              visaExpireDate: visaExpireFor(editedEmployee.nationalityType, editedEmployee.visaExpireDate),
+            }
+          : {
+              nationalityType: null,
+              tidType: editedEmployee.tidType ?? null,
+              // Left intact on purpose. An orphan visa date on an
+              // unclassified row is itself evidence — it is the
+              // fingerprint of the PUT paths that used to null this trio
+              // (fixed in 578a533), and it is the strongest signal that
+              // the person really is a passport holder. Clearing it here
+              // would erase the thing that lets you tell.
+              visaExpireDate: editedEmployee.visaExpireDate ?? null,
+            }),
       };
       // The mutating endpoint is keyed by the backend UUID, not the human empNo.
       const targetId = apiId ?? empNo;
@@ -1046,16 +1042,25 @@ export function Employees() {
         tid: raw.tid ?? null,
         // Round-tripped exactly as stored instead of being re-derived
         // from nationalityType: a position/department quick-edit must
-        // not silently rewrite a legacy row's ID columns. The details
-        // drawer is the only writer of this pair, and it writes both in
-        // one state update.
+        // not silently rewrite a legacy row's ID columns.
+        //
+        // Ten call sites in src/ PUT or POST an employee. The ID trio is
+        // AUTHORED by two of them — the details drawer (handleSaveEmployee
+        // above) and AddEmployeeDialog — and merely ROUND-TRIPPED by
+        // Exception.tsx (mark / unmark), DepsGroup.tsx (department move),
+        // BulkUploadEmployeesDialog's manager second pass, and the
+        // Enrollment/Appointment role taggers, which spread the raw
+        // employeesApi.Employee. Add a fourth ID column and every one of
+        // those round-trip sites has to carry it too, or the full-replace
+        // PUT nulls it — which is precisely what happened to
+        // tid_type / nationality_type / visa_expire_date before 578a533.
         tidType: raw.tidType ?? null,
         // V300 — clear visaExpireDate when nationalityType flips back
         // to national_id so we don't send a stale passport-only
         // date. Server also accepts null explicitly, matching the
         // partial-patch semantics of the rest of this payload.
         nationalityType: raw.nationalityType ?? null,
-        visaExpireDate: raw.nationalityType === 'passport' ? (raw.visaExpireDate ?? null) : null,
+        visaExpireDate: visaExpireFor(raw.nationalityType, raw.visaExpireDate),
         contractExpireDate: raw.contractExpireDate ?? null,
         resignDate: raw.resignDate ?? null,
         attendanceYn: raw.attendanceYn,
@@ -2389,8 +2394,9 @@ export function Employees() {
                               className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm"
                               aria-label="ID type"
                             >
-                              <option value="national_id">National ID</option>
-                              <option value="passport">Passport</option>
+                              {ID_TYPE_OPTIONS.map(o => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
                             </select>
                             <Input
                               value={editedEmployee.tid || ''}
