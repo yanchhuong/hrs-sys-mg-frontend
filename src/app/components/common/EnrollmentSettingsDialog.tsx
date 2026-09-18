@@ -336,7 +336,12 @@ function TeachersSection() {
     try {
       const saved = await employeesApi.update(emp.apiId ?? emp.id, {
         ...(emp as unknown as employeesApi.CreateEmployeeRequest),
-        clinicalRole: next,
+        // '' clears, null means "leave alone". EmployeeService guards this
+        // one with `if (req.clinicalRole() != null)` — unlike the ID columns
+        // beside it — so sending null made Remove a silent no-op: success
+        // toast, row gone from the table, employee still tagged after a
+        // reload. Same fix AppointmentSettingsDialog already carries.
+        clinicalRole: next ?? ('' as unknown as employeesApi.ClinicalRole),
       });
       setEmployees(list => list.map(e => (e.apiId ?? e.id) === key ? saved : e));
       toast.success(next === 'teacher'

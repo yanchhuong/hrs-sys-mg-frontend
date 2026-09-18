@@ -2724,11 +2724,19 @@ function BillDetailDialog({
                                 readOnly={invoice.status === 'void' || !canEdit} />
             </div>
 
-            {/* v-dialog-close-x-only — footer removed whole (not just its
-                lone "Close" button): DialogContent already renders the
-                top-right X, and an empty DialogFooter still takes a grid
-                row, leaving a stray gap under Attachments. It was
-                print:hidden, so the print layout below is unaffected. */}
+            {/* v-dialog-close-x-only — footer Close RESTORED, deliberately.
+                This DialogContent is itself the scroll container (max-h +
+                overflow-y-auto) and ui/dialog.tsx positions the X `absolute`,
+                so on a body taller than the viewport the X scrolls off the top
+                and the dialog has NO visible exit. The X is only redundant while
+                it stays reachable; here it does not, so this button IS the exit.
+                Drop it again once this dialog uses the pattern Announcements
+                already does — `flex flex-col` on DialogContent with an inner
+                `overflow-y-auto` body — which stops the FRAME scrolling and pins
+                the X for real. */}
+            <DialogFooter className="print:hidden">
+              <Button variant="outline" onClick={onClose}>Close</Button>
+            </DialogFooter>
 
             {/* Print layout — the same Cambodian tax-invoice template the
              *  Sale side prints, with the parties INVERTED: a Bill is the

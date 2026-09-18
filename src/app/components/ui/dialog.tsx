@@ -77,7 +77,15 @@ const DialogContent = React.forwardRef<
         )}
         {...props}
       >
+        {children}
         {!hideClose && (
+          // ORDER MATTERS: this block stays AFTER {children}. Radix autofocuses
+          // the first focusable descendant on open, so rendering the X first
+          // put the focus ring on the close button instead of the dialog's
+          // first input — the operator types and nothing lands, and a reflexive
+          // Space or Enter dismisses the dialog. (It briefly did, while the X
+          // was being trialled as a sticky first child.)
+          //
           // v-dialog-close-frameless — ONE close affordance, drawn the same
           // way everywhere: a bare X, no frame.
           //
@@ -122,7 +130,6 @@ const DialogContent = React.forwardRef<
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         )}
-        {children}
       </DialogPrimitive.Content>
     </DialogPortal>
   );

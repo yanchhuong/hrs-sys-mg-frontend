@@ -20,6 +20,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -1077,9 +1078,19 @@ export function Increase() {
               </div>
             );
           })()}
-          {/* No footer: read-only record (corrections are a separate
-              entry), so the only button was a Close duplicating
-              DialogContent's built-in top-right X. */}
+          {/* v-dialog-close-x-only — footer Close RESTORED, deliberately.
+              This DialogContent is itself the scroll container (max-h +
+              overflow-y-auto) and ui/dialog.tsx positions the X `absolute`,
+              so on a body taller than the viewport the X scrolls off the top
+              and the dialog has NO visible exit. The X is only redundant while
+              it stays reachable; here it does not, so this button IS the exit.
+              Drop it again once this dialog uses the pattern Announcements
+              already does — `flex flex-col` on DialogContent with an inner
+              `overflow-y-auto` body — which stops the FRAME scrolling and pins
+              the X for real. */}
+          <DialogFooter>
+            <Button onClick={() => setDetailsTarget(null)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

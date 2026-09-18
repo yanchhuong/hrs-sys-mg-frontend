@@ -64,6 +64,17 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     dateOfBirth: e.dateOfBirth ?? undefined,
     placeOfBirth: e.placeOfBirth ?? undefined,
     currentAddress: e.currentAddress ?? undefined,
+    // Payroll-affecting columns this screen never shows, carried ONLY so the
+    // full-replace PUTs below can round-trip them. EmployeeService coerces a
+    // missing allowance to ZERO (not "leave alone") and assigns maritalStatus
+    // unconditionally, so omitting them silently zeroed real money on every
+    // save from here — the allowances feed the payslip, the AL-remain payout
+    // and the seniority indemnity base.
+    maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married'
+      || e.maritalStatus === 'divorced' || e.maritalStatus === 'widowed')
+      ? e.maritalStatus : undefined,
+    positionAllowance: e.positionAllowance ?? 0,
+    evaluationAllowance: e.evaluationAllowance ?? 0,
     nffNo: e.nffNo ?? undefined,
     tid: e.tid ?? undefined,
     // Carried purely so the PUT bodies below can round-trip them. The
@@ -273,6 +284,10 @@ export function Exception() {
         contactNumber: editEmp.contactNumber,
         currentAddress: editEmp.currentAddress,
         nffNo: editEmp.nffNo,
+        // Full-replace PUT: a missing allowance is coerced to ZERO server-side.
+        positionAllowance: editEmp.positionAllowance ?? 0,
+        evaluationAllowance: editEmp.evaluationAllowance ?? 0,
+        maritalStatus: editEmp.maritalStatus ?? null,
         tid: editEmp.tid,
         // Full-replace PUT — omitting these nulls them server-side.
         tidType: editEmp.tidType ?? null,
@@ -332,6 +347,10 @@ export function Exception() {
         contactNumber: emp.contactNumber,
         currentAddress: emp.currentAddress,
         nffNo: emp.nffNo,
+        // Full-replace PUT: a missing allowance is coerced to ZERO server-side.
+        positionAllowance: emp.positionAllowance ?? 0,
+        evaluationAllowance: emp.evaluationAllowance ?? 0,
+        maritalStatus: emp.maritalStatus ?? null,
         tid: emp.tid,
         // Full-replace PUT — omitting these nulls them server-side.
         tidType: emp.tidType ?? null,

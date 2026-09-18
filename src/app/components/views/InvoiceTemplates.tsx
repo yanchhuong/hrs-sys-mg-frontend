@@ -691,26 +691,27 @@ export function InvoiceTemplates() {
             </DialogTitle>
           </DialogHeader>
           {previewingConfig && <TemplatePreview config={previewingConfig.config} kind={previewingConfig.kind} />}
-          {/* v-dialog-close-x-only — "Close" dropped in favour of the
-              top-right X. The whole FOOTER is now conditional, not just
-              the button: a custom template has no preset, so without the
-              guard this would render an empty DialogFooter, which still
-              occupies a grid row and leaves a stray gap under the
-              preview. Nothing here mutates — "Use this preset" only
-              seeds the editor's local state. */}
-          {previewingConfig?.preset && (
-            <DialogFooter>
-              <Button
-                onClick={() => {
-                  const p = previewingConfig.preset!;
-                  setPreviewingConfig(null);
-                  startFromPreset(p);
-                }}
-              >
-                <Copy className="h-4 w-4 mr-1.5" /> Use this preset
-              </Button>
-            </DialogFooter>
-          )}
+          {/* v-dialog-close-x-only — Close RESTORED and the footer made
+              unconditional again. This DialogContent is itself the scroll
+              container (max-h-[85vh] overflow-y-auto) and the X is `absolute`,
+              so on a full-size preview the X scrolls off the top. Guarding the
+              whole footer on `preset` meant a CUSTOM template — which has none —
+              rendered a full-page preview with no close control at all. Close is
+              unconditional; "Use this preset" stays guarded. */}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewingConfig(null)}>Close</Button>
+            {previewingConfig?.preset && (
+                <Button
+                  onClick={() => {
+                    const p = previewingConfig.preset!;
+                    setPreviewingConfig(null);
+                    startFromPreset(p);
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-1.5" /> Use this preset
+                </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

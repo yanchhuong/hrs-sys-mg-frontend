@@ -456,10 +456,19 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
           </DetailSection>
         </div>
 
-        {/* v-dialog-close-consistency — read-only detail dialog: the footer's
-            only button was Close, i.e. DialogContent's top-right X again.
-            Footer removed entirely so the body isn't followed by an empty
-            gap-4 row. */}
+        {/* v-dialog-close-x-only — footer Close RESTORED, deliberately.
+            This DialogContent is itself the scroll container (max-h +
+            overflow-y-auto) and ui/dialog.tsx positions the X `absolute`,
+            so on a body taller than the viewport the X scrolls off the top
+            and the dialog has NO visible exit. The X is only redundant while
+            it stays reachable; here it does not, so this button IS the exit.
+            Drop it again once this dialog uses the pattern Announcements
+            already does — `flex flex-col` on DialogContent with an inner
+            `overflow-y-auto` body — which stops the FRAME scrolling and pins
+            the X for real. */}
+        <DialogFooter>
+          <Button onClick={onClose}>Close</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

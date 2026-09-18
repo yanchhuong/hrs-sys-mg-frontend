@@ -495,6 +495,14 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // Default true when the backend hasn't sent the field (older rows
     // before V15) so existing employees stay counted in attendance.
     attendanceYn: e.attendanceYn ?? true,
+    // Carried ONLY so the two PUT paths in this file can round-trip them.
+    // Nothing on the Employees screen renders or edits these — the Exception
+    // page owns them — but PUT /employees is a full replace, so a key this
+    // screen omits is persisted as NULL. Without these, fixing a phone number
+    // here silently deleted a Long-term Exception recorded on another page.
+    attendanceExceptionStartDate: e.attendanceExceptionStartDate ?? undefined,
+    attendanceExceptionEndDate: e.attendanceExceptionEndDate ?? undefined,
+    attendanceExceptionRemark: e.attendanceExceptionRemark ?? undefined,
     // NOT NULL DEFAULT 0 columns since V43 — coerce missing server data
     // to 0 so the input + payslip line read a number, not blank.
     positionAllowance: e.positionAllowance ?? 0,
@@ -1060,10 +1068,22 @@ export function Employees() {
         // date. Server also accepts null explicitly, matching the
         // partial-patch semantics of the rest of this payload.
         nationalityType: raw.nationalityType ?? null,
-        visaExpireDate: visaExpireFor(raw.nationalityType, raw.visaExpireDate),
+        // Mirrors handleSaveEmployee: only DERIVE once the row is classified.
+        // On an unclassified row an orphan visa date is evidence — it is the
+        // fingerprint of the PUT paths that used to null this trio, and the
+        // strongest hint the person really is a passport holder. A quick
+        // Position/Department edit, or an org-chart drag, must not erase it.
+        visaExpireDate: raw.nationalityType
+          ? visaExpireFor(raw.nationalityType, raw.visaExpireDate)
+          : (raw.visaExpireDate ?? null),
         contractExpireDate: raw.contractExpireDate ?? null,
         resignDate: raw.resignDate ?? null,
         attendanceYn: raw.attendanceYn,
+        // Full replace — omitting these wipes a Long-term Exception the
+        // Exception page recorded. See adaptApiEmployee above.
+        attendanceExceptionStartDate: raw.attendanceExceptionStartDate ?? null,
+        attendanceExceptionEndDate: raw.attendanceExceptionEndDate ?? null,
+        attendanceExceptionRemark: raw.attendanceExceptionRemark ?? null,
         decouple: raw.decouple ?? false,
         claimSpouse: raw.claimSpouse ?? false,
         positionAllowance: raw.positionAllowance ?? 0,
@@ -2371,8 +2391,15 @@ export function Employees() {
                       <FieldRow label="TID" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <div className="flex items-center gap-1.5">
+                            {/* An unclassified row (nationality_type NULL)
+                                shows "Not set", NOT the national_id default.
+                                With the default, the select already read
+                                "National ID", so choosing National ID changed
+                                no state: no unsaved-changes pill, Save stayed
+                                disabled, and the one gesture that resolves a
+                                V301-era row was impossible to perform. */}
                             <select
-                              value={editedEmployee.nationalityType ?? 'national_id'}
+                              value={editedEmployee.nationalityType ?? ''}
                               onChange={(e) => {
                                 const next = e.target.value as NationalityType;
                                 setEditedEmployee({
@@ -2394,6 +2421,7 @@ export function Employees() {
                               className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm"
                               aria-label="ID type"
                             >
+                              <option value="" disabled>Not set</option>
                               {ID_TYPE_OPTIONS.map(o => (
                                 <option key={o.value} value={o.value}>{o.label}</option>
                               ))}
@@ -2407,7 +2435,11 @@ export function Employees() {
                         ) : (
                           <p>
                             {selectedEmployee.tid
-                              ? `${idTypeLabel(selectedEmployee.nationalityType)} ${selectedEmployee.tid}`
+                              // Unclassified reads as "Not set", not as the
+                              // national_id default: the drawer is where a
+                              // human resolves these, so it must not assert a
+                              // document type the record does not hold.
+                              ? `${selectedEmployee.nationalityType ? idTypeLabel(selectedEmployee.nationalityType) : 'Not set —'} ${selectedEmployee.tid}`
                               : '—'}
                           </p>
                         )}
