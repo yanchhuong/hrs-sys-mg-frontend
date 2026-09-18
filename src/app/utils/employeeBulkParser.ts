@@ -44,6 +44,21 @@ const COLUMN_MAP: Record<string, keyof Employee> = {
   'Bank': 'bankName',
   'Account Number': 'bankAccount',
   'Bank Account': 'bankAccount',
+  // Reports-to ladder (V349). The cells carry the manager's Employee ID
+  // (empNo) — not a name, not a UUID — so an exported file re-imports with
+  // its ladder intact. The importer turns them into UUIDs after every row
+  // of the upload exists; see BulkUploadEmployeesDialog's second pass.
+  // 'Reports To' is deliberately NOT an alias. It is the label the
+  // Employees UI puts on this field, so a hand-maintained roster is the
+  // likely place to already have that column holding a manager's NAME —
+  // which would parse as an empNo ref and never resolve.
+  'Manager 1 ID': 'managerId',
+  'Manager 1': 'managerId',
+  'Manager ID': 'managerId',
+  'Manager 2 ID': 'manager2Id',
+  'Manager 2': 'manager2Id',
+  'Manager 3 ID': 'manager3Id',
+  'Manager 3': 'manager3Id',
 };
 
 /**
@@ -175,6 +190,13 @@ export function parseEmployeesExcel(
               } else if (iso !== undefined) {
                 (parsed as any)[key] = iso;
               }
+            } else if (key === 'department') {
+              // Export writes the "no department" placeholder ('-'/'—') for
+              // an employee whose departmentId is unset or unknown. Letting
+              // it through would make the backend find-or-create a real
+              // Department literally named "-" on the round trip.
+              const v = String(value).trim();
+              if (v && v !== '-' && v !== '—') (parsed as any)[key] = v;
             } else if (key === 'gender') {
               const v = String(value).toLowerCase();
               (parsed as any)[key] = v === 'male' || v === 'female' ? v : undefined;
@@ -229,6 +251,36 @@ export function parseEmployeesExcel(
           if (parsed.bankName && !parsed.bankAccount) rowWarnings.push('Bank selected but Account Number missing');
           if (!parsed.contactNumber) rowWarnings.push('No contact number provided');
 
+          // The server rejects a ladder that repeats a manager across slots
+          // or points a slot at the employee themselves. Surface it here so
+          // the user can fix the file before uploading, but as a warning —
+          // the rest of the row is importable, and the import reports the
+          // ladder failure per row anyway.
+          const ladder = [parsed.managerId, parsed.manager2Id, parsed.manager3Id];
+          ladder.forEach((ref, idx) => {
+            if (!ref) return;
+            const up = ref.toUpperCase();
+            // The ladder is written in one PUT, so a single bad slot costs
+            // the whole thing — including a perfectly good level 1.
+            if (parsed.id && up === parsed.id.toUpperCase()) {
+              rowWarnings.push(`Manager ${idx + 1} is this employee — the whole ladder will be rejected on import`);
+            } else if (ladder.findIndex(other => other?.toUpperCase() === up) !== idx) {
+              rowWarnings.push(`Manager ${idx + 1} "${ref}" repeats another manager slot — the whole ladder will be rejected on import`);
+            }
+          });
+
+          // A hole in the ladder is something Add/Edit Employee makes
+          // impossible (clearing a level cascades to the ones below), and
+          // only level 1 drives approval routing — so a row whose level 1
+          // is blank while a higher slot is filled ends up with no direct
+          // leader at all. The server accepts it, hence a warning.
+          const firstFilled = ladder.findIndex(Boolean);
+          if (firstFilled > 0) {
+            rowWarnings.push(
+              `Manager 1 is blank but Manager ${firstFilled + 1} is set — only Manager 1 drives approval routing`,
+            );
+          }
+
           parsed.status = 'active';
 
           employees.push({ rowNumber, data: parsed, errors: rowErrors, warnings: rowWarnings });
@@ -260,6 +312,7 @@ const EXPORT_HEADERS = [
   'Join Date', 'Base Salary', 'Gender', 'Date of Birth', 'Contact Number',
   'Place of Birth', 'Current Address', 'NFF No', 'TID', 'Contract Expire',
   'Bank Name', 'Account Number',
+  'Manager 1 ID', 'Manager 2 ID', 'Manager 3 ID',
 ] as const;
 
 export function downloadEmployeeTemplate() {
@@ -270,6 +323,10 @@ export function downloadEmployeeTemplate() {
       '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
       'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
       'ABA', '000-123-456',
+      // Managers are named by their Employee ID, filled from level 1 up.
+      // Level 3 is blank here because the ladder simply stops there —
+      // skipping a level and filling the one above it is warned about.
+      'EMP001', 'EMP002', '',
     ];
     const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], example]);
     ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
@@ -287,13 +344,32 @@ export function downloadEmployeeTemplate() {
  * the matching dept by name. `deptNameById` resolves the live-mode
  * `Employee.department` UUID to the human-readable name; pass an
  * identity function for mock mode where `department` already is a name.
+ *
+ * The three manager columns are written as Employee IDs for the same
+ * reason — a raw UUID means nothing to the person editing the file, and
+ * the importer can't resolve one either. `lookupPool` is the roster the
+ * manager refs are resolved against: pass the FULL employee list, not
+ * the filtered rows being exported, or a manager sitting outside the
+ * current filter writes a blank cell that reads as "has no manager".
  */
 export function exportEmployeesToExcel(
   employees: Employee[],
   deptNameById: (idOrName: string | undefined) => string,
+  lookupPool: Employee[] = employees,
   filename = `Employees-${new Date().toISOString().slice(0, 10)}.xlsx`,
 ): void {
   void loadXlsx().then(XLSX => {
+    // Manager fields hold the backend UUID in live mode and the empNo in
+    // mock mode, so key the lookup on both. A manager missing from the
+    // pool entirely has no Employee ID to write — leave the cell empty
+    // rather than emit a UUID the importer would reject.
+    const empNoByRef = new Map<string, string>();
+    lookupPool.forEach(e => {
+      if (e.apiId) empNoByRef.set(e.apiId, e.id);
+      if (e.id) empNoByRef.set(e.id, e.id);
+    });
+    const managerEmpNo = (ref: string | undefined) => (ref ? empNoByRef.get(ref) ?? '' : '');
+
     const rows: (string | number)[][] = employees.map(e => [
       e.id ?? '',
       e.name ?? '',
@@ -313,6 +389,9 @@ export function exportEmployeesToExcel(
       e.contractExpireDate ?? '',
       e.bankName ?? '',
       e.bankAccount ?? '',
+      managerEmpNo(e.managerId),
+      managerEmpNo(e.manager2Id),
+      managerEmpNo(e.manager3Id),
     ]);
 
     const wb = XLSX.utils.book_new();

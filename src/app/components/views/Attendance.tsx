@@ -3370,8 +3370,8 @@ export function Attendance({ onNavigate }: Props = {}) {
                   className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
                   <option value="full">Full Day</option>
-                  <option value="half_morning">Half Day — Morning</option>
-                  <option value="half_noon">Half Day — Afternoon</option>
+                  <option value="half_morning">Half Morning</option>
+                  <option value="half_noon">Half Noon</option>
                 </select>
               </div>
             </div>

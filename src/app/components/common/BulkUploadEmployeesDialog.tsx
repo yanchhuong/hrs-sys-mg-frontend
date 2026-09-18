@@ -30,13 +30,29 @@ interface Props {
   existingEmpNos?: string[];
   /** emails already in the system — drives the duplicate-email parser check. */
   existingEmails?: string[];
+  /**
+   * The roster the parent already has paged to completion. The manager
+   * pass resolves the spreadsheet's Employee ID refs against it, so the
+   * dialog doesn't re-fetch thousands of rows the caller is holding.
+   * Note it carries the caller's server-side scoping: a 'manager' role
+   * only ever sees themselves plus their direct reports.
+   */
+  existingEmployees?: employeesApi.Employee[];
 }
 
-type RowStatus = 'pending' | 'creating' | 'created' | 'failed';
+// 'partial' = the employee was created, but their Manager columns could not
+// be applied. Kept distinct from 'created' so a half-imported row is never
+// counted as a clean success.
+type RowStatus = 'pending' | 'creating' | 'created' | 'partial' | 'failed';
 interface RowProgress {
   rowNumber: number;
   status: RowStatus;
   message?: string;
+}
+
+/** True when the row named at least one manager on the spreadsheet. */
+function hasLadderRefs(row: ParsedEmployeeRow): boolean {
+  return Boolean(row.data.managerId || row.data.manager2Id || row.data.manager3Id);
 }
 
 /**
@@ -65,6 +81,10 @@ function buildCreateRequest(
     departmentName: deptName || null,
     joinDate: d.joinDate as string,
     baseSalary: d.baseSalary as number,
+    // The reports-to ladder stays out of the create on purpose: a row's
+    // manager may be another row of this same file that doesn't exist yet.
+    // The empNo refs are resolved and PUT in a second pass once every
+    // selected row has been created.
     managerId: undefined,
     contactNumber: d.contactNumber,
     gender: d.gender,
@@ -106,7 +126,7 @@ async function runWithConcurrency<T, R>(
 }
 
 export function BulkUploadEmployeesDialog({
-  open, onOpenChange, onImported, departments, existingEmpNos, existingEmails,
+  open, onOpenChange, onImported, departments, existingEmpNos, existingEmails, existingEmployees,
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -114,8 +134,12 @@ export function BulkUploadEmployeesDialog({
 
   // Progress while POSTing to the backend.
   const [importing, setImporting] = useState(false);
+  // 'creating' = POSTing rows, 'linking' = second pass writing the manager
+  // ladder. Only drives the banner wording; every row is already counted
+  // as done by the time linking starts.
+  const [importPhase, setImportPhase] = useState<'creating' | 'linking'>('creating');
   const [progress, setProgress] = useState<Map<number, RowProgress>>(new Map());
-  const [finalResult, setFinalResult] = useState<{ ok: number; failed: number } | null>(null);
+  const [finalResult, setFinalResult] = useState<{ ok: number; failed: number; partial: number } | null>(null);
   // v-employee-seat-cap — populated when a row returns 402; remaining
   // rows skip immediately and a SeatCapDialog surfaces the reason.
   const [seatCapMessage, setSeatCapMessage] = useState<string | null>(null);
@@ -141,6 +165,7 @@ export function BulkUploadEmployeesDialog({
     setParsed(null);
     setParsing(false);
     setImporting(false);
+    setImportPhase('creating');
     setProgress(new Map());
     setFinalResult(null);
     setViewFilter('all');
@@ -214,9 +239,14 @@ export function BulkUploadEmployeesDialog({
       rowsToImport.map(r => [r.rowNumber, { rowNumber: r.rowNumber, status: 'pending' as const }]),
     );
     setProgress(initial);
+    setImportPhase('creating');
     setImporting(true);
 
     const created: Employee[] = [];
+    // Backend-shaped rows from pass 1, keyed by upper-cased empNo. Pass 2
+    // resolves the spreadsheet's manager refs against these, and needs the
+    // whole object to rebuild the PUT body.
+    const createdByEmpNo = new Map<string, employeesApi.Employee>();
     let okCount = 0;
     let failCount = 0;
     // v-employee-seat-cap — once one row returns 402 (plan cap reached),
@@ -259,6 +289,7 @@ export function BulkUploadEmployeesDialog({
         } else {
           okCount++;
           created.push(result as unknown as Employee);
+          createdByEmpNo.set((row.data.id ?? '').toUpperCase(), result);
           setProgress(prev => {
             const next = new Map(prev);
             next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'created' });
@@ -270,15 +301,116 @@ export function BulkUploadEmployeesDialog({
 
     if (seatCapHit) setSeatCapMessage(seatCapHit);
 
+    // ----- Pass 2: write the reports-to ladder. -----
+    // Deferred until every row exists, because a file may list an employee
+    // before the manager it points at. Rows whose create failed are skipped:
+    // there is nothing to link.
+    const ladderRows = rowsToImport.filter(
+      r => hasLadderRefs(r) && createdByEmpNo.has((r.data.id ?? '').toUpperCase()),
+    );
+    let partialCount = 0;
+
+    if (ladderRows.length > 0) {
+      setImportPhase('linking');
+
+      // Managers can just as well be people already on the roster, so index
+      // it alongside this upload's rows. The parent hands us the roster it
+      // has already paged to completion — re-fetching it here would be MBs
+      // of JSON for what is usually a handful of PUTs.
+      //
+      // Two indexes: empNo uniqueness is case-SENSITIVE on the backend, so
+      // 'mgr-01' and 'MGR-01' can both exist. Match exactly first and only
+      // fall back to a case-insensitive hit when it is unambiguous, rather
+      // than silently linking to whichever row was indexed last.
+      const rosterByEmpNo = new Map<string, employeesApi.Employee>();
+      const rosterByUpper = new Map<string, employeesApi.Employee | null>();
+      (existingEmployees ?? []).forEach(e => {
+        rosterByEmpNo.set(e.empNo, e);
+        const up = e.empNo.toUpperCase();
+        rosterByUpper.set(up, rosterByUpper.has(up) ? null : e);
+      });
+
+      await runWithConcurrency(
+        ladderRows,
+        async (row): Promise<string | null> => {
+          const self = createdByEmpNo.get((row.data.id ?? '').toUpperCase())!;
+          const unresolved: string[] = [];
+          const notActive: string[] = [];
+          const resolve = (ref: string | undefined): string | null => {
+            if (!ref) return null;
+            const hit = rosterByEmpNo.get(ref)
+              ?? createdByEmpNo.get(ref.toUpperCase())
+              ?? rosterByUpper.get(ref.toUpperCase())
+              ?? null;
+            if (!hit) { unresolved.push(ref); return null; }
+            // Every manager picker in the app offers active employees only,
+            // so don't let the bulk path write a route to someone who left —
+            // the profile editor could not even display it.
+            if (hit.status && hit.status !== 'active') { notActive.push(ref); return null; }
+            return hit.id;
+          };
+
+          const managerId = resolve(row.data.managerId);
+          const manager2Id = resolve(row.data.manager2Id);
+          const manager3Id = resolve(row.data.manager3Id);
+
+          // PUT is a full overwrite — send the created row back verbatim
+          // with only the three manager fields laid on top, or every other
+          // field would be nulled out. Skip the call when nothing resolved:
+          // the employee already has an empty ladder.
+          if (managerId || manager2Id || manager3Id) {
+            await employeesApi.update(self.id, { ...self, managerId, manager2Id, manager3Id });
+          }
+
+          // Created either way — an unmatched manager downgrades the row to
+          // a warning rather than failing an employee who already exists.
+          // Don't claim they don't exist: the roster we matched against is
+          // scoped to what this user is allowed to see.
+          const notes = [
+            unresolved.length > 0
+              ? `manager ${unresolved.join(', ')} did not match any Employee ID in this file or the roster you can see`
+              : null,
+            notActive.length > 0
+              ? `manager ${notActive.join(', ')} is not an active employee`
+              : null,
+          ].filter(Boolean);
+          return notes.length > 0 ? `Imported, but ${notes.join('; ')}` : null;
+        },
+        5, // same gentle pool as the creates above
+        (row, _i, result) => {
+          // A rejected PUT lands here too. 403 is its own story: POST and
+          // PUT are separate permissions, so a create-without-update role
+          // gets here with every employee already made.
+          const message = result instanceof Error
+            ? (result instanceof ApiClientError && result.status === 403
+                ? 'Imported, but setting the manager needs the "edit employee" permission'
+                : `Imported, but the manager ladder was rejected: ${result.message}`)
+            : result;
+          if (!message) return;
+          partialCount++;
+          setProgress(prev => {
+            const next = new Map(prev);
+            next.set(row.rowNumber, { rowNumber: row.rowNumber, status: 'partial', message });
+            return next;
+          });
+        },
+      );
+    }
+
     setImporting(false);
-    setFinalResult({ ok: okCount, failed: failCount });
+    setImportPhase('creating');
+    setFinalResult({ ok: okCount, failed: failCount, partial: partialCount });
 
     if (okCount > 0) {
       onImported(created);
       toast.success(
-        failCount === 0
+        failCount === 0 && partialCount === 0
           ? `Imported ${okCount} employee${okCount !== 1 ? 's' : ''}`
-          : `Imported ${okCount} of ${okCount + failCount} — ${failCount} failed`,
+          : [
+              `Imported ${okCount} of ${okCount + failCount}`,
+              failCount > 0 ? `${failCount} failed` : null,
+              partialCount > 0 ? `${partialCount} without their manager` : null,
+            ].filter(Boolean).join(' — '),
         { duration: 6000 },
       );
     }
@@ -296,7 +428,9 @@ export function BulkUploadEmployeesDialog({
     errorRows: parsed.employees.filter(r => r.errors.length > 0).length,
   } : null;
 
-  const doneCount = Array.from(progress.values()).filter(p => p.status === 'created' || p.status === 'failed').length;
+  const doneCount = Array.from(progress.values()).filter(
+    p => p.status === 'created' || p.status === 'partial' || p.status === 'failed',
+  ).length;
   const progressPct = selectedRows.size > 0 ? Math.round((doneCount / selectedRows.size) * 100) : 0;
 
   return (
@@ -327,13 +461,13 @@ export function BulkUploadEmployeesDialog({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-sm text-xs leading-relaxed">
-                  Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. Blank rows are skipped automatically.
+                  Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. The Manager 1/2/3 columns take the manager's Employee ID and are applied after every row is created, so a manager listed further down the file still links. Blank rows are skipped automatically.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </DialogTitle>
           <DialogDescription className="sr-only">
-            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. Blank rows are skipped automatically.
+            Upload an Excel file (.xlsx) with one row per employee. Required columns: Employee ID, Name, Email, Join Date, Base Salary. Position + Department are optional. The Manager 1/2/3 columns take the manager's Employee ID and are applied after every row is created, so a manager listed further down the file still links. Blank rows are skipped automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -418,7 +552,9 @@ export function BulkUploadEmployeesDialog({
                 <RefreshCw className="h-5 w-5 text-blue-600 shrink-0 mt-0.5 animate-spin" />
                 <div className="flex-1 min-w-0 space-y-2">
                   <p className="font-medium text-blue-900">
-                    Importing {doneCount} of {selectedRows.size}…
+                    {importPhase === 'linking'
+                      ? 'Linking managers…'
+                      : `Importing ${doneCount} of ${selectedRows.size}…`}
                   </p>
                   <Progress value={progressPct} className="h-1.5" />
                 </div>
@@ -429,24 +565,33 @@ export function BulkUploadEmployeesDialog({
           {/* Final result banner */}
           {finalResult && !importing && (
             <div className={`rounded-md border p-3 ${
-              finalResult.failed === 0 ? 'bg-green-50 border-green-200'
+              finalResult.failed === 0 && finalResult.partial === 0 ? 'bg-green-50 border-green-200'
                 : finalResult.ok === 0 ? 'bg-red-50 border-red-200'
                 : 'bg-amber-50 border-amber-200'
             }`}>
               <div className="flex items-start gap-3">
-                {finalResult.failed === 0 ? <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+                {finalResult.failed === 0 && finalResult.partial === 0 ? <CheckCircle className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
                   : finalResult.ok === 0 ? <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
                   : <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium">
-                    {finalResult.failed === 0
+                    {finalResult.failed === 0 && finalResult.partial === 0
                       ? `All ${finalResult.ok} employee${finalResult.ok !== 1 ? 's' : ''} imported successfully`
                       : finalResult.ok === 0
                         ? `No employees imported — all ${finalResult.failed} failed`
-                        : `${finalResult.ok} imported · ${finalResult.failed} failed`}
+                        : [
+                            `${finalResult.ok} imported`,
+                            finalResult.partial > 0 ? `${finalResult.partial} without their manager` : null,
+                            finalResult.failed > 0 ? `${finalResult.failed} failed` : null,
+                          ].filter(Boolean).join(' · ')}
                   </p>
                   {finalResult.failed > 0 && (
                     <p className="text-sm text-gray-700">Failed rows are highlighted below with the backend error message.</p>
+                  )}
+                  {finalResult.partial > 0 && (
+                    <p className="text-sm text-gray-700">
+                      Amber rows were created — only their Manager columns didn't stick. Fix those on the employee's profile, or correct the Employee IDs and re-upload just those rows.
+                    </p>
                   )}
                 </div>
               </div>
@@ -558,10 +703,12 @@ export function BulkUploadEmployeesDialog({
                         const hasErr = row.errors.length > 0;
                         const hasWarn = !hasErr && row.warnings.length > 0;
                         const isCreated = prog?.status === 'created';
+                        const isPartial = prog?.status === 'partial';
                         const isFailed = prog?.status === 'failed';
                         const isCreating = prog?.status === 'creating';
 
                         const rowBg = isFailed ? 'bg-red-50'
+                          : isPartial ? 'bg-amber-50'
                           : isCreated ? 'bg-green-50'
                           : isCreating ? 'bg-blue-50'
                           : hasErr ? 'bg-red-50'
@@ -576,12 +723,13 @@ export function BulkUploadEmployeesDialog({
                               <Checkbox
                                 checked={checked}
                                 onCheckedChange={() => toggleOne(row.rowNumber)}
-                                disabled={hasErr || importing || isCreated}
+                                disabled={hasErr || importing || isCreated || isPartial}
                                 aria-label={`Select row ${row.rowNumber}`}
                               />
                             </td>
                             <td className={`px-2 py-2 text-center ${rowBg}`}>
                               {isCreated ? <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                                : isPartial ? <AlertTriangle className="h-4 w-4 text-amber-600 inline" />
                                 : isFailed ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
                                 : isCreating ? <RefreshCw className="h-4 w-4 text-blue-600 inline animate-spin" />
                                 : hasErr ? <AlertCircle className="h-4 w-4 text-red-600 inline" />
@@ -603,6 +751,10 @@ export function BulkUploadEmployeesDialog({
                               {isFailed ? (
                                 <span className="text-red-700 block truncate" title={prog?.message}>
                                   {prog?.message ?? 'Failed'}
+                                </span>
+                              ) : isPartial ? (
+                                <span className="text-amber-700 block truncate" title={prog?.message}>
+                                  {prog?.message ?? 'Imported without their manager'}
                                 </span>
                               ) : isCreated ? (
                                 <span className="text-green-700 block">Imported</span>
@@ -633,9 +785,10 @@ export function BulkUploadEmployeesDialog({
         <DialogFooter className="px-6 py-4 border-t shrink-0 bg-white sm:justify-between sm:items-center gap-3">
           <div className="text-xs">
             {finalResult ? (
-              <span className={`inline-flex items-center gap-1 font-medium ${finalResult.failed === 0 ? 'text-green-700' : finalResult.ok === 0 ? 'text-red-700' : 'text-amber-700'}`}>
-                {finalResult.failed === 0 ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+              <span className={`inline-flex items-center gap-1 font-medium ${finalResult.failed === 0 && finalResult.partial === 0 ? 'text-green-700' : finalResult.ok === 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                {finalResult.failed === 0 && finalResult.partial === 0 ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
                 {finalResult.ok} imported · {finalResult.failed} failed
+                {finalResult.partial > 0 ? ` · ${finalResult.partial} without manager` : ''}
               </span>
             ) : summary ? (
               <span className="inline-flex items-center gap-1 font-medium">

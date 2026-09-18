@@ -529,8 +529,11 @@ export function AllLeave() {
                       className="w-full px-3 py-2 border rounded-md text-sm h-9"
                     >
                       <option value="full">Full Day</option>
-                      <option value="half_morning">Half Day — Morning</option>
-                      <option value="half_noon">Half Day — Afternoon</option>
+                      {/* Wording matches the badge labels above and the
+                          Telegram bot's duration buttons — the same leave
+                          should read the same in every surface. */}
+                      <option value="half_morning">Half Morning</option>
+                      <option value="half_noon">Half Noon</option>
                     </select>
                   </div>
                   {/* Date range — Start + End. End is read-only for

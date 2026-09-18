@@ -54,12 +54,45 @@ export async function getForEmployee(employeeId: string): Promise<PayWayBenefici
   return r.json();
 }
 
-/** Batch lookup — used by the Payroll page's readiness column. */
+/**
+ * Ids per request. The ids travel in the QUERY STRING — one
+ * {@code ids=<uuid>} is ~41 bytes — and Tomcat's default
+ * {@code maxHttpHeaderSize} (8 KB) has to cover the whole request
+ * line PLUS every header, JWT included. 50 keeps each URL near 2 KB
+ * with comfortable headroom.
+ */
+const BATCH_SIZE = 50;
+
+/**
+ * Batch lookup — used by the Employees roster and the Payroll page's
+ * readiness column.
+ *
+ * <p>Chunked, and that is not premature: unbatched, a 246-person
+ * roster produced a 10.6 KB URL and Tomcat rejected it with a 400.
+ * That rejection happens at the connector, <em>before</em> the CORS
+ * filter runs, so the response carries no CORS headers and the
+ * browser surfaces it as a bare network failure rather than an HTTP
+ * error. {@code apiFetch} reads a network failure as "the API is
+ * unreachable", clears the token and routes to LandingPage — so
+ * simply opening the Employees page logged the operator out, on any
+ * tenant whose headcount pushed the URL past the limit.</p>
+ *
+ * <p>Note the caller's {@code .catch()} cannot save you from that:
+ * the token is cleared inside {@code apiFetch} before it throws.
+ * Keeping the URL bounded is the fix, not error handling.</p>
+ */
 export async function getBatch(employeeIds: string[]): Promise<PayWayBeneficiary[]> {
   if (employeeIds.length === 0) return [];
-  const q = new URLSearchParams();
-  for (const id of employeeIds) q.append('ids', id);
-  return apiJson(`${BASE}?${q.toString()}`);
+  const chunks: string[][] = [];
+  for (let i = 0; i < employeeIds.length; i += BATCH_SIZE) {
+    chunks.push(employeeIds.slice(i, i + BATCH_SIZE));
+  }
+  const pages = await Promise.all(chunks.map(chunk => {
+    const q = new URLSearchParams();
+    for (const id of chunk) q.append('ids', id);
+    return apiJson<PayWayBeneficiary[]>(`${BASE}?${q.toString()}`);
+  }));
+  return pages.flat();
 }
 
 export async function submit(req: PayWayBeneficiaryRequest): Promise<PayWayBeneficiary> {

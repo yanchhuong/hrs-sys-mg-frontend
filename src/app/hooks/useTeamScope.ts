@@ -16,8 +16,11 @@ export type ScopeMode = 'all' | 'mine' | 'team';
  *   - **Manager / Employee** see self + direct reports by default. They can narrow
  *     with a {@link ScopeMode} picker.
  *
- * Approval (`canApproveFor`): admin anytime; everyone else only when they are
- * the target's direct leader.
+ * Approval (`canApproveFor`): the target's direct leader, always. Plus
+ * admin / tenant-wide roles when the target has no Reports To set —
+ * otherwise nobody could approve that person's leave or overtime and
+ * the request would sit at pending forever. (The old wording here said
+ * "admin anytime", which the implementation never did.)
  */
 export function useTeamScope() {
   const { currentUser } = useAuth();
@@ -111,12 +114,23 @@ export function useTeamScope() {
     targetEmployeeId: string,
     roster?: ReadonlyArray<{ id: string; apiId?: string; managerId?: string | null }>,
   ) => {
-    if (!myEmpId) return false;
     const list = roster ?? mockEmployees;
     const target = list.find(
       e => e.id === targetEmployeeId || (e as { apiId?: string }).apiId === targetEmployeeId,
     );
-    if (!target?.managerId) return false;
+    if (!target) return false;
+
+    // No Reports To on file → the tenant's admins stand in, mirroring
+    // the API's loadApprovable fallback in LeaveRequestService /
+    // OtRequestService. This branch runs BEFORE the myEmpId check on
+    // purpose: an admin commonly has no Employee row of their own, and
+    // the old `if (!myEmpId) return false` at the top meant they could
+    // never approve anything. Combined with the old
+    // `if (!target?.managerId) return false`, a request from someone
+    // with no manager showed no Approve button to anyone at all.
+    if (!target.managerId) return isTenantWide;
+
+    if (!myEmpId) return false;
     // In live mode the auth token gives us the caller's UUID and the
     // employees roster also stores managerId as UUID; in mock mode both
     // sides are empNos. Either way, the comparison is direct.

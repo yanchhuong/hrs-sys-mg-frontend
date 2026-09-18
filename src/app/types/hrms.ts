@@ -96,7 +96,11 @@ export interface Employee {
   status: EmployeeStatus;
   contactNumber: string;
   baseSalary: number;
+  /** Reports-to ladder. Level 1 drives approval routing and team
+   *  scoping; levels 2 and 3 (V349) are recorded only. */
   managerId?: string;
+  manager2Id?: string;
+  manager3Id?: string;
   profileImage?: string;
   gender?: 'male' | 'female';
   /** Drives the dependents count for Cambodia TOS (KHR 150,000 each).

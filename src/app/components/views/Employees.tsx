@@ -43,7 +43,7 @@ import {
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -52,7 +52,11 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import { AddEmployeeDialog } from '../common/AddEmployeeDialog';
+import {
+  AddEmployeeDialog, MANAGER_LEVELS, visibleManagerLevels, clearManagerFrom,
+} from '../common/AddEmployeeDialog';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { OrgChartTab } from './OrgChartTab';
 import { BulkUploadEmployeesDialog } from '../common/BulkUploadEmployeesDialog';
 import { EmployeeSettingsDialog } from '../common/EmployeeSettingsDialog';
 import { EmployeeBeneficiarySection } from '../common/EmployeeBeneficiarySection';
@@ -458,6 +462,8 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     contactNumber: e.contactNumber ?? '',
     baseSalary: e.baseSalary,
     managerId: e.managerId ?? undefined,
+    manager2Id: e.manager2Id ?? undefined,
+    manager3Id: e.manager3Id ?? undefined,
     profileImage: e.profileImage ?? undefined,
     gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
     maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married' || e.maritalStatus === 'divorced' || e.maritalStatus === 'widowed') ? e.maritalStatus : undefined,
@@ -532,7 +538,7 @@ export function Employees() {
   const { currentUser } = useAuth();
   // Underlined-button page-level tab state — mirrors the pattern
   // used by the agency's Sale & Expense page.
-  const [pageTab, setPageTab] = useState<'roster' | 'cards' | 'documents'>('roster');
+  const [pageTab, setPageTab] = useState<'roster' | 'orgchart' | 'cards' | 'documents'>('roster');
   /** ID-card preview dialog — non-null = open for that employee. */
   const [idCardEmployee, setIdCardEmployee] = useState<typeof mockEmployees[0] | null>(null);
   /** Company profile — logo + name printed on the ID card header /
@@ -894,12 +900,19 @@ export function Employees() {
    */
   const handleQuickFieldUpdate = async (
     employee: Employee,
-    patch: { position?: string; department?: string | null },
+    patch: { position?: string; department?: string | null; managerId?: string | null },
+    opts?: { successMessage?: string; undo?: () => void },
   ) => {
     // Compute the auto-managerId follow-through up-front so both the
     // mock-mode short-circuit and the live PUT path apply it consistently.
     let managerPatch: { managerId?: string | null } = {};
-    if (patch.department !== undefined) {
+    if (patch.managerId !== undefined) {
+      // An explicit manager wins outright. The org chart's drag-to-
+      // reassign states the manager directly, so the department→PIC
+      // follow-through below must not get a vote and silently
+      // overwrite what the user just dropped.
+      managerPatch = { managerId: patch.managerId };
+    } else if (patch.department !== undefined) {
       const newDeptKey = patch.department && patch.department !== '-' ? patch.department : null;
       const newDept = newDeptKey
         ? departments.find(d => (USE_MOCKS ? d.name === newDeptKey : d.id === newDeptKey))
@@ -908,22 +921,32 @@ export function Employees() {
       const oldDept = oldDeptKey
         ? departments.find(d => (USE_MOCKS ? d.name === oldDeptKey : d.id === oldDeptKey))
         : undefined;
-      const newPic = newDept?.managerId ?? null;
-      const oldPic = oldDept?.managerId ?? null;
-      const currentReports = employee.managerId ?? null;
-      const reportsFollowsDeptPic = !currentReports || currentReports === oldPic;
-      if (reportsFollowsDeptPic && newPic !== currentReports) {
-        managerPatch = { managerId: newPic };
-      }
+      const next = nextManagerForDeptChange(
+        selfManagerKey(employee),
+        employee.managerId ?? null,
+        oldDept?.managerId ?? null,
+        newDept?.managerId ?? null,
+      );
+      if (next !== undefined) managerPatch = { managerId: next };
     }
+
+    // managerId is applied via managerPatch (it can be null, which the
+    // adapter's Employee type models as undefined), so keep it out of
+    // the raw spread.
+    const { managerId: _explicitManagerId, ...uiPatch } = patch;
+    const notifySuccess = () => {
+      const msg = opts?.successMessage ?? 'Updated';
+      if (opts?.undo) toast.success(msg, { action: { label: 'Undo', onClick: opts.undo } });
+      else toast.success(msg);
+    };
 
     if (USE_MOCKS) {
       setEmployees(prev => prev.map(e =>
         e.id === employee.id
-          ? { ...e, ...patch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
+          ? { ...e, ...uiPatch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
           : e,
       ));
-      toast.success('Updated');
+      notifySuccess();
       return;
     }
     const raw = rawEmployees.find(r => r.id === employee.apiId || r.empNo === employee.id);
@@ -935,7 +958,7 @@ export function Employees() {
     const before = employee;
     setEmployees(prev => prev.map(e =>
       e.id === employee.id
-        ? { ...e, ...patch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
+        ? { ...e, ...uiPatch, ...(managerPatch.managerId !== undefined ? { managerId: managerPatch.managerId ?? undefined } : {}) }
         : e,
     ));
     try {
@@ -953,6 +976,11 @@ export function Employees() {
         contactNumber: raw.contactNumber ?? null,
         baseSalary: raw.baseSalary,
         managerId: managerPatch.managerId !== undefined ? managerPatch.managerId : (raw.managerId ?? null),
+        // Levels 2 and 3 are never auto-followed from the dept PIC —
+        // only level 1 tracks it. Round-tripped so this dept-change
+        // save doesn't null them (PUT overwrites every field).
+        manager2Id: raw.manager2Id ?? null,
+        manager3Id: raw.manager3Id ?? null,
         gender: raw.gender ?? null,
         dateOfBirth: raw.dateOfBirth ?? null,
         placeOfBirth: raw.placeOfBirth ?? null,
@@ -977,12 +1005,45 @@ export function Employees() {
       const updated = await employeesApi.update(raw.id, body);
       // Refresh the raw cache so subsequent edits see the new value.
       setRawEmployees(prev => prev.map(r => r.id === updated.id ? updated : r));
-      toast.success('Updated');
+      notifySuccess();
     } catch (err) {
       // Rollback on failure.
       setEmployees(prev => prev.map(e => e.id === employee.id ? before : e));
       toast.error(err instanceof Error ? err.message : 'Failed to update');
     }
+  };
+
+  /**
+   * Org-chart drag-to-reassign. Routes through handleQuickFieldUpdate
+   * so a drop gets exactly the same optimistic-update, rollback and
+   * full-payload PUT an inline table edit gets — one way to save an
+   * employee, not two.
+   *
+   * Undo re-drives the same call with the previous manager. That is a
+   * real round-trip rather than a local state rewind, so what the
+   * server ends up holding is never in doubt.
+   */
+  const handleReassignManager = (
+    employee: Employee,
+    newManagerId: string | null,
+    prevManagerId: string | null,
+  ) => {
+    const nameOf = (key: string | null) => {
+      if (!key) return null;
+      const hit = employees.find(e => e.id === key || (e as { apiId?: string }).apiId === key);
+      return hit?.name ?? 'someone';
+    };
+    const target = nameOf(newManagerId);
+    void handleQuickFieldUpdate(
+      employee,
+      { managerId: newManagerId },
+      {
+        successMessage: target
+          ? `${employee.name} now reports to ${target}`
+          : `${employee.name} moved to top management`,
+        undo: () => handleReassignManager(employee, prevManagerId, newManagerId),
+      },
+    );
   };
 
   /** V70 — Cambodian Labour Law probation max by employee level.
@@ -1392,12 +1453,15 @@ export function Employees() {
                 onClick={() => {
                   // Re-importable Excel: same column order as the Bulk
                   // Upload template, so HR can round-trip edits through
-                  // Excel and re-upload without reshaping.
+                  // Excel and re-upload without reshaping. The filtered
+                  // rows are what gets written, but manager refs resolve
+                  // against the whole roster — a manager in another
+                  // department would otherwise export as "no manager".
                   if (filteredEmployees.length === 0) {
                     toast.error('No employees match the current filters');
                     return;
                   }
-                  exportEmployeesToExcel(filteredEmployees, deptName);
+                  exportEmployeesToExcel(filteredEmployees, deptName, employees);
                   toast.success(`Exported ${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'}`);
                 }}
               >
@@ -1455,17 +1519,23 @@ export function Employees() {
         departments={departments}
         existingEmpNos={USE_MOCKS ? employees.map(e => e.id) : rawEmployees.map(e => e.empNo)}
         existingEmails={USE_MOCKS ? employees.map(e => e.email) : rawEmployees.map(e => e.email)}
+        existingEmployees={rawEmployees}
       />
 
-      {/* Three tabs — table roster / business-card grid / tenant-wide
-          documents. Card layout is a scannable at-a-glance view that
-          Managers use to hand out contact info; the table stays for
-          bulk edits and Excel export. */}
-      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'cards' | 'documents')} className="space-y-4">
+      {/* Four tabs — table roster / org chart / business-card grid /
+          tenant-wide documents. Card layout is a scannable at-a-glance
+          view that Managers use to hand out contact info; the table
+          stays for bulk edits and Excel export; the org chart reads the
+          same managerId the table's Managers column shows. */}
+      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'orgchart' | 'cards' | 'documents')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="roster">
             <User className="h-3.5 w-3.5" />
             Employees
+          </TabsTrigger>
+          <TabsTrigger value="orgchart">
+            <Network className="h-3.5 w-3.5" />
+            Org Chart
           </TabsTrigger>
           <TabsTrigger value="cards">
             <IdCard className="h-3.5 w-3.5" />
@@ -1577,6 +1647,7 @@ export function Employees() {
                 <TableHead>Date of Birth</TableHead>
                 <TableHead>Position</TableHead>
                 <TableHead>Department</TableHead>
+                <TableHead>Managers</TableHead>
                 <TableHead>Experience</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>NSSF No</TableHead>
@@ -1591,7 +1662,7 @@ export function Employees() {
             <TableBody>
               {employeePagination.paginatedItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canViewHrTelegram ? 16 : 15} className="text-center text-sm text-gray-500 py-8">
+                  <TableCell colSpan={canViewHrTelegram ? 17 : 16} className="text-center text-sm text-gray-500 py-8">
                     No employees match these filters.
                   </TableCell>
                 </TableRow>
@@ -1754,6 +1825,9 @@ export function Employees() {
                       deptName(employee.department)
                     )}
                   </TableCell>
+                  <TableCell className="min-w-[150px]">
+                    <ManagersCell employee={employee} roster={employees} />
+                  </TableCell>
                   <TableCell>{calculateExperience(employee.joinDate)}</TableCell>
                   <TableCell>{employee.contactNumber}</TableCell>
                   <TableCell>{employee.nffNo || '-'}</TableCell>
@@ -1834,6 +1908,17 @@ export function Employees() {
         </CardContent>
       </Card>
 
+        </TabsContent>
+
+        <TabsContent value="orgchart" className="mt-0">
+          <OrgChartTab
+            employees={employees}
+            deptName={deptName}
+            onOpenEmployee={emp => { setSelectedEmployee(emp); setSheetOpen(true); }}
+            canEdit={canUpdateEmp}
+            onReassign={handleReassignManager}
+            positions={positions}
+          />
         </TabsContent>
 
         <TabsContent value="cards" className="mt-0">
@@ -2425,18 +2510,19 @@ export function Employees() {
                               const pickedDept = departments.find(d =>
                                 (USE_MOCKS ? d.name === v : d.id === v),
                               );
-                              const pickedPic = pickedDept?.managerId ?? '';
                               const oldDept = departments.find(d =>
                                 (USE_MOCKS ? d.name === editedEmployee.department : d.id === editedEmployee.department),
                               );
-                              const oldPic = oldDept?.managerId ?? '';
-                              const currentReports = editedEmployee.managerId ?? '';
-                              const reportsFollowsDeptPic =
-                                !currentReports || currentReports === oldPic;
+                              const next = nextManagerForDeptChange(
+                                selfManagerKey(editedEmployee),
+                                editedEmployee.managerId ?? null,
+                                oldDept?.managerId ?? null,
+                                pickedDept?.managerId ?? null,
+                              );
                               setEditedEmployee({
                                 ...editedEmployee,
                                 department: v,
-                                ...(reportsFollowsDeptPic ? { managerId: pickedPic || undefined } : {}),
+                                ...(next !== undefined ? { managerId: next ?? undefined } : {}),
                               });
                             }}
                             placeholder="Select department…"
@@ -2447,33 +2533,55 @@ export function Employees() {
                           <p>{deptName(selectedEmployee.department)}</p>
                         )}
                       </FieldRow>
-                      <FieldRow label="Reports To" isEditing={isEditing}>
-                        {isEditing && editedEmployee ? (
-                          <SearchablePicker
-                            options={employees
-                              .filter(e => e.id !== editedEmployee.id && e.status === 'active')
-                              .map(emp => ({
-                                // Value carries whatever the backend stores on managerId
-                                // (UUID in live mode, empNo in mock mode).
-                                value: emp.apiId ?? emp.id,
-                                label: emp.name,
-                                secondary: emp.position,
-                                searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''}`,
-                              }))}
-                            value={editedEmployee.managerId || ''}
-                            onChange={v => setEditedEmployee({ ...editedEmployee, managerId: v })}
-                            placeholder="Select manager…"
-                            emptyLabel="No manager"
-                            searchPlaceholder="Search by name, ID, position…"
-                          />
-                        ) : (
-                          <p>
-                            {selectedEmployee.managerId
-                              ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee.managerId)?.name || '—'
-                              : 'No manager'}
-                          </p>
-                        )}
-                      </FieldRow>
+                      {/* Reports-to ladder (V349). Level 1 is the direct
+                          leader — the only one approval routing and team
+                          scoping read. Each picker hides whoever is
+                          already chosen at another level. */}
+                      {/* Progressive disclosure: Manager 2 only appears
+                          once Manager 1 is set, 3 once 2 is. Read-only
+                          mode uses the saved row so a viewer doesn't see
+                          empty slots the record never filled. */}
+                      {visibleManagerLevels(
+                        (isEditing && editedEmployee ? editedEmployee : selectedEmployee) ?? {},
+                      ).map(({ key, label }) => (
+                        <FieldRow key={key} label={label} isEditing={isEditing}>
+                          {isEditing && editedEmployee ? (
+                            <SearchablePicker
+                              options={employees
+                                .filter(e => e.id !== editedEmployee.id && e.status === 'active')
+                                .filter(e => {
+                                  const id = e.apiId ?? e.id;
+                                  return MANAGER_LEVELS.every(o => o.key === key || editedEmployee[o.key] !== id);
+                                })
+                                .map(emp => ({
+                                  // Value carries whatever the backend stores on managerId
+                                  // (UUID in live mode, empNo in mock mode).
+                                  value: emp.apiId ?? emp.id,
+                                  label: emp.name,
+                                  secondary: emp.position,
+                                  searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''}`,
+                                }))}
+                              value={editedEmployee[key] || ''}
+                              onChange={v => setEditedEmployee(
+                                v ? { ...editedEmployee, [key]: v }
+                                  // Clearing a level clears the ones below
+                                  // it — otherwise the ladder keeps a hole
+                                  // that approval routing can't walk past.
+                                  : { ...editedEmployee, ...clearManagerFrom(key) },
+                              )}
+                              placeholder="Select manager…"
+                              emptyLabel="No manager"
+                              searchPlaceholder="Search by name, ID, position…"
+                            />
+                          ) : (
+                            <p>
+                              {selectedEmployee[key]
+                                ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee[key])?.name || '—'
+                                : 'No manager'}
+                            </p>
+                          )}
+                        </FieldRow>
+                      ))}
                       {/* V70 — Cambodian Labour Law skill level. Drives the
                           probation-max default on the Add Contract dialog.
                           Probation breakdown lives in the label tooltip so
@@ -3475,4 +3583,126 @@ function EmployeeCardsGrid({
       })}
     </div>
   );
+}
+
+/**
+ * Managers cell — the reports-to ladder, condensed to one line.
+ *
+ * Shows level 1 inline (the only level approval routing and team
+ * scoping actually read) and tucks levels 2–3 behind a chevron, so the
+ * column costs one line per row no matter how deep the ladder goes.
+ *
+ * The chevron only renders when there IS something behind it —
+ * a disclosure control that opens an empty popover is worse than no
+ * control, and most rows have level 1 alone.
+ */
+function ManagersCell({ employee, roster }: {
+  employee: Employee;
+  roster: Employee[];
+}) {
+  // managerId stores a UUID in live mode and an empNo in mock mode;
+  // the roster carries both, so match on either.
+  const nameOf = (id?: string | null) => {
+    if (!id) return null;
+    const hit = roster.find(e => e.id === id || (e as { apiId?: string }).apiId === id);
+    return hit?.name ?? 'Unknown';
+  };
+
+  // Ordinals rather than MANAGER_LEVELS' own labels ("Manager 1"): in a
+  // column already headed "Managers", repeating the word on every row
+  // is noise. "1st Chheang Ratha" reads as rank + person.
+  const ORDINALS = ['1st', '2nd', '3rd'];
+
+  const ladder = MANAGER_LEVELS
+    .map(({ key }, i) => ({ rank: ORDINALS[i] ?? `${i + 1}`, name: nameOf(employee[key]) }))
+    .filter((l): l is { rank: string; name: string } => !!l.name);
+
+  if (ladder.length === 0) {
+    return <span className="text-sm text-gray-400">No manager</span>;
+  }
+
+  const [first, ...rest] = ladder;
+
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <span className="text-sm truncate" title={`${first.rank} — ${first.name}`}>
+        <span className="text-gray-500 mr-1">{first.rank}</span>
+        {first.name}
+      </span>
+      {rest.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 shrink-0 text-gray-500 hover:text-gray-900"
+              title={`${rest.length} more manager${rest.length === 1 ? '' : 's'}`}
+              aria-label={`Show ${rest.length} more manager${rest.length === 1 ? '' : 's'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-56 p-0"
+            onClick={e => e.stopPropagation()}
+          >
+            <ul className="py-1">
+              {ladder.map(l => (
+                <li key={l.rank} className="px-3 py-1.5 text-sm flex items-baseline gap-2">
+                  <span className="text-gray-500 shrink-0 w-7">{l.rank}</span>
+                  <span className="truncate" title={l.name}>{l.name}</span>
+                </li>
+              ))}
+            </ul>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
+/** The employee's own identity as it would appear in a `managerId`
+ *  field: a UUID in live mode, an empNo in mock mode. */
+function selfManagerKey(e: Employee): string {
+  return (e as { apiId?: string }).apiId ?? e.id;
+}
+
+/**
+ * The department → "Reports To" follow-through.
+ *
+ * House convention: moving someone to a new department re-points their
+ * manager at that department's PIC — but only when their current
+ * manager is unset or still tracking the OLD department's PIC. A
+ * manager HR set deliberately is left alone.
+ *
+ * The case the original rule missed is a department's own PIC. Moving
+ * the PIC of PX *into* PX set their manager to the PX PIC — themselves
+ * — and the server rejects that outright with "Manager 1 cannot be the
+ * employee themselves". The department change was therefore impossible
+ * to save, for any PIC, into the department they lead. Worse, the
+ * invalid value was written into the edit state first, so the Manager 1
+ * picker rendered blank (an employee is excluded from their own manager
+ * options, so the selected id matched nothing) while Manager 2 appeared
+ * — the ladder looked corrupted before the save even failed.
+ *
+ * @returns the managerId to apply, or `undefined` to leave it untouched.
+ *          `null` means "clear it" — the new department has no PIC.
+ */
+function nextManagerForDeptChange(
+  selfKey: string,
+  currentManagerId: string | null,
+  oldPic: string | null,
+  newPic: string | null,
+): string | null | undefined {
+  // HR set this deliberately — don't second-guess it.
+  const followsDeptPic = !currentManagerId || currentManagerId === oldPic;
+  if (!followsDeptPic) return undefined;
+  // They LEAD the department they're moving into. Nobody is their own
+  // manager; leave the existing value for a human to decide rather than
+  // writing a value the API will reject.
+  if (newPic && newPic === selfKey) return undefined;
+  if (newPic === currentManagerId) return undefined;
+  return newPic;
 }
