@@ -751,22 +751,26 @@ function ApprovalDetailDialog({
         )}
         </div>
 
-        <DialogFooter className="px-6 py-3 border-t gap-2 shrink-0">
-          {canAct ? (
-            <>
-              <Button variant="outline" onClick={() => act('rejected')} disabled={busy} className="text-rose-700 border-rose-200 hover:bg-rose-50">
-                <X className="h-4 w-4 mr-1.5" />
-                Reject
-              </Button>
-              <Button onClick={() => act('approved')} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
-                <Check className="h-4 w-4 mr-1.5" />
-                Approve
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" onClick={onClose}>Close</Button>
-          )}
-        </DialogFooter>
+        {/* Footer only exists for the actor. The old `else` branch
+            rendered a lone Close that duplicated DialogContent's
+            built-in top-right X — and because the comment Textarea is
+            itself gated on `canAct`, a read-only viewer has no typed
+            input to protect, so there is no Cancel semantics to keep.
+            The whole DialogFooter is conditional (not just its
+            contents) so the read-only view doesn't end on an empty
+            border-t stripe. */}
+        {canAct && (
+          <DialogFooter className="px-6 py-3 border-t gap-2 shrink-0">
+            <Button variant="outline" onClick={() => act('rejected')} disabled={busy} className="text-rose-700 border-rose-200 hover:bg-rose-50">
+              <X className="h-4 w-4 mr-1.5" />
+              Reject
+            </Button>
+            <Button onClick={() => act('approved')} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
+              <Check className="h-4 w-4 mr-1.5" />
+              Approve
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

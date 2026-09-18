@@ -1,7 +1,6 @@
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import { Button } from '../ui/button';
 import { AlertOctagon } from 'lucide-react';
 
 interface Props {
@@ -19,6 +18,10 @@ interface Props {
  * Nested inside the parent Dialog so it renders on top; closing it
  * dismisses only the popup, leaving the Add form open for the user
  * to review or cancel.
+ *
+ * v-dialog-close-x-only — no footer Close button. DialogContent already
+ * renders the top-right X, so a lone Close duplicated it; dismissal is
+ * X / Esc / overlay click, identical to every other dialog in the app.
  */
 export function SeatCapDialog({ open, message, onClose }: Props) {
   return (
@@ -38,9 +41,6 @@ export function SeatCapDialog({ open, message, onClose }: Props) {
           Once your seat count is raised, adding new employees will work
           again immediately.
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

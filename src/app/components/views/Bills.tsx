@@ -38,6 +38,10 @@ import * as usersApi from '../../api/users';
 import { formatMoneyForCurrency } from '../../utils/format';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import * as vendorsApi from '../../api/vendors';
+import * as customersApi from '../../api/customers';
+import * as invoicesApi from '../../api/invoices';
+import * as settingsApi from '../../api/settings';
+import { PrintTaxInvoice } from './Invoices';
 import * as itemsApi from '../../api/items';
 import * as currencyApi from '../../api/currencySettings';
 import { StockItemPicker } from '../common/StockItemPicker';
@@ -192,6 +196,67 @@ const TAX_TYPES_FOR_KIND = (_kind: billsApi.BillKind, _parentKind?: billsApi.Bil
  * individuals show phone + address. Renders nothing when no
  * customer is selected.
  */
+/* ────────── Print adapters ──────────
+ *
+ * A Bill prints through the Sale side's PrintTaxInvoice, because it is
+ * the same document seen from the other side of the trade. Only the
+ * parties swap:
+ *
+ *   issuer slot  ← the VENDOR   (their name, address, TIN in the VAT boxes)
+ *   bill-to slot ← OUR company
+ *
+ * That mapping is the whole reason this works without a second 500-line
+ * template to keep in sync. The three adapters below are deliberately
+ * dumb — if the print layout gains a field, it gains it for bills too.
+ */
+
+/** The vendor, shaped as the issuing company. */
+function vendorAsIssuer(v: vendorsApi.Vendor | undefined): settingsApi.CompanyInfo | null {
+  if (!v) return null;
+  return {
+    name: v.name,
+    legalName: v.name,
+    // Lands in the issuer's VAT-TIN boxes — on a supplier's tax invoice
+    // that is the supplier's TIN, which is exactly what a vendor record
+    // holds. Blank when the vendor is an individual with no TIN.
+    taxId: v.tin ?? null,
+    address: v.address ?? null,
+    phone: v.phone ?? null,
+    email: null,
+    website: v.site ?? null,
+    // Vendors carry no logo, so the header's logo slot renders empty.
+    logoUrl: null,
+  };
+}
+
+/** Our own company, shaped as the party being billed. */
+function companyAsParty(c: settingsApi.CompanyInfo | null): customersApi.Customer | undefined {
+  if (!c) return undefined;
+  return {
+    id: 'self',
+    type: 'business',
+    name: c.name,
+    tin: c.taxId ?? null,
+    address: c.address ?? null,
+    phone: c.phone ?? null,
+  } as customersApi.Customer;
+}
+
+/** The bill, shaped as the document the template renders. The two types
+ *  are already near-identical; only line `category` is Sale-only. */
+function billAsPrintable(b: billsApi.Bill): invoicesApi.Invoice {
+  return {
+    ...b,
+    invoiceNo: b.billNo,
+    items: b.items.map(i => ({ ...i, category: 'other' })),
+  } as unknown as invoicesApi.Invoice;
+}
+
+/** Template config used for bill printing. The only knob that matters is
+ *  banking: those cards are OUR receiving accounts and have no business
+ *  on a document a supplier issued to us. */
+const BILL_PRINT_TEMPLATE = { config: { footer: { showBanking: false } } } as never;
+
 function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
   if (!vendor) return null;
   const rows: Array<{ label: string; value: string | null | undefined }> =
@@ -2119,6 +2184,22 @@ function BillDetailDialog({
 
   const vendor = invoice ? vendors.find(c => c.id === invoice.vendorId) : undefined;
 
+  /**
+   * Our own company, for the print layout's "bill to" block. Loaded
+   * lazily with the dialog rather than at page level — the roster
+   * doesn't need it and a Bill list of 200 rows shouldn't pay for it.
+   */
+  const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    settingsApi.getCompanyInfo()
+      .then(c => { if (alive) setCompanyInfo(c); })
+      // Print falls back to blank letterhead rather than blocking the
+      // dialog — the bill itself is still readable without it.
+      .catch(() => { if (alive) setCompanyInfo(null); });
+    return () => { alive = false; };
+  }, []);
+
   // USD-equivalent AP — collapses USD + (KHR ÷ rate) payments against
   // Total USD (= bill.total + ΣDN − ΣCN). Used by the big top-right
   // callout AND the Record-payment gate so the operator can keep
@@ -2643,9 +2724,52 @@ function BillDetailDialog({
                                 readOnly={invoice.status === 'void' || !canEdit} />
             </div>
 
-            <DialogFooter className="print:hidden">
-              <Button variant="outline" onClick={onClose}>Close</Button>
-            </DialogFooter>
+            {/* v-dialog-close-x-only — footer removed whole (not just its
+                lone "Close" button): DialogContent already renders the
+                top-right X, and an empty DialogFooter still takes a grid
+                row, leaving a stray gap under Attachments. It was
+                print:hidden, so the print layout below is unaffected. */}
+
+            {/* Print layout — the same Cambodian tax-invoice template the
+             *  Sale side prints, with the parties INVERTED: a Bill is the
+             *  vendor's document, so the vendor occupies the issuer slot
+             *  (their name, address and TIN in the VAT boxes) and our own
+             *  company is the bill-to. Reusing the template rather than
+             *  cloning it means the two stay identical as it evolves.
+             *
+             *  Without this the dialog itself was what printed, so the
+             *  items table was clipped at the dialog's scroll edge. */}
+            <style>{`
+              @media print {
+                html, body { background: white !important; }
+                body > *:not(.print-tax-invoice) { display: none !important; }
+                body > .print-tax-invoice {
+                  display: block !important;
+                  position: relative !important;
+                  padding: 14mm !important;
+                  color: black !important;
+                  font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
+                }
+                .print-tax-invoice .kh-title {
+                  font-family: 'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
+                  font-weight: 400 !important;
+                  letter-spacing: 0.5px;
+                }
+                @page { margin: 0; size: A4; }
+              }
+            `}</style>
+            <PrintTaxInvoice
+              invoice={billAsPrintable(invoice)}
+              customer={companyAsParty(companyInfo)}
+              company={vendorAsIssuer(vendor)}
+              paid={invoice.status === 'paid'}
+              currencySettings={currencySettings}
+              // Suppresses the bank-account footer. Those cards are OUR
+              // receiving accounts — printing them on a supplier's
+              // document would invite someone to pay us for our own
+              // purchase.
+              template={BILL_PRINT_TEMPLATE}
+            />
           </>
         )}
 

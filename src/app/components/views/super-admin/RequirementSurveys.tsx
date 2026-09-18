@@ -456,9 +456,10 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
           </DetailSection>
         </div>
 
-        <DialogFooter>
-          <Button onClick={onClose}>Close</Button>
-        </DialogFooter>
+        {/* v-dialog-close-consistency — read-only detail dialog: the footer's
+            only button was Close, i.e. DialogContent's top-right X again.
+            Footer removed entirely so the body isn't followed by an empty
+            gap-4 row. */}
       </DialogContent>
     </Dialog>
   );

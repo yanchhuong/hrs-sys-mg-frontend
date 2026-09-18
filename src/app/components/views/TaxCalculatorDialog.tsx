@@ -618,7 +618,9 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
           >
             <Download className="mr-2 h-4 w-4" /> Download Excel
           </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          {/* v-dialog-close-consistency — Close dropped; the top-right X is
+              the app-wide close. Footer stays for the export, which is the
+              only real action here (nothing in this dialog is saved). */}
         </DialogFooter>
       </DialogContent>
     </Dialog>

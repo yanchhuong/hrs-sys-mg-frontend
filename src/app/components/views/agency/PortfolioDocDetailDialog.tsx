@@ -359,9 +359,10 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
           </div>
         </div>
 
-        <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-end shrink-0">
-          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-        </div>
+        {/* v-dialog-close-consistency — the pinned grey action bar held a
+            lone Close, duplicating DialogContent's top-right X. Removed the
+            whole bar, not just the button: its border-t + bg-gray-50 would
+            have stayed as an empty stripe under the comment box. */}
       </DialogContent>
     </Dialog>
   );

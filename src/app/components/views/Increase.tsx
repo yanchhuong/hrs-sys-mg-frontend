@@ -20,7 +20,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -1078,9 +1077,9 @@ export function Increase() {
               </div>
             );
           })()}
-          <DialogFooter>
-            <Button onClick={() => setDetailsTarget(null)}>Close</Button>
-          </DialogFooter>
+          {/* No footer: read-only record (corrections are a separate
+              entry), so the only button was a Close duplicating
+              DialogContent's built-in top-right X. */}
         </DialogContent>
       </Dialog>
 

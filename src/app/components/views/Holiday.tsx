@@ -648,10 +648,11 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               </Table>
             )}
           </div>
-
-          <DialogFooter className="px-6 py-3 border-t shrink-0">
-            <Button onClick={() => setSystemDialogOpen(false)}>Close</Button>
-          </DialogFooter>
+          {/* No footer: copying is done per-row inside the table above,
+              so the footer held nothing but a Close that duplicated
+              DialogContent's built-in top-right X. Removing the whole
+              DialogFooter takes its border-t with it — an emptied
+              footer would leave a stray rule under the list. */}
         </DialogContent>
       </Dialog>
 

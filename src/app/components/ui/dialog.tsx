@@ -77,27 +77,50 @@ const DialogContent = React.forwardRef<
         )}
         {...props}
       >
-        {children}
         {!hideClose && (
-          // v-dialog-close-mobile — the built-in X used to be
-          // absolute+plain and drifted / overlapped adjacent action
-          // buttons on narrow mobile viewports (see Invoice detail
-          // screenshot: X ended up on the LEFT of Print/Send/Void).
-          // Same top:4 right:4 anchor as before, but:
-          //   • z-50 keeps it above any overflowing header content
-          //   • bg-background rounded-full padded circle gives it a
-          //     tap-target hit area + guarantees the icon is
-          //     readable against any content behind it
-          //   • ring-1 border-line so the pill reads as a control
-          //     even on dark screenshots
-          //   • h-8 w-8 makes it a proper 32 px touch target on
-          //     phones (was ~16 px with no padding — below Apple
-          //     HIG's 44 px suggestion but at least visible)
-          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-3 right-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-full bg-background ring-1 ring-border opacity-80 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
-            <XIcon />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
+          // v-dialog-close-frameless + v-dialog-close-sticky — ONE close
+          // affordance, drawn the same way everywhere: a bare X, no frame,
+          // that never scrolls out of reach.
+          //
+          // FRAMELESS. v-dialog-close-mobile had given this a
+          // `bg-background rounded-full ring-1 ring-border` pill to fix an X
+          // that drifted into the Print/Send/Void row on narrow viewports.
+          // The pill fixed the collision but left the app with two
+          // different-looking X's — a CIRCLE here, a RECTANGLE on dialogs
+          // drawing their own outline Button. Dropped: bg-background, the
+          // ring and the pill. Kept: h-8 w-8 (a 32 px touch target; the glyph
+          // alone is 16 px) and z-50 (above overflowing header content).
+          // rounded-md survives only so the hover tint is not a circle.
+          // Trade-off: with no bg-background, content scrolling UNDER the
+          // button shows through behind the glyph. Fix that on the offending
+          // dialog with top padding — not by restoring the pill, which is
+          // what broke consistency.
+          //
+          // STICKY, and the FIRST child. DialogContent is both the scroll
+          // container (max-h + overflow-y-auto above) and the positioning
+          // parent, and an `absolute` child of a scrolling box scrolls away
+          // with the content. On any dialog taller than the viewport —
+          // invoice detail, bill detail, a long survey — the X left the
+          // screen as soon as the user scrolled. That was survivable while
+          // those dialogs also had a footer Close; it is not, now that the X
+          // is the only way out.
+          //
+          // The offsets keep the button from MOVING when content scrolls:
+          //   • the wrapper is h-0 so it claims no height, and -mb-4 cancels
+          //     the grid's gap-4 — everything below sits where it did
+          //   • unscrolled it sits at the p-6 padding edge (24px); top-6 pins
+          //     it at that same 24px once scrolling starts, so there is no
+          //     jump at the moment it becomes stuck
+          //   • -mt-3 / -mr-3 pull it back to 12px from the frame, i.e. the
+          //     top-3 right-3 it has always rendered at
+          <div className="sticky top-6 z-50 -mb-4 flex h-0 justify-end">
+            <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:text-muted-foreground -mt-3 -mr-3 inline-flex h-8 w-8 items-center justify-center rounded-md opacity-70 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          </div>
         )}
+        {children}
       </DialogPrimitive.Content>
     </DialogPortal>
   );

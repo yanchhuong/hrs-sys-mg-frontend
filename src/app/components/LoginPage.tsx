@@ -359,11 +359,12 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
               </DialogFooter>
             </form>
           )}
-          {forgotSent && (
-            <DialogFooter>
-              <Button onClick={() => setForgotOpen(false)}>Close</Button>
-            </DialogFooter>
-          )}
+          {/* v-dialog-close-consistency — the "check your inbox" state has
+              nothing left to submit, so its footer held a single Close that
+              only duplicated DialogContent's top-right X. Footer dropped
+              whole (an empty DialogFooter still eats the grid's gap-4). The
+              !forgotSent branch above keeps its Cancel: there it sits beside
+              a submit and is the low-risk way out of a half-typed form. */}
         </DialogContent>
       </Dialog>
     </div>

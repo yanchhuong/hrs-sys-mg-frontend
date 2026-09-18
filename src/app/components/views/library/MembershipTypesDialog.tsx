@@ -16,7 +16,7 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Badge } from '../../ui/badge';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -259,9 +259,12 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
+        {/* v-dialog-close-x-only — footer removed whole. Its only child was
+            a "Close" button duplicating the top-right X. This is NOT the
+            form's Cancel: the inline add/edit form inside the tab carries
+            its own Add Type / Save Changes / Clear, so nothing here was the
+            user's way out of an edit. Removing the empty DialogFooter too,
+            since it would still take a grid row and leave a gap. */}
       </DialogContent>
     </Dialog>
   );

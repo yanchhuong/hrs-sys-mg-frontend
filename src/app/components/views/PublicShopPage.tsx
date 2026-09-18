@@ -1687,10 +1687,13 @@ export function PublicShopPage() {
 
       {/* Order received — success popup shown after a successful
           submit. Auto-closes on an 8-second countdown so the menu
-          returns without a manual dismiss. Manual dismiss ("OK") is
-          available in the footer for customers who want to move on
-          faster. Menu stays mounted behind the popup so a "Place
-          another order" flow feels instant. */}
+          returns without a manual dismiss. Customers who want to move
+          on faster use the top-right X (v-dialog-close-consistency
+          retired the footer's "OK": it did nothing the X doesn't, and
+          this DialogContent renders the standard always-visible X —
+          unlike ItemDetailDialog's hover-only one). Menu stays mounted
+          behind the popup so a "Place another order" flow feels
+          instant. */}
       <Dialog open={!!confirmed} onOpenChange={(open) => { if (!open) setConfirmed(null); }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader className="text-center">
@@ -1710,12 +1713,9 @@ export function PublicShopPage() {
               Total: <span className="font-semibold text-emerald-700">${Number(confirmed?.total ?? 0).toFixed(2)}</span>
             </p>
           </div>
-          <DialogFooter className="sm:justify-center gap-2">
-            <Button variant="outline" onClick={() => setConfirmed(null)}>
-              OK
-            </Button>
-          </DialogFooter>
-          <p className="text-center text-[11px] text-gray-400 -mt-2 pb-1">
+          {/* -mt-2 dropped with the footer above it — that negative margin
+              only existed to tighten the gap under the OK button. */}
+          <p className="text-center text-[11px] text-gray-400 pb-1">
             Closes in {confirmedCountdown}s
           </p>
         </DialogContent>

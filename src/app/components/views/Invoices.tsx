@@ -2966,16 +2966,22 @@ function InvoiceDetailDialog({
                     the top-right and never collides with the other
                     actions (which is what happened on narrow mobile
                     with Radix's absolute-positioned X). */}
-                <Button
-                  size="sm"
-                  variant="outline"
+                {/* v-dialog-close-frameless — a bare X, no frame, matching
+                    ui/dialog.tsx. This used to be variant="outline", which
+                    boxed it like the Print/Send/Void buttons beside it: the
+                    app then had a RECTANGLE X here and a CIRCLE X on every
+                    shared dialog, two framings of the same control. Keeps
+                    h-8 w-8 so the 32 px touch target survives the loss of
+                    Button's padding. */}
+                <button
+                  type="button"
                   onClick={onClose}
                   title="Close"
                   aria-label="Close"
-                  className="shrink-0"
+                  className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md opacity-70 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-ring focus:outline-hidden"
                 >
-                  <XIcon className="h-3.5 w-3.5" />
-                </Button>
+                  <XIcon className="h-4 w-4" />
+                </button>
               </div>
             )}
           </div>
@@ -3392,9 +3398,14 @@ function InvoiceDetailDialog({
                                 readOnly={invoice.status === 'void' || !canEdit} />
             </div>
 
-            <DialogFooter className="print:hidden">
-              <Button variant="outline" onClick={onClose}>Close</Button>
-            </DialogFooter>
+            {/* v-dialog-close-x-only — the footer that lived here held a
+                single "Close" button, which duplicated the inline X this
+                dialog already renders as the last item of the action row
+                (see v-invoice-detail-close-inline above). Removed whole,
+                not just the button: an empty DialogFooter still occupies a
+                grid row and would leave a stray gap under Attachments. It
+                was print:hidden, so the print layout below never rendered
+                it — nothing here is load-bearing for printing. */}
 
             {/* Print-only Cambodian Tax Invoice (bilingual print layout).
              *  Screen renders the editable dashboard above; window.print()
@@ -3627,7 +3638,7 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
   );
 }
 
-function PrintTaxInvoice({
+export function PrintTaxInvoice({
   invoice, customer, company, paid, currencySettings, template,
 }: {
   invoice: invoicesApi.Invoice;
@@ -4272,8 +4283,11 @@ function PaymentReceiptDialog({
           />
         </div>
 
+        {/* v-dialog-close-x-only — "Close" dropped; the top-right X is the
+            one close affordance. Footer stays for Print, which is the only
+            real action here (non-mutating, so nothing is lost by exiting
+            via the X instead). */}
         <DialogFooter className="px-5 py-3 border-t gap-2">
-          <Button variant="outline" onClick={onClose}>Close</Button>
           <Button onClick={print}>
             <Printer className="h-3.5 w-3.5 mr-1.5" />
             Print

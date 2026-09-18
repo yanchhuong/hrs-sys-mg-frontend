@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
@@ -453,10 +453,6 @@ export function BookingSchedulesDialog({
             )}
           </div>
         </div>
-
-        <DialogFooter className="px-6 py-3 border-t shrink-0">
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
       </DialogContent>
 
       {/* Popups — mounted alongside the main dialog so they can

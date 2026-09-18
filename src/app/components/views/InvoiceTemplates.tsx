@@ -691,9 +691,15 @@ export function InvoiceTemplates() {
             </DialogTitle>
           </DialogHeader>
           {previewingConfig && <TemplatePreview config={previewingConfig.config} kind={previewingConfig.kind} />}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewingConfig(null)}>Close</Button>
-            {previewingConfig?.preset && (
+          {/* v-dialog-close-x-only — "Close" dropped in favour of the
+              top-right X. The whole FOOTER is now conditional, not just
+              the button: a custom template has no preset, so without the
+              guard this would render an empty DialogFooter, which still
+              occupies a grid row and leaves a stray gap under the
+              preview. Nothing here mutates — "Use this preset" only
+              seeds the editor's local state. */}
+          {previewingConfig?.preset && (
+            <DialogFooter>
               <Button
                 onClick={() => {
                   const p = previewingConfig.preset!;
@@ -703,8 +709,8 @@ export function InvoiceTemplates() {
               >
                 <Copy className="h-4 w-4 mr-1.5" /> Use this preset
               </Button>
-            )}
-          </DialogFooter>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -717,8 +723,10 @@ export function InvoiceTemplates() {
             <DialogTitle>Default Template · Preview</DialogTitle>
           </DialogHeader>
           <TemplatePreview config={defaultTemplateConfig()} kind="invoice" />
+          {/* v-dialog-close-x-only — "Close" dropped; the X closes this
+              read-only preview. Footer kept for the one real action, which
+              only seeds the editor locally (the create happens on submit). */}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewingBuiltin(false)}>Close</Button>
             <Button
               onClick={() => { setPreviewingBuiltin(false); duplicateBuiltin(); }}
             >

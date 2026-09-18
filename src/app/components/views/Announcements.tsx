@@ -1318,9 +1318,11 @@ export function Announcements() {
               )}
             </div>
           )}
-          <DialogFooter className="px-6 py-3 border-t shrink-0">
-            <Button onClick={() => setDetail(null)}>Close</Button>
-          </DialogFooter>
+          {/* No footer: this is a read-only detail view, so the only
+              action was a Close button that duplicated DialogContent's
+              built-in top-right X. Dropping the whole DialogFooter (not
+              just the button) also drops its border-t, which would
+              otherwise leave a stray rule across the dialog bottom. */}
         </DialogContent>
       </Dialog>
 

@@ -205,14 +205,19 @@ export function InvoicePreviewDialog({ open, onOpenChange, invoiceId, onNavigate
           <p className="text-sm text-gray-500 py-6 text-center">No invoice loaded.</p>
         )}
 
-        <DialogFooter>
-          {onNavigate && invoice && (
+        {/* Footer holds navigation only — dismissal is the shared
+            top-right X (see DialogContent), so a duplicate Close
+            button was dropped. Guard on the same condition as its
+            single child: DialogContent is a `grid gap-4`, so an
+            always-rendered empty footer would still eat a 16 px row
+            under the totals block. */}
+        {onNavigate && invoice && (
+          <DialogFooter>
             <Button variant="outline" onClick={openFullPage}>
               <ExternalLink className="h-4 w-4 mr-1.5" /> Open in Invoices
             </Button>
-          )}
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -425,10 +425,6 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
               )}
             </div>
           </div>
-
-          <DialogFooter className="px-6 py-3 border-t shrink-0">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

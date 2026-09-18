@@ -247,10 +247,11 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
             )}
           </div>
         </div>
-
-        <DialogFooter className="px-6 py-3 border-t">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
+        {/* No footer: every edit here (role tagging, remove) saves
+            immediately per-row, so there was nothing to confirm — the
+            lone Close button just duplicated DialogContent's top-right
+            X. The whole DialogFooter goes, border-t included, so the
+            dialog doesn't end on an empty ruled stripe. */}
       </DialogContent>
 
       <AddStaffDialog
