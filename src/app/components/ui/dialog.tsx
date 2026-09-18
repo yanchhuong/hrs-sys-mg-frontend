@@ -113,7 +113,11 @@ const DialogContent = React.forwardRef<
           // use: `flex flex-col` on DialogContent with an inner
           // `overflow-y-auto` body, so the FRAME stops scrolling and this
           // button stays pinned to it.
-          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:text-muted-foreground absolute top-3 right-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-md opacity-70 transition hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+          // RED. The glyph carries the colour itself rather than leaning on
+          // the old opacity-70 → 100 fade: at 70% a red reads washed-out
+          // pink, so the states are expressed as red-600 → red-700 and the
+          // hover tint moves from the neutral accent to red-50 to match.
+          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring absolute top-3 right-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 hover:text-red-700 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
             <XIcon />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
