@@ -43,27 +43,50 @@ interface Position {
   /** Empty string = unassigned / cross-departmental. */
   departmentId: string;
   description?: string;
+  /**
+   * Org rank: 0 is the HIGHEST / most senior level, larger = more junior,
+   * null = "not ranked yet". Required (not optional) on purpose — the form
+   * state has to be able to hold an explicit null so a cleared box round-trips
+   * to the API as null rather than 0 or ''.
+   * This is NOT `employees.level`, which is the Labour-Law skill class.
+   */
+  level: number | null;
 }
+
+// Default table order: level ASC with NULLS LAST, then name ASC. 0 is a real
+// rank (the most senior one) while null only means "nobody has ranked this
+// yet", so unranked rows sink to the bottom — floating them to the top would
+// read as if every unranked role outranked the CEO.
+const byLevelThenName = (a: Position, b: Position) => {
+  if (a.level !== b.level) {
+    if (a.level == null) return 1;
+    if (b.level == null) return -1;
+    return a.level - b.level;
+  }
+  return a.name.localeCompare(b.name);
+};
 
 // Mock-mode seed — keeps the page useful in `USE_MOCKS` runs that have no
 // backend. Live mode loads from /api/v1/positions.
+// A couple of rows are deliberately left `level: null` so mock runs exercise
+// the unranked rendering and the nulls-last sort, not just the happy path.
 const SEED_POSITIONS: Omit<Position, 'id'>[] = [
-  { name: 'Senior Developer',        departmentId: 'DEPT001' },
-  { name: 'Frontend Developer',      departmentId: 'DEPT001' },
-  { name: 'Backend Developer',       departmentId: 'DEPT001' },
-  { name: 'QA Engineer',             departmentId: 'DEPT001' },
-  { name: 'DevOps Engineer',         departmentId: 'DEPT001' },
-  { name: 'Engineering Manager',     departmentId: 'DEPT001' },
-  { name: 'HR Specialist',           departmentId: 'DEPT002' },
-  { name: 'Recruiter',               departmentId: 'DEPT002' },
-  { name: 'HR Manager',              departmentId: 'DEPT002' },
-  { name: 'Sales Representative',    departmentId: 'DEPT003' },
-  { name: 'Account Manager',         departmentId: 'DEPT003' },
-  { name: 'Sales Manager',           departmentId: 'DEPT003' },
-  { name: 'Marketing Specialist',    departmentId: 'DEPT004' },
-  { name: 'Marketing Manager',       departmentId: 'DEPT004' },
-  { name: 'Accountant',              departmentId: 'DEPT005' },
-  { name: 'Finance Manager',         departmentId: 'DEPT005' },
+  { name: 'Senior Developer',        departmentId: 'DEPT001', level: 2 },
+  { name: 'Frontend Developer',      departmentId: 'DEPT001', level: 3 },
+  { name: 'Backend Developer',       departmentId: 'DEPT001', level: 3 },
+  { name: 'QA Engineer',             departmentId: 'DEPT001', level: 3 },
+  { name: 'DevOps Engineer',         departmentId: 'DEPT001', level: 3 },
+  { name: 'Engineering Manager',     departmentId: 'DEPT001', level: 1 },
+  { name: 'HR Specialist',           departmentId: 'DEPT002', level: 3 },
+  { name: 'Recruiter',               departmentId: 'DEPT002', level: null },
+  { name: 'HR Manager',              departmentId: 'DEPT002', level: 1 },
+  { name: 'Sales Representative',    departmentId: 'DEPT003', level: 4 },
+  { name: 'Account Manager',         departmentId: 'DEPT003', level: 2 },
+  { name: 'Sales Manager',           departmentId: 'DEPT003', level: 1 },
+  { name: 'Marketing Specialist',    departmentId: 'DEPT004', level: null },
+  { name: 'Marketing Manager',       departmentId: 'DEPT004', level: 1 },
+  { name: 'Accountant',              departmentId: 'DEPT005', level: 3 },
+  { name: 'Finance Manager',         departmentId: 'DEPT005', level: 1 },
 ];
 
 const buildMockSeed = (): Position[] => SEED_POSITIONS.map((p, i) => ({
@@ -75,6 +98,8 @@ const emptyForm: Omit<Position, 'id'> = {
   name: '',
   departmentId: '',
   description: '',
+  // null, not 0 — a brand-new position is unranked until someone ranks it.
+  level: null,
 };
 
 interface PositionsProps {
@@ -112,6 +137,8 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         name: p.name,
         departmentId: p.departmentId ?? '',
         description: p.description ?? '',
+        // `?? null` and not `?? 0`: a missing level means unranked.
+        level: p.level ?? null,
       })));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load positions');
@@ -167,13 +194,16 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
 
   const countFor = (p: Position) => memberCount.get(p.name.trim().toLowerCase()) ?? 0;
 
-  const filtered = positions.filter(p => {
+  // Sorted by seniority on open. There is no column-sort UI on this table, so
+  // this is the one and only order — see `byLevelThenName`. `.sort()` mutating
+  // in place is safe because `.filter()` already handed back a fresh array.
+  const filtered = useMemo(() => positions.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.description || '').toLowerCase().includes(search.toLowerCase());
     const matchDept = filterDept === 'all'
       || (filterDept === '__none' ? !p.departmentId : p.departmentId === filterDept);
     return matchSearch && matchDept;
-  });
+  }).sort(byLevelThenName), [positions, search, filterDept]);
 
   const pagination = usePagination(filtered, 10);
   useEffect(() => { pagination.resetPage(); }, [search, filterDept]);
@@ -186,7 +216,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
 
   const openEdit = (p: Position) => {
     setEditing(p);
-    setForm({ name: p.name, departmentId: p.departmentId, description: p.description || '' });
+    setForm({ name: p.name, departmentId: p.departmentId, description: p.description || '', level: p.level });
     setDialogOpen(true);
   };
 
@@ -194,6 +224,12 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
     const name = form.name.trim();
     if (!name) {
       notify.validate('Please enter a position name');
+      return;
+    }
+    // Level is optional, but when present it must be a whole 0–99 — mirrors the
+    // server-side check so a bad value fails here instead of as a 400.
+    if (form.level != null && (!Number.isInteger(form.level) || form.level < 0 || form.level > 99)) {
+      notify.validate('Level must be a whole number between 0 and 99');
       return;
     }
 
@@ -227,6 +263,9 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         name,
         description: form.description || undefined,
         departmentId: form.departmentId || null,
+        // Explicit null (never undefined, never 0) so a PATCH that clears the
+        // box actually unranks the position instead of keeping the old rank.
+        level: form.level ?? null,
       };
       if (editing) {
         await positionsApi.update(editing.id, payload);
@@ -372,6 +411,8 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
             <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Position</TableHead>
+                {/* Rank sits next to the thing it ranks, before department. */}
+                <TableHead className="w-24">Level</TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead className="text-center">Members</TableHead>
                 <TableHead>Description</TableHead>
@@ -381,7 +422,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12 text-gray-400">
+                  <TableCell colSpan={6} className="text-center py-12 text-gray-400">
                     <Briefcase className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">{loading ? 'Loading…' : 'No positions found'}</p>
                   </TableCell>
@@ -395,6 +436,18 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
                         <div>
                           <p className="font-medium text-sm">{p.name}</p>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {p.level == null ? (
+                          // Em dash, never "0" and never blank — an unranked
+                          // position must not read as the most senior one.
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : (
+                          // A pill so 0 reads as a deliberate rank, not a gap.
+                          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 tabular-nums">
+                            {p.level}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         {p.departmentId ? (
@@ -482,6 +535,31 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. Senior Developer"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Level</Label>
+              <Input
+                type="number"
+                min="0"
+                max="99"
+                step="1"
+                value={form.level ?? ''}
+                onChange={e => {
+                  const raw = e.target.value;
+                  // Number(), not parseInt(): parseInt truncates "1.5" to 1
+                  // silently, which both loses what the user typed and makes
+                  // the whole-number check in handleSave unreachable.
+                  const n = Number(raw);
+                  // An empty box means "unranked" → null. Never fall through to
+                  // 0 (`Number('')` is 0), which would silently promote the
+                  // position to the most senior rank in the company.
+                  setForm({ ...form, level: raw === '' || Number.isNaN(n) ? null : n });
+                }}
+                placeholder="Unranked"
+              />
+              <p className="text-xs text-gray-500">
+                Optional — 0 = highest (most senior). Leave blank if not ranked yet.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Department</Label>

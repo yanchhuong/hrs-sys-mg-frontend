@@ -6,6 +6,13 @@ export interface Position {
   description?: string | null;
   /** Backend UUID of the owning department. null = unassigned / cross-dept. */
   departmentId?: string | null;
+  /**
+   * Org rank. 0 is the HIGHEST / most senior level; larger numbers are more
+   * junior. null = "not ranked yet", which is NOT the same as 0 — unranked
+   * positions sort to the bottom of the list, never the top.
+   * Unrelated to `employees.level` (the Labour-Law skill classification).
+   */
+  level?: number | null;
   createdAt?: string;
 }
 
@@ -14,6 +21,12 @@ export interface CreatePositionRequest {
   description?: string;
   /** Pass the department's UUID, or null for unassigned. */
   departmentId?: string | null;
+  /**
+   * Org rank, 0 = highest / most senior, valid range 0–99. Send null to clear
+   * the rank ("not ranked yet"); sending 0 instead would declare the position
+   * the most senior in the company, so the two must never be conflated.
+   */
+  level?: number | null;
 }
 
 export async function list(): Promise<Position[]> {
