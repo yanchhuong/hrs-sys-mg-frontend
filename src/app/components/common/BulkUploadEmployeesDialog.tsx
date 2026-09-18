@@ -50,9 +50,9 @@ interface RowProgress {
   message?: string;
 }
 
-/** True when the row named at least one manager on the spreadsheet. */
+/** True when the row named a manager on the spreadsheet. */
 function hasLadderRefs(row: ParsedEmployeeRow): boolean {
-  return Boolean(row.data.managerId || row.data.manager2Id || row.data.manager3Id);
+  return Boolean(row.data.managerId);
 }
 
 /**
@@ -351,15 +351,13 @@ export function BulkUploadEmployeesDialog({
           };
 
           const managerId = resolve(row.data.managerId);
-          const manager2Id = resolve(row.data.manager2Id);
-          const manager3Id = resolve(row.data.manager3Id);
 
           // PUT is a full overwrite — send the created row back verbatim
-          // with only the three manager fields laid on top, or every other
-          // field would be nulled out. Skip the call when nothing resolved:
-          // the employee already has an empty ladder.
-          if (managerId || manager2Id || manager3Id) {
-            await employeesApi.update(self.id, { ...self, managerId, manager2Id, manager3Id });
+          // with only the manager laid on top, or every other field would
+          // be nulled out. Skip the call when nothing resolved: the
+          // employee already has no manager.
+          if (managerId) {
+            await employeesApi.update(self.id, { ...self, managerId });
           }
 
           // Created either way — an unmatched manager downgrades the row to

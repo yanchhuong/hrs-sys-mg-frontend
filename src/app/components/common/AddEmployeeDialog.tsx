@@ -30,53 +30,6 @@ interface Props {
   employees?: Employee[];
 }
 
-/** Reports-to ladder slots, in seniority order (V349). Level 1 keeps
- *  the original `managerId` column because approval routing, the "my
- *  team" queries and the direct-leader approval checks all read it. */
-export const MANAGER_LEVELS = [
-  { key: 'managerId'  as const, label: 'Manager 1' },
-  { key: 'manager2Id' as const, label: 'Manager 2' },
-  { key: 'manager3Id' as const, label: 'Manager 3' },
-];
-
-type ManagerKey = typeof MANAGER_LEVELS[number]['key'];
-type ManagerForm = Partial<Record<ManagerKey, string | null | undefined>>;
-
-/**
- * Which ladder slots to render, given the current form state.
- *
- * Progressive disclosure: Manager 1 always shows, and each deeper
- * level appears only once the one above it is filled. A ladder with a
- * hole in it isn't a hierarchy — and approval routing walks it from
- * level 1 down, so a gap silently truncates the chain.
- *
- * The rule is driven by the DEEPEST filled slot, not just the first
- * empty one, so a legacy row that already has a gap (Manager 3 set
- * with Manager 2 blank) still renders every slot. Hiding a populated
- * field would leave the operator unable to see or clear a value the
- * record still holds and still submits.
- */
-export function visibleManagerLevels(form: ManagerForm): typeof MANAGER_LEVELS {
-  let deepestFilled = -1;
-  MANAGER_LEVELS.forEach((l, i) => { if (form[l.key]) deepestFilled = i; });
-  const count = Math.min(MANAGER_LEVELS.length, Math.max(1, deepestFilled + 2));
-  return MANAGER_LEVELS.slice(0, count);
-}
-
-/**
- * Patch for clearing a ladder slot: wipes every level BELOW it too.
- *
- * Without the cascade, clearing Manager 1 while 2 and 3 are set would
- * leave exactly the gap {@link visibleManagerLevels} has to defend
- * against — and the record would save with a dangling upper ladder
- * that routing can't reach.
- */
-export function clearManagerFrom(key: ManagerKey): Record<string, undefined> {
-  const from = MANAGER_LEVELS.findIndex(l => l.key === key);
-  const patch: Record<string, undefined> = {};
-  for (const deeper of MANAGER_LEVELS.slice(from)) patch[deeper.key] = undefined;
-  return patch;
-}
 
 const blank: Partial<Employee> = {
   id: '',
@@ -178,8 +131,6 @@ export function AddEmployeeDialog({
         // until HR fills it in.
         level: form.level ?? null,
         managerId: form.managerId || null,
-        manager2Id: form.manager2Id || null,
-        manager3Id: form.manager3Id || null,
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
         placeOfBirth: form.placeOfBirth?.trim() || undefined,
@@ -394,38 +345,25 @@ export function AddEmployeeDialog({
                   onChange={(e) => patch({ baseSalary: parseFloat(e.target.value) })}
                 />
               </Field>
-              {/* Reports-to ladder (V349). Level 1 is the direct leader
-                  and is the one approval routing and team scoping read;
-                  2 and 3 record the levels above them. Each picker
-                  excludes whoever is already chosen in another slot, so
-                  the same person can't occupy two levels — the server
-                  rejects that too. */}
-              {/* Only the filled depth + 1 is offered — see
-                  visibleManagerLevels. The exclusion filter below still
-                  scans ALL levels, so a value in a slot that isn't
-                  currently rendered can't be picked twice. */}
-              {visibleManagerLevels(form).map(({ key, label }) => (
-                <Field key={key} label={label}>
-                  <SearchablePicker
-                    options={candidateManagers
-                      .filter(m => {
-                        const id = m.apiId ?? m.id;
-                        return MANAGER_LEVELS.every(o => o.key === key || form[o.key] !== id);
-                      })
-                      .map(m => ({
-                        value: m.apiId ?? m.id,
-                        label: m.name,
-                        secondary: m.position,
-                        searchKey: `${m.name} ${m.id} ${m.position ?? ''}`,
-                      }))}
-                    value={form[key] ?? ''}
-                    onChange={v => patch(v ? { [key]: v } : clearManagerFrom(key))}
-                    placeholder="Select manager…"
-                    emptyLabel="No manager"
-                    searchPlaceholder="Search by name, ID, position…"
-                  />
-                </Field>
-              ))}
+              {/* Only the direct leader is stored. The levels above are
+                  derived by walking this chain (see utils/managerLadder),
+                  so there is nothing else to pick here — and nothing that
+                  can disagree with the hierarchy. */}
+              <Field label="Manager 1">
+                <SearchablePicker
+                  options={candidateManagers.map(m => ({
+                    value: m.apiId ?? m.id,
+                    label: m.name,
+                    secondary: m.position,
+                    searchKey: `${m.name} ${m.id} ${m.position ?? ''}`,
+                  }))}
+                  value={form.managerId ?? ''}
+                  onChange={v => patch({ managerId: v || undefined })}
+                  placeholder="Select manager…"
+                  emptyLabel="No manager"
+                  searchPlaceholder="Search by name, ID, position…"
+                />
+              </Field>
             </div>
             {/* Standing earnings on the Employee record. NOT NULL DEFAULT 0
                 on the server (V43): we always send a number, never blank. */}

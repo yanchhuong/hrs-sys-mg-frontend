@@ -99,8 +99,6 @@ export interface Employee {
   /** Reports-to ladder. Level 1 drives approval routing and team
    *  scoping; levels 2 and 3 (V349) are recorded only. */
   managerId?: string;
-  manager2Id?: string;
-  manager3Id?: string;
   profileImage?: string;
   gender?: 'male' | 'female';
   /** Drives the dependents count for Cambodia TOS (KHR 150,000 each).
@@ -215,6 +213,13 @@ export interface Attendance {
    *  attendance table has no such column. Needed because Exception
    *  and Leave are the same attendance status but different things. */
   leaveCategory?: string | null;
+  /** Duration of that same leave/exception record — the whole day, or
+   *  which half of it. Carried as its own field rather than re-parsed
+   *  out of the remark: the remark is built from the CATEGORY ("Leave:
+   *  special — …"), so the duration is not recoverable from it. This is
+   *  what decides which of the four punch slots read "On leave" and
+   *  which still show the employee's real scan times. */
+  leaveDuration?: 'full' | 'half_morning' | 'half_noon' | null;
 }
 
 export interface OTRequest {

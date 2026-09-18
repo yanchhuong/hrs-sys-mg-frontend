@@ -806,7 +806,60 @@ export function UserManagement() {
     isActive: true,
   });
 
+  /**
+   * Inline field errors shown on blur ("when the mouse leaves"), so a
+   * clash surfaces while the admin is still looking at the field
+   * instead of after they submit.
+   *
+   * Advisory only. The server is the authority — it re-checks
+   * uniqueness inside the same transaction that writes, which is the
+   * only place it can be race-free — and returns 409. This check runs
+   * against the loaded roster (size: 200), so on a tenant with more
+   * users than that it can miss a clash; the save still fails safely
+   * with the server's message. Never treat a clean blur as permission
+   * to skip the server's answer.
+   */
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; username?: string }>({});
+
+  /** Same identity rules the server applies before comparing. */
+  const normEmail = (v: string) => v.trim().toLowerCase();
+  const normUsername = (v: string) => v.trim().toLowerCase();
+
+  const validateEmailOnBlur = () => {
+    const value = normEmail(formData.email);
+    if (!value) {
+      setFieldErrors(p => ({ ...p, email: 'Email is required' }));
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(value)) {
+      setFieldErrors(p => ({ ...p, email: 'That does not look like an email address' }));
+      return;
+    }
+    // Exclude the row being edited — an unchanged email is not a clash.
+    const clash = users.find(u =>
+      u.id !== editingUser?.id && normEmail(u.email ?? '') === value);
+    setFieldErrors(p => ({
+      ...p,
+      email: clash ? `Already used by ${clash.name || clash.email}` : undefined,
+    }));
+  };
+
+  const validateUsernameOnBlur = () => {
+    const value = normUsername(formData.username);
+    // Blank is legitimate — it means email-only login.
+    if (!value) { setFieldErrors(p => ({ ...p, username: undefined })); return; }
+    const clash = users.find(u =>
+      u.id !== editingUser?.id && normUsername(u.username ?? '') === value);
+    setFieldErrors(p => ({
+      ...p,
+      username: clash ? `Taken by ${clash.name || clash.email}` : undefined,
+    }));
+  };
+
   const handleOpenDialog = (user?: User) => {
+    // Errors belong to the previous subject — carrying them into a
+    // freshly-opened dialog would flag a field the admin hasn't touched.
+    setFieldErrors({});
     if (user) {
       setEditingUser(user);
       setLinkEmployee(!!user.employeeId);
@@ -849,6 +902,25 @@ export function UserManagement() {
       return;
     }
 
+    // Re-run the blur checks on submit: a field the admin never focused
+    // never blurred, so a clash typed-then-tabbed-past could otherwise
+    // reach the server unchecked. Cheap, and it keeps the inline error
+    // and the block in agreement.
+    const emailClash = users.find(u =>
+      u.id !== editingUser?.id && normEmail(u.email ?? '') === normEmail(formData.email));
+    const usernameClash = formData.username.trim()
+      ? users.find(u =>
+          u.id !== editingUser?.id && normUsername(u.username ?? '') === normUsername(formData.username))
+      : undefined;
+    if (emailClash || usernameClash) {
+      setFieldErrors({
+        email: emailClash ? `Already used by ${emailClash.name || emailClash.email}` : undefined,
+        username: usernameClash ? `Taken by ${usernameClash.name || usernameClash.email}` : undefined,
+      });
+      toast.error(emailClash ? 'That email is already in use' : 'That username is already taken');
+      return;
+    }
+
     if (USE_MOCKS) {
       if (editingUser) {
         setUsers(users.map(u =>
@@ -886,9 +958,19 @@ export function UserManagement() {
     try {
       if (editingUser) {
         // PATCH semantics — only send fields whose value diverges from the
-        // current user record. Email change isn't supported by the backend
-        // PATCH DTO, so we leave it out.
+        // current user record.
         const patch: usersApi.UpdateUserRequest = {};
+        // V-user-email-editable. This used to be skipped ("not supported by
+        // the backend PATCH DTO"), which left the Email box editable but
+        // inert: an admin could correct a typo, hit Update User, get a
+        // success toast and the old address would still be the login.
+        // The server trims, lowercases and enforces per-tenant uniqueness.
+        {
+          const nextEmail = formData.email.trim().toLowerCase();
+          if (nextEmail && nextEmail !== (editingUser.email ?? '').trim().toLowerCase()) {
+            patch.email = nextEmail;
+          }
+        }
         if (formData.role !== editingUser.role) patch.role = formData.role as usersApi.UserRole;
         if (formData.employeeId !== (editingUser.employeeId ?? '')) {
           patch.employeeId = formData.employeeId || null;
@@ -943,7 +1025,20 @@ export function UserManagement() {
       setDialogOpen(false);
       await loadUsers();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save user');
+      const msg = err instanceof Error ? err.message : 'Failed to save user';
+      // The server is the authority on uniqueness — it checks inside the
+      // writing transaction, so it catches clashes the blur check can't
+      // (a user beyond the loaded page, or one created seconds ago by
+      // someone else). Put its verdict on the field that caused it
+      // rather than leaving a toast to explain a form that still looks
+      // fine.
+      const low = msg.toLowerCase();
+      if (low.includes('email') && (low.includes('already') || low.includes('in use'))) {
+        setFieldErrors(p => ({ ...p, email: msg }));
+      } else if (low.includes('username') && (low.includes('already') || low.includes('taken'))) {
+        setFieldErrors(p => ({ ...p, username: msg }));
+      }
+      toast.error(msg);
     }
   };
 
@@ -1468,8 +1563,21 @@ export function UserManagement() {
                             type="email"
                             placeholder="user@company.com"
                             value={formData.email}
-                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                            aria-invalid={!!fieldErrors.email}
+                            aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+                            className={fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : undefined}
+                            onChange={(e) => {
+                              // Clear on edit, re-check on blur — keeping a
+                              // stale "already used" under the box while the
+                              // admin is fixing it is just noise.
+                              setFormData({ ...formData, email: e.target.value });
+                              if (fieldErrors.email) setFieldErrors(p => ({ ...p, email: undefined }));
+                            }}
+                            onBlur={validateEmailOnBlur}
                           />
+                          {fieldErrors.email && (
+                            <p id="email-error" className="text-xs text-red-600">{fieldErrors.email}</p>
+                          )}
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="username" className="flex items-center gap-1.5">
@@ -1502,12 +1610,22 @@ export function UserManagement() {
                             // characters are filtered out client-side so an
                             // unintentional space or capital doesn't bounce as
                             // a validation error on save.
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''),
-                            })}
+                            aria-invalid={!!fieldErrors.username}
+                            aria-describedby={fieldErrors.username ? 'username-error' : undefined}
+                            className={fieldErrors.username ? 'border-red-500 focus-visible:ring-red-500' : undefined}
+                            onChange={(e) => {
+                              setFormData({
+                                ...formData,
+                                username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''),
+                              });
+                              if (fieldErrors.username) setFieldErrors(p => ({ ...p, username: undefined }));
+                            }}
+                            onBlur={validateUsernameOnBlur}
                             maxLength={64}
                           />
+                          {fieldErrors.username && (
+                            <p id="username-error" className="text-xs text-red-600">{fieldErrors.username}</p>
+                          )}
                         </div>
                       </div>
 

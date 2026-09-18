@@ -5,8 +5,10 @@ import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Search, ChevronDown, CornerLeftUp } from 'lucide-react';
+import { Search, ChevronDown, CornerLeftUp, List, LayoutGrid } from 'lucide-react';
 import { Employee } from '../../types/hrms';
+import { EmployeeAvatar } from '../common/EmployeeAvatar';
+import { OrgChartProfile } from './OrgChartProfile';
 
 /**
  * Org Chart — the reporting hierarchy, read from the same `managerId`
@@ -30,7 +32,7 @@ import { Employee } from '../../types/hrms';
  * render — a loop that briefly exists is a loop that can be saved.
  */
 
-interface OrgNode {
+export interface OrgNode {
   emp: Employee;
   children: OrgNode[];
   /** 0 = top management — nobody to report to. */
@@ -153,6 +155,13 @@ function isDescendantOf(key: string, ancestorKey: string, parentOf: Map<string, 
   return false;
 }
 
+type Shape = 'list' | 'profile';
+
+const SHAPES = [
+  { key: 'list' as const,    label: 'List',    Icon: List,       hint: 'Indented tree — scales to any headcount and prints' },
+  { key: 'profile' as const, label: 'Profile', Icon: LayoutGrid, hint: 'Top-down card chart with photos' },
+];
+
 /** react-dnd item type for a dragged employee row. */
 const DRAG_EMPLOYEE = 'org-employee';
 
@@ -174,6 +183,7 @@ export function OrgChartTab({
    *  caller can offer Undo without re-deriving it. */
   onReassign?: (emp: Employee, newManagerId: string | null, prevManagerId: string | null) => void;
 }) {
+  const [shape, setShape] = useState<Shape>('list');
   const [query, setQuery] = useState('');
   const [position, setPosition] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -330,6 +340,29 @@ export function OrgChartTab({
             >
               Active only
             </Button>
+
+            {/* Same tree, two shapes. List scales and prints; Profile is
+                the recognisable photo chart. Search / position / active
+                filters drive both. */}
+            <div className="ml-auto inline-flex rounded-md border p-0.5">
+              {SHAPES.map(s => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setShape(s.key)}
+                  className={
+                    'inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors '
+                    + (shape === s.key
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-600 hover:bg-gray-100')
+                  }
+                  title={s.hint}
+                >
+                  <s.Icon className="h-3.5 w-3.5" />
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -375,6 +408,13 @@ export function OrgChartTab({
                   ? <>Nobody holds the position {position}.</>
                   : <>Nobody matches &ldquo;{query}&rdquo;.</>}
             </p>
+          ) : shape === 'profile' ? (
+            <OrgChartProfile
+              roots={roots}
+              matchPaths={matchPaths}
+              deptName={deptName}
+              onOpenEmployee={onOpenEmployee}
+            />
           ) : (
             <ul className="max-h-[68vh] overflow-auto pr-1">
               {roots.map(renderNode)}
@@ -515,14 +555,18 @@ function OrgRow({
           <span className="h-5 w-5 shrink-0" aria-hidden />
         )}
 
-        <span
-          className={
-            'h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[11px] font-medium '
+        {/* Photo when the employee has uploaded one, initial otherwise.
+            The level-0 blue / descendant grey tone stays on the initial,
+            so the hierarchy still reads on rows with no photo. */}
+        <EmployeeAvatar
+          employee={n.emp}
+          className="h-7 w-7 shrink-0 rounded-full"
+          imageClassName="rounded-full"
+          fallbackClassName={
+            'text-[11px] font-medium '
             + (n.level === 0 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700')
           }
-        >
-          {n.emp.name.slice(0, 1).toUpperCase()}
-        </span>
+        />
 
         <button
           type="button"

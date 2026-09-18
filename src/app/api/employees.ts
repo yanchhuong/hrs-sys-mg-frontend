@@ -28,8 +28,6 @@ export interface Employee {
   /** Reports-to level 1 (direct leader) -- drives approval routing.
    *  Levels 2 and 3 (V349) are recorded only. */
   managerId?: string | null;
-  manager2Id?: string | null;
-  manager3Id?: string | null;
   profileImage?: string | null;
   gender?: 'male' | 'female' | 'other' | string | null;
   /** "single" | "married" | null. Drives the Cambodia TOS dependents count. */

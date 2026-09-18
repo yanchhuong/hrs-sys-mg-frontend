@@ -55,10 +55,6 @@ const COLUMN_MAP: Record<string, keyof Employee> = {
   'Manager 1 ID': 'managerId',
   'Manager 1': 'managerId',
   'Manager ID': 'managerId',
-  'Manager 2 ID': 'manager2Id',
-  'Manager 2': 'manager2Id',
-  'Manager 3 ID': 'manager3Id',
-  'Manager 3': 'manager3Id',
 };
 
 /**
@@ -251,34 +247,14 @@ export function parseEmployeesExcel(
           if (parsed.bankName && !parsed.bankAccount) rowWarnings.push('Bank selected but Account Number missing');
           if (!parsed.contactNumber) rowWarnings.push('No contact number provided');
 
-          // The server rejects a ladder that repeats a manager across slots
-          // or points a slot at the employee themselves. Surface it here so
-          // the user can fix the file before uploading, but as a warning —
-          // the rest of the row is importable, and the import reports the
-          // ladder failure per row anyway.
-          const ladder = [parsed.managerId, parsed.manager2Id, parsed.manager3Id];
-          ladder.forEach((ref, idx) => {
-            if (!ref) return;
-            const up = ref.toUpperCase();
-            // The ladder is written in one PUT, so a single bad slot costs
-            // the whole thing — including a perfectly good level 1.
-            if (parsed.id && up === parsed.id.toUpperCase()) {
-              rowWarnings.push(`Manager ${idx + 1} is this employee — the whole ladder will be rejected on import`);
-            } else if (ladder.findIndex(other => other?.toUpperCase() === up) !== idx) {
-              rowWarnings.push(`Manager ${idx + 1} "${ref}" repeats another manager slot — the whole ladder will be rejected on import`);
-            }
-          });
-
-          // A hole in the ladder is something Add/Edit Employee makes
-          // impossible (clearing a level cascades to the ones below), and
-          // only level 1 drives approval routing — so a row whose level 1
-          // is blank while a higher slot is filled ends up with no direct
-          // leader at all. The server accepts it, hence a warning.
-          const firstFilled = ladder.findIndex(Boolean);
-          if (firstFilled > 0) {
-            rowWarnings.push(
-              `Manager 1 is blank but Manager ${firstFilled + 1} is set — only Manager 1 drives approval routing`,
-            );
+          // Only the direct leader is stored — the levels above are
+          // derived by walking the chain — so the one thing a file can
+          // get wrong here is pointing someone at themselves, which the
+          // server rejects. A warning, not an error: the rest of the row
+          // is importable and the import reports the failure per row.
+          if (parsed.managerId && parsed.id
+              && parsed.managerId.toUpperCase() === parsed.id.toUpperCase()) {
+            rowWarnings.push('Manager is this employee — it will be rejected on import');
           }
 
           parsed.status = 'active';
@@ -312,7 +288,7 @@ const EXPORT_HEADERS = [
   'Join Date', 'Base Salary', 'Gender', 'Date of Birth', 'Contact Number',
   'Place of Birth', 'Current Address', 'NFF No', 'TID', 'Contract Expire',
   'Bank Name', 'Account Number',
-  'Manager 1 ID', 'Manager 2 ID', 'Manager 3 ID',
+  'Manager 1 ID',
 ] as const;
 
 export function downloadEmployeeTemplate() {
@@ -323,10 +299,10 @@ export function downloadEmployeeTemplate() {
       '2026-04-22', 2800, 'male', '1996-03-14', '+855-12-345-678',
       'Phnom Penh', '123 Main St, Phnom Penh', 'NFF000128', 'TID000128', '2028-04-22',
       'ABA', '000-123-456',
-      // Managers are named by their Employee ID, filled from level 1 up.
-      // Level 3 is blank here because the ladder simply stops there —
-      // skipping a level and filling the one above it is warned about.
-      'EMP001', 'EMP002', '',
+      // The manager is named by their Employee ID, not their name. Only
+      // the direct leader is imported — the levels above are derived
+      // from the chain, so there is nothing else to fill in.
+      'EMP001',
     ];
     const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS as unknown as string[], example]);
     ws['!cols'] = EXPORT_HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
@@ -390,8 +366,6 @@ export function exportEmployeesToExcel(
       e.bankName ?? '',
       e.bankAccount ?? '',
       managerEmpNo(e.managerId),
-      managerEmpNo(e.manager2Id),
-      managerEmpNo(e.manager3Id),
     ]);
 
     const wb = XLSX.utils.book_new();

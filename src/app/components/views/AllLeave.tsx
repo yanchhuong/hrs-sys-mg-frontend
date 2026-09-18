@@ -46,6 +46,7 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
+import { leaderOf } from '../../utils/managerLadder';
 
 // Adapts a backend Employee to the front-end Employee shape. Mirrors
 // Exception.tsx — see that file for the wider rationale on apiId/empNo.
@@ -728,11 +729,7 @@ export function AllLeave() {
                 const employee = employees.find(
                   (e) => e.id === leave.employeeId || (e as any).apiId === leave.employeeId,
                 );
-                const leader = employee?.managerId
-                  ? employees.find(
-                      (e) => e.id === employee.managerId || (e as any).apiId === employee.managerId,
-                    )
-                  : null;
+                const leader = leaderOf(employee, employees);
                 const isPending = leave.status === 'pending';
                 const canActOnThis = isPending && canApproveLeaveOf(leave.employeeId, employees);
                 return (
@@ -746,11 +743,10 @@ export function AllLeave() {
                         : <span className="text-gray-400">—</span>}
                     </TableCell>
                     <TableCell>
-                      {leader ? (
-                        <EmployeeCell employee={leader} subtitle={leader.position} />
-                      ) : (
-                        <span className="text-xs text-gray-400">No leader assigned</span>
-                      )}
+                      {/* Blank, not a placeholder: an employee at the top
+                          of the org has no leader by design, and "No leader
+                          assigned" reads as data somebody forgot to fill in. */}
+                      {leader && <EmployeeCell employee={leader} subtitle={leader.position} />}
                     </TableCell>
                     <TableCell>{formatDate(leave.date)}</TableCell>
                     <TableCell>

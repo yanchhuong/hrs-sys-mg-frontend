@@ -1,8 +1,9 @@
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Employee } from '../../types/hrms';
+import { useProfileImage } from '../../hooks/useProfileImage';
 
 interface EmployeeCellProps {
-  employee: Pick<Employee, 'id' | 'name' | 'department' | 'profileImage'> | undefined | null;
+  employee: Pick<Employee, 'id' | 'name' | 'department' | 'profileImage' | 'apiId'> | undefined | null;
   /** optional subtitle override; defaults to employee.id (empNo / 4-digit code) */
   subtitle?: string | null;
   size?: 'sm' | 'md';
@@ -24,11 +25,34 @@ interface EmployeeCellProps {
  * in live mode that field carries the department UUID — which leaked into
  * Increase / Deduction / Contracts / Overtime tables as raw 36-char UUIDs.
  * Falls back to a blank placeholder when employee is missing.
+ *
+ * The avatar shows the employee's uploaded photo when there is one and
+ * their first initial otherwise. The photo comes from an authenticated
+ * endpoint via {@link useProfileImage}, which shares one fetch per
+ * employee across every avatar on screen.
  */
 export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly, payable }: EmployeeCellProps) {
   if (!employee) {
     return <span className="text-gray-400 text-sm">—</span>;
   }
+  // Body is split out so the photo hook runs unconditionally — the
+  // missing-employee branch above returns before any hook could run,
+  // which would otherwise break the rules of hooks as rows come and go.
+  return (
+    <EmployeeCellBody
+      employee={employee}
+      subtitle={subtitle}
+      size={size}
+      nameOnly={nameOnly}
+      payable={payable}
+    />
+  );
+}
+
+function EmployeeCellBody({
+  employee, subtitle, size = 'sm', nameOnly, payable,
+}: EmployeeCellProps & { employee: NonNullable<EmployeeCellProps['employee']> }) {
+  const photo = useProfileImage(employee.apiId, employee.profileImage);
   const dim = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10';
   const sub = subtitle === undefined ? employee.id : subtitle;
   // Green ring when the employee is payroll-payable via PayWay.
@@ -44,7 +68,7 @@ export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly, payabl
         className={`${dim} rounded-md ${frame} shrink-0`}
         title={payable ? 'Payable — PayWay beneficiary is active' : undefined}
       >
-        <AvatarImage src={employee.profileImage} className="rounded-md object-cover" />
+        <AvatarImage src={photo} className="rounded-md object-cover" />
         <AvatarFallback className="rounded-md bg-blue-50 text-blue-700 text-xs font-medium">
           {(employee.name || '?').charAt(0).toUpperCase()}
         </AvatarFallback>

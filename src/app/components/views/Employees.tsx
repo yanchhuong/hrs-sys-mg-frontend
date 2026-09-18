@@ -53,7 +53,7 @@ import {
 } from '../ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
-  AddEmployeeDialog, MANAGER_LEVELS, visibleManagerLevels, clearManagerFrom,
+  AddEmployeeDialog,
 } from '../common/AddEmployeeDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { OrgChartTab } from './OrgChartTab';
@@ -66,6 +66,8 @@ import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
 import { EmployeeIdCardDialog } from '../common/EmployeeIdCardDialog';
 import { EmployeePhoto } from '../common/EmployeePhoto';
+import { useProfileImage } from '../../hooks/useProfileImage';
+import { invalidateProfileImage, markProfileImageUploaded } from '../../api/profileImageCache';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { useI18n } from '../../i18n/I18nContext';
@@ -77,6 +79,8 @@ import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYea
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
 import { makeDeptName } from '../../utils/deptName';
+import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
+import { managerLadder, LADDER_LABELS } from '../../utils/managerLadder';
 import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
@@ -121,6 +125,27 @@ function hasUnsavedChanges(
   if (!original || !edited) return false;
   return JSON.stringify(original) !== JSON.stringify(edited);
 }
+
+// ---------------------------------------------------------------------------
+// ID document type
+// ---------------------------------------------------------------------------
+/**
+ * V302 — `nationalityType` is the single source of truth for which ID
+ * document an employee carries; `tidType` is only the shorthand stored
+ * alongside it ('TID' = national ID, 'PA' = passport). The Profile tab
+ * used to expose both as independent selects, which let HR save a row
+ * claiming "National ID" and "PA" at the same time. Every label is now
+ * derived from `nationalityType` through these helpers, so the roster
+ * cell, the details drawer and the persisted column cannot disagree.
+ * Unset (legacy rows) reads as national_id / 'TID'.
+ */
+type NationalityType = NonNullable<Employee['nationalityType']>;
+
+const tidTypeFor = (n: NationalityType | undefined): 'PA' | 'TID' =>
+  n === 'passport' ? 'PA' : 'TID';
+
+const idTypeLabel = (n: NationalityType | undefined): string =>
+  n === 'passport' ? 'Passport' : 'National ID';
 
 // ---------------------------------------------------------------------------
 // Documents tab
@@ -462,8 +487,6 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     contactNumber: e.contactNumber ?? '',
     baseSalary: e.baseSalary,
     managerId: e.managerId ?? undefined,
-    manager2Id: e.manager2Id ?? undefined,
-    manager3Id: e.manager3Id ?? undefined,
     profileImage: e.profileImage ?? undefined,
     gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
     maritalStatus: (e.maritalStatus === 'single' || e.maritalStatus === 'married' || e.maritalStatus === 'divorced' || e.maritalStatus === 'widowed') ? e.maritalStatus : undefined,
@@ -780,6 +803,19 @@ export function Employees() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedEmployee, setEditedEmployee] = useState<typeof mockEmployees[0] | null>(null);
+
+  /**
+   * Escalation levels above the direct leader, walked from the live
+   * roster. Follows the edit state while editing so picking a new
+   * Manager 1 updates the levels above immediately, rather than after
+   * a save-and-reload.
+   */
+  const derivedLadder = useMemo(() => {
+    const subject = isEditing && editedEmployee ? editedEmployee : selectedEmployee;
+    if (!subject) return [];
+    // index 0 is Manager 1, which has its own editable row above.
+    return managerLadder(subject, employees).slice(1);
+  }, [isEditing, editedEmployee, selectedEmployee, employees]);
   // Single dialog handles add / edit / renew. `selectedContract` is the row
   // being edited or renewed; null when adding.
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
@@ -798,12 +834,6 @@ export function Employees() {
   });
   const [savingContract, setSavingContract] = useState(false);
 
-  // Profile image: in live mode the API's storage path isn't a browser-
-  // loadable URL, so we fetch the bytes via apiFetch (carries the bearer)
-  // and stash the blob URL for AvatarImage. Cache-bust counter forces a
-  // refetch right after upload.
-  const [avatarSrc, setAvatarSrc] = useState<string | undefined>(undefined);
-  const [avatarVersion, setAvatarVersion] = useState(0);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
@@ -979,14 +1009,17 @@ export function Employees() {
         // Levels 2 and 3 are never auto-followed from the dept PIC —
         // only level 1 tracks it. Round-tripped so this dept-change
         // save doesn't null them (PUT overwrites every field).
-        manager2Id: raw.manager2Id ?? null,
-        manager3Id: raw.manager3Id ?? null,
         gender: raw.gender ?? null,
         dateOfBirth: raw.dateOfBirth ?? null,
         placeOfBirth: raw.placeOfBirth ?? null,
         currentAddress: raw.currentAddress ?? null,
         nffNo: raw.nffNo ?? null,
         tid: raw.tid ?? null,
+        // Round-tripped exactly as stored instead of being re-derived
+        // from nationalityType: a position/department quick-edit must
+        // not silently rewrite a legacy row's ID columns. The details
+        // drawer is the only writer of this pair, and it writes both in
+        // one state update.
         tidType: raw.tidType ?? null,
         // V300 — clear visaExpireDate when nationalityType flips back
         // to national_id so we don't send a stale passport-only
@@ -1339,46 +1372,13 @@ export function Employees() {
     employeePagination.resetPage();
   }, [searchTerm, dateFilter, statusFilter, departmentFilter, employees.length]);
 
-  // Load the employee's profile image whenever the selected row changes (or
-  // a fresh upload bumps the version). Mock mode uses profileImage as-is.
-  useEffect(() => {
-    if (USE_MOCKS) {
-      setAvatarSrc(selectedEmployee?.profileImage);
-      return;
-    }
-    const empApiId = (selectedEmployee as any)?.apiId ?? selectedEmployee?.id;
-    if (!empApiId) {
-      setAvatarSrc(undefined);
-      return;
-    }
-    // Skip the blob fetch when the row has no stored image — the DTO's
-    // profileImage carries the storage path, so an empty value means the
-    // employee hasn't uploaded one. Without this guard every avatar render
-    // logs a 404 from /profile-image to the network panel.
-    if (!selectedEmployee?.profileImage) {
-      setAvatarSrc(undefined);
-      return;
-    }
-    let cancelled = false;
-    let activeUrl: string | null = null;
-    (async () => {
-      try {
-        const url = await documentsApi.fetchProfileImageBlobUrl(empApiId);
-        if (cancelled) {
-          if (url) URL.revokeObjectURL(url);
-          return;
-        }
-        activeUrl = url;
-        setAvatarSrc(url ?? undefined);
-      } catch {
-        if (!cancelled) setAvatarSrc(undefined);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (activeUrl) URL.revokeObjectURL(activeUrl);
-    };
-  }, [selectedEmployee?.id, (selectedEmployee as any)?.apiId, avatarVersion]);
+  // Profile image for the details strip. Shares the same cache as the
+  // roster table and the org chart, so opening a row the list already
+  // drew reuses that fetch, and an upload here refreshes all three.
+  const avatarSrc = useProfileImage(
+    (selectedEmployee as any)?.apiId ?? selectedEmployee?.id,
+    selectedEmployee?.profileImage,
+  );
 
   const handleProfileImageUpload = async (file: File) => {
     if (!selectedEmployee) return;
@@ -1403,8 +1403,17 @@ export function Employees() {
       const empApiId = (selectedEmployee as any).apiId ?? selectedEmployee.id;
       await documentsApi.uploadProfileImage(empApiId, file);
       toast.success('Profile photo updated');
-      // Bump version so the effect above re-fetches the new image.
-      setAvatarVersion(v => v + 1);
+      // Record that this employee now HAS an image before invalidating.
+      // Avatars skip the fetch when `profileImage` is empty, and the
+      // upload endpoint returns no body — so on a first upload the
+      // in-memory employee still carries an empty path and the refetch
+      // would be suppressed, leaving the initial on screen until a full
+      // reload. Marking it here is what makes the new photo appear
+      // immediately. It is deliberately not written onto the employee
+      // object: the edit form spreads that straight into the update
+      // payload, so a placeholder path would be saved back.
+      markProfileImageUploaded(empApiId);
+      invalidateProfileImage(empApiId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -1832,8 +1841,12 @@ export function Employees() {
                   <TableCell>{employee.contactNumber}</TableCell>
                   <TableCell>{employee.nffNo || '-'}</TableCell>
                   <TableCell>
+                    {/* Prefix derives from nationalityType rather than the
+                        stored tidType: legacy rows can still carry a
+                        tidType that contradicts it, and the drawer now
+                        labels this employee from nationalityType alone. */}
                     {employee.tid
-                      ? `${employee.tidType ?? 'TID'} ${employee.tid}`
+                      ? `${tidTypeFor(employee.nationalityType)} ${employee.tid}`
                       : '-'}
                   </TableCell>
                   <TableCell>
@@ -2313,62 +2326,42 @@ export function Employees() {
                           <p>{selectedEmployee.nffNo || '—'}</p>
                         )}
                       </FieldRow>
-                      {/* V300 — nationality type + optional visa expiry.
-                          Order: ID Type → TID → Visa Expire (only when
-                          Passport). Default (null / national_id) reads
-                          as "National ID" for local employees; flipping
-                          to Passport reveals the date input right below
-                          the TID row. */}
-                      <FieldRow label="ID Type" isEditing={isEditing}>
-                        {isEditing && editedEmployee ? (
-                          <select
-                            value={editedEmployee.nationalityType ?? 'national_id'}
-                            onChange={(e) => {
-                              const next = e.target.value as 'national_id' | 'passport';
-                              setEditedEmployee({
-                                ...editedEmployee,
-                                nationalityType: next,
-                                // Clear visaExpireDate when switching
-                                // away from passport so a stale date
-                                // doesn't linger on the row.
-                                visaExpireDate: next === 'passport'
-                                  ? editedEmployee.visaExpireDate
-                                  : undefined,
-                              });
-                            }}
-                            className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-                          >
-                            <option value="national_id">National ID</option>
-                            <option value="passport">Passport</option>
-                          </select>
-                        ) : (
-                          <p>
-                            {selectedEmployee.nationalityType === 'passport'
-                              ? 'Passport'
-                              : 'National ID'}
-                          </p>
-                        )}
-                      </FieldRow>
-                      {/* V301 — TID row now has a PA/TID prefix
-                          dropdown next to the number input. Read-only
-                          view renders the prefix inline with the
-                          value ('PA 12345' / 'TID 12345'). */}
+                      {/* V302 — one ID control instead of two. The old
+                          "ID Type" row edited nationalityType while the
+                          TID row edited tidType, so HR could save
+                          "National ID" and "PA" on the same employee.
+                          The type select now lives inside the TID row
+                          and writes both fields in a single setState,
+                          so they can never be observed out of step.
+                          Order: TID → Visa Expire (Passport only). */}
                       <FieldRow label="TID" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
                           <div className="flex items-center gap-1.5">
                             <select
-                              value={editedEmployee.tidType ?? 'TID'}
-                              onChange={(e) =>
+                              value={editedEmployee.nationalityType ?? 'national_id'}
+                              onChange={(e) => {
+                                const next = e.target.value as NationalityType;
                                 setEditedEmployee({
                                   ...editedEmployee,
-                                  tidType: e.target.value as 'PA' | 'TID',
-                                })
-                              }
+                                  nationalityType: next,
+                                  // tidType is derived, never edited on
+                                  // its own — written in the same update
+                                  // so the roster cell and the API
+                                  // payload follow the chosen type.
+                                  tidType: tidTypeFor(next),
+                                  // Clear visaExpireDate when switching
+                                  // away from passport so a stale date
+                                  // doesn't linger on the row.
+                                  visaExpireDate: next === 'passport'
+                                    ? editedEmployee.visaExpireDate
+                                    : undefined,
+                                });
+                              }}
                               className="h-9 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm"
-                              aria-label="TID prefix"
+                              aria-label="ID type"
                             >
-                              <option value="PA">PA</option>
-                              <option value="TID">TID</option>
+                              <option value="national_id">National ID</option>
+                              <option value="passport">Passport</option>
                             </select>
                             <Input
                               value={editedEmployee.tid || ''}
@@ -2379,7 +2372,7 @@ export function Employees() {
                         ) : (
                           <p>
                             {selectedEmployee.tid
-                              ? `${selectedEmployee.tidType ?? 'TID'} ${selectedEmployee.tid}`
+                              ? `${idTypeLabel(selectedEmployee.nationalityType)} ${selectedEmployee.tid}`
                               : '—'}
                           </p>
                         )}
@@ -2533,53 +2526,44 @@ export function Employees() {
                           <p>{deptName(selectedEmployee.department)}</p>
                         )}
                       </FieldRow>
-                      {/* Reports-to ladder (V349). Level 1 is the direct
-                          leader — the only one approval routing and team
-                          scoping read. Each picker hides whoever is
-                          already chosen at another level. */}
-                      {/* Progressive disclosure: Manager 2 only appears
-                          once Manager 1 is set, 3 once 2 is. Read-only
-                          mode uses the saved row so a viewer doesn't see
-                          empty slots the record never filled. */}
-                      {visibleManagerLevels(
-                        (isEditing && editedEmployee ? editedEmployee : selectedEmployee) ?? {},
-                      ).map(({ key, label }) => (
-                        <FieldRow key={key} label={label} isEditing={isEditing}>
-                          {isEditing && editedEmployee ? (
-                            <SearchablePicker
-                              options={employees
-                                .filter(e => e.id !== editedEmployee.id && e.status === 'active')
-                                .filter(e => {
-                                  const id = e.apiId ?? e.id;
-                                  return MANAGER_LEVELS.every(o => o.key === key || editedEmployee[o.key] !== id);
-                                })
-                                .map(emp => ({
-                                  // Value carries whatever the backend stores on managerId
-                                  // (UUID in live mode, empNo in mock mode).
-                                  value: emp.apiId ?? emp.id,
-                                  label: emp.name,
-                                  secondary: emp.position,
-                                  searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''}`,
-                                }))}
-                              value={editedEmployee[key] || ''}
-                              onChange={v => setEditedEmployee(
-                                v ? { ...editedEmployee, [key]: v }
-                                  // Clearing a level clears the ones below
-                                  // it — otherwise the ladder keeps a hole
-                                  // that approval routing can't walk past.
-                                  : { ...editedEmployee, ...clearManagerFrom(key) },
-                              )}
-                              placeholder="Select manager…"
-                              emptyLabel="No manager"
-                              searchPlaceholder="Search by name, ID, position…"
-                            />
-                          ) : (
-                            <p>
-                              {selectedEmployee[key]
-                                ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee[key])?.name || '—'
-                                : 'No manager'}
-                            </p>
-                          )}
+                      {/* Only Manager 1 is stored and editable. The
+                          levels above are derived by walking the chain,
+                          so they render read-only in both modes — there
+                          is no value to type, and none that could
+                          disagree with the hierarchy. */}
+                      <FieldRow label="Manager 1" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <SearchablePicker
+                            options={employees
+                              .filter(e => e.id !== editedEmployee.id && e.status === 'active')
+                              .map(emp => ({
+                                // Value carries whatever the backend stores on managerId
+                                // (UUID in live mode, empNo in mock mode).
+                                value: emp.apiId ?? emp.id,
+                                label: emp.name,
+                                secondary: emp.position,
+                                searchKey: `${emp.name} ${emp.id} ${emp.position ?? ''}`,
+                              }))}
+                            value={editedEmployee.managerId || ''}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, managerId: v || undefined })}
+                            placeholder="Select manager…"
+                            emptyLabel="No manager"
+                            searchPlaceholder="Search by name, ID, position…"
+                          />
+                        ) : (
+                          <p>
+                            {selectedEmployee.managerId
+                              ? employees.find(e => (e.apiId ?? e.id) === selectedEmployee.managerId)?.name || '—'
+                              : 'No manager'}
+                          </p>
+                        )}
+                      </FieldRow>
+                      {derivedLadder.map((mgr, i) => (
+                        <FieldRow key={LADDER_LABELS[i + 1]} label={LADDER_LABELS[i + 1]}>
+                          <p className="flex items-center gap-1.5">
+                            {mgr.name}
+                            <span className="text-xs text-gray-400">derived</span>
+                          </p>
                         </FieldRow>
                       ))}
                       {/* V70 — Cambodian Labour Law skill level. Drives the
@@ -3608,14 +3592,15 @@ function ManagersCell({ employee, roster }: {
     return hit?.name ?? 'Unknown';
   };
 
-  // Ordinals rather than MANAGER_LEVELS' own labels ("Manager 1"): in a
-  // column already headed "Managers", repeating the word on every row
-  // is noise. "1st Chheang Ratha" reads as rank + person.
+  // Ordinals rather than the full labels ("Manager 1"): in a column
+  // already headed "Managers", repeating the word on every row is
+  // noise. "1st Chheang Ratha" reads as rank + person.
   const ORDINALS = ['1st', '2nd', '3rd'];
 
-  const ladder = MANAGER_LEVELS
-    .map(({ key }, i) => ({ rank: ORDINALS[i] ?? `${i + 1}`, name: nameOf(employee[key]) }))
-    .filter((l): l is { rank: string; name: string } => !!l.name);
+  // Walked from the roster, not read off the row — only the direct
+  // leader is stored, so the levels above come from the chain.
+  const ladder = managerLadder(employee, roster)
+    .map((mgr, i) => ({ rank: ORDINALS[i] ?? `${i + 1}`, name: mgr.name }));
 
   if (ladder.length === 0) {
     return <span className="text-sm text-gray-400">No manager</span>;
@@ -3663,46 +3648,3 @@ function ManagersCell({ employee, roster }: {
   );
 }
 
-/** The employee's own identity as it would appear in a `managerId`
- *  field: a UUID in live mode, an empNo in mock mode. */
-function selfManagerKey(e: Employee): string {
-  return (e as { apiId?: string }).apiId ?? e.id;
-}
-
-/**
- * The department → "Reports To" follow-through.
- *
- * House convention: moving someone to a new department re-points their
- * manager at that department's PIC — but only when their current
- * manager is unset or still tracking the OLD department's PIC. A
- * manager HR set deliberately is left alone.
- *
- * The case the original rule missed is a department's own PIC. Moving
- * the PIC of PX *into* PX set their manager to the PX PIC — themselves
- * — and the server rejects that outright with "Manager 1 cannot be the
- * employee themselves". The department change was therefore impossible
- * to save, for any PIC, into the department they lead. Worse, the
- * invalid value was written into the edit state first, so the Manager 1
- * picker rendered blank (an employee is excluded from their own manager
- * options, so the selected id matched nothing) while Manager 2 appeared
- * — the ladder looked corrupted before the save even failed.
- *
- * @returns the managerId to apply, or `undefined` to leave it untouched.
- *          `null` means "clear it" — the new department has no PIC.
- */
-function nextManagerForDeptChange(
-  selfKey: string,
-  currentManagerId: string | null,
-  oldPic: string | null,
-  newPic: string | null,
-): string | null | undefined {
-  // HR set this deliberately — don't second-guess it.
-  const followsDeptPic = !currentManagerId || currentManagerId === oldPic;
-  if (!followsDeptPic) return undefined;
-  // They LEAD the department they're moving into. Nobody is their own
-  // manager; leave the existing value for a human to decide rather than
-  // writing a value the API will reject.
-  if (newPic && newPic === selfKey) return undefined;
-  if (newPic === currentManagerId) return undefined;
-  return newPic;
-}

@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
+import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -208,8 +209,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         contactNumber: e.contactNumber ?? '',
         baseSalary: e.baseSalary,
         managerId: e.managerId ?? undefined,
-        manager2Id: e.manager2Id ?? undefined,
-        manager3Id: e.manager3Id ?? undefined,
         profileImage: e.profileImage ?? undefined,
         gender: (e.gender === 'male' || e.gender === 'female') ? e.gender : undefined,
         dateOfBirth: e.dateOfBirth ?? undefined,
@@ -442,11 +441,30 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const handleMoveMember = async (emp: Employee, newDeptId: string | null) => {
     const targetEmployeeId = (emp as { apiId?: string }).apiId ?? emp.id;
     const targetDept = newDeptId ? items.find(i => i.id === newDeptId) : null;
+
+    // Same department → "Reports To" follow-through the Employees page
+    // applies, so assigning someone here lands them exactly where
+    // editing their Department on the employee record would. Without
+    // it, the two routes to the same change produced different data.
+    const oldDeptKey = emp.department && emp.department !== '-' ? emp.department : null;
+    const oldDept = oldDeptKey
+      ? items.find(i => (USE_MOCKS ? i.name === oldDeptKey : i.id === oldDeptKey))
+      : undefined;
+    const nextManager = nextManagerForDeptChange(
+      selfManagerKey(emp),
+      emp.managerId ?? null,
+      oldDept?.managerId ?? null,
+      targetDept?.managerId ?? null,
+    );
+    const managerId = nextManager !== undefined ? nextManager : (emp.managerId ?? null);
+
     setAddingMemberId(emp.id);
     try {
       if (USE_MOCKS) {
         setEmployees(prev => prev.map(e =>
-          e.id === emp.id ? { ...e, department: newDeptId ?? '-' } : e,
+          e.id === emp.id
+            ? { ...e, department: newDeptId ?? '-', managerId: managerId ?? undefined }
+            : e,
         ));
         toast.success(newDeptId
           ? `${emp.name} moved to "${targetDept?.name ?? newDeptId}"`
@@ -464,9 +482,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         departmentId: newDeptId,
         joinDate: emp.joinDate,
         baseSalary: emp.baseSalary,
-        managerId: emp.managerId ?? null,
-        manager2Id: emp.manager2Id ?? null,
-        manager3Id: emp.manager3Id ?? null,
+        managerId,
         gender: emp.gender,
         dateOfBirth: emp.dateOfBirth,
         placeOfBirth: emp.placeOfBirth,
@@ -480,7 +496,9 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       });
       // Optimistic update so the Members count refreshes immediately.
       setEmployees(prev => prev.map(e =>
-        e.id === emp.id ? { ...e, department: newDeptId ?? '-' } : e,
+        e.id === emp.id
+          ? { ...e, department: newDeptId ?? '-', managerId: managerId ?? undefined }
+          : e,
       ));
       toast.success(newDeptId
         ? `${emp.name} moved to "${targetDept?.name ?? newDeptId}"`

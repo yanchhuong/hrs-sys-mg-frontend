@@ -88,6 +88,83 @@ const EXCEPTION_CATEGORIES = new Set(['exception', 'maternity']);
 const isExceptionCategory = (category?: string | null) =>
   !!category && EXCEPTION_CATEGORIES.has(category.toLowerCase());
 
+type LeaveDuration = 'full' | 'half_morning' | 'half_noon';
+
+/**
+ * Normalise whatever the leave record carries in its duration field.
+ * Anything unrecognised — including a legacy row where `type` still
+ * holds a CATEGORY ('annual', 'special', …) from before the V47 split —
+ * reads as a full day. Over-greying a slot is the safe failure: it
+ * says "no attendance expected here", which is true of every full-day
+ * leave, whereas guessing "half" would invite a scan the employee
+ * never owed.
+ */
+const normaliseLeaveDuration = (raw?: string | null): LeaveDuration => {
+  switch ((raw ?? '').trim().toLowerCase()) {
+    case 'half_morning': return 'half_morning';
+    case 'half_noon':    return 'half_noon';
+    default:             return 'full';
+  }
+};
+
+/**
+ * Which punch slots a leave covers.
+ *
+ *   full         → all four slots are on leave
+ *   half_morning → morning is on leave; the employee works the
+ *                  afternoon, so Noon In / Noon Out show real times
+ *   half_noon    → the mirror image: Morning In / Morning Out show
+ *                  real times, Noon reads "On leave"
+ *
+ * Returns both halves false for a row that is not on leave at all, so
+ * callers can use it unconditionally.
+ */
+const leaveCoverage = (
+  isOnLeave: boolean,
+  duration: LeaveDuration,
+): { morning: boolean; noon: boolean } => ({
+  morning: isOnLeave && (duration === 'full' || duration === 'half_morning'),
+  noon:    isOnLeave && (duration === 'full' || duration === 'half_noon'),
+});
+
+/**
+ * The punches to show for a half-day leave, in the half the employee
+ * actually worked.
+ *
+ * A half day is ONE working session, but the device doesn't know that.
+ * Scan-to-slot assignment fills morning_in first and noon_out last, so
+ * somebody who works the morning and takes the afternoon off ends up
+ * with their second scan in `noon_out` — the very slot the leave
+ * overlay covers. The real check-out then vanishes behind "On leave"
+ * and Morning Out reads blank, which looks like a missed punch.
+ *
+ * So for a half-day we ignore which slot a punch landed in: the first
+ * real punch of the day is the session's IN and the last is its OUT,
+ * both rendered in the working half. A lone punch is an IN with no OUT
+ * yet, not an OUT.
+ *
+ * Full-day leave and ordinary days are untouched — there the slots
+ * mean what they say.
+ */
+const halfDaySession = (
+  r: { morningIn?: string | null; morningOut?: string | null;
+       noonIn?: string | null; noonOut?: string | null;
+       checkIn?: string | null; checkOut?: string | null },
+): { in?: string; out?: string } => {
+  const punches = [r.morningIn ?? r.checkIn, r.morningOut, r.noonIn, r.noonOut ?? r.checkOut]
+    .filter((t): t is string => !!t);
+  if (punches.length === 0) return {};
+  return { in: punches[0], out: punches.length > 1 ? punches[punches.length - 1] : undefined };
+};
+
+/** Short human tag appended to the remark so HR can see at a glance why
+ *  only half the row is greyed out. Empty for a full day — the default
+ *  needs no explanation. */
+const leaveDurationTag = (duration: LeaveDuration): string =>
+  duration === 'half_morning' ? ' (half day — morning)'
+  : duration === 'half_noon'  ? ' (half day — afternoon)'
+  : '';
+
 // Adapts a backend AttendanceEntry to the front-end Attendance shape used
 // throughout the UI. The fingerprint sync writes morning/noon punches; carry
 // them through so the daily grid shows real check-in / check-out times.
@@ -836,7 +913,15 @@ export function Attendance({ onNavigate }: Props = {}) {
           // duration (full / half day).
           const isExc = isExceptionCategory((leave as { category?: string | null }).category);
           const kind = isExc ? 'Exception' : 'Leave';
+          // `leave.type` is the duration axis (full / half_morning /
+          // half_noon); `leave.category` is what kind of leave it is.
+          // The remark is built from the category, so the duration has
+          // to travel as its own field — parsing it back out of this
+          // string is what used to silently turn every half day into a
+          // full one.
+          const duration = normaliseLeaveDuration(leave.type);
           const remark = `${kind}: ${(leave as { category?: string | null }).category ?? leave.type}`
+            + leaveDurationTag(duration)
             + (leave.reason ? ` — ${leave.reason}` : '')
             + (leave.status === 'pending' ? ' (pending approval)' : '');
           row = {
@@ -844,6 +929,7 @@ export function Attendance({ onNavigate }: Props = {}) {
             status: (isExc ? 'exception' : 'leave') as AttendanceStatus,
             notes: remark,
             leaveCategory: (leave as { category?: string | null }).category ?? null,
+            leaveDuration: duration,
           };
         }
 
@@ -1054,10 +1140,24 @@ export function Attendance({ onNavigate }: Props = {}) {
       // where the morning/noon split is null. Fall back to them so the
       // Excel never shows blanks when the underlying record really had
       // a scan recorded.
-      const mIn  = r.morningIn  ?? r.checkIn  ?? '';
-      const mOut = r.morningOut ?? '';
-      const nIn  = r.noonIn     ?? '';
-      const nOut = r.noonOut    ?? r.checkOut ?? '';
+      // Same half-day rule as the table: a half-noon leave owes a
+      // morning scan, so only the noon pair reads "On leave". Writing
+      // the words rather than a blank keeps the export self-explanatory
+      // — an empty cell would read as a missed scan.
+      const cover = leaveCoverage(r.status === 'leave', normaliseLeaveDuration(
+        r.leaveDuration ?? /^Leave:\s*(\S+)/.exec(r.notes ?? '')?.[1],
+      ));
+      const ON_LEAVE = 'On leave';
+      // Half day: the worked session belongs to whichever half isn't on
+      // leave, regardless of the slot the punch landed in — same rule
+      // the table applies, so the export can't contradict the screen.
+      const half = r.status === 'leave' && cover.morning !== cover.noon
+        ? halfDaySession(r)
+        : null;
+      const mIn  = cover.morning ? ON_LEAVE : (half ? (half.in  ?? '') : (r.morningIn  ?? r.checkIn  ?? ''));
+      const mOut = cover.morning ? ON_LEAVE : (half ? (half.out ?? '') : (r.morningOut ?? ''));
+      const nIn  = cover.noon    ? ON_LEAVE : (half ? (half.in  ?? '') : (r.noonIn     ?? ''));
+      const nOut = cover.noon    ? ON_LEAVE : (half ? (half.out ?? '') : (r.noonOut    ?? r.checkOut ?? ''));
       return [
         r.date,
         r.date ? format(parseISO(r.date), 'EEE') : '',
@@ -1352,7 +1452,12 @@ export function Attendance({ onNavigate }: Props = {}) {
     setEditNoonOut(record.noonOut || '');
     setEditStatus(record.status);
     setEditRemark(record.notes || '');
-    setEditLeaveType(suggestLeaveType(
+    // An existing leave already states its duration — use it. Inferring
+    // from the punch pattern is only a guess for rows that have no
+    // leave yet, and on a half-day row the guess is actively wrong:
+    // the slots covered by the leave hold no punches, so a half_noon
+    // leave with the morning not yet scanned would re-save as 'full'.
+    setEditLeaveType(record.leaveDuration ?? suggestLeaveType(
       record.morningIn || '', record.morningOut || '',
       record.noonIn || '',    record.noonOut || '',
     ));
@@ -2120,22 +2225,47 @@ export function Attendance({ onNavigate }: Props = {}) {
                       );
                       const isSynthetic = record.id.startsWith('synthetic:');
                       // Half-day leave constrains which punch slots are
-                      // even meaningful. The merge logic at dailyRows
-                      // build time stamps "Leave: <type> — …" into
-                      // `notes`, so we re-derive the structured type
-                      // here without round-tripping through state.
-                      // Unknown leave types fall through to "full"
-                      // (better to over-grey than to suggest a slot
-                      // is available when the data is uncertain).
-                      const activeLeaveType: 'full' | 'half_morning' | 'half_noon' | null = (() => {
-                        if (record.status !== 'leave') return null;
-                        const n = record.notes ?? '';
-                        if (n.startsWith('Leave: half_morning')) return 'half_morning';
-                        if (n.startsWith('Leave: half_noon'))    return 'half_noon';
-                        return 'full';
-                      })();
-                      const morningOnLeave = activeLeaveType === 'full' || activeLeaveType === 'half_morning';
-                      const noonOnLeave    = activeLeaveType === 'full' || activeLeaveType === 'half_noon';
+                      // even meaningful — a half-noon leave still owes a
+                      // morning scan, and that morning time has to stay
+                      // visible.
+                      //
+                      // The duration comes off the row as a field. It is
+                      // NOT read out of `notes`: that string is built
+                      // from the leave CATEGORY ("Leave: special — …"),
+                      // so every half day used to fall through to "full"
+                      // and grey out all four slots. The note-prefix
+                      // check survives only as a fallback for rows that
+                      // reach the table without the leave overlay (a
+                      // backend row already stamped status='leave' with
+                      // no matching request in the loaded window).
+                      //
+                      // Only status 'leave' greys slots. An Exception
+                      // means the employee IS working, just not at a
+                      // desk here — their scans, where they exist, are
+                      // real and must show.
+                      const isOnLeave = record.status === 'leave';
+                      const activeLeaveType: LeaveDuration | null = !isOnLeave
+                        ? null
+                        : record.leaveDuration
+                          ?? normaliseLeaveDuration(
+                              /^Leave:\s*(\S+)/.exec(record.notes ?? '')?.[1],
+                            );
+                      const { morning: morningOnLeave, noon: noonOnLeave } =
+                        leaveCoverage(isOnLeave, activeLeaveType ?? 'full');
+
+                      // On a half day the worked session moves into the
+                      // half that isn't on leave, wherever the device
+                      // happened to file the punches. See halfDaySession.
+                      const halfDay = isOnLeave && morningOnLeave !== noonOnLeave;
+                      const session = halfDay ? halfDaySession(record) : null;
+                      const worked = session
+                        ? (noonOnLeave
+                            ? { morningIn: session.in, morningOut: session.out, noonIn: undefined, noonOut: undefined }
+                            : { morningIn: undefined, morningOut: undefined, noonIn: session.in, noonOut: session.out })
+                        : {
+                            morningIn: record.morningIn, morningOut: record.morningOut,
+                            noonIn: record.noonIn, noonOut: record.noonOut,
+                          };
 
                       const timeCell = (val?: string, icon?: 'in' | 'out', onLeave?: boolean) => {
                         // On-leave overrides any stored value in that
@@ -2225,10 +2355,10 @@ export function Attendance({ onNavigate }: Props = {}) {
                               {format(parseISO(record.date), 'MMM dd')}
                             </TableCell>
                           )}
-                          <TableCell className="text-center">{timeCell(record.morningIn, 'in', morningOnLeave)}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.morningOut, 'out', morningOnLeave)}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.noonIn, 'in', noonOnLeave)}</TableCell>
-                          <TableCell className="text-center">{timeCell(record.noonOut, 'out', noonOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(worked.morningIn, 'in', morningOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(worked.morningOut, 'out', morningOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(worked.noonIn, 'in', noonOnLeave)}</TableCell>
+                          <TableCell className="text-center">{timeCell(worked.noonOut, 'out', noonOnLeave)}</TableCell>
                           <TableCell className="text-center">
                             {otDisplay !== null ? (
                               <Badge

@@ -1,32 +1,33 @@
-import { useEffect, useState } from 'react';
 import { User as UserIcon } from 'lucide-react';
-import { fetchProfileImageBlobUrl } from '../../api/documents';
-import { USE_MOCKS } from '../../api/client';
+import { useProfileImage } from '../../hooks/useProfileImage';
 
 /**
  * Render an employee's profile photo without leaking the auth JWT
  * into a query string. Backend serves the image at
  * {@code /api/v1/employees/:id/profile-image} behind a Bearer token —
- * `<img src>` can't send headers, so we fetch to a Blob, wrap it in
- * an object URL, and render that. Fallback (no image or 404) shows a
+ * `<img src>` can't send headers, so the bytes are fetched to a Blob
+ * and wrapped in an object URL. Fallback (no image or 404) shows a
  * generic user icon so cards stay layout-stable.
  *
- * In mock mode `employee.profileImage` is already a data URL — we
- * short-circuit and use it directly.
+ * In mock mode `employee.profileImage` is already a data URL and is
+ * used directly.
  *
- * The blob URL is revoked on unmount or when the employee changes,
- * so switching between many cards doesn't leak memory.
- *
- * `version` lets callers force a refetch after an upload without
- * remounting the component — bump the number and the effect will
- * fetch the fresh image.
+ * The fetch, the object URL and its lifetime belong to
+ * {@link useProfileImage}'s shared cache: every avatar for the same
+ * employee — this photo, the roster table cell, the org-chart node —
+ * resolves to one request, and an upload anywhere refreshes them all.
+ * That is also why the URL is not revoked when this component
+ * unmounts: other avatars may still be rendering it.
  */
 interface Props {
   employeeApiId: string | undefined;
-  /** Data URL fallback (mock mode). Ignored when apiId is set + live. */
+  /**
+   * The employee's stored image. A data URL in mock mode (rendered
+   * as-is); in live mode the storage path, which is used as the
+   * "has a photo at all" flag so photo-less rows skip the request
+   * instead of logging a 404 each.
+   */
   fallbackDataUrl?: string | null;
-  /** Bump to force a fresh fetch after an upload. */
-  version?: number | string;
   alt?: string;
   className?: string;
   /** Icon size for the fallback User glyph. */
@@ -34,33 +35,9 @@ interface Props {
 }
 
 export function EmployeePhoto({
-  employeeApiId, fallbackDataUrl, version, alt = '', className, iconClassName = 'h-6 w-6',
+  employeeApiId, fallbackDataUrl, alt = '', className, iconClassName = 'h-6 w-6',
 }: Props): JSX.Element {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (USE_MOCKS) {
-      setSrc(fallbackDataUrl || null);
-      return;
-    }
-    if (!employeeApiId) { setSrc(null); return; }
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    fetchProfileImageBlobUrl(employeeApiId)
-      .then(url => {
-        if (cancelled) {
-          if (url) URL.revokeObjectURL(url);
-          return;
-        }
-        objectUrl = url;
-        setSrc(url);
-      })
-      .catch(() => { if (!cancelled) setSrc(null); });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [employeeApiId, fallbackDataUrl, version]);
+  const src = useProfileImage(employeeApiId, fallbackDataUrl);
 
   if (src) {
     return <img src={src} alt={alt} className={className} draggable={false} />;

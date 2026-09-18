@@ -8,6 +8,7 @@ import * as departmentsApi from '../../api/departments';
 import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
+import { leaderOf } from '../../utils/managerLadder';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import {
   otOverlapsNightWindow, effectiveOtMultiplier,
@@ -1090,9 +1091,7 @@ export function Overtime() {
               )}
               {overtimePagination.paginatedItems.map((request) => {
                 const employee = employees.find(e => e.id === request.employeeId || (e as any).apiId === request.employeeId);
-                const leader = employee?.managerId
-                  ? employees.find(e => e.id === employee.managerId || (e as any).apiId === employee.managerId)
-                  : null;
+                const leader = leaderOf(employee, employees);
                 // The backend resolves the approver's display name on
                 // the OT DTO (`approvedByName`). Front-end lookups would
                 // miss because `approvedById` is a USER UUID, not an
@@ -1111,11 +1110,10 @@ export function Overtime() {
                         : <span className="text-gray-400">—</span>}
                     </TableCell>
                     <TableCell>
-                      {leader ? (
-                        <EmployeeCell employee={leader} subtitle={leader.position} />
-                      ) : (
-                        <span className="text-xs text-gray-400">No leader assigned</span>
-                      )}
+                      {/* Blank, not a placeholder: an employee at the top
+                          of the org has no leader by design, and "No leader
+                          assigned" reads as data somebody forgot to fill in. */}
+                      {leader && <EmployeeCell employee={leader} subtitle={leader.position} />}
                     </TableCell>
                     <TableCell>{formatDate(request.date)}</TableCell>
                     <TableCell className="text-center text-sm">
