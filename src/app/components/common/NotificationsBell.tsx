@@ -9,6 +9,7 @@ import {
 import * as api from '../../api/notifications';
 import { TenantDocCommentDialog } from './TenantDocCommentDialog';
 import type { PortfolioDocType } from '../../api/agencyPortfolioDocs';
+import { updateAppBadge } from '../../utils/appBadge';
 
 const DOC_TYPES = new Set<string>(['invoice', 'bill', 'expense']);
 
@@ -41,12 +42,41 @@ export function NotificationsBell({ onNavigate }: {
     try { setUnread(await api.unreadCount()); } catch { /* soft-fail */ }
   };
 
+  // The PWA app-icon badge mirrors whatever the bell shows. Driven off
+  // `unread` itself rather than each mutation site, so polling, reading
+  // one, mark-all-read and the dropdown-close re-sync all stay in step
+  // without extra calls. updateAppBadge feature-detects and never
+  // throws, so an unsupported platform is a no-op.
+  useEffect(() => { void updateAppBadge(unread); }, [unread]);
+
   useEffect(() => {
     void refreshCount();
-    // 60s polling — good enough for a notification surface and
-    // avoids the extra moving part of a websocket subscription.
-    const id = window.setInterval(() => { void refreshCount(); }, 60_000);
-    return () => window.clearInterval(id);
+
+    // Real-time first, polling as the safety net (spec §14/§16).
+    // The stream only pokes; refreshCount() re-reads the authoritative
+    // number, so devices can never drift the way a local ++ would let
+    // them. Polling stays on but drops to a slow heartbeat while the
+    // stream is healthy, and returns to 60s if it drops — one timer
+    // either way, never two.
+    let disposeStream: (() => void) | null = null;
+    let live = false;
+    let timer = 0;
+
+    const arm = (ms: number) => {
+      window.clearInterval(timer);
+      timer = window.setInterval(() => { void refreshCount(); }, ms);
+    };
+    arm(60_000);
+
+    void api.subscribeToChanges(
+      () => { live = true; arm(5 * 60_000); void refreshCount(); },
+      () => { if (live) { live = false; arm(60_000); } },
+    ).then(dispose => { disposeStream = dispose; });
+
+    return () => {
+      window.clearInterval(timer);
+      disposeStream?.();
+    };
   }, []);
 
   const loadList = async () => {

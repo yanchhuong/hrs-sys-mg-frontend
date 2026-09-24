@@ -70,3 +70,20 @@ self.addEventListener('notificationclick', (event) => {
     }
   })());
 });
+
+/* ---------------------------------------------------------------------
+ * PWA installability (spec §17).
+ *
+ * Chrome will only offer "Install app" when a service worker controlling
+ * start_url has a fetch handler. This file is already registered at root
+ * scope by useFcmToken.ts, so it is that worker — adding a second one at
+ * '/' would take over the scope and silently break background push.
+ *
+ * Deliberately a pass-through: no caching, no offline shell. The app is
+ * an online SaaS client and a stale cached bundle is far worse than a
+ * failed load. This exists purely to satisfy the install criterion, so
+ * the Badging API has an installed PWA to draw on.
+ * ------------------------------------------------------------------- */
+self.addEventListener('fetch', () => {
+  // Intentionally empty — let the network handle every request.
+});

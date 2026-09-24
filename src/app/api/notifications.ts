@@ -1,4 +1,4 @@
-import { apiJson, apiVoid } from './client';
+import { apiJson, apiOrigin, apiPath, apiVoid } from './client';
 
 /**
  * Top-bar notification bell. Feed merges two sources:
@@ -48,4 +48,43 @@ export async function markRead(kind: NotificationKind, id: string): Promise<void
 
 export async function markAllRead(): Promise<void> {
   return apiVoid('/api/v1/notifications/read-all', { method: 'POST' });
+}
+
+/**
+ * Live notification stream (spec §14/§15).
+ *
+ * The server emits only `{"type":"NOTIFICATION_CHANGED"}` — never the
+ * count. `onChange` should re-read {@link unreadCount}, so the backend
+ * stays the single source of truth and two devices can't drift apart
+ * the way `unreadCount++` would let them.
+ *
+ * EventSource can't set an Authorization header, so we first mint a
+ * single-use 60s ticket over the authenticated client and pass that.
+ *
+ * Returns a disposer. Resolves to null when the ticket can't be minted
+ * (older backend, offline) — the caller then just keeps polling.
+ */
+export async function subscribeToChanges(
+  onChange: () => void,
+  onError?: () => void,
+): Promise<(() => void) | null> {
+  let ticket: string;
+  try {
+    const res = await apiJson<{ ticket: string }>(
+      '/api/v1/notifications/stream-ticket', { method: 'POST' },
+    );
+    ticket = res.ticket;
+  } catch {
+    return null;
+  }
+
+  const path = apiPath(`/api/v1/notifications/stream?ticket=${encodeURIComponent(ticket)}`);
+  const es = new EventSource(`${apiOrigin()}${path}`);
+  es.addEventListener('notification', () => onChange());
+  es.onerror = () => {
+    // EventSource retries on its own; tell the caller so it can lean
+    // back on polling while the connection is down.
+    onError?.();
+  };
+  return () => es.close();
 }

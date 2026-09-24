@@ -5,6 +5,14 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA: installable shell. The service worker is the existing
+         /firebase-messaging-sw.js (root scope) — deliberately NOT a
+         second worker, which would displace it and break push. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#005EB8" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="HR-Share" />
 
       <!-- SEO — primary tags for Google, Bing, Yandex. Title +
            description are what actually render in the search

@@ -11,6 +11,7 @@ import { USE_MOCKS } from '../api/client';
 // subsequent tenant-broadcasts don't ping the ex-user's device.
 import { unregisterFcmToken } from '../api/fcm';
 import { Employee } from '../types/hrms';
+import { clearAppBadge } from '../utils/appBadge';
 
 export interface LoginResult {
   success: boolean;
@@ -552,6 +553,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try { localStorage.removeItem('hrms:fcmLastRegisteredToken'); } catch { /* ignore */ }
       }
     } catch { /* localStorage disabled — nothing to clean up */ }
+
+    // Drop the app-icon badge too. On a shared machine the next person
+    // to sign in must not inherit the previous user's unread count —
+    // the icon badge outlives the tab, unlike the in-app bell.
+    void clearAppBadge();
 
     setCurrentUser(null);
     setGrants(new Set());
