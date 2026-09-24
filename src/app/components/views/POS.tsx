@@ -63,6 +63,38 @@ import {
 import type { PosOrder, PosOrderItem, PosPaymentMethod } from '../../api/pos';
 
 /**
+ * Walk every page of the active catalogue and return the whole set.
+ *
+ * POS keeps the full catalogue in memory on purpose: the category
+ * chip counts and the offline barcode lookup both read across all
+ * items, not just the rendered window. A single size=1000 request
+ * used to stand in for "everything", but the server clamps size to
+ * 1000, so a tenant past that quietly lost rows.
+ *
+ * Rows are deduped by id. The server sorts by (name, id) which is a
+ * total order, but the dedupe also covers a row genuinely changing
+ * underneath a long walk, and it lets the loop stop early if a
+ * server ever repeats a page rather than spinning forever.
+ */
+async function fetchAllActiveItems(): Promise<itemsApi.Item[]> {
+  const PAGE_SIZE = 500;     // under the server clamp, few round-trips
+  const MAX_PAGES = 40;      // 20k rows — a runaway guard, not a target
+  const out: itemsApi.Item[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await itemsApi.list({ page, size: PAGE_SIZE, slim: true, active: true });
+    const rows = res.content ?? [];
+    const fresh = rows.filter(r => !seen.has(r.id));
+    for (const r of fresh) seen.add(r.id);
+    out.push(...fresh);
+    const total = res.totalElements ?? out.length;
+    if (rows.length === 0 || fresh.length === 0 || out.length >= total) break;
+    if (res.totalPages !== undefined && page + 1 >= res.totalPages) break;
+  }
+  return out;
+}
+
+/**
  * POS (Point of Sale) page (V130 + V131).
  *
  * <p>Layout — items grid left (~60%), cart right (~40%).</p>
@@ -380,19 +412,20 @@ export function POS() {
         // with the first 50 tiles while the tail streams in.
         setLoading(false);
 
-        // Phase 2 — backfill more items + everything else. Bumped
-        // back to 1000 now that the query is active-only server-side
-        // — the whole 1000 budget goes to rows POS actually shows,
-        // so this covers even the largest realistic catalogue in
-        // one shot. The 300-row cap was defensive against the
-        // active-filter-bug scenario that no longer exists.
+        // Phase 2 — backfill the rest of the catalogue + everything
+        // else. This used to be a single size=1000 call, but the
+        // server clamps size to 1000 (StockItemService), so a tenant
+        // past 1000 active rows was silently truncated — the grid,
+        // the category chip counts and the local barcode lookup all
+        // read from this set. fetchAllActiveItems walks every page
+        // instead, so the ceiling is gone.
         Promise.all([
-          itemsApi.list({ size: 1000, slim: true, active: true }),
+          fetchAllActiveItems(),
           customersApi.list({ size: 200 }),
           posApi.listOpen(),
           posApi.listActiveFulfillment(),
-        ]).then(([itemList, custList, open, active]) => {
-          setItems(itemList.content.filter(i => i.active));
+        ]).then(([allItems, custList, open, active]) => {
+          setItems(allItems.filter(i => i.active));
           setCustomers(custList.content);
           setOpenOrders(open);
           setActiveOrders(active);
