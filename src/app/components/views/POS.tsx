@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, lazy, Suspense, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo, lazy, Suspense, type MutableRefObject } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
@@ -132,18 +132,72 @@ export function POS() {
   // guards below have passed). Kept ref-callback rather than useEffect
   // so we don't need to hoist the observer above the early-return
   // gates that follow this block.
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const attachLoadMoreSentinel = (node: HTMLDivElement | null) => {
-    if (observerRef.current) { observerRef.current.disconnect(); observerRef.current = null; }
-    if (!node) return;
-    const io = new IntersectionObserver(entries => {
-      if (entries.some(e => e.isIntersecting)) {
-        setVisibleCount(c => c + POS_PAGE);
-      }
-    }, { rootMargin: '200px' });
-    io.observe(node);
-    observerRef.current = io;
-  };
+
+  // v-pos-scroll-smooth — the sellable/filter pass is hoisted up here,
+  // above the early-return gates further down, so it can be memoised.
+  // It used to run as a plain `items.filter(...)` below those gates,
+  // which meant a fresh array on EVERY render (every cart tap, every
+  // 15 s refresh tick) — and a fresh array re-rendered every mounted
+  // tile, which is what made scrolling stutter once the window had
+  // grown to 60+ images.
+  //
+  // v-shared-category-chips / v-item-sellable-align notes live with
+  // the predicate itself below.
+  const filteredItems = useMemo(() => items.filter(i => {
+    // v-item-sellable-align — shared isItemSellable() mirrors the
+    // BE's inStock formula in ShopLinkService.publicMenu so POS and
+    // the Public Shop show the same "in-stock" set for the same
+    // tenant. Prior `(stockQty ?? 0) <= 0` treated null as 0 →
+    // excluded, while the BE treats null as in-stock → included;
+    // that gap caused Shop=82 vs POS=8 on tenants with legacy null-
+    // qty rows.
+    if (!itemsApi.isItemSellable(i)) return false;
+    if (categoryFilter !== 'all' && normalCat(i.category) !== categoryFilter) return false;
+    if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    // Match display name OR SKU OR barcode (V302). A physical scanner
+    // types the code straight into the same input, so widening the
+    // match here means the tile lights up as the digits come in — no
+    // separate scan field needed.
+    return i.name.toLowerCase().includes(q)
+        || (i.sku ?? '').toLowerCase().includes(q)
+        || (i.barcode ?? '').toLowerCase().includes(q);
+  }), [items, categoryFilter, warehouseFilter, search]);
+
+  // The rendered window. Memoised for the same reason as above, and
+  // so the memoised PosItemCard children actually hit their cache.
+  const visibleItems = useMemo(
+    () => filteredItems.slice(0, visibleCount),
+    [filteredItems, visibleCount],
+  );
+
+  // Sentinel observer — same shape as PublicShopPage (stable ref +
+  // useEffect) rather than the callback ref this used to use. That
+  // callback was a new function identity on every render, so React
+  // detached and re-attached it each time and the observer was torn
+  // down and rebuilt on every single render.
+  //
+  // `loading` / `usageOk` are in the dep list because the sentinel
+  // only mounts once those gates open: without them the effect can
+  // miss the mount (unchanged length + count) and infinite scroll
+  // never arms.
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    if (visibleCount >= filteredItems.length) return;   // everything shown
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          setVisibleCount(c => Math.min(c + POS_PAGE, filteredItems.length));
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [filteredItems.length, visibleCount, loading, usageOk]);
   // Modifier picker (V142). When the cashier taps an item with
   // modifiers, this holds the item being configured; the picker
   // dialog reads it and commits the selection back into the cart.
@@ -622,6 +676,20 @@ export function POS() {
     else addItem(it);
   };
 
+  // v-pos-scroll-smooth — PosItemCard is memoised, so it needs a tap
+  // handler whose identity is stable; otherwise every tile re-renders
+  // each time this closure is rebuilt (i.e. every render) and the memo
+  // buys nothing. A latest-ref keeps the call fresh rather than
+  // freezing it: addItem reads `cart` directly for its stock-cap
+  // check, so invoking a stale closure could let the cashier add past
+  // the cap.
+  const onItemTapRef = useRef(onItemTap);
+  useEffect(() => { onItemTapRef.current = onItemTap; });
+  const stableOnItemTap = useCallback(
+    (it: itemsApi.Item) => onItemTapRef.current(it),
+    [],
+  );
+
   /**
    * V302 phase 2 — resolve a raw code (from the search input on
    * Enter, or the camera scan dialog) into a cart line.
@@ -972,27 +1040,8 @@ export function POS() {
   // to compare item.category against the current chip key. Chip
   // labels come from `catLabel` at the render site (see the strip
   // below in this component).
-  const filteredItems = items.filter(i => {
-    // v-item-sellable-align — shared isItemSellable() mirrors the
-    // BE's inStock formula in ShopLinkService.publicMenu so POS and
-    // the Public Shop show the same "in-stock" set for the same
-    // tenant. Prior `(stockQty ?? 0) <= 0` treated null as 0 →
-    // excluded, while the BE treats null as in-stock → included;
-    // that gap caused Shop=82 vs POS=8 on tenants with legacy null-
-    // qty rows.
-    if (!itemsApi.isItemSellable(i)) return false;
-    if (categoryFilter !== 'all' && normalCat(i.category) !== categoryFilter) return false;
-    if (warehouseFilter && (i.warehouseId ?? '') !== warehouseFilter) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    // Match display name OR SKU OR barcode (V302). A physical scanner
-    // types the code straight into the same input, so widening the
-    // match here means the tile lights up as the digits come in — no
-    // separate scan field needed.
-    return i.name.toLowerCase().includes(q)
-        || (i.sku ?? '').toLowerCase().includes(q)
-        || (i.barcode ?? '').toLowerCase().includes(q);
-  });
+  // (filteredItems is computed and memoised near the top of this
+  //  component — see v-pos-scroll-smooth.)
   // V149 — warehouse counts drive the chip labels ("A (7)"). Only
   // computed / rendered when the tenant has 2+ warehouses; a single-
   // warehouse tenant sees no filter chips at all.
@@ -1571,12 +1620,12 @@ export function POS() {
                     the current window so a 200-item tenant paints the
                     first screenful fast. The sentinel below expands
                     the window as the cashier scrolls. */}
-                {filteredItems.slice(0, visibleCount).map(it => (
-                  <PosItemCard key={it.id} item={it} onAdd={onItemTap} />
+                {visibleItems.map(it => (
+                  <PosItemCard key={it.id} item={it} onAdd={stableOnItemTap} />
                 ))}
                 {visibleCount < filteredItems.length && (
                   <div
-                    ref={attachLoadMoreSentinel}
+                    ref={loadMoreRef}
                     className="col-span-full h-10 flex items-center justify-center text-xs text-gray-400"
                   >
                     Loading more…
@@ -1919,7 +1968,12 @@ export function POS() {
  *  glyph when the URL is missing or fails to load (e-commerce style).
  * =================================================================== */
 
-function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsApi.Item) => void }) {
+// v-pos-scroll-smooth — memoised so growing the scroll window only
+// renders the newly revealed tiles instead of every tile already on
+// screen. Relies on `item` identity being stable (it comes straight
+// from the memoised filteredItems array) and on `onAdd` being the
+// stable wrapper above.
+const PosItemCard = memo(function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsApi.Item) => void }) {
   // Track load failure so a broken URL doesn't keep retrying — once
   // the browser errors out we swap to the placeholder permanently.
   const [broken, setBroken] = useState(false);
@@ -1969,7 +2023,7 @@ function PosItemCard({ item, onAdd }: { item: itemsApi.Item; onAdd: (it: itemsAp
       </div>
     </button>
   );
-}
+});
 
 /* ====================================================================
  *  Cart line — qty stepper + inline editable unit price + per-line
