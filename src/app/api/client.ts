@@ -173,6 +173,22 @@ export function apiPath(path: string): string {
     : path;
 }
 
+/**
+ * Make an asset URL the server handed out loadable in an &lt;img&gt;.
+ *
+ * The API returns image paths relative to itself (e.g.
+ * `/api/v1/public/stock-item-images/…`). They must be composed exactly
+ * like request URLs — apiOrigin() + apiPath() — because production's API
+ * base ends in `/api-02` and apiPath strips the leading `/api`; a plain
+ * `API_BASE + path` would produce `/api-02/api/v1/…` and 404. Absolute
+ * URLs and data URIs pass through unchanged.
+ */
+export function resolveAssetUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  if (u.startsWith('/')) return `${apiOrigin()}${apiPath(u)}`;
+  return u;
+}
+
 export async function apiFetch(path: string, opts: RawFetchOptions = {}): Promise<Response> {
   const { json, query, auth = true, headers, ...rest } = opts;
   const url = buildUrl(path, query);

@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import * as itemsApi from '../../api/items';
+import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
 import { Plus, Pencil, Trash2, Search, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX, ScanBarcode } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
@@ -361,19 +362,45 @@ function RowImageCell({
   onSaved: (updated: itemsApi.Item) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [imageUrls, setImageUrls] = useState<string[]>(() => itemsApi.resolveImages(item));
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  /**
+   * The full item, loaded when the dialog opens. Rows are fetched with
+   * images=ref, so they carry no image data: seeding the editor from the
+   * row would open it empty, and Save would then send imageUrls: [] —
+   * which the server treats as "clear every image". Everything the
+   * dialog edits or resends comes from this instead, and Save stays
+   * disabled until it has arrived.
+   */
+  const [full, setFull] = useState<itemsApi.Item | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  // Reset the transient buffer to the current row every time the
-  // dialog opens — a rejected save or an external row change (from
-  // an unrelated toggle) shouldn't leave stale state behind.
+  // Keyed on the id, not the row object: the background 1000-row fetch
+  // replaces every row object when it lands, and a dependency on `item`
+  // would reload and reset an edit the user was in the middle of.
   useEffect(() => {
-    if (open) setImageUrls(itemsApi.resolveImages(item));
-  }, [open, item]);
+    if (!open) return;
+    let cancelled = false;
+    setFull(null);
+    setLoadFailed(false);
+    itemsApi.get(item.id)
+      .then(f => {
+        if (cancelled) return;
+        setFull(f);
+        setImageUrls(itemsApi.resolveImages(f));
+      })
+      .catch(() => { if (!cancelled) setLoadFailed(true); });
+    return () => { cancelled = true; };
+  }, [open, item.id]);
+  const ready = full !== null;
 
-  const cover = item.imageThumbUrl || item.imageUrl || itemsApi.resolveImages(item)[0] || '';
+  // The small server thumbnail (~8 KB) by URL — not the inline cover.
+  const cover = resolveAssetUrl(itemsApi.tileImageOf(item)) || '';
 
   const save = async () => {
+    // Never write without the full item — see `full` above.
+    if (!full) return;
+    const base = full;
     setBusy(true);
     try {
       // Regenerate the small thumbnail from the first image (cover).
@@ -382,23 +409,26 @@ function RowImageCell({
       const imageThumbUrl = first
         ? await makeThumbnailFromUrl(first).catch(() => '')
         : '';
+      // From the full item, not the row: the row may lack the
+      // description too (the first page is slim), and update() writes
+      // description unconditionally.
       const payload: itemsApi.ItemRequest = {
-        sku: item.sku ?? undefined,
-        name: item.name,
-        description: item.description ?? undefined,
-        unit: item.unit ?? undefined,
-        unitPrice: item.unitPrice,
-        unitCost: item.unitCost,
-        stockQty: item.stockQty ?? 0,
-        active: item.active,
-        deductionEnabled: item.deductionEnabled,
+        sku: base.sku ?? undefined,
+        name: base.name,
+        description: base.description ?? undefined,
+        unit: base.unit ?? undefined,
+        unitPrice: base.unitPrice,
+        unitCost: base.unitCost,
+        stockQty: base.stockQty ?? 0,
+        active: base.active,
+        deductionEnabled: base.deductionEnabled,
         imageUrls,
         imageThumbUrl,
-        category: item.category,
-        modifiers: item.modifiers ?? '',
-        warehouseId: item.warehouseId ?? null,
-        itemCategory: item.itemCategory ?? '',
-        minStock: item.minStock ?? 0,
+        category: base.category,
+        modifiers: base.modifiers ?? '',
+        warehouseId: base.warehouseId ?? null,
+        itemCategory: base.itemCategory ?? '',
+        minStock: base.minStock ?? 0,
       };
       const updated = await itemsApi.update(item.id, payload);
       onSaved(updated);
@@ -471,11 +501,20 @@ function RowImageCell({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {!ready && !loadFailed && (
+              <p className="text-sm text-gray-500">Loading current images…</p>
+            )}
+            {loadFailed && (
+              <p className="text-sm text-red-600">
+                Couldn't load this item's current images, so saving is disabled
+                to avoid overwriting them. Close and try again.
+              </p>
+            )}
             <MultiImageDropZone
               value={imageUrls}
               onChange={setImageUrls}
               max={5}
-              disabled={busy}
+              disabled={busy || !ready}
               hint="First image is the product card cover. Drop or click to add."
             />
           </div>
@@ -484,7 +523,7 @@ function RowImageCell({
               variant="ghost"
               className="text-red-600 hover:bg-red-50"
               onClick={clear}
-              disabled={busy || imageUrls.length === 0}
+              disabled={busy || !ready || imageUrls.length === 0}
             >
               <Trash2 className="h-3.5 w-3.5 mr-1.5" />
               Clear all
@@ -493,7 +532,7 @@ function RowImageCell({
               <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
                 Cancel
               </Button>
-              <Button onClick={save} disabled={busy}>
+              <Button onClick={save} disabled={busy || !ready}>
                 {busy ? 'Saving…' : 'Save'}
               </Button>
             </div>
@@ -556,7 +595,9 @@ function RowModifiersPopover({
         stockQty: item.stockQty,
         active: item.active,
         deductionEnabled: item.deductionEnabled,
-        imageUrls: itemsApi.resolveImages(item),
+        // imageUrls deliberately omitted: absent means "leave the images
+        // alone" server-side (V265), whereas resending the row's would
+        // send [] for an images=ref row and clear every image.
         category: item.category,
         modifiers: itemsApi.serializeModifiers({ groups }) ?? '',
         warehouseId: item.warehouseId ?? null,
@@ -762,7 +803,7 @@ export function Items() {
       // lands. Background size=1000 still runs so client-side
       // category / range filters + pagination past page 1 keep
       // working — dropped from a blocking gate to a nice-to-have.
-      const first = await itemsApi.listWithTotals({ ...params, size: 15, slim: true });
+      const first = await itemsApi.listWithTotals({ ...params, size: 15, slim: true, images: 'ref' });
       setRows(first.content ?? []);
       setTotalRows(first.totalElements ?? 0);
       setServerTotals({
@@ -774,7 +815,10 @@ export function Items() {
       });
       setLoading(false);
       setTimeout(() => {
-        itemsApi.list({ ...params, size: 1000 })
+        // images=ref but NOT slim: the rows keep their description, which
+        // the row-level edit paths resend and update() writes
+        // unconditionally. Only the base64 images are dropped.
+        itemsApi.list({ ...params, size: 1000, images: 'ref' })
           .then(full => {
             setRows(full.content ?? []);
             setTotalRows(full.totalElements ?? 0);
@@ -856,8 +900,8 @@ export function Items() {
       if (imageFilter) {
         // "Has image" is true when either the legacy single-image
         // slot OR the multi-image list carries a non-empty entry.
-        const hasImage = !!(r.imageUrl && r.imageUrl.trim())
-          || !!(r.imageUrls && r.imageUrls.some(u => u && u.trim()));
+        // images=ref rows signal this through imagePath, not imageUrl.
+        const hasImage = itemsApi.hasItemImage(r);
         if (imageFilter === 'yes' && !hasImage) return false;
         if (imageFilter === 'no'  &&  hasImage) return false;
       }
@@ -993,7 +1037,19 @@ export function Items() {
     setForm(EMPTY_FORM);
     setDialogOpen(true);
   };
-  const openEdit = (it: itemsApi.Item) => {
+  const openEdit = async (row: itemsApi.Item) => {
+    // Rows are fetched with images=ref, so they carry no image data (and a
+    // row from the slim first page has no description either). Seeding the
+    // form from the row would open the editor with no images, and saving
+    // would send imageUrls: [] — clearing every image. Load the full item
+    // first, and refuse to open on a partial one.
+    let it: itemsApi.Item;
+    try {
+      it = await itemsApi.get(row.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not load the item');
+      return;
+    }
     setEditing(it);
     setForm({
       sku: it.sku ?? '',
@@ -1138,7 +1194,8 @@ export function Items() {
       stockQty: it.stockQty ?? 0,
       active: patch.active ?? it.active,
       deductionEnabled: patch.deductionEnabled ?? it.deductionEnabled,
-      imageUrls: itemsApi.resolveImages(it),
+      // imageUrls deliberately omitted — absent leaves the images alone
+      // (V265); resending an images=ref row's would clear them all.
       category: it.category,
       modifiers: it.modifiers ?? '',
       // `warehouseId` in patch may legitimately be null (clearing the
@@ -1240,7 +1297,10 @@ export function Items() {
                                                             : '',                                             width: 18 },
                     { header: 'Stock IN/OUT',   value: it => it.deductionEnabled ? 'Yes' : 'No',              width: 12 },
                     { header: 'Active',         value: it => it.active ? 'Yes' : 'No',                        width: 10 },
-                    { header: 'Image URL',      value: it => it.imageUrl ?? (it.imageUrls?.[0] ?? ''),        width: 40 },
+                    // The image's URL. This used to export the raw base64 — tens
+                    // to hundreds of KB per cell, past Excel's 32,767-character
+                    // cell limit, so it was truncated and unusable anyway.
+                    { header: 'Image URL',      value: it => resolveAssetUrl(it.imagePath) ?? it.imageUrl ?? (it.imageUrls?.[0] ?? ''), width: 40 },
                   ],
                   rows: filtered,
                 });

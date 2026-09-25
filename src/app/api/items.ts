@@ -41,6 +41,11 @@ export interface Item {
    *  of the full 200 KB image. Null on legacy items; readers fall
    *  back to {@link imageUrl}. */
   imageThumbUrl?: string | null;
+  /** Cover image URL on the public image endpoint, relative to the API —
+   *  pass through resolveAssetUrl(). Absent when the item has no image. */
+  imagePath?: string | null;
+  /** Same for a small (~240 px) server thumbnail: what a tile should load. */
+  thumbPath?: string | null;
   /** Optional barcode (V302). Unique per tenant when set. */
   barcode?: string | null;
   /** POS category — drives the filter tabs on the items grid. (V142) */
@@ -177,6 +182,25 @@ export interface ItemRequest {
  *  Legacy rows only have {@link Item.imageUrl}; new rows carry the
  *  full {@link Item.imageUrls}. Callers that only need the cover can
  *  read the first entry (or fall back to {@code null}). */
+/** Best image for a tile or table cell: the server thumbnail when the row
+ *  has one, else any inline image (a row fetched without images=ref, or
+ *  an older API). Resolve with resolveAssetUrl() before rendering. */
+export function tileImageOf(
+  it: Pick<Item, 'thumbPath' | 'imageThumbUrl' | 'imageUrl' | 'imageUrls'>,
+): string | null {
+  return it.thumbPath || it.imageThumbUrl || it.imageUrl || (it.imageUrls?.[0] ?? null);
+}
+
+/** Whether the item has an image, for rows with or without inline data —
+ *  an images=ref row signals it through imagePath instead of imageUrl. */
+export function hasItemImage(
+  it: Pick<Item, 'imagePath' | 'imageUrl' | 'imageUrls'>,
+): boolean {
+  return !!it.imagePath
+    || !!(it.imageUrl && it.imageUrl.trim())
+    || !!(it.imageUrls && it.imageUrls.some(u => u && u.trim()));
+}
+
 export function resolveImages(it: Pick<Item, 'imageUrl' | 'imageUrls'>): string[] {
   if (Array.isArray(it.imageUrls) && it.imageUrls.length > 0) {
     return it.imageUrls.filter((s): s is string => typeof s === 'string' && s.length > 0);
@@ -244,6 +268,14 @@ export interface ListParams {
    *  render. POS uses this; the Items page keeps it off because
    *  admins need to see inactive rows there. */
   active?: boolean;
+  /** 'ref' drops the inline base64 images; rows carry imagePath /
+   *  thumbPath and each image loads by URL — lazily, and cacheably.
+   *
+   *  ONLY for read-only surfaces, or ones that re-fetch the item before
+   *  writing. A row fetched this way has no imageUrls, and an update that
+   *  sends `imageUrls: resolveImages(row)` would send [] — which the
+   *  server treats as "clear every image". */
+  images?: 'ref';
 }
 
 export interface PagedResponse<T> {
@@ -263,6 +295,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Item>
   if (params.size !== undefined) q.size = params.size;
   if (params.slim) q.slim = true;
   if (params.active) q.active = true;
+  if (params.images) q.images = params.images;
   return apiJson('/api/v1/stock-items', { query: q });
 }
 
@@ -311,6 +344,7 @@ export async function listWithTotals(params: ListParams = {}): Promise<ItemsList
   if (params.page !== undefined) q.page = params.page;
   if (params.size !== undefined) q.size = params.size;
   if (params.slim) q.slim = true;
+  if (params.images) q.images = params.images;
   return apiJson('/api/v1/stock-items/with-totals', { query: q });
 }
 

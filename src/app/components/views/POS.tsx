@@ -36,6 +36,7 @@ const CameraBarcodeScanner = lazy(() =>
 );
 import * as posApi from '../../api/pos';
 import * as itemsApi from '../../api/items';
+import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
 import * as customersApi from '../../api/customers';
 import { loyaltyPos, type CustomerLoyaltyState, type EarnSummary, type CustomerBalanceSummary, type LoyaltyType } from '../../api/loyalty';
@@ -82,7 +83,10 @@ async function fetchAllActiveItems(): Promise<itemsApi.Item[]> {
   const out: itemsApi.Item[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await itemsApi.list({ page, size: PAGE_SIZE, slim: true, active: true });
+    // images=ref: the covers are base64 (~40 KB avg, up to ~390 KB) and
+    // walking every page used to pull all of them. Tiles load a small
+    // thumbnail by URL instead. Safe because POS never writes items.
+    const res = await itemsApi.list({ page, size: PAGE_SIZE, slim: true, active: true, images: 'ref' });
     const rows = res.content ?? [];
     const fresh = rows.filter(r => !seen.has(r.id));
     for (const r of fresh) seen.add(r.id);
@@ -403,7 +407,7 @@ export function POS() {
           // size cap missing from the grid (POS and Shop diverged
           // on same-tenant counts). Server sort is by name; matches
           // ShopLinkService.publicMenu so both surfaces align.
-          itemsApi.list({ page: 0, size: 50, slim: true, active: true }),
+          itemsApi.list({ page: 0, size: 50, slim: true, active: true, images: 'ref' }),
           settingsApi.get('pos'),
         ]);
         setItems(firstPage.content.filter(i => i.active));
@@ -527,7 +531,11 @@ export function POS() {
       unitPrice: l.unitPrice,
       lineTotal: l.lineTotal,
       notes: l.notes,
-      imageUrl: (l.stockItemId && itemById.get(l.stockItemId)?.imageUrl) || null,
+      // An absolute thumbnail URL rather than the inline base64: this
+      // snapshot is rebroadcast on EVERY cart change, so inline covers
+      // made each tap ship every line's full image to the display. The
+      // endpoint is public, so a display on another device can load it.
+      imageUrl: (l.stockItemId && resolveAssetUrl(itemsApi.tileImageOf(itemById.get(l.stockItemId) ?? {}))) || null,
     }));
     // Logo fallback chain: POS-specific logo (posLogoUrl) wins so a
     // tenant can pick a compact / mono variant just for the customer
@@ -1241,7 +1249,7 @@ export function POS() {
                 <CartLineRow
                   key={idx}
                   line={l}
-                  imageUrl={(l.stockItemId && itemsById.get(l.stockItemId)?.imageUrl) || null}
+                  imageUrl={(l.stockItemId && resolveAssetUrl(itemsApi.tileImageOf(itemsById.get(l.stockItemId) ?? {}))) || null}
                   maxQty={maxQty}
                   onQty={n => setLineQty(idx, n)}
                   onRemove={() => removeLine(idx)}
@@ -2010,10 +2018,9 @@ const PosItemCard = memo(function PosItemCard({ item, onAdd }: { item: itemsApi.
   // Track load failure so a broken URL doesn't keep retrying — once
   // the browser errors out we swap to the placeholder permanently.
   const [broken, setBroken] = useState(false);
-  // V280 — prefer the small thumbnail (~15 KB) over the full cover
-  // (~200 KB) when the server supplied one. Legacy items still land
-  // here via imageUrl.
-  const coverSrc = item.imageThumbUrl || item.imageUrl;
+  // The server thumbnail (~8 KB, generated and cached by the API) by URL.
+  // Falls back to any inline image a row still carries.
+  const coverSrc = resolveAssetUrl(itemsApi.tileImageOf(item));
   const showImage = !!coverSrc && !broken;
   return (
     <button
