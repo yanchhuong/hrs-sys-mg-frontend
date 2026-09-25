@@ -483,13 +483,13 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                   {currentUser?.role.replace('_', ' ')}
                 </div>
               </FieldBox>
-              <FieldBox label="Employee ID">
+              <FieldBox label="Employee No">
                 {/* Human emp_no (e.g. EMP002), never the backend UUID
                     — currentUser.employeeId is the FK to employees,
                     which is internal plumbing nobody wants to see in
                     a profile card. */}
                 <div className="h-9 flex items-center px-3 border rounded-md bg-gray-50 text-sm tabular-nums text-gray-700">
-                  {currentEmployee?.empNo || currentEmployee?.id || '—'}
+                  {currentEmployee?.empNo || currentUser?.employeeNo || 'Not linked'}
                 </div>
               </FieldBox>
             </div>

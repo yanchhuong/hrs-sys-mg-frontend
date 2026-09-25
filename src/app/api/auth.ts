@@ -60,6 +60,13 @@ export interface AuthUser {
    *  dialog renders a Switch that reads this and calls
    *  {@link updateNotifications} to persist. */
   notificationsEnabled?: boolean;
+  /** GET /auth/me: the linked employee's number (Employee No); null
+   *  when the account has no employee. */
+  employeeNo?: string | null;
+  /** GET /auth/me: when the account was created (ISO). */
+  createdAt?: string | null;
+  /** GET /auth/me: most recent successful sign-in (ISO). */
+  lastLogin?: string | null;
 }
 
 export interface LoginResponse {

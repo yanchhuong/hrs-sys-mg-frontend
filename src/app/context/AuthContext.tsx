@@ -162,7 +162,11 @@ function fromApi(apiUser: authApi.AuthUser): User {
     // V-fcm-3-user-pref — carry the per-user push toggle through so
     // useFcmToken can skip registration when the user is opted out.
     notificationsEnabled: apiUser.notificationsEnabled,
-    createdAt: new Date().toISOString(),
+    // From /auth/me. Used to be stamped with "now", so the profile's
+    // Member Since always read today; Last Sign-in was never filled.
+    createdAt: apiUser.createdAt ?? '',
+    lastLogin: apiUser.lastLogin ?? undefined,
+    employeeNo: apiUser.employeeNo ?? null,
     isActive: true,
   };
 }

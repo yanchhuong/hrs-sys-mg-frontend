@@ -74,6 +74,8 @@ export interface User {
   notificationsEnabled?: boolean;
   createdAt: string;
   lastLogin?: string;
+  /** The linked employee's number (Employee No); null when unlinked. */
+  employeeNo?: string | null;
   isActive: boolean;
 }
 
