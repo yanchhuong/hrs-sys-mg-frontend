@@ -544,7 +544,11 @@ export function POS() {
     // the fork/knife glyph placeholder.
     const resolvedLogo =
       ((posSettings.posLogoUrl ?? '').trim() || null)
-      ?? ((companyInfo?.logoUrl ?? '').trim() || null);
+      // The company logo by absolute URL, not inline: this snapshot is
+      // rebroadcast on EVERY cart change, and the inline logo is ~314 KB of
+      // base64. The endpoint is public, so a display on another device can
+      // load it. Inline only as a fallback for an API that predates logoPath.
+      ?? (resolveAssetUrl(companyInfo?.logoPath) || (companyInfo?.logoUrl ?? '').trim() || null);
     const snapshot: DisplayState = {
       shopName: posSettings.posShopName?.trim() || 'Welcome',
       logoUrl: resolvedLogo,

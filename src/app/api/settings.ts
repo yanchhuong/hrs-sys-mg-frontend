@@ -83,6 +83,12 @@ export interface CompanyInfo {
   email?: string | null;
   website?: string | null;
   logoUrl?: string | null;
+  /** The logo on the public image endpoint, relative to the API — pass
+   *  through resolveAssetUrl(). Read-only; ignored on update. Use it where
+   *  the logo only needs to be SHOWN and inline base64 would be wasteful. */
+  logoPath?: string | null;
+  /** Same, 128 px. */
+  logoThumbPath?: string | null;
   currency?: string;
   /** date-fns pattern used to render visible dates across the app (V60).
    *  Null on the wire leaves the persisted value untouched on PUT. */
