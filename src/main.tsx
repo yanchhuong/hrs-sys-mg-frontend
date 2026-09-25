@@ -3,6 +3,7 @@
   import App from "./app/App";
   import "./styles/index.css";
   import { installChunkReloadSafetyNet } from "./app/utils/lazyWithReload";
+  import { rememberDesktopPreference } from "./app/utils/desktopOptOut";
 
   // Belt-and-suspenders backup for the React.lazy-level guard: any raw
   // dynamic import() that isn't wrapped in lazyWithReload() (e.g. a
@@ -11,5 +12,9 @@
   // "Failed to fetch dynamically imported module" errors bubbling up
   // through window `error` / `unhandledrejection` events.
   installChunkReloadSafetyNet();
+
+  // Persist a "?desktop=1" visit before anything renders, so the phone
+  // redirect in vercel.json leaves this visitor alone on later page loads.
+  rememberDesktopPreference();
 
   createRoot(document.getElementById("root")!).render(<App />);

@@ -3,8 +3,47 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "(www\\.)?hr-share\\.com"
+        },
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([iI][pP]hone|[iI][pP]od|[aA]ndroid.*[mM]obile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile).*"
+        }
+      ],
+      "missing": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([bB]ot|[cC]rawler|[sS]pider|[sS]lurp|facebookexternalhit|[eE]mbedly|[pP]interest|[wW]hats[aA]pp|[tT]elegram|[aA]pple[bB]ot|[lL]ighthouse|HeadlessChrome).*"
+        },
+        {
+          "type": "cookie",
+          "key": "prefer_desktop"
+        },
+        {
+          "type": "query",
+          "key": "desktop"
+        }
+      ],
+      "destination": "https://m.hr-share.com/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [
-    { "source": "/api-02/:path*", "destination": "https://api.hr-share.com/api/:path*" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api-02/:path*",
+      "destination": "https://api.hr-share.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
