@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -18,6 +18,8 @@ import { mockEmployees } from '../../data/mockData';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as positionsApi from '../../api/positions';
+import * as usersApi from '../../api/users';
+import { useTeamScope } from '../../hooks/useTeamScope';
 import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
 import { SeatCapDialog } from './SeatCapDialog';
@@ -66,7 +68,56 @@ export function AddEmployeeDialog({
 
   const patch = (p: Partial<Employee>) => setForm({ ...form, ...p });
 
-  const reset = () => { setForm(blank); setTab('personal'); setSubmitting(false); };
+  // ---- Link an existing user account (the reverse of Create User's
+  // employee picker). Admin-only, like user management itself; the
+  // server enforces that too.
+  const { isAdmin } = useTeamScope();
+  const canLinkUser = isAdmin && !USE_MOCKS;
+  const [linkUserId, setLinkUserId] = useState('');
+  const [linkableUsers, setLinkableUsers] = useState<usersApi.User[]>([]);
+  useEffect(() => {
+    if (!open || !canLinkUser) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Every page — the list is capped at 200 per request.
+        const all: usersApi.User[] = [];
+        for (let page = 0; page < 50; page++) {
+          const res = await usersApi.list({ page, size: 200 });
+          all.push(...res.data);
+          if (page + 1 >= (res.totalPages || 1)) break;
+        }
+        // Only accounts not yet linked to an employee can be picked.
+        if (!cancelled) setLinkableUsers(all.filter(u => !u.employeeId && u.isActive));
+      } catch {
+        if (!cancelled) setLinkableUsers([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, canLinkUser]);
+
+  const userOptions = useMemo(() => linkableUsers.map(u => ({
+    value: u.id,
+    label: u.name?.trim() || u.email,
+    secondary: u.name?.trim() ? u.email : u.role,
+    searchKey: [u.name, u.email, u.username].filter(Boolean).join(' '),
+  })), [linkableUsers]);
+
+  /** Picking a user fills the fields the account already knows — name
+   *  (when the operator hasn't typed one) and email — so the employee
+   *  record starts out matching the login it is linked to. */
+  const pickUser = (id: string) => {
+    setLinkUserId(id);
+    const u = linkableUsers.find(x => x.id === id);
+    if (!u) return;
+    setForm(prev => ({
+      ...prev,
+      name: prev.name?.trim() ? prev.name : (u.name?.trim() || prev.name),
+      email: u.email,
+    }));
+  };
+
+  const reset = () => { setForm(blank); setTab('personal'); setSubmitting(false); setLinkUserId(''); };
 
   // One read of the chosen ID type for the select, the Visa Expire
   // gate and the payload, so the control and what gets stored can't
@@ -164,8 +215,11 @@ export function AddEmployeeDialog({
         visaExpireDate: visaExpireFor(idType, form.visaExpireDate),
         contractExpireDate: form.contractExpireDate || undefined,
         status: form.status || 'active',
+        linkUserId: linkUserId || undefined,
       } as employeesApi.CreateEmployeeRequest);
-      toast.success(`Employee ${created.empNo} created`);
+      toast.success(linkUserId
+        ? `Employee ${created.empNo} created and linked to ${form.email}`
+        : `Employee ${created.empNo} created`);
       // Pass a minimal Employee shape — parent refetches the live list anyway.
       onCreated({ ...(form as Employee), id: created.empNo, status: created.status as Employee['status'] });
       reset();
@@ -227,6 +281,25 @@ export function AddEmployeeDialog({
 
           {/* Personal */}
           <TabsContent value="personal" className="space-y-4 pt-4">
+            {canLinkUser && (
+              <Field label="Link to user account (optional)">
+                <SearchablePicker
+                  options={userOptions}
+                  value={linkUserId}
+                  onChange={pickUser}
+                  allowClear
+                  placeholder="Create from an existing user…"
+                  searchPlaceholder="Search name or email"
+                  emptyResultsLabel="No matching user"
+                  emptyOptionsHint="Every user account is already linked to an employee."
+                />
+                {linkUserId && (
+                  <p className="text-xs text-gray-500">
+                    Name and email are filled from the account. On create, that user signs in as this employee.
+                  </p>
+                )}
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Field label="Employee ID" required>
                 <Input

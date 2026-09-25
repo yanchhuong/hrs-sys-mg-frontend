@@ -92,6 +92,9 @@ export interface Employee {
 }
 
 export type CreateEmployeeRequest = Omit<Employee, 'id' | 'status' | 'profileImage'> & {
+  /** Create only, admin only: an existing user account to link to the
+   *  new employee. The server refuses a user that is already linked. */
+  linkUserId?: string;
   status?: string;
   /** Bulk-upload only: lets the server find-or-create a Department when the
    *  frontend couldn't resolve `departmentId` from a name on the spreadsheet. */
