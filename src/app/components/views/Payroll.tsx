@@ -3392,6 +3392,7 @@ export function Payroll() {
                         <TableHead className="text-center w-[90px]">Type</TableHead>
                         <TableHead className="text-center w-[80px]">Work Day</TableHead>
                         <TableHead className="text-center w-[80px]">Present</TableHead>
+                        <TableHead className="w-[200px]">Remark</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Net Salary</TableHead>
                         <TableHead>Total Earnings</TableHead>
@@ -3522,6 +3523,22 @@ export function Payroll() {
                           </TableCell>
                         );
                       })()}
+                      {/* Remark — free-text note on this row. Saves on
+                          blur / Enter, and only when the text actually
+                          changed, so tabbing through the table doesn't
+                          fire a PATCH per row. */}
+                      <TableCell className="w-[200px]">
+                        <RemarkCell
+                          value={(record as PayrollItem).remark ?? ''}
+                          disabled={!selectedBatch || USE_MOCKS}
+                          onSave={async (text) => {
+                            if (!selectedBatch) return;
+                            await payrollApi.updateItemRemark(selectedBatch.id, record.id, text);
+                            setBatchItems(prev => prev.map(it =>
+                              it.id === record.id ? { ...it, remark: text || null } : it));
+                          }}
+                        />
+                      </TableCell>
                       <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
                       <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
@@ -3985,6 +4002,63 @@ function derivePayslipLines(
     if ((payslip.otherDeductions ?? 0) > 0)      deductions.push({ label: 'Other Deductions',    amount: payslip.otherDeductions! });
   }
   return { earnings, deductions };
+}
+
+/**
+ * Inline remark editor for one payroll row.
+ *
+ * Local state while typing, committed on blur or Enter — and only when
+ * the text actually differs from what was loaded, so tabbing across the
+ * table does not fire a PATCH per row. Escape abandons the edit.
+ *
+ * On failure the cell rolls back to the saved value and surfaces the
+ * error, rather than leaving text on screen that was never persisted.
+ */
+function RemarkCell({
+  value, onSave, disabled,
+}: {
+  value: string;
+  onSave: (text: string) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(value);
+  const [busy, setBusy] = useState(false);
+
+  // Re-sync when the row's saved value changes underneath us (batch
+  // reload, or another edit landing) — but never mid-edit.
+  useEffect(() => { setText(value); }, [value]);
+
+  const commit = async () => {
+    const next = text.trim();
+    if (next === (value ?? '').trim()) return;
+    setBusy(true);
+    try {
+      await onSave(next);
+    } catch (e) {
+      setText(value);
+      toast.error(e instanceof Error ? e.message : 'Could not save the remark');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      value={text}
+      disabled={disabled || busy}
+      onChange={e => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') { setText(value); (e.target as HTMLInputElement).blur(); }
+      }}
+      maxLength={500}
+      placeholder="Add a note…"
+      title={text || 'Add a note'}
+      className="w-full bg-transparent text-sm px-2 py-1 rounded border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white focus:outline-none disabled:opacity-50"
+    />
+  );
 }
 
 function PayslipBody({

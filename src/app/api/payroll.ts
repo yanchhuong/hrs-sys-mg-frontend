@@ -64,6 +64,9 @@ export interface PayrollItem {
   earnings?: Record<string, number>;
   deductionsBreakdown?: Record<string, number>;
   payrollAccount?: string;
+  /** Free-text note on THIS row. Distinct from PayrollBatch.remarks,
+   *  which is one note shared by every payslip in the run. */
+  remark?: string | null;
   generatedAt?: string;
   /** Per-channel dispatch state. ISO timestamp = sent on that channel.
    *  Null/missing = not yet sent. Once stamped server-side the timestamp
@@ -174,6 +177,26 @@ export async function updateDraftItem(
   return apiJson(`/api/v1/payroll/batches/${batchId}/items/${itemId}`, {
     method: 'PATCH',
     json: patch,
+  });
+}
+
+/** Set or clear a single row's remark.
+ *
+ *  Separate endpoint from {@link updateDraftItem} on purpose: that one
+ *  owns the row's money and rewrites workDays from its payload, so
+ *  sending a remark through it would clear a work-days override as a
+ *  side effect. This one is also allowed after the batch leaves draft,
+ *  since a note changes no figures.
+ *
+ *  Pass an empty string to clear — the server stores blank as NULL. */
+export async function updateItemRemark(
+  batchId: string,
+  itemId: string,
+  remark: string,
+): Promise<PayrollItem> {
+  return apiJson(`/api/v1/payroll/batches/${batchId}/items/${itemId}/remark`, {
+    method: 'PATCH',
+    json: { remark },
   });
 }
 
