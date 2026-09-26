@@ -3392,8 +3392,7 @@ export function Payroll() {
                         <TableHead className="text-center w-[90px]">Type</TableHead>
                         <TableHead className="text-center w-[80px]">Work Day</TableHead>
                         <TableHead className="text-center w-[80px]">Present</TableHead>
-                        <TableHead className="w-[200px]">Remark</TableHead>
-                        <TableHead>Currency</TableHead>
+                        <TableHead className="w-[320px]">Remark</TableHead>
                         <TableHead>Net Salary</TableHead>
                         <TableHead>Total Earnings</TableHead>
                         <TableHead>Deductions</TableHead>
@@ -3527,7 +3526,7 @@ export function Payroll() {
                           blur / Enter, and only when the text actually
                           changed, so tabbing through the table doesn't
                           fire a PATCH per row. */}
-                      <TableCell className="w-[200px]">
+                      <TableCell className="w-[320px]">
                         <RemarkCell
                           value={(record as PayrollItem).remark ?? ''}
                           disabled={!selectedBatch || USE_MOCKS}
@@ -3539,7 +3538,6 @@ export function Payroll() {
                           }}
                         />
                       </TableCell>
-                      <TableCell>{record.currency}</TableCell>
                       <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
                       <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
                       <TableCell className="text-red-600">${formatMoney(record.deductions)}</TableCell>
