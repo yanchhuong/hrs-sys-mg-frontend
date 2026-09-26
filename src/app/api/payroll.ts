@@ -74,6 +74,16 @@ export interface PayrollItem {
   mailSentAt?: string | null;
   smsSentAt?: string | null;
   bankSentAt?: string | null;
+  /** Author / modifier of THIS slip. Separate from the batch's pair:
+   *  a slip can be edited on its own (per-row amount, per-row remark),
+   *  and the batch modifier only says someone changed something in the
+   *  run. Null on slips that predate the audit columns (V356). */
+  createdAt?: string | null;
+  createdById?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedById?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CreateBatchItem {
