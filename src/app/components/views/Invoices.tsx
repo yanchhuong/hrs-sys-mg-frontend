@@ -669,7 +669,7 @@ export function Invoices({
                                                      : r.kind === 'debit_note'  ? 'Debit Note' : r.kind,     width: 14 },
                 { header: 'Issue Date',    value: r => r.issueDate,                                          width: 12 },
                 { header: 'Due Date',      value: r => r.dueDate ?? '',                                     width: 12 },
-                { header: 'Customer',      value: r => customerById.get(r.customerId)?.name ?? '',          width: 30 },
+                { header: 'Customer',      value: r => r.customerId ? (customerById.get(r.customerId)?.name ?? '') : 'Walk-in', width: 30 },
                 { header: 'Currency',      value: r => r.currency,                                          width: 8  },
                 { header: 'Subtotal',      value: r => Number(r.subtotal ?? 0),                             width: 12 },
                 { header: 'Tax',           value: r => Number(r.taxAmount ?? 0),                            width: 10 },
@@ -875,7 +875,14 @@ export function Invoices({
                         )}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {customerById.get(inv.customerId)?.name ?? <span className="text-gray-400">(unknown)</span>}
+                        {/* No customerId at all = walk-in (V357 made it
+                            optional). An id that does not resolve is a
+                            different thing — a deleted customer — and
+                            still reads as (unknown). */}
+                        {inv.customerId
+                          ? (customerById.get(inv.customerId)?.name
+                              ?? <span className="text-gray-400">(unknown)</span>)
+                          : <span className="text-gray-400">Walk-in</span>}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">{formatDate(inv.issueDate)}</TableCell>
                       {/* CN amount represents money we owe customer →
@@ -1583,7 +1590,6 @@ function InvoiceFormDialog({
 
   const validate = (): boolean => {
     if (!invoiceNo) { toast.error('Invoice No. is required'); return false; }
-    if (!customerId) { toast.error('Customer is required'); return false; }
     if (!issueDate) { toast.error('Issue date is required'); return false; }
     if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return false; }
     if (items.length === 0 || items.some(it => !it.name.trim())) {
