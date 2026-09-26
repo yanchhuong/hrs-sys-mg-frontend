@@ -13,6 +13,7 @@ import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as overtimeApi from '../../api/overtime';
 import * as deductionsApi from '../../api/deductions';
 import * as settingsApi from '../../api/settings';
+import * as attendanceApi from '../../api/attendance';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import * as increasesApi from '../../api/increases';
 import { USE_MOCKS } from '../../api/client';
@@ -373,6 +374,9 @@ export function Payroll() {
    *  in O(1) inside the table render. Refreshed when the selected
    *  batch flips so a fresh batch carries its own lookup. */
   const [beneficiaryByEmpId, setBeneficiaryByEmpId] = useState<Map<string, beneficiaryApi.PayWayBeneficiary>>(new Map());
+  /** employeeId -> number of days in the batch month with BOTH an
+   *  in-punch and an out-punch. Feeds the Present column. */
+  const [presentByEmpId, setPresentByEmpId] = useState<Map<string, number>>(new Map());
   useEffect(() => {
     if (!selectedBatch) {
       setSelectedRowIds(new Set());
@@ -1078,6 +1082,57 @@ export function Payroll() {
    *  lookups for the Payout Ready chip. Declared AFTER
    *  {@code payrollRecords} so the deps array doesn't trip JS's
    *  temporal-dead-zone check. */
+  /** Present days (per employee) for the batch's month.
+   *
+   *  "Present" here means the day was actually completed — an in-punch
+   *  AND an out-punch — which is NOT what /attendance/month returns.
+   *  That endpoint counts by `status` ('present' or 'late'), so a day
+   *  someone forgot to clock out of still counts. Hence the raw rows.
+   *
+   *  Both punch shapes are accepted: the legacy checkIn/checkOut pair
+   *  and the 4-scan morning/noon fields the fingerprint sync writes.
+   *
+   *  attendanceApi.listRange walks one request per day — the backend
+   *  serves single-day lists only — so this is ~30 calls per batch
+   *  view. It runs once per batch, off the render path, and failures
+   *  of individual days are swallowed inside listRange.
+   */
+  useEffect(() => {
+    const month = selectedBatch?.monthYear
+      ?? (USE_MOCKS ? payrollRecords : batchItems)[0]?.month;
+    if (!selectedBatch || !month) {
+      setPresentByEmpId(new Map());
+      return;
+    }
+    let cancelled = false;
+    const [y, m] = month.split('-').map(Number);
+    if (!y || !m) { setPresentByEmpId(new Map()); return; }
+    const from = `${month}-01`;
+    const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+
+    attendanceApi.listRange({ from, to })
+      .then(entries => {
+        if (cancelled) return;
+        const counted = new Set<string>();   // employeeId|date, guards duplicate rows
+        const tally = new Map<string, number>();
+        for (const e of entries) {
+          if (!e.employeeId) continue;
+          const hasIn  = !!(e.checkIn  || e.morningIn  || e.noonIn);
+          const hasOut = !!(e.checkOut || e.morningOut || e.noonOut);
+          if (!hasIn || !hasOut) continue;
+          const key = `${e.employeeId}|${e.date}`;
+          if (counted.has(key)) continue;
+          counted.add(key);
+          tally.set(e.employeeId, (tally.get(e.employeeId) ?? 0) + 1);
+        }
+        setPresentByEmpId(tally);
+      })
+      .catch(() => { if (!cancelled) setPresentByEmpId(new Map()); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatch?.id, selectedBatch?.monthYear, batchItems.length]);
+
   useEffect(() => {
     const rows = USE_MOCKS ? payrollRecords : batchItems;
     if (!selectedBatch || rows.length === 0) {
@@ -3330,11 +3385,12 @@ export function Payroll() {
                           </TableHead>
                         )}
                         <TableHead>Employee</TableHead>
-                        <TableHead className="text-center w-[110px]">Payout Ready</TableHead>
+                        <TableHead className="text-center w-[110px]">Payout</TableHead>
                         <TableHead>Position / Department</TableHead>
                         <TableHead>Payroll Account</TableHead>
                         <TableHead className="text-center w-[90px]">Type</TableHead>
                         <TableHead className="text-center w-[80px]">Work Day</TableHead>
+                        <TableHead className="text-center w-[80px]">Present</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Net Salary</TableHead>
                         <TableHead>Total Earnings</TableHead>
@@ -3447,6 +3503,21 @@ export function Payroll() {
                               : `Standard for ${record.month ?? selectedBatch?.monthYear} based on Weekend Configuration`}
                           >
                             {value}
+                          </TableCell>
+                        );
+                      })()}
+                      {/* Present — days this employee both clocked in and
+                          clocked out during the batch month. Blank map
+                          (load failed or still in flight) shows a dash
+                          rather than a misleading 0. */}
+                      {(() => {
+                        const n = record.employeeId ? presentByEmpId.get(record.employeeId) : undefined;
+                        return (
+                          <TableCell
+                            className="text-center text-sm tabular-nums"
+                            title="Days with both a check-in and a check-out"
+                          >
+                            {presentByEmpId.size === 0 ? '—' : (n ?? 0)}
                           </TableCell>
                         );
                       })()}
