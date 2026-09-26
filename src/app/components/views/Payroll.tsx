@@ -3065,6 +3065,7 @@ export function Payroll() {
                               earningCategories={earningCategories}
                               deductionCategories={deductionCategories}
                               onDownload={handleDownloadPayslip}
+                              remark={selectedBatch?.remarks}
                             />
                           )}
                         </DialogContent>
@@ -3569,6 +3570,7 @@ export function Payroll() {
                                 earningCategories={earningCategories}
                                 deductionCategories={deductionCategories}
                                 onDownload={handleDownloadPayslip}
+                                remark={selectedBatch?.remarks}
                               />
                             )}
                           </DialogContent>
@@ -3986,13 +3988,16 @@ function derivePayslipLines(
 }
 
 function PayslipBody({
-  payslip, employees, earningCategories, deductionCategories, onDownload,
+  payslip, employees, earningCategories, deductionCategories, onDownload, remark,
 }: {
   payslip: AnyPayslip;
   employees: Employee[];
   earningCategories: PayrollCategory[];
   deductionCategories: PayrollCategory[];
   onDownload: (id: string) => void;
+  /** Batch-level remark. There is no per-payslip remark column, so this
+   *  is the same note for everyone in the run. */
+  remark?: string | null;
 }) {
   const employee = employees.find(
     e => e.id === payslip.employeeId || (e as Employee).apiId === payslip.employeeId,
@@ -4119,6 +4124,13 @@ function PayslipBody({
           <span className="text-2xl font-bold text-blue-600">${formatMoney(payslip.totalPay)}</span>
         </div>
       </div>
+
+      {!!remark?.trim() && (
+        <div className="border-t pt-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Remark</p>
+          <p className="text-sm text-gray-800 whitespace-pre-wrap">{remark.trim()}</p>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <Button
