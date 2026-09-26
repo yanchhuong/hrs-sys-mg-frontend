@@ -1799,16 +1799,19 @@ function InvoiceFormDialog({
               comes back as a 409 naming the number. */}
           <div className="grid grid-cols-[1fr_280px] gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Customer <span className="text-red-600">*</span></Label>
+              {/* Optional since V357. No asterisk, and clearing is
+                  allowed — an invoice with no customer is a walk-in
+                  sale, not an incomplete form. */}
+              <Label className="text-xs">Customer</Label>
               <SearchablePicker
                 value={customerId}
                 onChange={setCustomerId}
-                placeholder="Pick customer"
+                placeholder="Walk-in — pick to attach a customer"
                 searchPlaceholder="Search by name, phone, or TIN…"
                 emptyResultsLabel="No customer matches — type a name to create."
                 createLabel={q => `Add "${q}" as a new customer`}
                 onCreate={quickAdd.onCreate}
-                allowClear={false}
+                allowClear
                 options={customers.map(c => ({
                   value: c.id,
                   label: c.name,
