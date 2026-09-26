@@ -280,6 +280,8 @@ export interface PayrollItem {
   totalPay: number; // Net Salary
   totalEarnings: number; // Total Earnings (baseSalary + allowances + otPay)
   payrollAccount?: string;
+  /** Free-text note on this row (V355). Null when never set. */
+  remark?: string | null;
   currency: string;
   generatedAt: string;
   approvedBy?: string;

@@ -814,6 +814,10 @@ export function Payroll() {
           extras: (it as any).earnings as Record<string, number> | undefined,
           deductionsExtras: (it as any).deductionsBreakdown as Record<string, number> | undefined,
           payrollAccount: (it as any).payrollAccount,
+          // Without this the Remark column reloaded blank: the row is
+          // rebuilt field-by-field here, and the `as unknown as` cast
+          // below means a missing field is not a type error.
+          remark: it.remark ?? null,
         } as unknown as PayrollItem)));
         // Hydrate the per-channel "sent" sets from the persisted timestamps
         // so a page reload doesn't reset every Yes back to No. Empty when
@@ -3018,13 +3022,14 @@ export function Payroll() {
                   <TableHead>Net Salary</TableHead>
                   <TableHead>Total Earnings</TableHead>
                   <TableHead>Deductions</TableHead>
+                  <TableHead>Modifier</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {payrollRecords.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
+                    <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
                       No payroll records yet.
                     </TableCell>
                   </TableRow>
@@ -3040,6 +3045,12 @@ export function Payroll() {
                     <TableCell className="font-semibold">${formatMoney(record.totalPay)}</TableCell>
                     <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
                     <TableCell className="text-red-600">${formatMoney(record.deductions)}</TableCell>
+                    {/* Who last edited THIS slip. The per-row amount edit and the
+                        per-row remark each PATCH a single item, so the batch-level
+                        modifier cannot answer it. Same AuditCell as the batch table. */}
+                    <TableCell>
+                      <AuditCell name={record.updatedByName} at={record.updatedAt} />
+                    </TableCell>
                     <TableCell>
                       <Dialog>
                         <DialogTrigger asChild>
