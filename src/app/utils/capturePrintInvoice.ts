@@ -2,6 +2,8 @@
 // on demand via dynamic import so it stays out of the initial
 // bundle; users who never Send-as-image never download it.
 
+import { withHtml2canvasBaselineFix } from './html2canvasBaselineFix';
+
 /**
  * Capture the currently-mounted sale-document print template (the
  * body-level portal that {@code PrintTaxInvoice} /
@@ -49,14 +51,14 @@ export async function capturePrintImage(): Promise<string | null> {
     el.style.width = '794px';
     el.style.padding = '14mm';
 
-    const canvas = await html2canvas(el, {
+    const canvas = await withHtml2canvasBaselineFix(() => html2canvas(el, {
       backgroundColor: '#ffffff',
       // 2x scale = retina-sharp on a phone screen; the file size
       // sits well under Telegram's 10 MB photo cap.
       scale: 2,
       useCORS: true,
       logging: false,
-    });
+    }));
     return canvas.toDataURL('image/png');
   } catch (err) {
     console.warn('[capturePrintInvoice] capture failed:', err);

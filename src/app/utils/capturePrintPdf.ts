@@ -3,6 +3,8 @@
 // Download PDF, which is an interactive action; loading them on
 // demand keeps them out of the initial bundle entirely.
 
+import { withHtml2canvasBaselineFix } from './html2canvasBaselineFix';
+
 /**
  * V271 — capture the currently-mounted sale-document print template
  * ({@code .print-tax-invoice}) as a base64-encoded PDF (portrait A4)
@@ -60,12 +62,12 @@ export async function capturePrintPdf(defaultFilename = 'document.pdf'): Promise
     el.style.width = '794px';  // ~210mm @ 96dpi
     el.style.padding = '14mm';
 
-    const canvas = await html2canvas(el, {
+    const canvas = await withHtml2canvasBaselineFix(() => html2canvas(el, {
       backgroundColor: '#ffffff',
       scale: 2,
       useCORS: true,
       logging: false,
-    });
+    }));
 
     // A4 portrait — 210 × 297mm. jsPDF works in mm by default.
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
