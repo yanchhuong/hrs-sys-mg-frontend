@@ -4,6 +4,42 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <!-- Device routing: phones go to the mobile site (m.hr-share.com);
+           m.hr-share.com sends computers back here (its own index.html).
+
+           Runs in the browser, first thing in <head>, so a phone leaves
+           before the desktop bundle downloads (no flash, no wasted mobile
+           data). It replaces the Vercel edge rule switched off in 84e7f15:
+           that rule skipped bots and crawlers, so scanners saw a different
+           site than phones — the "cloaking" pattern behind Smart's phishing
+           block. Here the server sends every visitor the same page and the
+           same rule runs for all of them; there is no bot exception.
+
+           Only on the production host — localhost, Vercel previews and the
+           Capacitor / Tauri builds (https://localhost) never redirect.
+           Public pages customers open from a phone stay on this site: the
+           mobile app has no /scan, /pos/display, /shop, /kitchen,
+           /requirement-survey, /cambodia, /reset-password or /invoice/view.
+
+           ?desktop=1 keeps a phone here and is remembered in the
+           prefer_desktop cookie (this host only); ?desktop=0 clears it. -->
+      <script>
+        (function () {
+          try {
+            if (!/^(www\.)?hr-share\.com$/.test(location.hostname)) return;
+            var choice = /[?&]desktop=([01])(&|$)/.exec(location.search);
+            if (choice && choice[1] === '1') {
+              document.cookie = 'prefer_desktop=1; path=/; max-age=31536000; SameSite=Lax';
+              return;
+            }
+            if (choice) document.cookie = 'prefer_desktop=; path=/; max-age=0; SameSite=Lax';
+            else if (/(^|;\s*)prefer_desktop=1/.test(document.cookie)) return;
+            if (!/iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile/i.test(navigator.userAgent || '')) return;
+            if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view)\//.test(location.pathname)) return;
+            location.replace('https://m.hr-share.com/');
+          } catch (e) { /* never keep anyone off the site */ }
+        })();
+      </script>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- PWA: installable shell. The service worker is the existing
          /firebase-messaging-sw.js (root scope) — deliberately NOT a
