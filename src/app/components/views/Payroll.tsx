@@ -818,6 +818,9 @@ export function Payroll() {
           // rebuilt field-by-field here, and the `as unknown as` cast
           // below means a missing field is not a type error.
           remark: it.remark ?? null,
+          // Same trap as remark: carry the last editor through.
+          updatedAt: it.updatedAt ?? null,
+          updatedByName: it.updatedByName ?? null,
         } as unknown as PayrollItem)));
         // Hydrate the per-channel "sent" sets from the persisted timestamps
         // so a page reload doesn't reset every Yes back to No. Empty when
@@ -1055,6 +1058,11 @@ export function Payroll() {
     // Owning batch subject (e.g. "1st Salary of May") — surfaced in
     // the Subject column and the Payslip Details header.
     batchSubject: it.batchSubject,
+    // Last editor of this slip, for the table's audit cell. Rows are
+    // rebuilt field by field and the cast hides a missing field, so
+    // without these the column rendered blank despite the API sending them.
+    updatedAt: it.updatedAt ?? null,
+    updatedByName: it.updatedByName ?? null,
   } as unknown as typeof mockPayroll[number]);
 
   let payrollRecords: typeof mockPayroll = isSelfPayslipView

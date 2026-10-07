@@ -293,6 +293,10 @@ export interface PayrollItem {
   earnings?: Record<string, number>;
   /** Per-category deductions keyed by PayrollCategory.code. */
   deductionsBreakdown?: Record<string, number>;
+  /** Who last edited this slip, and when (V356). Null on slips that
+   *  predate the audit columns. Shown in the payroll table's audit cell. */
+  updatedAt?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface Contract {
