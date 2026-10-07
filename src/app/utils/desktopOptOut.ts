@@ -1,8 +1,45 @@
 /**
  * "Use the desktop site" opt-out, the half that has to run in the browser.
  *
- * Phones hitting hr-share.com are bounced to m.hr-share.com by a redirect
- * rule in vercel.json. That rule is skipped for a request carrying
+ * ── STATUS: DEVICE REDIRECT DISABLED (2026-10-07) ─────────────────────────
+ * The phone → m.hr-share.com redirect is switched OFF. PC and phone
+ * browsers both stay on hr-share.com; m.hr-share.com is reached only by
+ * going there directly. Reasons: it exempted bots/crawlers, so scanners
+ * saw a different site than phones did — the "cloaking" pattern security
+ * vendors flag, and the carrier Smart's filter had already blocked
+ * hr-share.com as phishing. Nothing in this file runs a redirect, so it is
+ * harmless while the rule is off; it keeps working if the rule returns.
+ *
+ * To turn the redirect back on, add this to the top level of vercel.json
+ * (JSON cannot hold comments, and Vercel rejects unknown keys, so the rule
+ * lives here). Read the two traps below first.
+ *
+ *   "redirects": [
+ *     {
+ *       "source": "/(.*)",
+ *       "has": [
+ *         { "type": "host",   "value": "(www\\.)?hr-share\\.com" },
+ *         { "type": "header", "key": "sec-fetch-dest", "value": "document" },
+ *         { "type": "header", "key": "user-agent",
+ *           "value": ".*([iI][pP]hone|[iI][pP]od|[aA]ndroid.*[mM]obile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile).*" }
+ *       ],
+ *       "missing": [
+ *         { "type": "header", "key": "user-agent",
+ *           "value": ".*([bB]ot|[cC]rawler|[sS]pider|[sS]lurp|facebookexternalhit|[eE]mbedly|[pP]interest|[wW]hats[aA]pp|[tT]elegram|[aA]pple[bB]ot|[lL]ighthouse|HeadlessChrome).*" },
+ *         { "type": "cookie", "key": "prefer_desktop" },
+ *         { "type": "query",  "key": "desktop" }
+ *       ],
+ *       "destination": "https://m.hr-share.com/$1",
+ *       "permanent": false
+ *     }
+ *   ]
+ *
+ * If it comes back, consider dropping the bot/crawler exemption from
+ * "missing" — that exemption is what made it look like cloaking.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * When enabled: phones hitting hr-share.com are bounced to m.hr-share.com
+ * by the rule above. That rule is skipped for a request carrying
  * `?desktop=1` or a `prefer_desktop` cookie.
  *
  * The cookie has to be written HERE because Vercel's redirect layer can
