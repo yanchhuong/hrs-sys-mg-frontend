@@ -4,8 +4,9 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <!-- Device routing: phones go to the mobile site (m.hr-share.com);
-           m.hr-share.com sends computers back here (its own index.html).
+      <!-- Device routing: phones go to the mobile site (m.hr-share.com).
+           Only this site checks the device — m.hr-share.com never
+           redirects anyone, so opening it directly always stays there.
 
            Runs in the browser, first thing in <head>, so a phone leaves
            before the desktop bundle downloads (no flash, no wasted mobile
