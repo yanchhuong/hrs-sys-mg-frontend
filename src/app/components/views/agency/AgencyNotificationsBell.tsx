@@ -6,6 +6,7 @@ import { Button } from '../../ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import * as notifApi from '../../../api/agencyNotifications';
 import type { AgencyNotificationDto } from '../../../api/agencyNotifications';
+import { formatNotificationTime } from '../../../utils/format';
 
 /**
  * Top-bar notification bell for the agency workspace. Parallel to
@@ -129,7 +130,7 @@ export function AgencyNotificationsBell() {
                   <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{n.body}</div>
                 )}
                 <div className="text-[10px] text-gray-400 mt-1">
-                  {new Date(n.createdAt).toLocaleString()}
+                  {formatNotificationTime(n.createdAt)}
                   {n.entityType && n.entityId && (
                     <span className="ml-2">
                       {n.entityType} · {n.entityId.slice(0, 8)}

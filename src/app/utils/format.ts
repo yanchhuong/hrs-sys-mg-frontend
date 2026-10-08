@@ -49,3 +49,27 @@ export function formatMoneyForCurrency(n: number | null | undefined, currency: s
     maximumFractionDigits: isKhr ? 0 : 2,
   });
 }
+
+/**
+ * When a notification arrived: "Sep 24, 02:46 PM".
+ *
+ * The bells used a bare `toLocaleString()`, which renders
+ * "9/24/2026, 2:46:33 PM" — a numeric date and seconds nobody reads.
+ * This matches the mobile notification list and announcement-detail, so
+ * the same event reads the same wherever it is shown.
+ *
+ * The year appears only when it is not the current one: showing it
+ * always is noise, and omitting it always is misleading on an old row.
+ */
+export function formatNotificationTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+  return when.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    ...(when.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}

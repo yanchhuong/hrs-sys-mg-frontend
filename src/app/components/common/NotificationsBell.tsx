@@ -10,6 +10,7 @@ import * as api from '../../api/notifications';
 import { TenantDocCommentDialog } from './TenantDocCommentDialog';
 import type { PortfolioDocType } from '../../api/agencyPortfolioDocs';
 import { updateAppBadge } from '../../utils/appBadge';
+import { formatNotificationTime } from '../../utils/format';
 
 const DOC_TYPES = new Set<string>(['invoice', 'bill', 'expense']);
 
@@ -192,7 +193,7 @@ export function NotificationsBell({ onNavigate }: {
                 <div className="text-[11px] text-gray-500 truncate mt-0.5">{n.body}</div>
                 {n.publishAt && (
                   <div className="text-[10px] text-gray-400 mt-1">
-                    {new Date(n.publishAt).toLocaleString()}
+                    {formatNotificationTime(n.publishAt)}
                   </div>
                 )}
               </div>
