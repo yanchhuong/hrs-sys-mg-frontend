@@ -12,7 +12,10 @@ export type EmployeeStatus = 'active' | 'inactive';
 
 export type ContractStatus = 'active' | 'expiring' | 'expired';
 
-export type OTStatus = 'pending' | 'approved' | 'rejected' | 'paid';
+/** 'closed' = calculated into a payroll batch awaiting approval;
+ *  'paid' = that batch was approved. Both are locked for editing.
+ *  See api/overtime.ts OtStatus for the full lifecycle. */
+export type OTStatus = 'pending' | 'approved' | 'rejected' | 'closed' | 'paid';
 
 // 'exception' is a client-derived status: Attendance.tsx's dailyRows
 // builder assigns it (in place of 'leave') when the covering leave

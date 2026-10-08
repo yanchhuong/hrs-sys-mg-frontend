@@ -1,6 +1,23 @@
 import { apiJson, apiVoid } from './client';
 
-export type OtStatus = 'pending' | 'approved' | 'rejected' | 'paid';
+/**
+ * pending → approved → closed → paid, plus rejected.
+ *
+ * 'closed' means the hours have been CALCULATED into a payroll batch
+ * that has not been approved yet. It exists so the same approved OT
+ * cannot be costed twice: the payroll template only ever reads
+ * status='approved', so claiming the rows at batch-create removes them
+ * from the next calculation. Rejecting the batch returns them.
+ *
+ * 'closed' and 'paid' are both locked for editing — see otIsLocked.
+ */
+export type OtStatus = 'pending' | 'approved' | 'rejected' | 'closed' | 'paid';
+
+/** Consumed by a payroll calculation, so the hours must not change —
+ *  the batch already carries a copy of the amount. */
+export function otIsLocked(status: string | undefined): boolean {
+  return status === 'closed' || status === 'paid';
+}
 
 export interface OtRequest {
   id: string;

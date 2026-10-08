@@ -167,7 +167,8 @@ export function Overtime() {
     start: null,
     end: null,
   });
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'paid'>('all');
+  const [statusFilter, setStatusFilter] =
+    useState<'all' | 'pending' | 'approved' | 'rejected' | 'closed' | 'paid'>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'by-request' | 'by-employee'>('by-request');
 
@@ -526,6 +527,9 @@ export function Overtime() {
       pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
       approved: 'bg-green-100 text-green-800 hover:bg-green-100',
       rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
+      // Slate rather than blue: closed is "in a batch, not signed off
+      // yet", and giving it the paid colour would read as money out.
+      closed: 'bg-slate-200 text-slate-700 hover:bg-slate-200',
       paid: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
     };
     return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
@@ -1209,7 +1213,11 @@ export function Overtime() {
                         // approved payroll batch. All admin/leader
                         // actions hide until the batch is rejected. The
                         // batch subject is surfaced as the slip ref.
-                        const isPaid = request.status === 'paid';
+                        // Both locked states hide the actions: the hours
+                        // are already costed into a batch, so editing or
+                        // re-approving them would desync the payslip from
+                        // the row it was computed from.
+                        const isPaid = overtimeApi.otIsLocked(request.status);
                         if (isPaid) {
                           const slipRef = request.payrollBatchSubject;
                           return (
