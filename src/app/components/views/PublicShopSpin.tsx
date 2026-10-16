@@ -195,7 +195,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 type="button"
                 onClick={spin}
                 disabled={spinning}
-                className="mt-5 w-full rounded-xl bg-gray-900 py-3 text-base font-bold text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                className="mt-5 w-full rounded-xl bg-blue-600 py-3 text-base font-bold text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
                 {spinning ? <><Loader2 className="h-4 w-4 animate-spin" /> Spinning…</> : 'Spin the wheel'}
               </button>
