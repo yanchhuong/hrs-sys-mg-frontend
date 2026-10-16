@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Gift, X, Copy, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
@@ -20,7 +20,18 @@ import * as shopApi from '../../api/shop';
 // so a customer gets one spin a day on EACH shop they visit, and shops
 // never see the same id for the same person.
 const DEVICE_KEY = 'shop-spin-device';
-const SPIN_MS = 4800;
+
+/* The spin, frame by frame (requestAnimationFrame), like a real wheel:
+ *   1. speed-up — starts turning the moment the centre is tapped, easing
+ *      up to full speed while the server picks the result;
+ *   2. cruise  — keeps turning at full speed for at least MIN_SPIN_MS;
+ *   3. slow-down — an ease-out (cubic) that STARTS at the cruise speed, so
+ *      there is no jump, and comes to rest on the server's slice after a
+ *      few more turns. The pointer ticks as each slice goes past. */
+const SPIN_UP_MS = 450;
+const MIN_SPIN_MS = 1200;
+const MAX_SPEED = 0.9; // degrees per ms (about 2.5 turns a second)
+const MIN_TURNS_LEFT = 3; // full turns while slowing down
 // Alternating slice colours; prize slices get the warm pair.
 const PRIZE_COLORS = ['#EC4899', '#F59E0B'];
 const OTHER_COLORS = ['#E5E7EB', '#CBD5E1'];
@@ -51,7 +62,6 @@ export function PublicShopSpin({ shopCode, lifted }: {
 }) {
   const [config, setConfig] = useState<shopApi.PublicSpinConfig | null>(null);
   const [open, setOpen] = useState(false);
-  const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<shopApi.SpinResult | null>(null);
   const [name, setName] = useState('');
@@ -60,6 +70,24 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const [savingContact, setSavingContact] = useState(false);
   /** V361 — asking the server whether this browser already spun today. */
   const [checkingToday, setCheckingToday] = useState(false);
+
+  // The wheel's angle lives in a ref and is written straight to the SVG's
+  // style each frame — no React re-render per frame.
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const pointerRef = useRef<HTMLDivElement | null>(null);
+  const angleRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  const tickRef = useRef({ slice: -1, at: 0 });
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+  const setAngle = (a: number) => {
+    angleRef.current = a;
+    if (svgRef.current) svgRef.current.style.transform = `rotate(${a}deg)`;
+  };
+  /** A re-opened modal mounts a new SVG: give it the current angle. */
+  const attachSvg = (el: SVGSVGElement | null) => {
+    svgRef.current = el;
+    if (el) el.style.transform = `rotate(${angleRef.current}deg)`;
+  };
 
   useEffect(() => {
     if (!shopCode) return;
@@ -85,7 +113,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
     shopApi.getMySpinToday(shopCode, deviceId(shopCode))
       .then(r => {
         if (!live || !r) return;
-        setRotation(-(r.sliceIndex * seg + seg / 2));
+        setAngle(-(r.sliceIndex * seg + seg / 2));
         showResult(r);
       })
       .catch(() => { /* fall back to the Spin button — a spin returns it anyway */ })
@@ -96,31 +124,94 @@ export function PublicShopSpin({ shopCode, lifted }: {
 
   if (!config?.enabled || n < 2) return null;
 
-  const spin = async () => {
-    if (spinning) return;
+  /** Pointer "tick" when a slice boundary passes under it. */
+  const tick = (angle: number, now: number) => {
+    const under = Math.floor(((((-angle) % 360) + 360) % 360) / seg);
+    if (under === tickRef.current.slice) return;
+    tickRef.current.slice = under;
+    // At full speed slices pass every frame — don't restart it that often.
+    if (now - tickRef.current.at < 70 || !pointerRef.current?.animate) return;
+    tickRef.current.at = now;
+    pointerRef.current.animate(
+      [
+        { transform: 'translateX(-50%) rotate(0deg)' },
+        { transform: 'translateX(-50%) rotate(-24deg)' },
+        { transform: 'translateX(-50%) rotate(0deg)' },
+      ],
+      { duration: 160, easing: 'ease-out' },
+    );
+  };
+
+  const finish = (r: shopApi.SpinResult) => {
+    showResult(r);
+    setSpinning(false);
+    if (r.prize) { try { navigator.vibrate?.([30, 50, 30]); } catch { /* not supported */ } }
+  };
+
+  const spin = () => {
+    if (spinning || result || checkingToday) return;
     setSpinning(true);
-    setResult(null);
-    try {
-      const r = await shopApi.spinPublic(shopCode, deviceId(shopCode));
-      if (r.alreadySpun) {
-        // Today's spin already happened: show it straight away, wheel
-        // resting on that slice.
-        setRotation(-(r.sliceIndex * seg + seg / 2));
-        showResult(r);
-        setSpinning(false);
-        return;
-      }
-      // Land the middle of the slice under the pointer at the top, after
-      // several full turns. A little jitter so it isn't dead-centre.
+    // Keep the numbers small: start from the same position within one turn.
+    setAngle(((angleRef.current % 360) + 360) % 360);
+    const restOn = (r: shopApi.SpinResult) => {
+      // Land inside the slice, a little off-centre so it doesn't look staged.
       const jitter = (Math.random() - 0.5) * seg * 0.6;
-      const target = 360 * 6 - (r.sliceIndex * seg + seg / 2) + jitter;
-      const base = rotation - (rotation % 360);
-      setRotation(base + target);
-      window.setTimeout(() => { showResult(r); setSpinning(false); }, SPIN_MS + 100);
-    } catch (e) {
+      return -(r.sliceIndex * seg + seg / 2) + jitter;
+    };
+
+    let res: shopApi.SpinResult | null = null;
+    let err: unknown = null;
+    const request = shopApi.spinPublic(shopCode, deviceId(shopCode))
+      .then(r => { res = r; })
+      .catch(e => { err = e; });
+    const fail = () => {
       setSpinning(false);
-      toast.error(e instanceof Error ? e.message : 'Could not spin — please try again.');
+      toast.error(err instanceof Error ? err.message : 'Could not spin — please try again.');
+    };
+
+    // Reduced motion: no spin — just show where it landed.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      void request.then(() => {
+        const r = res as shopApi.SpinResult | null;
+        if (r) { setAngle(restOn(r)); finish(r); } else fail();
+      });
+      return;
     }
+
+    const t0 = performance.now();
+    let last = t0;
+    let plan: { from: number; to: number; start: number; ms: number } | null = null;
+    const frame = (now: number) => {
+      const dt = Math.min(50, now - last); // a background tab can stall frames
+      last = now;
+      const r = res as shopApi.SpinResult | null;
+      if (!plan) {
+        const up = Math.min(1, (now - t0) / SPIN_UP_MS);
+        const speed = MAX_SPEED * up * up;
+        setAngle(angleRef.current + speed * dt);
+        if ((r || err) && now - t0 >= MIN_SPIN_MS) {
+          const from = angleRef.current;
+          // On an error, just glide to a stop one turn later.
+          const want = r ? restOn(r) : from + 360;
+          const base = from + (r ? MIN_TURNS_LEFT * 360 : 0);
+          const to = base + ((((want - base) % 360) + 360) % 360);
+          // An ease-out cubic starts at 3 x distance / time — match it to the
+          // current speed so the slow-down carries on smoothly.
+          plan = { from, to, start: now, ms: (3 * (to - from)) / speed };
+        }
+      } else {
+        const p = Math.min(1, (now - plan.start) / plan.ms);
+        setAngle(plan.from + (plan.to - plan.from) * (1 - Math.pow(1 - p, 3)));
+        if (p >= 1) {
+          rafRef.current = null;
+          if (r) finish(r); else fail();
+          return;
+        }
+      }
+      tick(angleRef.current, now);
+      rafRef.current = requestAnimationFrame(frame);
+    };
+    rafRef.current = requestAnimationFrame(frame);
   };
 
   const showResult = (r: shopApi.SpinResult) => {
@@ -198,14 +289,16 @@ export function PublicShopSpin({ shopCode, lifted }: {
 
             <div className="relative mx-auto mt-4 h-72 w-72">
               {/* Pointer */}
-              <div className="absolute left-1/2 -top-1 z-10 -translate-x-1/2 h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-gray-900 drop-shadow" />
+              <div
+                ref={pointerRef}
+                className="absolute left-1/2 -top-1 z-20 h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-gray-900 drop-shadow"
+                style={{ transform: 'translateX(-50%)', transformOrigin: '50% 0%' }}
+              />
               <svg
+                ref={attachSvg}
                 viewBox="-150 -150 300 300"
                 className="h-full w-full"
-                style={{
-                  transform: `rotate(${rotation}deg)`,
-                  transition: spinning ? `transform ${SPIN_MS}ms cubic-bezier(0.12, 0.8, 0.12, 1)` : 'none',
-                }}
+                style={{ willChange: 'transform' }}
               >
                 {slices.map((s, i) => (
                   <g key={i}>
@@ -224,8 +317,27 @@ export function PublicShopSpin({ shopCode, lifted }: {
                     </text>
                   </g>
                 ))}
-                <circle r="22" fill="#fff" stroke="#E5E7EB" strokeWidth="3" />
               </svg>
+              {/* The centre IS the button. It sits above the SVG, so it stays
+                  upright while the wheel turns. */}
+              <button
+                type="button"
+                onClick={spin}
+                disabled={spinning || !!result || checkingToday}
+                aria-label="Spin the wheel"
+                className={`absolute left-1/2 top-1/2 z-10 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-white font-extrabold tracking-wider text-white transition-transform active:scale-95 disabled:cursor-default ${
+                  result ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 shadow-[0_6px_18px_rgba(37,99,235,0.45)]'
+                }`}
+              >
+                {/* An invitation to tap, until the spin starts. */}
+                {!spinning && !result && !checkingToday && (
+                  <span aria-hidden className="absolute inset-0 -z-10 rounded-full bg-blue-500/40 animate-ping" />
+                )}
+                {checkingToday
+                  ? <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                  : result ? <Gift className="mx-auto h-6 w-6 text-gray-500" />
+                  : spinning ? null : 'SPIN'}
+              </button>
             </div>
 
             {result ? (
@@ -292,19 +404,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
                   <div className="mt-2 text-[11px] text-gray-400">You’ve already spun today. Come back tomorrow for another spin.</div>
                 )}
               </div>
-            ) : checkingToday ? (
-              <div className="mt-5 flex items-center justify-center gap-2 py-3 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-              </div>
             ) : (
-              <button
-                type="button"
-                onClick={spin}
-                disabled={spinning}
-                className="mt-5 w-full rounded-xl bg-blue-600 py-3 text-base font-bold text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center justify-center gap-2"
-              >
-                {spinning ? <><Loader2 className="h-4 w-4 animate-spin" /> Spinning…</> : 'Spin the wheel'}
-              </button>
+              <div className="mt-4 text-center text-sm font-medium text-gray-500" aria-live="polite">
+                {checkingToday ? 'Loading…' : spinning ? 'Good luck…' : 'Tap SPIN in the middle of the wheel'}
+              </div>
             )}
           </div>
         </div>
