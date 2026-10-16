@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import * as shopApi from '../../api/shop';
 import { SpinWinnersDialog } from './SpinWinnersDialog';
+import { SpinScanToPlay } from './SpinScanToPlay';
 import { PRIZE_KINDS, COUPON_DAY_CHOICES, couponDaysLabel, autoLabel, fmtExpiry } from '../../utils/spinPrize';
 
 const kindOf = (s: shopApi.SpinSlice): shopApi.PrizeKind => s.kind ?? (s.prize ? 'gift' : 'none');
@@ -27,7 +28,11 @@ const SELECT_CLS = 'h-8 rounded-md border border-input bg-transparent px-1.5 tex
  * The server picks every spin's result from these odds, so nothing on the
  * public page can choose a better prize.
  */
-export function ShopSpinSection() {
+export function ShopSpinSection({ shopUrl, shopCode }: {
+  /** The shop's public link; the Scan to Play QR adds ?spin=1. */
+  shopUrl?: string;
+  shopCode?: string;
+} = {}) {
   const [settings, setSettings] = useState<shopApi.SpinSettings | null>(null);
   const [draft, setDraft] = useState<shopApi.SpinSlice[]>([]);
   const [editing, setEditing] = useState(false);
@@ -181,6 +186,11 @@ export function ShopSpinSection() {
         </div>
         <Switch checked={settings.enabled} disabled={busy} onCheckedChange={toggle} aria-label="Spin & Win" />
       </div>
+
+      {/* Scan to Play — a QR straight to the wheel, while it's on. */}
+      {settings.enabled && shopUrl && (
+        <SpinScanToPlay shopUrl={shopUrl} shopCode={shopCode ?? ''} couponDays={settings.couponDays} />
+      )}
 
       {/* V362 — how long a won coupon stays valid, from the moment it's won. */}
       <div className="flex items-center justify-between gap-2">

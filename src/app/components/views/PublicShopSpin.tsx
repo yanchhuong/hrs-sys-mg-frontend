@@ -93,6 +93,20 @@ export function PublicShopSpin({ shopCode, lifted }: {
     shopApi.getPublicSpin(shopCode).then(setConfig).catch(() => setConfig(null));
   }, [shopCode]);
 
+  // "Scan to Play" QR → /shop/{code}?spin=1 opens the wheel straight away
+  // (once it is known to be on). The flag is then dropped from the address
+  // so a refresh or a shared link doesn't keep popping it open.
+  useEffect(() => {
+    if (!config?.enabled || (config.slices?.length ?? 0) < 2) return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('spin') !== '1') return;
+      setOpen(true);
+      url.searchParams.delete('spin');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch { /* no URL API — the floating button still works */ }
+  }, [config]);
+
   const slices = config?.slices ?? [];
   const n = slices.length;
   const seg = n > 0 ? 360 / n : 360;
