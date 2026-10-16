@@ -2360,8 +2360,16 @@ function PosCheckoutDialog({
   const [coupon, setCoupon] = useState<shopApi.SpinCoupon | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [checkingCoupon, setCheckingCoupon] = useState(false);
+  /** The Coupon row only shows while Spin & Win is switched on. */
+  const [spinOn, setSpinOn] = useState(false);
   useEffect(() => {
-    if (open) { setCouponInput(''); setCoupon(null); setCouponError(null); }
+    if (!open) return;
+    setCouponInput(''); setCoupon(null); setCouponError(null);
+    let live = true;
+    shopApi.getSpinSettings()
+      .then(s => { if (live) setSpinOn(s.enabled); })
+      .catch(() => { if (live) setSpinOn(false); });
+    return () => { live = false; };
   }, [open]);
   const checkCoupon = async () => {
     const code = couponInput.trim();
@@ -3004,11 +3012,12 @@ function PosCheckoutDialog({
               </div>
             )}
 
-            {/* V360 — Spin & Win coupon */}
+            {/* V360 — Spin & Win coupon; only while Spin & Win is on */}
+            {spinOn && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-gray-600 flex-1 inline-flex items-center gap-1.5">
-                  <Ticket className="h-3.5 w-3.5 text-pink-600" /> Spin coupon
+                  <Ticket className="h-3.5 w-3.5 text-pink-600" /> Coupon
                 </span>
                 <Input
                   value={couponInput}
@@ -3016,7 +3025,7 @@ function PosCheckoutDialog({
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void checkCoupon(); } }}
                   placeholder="SPIN-XXXXXX"
                   className="h-7 w-36 font-mono text-xs"
-                  aria-label="Spin coupon code"
+                  aria-label="Coupon code"
                 />
                 <Button
                   type="button"
@@ -3063,6 +3072,7 @@ function PosCheckoutDialog({
               )}
               {couponError && <div className="text-xs text-red-600">{couponError}</div>}
             </div>
+            )}
 
             {showTax && (
               <div className="flex items-center gap-2">
