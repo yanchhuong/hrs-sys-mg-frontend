@@ -271,9 +271,9 @@ export function ShopSpinSection() {
           </div>
           <div className="text-[11px] text-gray-500 mt-0.5 tabular-nums">
             {summary
-              ? summary.issued === 0
-                ? 'No winners yet'
-                : `${summary.issued} won · ${summary.open} open · ${summary.redeemed} used · ${summary.withContact} left a phone`
+              ? summary.spins === 0
+                ? 'No spins yet'
+                : `${summary.spins} spin${summary.spins === 1 ? '' : 's'} · ${summary.issued} won · ${summary.open} open · ${summary.redeemed} used · ${summary.withContact} left a phone`
               : '—'}
           </div>
         </div>

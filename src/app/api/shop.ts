@@ -269,7 +269,8 @@ export interface SpinCoupon {
 
 /** V359 — the Manage winners list: one page plus tallies over ALL winners. */
 export type WinnerStatus = 'all' | 'open' | 'redeemed';
-export interface WinnerSummary { issued: number; redeemed: number; open: number; withContact: number }
+/** spins = every spin, win or not; the rest count winners only. */
+export interface WinnerSummary { spins: number; issued: number; redeemed: number; open: number; withContact: number }
 export interface WinnersPage { items: SpinCoupon[]; total: number; page: number; size: number; summary: WinnerSummary }
 
 export async function listSpinWinners(p: { status?: WinnerStatus; q?: string; page?: number; size?: number } = {}): Promise<WinnersPage> {
