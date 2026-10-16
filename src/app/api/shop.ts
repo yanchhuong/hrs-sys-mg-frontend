@@ -320,6 +320,16 @@ export interface SpinResult {
   /** V359 — the contact this device left for the prize, if any. */
   winnerName?: string | null;
   winnerPhone?: string | null;
+  /** V361 — set once the coupon was used at the counter. */
+  redeemedAt?: string | null;
+}
+
+/** V361 — this device's spin today without spinning (null = not yet),
+ *  so the wheel can open straight on the earlier result. */
+export async function getMySpinToday(code: string, deviceId: string): Promise<SpinResult | null> {
+  const r: { result?: SpinResult | null } = await apiJson(
+    `/api/v1/public/shop/${encodeURIComponent(code)}/spin/mine`, { query: { deviceId } });
+  return r.result ?? null;
 }
 
 export async function spinPublic(code: string, deviceId: string): Promise<SpinResult> {

@@ -58,6 +58,8 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const [phone, setPhone] = useState('');
   const [editingContact, setEditingContact] = useState(false);
   const [savingContact, setSavingContact] = useState(false);
+  /** V361 — asking the server whether this browser already spun today. */
+  const [checkingToday, setCheckingToday] = useState(false);
 
   useEffect(() => {
     if (!shopCode) return;
@@ -72,6 +74,25 @@ export function PublicShopSpin({ shopCode, lifted }: {
     let p = 0, o = 0;
     return slices.map(s => (s.prize ? PRIZE_COLORS[p++ % 2] : OTHER_COLORS[o++ % 2]));
   }, [slices]);
+
+  // V361 — opening the wheel shows today's earlier spin straight away,
+  // win or not, resting on its slice; the Spin button is only offered
+  // when there is no spin yet.
+  useEffect(() => {
+    if (!open || result || !config?.enabled || n < 2) return;
+    let live = true;
+    setCheckingToday(true);
+    shopApi.getMySpinToday(shopCode, deviceId(shopCode))
+      .then(r => {
+        if (!live || !r) return;
+        setRotation(-(r.sliceIndex * seg + seg / 2));
+        showResult(r);
+      })
+      .catch(() => { /* fall back to the Spin button — a spin returns it anyway */ })
+      .finally(() => { if (live) setCheckingToday(false); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, shopCode, n]);
 
   if (!config?.enabled || n < 2) return null;
 
@@ -219,7 +240,12 @@ export function PublicShopSpin({ shopCode, lifted }: {
                       </button>
                     </div>
                     <div className="mt-2 text-xs text-gray-600">Show this code at the counter to claim your prize.</div>
-                    {result.winnerPhone && !editingContact ? (
+                    {result.redeemedAt ? (
+                      <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600">
+                        <Check className="h-3.5 w-3.5" />
+                        Used at the counter on {new Date(result.redeemedAt).toLocaleString()}
+                      </div>
+                    ) : result.winnerPhone && !editingContact ? (
                       <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-800">
                         <Check className="h-3.5 w-3.5" />
                         Saved for {result.winnerName} · {result.winnerPhone}
@@ -250,7 +276,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
                         />
                         <button
                           type="submit"
-                          disabled={savingContact || name.trim().length < 2 || phone.replace(/D/g, '').length < 8}
+                          disabled={savingContact || name.trim().length < 2 || phone.replace(/\D/g, '').length < 8}
                           className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
                         >
                           {savingContact && <Loader2 className="h-4 w-4 animate-spin" />} Save my details
@@ -265,6 +291,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 {result.alreadySpun && (
                   <div className="mt-2 text-[11px] text-gray-400">You’ve already spun today. Come back tomorrow for another spin.</div>
                 )}
+              </div>
+            ) : checkingToday ? (
+              <div className="mt-5 flex items-center justify-center gap-2 py-3 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </div>
             ) : (
               <button
