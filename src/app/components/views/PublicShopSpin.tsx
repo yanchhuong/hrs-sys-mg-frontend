@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Gift, X, Copy, Loader2, Check, Clock } from 'lucide-react';
+import { Gift, X, Copy, Loader2, Check, Clock, QrCode, Share2, ArrowLeft } from 'lucide-react';
+import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { couponDaysLabel, fmtExpiry } from '../../utils/spinPrize';
@@ -71,6 +72,27 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const [savingContact, setSavingContact] = useState(false);
   /** V361 — asking the server whether this browser already spun today. */
   const [checkingToday, setCheckingToday] = useState(false);
+  /** "Play on another phone" — a QR of this wheel for a friend to scan. */
+  const [showQr, setShowQr] = useState(false);
+  const [qrData, setQrData] = useState('');
+  const playUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/shop/${encodeURIComponent(shopCode)}?spin=1`
+    : '';
+  useEffect(() => {
+    if (!showQr || qrData || !playUrl) return;
+    QRCode.toDataURL(playUrl, { width: 440, margin: 1, color: { dark: '#0f172a', light: '#ffffff' } })
+      .then(setQrData)
+      .catch(() => setQrData(''));
+  }, [showQr, qrData, playUrl]);
+  useEffect(() => { if (!open) setShowQr(false); }, [open]);
+  const copyPlayUrl = async () => {
+    try { await navigator.clipboard.writeText(playUrl); toast.success('Link copied'); }
+    catch { toast.error('Could not copy — long-press the link instead'); }
+  };
+  const sharePlayUrl = async () => {
+    try { await navigator.share({ title: 'Spin & Win', text: 'Spin the wheel and win a prize!', url: playUrl }); }
+    catch { /* cancelled */ }
+  };
 
   // The wheel's angle lives in a ref and is written straight to the SVG's
   // style each frame — no React re-render per frame.
@@ -262,7 +284,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
       {open && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => !spinning && setOpen(false)}>
           <div
-            className="relative w-full sm:max-w-sm max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 shadow-2xl"
+            // While the QR layer is up the card stops scrolling, at the top,
+            // so the layer (inset-0) covers exactly what's on screen.
+            ref={el => { if (el && showQr) el.scrollTop = 0; }}
+            className={`relative w-full sm:max-w-sm max-h-[92vh] ${showQr ? 'overflow-hidden min-h-[600px]' : 'overflow-y-auto'} rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 shadow-2xl`}
             onClick={e => e.stopPropagation()}
             role="dialog"
             aria-label="Spin and win"
@@ -275,6 +300,16 @@ export function PublicShopSpin({ shopCode, lifted }: {
               aria-label="Close"
             >
               <X className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowQr(true)}
+              disabled={spinning}
+              className="absolute left-3 top-3 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-40"
+              aria-label="Play on another phone"
+              title="Play on another phone"
+            >
+              <QrCode className="h-5 w-5" />
             </button>
             <div className="text-center">
               <div className="text-lg font-bold text-gray-900">Spin &amp; Win</div>
@@ -418,10 +453,61 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 {result.alreadySpun && (
                   <div className="mt-2 text-[11px] text-gray-400">You’ve already spun today. Come back tomorrow for another spin.</div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setShowQr(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  <QrCode className="h-3.5 w-3.5" /> Let a friend play — show QR
+                </button>
               </div>
             ) : (
               <div className="mt-4 text-center text-sm font-medium text-gray-500" aria-live="polite">
                 {checkingToday ? 'Loading…' : spinning ? 'Good luck…' : 'Tap SPIN in the middle of the wheel'}
+              </div>
+            )}
+
+            {showQr && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 text-center" role="region" aria-label="Play on another phone">
+                <button
+                  type="button"
+                  onClick={() => setShowQr(false)}
+                  className="absolute left-3 top-3 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
+                  aria-label="Back to the wheel"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="text-lg font-bold text-gray-900">Play on another phone</div>
+                <div className="mt-1 text-xs text-gray-500">Scan with the other phone’s camera to open this wheel.</div>
+                <div className="mt-4 rounded-xl border bg-white p-2 shadow-sm">
+                  {qrData
+                    ? <img src={qrData} alt="QR to play Spin & Win" className="h-56 w-56" />
+                    : <div className="h-56 w-56 grid place-items-center"><Loader2 className="h-6 w-6 animate-spin text-gray-300" /></div>}
+                </div>
+                <div className="mt-2 text-sm font-semibold text-blue-600">Scan to Play</div>
+                <div className="mt-1 text-[11px] text-gray-400">
+                  Each phone gets one spin a day.
+                  {!!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
+                </div>
+                <div className="mt-3 w-full truncate rounded-lg bg-gray-50 border px-3 py-1.5 font-mono text-[11px] text-gray-600" title={playUrl}>{playUrl}</div>
+                <div className="mt-3 flex w-full gap-2">
+                  <button
+                    type="button"
+                    onClick={copyPlayUrl}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Copy className="h-4 w-4" /> Copy link
+                  </button>
+                  {typeof navigator !== 'undefined' && 'share' in navigator && (
+                    <button
+                      type="button"
+                      onClick={sharePlayUrl}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Share2 className="h-4 w-4" /> Share
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

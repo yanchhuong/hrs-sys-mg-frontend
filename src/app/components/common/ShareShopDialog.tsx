@@ -242,7 +242,7 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
             </div>
 
             {/* V358 — Spin & Win: on/off, the wheel, and coupon redemption. */}
-            <ShopSpinSection shopUrl={composedUrl} shopCode={info.code} />
+            <ShopSpinSection />
           </div>
         ) : null}
 
