@@ -14,6 +14,7 @@ import {
 } from '../ui/dialog';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
+import { PublicShopSpin } from './PublicShopSpin';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
 // v-perf-lazy-map — customer-facing storefront page; most customers
@@ -1192,6 +1193,10 @@ export function PublicShopPage() {
           V277 — hidden entirely when the shop is frozen; the BE
           would reject the order anyway and hiding the bar is a
           clearer signal than a disabled button. */}
+      {/* V358 — Spin & Win. Renders nothing unless the owner switched it
+          on. data.code is the shop code in both /shop/{code} and table mode. */}
+      {data?.code && <PublicShopSpin shopCode={data.code} lifted={cartCount > 0 && !orderingBlocked} />}
+
       {cartCount > 0 && !orderingBlocked && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">

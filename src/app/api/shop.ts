@@ -241,3 +241,67 @@ export async function getShopPayWayStatus(
     `/api/v1/public/shop/${encodeURIComponent(code)}/payway-status/${encodeURIComponent(tranId)}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// V358 — "Spin & Win" wheel on the public shop page.
+// The owner switches it on and sets the slices in the Share Shop dialog; a
+// customer gets one spin per device per day; a winning slice issues a
+// coupon code that staff look up and redeem at the counter.
+// ---------------------------------------------------------------------------
+
+/** One wheel slice. weight = relative odds; prize=false is "try again". */
+export interface SpinSlice { label: string; weight: number; prize: boolean }
+export interface SpinSettings { enabled: boolean; slices: SpinSlice[] }
+
+export interface SpinCoupon {
+  code: string;
+  label: string;
+  spunAt: string;
+  redeemedAt: string | null;
+  redeemedByName: string | null;
+}
+
+export async function getSpinSettings(): Promise<SpinSettings> {
+  return apiJson('/api/v1/pos/shop-link/spin');
+}
+
+/** Either field may be omitted: { enabled } only flips the switch. */
+export async function updateSpinSettings(req: { enabled?: boolean; slices?: SpinSlice[] }): Promise<SpinSettings> {
+  return apiJson('/api/v1/pos/shop-link/spin', { method: 'PUT', json: req });
+}
+
+export async function recentSpinCoupons(size = 20): Promise<SpinCoupon[]> {
+  return apiJson('/api/v1/pos/shop-link/spin/coupons', { query: { size } });
+}
+
+export async function lookupSpinCoupon(code: string): Promise<SpinCoupon> {
+  return apiJson(`/api/v1/pos/shop-link/spin/coupons/${encodeURIComponent(code.trim())}`);
+}
+
+/** 409 when the coupon was already redeemed (message says by whom). */
+export async function redeemSpinCoupon(code: string): Promise<SpinCoupon> {
+  return apiJson(`/api/v1/pos/shop-link/spin/coupons/${encodeURIComponent(code.trim())}/redeem`, { method: 'POST' });
+}
+
+/** Public: whether the wheel is on, and what to draw (no odds). */
+export interface PublicSpinConfig { enabled: boolean; slices: { label: string; prize: boolean }[] }
+
+export async function getPublicSpin(code: string): Promise<PublicSpinConfig> {
+  return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin`);
+}
+
+/** The outcome — the server picks it; the page only animates to it.
+ *  alreadySpun=true: this device's earlier spin today, returned again. */
+export interface SpinResult {
+  sliceIndex: number;
+  label: string;
+  prize: boolean;
+  couponCode: string | null;
+  spunAt: string;
+  alreadySpun: boolean;
+  nextSpinDay: string;
+}
+
+export async function spinPublic(code: string, deviceId: string): Promise<SpinResult> {
+  return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin`, { method: 'POST', json: { deviceId } });
+}

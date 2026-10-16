@@ -12,6 +12,7 @@ import { Switch } from '../ui/switch';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ManageTablesDialog } from './ManageTablesDialog';
+import { ShopSpinSection } from './ShopSpinSection';
 
 /**
  * "Share menu" popup launched from the POS header. Surfaces the
@@ -239,6 +240,9 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
                 }}
               />
             </div>
+
+            {/* V358 — Spin & Win: on/off, the wheel, and coupon redemption. */}
+            <ShopSpinSection />
           </div>
         ) : null}
 
