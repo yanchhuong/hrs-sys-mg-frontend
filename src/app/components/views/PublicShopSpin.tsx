@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Gift, X, Copy, Loader2 } from 'lucide-react';
+import { Gift, X, Copy, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 
@@ -12,7 +12,8 @@ import * as shopApi from '../../api/shop';
  * a random id kept in localStorage per shop, and the server enforces the
  * limit on (shop, device, day), returning
  * the earlier result if the device already spun today. A prize comes with
- * a coupon code to show at the counter.
+ * a coupon code to show at the counter, and (V359) the winner can leave
+ * their name and phone so the shop knows who won and can reach them.
  */
 
 // One id per shop in this browser ("shop + browser" is the unique visitor),
@@ -53,6 +54,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<shopApi.SpinResult | null>(null);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [editingContact, setEditingContact] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
 
   useEffect(() => {
     if (!shopCode) return;
@@ -80,7 +85,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
         // Today's spin already happened: show it straight away, wheel
         // resting on that slice.
         setRotation(-(r.sliceIndex * seg + seg / 2));
-        setResult(r);
+        showResult(r);
         setSpinning(false);
         return;
       }
@@ -90,10 +95,34 @@ export function PublicShopSpin({ shopCode, lifted }: {
       const target = 360 * 6 - (r.sliceIndex * seg + seg / 2) + jitter;
       const base = rotation - (rotation % 360);
       setRotation(base + target);
-      window.setTimeout(() => { setResult(r); setSpinning(false); }, SPIN_MS + 100);
+      window.setTimeout(() => { showResult(r); setSpinning(false); }, SPIN_MS + 100);
     } catch (e) {
       setSpinning(false);
       toast.error(e instanceof Error ? e.message : 'Could not spin — please try again.');
+    }
+  };
+
+  const showResult = (r: shopApi.SpinResult) => {
+    setResult(r);
+    setName(r.winnerName ?? '');
+    setPhone(r.winnerPhone ?? '');
+    setEditingContact(false);
+  };
+
+  const saveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!result?.couponCode) return;
+    setSavingContact(true);
+    try {
+      const r = await shopApi.claimSpinPublic(shopCode, {
+        deviceId: deviceId(shopCode), couponCode: result.couponCode, name, phone,
+      });
+      showResult({ ...r, alreadySpun: result.alreadySpun });
+      toast.success('Saved — the shop has your details');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save — please try again.');
+    } finally {
+      setSavingContact(false);
     }
   };
 
@@ -127,7 +156,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
       {open && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => !spinning && setOpen(false)}>
           <div
-            className="relative w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 shadow-2xl"
+            className="relative w-full sm:max-w-sm max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 shadow-2xl"
             onClick={e => e.stopPropagation()}
             role="dialog"
             aria-label="Spin and win"
@@ -190,6 +219,45 @@ export function PublicShopSpin({ shopCode, lifted }: {
                       </button>
                     </div>
                     <div className="mt-2 text-xs text-gray-600">Show this code at the counter to claim your prize.</div>
+                    {result.winnerPhone && !editingContact ? (
+                      <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-800">
+                        <Check className="h-3.5 w-3.5" />
+                        Saved for {result.winnerName} · {result.winnerPhone}
+                        <button type="button" onClick={() => setEditingContact(true)} className="ml-1 font-semibold underline">Edit</button>
+                      </div>
+                    ) : (
+                      <form onSubmit={saveContact} className="mt-4 space-y-2 text-left">
+                        <div className="text-xs font-semibold text-gray-700">Leave your name and phone so the shop knows it’s you</div>
+                        <input
+                          value={name}
+                          onChange={e => setName(e.target.value)}
+                          placeholder="Your name"
+                          autoComplete="name"
+                          maxLength={80}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          aria-label="Your name"
+                        />
+                        <input
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          placeholder="Phone number, e.g. 012 345 678"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          maxLength={24}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          aria-label="Phone number"
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingContact || name.trim().length < 2 || phone.replace(/D/g, '').length < 8}
+                          className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                        >
+                          {savingContact && <Loader2 className="h-4 w-4 animate-spin" />} Save my details
+                        </button>
+                        <div className="text-[11px] text-gray-400 text-center">Only this shop sees it, to contact you about your prize.</div>
+                      </form>
+                    )}
                   </>
                 ) : (
                   <div className="text-base font-semibold text-gray-700">{result.label} — better luck next time!</div>

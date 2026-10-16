@@ -259,6 +259,21 @@ export interface SpinCoupon {
   spunAt: string;
   redeemedAt: string | null;
   redeemedByName: string | null;
+  /** V359 — contact the winner left on the shop page, if any. */
+  winnerName?: string | null;
+  winnerPhone?: string | null;
+  claimedAt?: string | null;
+}
+
+/** V359 — the Manage winners list: one page plus tallies over ALL winners. */
+export type WinnerStatus = 'all' | 'open' | 'redeemed';
+export interface WinnerSummary { issued: number; redeemed: number; open: number; withContact: number }
+export interface WinnersPage { items: SpinCoupon[]; total: number; page: number; size: number; summary: WinnerSummary }
+
+export async function listSpinWinners(p: { status?: WinnerStatus; q?: string; page?: number; size?: number } = {}): Promise<WinnersPage> {
+  return apiJson('/api/v1/pos/shop-link/spin/winners', {
+    query: { status: p.status ?? 'all', q: p.q?.trim() || undefined, page: p.page ?? 0, size: p.size ?? 10 },
+  });
 }
 
 export async function getSpinSettings(): Promise<SpinSettings> {
@@ -300,8 +315,17 @@ export interface SpinResult {
   spunAt: string;
   alreadySpun: boolean;
   nextSpinDay: string;
+  /** V359 — the contact this device left for the prize, if any. */
+  winnerName?: string | null;
+  winnerPhone?: string | null;
 }
 
 export async function spinPublic(code: string, deviceId: string): Promise<SpinResult> {
   return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin`, { method: 'POST', json: { deviceId } });
+}
+
+/** V359 — the winner leaves their name + phone for the coupon this device
+ *  won. Can be sent again to correct it, until the coupon is redeemed. */
+export async function claimSpinPublic(code: string, req: { deviceId: string; couponCode: string; name: string; phone: string }): Promise<SpinResult> {
+  return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin/claim`, { method: 'POST', json: req });
 }

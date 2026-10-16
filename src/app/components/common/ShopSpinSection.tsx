@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Gift, Plus, Trash2, Loader2, Ticket, CheckCircle2, Search } from 'lucide-react';
+import { Gift, Plus, Trash2, Loader2, Ticket, CheckCircle2, Search, Trophy, Phone, ChevronRight } from 'lucide-react';
 import { Switch } from '../ui/switch';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import * as shopApi from '../../api/shop';
+import { SpinWinnersDialog } from './SpinWinnersDialog';
 
 /**
  * V358 — "Spin & Win" controls in the Share Shop dialog.
@@ -14,7 +15,8 @@ import * as shopApi from '../../api/shop';
  *     whether it is a prize (issues a coupon) or a "try again".
  *   • Redeem        — look up a code a customer shows at the counter and
  *     mark it used; the server refuses a second redemption.
- *   • Recent winners, newest first, with their status.
+ *   • Winners (V359) — tallies here; the full list (name + phone the
+ *     winner left, search, status filter, export) in Manage winners.
  *
  * The server picks every spin's result from these odds, so nothing on the
  * public page can choose a better prize.
@@ -27,15 +29,17 @@ export function ShopSpinSection() {
   const [code, setCode] = useState('');
   const [found, setFound] = useState<shopApi.SpinCoupon | null>(null);
   const [checking, setChecking] = useState(false);
-  const [recent, setRecent] = useState<shopApi.SpinCoupon[]>([]);
+  const [summary, setSummary] = useState<shopApi.WinnerSummary | null>(null);
+  const [winnersOpen, setWinnersOpen] = useState(false);
 
-  const loadRecent = () => shopApi.recentSpinCoupons(10).then(setRecent).catch(() => setRecent([]));
+  const loadSummary = () =>
+    shopApi.listSpinWinners({ size: 1 }).then(p => setSummary(p.summary)).catch(() => setSummary(null));
 
   useEffect(() => {
     shopApi.getSpinSettings()
       .then(s => { setSettings(s); setDraft(s.slices); })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load Spin & Win'));
-    void loadRecent();
+    void loadSummary();
   }, []);
 
   const total = useMemo(() => draft.reduce((s, x) => s + (Number(x.weight) || 0), 0), [draft]);
@@ -93,7 +97,7 @@ export function ShopSpinSection() {
       const done = await shopApi.redeemSpinCoupon(found.code);
       setFound(done);
       toast.success(`${done.code} redeemed — ${done.label}`);
-      void loadRecent();
+      void loadSummary();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Redeem failed');
       try { setFound(await shopApi.lookupSpinCoupon(found.code)); } catch { /* keep */ }
@@ -235,6 +239,12 @@ export function ShopSpinSection() {
             <div className="min-w-0">
               <div className="font-mono font-semibold text-gray-800">{found.code}</div>
               <div className="text-gray-700">{found.label}</div>
+              {(found.winnerName || found.winnerPhone) && (
+                <div className="text-gray-700 inline-flex items-center gap-1">
+                  {found.winnerName}
+                  {found.winnerPhone && <span className="inline-flex items-center gap-0.5 text-gray-500 tabular-nums"><Phone className="h-3 w-3" />{found.winnerPhone}</span>}
+                </div>
+              )}
               <div className="text-[10px] text-gray-500">
                 Won {new Date(found.spunAt).toLocaleString()}
                 {found.redeemedAt && ` · Redeemed ${new Date(found.redeemedAt).toLocaleString()}${found.redeemedByName ? ' by ' + found.redeemedByName : ''}`}
@@ -247,24 +257,29 @@ export function ShopSpinSection() {
             )}
           </div>
         )}
-        {recent.length > 0 && (
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase tracking-wide text-gray-400">Recent winners</div>
-            {recent.slice(0, 6).map(c => (
-              <button
-                key={c.code}
-                type="button"
-                onClick={() => { setCode(c.code); setFound(c); }}
-                className="w-full flex items-center justify-between gap-2 text-[11px] text-left px-1.5 py-1 rounded hover:bg-gray-50"
-              >
-                <span className="font-mono text-gray-700">{c.code}</span>
-                <span className="truncate text-gray-500 flex-1">{c.label}</span>
-                <span className={c.redeemedAt ? 'text-gray-400' : 'text-green-600'}>{c.redeemedAt ? 'Used' : 'Open'}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+
+      {/* Winners — tallies here, the full list in its own window */}
+      <button
+        type="button"
+        onClick={() => setWinnersOpen(true)}
+        className="w-full border-t pt-3 flex items-center justify-between gap-2 text-left group"
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-gray-700 inline-flex items-center gap-1.5">
+            <Trophy className="h-3.5 w-3.5 text-gray-500" /> Manage winners
+          </div>
+          <div className="text-[11px] text-gray-500 mt-0.5 tabular-nums">
+            {summary
+              ? summary.issued === 0
+                ? 'No winners yet'
+                : `${summary.issued} won · ${summary.open} open · ${summary.redeemed} used · ${summary.withContact} left a phone`
+              : '—'}
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-gray-600 shrink-0" />
+      </button>
+      <SpinWinnersDialog open={winnersOpen} onOpenChange={setWinnersOpen} onChanged={() => void loadSummary()} />
     </div>
   );
 }
