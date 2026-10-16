@@ -8,24 +8,32 @@ import * as shopApi from '../../api/shop';
  *
  * A floating button opens the wheel. The SERVER picks the result (weighted
  * by the owner's odds); this component only animates the wheel to the
- * slice it is told. One spin per device per day: the device id is a random
- * id kept in localStorage, and the server enforces the limit, returning
+ * slice it is told. One spin per shop per browser per day: the device id is
+ * a random id kept in localStorage per shop, and the server enforces the
+ * limit on (shop, device, day), returning
  * the earlier result if the device already spun today. A prize comes with
  * a coupon code to show at the counter.
  */
 
+// One id per shop in this browser ("shop + browser" is the unique visitor),
+// so a customer gets one spin a day on EACH shop they visit, and shops
+// never see the same id for the same person.
 const DEVICE_KEY = 'shop-spin-device';
 const SPIN_MS = 4800;
 // Alternating slice colours; prize slices get the warm pair.
 const PRIZE_COLORS = ['#EC4899', '#F59E0B'];
 const OTHER_COLORS = ['#E5E7EB', '#CBD5E1'];
 
-function deviceId(): string {
+function deviceId(shopCode: string): string {
+  const key = `${DEVICE_KEY}:${shopCode}`;
   try {
-    let id = localStorage.getItem(DEVICE_KEY);
+    let id = localStorage.getItem(key);
     if (!id) {
-      id = (crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
-      localStorage.setItem(DEVICE_KEY, id);
+      // Reuse the old browser-wide id the first time, so a visitor who
+      // already spun today before this change isn't handed a second spin.
+      id = localStorage.getItem(DEVICE_KEY)
+        ?? (crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+      localStorage.setItem(key, id);
     }
     return id;
   } catch {
@@ -67,7 +75,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
     setSpinning(true);
     setResult(null);
     try {
-      const r = await shopApi.spinPublic(shopCode, deviceId());
+      const r = await shopApi.spinPublic(shopCode, deviceId(shopCode));
       if (r.alreadySpun) {
         // Today's spin already happened: show it straight away, wheel
         // resting on that slice.
