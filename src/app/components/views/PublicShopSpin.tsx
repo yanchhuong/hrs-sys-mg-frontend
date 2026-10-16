@@ -27,7 +27,7 @@ const DEVICE_KEY = 'shop-spin-device';
  *   2. cruise  — keeps turning at full speed for at least MIN_SPIN_MS;
  *   3. slow-down — an ease-out (cubic) that STARTS at the cruise speed, so
  *      there is no jump, and comes to rest on the server's slice after a
- *      few more turns. The pointer ticks as each slice goes past. */
+ *      few more turns. The pointer stays still. */
 const SPIN_UP_MS = 450;
 const MIN_SPIN_MS = 1200;
 const MAX_SPEED = 0.9; // degrees per ms (about 2.5 turns a second)
@@ -74,10 +74,8 @@ export function PublicShopSpin({ shopCode, lifted }: {
   // The wheel's angle lives in a ref and is written straight to the SVG's
   // style each frame — no React re-render per frame.
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const pointerRef = useRef<HTMLDivElement | null>(null);
   const angleRef = useRef(0);
   const rafRef = useRef<number | null>(null);
-  const tickRef = useRef({ slice: -1, at: 0 });
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
   const setAngle = (a: number) => {
     angleRef.current = a;
@@ -123,24 +121,6 @@ export function PublicShopSpin({ shopCode, lifted }: {
   }, [open, shopCode, n]);
 
   if (!config?.enabled || n < 2) return null;
-
-  /** Pointer "tick" when a slice boundary passes under it. */
-  const tick = (angle: number, now: number) => {
-    const under = Math.floor(((((-angle) % 360) + 360) % 360) / seg);
-    if (under === tickRef.current.slice) return;
-    tickRef.current.slice = under;
-    // At full speed slices pass every frame — don't restart it that often.
-    if (now - tickRef.current.at < 70 || !pointerRef.current?.animate) return;
-    tickRef.current.at = now;
-    pointerRef.current.animate(
-      [
-        { transform: 'translateX(-50%) rotate(0deg)' },
-        { transform: 'translateX(-50%) rotate(-24deg)' },
-        { transform: 'translateX(-50%) rotate(0deg)' },
-      ],
-      { duration: 160, easing: 'ease-out' },
-    );
-  };
 
   const finish = (r: shopApi.SpinResult) => {
     showResult(r);
@@ -191,10 +171,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
         setAngle(angleRef.current + speed * dt);
         if ((r || err) && now - t0 >= MIN_SPIN_MS) {
           const from = angleRef.current;
-          // On an error, just glide to a stop one turn later.
-          const want = r ? restOn(r) : from + 360;
-          const base = from + (r ? MIN_TURNS_LEFT * 360 : 0);
-          const to = base + ((((want - base) % 360) + 360) % 360);
+          // On an error, just glide to a stop one turn later; otherwise rest
+          // on the result after at least MIN_TURNS_LEFT more turns.
+          const base = from + MIN_TURNS_LEFT * 360;
+          const to = r ? base + ((((restOn(r) - base) % 360) + 360) % 360) : from + 360;
           // An ease-out cubic starts at 3 x distance / time — match it to the
           // current speed so the slow-down carries on smoothly.
           plan = { from, to, start: now, ms: (3 * (to - from)) / speed };
@@ -208,7 +188,6 @@ export function PublicShopSpin({ shopCode, lifted }: {
           return;
         }
       }
-      tick(angleRef.current, now);
       rafRef.current = requestAnimationFrame(frame);
     };
     rafRef.current = requestAnimationFrame(frame);
@@ -288,12 +267,9 @@ export function PublicShopSpin({ shopCode, lifted }: {
             </div>
 
             <div className="relative mx-auto mt-4 h-72 w-72">
-              {/* Pointer */}
-              <div
-                ref={pointerRef}
-                className="absolute left-1/2 -top-1 z-20 h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-gray-900 drop-shadow"
-                style={{ transform: 'translateX(-50%)', transformOrigin: '50% 0%' }}
-              />
+              {/* Pointer — blue like the SPIN button; it stays still while
+                  the wheel turns. */}
+              <div className="absolute left-1/2 -top-1 z-20 -translate-x-1/2 h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-blue-600 drop-shadow" />
               <svg
                 ref={attachSvg}
                 viewBox="-150 -150 300 300"
