@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Gift, Plus, Trash2, Loader2, Ticket, CheckCircle2, Search, Trophy, Phone, ChevronRight, Clock, XCircle } from 'lucide-react';
+import { Gift, Plus, Trash2, Loader2, Ticket, CheckCircle2, Search, Trophy, Phone, ChevronRight, Clock, XCircle, GripVertical } from 'lucide-react';
+import { useDragReorder } from '../../hooks/useDragReorder';
 import { Switch } from '../ui/switch';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -9,6 +10,12 @@ import { SpinWinnersDialog } from './SpinWinnersDialog';
 import { PRIZE_KINDS, COUPON_DAY_CHOICES, couponDaysLabel, autoLabel, fmtExpiry } from '../../utils/spinPrize';
 
 const kindOf = (s: shopApi.SpinSlice): shopApi.PrizeKind => s.kind ?? (s.prize ? 'gift' : 'none');
+
+/** A slice being edited, with a stable key so a dragged row keeps its own
+ *  inputs (React moves the row instead of refilling the one in place). */
+type DraftSlice = shopApi.SpinSlice & { _k: string };
+let keySeq = 0;
+const withKeys = (slices: shopApi.SpinSlice[]): DraftSlice[] => slices.map(s => ({ ...s, _k: `s${++keySeq}` }));
 const SELECT_CLS = 'h-8 rounded-md border border-input bg-transparent px-1.5 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
 /**
@@ -29,7 +36,9 @@ const SELECT_CLS = 'h-8 rounded-md border border-input bg-transparent px-1.5 tex
  */
 export function ShopSpinSection() {
   const [settings, setSettings] = useState<shopApi.SpinSettings | null>(null);
-  const [draft, setDraft] = useState<shopApi.SpinSlice[]>([]);
+  const [draft, setDraft] = useState<DraftSlice[]>([]);
+  // Drag a row by its grip to change the order on the wheel.
+  const drag = useDragReorder(setDraft);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState('');
@@ -43,7 +52,7 @@ export function ShopSpinSection() {
 
   useEffect(() => {
     shopApi.getSpinSettings()
-      .then(s => { setSettings(s); setDraft(s.slices); })
+      .then(s => { setSettings(s); setDraft(withKeys(s.slices)); })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load Spin & Win'));
     void loadSummary();
   }, []);
@@ -117,7 +126,7 @@ export function ShopSpinSection() {
         }),
       });
       setSettings(fresh);
-      setDraft(fresh.slices);
+      setDraft(withKeys(fresh.slices));
       setEditing(false);
       toast.success('Wheel saved');
     } catch (e) {
@@ -215,19 +224,33 @@ export function ShopSpinSection() {
               {s.label}
             </span>
           ))}
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setDraft(settings.slices); setEditing(true); }}>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setDraft(withKeys(settings.slices)); setEditing(true); }}>
             Edit wheel
           </Button>
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_84px_72px_54px_24px] gap-1.5 text-[10px] uppercase tracking-wide text-gray-400 px-0.5">
+          <div className="grid grid-cols-[18px_1fr_84px_72px_54px_24px] gap-1.5 text-[10px] uppercase tracking-wide text-gray-400 px-0.5">
+            <span />
             <span>Slice</span><span>Type</span><span>Value</span><span>Chance</span><span />
           </div>
           {draft.map((s, i) => {
             const k = kindOf(s);
             return (
-            <div key={i} className="grid grid-cols-[1fr_84px_72px_54px_24px] gap-1.5 items-center">
+            <div
+              key={s._k}
+              ref={drag.rowRef(i)}
+              style={drag.rowStyle(i)}
+              className={`grid grid-cols-[18px_1fr_84px_72px_54px_24px] gap-1.5 items-center rounded-md transition-shadow ${
+                drag.dragIndex === i ? 'bg-blue-50 shadow-md ring-1 ring-blue-200' : ''
+              }`}
+            >
+              <button
+                {...drag.handleProps(i, s.label || `slice ${i + 1}`)}
+                className="h-8 w-[18px] inline-flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <GripVertical className="h-4 w-4" />
+              </button>
               <Input
                 value={s.label}
                 maxLength={40}
@@ -281,7 +304,7 @@ export function ShopSpinSection() {
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
-              <div className="col-span-5 -mt-1 text-[10px] text-gray-400 pl-0.5">
+              <div className="col-span-5 col-start-2 -mt-1 text-[10px] text-gray-400 pl-0.5">
                 {total > 0 ? `${Math.round(((Number(s.weight) || 0) / total) * 1000) / 10}% of spins` : '—'}
               </div>
             </div>
@@ -293,12 +316,12 @@ export function ShopSpinSection() {
               size="sm"
               className="h-7 text-xs"
               disabled={draft.length >= 12}
-              onClick={() => setDraft(d => [...d, { label: '10% off', weight: 10, prize: true, kind: 'percent', value: 10 }])}
+              onClick={() => setDraft(d => [...d, { label: '10% off', weight: 10, prize: true, kind: 'percent', value: 10, _k: `s${++keySeq}` }])}
             >
               <Plus className="h-3.5 w-3.5 mr-1" /> Add slice
             </Button>
             <div className="flex gap-1.5">
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setDraft(settings.slices); setEditing(false); }}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setDraft(withKeys(settings.slices)); setEditing(false); }}>
                 Cancel
               </Button>
               <Button size="sm" className="h-7 text-xs" disabled={busy} onClick={saveWheel}>
