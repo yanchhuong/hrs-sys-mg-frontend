@@ -249,9 +249,15 @@ export async function getShopPayWayStatus(
 // coupon code that staff look up and redeem at the counter.
 // ---------------------------------------------------------------------------
 
-/** One wheel slice. weight = relative odds; prize=false is "try again". */
-export interface SpinSlice { label: string; weight: number; prize: boolean }
-export interface SpinSettings { enabled: boolean; slices: SpinSlice[] }
+/** V362 — what a slice gives: percent off, an amount off (USD), a gift
+ *  (free item — described by the label), or none ("try again"). */
+export type PrizeKind = 'percent' | 'amount' | 'gift' | 'none';
+
+/** One wheel slice. weight = relative odds; prize mirrors kind !== 'none'.
+ *  value = 10 for "10% off" or "$10 off"; null for gift / none. */
+export interface SpinSlice { label: string; weight: number; prize: boolean; kind?: PrizeKind | null; value?: number | null }
+/** couponDays = how long a won coupon stays valid (null = no expiry). */
+export interface SpinSettings { enabled: boolean; slices: SpinSlice[]; couponDays?: number | null }
 
 export interface SpinCoupon {
   code: string;
@@ -269,12 +275,18 @@ export interface SpinCoupon {
    *  8 characters of its id, to tell devices apart. */
   deviceLabel?: string | null;
   deviceShort?: string | null;
+  /** V362 — the prize as won, and when the coupon stops being valid. */
+  prizeKind?: PrizeKind | null;
+  prizeValue?: number | null;
+  expiresAt?: string | null;
+  expired?: boolean;
 }
 
 /** V359 — the Manage winners list: one page plus tallies over ALL winners. */
-export type WinnerStatus = 'all' | 'open' | 'redeemed';
-/** spins = every spin, win or not; the rest count winners only. */
-export interface WinnerSummary { spins: number; issued: number; redeemed: number; open: number; withContact: number }
+export type WinnerStatus = 'all' | 'open' | 'redeemed' | 'expired';
+/** spins = every spin, win or not; the rest count winners only.
+ *  open excludes expired (V362). */
+export interface WinnerSummary { spins: number; issued: number; redeemed: number; open: number; expired?: number; withContact: number }
 export interface WinnersPage { items: SpinCoupon[]; total: number; page: number; size: number; summary: WinnerSummary }
 
 export async function listSpinWinners(p: { status?: WinnerStatus; q?: string; page?: number; size?: number } = {}): Promise<WinnersPage> {
@@ -287,8 +299,9 @@ export async function getSpinSettings(): Promise<SpinSettings> {
   return apiJson('/api/v1/pos/shop-link/spin');
 }
 
-/** Either field may be omitted: { enabled } only flips the switch. */
-export async function updateSpinSettings(req: { enabled?: boolean; slices?: SpinSlice[] }): Promise<SpinSettings> {
+/** Any field may be omitted: { enabled } only flips the switch.
+ *  couponDays 0 = no expiry. */
+export async function updateSpinSettings(req: { enabled?: boolean; slices?: SpinSlice[]; couponDays?: number }): Promise<SpinSettings> {
   return apiJson('/api/v1/pos/shop-link/spin', { method: 'PUT', json: req });
 }
 
@@ -306,7 +319,8 @@ export async function redeemSpinCoupon(code: string): Promise<SpinCoupon> {
 }
 
 /** Public: whether the wheel is on, and what to draw (no odds). */
-export interface PublicSpinConfig { enabled: boolean; slices: { label: string; prize: boolean }[] }
+/** couponDays (V362): how long a prize stays valid — said before the spin. */
+export interface PublicSpinConfig { enabled: boolean; slices: { label: string; prize: boolean }[]; couponDays?: number | null }
 
 export async function getPublicSpin(code: string): Promise<PublicSpinConfig> {
   return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin`);
@@ -327,6 +341,11 @@ export interface SpinResult {
   winnerPhone?: string | null;
   /** V361 — set once the coupon was used at the counter. */
   redeemedAt?: string | null;
+  /** V362 — the prize as won, and the coupon's expiry. */
+  prizeKind?: PrizeKind | null;
+  prizeValue?: number | null;
+  expiresAt?: string | null;
+  expired?: boolean;
 }
 
 /** V361 — this device's spin today without spinning (null = not yet),

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Gift, X, Copy, Loader2, Check } from 'lucide-react';
+import { Gift, X, Copy, Loader2, Check, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
+import { couponDaysLabel, fmtExpiry } from '../../utils/spinPrize';
 
 /**
  * V358 — "Spin & Win" on the public shop page.
@@ -263,7 +264,11 @@ export function PublicShopSpin({ shopCode, lifted }: {
             </button>
             <div className="text-center">
               <div className="text-lg font-bold text-gray-900">Spin &amp; Win</div>
-              <div className="text-xs text-gray-500">One spin a day. Win a coupon to use at the counter.</div>
+              <div className="text-xs text-gray-500">
+                One spin a day. Win a coupon to use at the counter.
+                {/* V362 — say up front how long a prize lasts. */}
+                {!!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
+              </div>
             </div>
 
             <div className="relative mx-auto mt-4 h-72 w-72">
@@ -328,10 +333,21 @@ export function PublicShopSpin({ shopCode, lifted }: {
                       </button>
                     </div>
                     <div className="mt-2 text-xs text-gray-600">Show this code at the counter to claim your prize.</div>
+                    {/* V362 — when it stops working. */}
+                    {result.expiresAt && !result.redeemedAt && (
+                      <div className={`mt-1.5 inline-flex items-center gap-1 text-xs font-medium ${result.expired ? 'text-red-600' : 'text-amber-700'}`}>
+                        <Clock className="h-3.5 w-3.5" />
+                        {result.expired ? 'Expired on' : 'Valid until'} {fmtExpiry(result.expiresAt)}
+                      </div>
+                    )}
                     {result.redeemedAt ? (
                       <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600">
                         <Check className="h-3.5 w-3.5" />
                         Used at the counter on {new Date(result.redeemedAt).toLocaleString()}
+                      </div>
+                    ) : result.expired ? (
+                      <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                        This coupon has expired and can no longer be used.
                       </div>
                     ) : result.winnerPhone && !editingContact ? (
                       <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-800">
@@ -369,7 +385,16 @@ export function PublicShopSpin({ shopCode, lifted }: {
                         >
                           {savingContact && <Loader2 className="h-4 w-4 animate-spin" />} Save my details
                         </button>
-                        <div className="text-[11px] text-gray-400 text-center">Only this shop sees it, to contact you about your prize.</div>
+                        {/* V362 — the coupon policy, where the winner gives their details. */}
+                        <ul className="mt-1 space-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500 list-disc list-inside">
+                          <li>
+                            {result.expiresAt
+                              ? <>Valid until <span className="font-medium text-gray-700">{fmtExpiry(result.expiresAt)}</span> — it can’t be used after that.</>
+                              : 'This coupon does not expire.'}
+                          </li>
+                          <li>One use only. Show the code at the counter or give it at checkout.</li>
+                          <li>Only this shop sees your name and phone, to confirm the winner and contact you about the prize.</li>
+                        </ul>
                       </form>
                     )}
                   </>

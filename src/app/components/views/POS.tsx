@@ -36,6 +36,7 @@ const CameraBarcodeScanner = lazy(() =>
 );
 import * as posApi from '../../api/pos';
 import * as shopApi from '../../api/shop';
+import { couponDiscount as spinCouponDiscount, fmtExpiry } from '../../utils/spinPrize';
 import * as itemsApi from '../../api/items';
 import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
@@ -2383,6 +2384,9 @@ function PosCheckoutDialog({
         const where = c.redeemedRef ? ` at checkout ${c.redeemedRef}` : '';
         const who = c.redeemedByName ? ` by ${c.redeemedByName}` : '';
         setCouponError(`${c.code} was already used${where} on ${new Date(c.redeemedAt).toLocaleString()}${who}.`);
+      } else if (c.expired && c.expiresAt) {
+        // V362 — the server refuses it too; say so before the cashier pays.
+        setCouponError(`${c.code} expired on ${fmtExpiry(c.expiresAt)} and can no longer be used.`);
       } else {
         setCoupon(c);
         setCouponInput(c.code);
@@ -2396,14 +2400,7 @@ function PosCheckoutDialog({
   };
   /** "10% off" / "$2 off" → a discount the cashier can apply in one tap.
    *  Never applied automatically — prizes like "Free drink" are free text. */
-  const couponDiscount = useMemo(() => {
-    if (!coupon) return null;
-    const pct = coupon.label.match(/(\d+(?:\.\d+)?)\s*%\s*off/i);
-    if (pct) return { type: 'percent' as const, value: Number(pct[1]), text: `${pct[1]}%` };
-    const amt = coupon.label.match(/\$\s*(\d+(?:\.\d+)?)\s*off/i);
-    if (amt) return { type: 'amount' as const, value: Number(amt[1]), text: `${amt[1]}` };
-    return null;
-  }, [coupon]);
+  const couponDiscount = useMemo(() => (coupon ? spinCouponDiscount(coupon) : null), [coupon]);
   const couponDiscountApplied = !!couponDiscount
     && discountType === couponDiscount.type && discountValue === couponDiscount.value;
 
@@ -3021,7 +3018,11 @@ function PosCheckoutDialog({
                 </span>
                 <Input
                   value={couponInput}
-                  onChange={e => { setCouponInput(e.target.value.toUpperCase()); setCoupon(null); setCouponError(null); }}
+                  onChange={e => {
+                    // Editing a checked code drops it — and the discount it applied.
+                    if (coupon && couponDiscountApplied) onDiscountValueChange(0);
+                    setCouponInput(e.target.value.toUpperCase()); setCoupon(null); setCouponError(null);
+                  }}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void checkCoupon(); } }}
                   placeholder="SPIN-XXXXXX"
                   className="h-7 w-36 font-mono text-xs"
@@ -3046,6 +3047,7 @@ function PosCheckoutDialog({
                     {(coupon.winnerName || coupon.winnerPhone) && (
                       <div className="text-green-700 truncate">{[coupon.winnerName, coupon.winnerPhone].filter(Boolean).join(' · ')}</div>
                     )}
+                    {coupon.expiresAt && <div className="text-green-700">Valid until {fmtExpiry(coupon.expiresAt)}</div>}
                     {couponDiscount && showDiscount && (
                       couponDiscountApplied ? (
                         <div className="text-green-700">{couponDiscount.text} discount applied</div>
@@ -3062,7 +3064,12 @@ function PosCheckoutDialog({
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setCoupon(null); setCouponInput(''); }}
+                    onClick={() => {
+                      // Take back the discount this coupon applied, if it's still the one set.
+                      if (couponDiscountApplied) onDiscountValueChange(0);
+                      setCoupon(null);
+                      setCouponInput('');
+                    }}
                     className="text-green-700 hover:text-green-900"
                     aria-label="Remove coupon"
                   >

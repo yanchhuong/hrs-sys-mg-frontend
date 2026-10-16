@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Trophy, Loader2, Search, Phone, Download, CheckCircle2, ChevronLeft, ChevronRight, Smartphone } from 'lucide-react';
+import { Trophy, Loader2, Search, Phone, Download, CheckCircle2, ChevronLeft, ChevronRight, Smartphone, XCircle } from 'lucide-react';
+import { fmtExpiry } from '../../utils/spinPrize';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -93,11 +94,12 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
         return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
       };
       const lines = [
-        ['Code', 'Prize', 'Name', 'Phone', 'Device', 'Device ID', 'Won at', 'Status', 'Redeemed at', 'Redeemed by'].join(','),
+        ['Code', 'Prize', 'Name', 'Phone', 'Device', 'Device ID', 'Won at', 'Expires', 'Status', 'Redeemed at', 'Redeemed by'].join(','),
         ...rows.map(c => [
           c.code, c.label, c.winnerName, c.winnerPhone, c.deviceLabel, c.deviceShort,
           new Date(c.spunAt).toISOString(),
-          c.redeemedAt ? 'Used' : 'Open',
+          c.expiresAt ? new Date(c.expiresAt).toISOString() : '',
+          c.redeemedAt ? 'Used' : c.expired ? 'Expired' : 'Open',
           c.redeemedAt ? new Date(c.redeemedAt).toISOString() : '',
           c.redeemedByName,
         ].map(cell).join(',')),
@@ -139,16 +141,16 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Tallies over all winners */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {[
               { label: 'Total spins', value: s?.spins, cls: 'text-gray-900' },
               { label: 'Winners', value: s?.issued, cls: 'text-pink-700' },
               { label: 'Open', value: s?.open, cls: 'text-green-700' },
               { label: 'Redeemed', value: s?.redeemed, cls: 'text-gray-500' },
+              { label: 'Expired', value: s?.expired ?? 0, cls: 'text-red-600' },
               { label: 'Left contact', value: s?.withContact, cls: 'text-blue-700' },
-            ].map((t, i) => (
-              // Five tiles on a 2-column phone grid: Total spins takes the full first row.
-              <div key={t.label} className={`rounded-md border bg-white px-3 py-2 ${i === 0 ? 'col-span-2 sm:col-span-1' : ''}`}>
+            ].map(t => (
+              <div key={t.label} className="rounded-md border bg-white px-3 py-2">
                 <div className="text-[11px] text-gray-500">{t.label}</div>
                 <div className={`text-lg font-semibold tabular-nums ${t.cls}`}>{t.value ?? '—'}</div>
               </div>
@@ -166,6 +168,7 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
               <option value="all">All winners</option>
               <option value="open">Open</option>
               <option value="redeemed">Used</option>
+              <option value="expired">Expired</option>
             </select>
             <div className="relative w-56">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -234,7 +237,15 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
                       </div>
                     )}
                   </div>
-                  <span className="col-span-2 sm:col-span-1 text-xs text-gray-500 tabular-nums order-4 sm:order-none">{when(c.spunAt)}</span>
+                  <span className="col-span-2 sm:col-span-1 text-xs text-gray-500 tabular-nums order-4 sm:order-none">
+                    {when(c.spunAt)}
+                    {/* V362 — the coupon's expiry while it can still be used. */}
+                    {c.expiresAt && !c.redeemedAt && (
+                      <span className={`block text-[10px] ${c.expired ? 'text-red-600' : 'text-gray-400'}`}>
+                        {c.expired ? 'Expired' : 'Until'} {fmtExpiry(c.expiresAt)}
+                      </span>
+                    )}
+                  </span>
                   <div className="flex justify-end order-2 sm:order-none">
                     {c.redeemedAt ? (
                       <span
@@ -244,6 +255,10 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         {/* V360 — used at a POS checkout shows its queue number. */}
                         {c.redeemedRef ? 'Used at POS' : 'Used'}
+                      </span>
+                    ) : c.expired ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                        <XCircle className="h-3.5 w-3.5" /> Expired
                       </span>
                     ) : (
                       <Button size="sm" className="h-7 text-xs" disabled={busyCode === c.code} onClick={() => redeem(c)}>
