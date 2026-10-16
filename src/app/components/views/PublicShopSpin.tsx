@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { couponDaysLabel, fmtExpiry, wheelColors } from '../../utils/spinPrize';
+import { layoutWheelLabel, makeMeasure } from '../../utils/wheelLabels';
 
 /**
  * V358 — "Spin & Win" on the public shop page.
@@ -129,6 +130,12 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const slices = config?.slices ?? [];
   const n = slices.length;
   const seg = n > 0 ? 360 / n : 360;
+
+  // Each label across its slice when it fits, else along it (see wheelLabels).
+  const labels = useMemo(() => {
+    const measure = makeMeasure();
+    return slices.map((s, i) => layoutWheelLabel(s.label, i, slices.length, measure));
+  }, [slices]);
 
   // Every slice its own colour (no repeats), stable for this shop's wheel.
   const colors = useMemo(
@@ -257,10 +264,6 @@ export function PublicShopSpin({ shopCode, lifted }: {
   };
 
   const r = 148; // wheel radius in SVG units — no frame, slices reach the edge
-  const label = (i: number) => {
-    const a = ((i * seg + seg / 2) - 90) * (Math.PI / 180);
-    return { x: Math.cos(a) * r * 0.62, y: Math.sin(a) * r * 0.62, rot: i * seg + seg / 2 };
-  };
   const arc = (i: number) => {
     const a0 = (i * seg - 90) * (Math.PI / 180);
     const a1 = ((i + 1) * seg - 90) * (Math.PI / 180);
@@ -331,18 +334,30 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 {slices.map((s, i) => (
                   <g key={i}>
                     <path d={arc(i)} fill={colors[i]?.fill} stroke="#fff" strokeWidth="2" />
-                    <text
-                      x={label(i).x}
-                      y={label(i).y}
-                      transform={`rotate(${label(i).rot} ${label(i).x} ${label(i).y})`}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fontSize={n > 8 ? 10 : 12}
-                      fontWeight={700}
-                      fill={colors[i]?.text}
-                    >
-                      {s.label.length > 14 ? s.label.slice(0, 13) + '…' : s.label}
-                    </text>
+                    {(() => {
+                      const L = labels[i];
+                      if (!L) return null;
+                      return (
+                        <text
+                          x={L.x}
+                          y={L.y}
+                          transform={`rotate(${L.rot} ${L.x} ${L.y})`}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={L.fontSize}
+                          fontWeight={700}
+                          fill={colors[i]?.text}
+                          data-layout={L.mode}
+                        >
+                          <title>{s.label}</title>
+                          {L.lines.length === 1
+                            ? L.lines[0]
+                            : L.lines.map((line, k) => (
+                              <tspan key={k} x={L.x} dy={k === 0 ? `${-0.575}em` : '1.15em'}>{line}</tspan>
+                            ))}
+                        </text>
+                      );
+                    })()}
                   </g>
                 ))}
               </svg>
