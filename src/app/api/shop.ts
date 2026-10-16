@@ -265,6 +265,10 @@ export interface SpinCoupon {
   claimedAt?: string | null;
   /** V360 — the POS queue number when it was used at checkout. */
   redeemedRef?: string | null;
+  /** V361 — readable device that won ("iPhone · Safari") and the first
+   *  8 characters of its id, to tell devices apart. */
+  deviceLabel?: string | null;
+  deviceShort?: string | null;
 }
 
 /** V359 — the Manage winners list: one page plus tallies over ALL winners. */

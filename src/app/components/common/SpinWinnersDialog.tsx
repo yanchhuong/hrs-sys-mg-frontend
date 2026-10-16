@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Trophy, Loader2, Search, Phone, Download, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trophy, Loader2, Search, Phone, Download, CheckCircle2, ChevronLeft, ChevronRight, Smartphone } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -93,9 +93,9 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
         return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
       };
       const lines = [
-        ['Code', 'Prize', 'Name', 'Phone', 'Won at', 'Status', 'Redeemed at', 'Redeemed by'].join(','),
+        ['Code', 'Prize', 'Name', 'Phone', 'Device', 'Device ID', 'Won at', 'Status', 'Redeemed at', 'Redeemed by'].join(','),
         ...rows.map(c => [
-          c.code, c.label, c.winnerName, c.winnerPhone,
+          c.code, c.label, c.winnerName, c.winnerPhone, c.deviceLabel, c.deviceShort,
           new Date(c.spunAt).toISOString(),
           c.redeemedAt ? 'Used' : 'Open',
           c.redeemedAt ? new Date(c.redeemedAt).toISOString() : '',
@@ -221,6 +221,17 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
                       </>
                     ) : (
                       <span className="text-xs text-gray-400">No contact left</span>
+                    )}
+                    {/* V361 — which device won: readable name + short id. */}
+                    {(c.deviceLabel || c.deviceShort) && (
+                      <div
+                        className="flex items-center gap-1 text-[11px] text-gray-500 truncate"
+                        title={c.deviceShort ? `Device ${c.deviceShort}…` : undefined}
+                      >
+                        <Smartphone className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{c.deviceLabel ?? 'Unknown device'}</span>
+                        {c.deviceShort && <span className="font-mono text-gray-400">· {c.deviceShort}</span>}
+                      </div>
                     )}
                   </div>
                   <span className="col-span-2 sm:col-span-1 text-xs text-gray-500 tabular-nums order-4 sm:order-none">{when(c.spunAt)}</span>
