@@ -93,7 +93,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
     try { await navigator.clipboard.writeText(code); toast.success('Code copied'); } catch { /* ignore */ }
   };
 
-  const r = 140; // wheel radius in SVG units
+  const r = 148; // wheel radius in SVG units — no frame, slices reach the edge
   const label = (i: number) => {
     const a = ((i * seg + seg / 2) - 90) * (Math.PI / 180);
     return { x: Math.cos(a) * r * 0.62, y: Math.sin(a) * r * 0.62, rot: i * seg + seg / 2 };
@@ -149,7 +149,6 @@ export function PublicShopSpin({ shopCode, lifted }: {
                   transition: spinning ? `transform ${SPIN_MS}ms cubic-bezier(0.12, 0.8, 0.12, 1)` : 'none',
                 }}
               >
-                <circle r="148" fill="#111827" />
                 {slices.map((s, i) => (
                   <g key={i}>
                     <path d={arc(i)} fill={colors[i]} stroke="#fff" strokeWidth="2" />
@@ -167,7 +166,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
                     </text>
                   </g>
                 ))}
-                <circle r="22" fill="#fff" stroke="#111827" strokeWidth="4" />
+                <circle r="22" fill="#fff" stroke="#E5E7EB" strokeWidth="3" />
               </svg>
             </div>
 
