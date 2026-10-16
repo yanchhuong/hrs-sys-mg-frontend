@@ -3,7 +3,7 @@ import { Gift, X, Copy, Loader2, Check, Clock, QrCode, Share2, ArrowLeft } from 
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
-import { couponDaysLabel, fmtExpiry } from '../../utils/spinPrize';
+import { couponDaysLabel, fmtExpiry, wheelColors } from '../../utils/spinPrize';
 
 /**
  * V358 — "Spin & Win" on the public shop page.
@@ -34,9 +34,6 @@ const SPIN_UP_MS = 450;
 const MIN_SPIN_MS = 1200;
 const MAX_SPEED = 0.9; // degrees per ms (about 2.5 turns a second)
 const MIN_TURNS_LEFT = 3; // full turns while slowing down
-// Alternating slice colours; prize slices get the warm pair.
-const PRIZE_COLORS = ['#EC4899', '#F59E0B'];
-const OTHER_COLORS = ['#E5E7EB', '#CBD5E1'];
 
 function deviceId(shopCode: string): string {
   const key = `${DEVICE_KEY}:${shopCode}`;
@@ -133,10 +130,11 @@ export function PublicShopSpin({ shopCode, lifted }: {
   const n = slices.length;
   const seg = n > 0 ? 360 / n : 360;
 
-  const colors = useMemo(() => {
-    let p = 0, o = 0;
-    return slices.map(s => (s.prize ? PRIZE_COLORS[p++ % 2] : OTHER_COLORS[o++ % 2]));
-  }, [slices]);
+  // Every slice its own colour (no repeats), stable for this shop's wheel.
+  const colors = useMemo(
+    () => wheelColors(slices.length, `${shopCode}|${slices.map(s => s.label).join('|')}`),
+    [slices, shopCode],
+  );
 
   // V361 — opening the wheel shows today's earlier spin straight away,
   // win or not, resting on its slice; the Spin button is only offered
@@ -332,7 +330,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
               >
                 {slices.map((s, i) => (
                   <g key={i}>
-                    <path d={arc(i)} fill={colors[i]} stroke="#fff" strokeWidth="2" />
+                    <path d={arc(i)} fill={colors[i]?.fill} stroke="#fff" strokeWidth="2" />
                     <text
                       x={label(i).x}
                       y={label(i).y}
@@ -341,7 +339,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
                       dominantBaseline="middle"
                       fontSize={n > 8 ? 10 : 12}
                       fontWeight={700}
-                      fill={s.prize ? '#fff' : '#334155'}
+                      fill={colors[i]?.text}
                     >
                       {s.label.length > 14 ? s.label.slice(0, 13) + '…' : s.label}
                     </text>
