@@ -70,11 +70,14 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
     return () => { cancelled = true; };
   }, [open]);
 
-  // Repaint the QR whenever the composed URL changes. Canvas-first
-  // (instead of a data-URL <img>) so the QR stays crisp at print
-  // resolutions when the user prints the dialog directly.
+  // Repaint the QR whenever the composed URL changes — and whenever a
+  // fresh canvas appears: the canvas is swapped for a spinner while the
+  // link loads, so on re-opening the dialog a NEW, blank canvas mounts
+  // with the SAME url, and keying on the url alone left it blank.
+  // Canvas-first (instead of a data-URL <img>) so the QR stays crisp at
+  // print resolutions when the user prints the dialog directly.
   useEffect(() => {
-    if (!open || !composedUrl || !canvasRef.current) return;
+    if (!open || loading || !composedUrl || !canvasRef.current) return;
     void QRCode.toCanvas(canvasRef.current, composedUrl, {
       width: 220,
       margin: 1,
@@ -83,7 +86,7 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
       // Don't surface a toast — the dialog still shows the URL + code
       // so the operator can hand-type if the canvas paint failed.
     });
-  }, [open, composedUrl]);
+  }, [open, loading, info, composedUrl]);
 
   const copy = async () => {
     try {
