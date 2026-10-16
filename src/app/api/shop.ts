@@ -263,6 +263,8 @@ export interface SpinCoupon {
   winnerName?: string | null;
   winnerPhone?: string | null;
   claimedAt?: string | null;
+  /** V360 — the POS queue number when it was used at checkout. */
+  redeemedRef?: string | null;
 }
 
 /** V359 — the Manage winners list: one page plus tallies over ALL winners. */

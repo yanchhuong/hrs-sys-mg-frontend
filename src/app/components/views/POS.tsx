@@ -5,7 +5,7 @@ import {
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, ChefHat,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
-  ChevronLeft, ChevronRight, ScanBarcode,
+  ChevronLeft, ChevronRight, ScanBarcode, Ticket,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -35,6 +35,7 @@ const CameraBarcodeScanner = lazy(() =>
     .then(m => ({ default: m.CameraBarcodeScanner })),
 );
 import * as posApi from '../../api/pos';
+import * as shopApi from '../../api/shop';
 import * as itemsApi from '../../api/items';
 import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
@@ -892,7 +893,7 @@ export function POS() {
     }
   };
 
-  const onCheckoutSubmit = async (method: PosPaymentMethod, received: number): Promise<boolean> => {
+  const onCheckoutSubmit = async (method: PosPaymentMethod, received: number, spinCouponCode?: string): Promise<boolean> => {
     // Persist the cart first if it isn't already saved — the checkout
     // endpoint needs a real ticket to flip.
     let order = currentOrder;
@@ -902,7 +903,9 @@ export function POS() {
     if (!order) return false;
     setSaving(true);
     try {
-      const checked = await posApi.checkout(order.id, { invoiceKind, paymentMethod: method, paymentReceived: received });
+      const checked = await posApi.checkout(order.id, { invoiceKind, paymentMethod: method, paymentReceived: received, spinCouponCode });
+      // V360 — the server marked the coupon used together with the sale.
+      if (spinCouponCode) toast.success(`Coupon ${spinCouponCode} marked as used`);
       // v-loyalty-mvp — fire the earn hook against the just-paid
       // invoice. AWAITED (not fire-and-forget) so the dialog can
       // chain a burn against the freshly-elevated balance (see
@@ -2265,7 +2268,7 @@ interface CheckoutProps {
   onMethodChange: (m: PosPaymentMethod) => void;
   /** Returns true on a successful checkout so the dialog can chain
    *  the loyalty burn after the earn hook has fired server-side. */
-  onSubmit: (method: PosPaymentMethod, received: number) => Promise<boolean>;
+  onSubmit: (method: PosPaymentMethod, received: number, spinCouponCode?: string) => Promise<boolean>;
   /** Cart breakdown moved into this dialog (v-pos-cart-slim) so the
    *  left cart panel keeps room for the item list. Subtotal + tax
    *  amount are computed by POS.tsx; the rest are controlled inputs
@@ -2348,6 +2351,53 @@ function PosCheckoutDialog({
   useEffect(() => {
     if (open) setApplied(new Map());
   }, [open]);
+
+  /* V360 — Spin & Win coupon. The cashier types the code and checks it
+   * (it must exist and be unused); a checked coupon rides along with
+   * Confirm Payment and the server marks it used in the same
+   * transaction as the sale — a failed sale leaves it open. */
+  const [couponInput, setCouponInput] = useState('');
+  const [coupon, setCoupon] = useState<shopApi.SpinCoupon | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [checkingCoupon, setCheckingCoupon] = useState(false);
+  useEffect(() => {
+    if (open) { setCouponInput(''); setCoupon(null); setCouponError(null); }
+  }, [open]);
+  const checkCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) return;
+    setCheckingCoupon(true);
+    setCouponError(null);
+    setCoupon(null);
+    try {
+      const c = await shopApi.lookupSpinCoupon(code);
+      if (c.redeemedAt) {
+        const where = c.redeemedRef ? ` at checkout ${c.redeemedRef}` : '';
+        const who = c.redeemedByName ? ` by ${c.redeemedByName}` : '';
+        setCouponError(`${c.code} was already used${where} on ${new Date(c.redeemedAt).toLocaleString()}${who}.`);
+      } else {
+        setCoupon(c);
+        setCouponInput(c.code);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not check the code.';
+      setCouponError(/not found/i.test(msg) ? 'No coupon with that code.' : msg);
+    } finally {
+      setCheckingCoupon(false);
+    }
+  };
+  /** "10% off" / "$2 off" → a discount the cashier can apply in one tap.
+   *  Never applied automatically — prizes like "Free drink" are free text. */
+  const couponDiscount = useMemo(() => {
+    if (!coupon) return null;
+    const pct = coupon.label.match(/(\d+(?:\.\d+)?)\s*%\s*off/i);
+    if (pct) return { type: 'percent' as const, value: Number(pct[1]), text: `${pct[1]}%` };
+    const amt = coupon.label.match(/\$\s*(\d+(?:\.\d+)?)\s*off/i);
+    if (amt) return { type: 'amount' as const, value: Number(amt[1]), text: `${amt[1]}` };
+    return null;
+  }, [coupon]);
+  const couponDiscountApplied = !!couponDiscount
+    && discountType === couponDiscount.type && discountValue === couponDiscount.value;
 
   /** v-loyalty-projected-redeem — walk each STAMP program and check
    *  if (current balance + stamps THIS cart is about to earn) crosses
@@ -2954,6 +3004,66 @@ function PosCheckoutDialog({
               </div>
             )}
 
+            {/* V360 — Spin & Win coupon */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 flex-1 inline-flex items-center gap-1.5">
+                  <Ticket className="h-3.5 w-3.5 text-pink-600" /> Spin coupon
+                </span>
+                <Input
+                  value={couponInput}
+                  onChange={e => { setCouponInput(e.target.value.toUpperCase()); setCoupon(null); setCouponError(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void checkCoupon(); } }}
+                  placeholder="SPIN-XXXXXX"
+                  className="h-7 w-36 font-mono text-xs"
+                  aria-label="Spin coupon code"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={checkingCoupon || !couponInput.trim() || !!coupon}
+                  onClick={checkCoupon}
+                >
+                  {checkingCoupon ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Check'}
+                </Button>
+              </div>
+              {coupon && (
+                <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-2.5 py-1.5 text-xs">
+                  <Check className="h-3.5 w-3.5 text-green-700 mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-green-800">{coupon.label} — valid, will be marked used</div>
+                    {(coupon.winnerName || coupon.winnerPhone) && (
+                      <div className="text-green-700 truncate">{[coupon.winnerName, coupon.winnerPhone].filter(Boolean).join(' · ')}</div>
+                    )}
+                    {couponDiscount && showDiscount && (
+                      couponDiscountApplied ? (
+                        <div className="text-green-700">{couponDiscount.text} discount applied</div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="mt-0.5 font-semibold text-blue-700 hover:underline"
+                          onClick={() => { onDiscountTypeChange(couponDiscount.type); onDiscountValueChange(couponDiscount.value); }}
+                        >
+                          Apply {couponDiscount.text} discount
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setCoupon(null); setCouponInput(''); }}
+                    className="text-green-700 hover:text-green-900"
+                    aria-label="Remove coupon"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {couponError && <div className="text-xs text-red-600">{couponError}</div>}
+            </div>
+
             {showTax && (
               <div className="flex items-center gap-2">
                 <span className="text-gray-600 flex-1">Tax</span>
@@ -3039,11 +3149,13 @@ function PosCheckoutDialog({
               // snapped by the auto-fill effect; non-cash methods use
               // the same clean total so the BE's amount check never
               // trips on a floating-point crumb (see totalCents doc).
-              const ok = await onSubmit(method, method === 'cash' ? received : totalCents);
+              const ok = await onSubmit(method, method === 'cash' ? received : totalCents, coupon?.code);
               if (!ok) return;
               await commitLoyalty();
             }}
-            disabled={saving || short || total <= 0}
+            // A typed-but-unchecked code would be silently dropped — the
+            // cashier checks it (or clears it) first.
+            disabled={saving || short || total <= 0 || (!!couponInput.trim() && !coupon)}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <CreditCard className="h-4 w-4 mr-1.5" />}

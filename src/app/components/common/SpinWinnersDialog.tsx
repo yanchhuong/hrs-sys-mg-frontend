@@ -198,11 +198,11 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
             </div>
           ) : (
             <div className={`rounded-md border divide-y ${loading ? 'opacity-60' : ''}`}>
-              <div className="hidden sm:grid grid-cols-[112px_1fr_1.3fr_104px_92px] gap-3 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-400 bg-gray-50/70">
+              <div className="hidden sm:grid grid-cols-[112px_1fr_1.3fr_104px_104px] gap-3 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-400 bg-gray-50/70">
                 <span>Code</span><span>Prize</span><span>Winner</span><span>Won</span><span className="text-right">Status</span>
               </div>
               {data!.items.map(c => (
-                <div key={c.code} className="grid grid-cols-[1fr_auto] sm:grid-cols-[112px_1fr_1.3fr_104px_92px] gap-x-3 gap-y-1 px-3 py-2.5 items-center text-sm">
+                <div key={c.code} className="grid grid-cols-[1fr_auto] sm:grid-cols-[112px_1fr_1.3fr_104px_104px] gap-x-3 gap-y-1 px-3 py-2.5 items-center text-sm">
                   <span className="font-mono font-semibold text-gray-800">{c.code}</span>
                   <span className="hidden sm:block text-gray-700 truncate">{c.label}</span>
                   {/* Phone: code + status on the first line, then the winner, then the date. */}
@@ -226,9 +226,11 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
                     {c.redeemedAt ? (
                       <span
                         className="inline-flex items-center gap-1 text-xs text-gray-500"
-                        title={`Redeemed ${new Date(c.redeemedAt).toLocaleString()}${c.redeemedByName ? ' by ' + c.redeemedByName : ''}`}
+                        title={`Redeemed${c.redeemedRef ? ' at checkout ' + c.redeemedRef : ''} ${new Date(c.redeemedAt).toLocaleString()}${c.redeemedByName ? ' by ' + c.redeemedByName : ''}`}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Used
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {/* V360 — used at a POS checkout shows its queue number. */}
+                        {c.redeemedRef ? 'Used at POS' : 'Used'}
                       </span>
                     ) : (
                       <Button size="sm" className="h-7 text-xs" disabled={busyCode === c.code} onClick={() => redeem(c)}>

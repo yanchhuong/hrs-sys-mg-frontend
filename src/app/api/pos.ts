@@ -136,6 +136,9 @@ export interface PosCheckoutRequest {
   /** Cash tendered. For non-cash methods the server defaults to total
    *  and computes paymentChange = 0. */
   paymentReceived?: number;
+  /** V360 — a Spin & Win coupon the customer brought. Must exist and be
+   *  unused (else the checkout is refused); marked used with the sale. */
+  spinCouponCode?: string;
 }
 
 export interface PagedResponse<T> {

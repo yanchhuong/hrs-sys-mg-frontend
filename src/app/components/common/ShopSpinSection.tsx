@@ -247,7 +247,7 @@ export function ShopSpinSection() {
               )}
               <div className="text-[10px] text-gray-500">
                 Won {new Date(found.spunAt).toLocaleString()}
-                {found.redeemedAt && ` · Redeemed ${new Date(found.redeemedAt).toLocaleString()}${found.redeemedByName ? ' by ' + found.redeemedByName : ''}`}
+                {found.redeemedAt && ` · Redeemed${found.redeemedRef ? ' at checkout ' + found.redeemedRef : ''} ${new Date(found.redeemedAt).toLocaleString()}${found.redeemedByName ? ' by ' + found.redeemedByName : ''}`}
               </div>
             </div>
             {found.redeemedAt ? (
