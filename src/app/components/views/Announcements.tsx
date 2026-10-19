@@ -703,10 +703,10 @@ export function Announcements() {
                       <SelectItem value="ALL_CUSTOMERS">All Customers</SelectItem>
                     )}
                     {employeesAvailable && (
-                      <SelectItem value="SPECIFIC_EMPLOYEES">Pick Employees…</SelectItem>
+                      <SelectItem value="SPECIFIC_EMPLOYEES">Specific Employees</SelectItem>
                     )}
                     {customersAvailable && (
-                      <SelectItem value="SPECIFIC_CUSTOMERS">Pick Customers…</SelectItem>
+                      <SelectItem value="SPECIFIC_CUSTOMERS">Specific Customers</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -1470,8 +1470,8 @@ function AudienceBadge({ type }: { type: api.AudienceType }) {
   const map: Record<api.AudienceType, { label: string; cls: string }> = {
     ALL_EMPLOYEES:       { label: 'All Employees',    cls: 'bg-amber-100 text-amber-800 border-amber-200' },
     ALL_CUSTOMERS:       { label: 'All Customers',    cls: 'bg-sky-100 text-sky-700 border-sky-200' },
-    SPECIFIC_EMPLOYEES:  { label: 'Some Employees',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-    SPECIFIC_CUSTOMERS:  { label: 'Some Customers',   cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+    SPECIFIC_EMPLOYEES:  { label: 'Specific Employees', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    SPECIFIC_CUSTOMERS:  { label: 'Specific Customers', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
   };
   const m = map[type];
   return <Badge className={`gap-1 ${m.cls}`}>{m.label}</Badge>;
