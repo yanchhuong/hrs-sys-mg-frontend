@@ -99,10 +99,6 @@ export function PlatformTelegram() {
     () => rows.find(r => r.kind === 'platform' && r.audience === 'employee') ?? null,
     [rows],
   );
-  const tenantBots = useMemo(
-    () => rows.filter(r => r.kind === 'tenant'),
-    [rows],
-  );
   const errorBot = useMemo(
     () => rows.find(r => r.kind === 'error') ?? null,
     [rows],

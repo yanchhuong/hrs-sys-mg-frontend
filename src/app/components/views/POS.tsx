@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo, lazy, Suspense, type MutableRefObject } from 'react';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
-  Banknote, QrCode, Receipt, Printer, ArrowLeft, AlertCircle, Landmark, ScrollText,
+  Banknote, QrCode, Receipt, Printer, AlertCircle, Landmark, ScrollText,
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, ChefHat,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
-  ChevronLeft, ChevronRight, ScanBarcode, Ticket,
+  ChevronRight, ScanBarcode, Ticket,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -60,7 +60,7 @@ import { printPosReceipt } from '../../utils/posReceipt';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
-  POS_DISPLAY_CHANNEL, POS_DISPLAY_PATH, emptyState,
+  POS_DISPLAY_CHANNEL, POS_DISPLAY_PATH,
   type DisplayItem, type DisplayMessage, type DisplayState,
 } from '../../utils/posCustomerDisplay';
 import type { PosOrder, PosOrderItem, PosPaymentMethod } from '../../api/pos';
@@ -2505,7 +2505,6 @@ function PosCheckoutDialog({
         const count = Math.floor(totalPtsAfterEarn / p.pointRedeemCost);
         if (count < 1) continue;
         const totalDiscount = Number((p.pointRedeemDiscount * count).toFixed(2));
-        const remainingPts = totalPtsAfterEarn - count * p.pointRedeemCost;
         out.push({
           programId: p.programId,
           programName: p.programName,
