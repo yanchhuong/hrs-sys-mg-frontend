@@ -145,25 +145,6 @@ export function applyRuleForYear(
   return { updated, skipped, total: employees.length };
 }
 
-/** Look up a single employee's AL for a given year. */
-export function getStoredAL(employeeId: string, year: number): number | null {
-  const rec = loadValuesForYear(year)[employeeId];
-  return rec ? rec.totalAL : null;
-}
-
-/** Override a single employee's AL (e.g. manual adjustment). */
-export function setEmployeeAL(employeeId: string, year: number, totalAL: number): void {
-  const values = loadValuesForYear(year);
-  values[employeeId] = {
-    employeeId,
-    year,
-    totalAL,
-    setAt: new Date().toISOString(),
-    ruleSignature: 'manual-override',
-  };
-  saveValuesForYear(year, values);
-}
-
 export function resetYear(year: number): void {
   localStorage.removeItem(VALUES_KEY(year));
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -394,16 +394,6 @@ export function InvoiceTemplates() {
       toast.success(`${r.name} no longer default — built-in ${r.kind} template takes over`);
       await load();
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Clear default failed'); }
-  };
-
-  /** Switch back to the built-in default for kind='invoice'. Finds
-   *  whichever custom template currently holds the slot and clears
-   *  its is_default flag; the built-in fallback then applies on
-   *  the next print. */
-  const restoreBuiltinDefault = async () => {
-    const current = rows.find(r => r.isDefault && r.kind === 'invoice');
-    if (!current) return; // nothing to unset — built-in already active
-    await clearDefault(current);
   };
 
   return (

@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Send, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock,
+  Plus, RefreshCw, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock,
 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';

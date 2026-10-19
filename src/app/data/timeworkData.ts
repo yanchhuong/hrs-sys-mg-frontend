@@ -1,4 +1,4 @@
-import { Timetable, Shift, Schedule, Holiday, AttendanceException, SalaryDeduction, SalaryIncrease } from '../types/timework';
+import { Holiday, AttendanceException, SalaryDeduction, SalaryIncrease } from '../types/timework';
 import { mockEmployees } from './mockData';
 
 // Re-export mockEmployees for components that need it
@@ -9,48 +9,6 @@ const _r = () => { _s = (_s * 9301 + 49297) % 233280; return _s / 233280; };
 const _pick = <T,>(arr: T[]) => arr[Math.floor(_r() * arr.length)];
 const _randInt = (min: number, max: number) => Math.floor(_r() * (max - min + 1)) + min;
 const _pad = (n: number, len = 4) => String(n).padStart(len, '0');
-
-export const mockTimetables: Timetable[] = [
-  {
-    id: 'TT001',
-    name: 'Standard Day Shift',
-    startTime: '08:00',
-    endTime: '17:00',
-    breakStart: '12:00',
-    breakEnd: '13:00',
-    workingHours: 8,
-    isActive: true,
-  },
-  {
-    id: 'TT002',
-    name: 'Night Shift',
-    startTime: '20:00',
-    endTime: '05:00',
-    breakStart: '00:00',
-    breakEnd: '01:00',
-    workingHours: 8,
-    isActive: true,
-  },
-];
-
-export const mockShifts: Shift[] = [
-  {
-    id: 'SHIFT001',
-    name: 'Day Shift',
-    timetableId: 'TT001',
-    type: 'day',
-    color: '#3b82f6',
-    isActive: true,
-  },
-  {
-    id: 'SHIFT002',
-    name: 'Night Shift',
-    timetableId: 'TT002',
-    type: 'night',
-    color: '#8b5cf6',
-    isActive: true,
-  },
-];
 
 export const mockHolidays: Holiday[] = [
   { id: 'HOL001', name: 'New Year Day', date: '2026-01-01', type: 'public', isPaid: true },

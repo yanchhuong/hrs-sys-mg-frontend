@@ -165,7 +165,6 @@ interface ReportsProps {
 
 export function Reports({ initialView }: ReportsProps = {}) {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
   const { currentUser, isModuleAvailable } = useAuth();
 
   // Shared datasets pulled once at this level. Children re-use them so we
@@ -1503,7 +1502,6 @@ function PayrollDetailTable({
     () => new Map(employees.map(e => [e.id, e])),
     [employees],
   );
-  const resolveDept = deptName ?? ((s: string) => s);
   const sorted = useMemo(
     () => [...records].sort((a, b) => b.month.localeCompare(a.month) || a.employeeId.localeCompare(b.employeeId)),
     [records],

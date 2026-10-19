@@ -54,21 +54,6 @@ import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 
-/** USD collapses to "$"; KHR uses the riel symbol ៛. Mirrors the
- *  formatting helper in Invoices / Quotations so the column widths
- *  and minus-sign convention all line up across the sale ledger. */
-/** Constrain a raw input to a decimal shape: digits + at most one
- *  dot + up to `decimals` fractional digits (default 2). Same helper
- *  used on Invoices / Quotations. */
-const maskDecimal = (raw: string, decimals = 2): string => {
-  let s = raw.replace(/[^\d.]/g, '');
-  const first = s.indexOf('.');
-  if (first !== -1) {
-    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
-  }
-  const [intPart, decPart] = s.split('.');
-  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
-};
 
 const fmtMoney = (n: number, currency: string): string => {
   const epsilon = currency === 'KHR' ? 0.5 : 0.005;

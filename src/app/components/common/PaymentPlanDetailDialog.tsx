@@ -41,7 +41,7 @@ export function PaymentPlanDetailDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { canCreate, canUpdate } = useAuth();
+  const { canUpdate } = useAuth();
   const { formatDate } = useDateFormat();
   // V253 retired the `payment_transaction` permission module —
   // recording a payment is now gated on payment_plan.update, matching
@@ -399,17 +399,6 @@ export function PaymentPlanDetailDialog({
   );
 }
 
-function SummaryStat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'red' }) {
-  const cls = tone === 'green' ? 'text-green-700'
-            : tone === 'red'   ? 'text-red-700'
-            : 'text-gray-900';
-  return (
-    <div className="rounded-md border bg-white p-2">
-      <div className="text-[11px] text-gray-500">{label}</div>
-      <div className={`text-sm font-semibold truncate ${cls}`} title={value}>{value}</div>
-    </div>
-  );
-}
 
 /* ================================================================== */
 

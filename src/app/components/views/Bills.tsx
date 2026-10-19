@@ -48,7 +48,7 @@ import { StockItemPicker } from '../common/StockItemPicker';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import {
-  Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
+  Plus, Trash2, RefreshCw, FileText, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Upload, FileSpreadsheet,
   ScanBarcode,
 } from 'lucide-react';
@@ -131,23 +131,6 @@ const KIND_FILTERS: ReadonlyArray<{ value: billsApi.BillKind | 'all'; label: str
   { value: 'credit_note', label: 'Credit Notes' },
   { value: 'debit_note',  label: 'Debit Notes' },
 ];
-
-/** Render an amount with the currency in front. USD collapses to "$"
- *  (no space — matches how customers read it on a printed invoice);
- *  other currencies keep the ISO code prefix with a space so the
- *  symbol stays unambiguous. */
-/** Constrain a raw input to a decimal shape: digits + at most one
- *  dot + up to `decimals` fractional digits (default 2). Same helper
- *  used on Invoices / Quotations / Vouchers. */
-const maskDecimal = (raw: string, decimals = 2): string => {
-  let s = raw.replace(/[^\d.]/g, '');
-  const first = s.indexOf('.');
-  if (first !== -1) {
-    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
-  }
-  const [intPart, decPart] = s.split('.');
-  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
-};
 
 const fmtMoney = (n: number, currency: string): string => {
   // Negative amounts render as "− $X" (leading minus + unsigned

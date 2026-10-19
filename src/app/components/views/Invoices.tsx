@@ -19,7 +19,6 @@ import {
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -55,7 +54,7 @@ import { formatMoneyForCurrency } from '../../utils/format';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
-  Package, CheckCircle2, Upload, FileSpreadsheet, Copy, ScanBarcode, X as XIcon,
+  Upload, FileSpreadsheet, Copy, ScanBarcode, X as XIcon,
 } from 'lucide-react';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
@@ -119,26 +118,6 @@ const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; labe
   { value: 'debit_note',  label: 'Debit Notes' },
 ];
 
-/** Render an amount with the currency in front. USD collapses to "$"
- *  (no space — matches how customers read it on a printed invoice);
- *  other currencies keep the ISO code prefix with a space so the
- *  symbol stays unambiguous. */
-/**
- * Constrain a raw input to a decimal shape: digits + at most one dot
- * + up to `decimals` fractional digits (default 2). Mirrors the same
- * mask used on Quotations. Callers pass `decimals=4` for unit-price
- * inputs that need finer precision (e.g. "#,###.0000" style tariffs).
- */
-const maskDecimal = (raw: string, decimals = 2): string => {
-  let s = raw.replace(/[^\d.]/g, '');
-  const first = s.indexOf('.');
-  if (first !== -1) {
-    // Keep only the FIRST dot; strip any further ones.
-    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
-  }
-  const [intPart, decPart] = s.split('.');
-  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
-};
 
 const fmtMoney = (n: number, currency: string): string => {
   // Negative amounts render with a leading "− " before the currency

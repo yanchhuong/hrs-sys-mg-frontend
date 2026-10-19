@@ -86,44 +86,6 @@ export function TableBodySkeletonRows({
   );
 }
 
-/** Tile grid placeholder. Drop-in for pages that render a card grid
- *  (POS items, Shop menu, Warehouse tiles). Each tile is a square
- *  cover + name line + optional price line — matches the shape POS /
- *  Shop render for real items so the grid's fold stays put. */
-export function TileGridSkeleton({
-  tiles = 12,
-  showPrice = true,
-  className,
-}: {
-  tiles?: number;
-  showPrice?: boolean;
-  /** Override the grid columns when the caller's viewport uses a
-   *  different responsive stepping than POS's 3/3/3/4/4. */
-  className?: string;
-}) {
-  const gridCls =
-    className
-    ?? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3';
-  return (
-    <div className={gridCls}>
-      {Array.from({ length: tiles }).map((_, i) => (
-        <div key={i} className="rounded-lg border bg-white overflow-hidden">
-          <Skeleton className="aspect-square w-full rounded-none" />
-          <div className="p-2 space-y-2">
-            <Skeleton className="h-3.5 w-4/5" />
-            {showPrice && (
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-14" />
-                <Skeleton className="h-3 w-8" />
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** Stat-cards placeholder. Drop-in for pages whose landing row is
  *  a strip of KPI tiles (Attendance summary, Dashboard, Payroll). */
 export function StatCardsSkeleton({
@@ -151,21 +113,3 @@ export function StatCardsSkeleton({
   );
 }
 
-/** Form section placeholder. Drop-in for settings dialogs / edit
- *  forms with several rows of labeled inputs. */
-export function FormFieldsSkeleton({
-  rows = 4,
-}: {
-  rows?: number;
-}) {
-  return (
-    <div className="space-y-4">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="space-y-1.5">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      ))}
-    </div>
-  );
-}

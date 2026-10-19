@@ -5,7 +5,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { CheckSquare, Loader2, Plus, RefreshCw, Search, User2, Calendar, ChevronDown } from 'lucide-react';
+import { CheckSquare, Plus, RefreshCw, Search, User2, Calendar, ChevronDown } from 'lucide-react';
 import * as tasksApi from '../../../api/agencyTasks';
 import type { TaskDto, TaskPriority, TaskStatus } from '../../../api/agencyTasks';
 import { useAgencyClient } from '../../../context/AgencyClientContext';

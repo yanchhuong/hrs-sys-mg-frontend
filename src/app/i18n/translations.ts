@@ -369,8 +369,6 @@ export const dict: Dict = {
   'contract.empty.hint':          { en: 'Click "Add Contract" to create one.', km: 'ចុច "បន្ថែមកិច្ចសន្យា" ដើម្បីបង្កើតថ្មី', zh: '点击"添加合同"以创建' },
 };
 
-export type TKey = keyof typeof dict;
-
 const missingLogged = new Set<string>();
 
 export function translate(key: string, lang: Lang, fallback?: string): string {

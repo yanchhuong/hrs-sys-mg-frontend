@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import {
-  LayoutDashboard,
   LogOut,
   Menu,
   X,

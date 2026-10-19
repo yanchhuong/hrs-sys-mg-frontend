@@ -17,11 +17,6 @@ type BadgeNavigator = Navigator & {
   clearAppBadge?: () => Promise<void>;
 };
 
-/** True when the platform exposes the Badging API. */
-export function supportsAppBadge(): boolean {
-  return typeof navigator !== 'undefined' && 'setAppBadge' in navigator;
-}
-
 /**
  * Mirror `count` onto the app icon. 0 (or negative) clears it.
  *

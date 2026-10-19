@@ -6,7 +6,7 @@ import {
 } from '../../ui/table';
 import {
   Building2, UsersRound, DollarSign, Activity, AlertTriangle, CheckCircle,
-  TrendingUp, HardDrive, Gauge, Eye, LogIn,
+  TrendingUp, Gauge, Eye, LogIn,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -80,7 +80,6 @@ export function PlatformDashboard() {
    *  reflects SA edits in the Plans page rather than the hardcoded
    *  FE constant. */
   const [plansByTier, setPlansByTier] = useState<Record<string, platformApi.PlanLimits>>({});
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (USE_MOCKS) {
@@ -90,7 +89,6 @@ export function PlatformDashboard() {
     }
     let cancelled = false;
     (async () => {
-      setLoading(true);
       try {
         const [t, i, u, a, m, p] = await Promise.all([
           platformApi.tenants.list(),
@@ -110,7 +108,6 @@ export function PlatformDashboard() {
         for (const row of p) map[row.planTier] = row;
         setPlansByTier(map);
       } catch { /* leave empty arrays */ }
-      finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
   }, []);

@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import { Label } from '../../ui/label';
 import { format } from 'date-fns';

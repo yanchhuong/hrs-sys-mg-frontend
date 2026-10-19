@@ -6,7 +6,7 @@ import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import {
   Building2, Loader2, RefreshCw, Search, Star, ScrollText, Check, X,

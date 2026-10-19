@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import {
   parseItemsExcel, downloadItemTemplate, toItemRequest,
   normalizeWarehouseKey,
-  ParsedItemData, ParsedItemRow,
+  ParsedItemData,
 } from '../../utils/itemBulkParser';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';

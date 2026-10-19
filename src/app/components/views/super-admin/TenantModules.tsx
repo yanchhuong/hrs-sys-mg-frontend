@@ -390,7 +390,6 @@ export function TenantModules() {
                 const rendered: ReactNode[] = [];
                 for (const cat of categories) {
                   const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
-                  const moduleKeys = modules.map(n => n.key);
                   const inheritTiles = INHERIT_TILES[cat.key] ?? [];
                   // Apply search + state filter to the tile lists.
                   const visibleInheritTiles = inheritTiles.filter(t => {

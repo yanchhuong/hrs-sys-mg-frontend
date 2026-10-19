@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { AuditCell } from '../common/AuditCell';
@@ -26,7 +26,6 @@ import {
   DialogTrigger,
 } from '../ui/dialog';
 import { Switch } from '../ui/switch';
-import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { mockDeductions } from '../../data/timeworkData';
@@ -36,7 +35,7 @@ import { Employee } from '../../types/hrms';
 import * as deductionsApi from '../../api/deductions';
 import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
-import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search, Settings, Eye, User as UserIcon } from 'lucide-react';
+import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search, Settings, User as UserIcon } from 'lucide-react';
 import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
 import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { Checkbox } from '../ui/checkbox';
@@ -137,7 +136,7 @@ export function Deduction() {
    *  the Increase page's pattern: the row carries one View Details
    *  button and Edit / Stop live in the dialog footer. */
   const [detailsTarget, setDetailsTarget] = useState<SalaryDeduction | null>(null);
-  const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
+  const [dateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
   });
@@ -259,9 +258,6 @@ export function Deduction() {
     return m;
   }, [deductionCategories]);
 
-  const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
-    setDateFilter({ start: startDate, end: endDate });
-  };
 
   const resetAddForm = () => {
     setNewEmployeeId(employees[0]?.apiId ?? employees[0]?.id ?? '');

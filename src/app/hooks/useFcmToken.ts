@@ -33,13 +33,6 @@ export function isFcmOptedOut(): boolean {
   catch { return false; }
 }
 
-export function setFcmOptedOut(v: boolean): void {
-  try {
-    if (v) localStorage.setItem(OPT_OUT_KEY, '1');
-    else localStorage.removeItem(OPT_OUT_KEY);
-  } catch { /* private mode — nothing to persist */ }
-}
-
 /** Detect the shipped Capacitor Android build so we don't try to
  *  register a Web-Push VAPID token there (Capacitor uses the native
  *  FCM plugin — a separate Stage 3B when we ship the APK push path). */

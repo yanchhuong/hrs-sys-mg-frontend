@@ -81,27 +81,3 @@ export function deleteFlexibleSchedule(id: string): void {
   writeAll(readAll().filter(o => o.id !== id));
 }
 
-// ---------------------------------------------------------------------------
-// Resolver
-// ---------------------------------------------------------------------------
-
-/**
- * Return the effective scan rule for an employee: the override's fields
- * layered on top of the tenant scan rule. Fields the override doesn't set
- * fall back to the tenant value.
- */
-export function resolveRuleFor(employeeId: string, scanRule: ScanRule): ScanRule {
-  const override = getFlexibleFor(employeeId);
-  if (!override) return scanRule;
-  return {
-    ...scanRule,
-    mode:                    override.mode                    ?? scanRule.mode,
-    morningIn:               override.morningIn               ?? scanRule.morningIn,
-    morningOut:              override.morningOut              ?? scanRule.morningOut,
-    afternoonIn:             override.afternoonIn             ?? scanRule.afternoonIn,
-    eveningOut:              override.eveningOut              ?? scanRule.eveningOut,
-    graceInMinutes:          override.graceInMinutes          ?? scanRule.graceInMinutes,
-    graceOutMinutes:         override.graceOutMinutes         ?? scanRule.graceOutMinutes,
-    halfDayCountsAsHalfScan: override.halfDayCountsAsHalfScan ?? scanRule.halfDayCountsAsHalfScan,
-  };
-}

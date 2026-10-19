@@ -9,7 +9,7 @@ import {
 } from '../../ui/dropdown-menu';
 import {
   Shield, LayoutDashboard, Building2, UsersRound, Link2, SlidersHorizontal, Smartphone,
-  ScrollText, Database, LogOut, Menu, X, UserCog, Layers, Settings,
+  ScrollText, LogOut, Menu, X, UserCog, Layers, Settings,
   ChevronRight, ChevronDown, DollarSign, CalendarDays, Bot, ClipboardList,
   Briefcase,
 } from 'lucide-react';

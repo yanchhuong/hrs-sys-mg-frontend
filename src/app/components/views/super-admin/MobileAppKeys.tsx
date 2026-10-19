@@ -14,7 +14,7 @@
  * that would imply a security property it deliberately doesn't have.
  * (A tenant's `apiKey` IS a bearer token and must never be used here.)
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';

@@ -22,7 +22,6 @@ import {
   AlertTriangle, Shield, Calendar, FileText, Info, Snowflake, Sun,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
   mockCompanies, mockLocalInstalls, Company, PlanTier, CompanyStatus,

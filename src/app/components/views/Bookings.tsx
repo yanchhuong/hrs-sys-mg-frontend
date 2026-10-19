@@ -20,7 +20,7 @@ import { DateInput } from '../common/DateInput';
 import { SearchablePicker } from '../common/SearchablePicker';
 import {
   Plus, Search, Loader2, Ticket, CheckCircle2, DollarSign, Undo2, X,
-  Ban, Trash2, Settings, CalendarClock, Info,
+  Ban, Trash2, Settings, Info,
   Image as ImageIconLucide,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -28,11 +28,6 @@ import { SeatMapDisplay, CinemaSeatMap, parseSeatLayout, type SeatLayout } from 
 import { BookingSchedulesDialog } from '../common/BookingSchedulesDialog';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
 import * as bookingTripsApi from '../../api/bookingTrips';
-import { format as fmtDate, parseISO } from 'date-fns';
-
-/** ISO day-of-week labels — 1=Mon..7=Sun. Matches
- *  BookingScheduleSlot.dayOfWeek numbering. */
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /** v-property-desc-strip — property descriptions typed before the
  *  Schedule entity commonly baked schedule info into the free

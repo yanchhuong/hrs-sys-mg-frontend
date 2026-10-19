@@ -33,13 +33,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Clock, CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
-  CheckCircle2, XCircle, AlertTriangle, LogIn, LogOut, Users,
-  ChevronLeft, ChevronRight, Pencil, Download, AlertCircle, BarChart3,
-  Search, X, UserMinus, Settings as SettingsIcon, MapPin,
+  CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
+  LogIn, LogOut, 
+  ChevronLeft, ChevronRight, Pencil, Download, BarChart3,
+  Search, X, UserMinus, Settings as SettingsIcon,
 } from 'lucide-react';
 import { OfficesDialog } from '../common/OfficesDialog';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isToday as isTodayFn, addMonths, subMonths } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
@@ -303,7 +303,7 @@ export function Attendance({ onNavigate }: Props = {}) {
    * into a per-scan event log so admins can see exactly who tapped
    * which device when.
    */
-  const [dailyViewMode, setDailyViewMode] = useState<'roster' | 'history'>('roster');
+  const [dailyViewMode] = useState<'roster' | 'history'>('roster');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [monthlySearch, setMonthlySearch] = useState('');
   const [dailySearch, setDailySearch] = useState('');
@@ -313,8 +313,6 @@ export function Attendance({ onNavigate }: Props = {}) {
   const [alVersion, setAlVersion] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editRecord, setEditRecord] = useState<AttendanceType | null>(null);
-  const [editCheckIn, setEditCheckIn] = useState('');
-  const [editCheckOut, setEditCheckOut] = useState('');
   const [editMorningIn, setEditMorningIn] = useState('');
   const [editMorningOut, setEditMorningOut] = useState('');
   const [editNoonIn, setEditNoonIn] = useState('');
@@ -439,7 +437,6 @@ export function Attendance({ onNavigate }: Props = {}) {
     || currentUser?.role === 'manager'
     || (!!currentUser?.role
         && currentUser.role !== 'employee');
-  const isEmployee = currentUser?.role === 'employee';
   /** Stricter check used by the Apply OT rule-type override Select.
    *  Manager + Employee see the auto-detected badge as read-only;
    *  only the true 'admin' role can force a different day-type. */
@@ -1418,20 +1415,6 @@ export function Attendance({ onNavigate }: Props = {}) {
     ? [...new Set(employees.map(e => e.department))]
     : deptList.map(d => d.name);
 
-  const filterTabs: { key: FilterTab; label: string; count: number; icon: React.ReactNode }[] = [
-    // Count the roster-augmented `dailyRows` (which includes synthetic absent
-    // rows), not the raw API list — otherwise "All" undercounts and disagrees
-    // with the bucket badges and the "Showing X of Y" pagination footer.
-    { key: 'all', label: 'All', count: dailyRows.length, icon: <Users className="h-4 w-4" /> },
-    { key: 'present', label: 'Present', count: summary.present, icon: <CheckCircle2 className="h-4 w-4" /> },
-    { key: 'no_checkin', label: 'No Check-in', count: summary.noCheckin, icon: <AlertTriangle className="h-4 w-4" /> },
-    { key: 'no_checkout', label: 'No Check-out', count: summary.noCheckout, icon: <AlertCircle className="h-4 w-4" /> },
-    { key: 'late', label: 'Late / Early Out', count: summary.late, icon: <Clock className="h-4 w-4" /> },
-    { key: 'absent', label: 'Absent', count: summary.absent, icon: <XCircle className="h-4 w-4" /> },
-    { key: 'leave', label: 'Leave', count: summary.leave, icon: <CalendarIcon className="h-4 w-4" /> },
-    { key: 'exception', label: 'Exception', count: summary.exception, icon: <MapPin className="h-4 w-4" /> },
-  ];
-
   const getStatusBadge = (status: string) => {
     const config = STATUS_CONFIG[status];
     if (!config) return <Badge variant="secondary">{status}</Badge>;
@@ -1444,8 +1427,6 @@ export function Attendance({ onNavigate }: Props = {}) {
 
   const handleEdit = (record: AttendanceType) => {
     setEditRecord(record);
-    setEditCheckIn(record.checkIn || '');
-    setEditCheckOut(record.checkOut || '');
     setEditMorningIn(record.morningIn || '');
     setEditMorningOut(record.morningOut || '');
     setEditNoonIn(record.noonIn || '');
@@ -2223,7 +2204,6 @@ export function Attendance({ onNavigate }: Props = {}) {
                       const emp = employees.find(
                         e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
                       );
-                      const isSynthetic = record.id.startsWith('synthetic:');
                       // Half-day leave constrains which punch slots are
                       // even meaningful — a half-noon leave still owes a
                       // morning scan, and that morning time has to stay

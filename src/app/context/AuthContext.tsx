@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { toast } from 'sonner';
 import { User, UserRole } from '../types/hrms';
 import { mockUsers, mockEmployees } from '../data/mockData';

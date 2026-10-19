@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { AuditCell } from '../common/AuditCell';
@@ -25,7 +25,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
-import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { Checkbox } from '../ui/checkbox';
@@ -40,7 +39,7 @@ import * as contractsApi from '../../api/contracts';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
-import { TrendingUp, Plus, Eye, User as UserIcon, Filter, Search, X, Settings } from 'lucide-react';
+import { TrendingUp, Plus, User as UserIcon, Filter, Search, X, Settings } from 'lucide-react';
 import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
 import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -161,7 +160,7 @@ export function Increase() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hiddenCategoryCodes, setHiddenCategoryCodes] = useState<Set<string>>(new Set());
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
-  const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
+  const [dateFilter] = useState<{ start: string | null; end: string | null }>({
     start: null,
     end: null,
   });
@@ -194,10 +193,6 @@ export function Increase() {
   const [newEffectiveUntil, setNewEffectiveUntil] = useState<string>('');
   const [newReason, setNewReason] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
-
-  const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
-    setDateFilter({ start: startDate, end: endDate });
-  };
 
   const loadIncreases = async () => {
     if (USE_MOCKS) {

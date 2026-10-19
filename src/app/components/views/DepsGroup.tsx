@@ -8,11 +8,8 @@ import { Switch } from '../ui/switch';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -72,9 +69,6 @@ const COLORS = [
   { value: 'pink', label: 'Pink', class: 'bg-pink-100 text-pink-800 border-pink-200' },
   { value: 'yellow', label: 'Yellow', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
 ];
-
-const getColorClass = (color: string) => COLORS.find(c => c.value === color)?.class || COLORS[0].class;
-
 
 // Helper: turn a raw Department (from mocks or API) into the UI's DeptGroup shape.
 // The backend persists {id, name, description, parentId, managerId, type}.
@@ -154,7 +148,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   // from the API in `loadDepartments` below.
   const [items, setItems] = useState<DeptGroup[]>(USE_MOCKS ? initialDepts : [...localGroups]);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
-  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeptGroup | null>(null);
   const [form, setForm] = useState<Omit<DeptGroup, 'id'>>(emptyForm);
@@ -178,14 +171,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       ]);
       return;
     }
-    setLoading(true);
     try {
       const apiDepts = await departmentsApi.list();
       setItems(apiDepts.map((d, i) => departmentToDeptGroup(d, i)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load departments');
-    } finally {
-      setLoading(false);
     }
   };
 

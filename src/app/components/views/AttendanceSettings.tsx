@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -9,7 +9,6 @@ import { Switch } from '../ui/switch';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { usePagination } from '../../hooks/usePagination';
-import { Pagination } from '../common/Pagination';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
@@ -19,19 +18,19 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { mockAttendanceRules, defaultOTSettings, defaultAttendanceRule } from '../../data/settingsData';
+import { defaultOTSettings } from '../../data/settingsData';
 import { mockDepartments } from '../../data/mockData';
 import * as departmentsApi from '../../api/departments';
 import * as officesApi from '../../api/offices';
 import { mockHolidays } from '../../data/timeworkData';
 import { Holiday as HolidayView } from './Holiday';
-import { AttendanceRule, OTSettings } from '../../types/settings';
+import { OTSettings } from '../../types/settings';
 import { Holiday } from '../../types/timework';
 import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import {
-  Settings, Clock, Save, Coffee, ArrowRightLeft, AlertTriangle, Timer,
-  Plus, Trash2, Pencil, CheckCircle2, XCircle, Info, Zap, Building2, CalendarDays,
+  Settings, Save, ArrowRightLeft, AlertTriangle, Timer,
+  Plus, Trash2, CheckCircle2, Info, Zap, CalendarDays,
   Briefcase, Calendar, PartyPopper, Shield, Users, Moon,
 } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
@@ -84,9 +83,6 @@ export function AttendanceSettings() {
   // read-only reference) but can't persist changes.
   const { canUpdate } = useAuth();
   const canEditSettings = canUpdate('settings');
-  // Kept for OT-tab cross-references (activeShift) — no per-shift UI anymore;
-  // per-employee work schedules are assigned on the Employee record.
-  const [shifts] = useState<AttendanceRule[]>(mockAttendanceRules);
   const [otSettings, setOtSettings] = useState<OTSettings>(USE_MOCKS ? defaultOTSettings : { ...defaultOTSettings });
   const [, setLoadingOt] = useState(false);
   const [scanRule, setScanRule] = useState<ScanRule>(DEFAULT_SCAN_RULE);
@@ -149,9 +145,7 @@ export function AttendanceSettings() {
 
   // Holiday state
   const [holidays, setHolidays] = useState<Holiday[]>(USE_MOCKS ? mockHolidays : []);
-  const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
-  const [newHoliday, setNewHoliday] = useState({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
-  const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
+  const [dateFilter] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
 
   const loadHolidays = async () => {
     if (USE_MOCKS) {
@@ -326,47 +320,7 @@ export function AttendanceSettings() {
     }
   };
 
-  const handleAddHoliday = async () => {
-    if (!newHoliday.name || !newHoliday.date) { toast.error('Please fill in name and date'); return; }
-    if (USE_MOCKS) {
-      const holiday: Holiday = { id: `HOL${String(holidays.length + 1).padStart(3, '0')}`, ...newHoliday };
-      setHolidays([...holidays, holiday]);
-      setNewHoliday({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
-      setHolidayDialogOpen(false);
-      toast.success('Holiday added successfully');
-      return;
-    }
-    try {
-      await settingsApi.createHoliday({
-        name: newHoliday.name,
-        date: newHoliday.date,
-        // Backend validates the type pattern as `public|company` — no remap.
-        type: newHoliday.type,
-        description: newHoliday.description,
-      });
-      await loadHolidays();
-      setNewHoliday({ name: '', date: '', type: 'public' as 'public' | 'company', description: '' });
-      setHolidayDialogOpen(false);
-      toast.success('Holiday added successfully');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add holiday');
-    }
-  };
 
-  const handleDeleteHoliday = async (id: string) => {
-    if (USE_MOCKS) {
-      setHolidays(holidays.filter(h => h.id !== id));
-      toast.success('Holiday deleted');
-      return;
-    }
-    try {
-      await settingsApi.removeHoliday(id);
-      await loadHolidays();
-      toast.success('Holiday deleted');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete holiday');
-    }
-  };
 
   const filteredHolidays = holidays.filter(h => {
     if (!dateFilter.start && !dateFilter.end) return true;
@@ -383,14 +337,7 @@ export function AttendanceSettings() {
     holidaysPagination.resetPage();
   }, [dateFilter]);
 
-  // OT tab uses the currently-active shift as reference for sample calculations.
-  const activeShift = shifts.find(s => s.isActive) || shifts[0];
 
-  const addGrace = (time: string, minutes: number) => {
-    const [h, m] = time.split(':').map(Number);
-    const total = h * 60 + m + minutes;
-    return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-  };
 
   return (
     <div className="space-y-6">
@@ -1442,7 +1389,6 @@ function ScanRuleCard({
   onSave: (next: ScanRule) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ScanRule>(rule);
-  const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft(rule); }, [rule]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(rule);
@@ -1455,7 +1401,6 @@ function ScanRuleCard({
   };
 
   const handleSave = async () => {
-    setSaving(true);
     try {
       await onSave(draft);
       // Say the required hours out loud: it's derived from the times
@@ -1471,20 +1416,15 @@ function ScanRuleCard({
       // it's a round trip, so a failure has to be reported instead of
       // leaving the admin believing the rule is live.
       toast.error(e instanceof Error ? e.message : 'Could not save the scan rule');
-    } finally {
-      setSaving(false);
     }
   };
 
   const handleReset = async () => {
-    setSaving(true);
     try {
       await onSave({ ...DEFAULT_SCAN_RULE });
       toast.success('Scan rule reset to defaults');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not reset the scan rule');
-    } finally {
-      setSaving(false);
     }
   };
 

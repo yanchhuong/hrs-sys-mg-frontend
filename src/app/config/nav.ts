@@ -25,12 +25,9 @@ import {
   Package, Boxes, Megaphone, History, ClipboardEdit, Wallet, ArrowLeftRight, Banknote,
   Handshake,
   ClipboardCheck, Stethoscope, HeartPulse, CalendarClock,
-  GraduationCap, BookOpen, FileSpreadsheet, Gift, Percent,
+  GraduationCap, FileSpreadsheet, Percent,
   CreditCard, Home, Ticket, ArrowDownLeft,
-  // V-library-membership — Library vertical icons: Library for the
-  // top-level group + Members leaf, BookOpen (already imported) for
-  // Books, Activity for the broadened Activity page.
-  Library, BookMarked, UserSquare2, Activity,
+  UserSquare2, Activity,
   type LucideIcon,
 } from 'lucide-react';
 import { lazyWithReload } from '../utils/lazyWithReload';
@@ -114,8 +111,8 @@ const ProfitLossReport       = lazyView(() => import('../components/views/Profit
 // Both are reached through popups on the Attendance page:
 //   • Offices  → the gear-icon "Manage Offices" dialog
 //   • QrDisplay → the per-row "View QR" dialog inside Manage Offices
-// The component files still live under views/ — OfficesDialog and
-// QrDisplayDialog import them — but they no longer back any leaf.
+// Offices lives under views/ for OfficesDialog; the QR popup is
+// QrDisplayDialog, self-contained.
 
 export interface NavLeaf {
   id: string;

@@ -8,7 +8,7 @@ import * as settingsApi from '../../api/settings';
 import * as positionsApi from '../../api/positions';
 import * as documentsApi from '../../api/documents';
 import { USE_MOCKS } from '../../api/client';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
@@ -29,7 +29,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '../ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -39,11 +38,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, DollarSign, CalendarCheck, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -75,7 +73,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useTeamScope } from '../../hooks/useTeamScope';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { format, isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
+import { isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
 import { makeDeptName } from '../../utils/deptName';
@@ -593,7 +591,6 @@ export function Employees() {
   const { canView, canCreate, canUpdate, canDelete } = useAuth();
   const canCreateEmp = canCreate('employees');
   const canUpdateEmp = canUpdate('employees');
-  const canDeleteEmp = canDelete('employees');
   const canCreateContract = canCreate('contracts');
   const canUpdateContract = canUpdate('contracts');
   const canManageRoster = canCreateEmp || canUpdateEmp;
@@ -645,7 +642,6 @@ export function Employees() {
   const [contracts, setContracts] = useState<Contract[]>(USE_MOCKS ? mockContracts : []);
   const [departments, setDepartments] = useState<departmentsApi.Department[]>([]);
   const [positions, setPositions] = useState<positionsApi.Position[]>([]);
-  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
 
   // departmentId → name lookup. In mock mode the adapter stores the name
   // directly, so the map just round-trips through the same string.
@@ -730,13 +726,7 @@ export function Employees() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await Promise.all([loadEmployees(), loadContracts(), loadDepartments(), loadPositions()]);
-      if (!cancelled) setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    void Promise.all([loadEmployees(), loadContracts(), loadDepartments(), loadPositions()]);
   }, []);
 
   // Telegram linkage is a side-fetch so a 403 on the hr_telegram
@@ -3651,13 +3641,6 @@ function ManagersCell({ employee, roster }: {
   employee: Employee;
   roster: Employee[];
 }) {
-  // managerId stores a UUID in live mode and an empNo in mock mode;
-  // the roster carries both, so match on either.
-  const nameOf = (id?: string | null) => {
-    if (!id) return null;
-    const hit = roster.find(e => e.id === id || (e as { apiId?: string }).apiId === id);
-    return hit?.name ?? 'Unknown';
-  };
 
   // Ordinals rather than the full labels ("Manager 1"): in a column
   // already headed "Managers", repeating the word on every row is

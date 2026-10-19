@@ -26,8 +26,6 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
-import { usePagination } from '../../hooks/usePagination';
-import { Pagination } from '../common/Pagination';
 import {
   Table,
   TableBody,
@@ -45,9 +43,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { DateRangeFilter } from '../common/DateRangeFilter';
-import { EmployeeCell } from '../common/EmployeeCell';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { AuditCell } from '../common/AuditCell';
 import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit, Coins } from 'lucide-react';
 import { CashCountDialog } from '../common/CashCountDialog';
@@ -59,7 +55,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
@@ -387,8 +383,6 @@ export function Payroll() {
     }
   }, [selectedBatch]);
 
-  const role = currentUser?.role;
-  const isEmployee = role === 'employee';
   // Batch-management surface — who sees Generate Payroll, the batch
   // list, the Approve / Reject buttons. Gated on the actual Payroll
   // permission grid instead of the role slug so a built-in Manager /
@@ -1906,10 +1900,6 @@ export function Payroll() {
     }
   };
 
-  const calculateOTRate = (baseSalary: number) => {
-    const hourlyRate = baseSalary / 160;
-    return hourlyRate * 1.5;
-  };
 
   return (
     <div className="space-y-6">

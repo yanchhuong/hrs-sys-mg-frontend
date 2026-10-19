@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { FileSpreadsheet, Loader2, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import * as declApi from '../../api/agencyTaxDecl';
 import type { TaxDeclStatus, TaxDeclarationDto } from '../../api/agencyTaxDecl';
 import { PageTitleTooltip } from './agency/PageTitleTooltip';

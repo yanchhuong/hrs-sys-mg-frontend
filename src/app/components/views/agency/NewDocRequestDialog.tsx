@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Loader2, Plus } from 'lucide-react';
 import * as docsApi from '../../../api/agencyDocs';
 import type { DocCategory, RelatedDocType } from '../../../api/agencyDocs';
-import { portfolioDocs, type PortfolioDoc, type PortfolioDocType } from '../../../api/agencyPortfolioDocs';
+import { portfolioDocs, type PortfolioDoc } from '../../../api/agencyPortfolioDocs';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 
 interface Props {
