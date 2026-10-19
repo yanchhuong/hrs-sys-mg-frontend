@@ -820,7 +820,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   <Label className="text-xs text-gray-600">Logo on receipt</Label>
                   <ImageDropZone
                     value={draft.posLogoUrl}
-                    onChange={v => setDraft({ ...draft, posLogoUrl: v })}
+                    onChange={v => setDraft({ ...draft, posLogoUrl: v ?? '' })} // '' clears; null = 'unchanged' server-side
                     hint="PNG / JPG · prints centered above the shop name"
                     height={100}
                     disabled={loading || saving}
@@ -1534,7 +1534,7 @@ function PosSlidesEditor({
   const items = settingsApi.parsePosSlideMedia(rawMedia);
 
   const commit = (next: settingsApi.PosSlideItem[]) =>
-    onMediaChange(next.length === 0 ? null : settingsApi.serializePosSlideMedia(next));
+    onMediaChange(next.length === 0 ? '' : settingsApi.serializePosSlideMedia(next)); // '' clears server-side
 
   const addImage = () => commit([...items, { kind: 'image', src: '' }]);
   const addVideo = () => commit([...items, { kind: 'video', src: '' }]);
