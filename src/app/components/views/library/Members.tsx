@@ -257,7 +257,9 @@ export function Members() {
         address: form.address || undefined,
         sex: form.sex || undefined,
         occupation: form.occupation || undefined,
-        profileImage: form.profileImage || null,
+        // '' clears the photo; null would mean "leave unchanged" to the
+        // API, so "Remove photo" never stuck.
+        profileImage: form.profileImage,
         membershipType: form.membershipType || undefined,
         registrationDate: form.registrationDate || undefined,
         effectiveDate: form.effectiveDate || undefined,
