@@ -532,6 +532,10 @@ function StatusUpdateDialog({
   if (!row) return null;
 
   const needsPaidAmount = status === 'PARTIALLY_PAID';
+  // The server clears the payment date when a run goes to Draft,
+  // Confirmed or Cancelled (applyStatusEffects "re-arm"), so the field
+  // only shows — and is only sent — for a status that keeps it.
+  const keepsPaymentDate = status === 'PARTIALLY_PAID' || status === 'PAID';
   const parsedPaid = paidAmount.trim() === '' ? null : Number(paidAmount);
   const paidError = (() => {
     if (!needsPaidAmount) return null;
@@ -551,7 +555,7 @@ function StatusUpdateDialog({
       await commissionSettlement.updateStatus(row.id, {
         status,
         paidAmount: parsedPaid,
-        paymentDate: paymentDate || null,
+        paymentDate: keepsPaymentDate ? (paymentDate || null) : null,
         paymentMethod: paymentMethod || null,
         referenceNo: referenceNo || null,
         remark: remark || null,
@@ -618,11 +622,14 @@ function StatusUpdateDialog({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Payment Date</Label>
-              <DateInput value={paymentDate} onChange={setPaymentDate} className="h-9 text-sm" />
-            </div>
-            <div className="space-y-1">
+            {keepsPaymentDate && (
+              <div className="space-y-1">
+                <Label>Payment Date</Label>
+                <DateInput value={paymentDate} onChange={setPaymentDate} className="h-9 text-sm" />
+                <p className="text-[11px] text-gray-500">Leave blank for today.</p>
+              </div>
+            )}
+            <div className={`space-y-1 ${keepsPaymentDate ? '' : 'col-span-2'}`}>
               <Label>Payment Method</Label>
               <Select value={paymentMethod} onValueChange={v => setPaymentMethod(v as PaymentMethod)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
