@@ -323,7 +323,7 @@ export function PublicInvoiceView() {
           {/* Notes block */}
           <div style={{ marginTop: '20px' }}>
             <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-            {inv.exchangeRate && currency !== 'KHR' && (
+            {!!inv.exchangeRate && currency !== 'KHR' && (
               <div style={{ fontSize: '11px', marginTop: '2px' }}>
                 អត្រាប្តូរប្រាក់ / Exchange rate : {inv.exchangeRate}
               </div>

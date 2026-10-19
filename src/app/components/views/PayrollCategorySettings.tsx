@@ -668,7 +668,7 @@ export function PayrollCategorySettings() {
                               {t('payrollCat.builtin')}
                             </Badge>
                           )}
-                          {CATEGORY_HELP[c.code] && (
+                          {!!CATEGORY_HELP[c.code] && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button

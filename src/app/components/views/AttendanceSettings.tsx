@@ -1389,6 +1389,9 @@ function ScanRuleCard({
   onSave: (next: ScanRule) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ScanRule>(rule);
+  // In-flight save / reset — both buttons stay disabled so a second
+  // click can't send the request twice.
+  const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft(rule); }, [rule]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(rule);
@@ -1401,6 +1404,8 @@ function ScanRuleCard({
   };
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       await onSave(draft);
       // Say the required hours out loud: it's derived from the times
@@ -1416,15 +1421,21 @@ function ScanRuleCard({
       // it's a round trip, so a failure has to be reported instead of
       // leaving the admin believing the rule is live.
       toast.error(e instanceof Error ? e.message : 'Could not save the scan rule');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleReset = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       await onSave({ ...DEFAULT_SCAN_RULE });
       toast.success('Scan rule reset to defaults');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not reset the scan rule');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1564,10 +1575,10 @@ function ScanRuleCard({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 pt-2 border-t">
-          <Button variant="ghost" size="sm" onClick={handleReset}>
+          <Button variant="ghost" size="sm" onClick={handleReset} disabled={saving || loading}>
             Reset to defaults
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty}>
+          <Button size="sm" onClick={handleSave} disabled={!dirty || saving || loading}>
             <Save className="h-4 w-4 mr-1.5" />
             Save rule
           </Button>

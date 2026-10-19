@@ -220,7 +220,7 @@ export function SearchablePicker({
               5th's first pixel. */}
           <CommandList className="hover-scroll-y max-h-44">
             <CommandEmpty>{emptyResultsLabel}</CommandEmpty>
-            {options.length === 0 && emptyOptionsHint && (
+            {options.length === 0 && !!emptyOptionsHint && (
               <div className="px-3 py-4 text-xs text-gray-500">{emptyOptionsHint}</div>
             )}
             <CommandGroup>
