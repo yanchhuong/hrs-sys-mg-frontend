@@ -688,6 +688,9 @@ function printConsignmentNote(
   w.document.open();
   w.document.write(html);
   w.document.close();
+  // Close the print window once printing ends (Print or Cancel) — it
+  // was left open on a bare A4 page, which on a phone has no close.
+  w.addEventListener('afterprint', () => w.close());
   // Wait for CDN fonts (Battambang for Khmer + Hanken Grotesk) AND
   // product images to land before the print snapshot fires.
   setTimeout(() => { w.focus(); w.print(); }, 700);
@@ -877,6 +880,8 @@ function printSettlementNote(
   w.document.open();
   w.document.write(html);
   w.document.close();
+  // Close once printing ends — see printConsignmentNote.
+  w.addEventListener('afterprint', () => w.close());
   setTimeout(() => { w.focus(); w.print(); }, 700);
 }
 
