@@ -117,6 +117,34 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
   };
 }
 
+/**
+ * An OT row's life is pending → approved → closed → paid, plus
+ * rejected. `closed` is what an approved row becomes when a payroll
+ * batch claims its hours, and `paid` when that batch pays out — both
+ * are stages *after* approval, not alternatives to it.
+ *
+ * So every total that means "approved OT" has to count all three.
+ * Reading 'approved' alone made the figures fall as payroll ran, and
+ * emptied the by-employee view precisely when there was something to
+ * reconcile against a payslip.
+ *
+ * The payroll calculation is the one place that must keep reading
+ * 'approved' on its own: that narrowness is what stops the same
+ * hours being costed into two batches.
+ */
+const APPROVED_ONWARD = new Set(['approved', 'closed', 'paid']);
+const isApprovedOnward = (status: string) => APPROVED_ONWARD.has(status);
+
+/** Labelled "Status : X" to match the selects on Transactions. */
+const OT_STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'rejected', label: 'Rejected' },
+] as const;
+
 export function Overtime() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
@@ -326,10 +354,13 @@ export function Overtime() {
   }
 
   const pendingRequests = otRequests.filter(req => req.status === 'pending');
-  const statusCounts = {
+  /** Per-status counts, shown on the filter's options. */
+  const statusCounts: Record<string, number> = {
     all: otRequests.length,
     pending: pendingRequests.length,
     approved: otRequests.filter(req => req.status === 'approved').length,
+    closed: otRequests.filter(req => req.status === 'closed').length,
+    paid: otRequests.filter(req => req.status === 'paid').length,
     rejected: otRequests.filter(req => req.status === 'rejected').length,
   };
 
@@ -646,7 +677,7 @@ export function Overtime() {
   // Group-by-employee aggregation. Only approved requests count toward pay —
   // pending/rejected amounts would mislead admins reconciling payroll.
   const byEmployeeRows = useMemo(() => {
-    const approved = otRequests.filter(r => r.status === 'approved');
+    const approved = otRequests.filter(r => isApprovedOnward(r.status));
     const map = new Map<string, { workday: number; weekend: number; holiday: number }>();
     approved.forEach(req => {
       const entry = map.get(req.employeeId) ?? { workday: 0, weekend: 0, holiday: 0 };
@@ -986,7 +1017,7 @@ export function Overtime() {
                 <TimerIcon className="h-5 w-5 text-gray-600" />
                 <span className="text-2xl font-bold text-gray-700">
                   {otRequests
-                    .filter(req => req.status === 'approved')
+                    .filter(req => isApprovedOnward(req.status))
                     .reduce((sum, req) => sum + req.hours, 0)}h
                 </span>
               </div>
@@ -1009,7 +1040,7 @@ export function Overtime() {
               <div className="flex items-center justify-between mb-2">
                 <TimerIcon className="h-5 w-5 text-green-600" />
                 <span className="text-2xl font-bold text-green-600">
-                  {otRequests.filter(req => req.status === 'approved').length}
+                  {otRequests.filter(req => isApprovedOnward(req.status)).length}
                 </span>
               </div>
               <p className="text-xs font-medium text-gray-700 truncate">Approved</p>
@@ -1031,6 +1062,20 @@ export function Overtime() {
                 <TabsTrigger value="by-employee">By Employee</TabsTrigger>
               </TabsList>
             </Tabs>
+            {viewMode === 'by-request' && (
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                aria-label="Filter by status"
+              >
+                {OT_STATUS_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>
+                    Status : {o.label} ({statusCounts[o.value] ?? 0})
+                  </option>
+                ))}
+              </select>
+            )}
             {viewMode === 'by-request' && (
               <div className="relative w-40 sm:w-56 ml-auto">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
