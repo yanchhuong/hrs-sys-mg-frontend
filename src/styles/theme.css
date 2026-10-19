@@ -27,6 +27,10 @@
   --input: transparent;
   --input-background: #f3f3f5;
   --switch-background: #cbced4;
+  /* On-state track. Green rather than --primary: a switch reports a
+     state, not an action, so green/grey reads as on/off without
+     having to be learned. Matches the mobile app's switchTrackOn. */
+  --switch-on: #12b76a;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --ring: oklch(0.708 0 0);
@@ -104,6 +108,7 @@
   --color-input: var(--input);
   --color-input-background: var(--input-background);
   --color-switch-background: var(--switch-background);
+  --color-switch-on: var(--switch-on);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
