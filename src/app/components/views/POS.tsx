@@ -270,6 +270,13 @@ export function POS() {
   } | null> = useRef(null);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [discountValue, setDiscountValue] = useState<number>(0);
+  /** The part of discountValue that came from redeemed loyalty rewards
+   *  (always amount-mode). Tracked apart from the cashier's manual
+   *  discount because Show Discount only governs the MANUAL field: a
+   *  reward the customer paid for with points must still come off the
+   *  total when the Discount row is hidden — before this, the points
+   *  were burned and the sale went through at full price. */
+  const [loyaltyDiscount, setLoyaltyDiscount] = useState<number>(0);
   const [taxType, setTaxType] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -476,12 +483,14 @@ export function POS() {
     () => cart.reduce((s, l) => s + l.quantity * l.unitPrice, 0),
     [cart],
   );
-  const effectiveDiscountValue = posSettings.showDiscount ? discountValue : 0;
+  const effectiveDiscountValue = posSettings.showDiscount ? discountValue : loyaltyDiscount;
   const effectiveTaxType       = posSettings.showTax     ? taxType        : null;
   const discountAmount = useMemo(() => {
-    if (discountType === 'percent') return (subtotal * effectiveDiscountValue) / 100;
+    // Hidden manual discount → only the loyalty amount remains, and that
+    // is always an amount, whatever type the hidden field was left on.
+    if (discountType === 'percent' && posSettings.showDiscount) return (subtotal * effectiveDiscountValue) / 100;
     return effectiveDiscountValue;
-  }, [subtotal, discountType, effectiveDiscountValue]);
+  }, [subtotal, discountType, effectiveDiscountValue, posSettings.showDiscount]);
   // POS tax simplifies to two options — no VAT (commercial receipt) or
   // VAT 10% (tax invoice). The choice drives both the tax line and the
   // invoiceKind sent to checkout, so the operator only picks once.
@@ -840,7 +849,7 @@ export function POS() {
 
   const newSale = () => {
     setCart([]); setCurrentOrder(null); setCustomerId(null);
-    setDiscountType('amount'); setDiscountValue(0); setTaxType(null); setNotes('');
+    setDiscountType('amount'); setDiscountValue(0); setLoyaltyDiscount(0); setTaxType(null); setNotes('');
     // Intentionally don't reset paidSnapshot here — checkout calls
     // newSale() right after setting the splash and we want the
     // customer screen to keep showing "Thank you" until the cashier
@@ -856,7 +865,7 @@ export function POS() {
     exchangeRate: posSettings.posExchangeRate > 0 ? posSettings.posExchangeRate : 4100,
     // Honour the Display toggles when persisting — a hidden Discount /
     // Tax / Notes field must not silently apply.
-    discountType,
+    discountType: posSettings.showDiscount ? discountType : 'amount',
     discountValue: effectiveDiscountValue,
     taxType: effectiveTaxType,
     notes: posSettings.showNotes ? (notes || null) : null,
@@ -1005,6 +1014,9 @@ export function POS() {
     setCustomerId(o.customerId);
     setDiscountType(o.discountType);
     setDiscountValue(o.discountValue);
+    // With the Discount row hidden, a saved discount can only have come
+    // from a loyalty reward (the manual one is dropped on save).
+    setLoyaltyDiscount(!posSettings.showDiscount && o.discountType === 'amount' ? Number(o.discountValue) || 0 : 0);
     setTaxType(o.taxType);
     setNotes(o.notes ?? '');
     setDrawerOpen(false);
@@ -1280,6 +1292,7 @@ export function POS() {
             // sums with any manual discount already keyed in.
             setDiscountType('amount');
             setDiscountValue(v => Number(v) + Number(discount));
+            setLoyaltyDiscount(v => v + Number(discount));
             toast.success(`Applied $${discount.toFixed(2)} loyalty discount.`);
             const next = await loyaltyPos.state(customerId);
             setLoyaltyState(next);
@@ -1778,6 +1791,7 @@ export function POS() {
         onDiscountTypeChange={setDiscountType}
         discountValue={discountValue}
         onDiscountValueChange={setDiscountValue}
+        onLoyaltyDiscountDelta={d => setLoyaltyDiscount(v => Math.max(0, v + d))}
         taxType={taxType}
         onTaxTypeChange={setTaxType}
         notes={notes}
@@ -2298,6 +2312,9 @@ interface CheckoutProps {
   /** Parent re-fetches balance snapshot + customer state after
    *  Confirm so the LoyaltyPanel + picker chip reflect the burn. */
   onLoyaltyChanged: () => void;
+  /** Adds (or, negative, removes) a ticked reward's amount from the
+   *  parent's loyalty share of the discount. */
+  onLoyaltyDiscountDelta: (delta: number) => void;
 }
 
 function PosCheckoutDialog({
@@ -2306,7 +2323,7 @@ function PosCheckoutDialog({
   discountType, onDiscountTypeChange, discountValue, onDiscountValueChange,
   taxType, onTaxTypeChange, notes, onNotesChange,
   showDiscount, showTax, showNotes,
-  customerId, loyaltyState, cartLines, catalogItems, onLoyaltyChanged,
+  customerId, loyaltyState, cartLines, catalogItems, onLoyaltyChanged, onLoyaltyDiscountDelta,
 }: CheckoutProps) {
   const setMethod = onMethodChange;
   /** String-first state so the input can show "0.90" with the
@@ -2351,6 +2368,25 @@ function PosCheckoutDialog({
   // prior sale's toggles don't carry over.
   useEffect(() => {
     if (open) setApplied(new Map());
+  }, [open]);
+  // Closed without paying → undo the ticked rewards' discount. Nothing
+  // was burned (commitLoyalty only runs after Confirm Payment), so
+  // leaving the amount behind gave the next checkout a free discount.
+  const committedRef = useRef(false);
+  const appliedRef = useRef(applied);
+  appliedRef.current = applied;
+  const discountValueRef = useRef(discountValue);
+  discountValueRef.current = discountValue;
+  useEffect(() => {
+    if (open) { committedRef.current = false; return; }
+    if (committedRef.current) return;
+    const total = [...appliedRef.current.values()].reduce((s, e) => s + e.delta, 0);
+    if (total > 0) {
+      onDiscountValueChange(Math.max(0, Number(discountValueRef.current) - total));
+      onLoyaltyDiscountDelta(-total);
+      setApplied(new Map());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   /* V360 — Spin & Win coupon. The cashier types the code and checks it
@@ -2545,6 +2581,7 @@ function PosCheckoutDialog({
         next.delete(programId);
         onDiscountTypeChange('amount');
         onDiscountValueChange(Math.max(0, Number(discountValue) - entry.delta));
+        onLoyaltyDiscountDelta(-entry.delta);
         return next;
       }
       let delta = 0;
@@ -2574,6 +2611,7 @@ function PosCheckoutDialog({
       next.set(programId, { delta, rewardItemId, programName, programType, count });
       onDiscountTypeChange('amount');
       onDiscountValueChange(Number(discountValue) + delta);
+      onLoyaltyDiscountDelta(delta);
       return next;
     });
   };
@@ -2983,6 +3021,17 @@ function PosCheckoutDialog({
                 readout below is suppressed while a reward is on
                 — the Loyalty panel + this row together already
                 convey both source and total. */}
+            {!showDiscount && discountAmount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-600 inline-flex items-center gap-1.5">
+                  Loyalty reward
+                  <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full border border-purple-300 bg-purple-50 text-purple-800">
+                    <Gift className="h-2.5 w-2.5" /> Reward
+                  </span>
+                </span>
+                <span className="tabular-nums text-rose-700">−${discountAmount.toFixed(2)}</span>
+              </div>
+            )}
             {showDiscount && (
               <div className="flex items-center gap-2">
                 <span className="text-gray-600 flex-1 inline-flex items-center gap-1.5">
@@ -3168,6 +3217,7 @@ function PosCheckoutDialog({
               // trips on a floating-point crumb (see totalCents doc).
               const ok = await onSubmit(method, method === 'cash' ? received : totalCents, coupon?.code);
               if (!ok) return;
+              committedRef.current = true;
               await commitLoyalty();
             }}
             // A typed-but-unchecked code would be silently dropped — the
