@@ -200,6 +200,7 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                autoComplete="current-password"
                 type="password"
                 placeholder="••••••••"
                 value={password}

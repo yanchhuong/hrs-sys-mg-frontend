@@ -292,6 +292,7 @@ function UserDialog({ open, onOpenChange, user, onSaved }: {
             <Input
               value={email}
               onChange={e => setEmail(e.target.value)}
+              autoComplete="off"
               className="h-9 text-sm mt-1"
               maxLength={255}
               placeholder="name@agency.com"
@@ -346,6 +347,7 @@ function UserDialog({ open, onOpenChange, user, onSaved }: {
               className="h-9 text-sm mt-1"
               maxLength={100}
               placeholder={editing ? '(unchanged)' : 'At least 8 characters'}
+              autoComplete="new-password"
             />
           </div>
           <p className="text-[10px] text-gray-500">

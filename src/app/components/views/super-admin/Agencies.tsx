@@ -437,11 +437,11 @@ function NewAgencyUserDialog({ open, onOpenChange, agencyId, onCreated }: {
         <div className="space-y-3">
           <div>
             <Label className="text-xs">Email</Label>
-            <Input value={email} onChange={e => setEmail(e.target.value)} className="h-9 text-sm mt-1" type="email" />
+            <Input value={email} onChange={e => setEmail(e.target.value)} className="h-9 text-sm mt-1" type="email" autoComplete="off" />
           </div>
           <div>
             <Label className="text-xs">Password (min 8 chars)</Label>
-            <Input value={password} onChange={e => setPassword(e.target.value)} className="h-9 text-sm mt-1" type="password" />
+            <Input value={password} onChange={e => setPassword(e.target.value)} className="h-9 text-sm mt-1" type="password" autoComplete="new-password" />
           </div>
           <div>
             <Label className="text-xs">Display name</Label>
@@ -574,6 +574,7 @@ function EditAgencyUserDialog({ user, onClose, onSaved }: {
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="(unchanged)"
+              autoComplete="new-password"
               className="h-9 text-sm mt-1"
               maxLength={100}
             />

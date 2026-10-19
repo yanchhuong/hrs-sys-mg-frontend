@@ -180,6 +180,7 @@ export function HrTelegramBotSettingsDialog({ open, onOpenChange }: Props) {
                 <Label htmlFor="hrbot-username">Bot username</Label>
                 <Input
                   id="hrbot-username"
+                  autoComplete="off"
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value.replace(/^@/, ''))}
                   placeholder="MyCompanyHRBot"
@@ -193,6 +194,7 @@ export function HrTelegramBotSettingsDialog({ open, onOpenChange }: Props) {
                 <Label htmlFor="hrbot-token">Bot token {bot && <span className="text-gray-400 text-[11px]">(paste again to update)</span>}</Label>
                 <Input
                   id="hrbot-token"
+                  autoComplete="new-password"
                   type="password"
                   value={botToken}
                   onChange={e => setBotToken(e.target.value)}

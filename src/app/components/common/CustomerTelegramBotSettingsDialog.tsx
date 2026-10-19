@@ -188,6 +188,7 @@ export function CustomerTelegramBotSettingsDialog({ open, onOpenChange, audience
                 <Label htmlFor="custbot-username">Bot username</Label>
                 <Input
                   id="custbot-username"
+                  autoComplete="off"
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value.replace(/^@/, ''))}
                   placeholder="MyCompanyBot"
@@ -201,6 +202,7 @@ export function CustomerTelegramBotSettingsDialog({ open, onOpenChange, audience
                 <Label htmlFor="custbot-token">Bot token {bot && <span className="text-gray-400 text-[11px]">(paste again to update)</span>}</Label>
                 <Input
                   id="custbot-token"
+                  autoComplete="new-password"
                   type="password"
                   value={botToken}
                   onChange={e => setBotToken(e.target.value)}

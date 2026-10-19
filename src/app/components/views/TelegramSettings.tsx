@@ -450,6 +450,7 @@ export function TelegramSettings() {
               <Input
                 value={botUsername}
                 onChange={e => setBotUsername(e.target.value)}
+                autoComplete="off"
                 placeholder="YourCompany_Invoice_Bot"
                 className="tabular-nums"
                 disabled={!canEdit || saving}
@@ -473,7 +474,7 @@ export function TelegramSettings() {
                 placeholder={bot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
                 className="tabular-nums"
                 disabled={!canEdit || saving}
-                autoComplete="off"
+                autoComplete="new-password"
               />
               <div className="text-[10px] text-gray-500">
                 Stored encrypted; never displayed back in full.

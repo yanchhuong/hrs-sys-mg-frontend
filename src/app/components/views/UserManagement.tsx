@@ -1560,6 +1560,7 @@ export function UserManagement() {
                           <Label htmlFor="email">Email *</Label>
                           <Input
                             id="email"
+                            autoComplete="off"
                             type="email"
                             placeholder="user@company.com"
                             value={formData.email}
@@ -1636,6 +1637,7 @@ export function UserManagement() {
                             id="password"
                             type="password"
                             placeholder={editingUser ? 'Leave blank to keep current' : 'Enter password'}
+                            autoComplete="new-password"
                             value={formData.password}
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                           />

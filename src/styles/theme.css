@@ -26,7 +26,11 @@
   --border: rgba(0, 0, 0, 0.1);
   --input: transparent;
   --input-background: #f3f3f5;
-  --switch-background: #cbced4;
+  /* Off-state track. Was #cbced4, which sits around 1.7:1 against
+     a white card — an off switch was easy to miss entirely. This is
+     the mobile app's switchTrackOff and clears the 3:1 WCAG asks of
+     a control boundary. */
+  --switch-background: #8a94a6;
   /* On-state track. Green rather than --primary: a switch reports a
      state, not an action, so green/grey reads as on/off without
      having to be learned. Matches the mobile app's switchTrackOn. */

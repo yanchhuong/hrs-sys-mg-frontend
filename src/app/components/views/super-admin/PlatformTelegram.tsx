@@ -620,6 +620,7 @@ export function PlatformTelegram() {
                 <Input
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value)}
+                  autoComplete="off"
                   placeholder={audience === 'employee' ? 'HRMS_HR_Bot' : 'HRMS_Platform_Bot'}
                   className="tabular-nums"
                   disabled={saving}
@@ -643,7 +644,7 @@ export function PlatformTelegram() {
                   placeholder={currentPlatformBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
                   className="tabular-nums"
                   disabled={saving}
-                  autoComplete="off"
+                  autoComplete="new-password"
                 />
                 <div className="text-[10px] text-gray-500">
                   Stored encrypted; never echoed back in full.
@@ -770,7 +771,7 @@ export function PlatformTelegram() {
                   placeholder={errorBot ? 'Re-enter to confirm or paste a new token' : '123456:AAH...'}
                   className="tabular-nums"
                   disabled={errorSaving}
-                  autoComplete="off"
+                  autoComplete="new-password"
                 />
               </div>
             </div>

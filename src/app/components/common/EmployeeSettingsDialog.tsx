@@ -266,6 +266,7 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                         <Label htmlFor="hrbot-username">Bot username</Label>
                         <Input
                           id="hrbot-username"
+                          autoComplete="off"
                           value={botUsername}
                           onChange={e => setBotUsername(e.target.value.replace(/^@/, ''))}
                           placeholder="MyCompanyHRBot"
@@ -281,6 +282,7 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                         </Label>
                         <Input
                           id="hrbot-token"
+                          autoComplete="new-password"
                           type="password"
                           value={botToken}
                           onChange={e => setBotToken(e.target.value)}
