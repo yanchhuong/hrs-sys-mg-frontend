@@ -256,9 +256,18 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
   // otherwise the company week it would inherit.
   const days = form.workDays.length === 7 ? form.workDays : companyWeek;
 
+  // Add offers only active employees WITHOUT custom hours — someone who
+  // has them is edited from their row (the upsert would otherwise
+  // silently overwrite their existing override). On edit the picker is
+  // disabled, but its own employee must stay in the list to show.
+  const takenIds = useMemo(() => new Set(rows.map(r => r.employeeId)), [rows]);
   const employeeOptions = useMemo<PickerOption[]>(
     () => employees
       .filter(e => e.status === 'active')
+      .filter(e => {
+        const key = (e as any).apiId ?? e.id;
+        return !takenIds.has(key) || key === form.employeeId;
+      })
       .map(e => {
         const dept = deptName(e.department);
         return {
@@ -270,7 +279,7 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
       }),
     // deptName is rebuilt each render from deptList; depend on that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [employees, deptList],
+    [employees, deptList, takenIds, form.employeeId],
   );
 
   const filtered = useMemo(() => {
@@ -563,7 +572,9 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
                 onChange={v => setForm({ ...form, employeeId: v })}
                 placeholder="Pick an employee"
                 searchPlaceholder="Search name, ID, department…"
-                emptyResultsLabel="No active employees match that."
+                emptyResultsLabel={employeeOptions.length === 0
+                  ? "Every active employee already has custom hours."
+                  : "No employees without custom hours match that."}
                 allowClear={false}
                 disabled={!!form.id}
               />
