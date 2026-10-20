@@ -325,6 +325,16 @@ const INHERIT_PARENT_KEY: Record<string, string> = {
   'payroll-categories':  'settings',
 };
 
+/** Rows whose permission key differs from the key the tenant's install
+ *  catalog uses. V201 dropped `receipt` from module_assignments, so the
+ *  Expense page is installed as `expenses` (see nav.ts) while the API
+ *  still authorizes it with @perm.allow('receipt', …). Without this the
+ *  Expense row never counted as installed and vanished from the matrix
+ *  even though the sidebar showed the page. */
+const INSTALL_KEY: Record<string, string> = {
+  receipt: 'expenses',
+};
+
 /**
  * Backend modules the matrix doesn't surface but {@code @perm.allow} still
  * checks at the API level (Contracts is the canonical example — it was
@@ -666,7 +676,7 @@ export function UserManagement() {
         const parentKey = INHERIT_PARENT_KEY[m.key];
         return parentKey ? installed(parentKey) : false;
       }
-      return installed(m.key);
+      return installed(INSTALL_KEY[m.key] ?? m.key);
     });
     // Second pass: drop a header if the next non-header before another
     // header is missing — i.e. no children survived the install filter.
