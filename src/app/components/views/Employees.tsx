@@ -78,7 +78,7 @@ import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
 import { makeDeptName } from '../../utils/deptName';
 import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
-import { managerLadder, LADDER_LABELS } from '../../utils/managerLadder';
+import { managerLadder, managerKeyOf, reportsUpTo, LADDER_LABELS } from '../../utils/managerLadder';
 import {
   ID_TYPE_OPTIONS, idTypeLabel, tidTypeFor, visaExpireFor,
   type NationalityType,
@@ -1879,7 +1879,19 @@ export function Employees() {
                     )}
                   </TableCell>
                   <TableCell className="min-w-[150px]">
-                    <ManagersCell employee={employee} roster={employees} />
+                    <ManagersCell
+                      employee={employee}
+                      roster={employees}
+                      onChange={canUpdateEmp
+                        ? next => {
+                            if (next === (employee.managerId ?? null)) return;
+                            const name = next ? employees.find(e => managerKeyOf(e) === next)?.name : null;
+                            void handleQuickFieldUpdate(employee, { managerId: next }, {
+                              successMessage: name ? `Manager set to ${name}` : 'Manager removed',
+                            });
+                          }
+                        : undefined}
+                    />
                   </TableCell>
                   <TableCell>{calculateExperience(employee.joinDate)}</TableCell>
                   <TableCell>{employee.contactNumber}</TableCell>
@@ -3636,10 +3648,17 @@ function EmployeeCardsGrid({
  * The chevron only renders when there IS something behind it —
  * a disclosure control that opens an empty popover is worse than no
  * control, and most rows have level 1 alone.
+ *
+ * With `onChange` (the user may update employees) level 1 is an inline
+ * picker, the same borderless trigger as the Department and Position
+ * cells. Levels 2–3 stay read-only: they follow from the chain, so
+ * changing someone's Manager 1 re-derives everything above it.
  */
-function ManagersCell({ employee, roster }: {
+function ManagersCell({ employee, roster, onChange }: {
   employee: Employee;
   roster: Employee[];
+  /** Set to make Manager 1 editable; receives the new managerId or null. */
+  onChange?: (managerId: string | null) => void;
 }) {
 
   // Ordinals rather than the full labels ("Manager 1"): in a column
@@ -3652,18 +3671,60 @@ function ManagersCell({ employee, roster }: {
   const ladder = managerLadder(employee, roster)
     .map((mgr, i) => ({ rank: ORDINALS[i] ?? `${i + 1}`, name: mgr.name }));
 
-  if (ladder.length === 0) {
+  if (ladder.length === 0 && !onChange) {
     return <span className="text-sm text-gray-400">No manager</span>;
   }
 
   const [first, ...rest] = ladder;
 
+  // Candidates: active colleagues, never the employee themselves nor
+  // anyone below them (that would close a loop). The current manager
+  // stays listed even when inactive, so the trigger shows who it is.
+  const options = onChange
+    ? roster
+        .filter(e => managerKeyOf(e) !== managerKeyOf(employee))
+        .filter(e => managerKeyOf(e) === employee.managerId
+          || (e.status === 'active' && !reportsUpTo(e, employee, roster)))
+        .map(e => ({
+          value: managerKeyOf(e),
+          label: e.name,
+          searchKey: `${e.name} ${e.id} ${e.position ?? ''}`,
+        }))
+    : [];
+
   return (
     <div className="flex items-center gap-1 min-w-0">
-      <span className="text-sm truncate" title={`${first.rank} — ${first.name}`}>
-        <span className="text-gray-500 mr-1">{first.rank}</span>
-        {first.name}
-      </span>
+      {onChange ? (
+        <>
+          {first && <span className="text-sm text-gray-500 shrink-0">{first.rank}</span>}
+          <SearchablePicker
+            options={options}
+            value={employee.managerId ?? ''}
+            onChange={v => onChange(v || null)}
+            placeholder="Set manager…"
+            emptyLabel="No manager"
+            searchPlaceholder="Search by name, ID, position…"
+            allowClear
+            contentClassName="min-w-60"
+            className={
+              'h-8 border-transparent bg-transparent shadow-none px-2 transition min-w-0 '
+              + 'hover:border-input hover:bg-white '
+              + 'focus-visible:border-input focus-visible:bg-white '
+              + 'data-[state=open]:border-input data-[state=open]:bg-white '
+              + '[&>svg]:opacity-0 '
+              + 'hover:[&>svg]:opacity-50 '
+              + 'focus-visible:[&>svg]:opacity-50 '
+              + 'data-[state=open]:[&>svg]:opacity-50 '
+              + (first ? '' : 'text-gray-400')
+            }
+          />
+        </>
+      ) : (
+        <span className="text-sm truncate" title={`${first.rank} — ${first.name}`}>
+          <span className="text-gray-500 mr-1">{first.rank}</span>
+          {first.name}
+        </span>
+      )}
       {rest.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>

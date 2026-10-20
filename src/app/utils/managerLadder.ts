@@ -53,6 +53,26 @@ export function managerLadder(employee: Employee, roster: Employee[]): Employee[
   return out;
 }
 
+/**
+ * True when `candidate` reports — directly or through any number of
+ * levels — to `boss`. Picking such a person as `boss`'s manager would
+ * close a loop (A → B → A), so manager pickers leave them out. The
+ * server only rejects the one-step case (an employee as their own
+ * manager). Cycle-safe like {@link managerLadder}, with no depth cap.
+ */
+export function reportsUpTo(candidate: Employee, boss: Employee, roster: Employee[]): boolean {
+  const byKey = new Map(roster.map(e => [managerKeyOf(e), e]));
+  const bossKey = managerKeyOf(boss);
+  const seen = new Set<string>();
+  let cur: Employee | undefined = candidate;
+  while (cur?.managerId && !seen.has(cur.managerId)) {
+    if (cur.managerId === bossKey) return true;
+    seen.add(cur.managerId);
+    cur = byKey.get(cur.managerId);
+  }
+  return false;
+}
+
 /** Labels for the rungs, so every screen names them identically. */
 export const LADDER_LABELS = ['Manager 1', 'Manager 2', 'Manager 3'];
 
