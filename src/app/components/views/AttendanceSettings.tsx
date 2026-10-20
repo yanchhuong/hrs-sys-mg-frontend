@@ -29,7 +29,7 @@ import { Holiday } from '../../types/timework';
 import * as settingsApi from '../../api/settings';
 import { USE_MOCKS } from '../../api/client';
 import {
-  Settings, Save, ArrowRightLeft, AlertTriangle, Timer,
+  Save, ArrowRightLeft, AlertTriangle, Timer,
   Plus, Trash2, CheckCircle2, Info, Zap, CalendarDays,
   Briefcase, Calendar, PartyPopper, Shield, Users, Moon,
 } from 'lucide-react';
@@ -376,7 +376,7 @@ export function AttendanceSettings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-5">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="scan" className="gap-1.5">
             <ArrowRightLeft className="h-4 w-4" />
             {t('page.attendance_settings.tab.scan')}
@@ -393,10 +393,6 @@ export function AttendanceSettings() {
             <CalendarDays className="h-4 w-4" />
             {t('page.attendance_settings.tab.holiday')}
           </TabsTrigger>
-          <TabsTrigger value="general" className="gap-1.5">
-            <Settings className="h-4 w-4" />
-            {t('page.attendance_settings.tab.general')}
-          </TabsTrigger>
         </TabsList>
 
         {/* ═══════════════ SCAN RULE TAB ═══════════════ */}
@@ -406,6 +402,132 @@ export function AttendanceSettings() {
             loading={scanRuleLoading}
             onSave={handleScanRuleSave}
           />
+
+          {/* Absent / missing-punch rules + weekly work pattern (formerly the
+              General tab). Persisted by the page-level "Save All Settings". */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Absent & Missing Punch Rules</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                    Auto-mark Absent
+                    <HelpHint>Automatically mark employees with no check-in as absent.</HelpHint>
+                  </p>
+                  <Switch
+                    checked={generalSettings.autoMarkAbsent}
+                    onCheckedChange={v => setGeneralSettings({ ...generalSettings, autoMarkAbsent: v })}
+                  />
+                </div>
+
+                {generalSettings.autoMarkAbsent && (
+                  <div className="space-y-2 pl-4 border-l-2 border-gray-200">
+                    <Label className="text-sm inline-flex items-center gap-1.5">
+                      Absent Deadline
+                      <HelpHint>If no check-in by this time, mark as absent.</HelpHint>
+                    </Label>
+                    <Input
+                      type="time"
+                      value={generalSettings.absentDeadlineTime}
+                      onChange={e => setGeneralSettings({ ...generalSettings, absentDeadlineTime: e.target.value })}
+                      className="w-36 h-9"
+                    />
+                  </div>
+                )}
+
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                      Track Missing Check-out
+                      <HelpHint>Flag employees who checked in but didn't check out.</HelpHint>
+                    </p>
+                    <Switch
+                      checked={generalSettings.trackMissingPunch}
+                      onCheckedChange={v => setGeneralSettings({ ...generalSettings, trackMissingPunch: v })}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Weekend Configuration</CardTitle>
+                <p className="text-xs text-gray-500 mt-1">
+                  Click a day to cycle through <strong className="text-green-700">Work</strong> → <strong className="text-amber-700">Half</strong> → <strong className="text-red-700">Weekend</strong>.
+                  Half workdays are common at Cambodian banks and factories (typically Saturday) — the employee is present but with reduced expected hours.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-7 gap-2">
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
+                    const isWeekend = generalSettings.weekendDays.includes(day);
+                    const isHalf    = generalSettings.halfDayDays.includes(day);
+                    // 3-state cycle: work → half → weekend → work. A day
+                    // can never be BOTH half and weekend, so the click
+                    // handler always strips the day from the "wrong"
+                    // list as part of its move.
+                    const state: 'work' | 'half' | 'weekend' =
+                      isWeekend ? 'weekend' : isHalf ? 'half' : 'work';
+                    const cycle = () => {
+                      const stripWeekend = generalSettings.weekendDays.filter(d => d !== day);
+                      const stripHalf    = generalSettings.halfDayDays.filter(d => d !== day);
+                      if (state === 'work') {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: stripWeekend,
+                          halfDayDays: [...stripHalf, day],
+                        });
+                      } else if (state === 'half') {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: [...stripWeekend, day],
+                          halfDayDays: stripHalf,
+                        });
+                      } else {
+                        setGeneralSettings({
+                          ...generalSettings,
+                          weekendDays: stripWeekend,
+                          halfDayDays: stripHalf,
+                        });
+                      }
+                    };
+                    const cls =
+                      state === 'weekend' ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                      : state === 'half'    ? 'bg-amber-100 text-amber-700 border-2 border-amber-300'
+                      : 'bg-green-50 text-green-700 border-2 border-green-200';
+                    const badge =
+                      state === 'weekend' ? 'Weekend'
+                      : state === 'half'    ? 'Half'
+                      : 'Work';
+                    return (
+                      <button
+                        key={day}
+                        onClick={cycle}
+                        title={`${day} — ${badge}. Click to change.`}
+                        className={`flex flex-col items-center py-2.5 rounded-lg text-xs font-medium transition-colors ${cls}`}
+                      >
+                        <span>{day.slice(0, 3)}</span>
+                        <span className="text-[10px] opacity-80 mt-0.5">{badge}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <div className="h-2.5 w-2.5 rounded bg-green-400" /> Work day
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <div className="h-2.5 w-2.5 rounded bg-amber-400" /> Half day
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <div className="h-2.5 w-2.5 rounded bg-red-400" /> Weekend
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* ═══════════════ FLEXIBLE WORK TAB ═══════════════ */}
@@ -1174,181 +1296,6 @@ export function AttendanceSettings() {
           <HolidayView embedded />
         </TabsContent>
 
-        {/* ═══════════════ GENERAL TAB ═══════════════ */}
-        <TabsContent value="general" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Absent & Missing Punch Rules</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
-                    Auto-mark Absent
-                    <HelpHint>Automatically mark employees with no check-in as absent.</HelpHint>
-                  </p>
-                  <Switch
-                    checked={generalSettings.autoMarkAbsent}
-                    onCheckedChange={v => setGeneralSettings({ ...generalSettings, autoMarkAbsent: v })}
-                  />
-                </div>
-
-                {generalSettings.autoMarkAbsent && (
-                  <div className="space-y-2 pl-4 border-l-2 border-gray-200">
-                    <Label className="text-sm inline-flex items-center gap-1.5">
-                      Absent Deadline
-                      <HelpHint>If no check-in by this time, mark as absent.</HelpHint>
-                    </Label>
-                    <Input
-                      type="time"
-                      value={generalSettings.absentDeadlineTime}
-                      onChange={e => setGeneralSettings({ ...generalSettings, absentDeadlineTime: e.target.value })}
-                      className="w-36 h-9"
-                    />
-                  </div>
-                )}
-
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium inline-flex items-center gap-1.5">
-                      Track Missing Check-out
-                      <HelpHint>Flag employees who checked in but didn't check out.</HelpHint>
-                    </p>
-                    <Switch
-                      checked={generalSettings.trackMissingPunch}
-                      onCheckedChange={v => setGeneralSettings({ ...generalSettings, trackMissingPunch: v })}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Notifications</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
-                    Notify Manager
-                    <HelpHint>Send alerts to managers about team attendance issues.</HelpHint>
-                  </p>
-                  <Switch
-                    checked={generalSettings.notifyManager}
-                    onCheckedChange={v => setGeneralSettings({ ...generalSettings, notifyManager: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium inline-flex items-center gap-1.5">
-                    Notify Employee
-                    <HelpHint>Send reminders to employees about missing punches.</HelpHint>
-                  </p>
-                  <Switch
-                    checked={generalSettings.notifyEmployee}
-                    onCheckedChange={v => setGeneralSettings({ ...generalSettings, notifyEmployee: v })}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Weekend Configuration</CardTitle>
-                <p className="text-xs text-gray-500 mt-1">
-                  Click a day to cycle through <strong className="text-green-700">Work</strong> → <strong className="text-amber-700">Half</strong> → <strong className="text-red-700">Weekend</strong>.
-                  Half workdays are common at Cambodian banks and factories (typically Saturday) — the employee is present but with reduced expected hours.
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-2">
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
-                    const isWeekend = generalSettings.weekendDays.includes(day);
-                    const isHalf    = generalSettings.halfDayDays.includes(day);
-                    // 3-state cycle: work → half → weekend → work. A day
-                    // can never be BOTH half and weekend, so the click
-                    // handler always strips the day from the "wrong"
-                    // list as part of its move.
-                    const state: 'work' | 'half' | 'weekend' =
-                      isWeekend ? 'weekend' : isHalf ? 'half' : 'work';
-                    const cycle = () => {
-                      const stripWeekend = generalSettings.weekendDays.filter(d => d !== day);
-                      const stripHalf    = generalSettings.halfDayDays.filter(d => d !== day);
-                      if (state === 'work') {
-                        setGeneralSettings({
-                          ...generalSettings,
-                          weekendDays: stripWeekend,
-                          halfDayDays: [...stripHalf, day],
-                        });
-                      } else if (state === 'half') {
-                        setGeneralSettings({
-                          ...generalSettings,
-                          weekendDays: [...stripWeekend, day],
-                          halfDayDays: stripHalf,
-                        });
-                      } else {
-                        setGeneralSettings({
-                          ...generalSettings,
-                          weekendDays: stripWeekend,
-                          halfDayDays: stripHalf,
-                        });
-                      }
-                    };
-                    const cls =
-                      state === 'weekend' ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                      : state === 'half'    ? 'bg-amber-100 text-amber-700 border-2 border-amber-300'
-                      : 'bg-green-50 text-green-700 border-2 border-green-200';
-                    const badge =
-                      state === 'weekend' ? 'Weekend'
-                      : state === 'half'    ? 'Half'
-                      : 'Work';
-                    return (
-                      <button
-                        key={day}
-                        onClick={cycle}
-                        title={`${day} — ${badge}. Click to change.`}
-                        className={`flex flex-col items-center py-2.5 rounded-lg text-xs font-medium transition-colors ${cls}`}
-                      >
-                        <span>{day.slice(0, 3)}</span>
-                        <span className="text-[10px] opacity-80 mt-0.5">{badge}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <div className="h-2.5 w-2.5 rounded bg-green-400" /> Work day
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <div className="h-2.5 w-2.5 rounded bg-amber-400" /> Half day
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <div className="h-2.5 w-2.5 rounded bg-red-400" /> Weekend
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Access Permissions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {[
-                    { role: 'Admin', access: 'Full edit', color: 'bg-red-50 text-red-700 border-red-200' },
-                    { role: 'Manager', access: 'View only', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                    { role: 'Employee', access: 'No access', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-                  ].map(item => (
-                    <div key={item.role} className={`flex items-center justify-between p-3 rounded-lg border ${item.color}`}>
-                      <span className="font-medium text-sm">{item.role}</span>
-                      <Badge variant="outline" className="text-xs">{item.access}</Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   );

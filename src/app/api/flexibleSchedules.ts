@@ -16,8 +16,12 @@ export interface FlexibleSchedule {
   graceInMinutes?: number | null;
   graceOutMinutes?: number | null;
   halfDayCountsAsHalfScan?: boolean | null;
-  /** 7-char Mon..Sun mask. Not edited by the dialog; the POST replaces
-   *  every field, so a save must send the stored value back. */
+  /** Seven-char Mon..Sun mask of the days this employee is expected
+   *  in; position = DayOfWeek.getValue(), 1 = expected. Null inherits
+   *  the tenant week. Self check-in is refused on a day this excludes,
+   *  and a day switched ON here is allowed even when the rest of the
+   *  company does not work it. The POST replaces every field, so a
+   *  save must send the stored value back. */
   workDays?: string | null;
   note?: string | null;
   updatedAt?: string;

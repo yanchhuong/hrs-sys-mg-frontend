@@ -79,6 +79,7 @@ function adaptApiSchedule(r: flexApi.FlexibleSchedule): FlexibleSchedule {
     graceInMinutes: r.graceInMinutes ?? undefined,
     graceOutMinutes: r.graceOutMinutes ?? undefined,
     halfDayCountsAsHalfScan: r.halfDayCountsAsHalfScan ?? undefined,
+    workDays: r.workDays ?? undefined,
     note: r.note ?? undefined,
     updatedAt: r.updatedAt ?? new Date().toISOString(),
   };
@@ -87,6 +88,29 @@ function adaptApiSchedule(r: flexApi.FlexibleSchedule): FlexibleSchedule {
 interface Props {
   scanRule: ScanRule;
 }
+
+/**
+ * Mon..Sun, matching the seven-character mask the API stores:
+ * position = DayOfWeek.getValue(), so index 0 is Monday and index 6
+ * is Sunday. Not locale-ordered on purpose — the server reads it
+ * positionally and a Sunday-first UI would silently shift every day.
+ */
+const WEEK = [
+  { i: 0, short: 'Mon' }, { i: 1, short: 'Tue' }, { i: 2, short: 'Wed' },
+  { i: 3, short: 'Thu' }, { i: 4, short: 'Fri' }, { i: 5, short: 'Sat' },
+  { i: 6, short: 'Sun' },
+] as const;
+
+const maskHas = (mask: string, i: number) => mask.length === 7 && mask[i] === '1';
+
+const toggleDay = (mask: string, i: number): string => {
+  const base = (mask.length === 7 ? mask : '1111111').split('');
+  base[i] = base[i] === '1' ? '0' : '1';
+  const next = base.join('');
+  // All-off is not a schedule, it is a lockout. The server coerces it
+  // to inherit too; refusing it here means the operator sees why.
+  return next === '0000000' ? mask : next;
+};
 
 type FormState = {
   id?: string;
@@ -99,6 +123,8 @@ type FormState = {
   graceInMinutes: string;
   graceOutMinutes: string;
   halfDayOverride: 'inherit' | 'on' | 'off';
+  /** Seven-char Mon..Sun mask, or '' to inherit the tenant's week. */
+  workDays: string;
   note: string;
 };
 
@@ -113,6 +139,7 @@ function empty(rule: ScanRule): FormState {
     graceInMinutes:  '',
     graceOutMinutes: '',
     halfDayOverride: 'inherit',
+    workDays: '',
     note: '',
   };
 }
@@ -239,6 +266,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
       halfDayOverride:
         row.halfDayCountsAsHalfScan === undefined ? 'inherit'
         : row.halfDayCountsAsHalfScan ? 'on' : 'off',
+      workDays: row.workDays ?? '',
       note: row.note ?? '',
     });
     setDialogOpen(true);
@@ -263,6 +291,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
       graceOutMinutes: form.graceOutMinutes.trim() !== '' ? Number(form.graceOutMinutes) : undefined,
       halfDayCountsAsHalfScan:
         form.halfDayOverride === 'inherit' ? undefined : form.halfDayOverride === 'on',
+      workDays: form.workDays.length === 7 ? form.workDays : undefined,
       note: form.note.trim() || undefined,
     };
 
@@ -578,6 +607,62 @@ export function FlexibleWorkCard({ scanRule }: Props) {
                 </Select>
               </div>
             )}
+
+            {/* Working days. The override is the rule for this
+                employee: a day switched on here is a day they can
+                check in, including a weekend the rest of the company
+                does not work. Left on Inherit, the tenant's ordinary
+                week applies and nothing is restricted. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-600">
+                Working days
+                <HelpHint>
+                  Which days this employee is expected in. Check-in is refused on the
+                  others. Switch a weekend on and they can check in then — the override
+                  is the rule for this employee, not a filter on the standard week.
+                  Inherit leaves the tenant's week in place.
+                </HelpHint>
+              </Label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {WEEK.map(d => {
+                  const on = maskHas(form.workDays, d.i);
+                  const inherit = form.workDays.length !== 7;
+                  return (
+                    <button
+                      key={d.i}
+                      type="button"
+                      onClick={() => setForm({ ...form, workDays: toggleDay(form.workDays, d.i) })}
+                      aria-pressed={on}
+                      className={`h-8 w-12 rounded-md border text-xs font-medium transition ${
+                        inherit
+                          ? 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
+                          : on
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-gray-300 text-gray-400 hover:border-gray-400'
+                      }`}
+                    >
+                      {d.short}
+                    </button>
+                  );
+                })}
+                {form.workDays.length === 7 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs text-gray-500"
+                    onClick={() => setForm({ ...form, workDays: '' })}
+                  >
+                    Inherit
+                  </Button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500">
+                {form.workDays.length === 7
+                  ? `${form.workDays.split('').filter(c => c === '1').length} days a week`
+                  : 'Inheriting the tenant’s week — no day restriction.'}
+              </p>
+            </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Note</Label>

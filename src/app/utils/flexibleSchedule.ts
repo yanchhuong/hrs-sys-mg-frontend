@@ -25,6 +25,8 @@ export interface FlexibleSchedule {
   graceInMinutes?: number;
   graceOutMinutes?: number;
   halfDayCountsAsHalfScan?: boolean;
+  /** Seven-char Mon..Sun mask; see the API type. Absent = inherit. */
+  workDays?: string;
   note?: string;
   updatedAt: string;
 }
