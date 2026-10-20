@@ -1142,6 +1142,15 @@ export function PublicShopPage() {
                     .reduce((s, l) => s + l.qty, 0)}
                   onOpen={() => setDetailTarget(it)}
                   onAdd={() => addOne(it)}
+                  onRemove={(() => {
+                    // Unambiguous only when this item is on a single
+                    // line. setQty deletes the row at zero, so the
+                    // last - clears the item from the cart.
+                    const lines = cartLines.filter(l => l.item.id === it.id);
+                    if (lines.length !== 1) return undefined;
+                    const only = lines[0];
+                    return () => setQty(only.key, only.qty - 1);
+                  })()}
                   orderingDisabled={orderingBlocked}
                 />
               ))}
@@ -1644,6 +1653,13 @@ export function PublicShopPage() {
         orderingDisabled={orderingBlocked}
         onClose={() => setDetailTarget(null)}
         onAdd={() => { if (detailTarget) addOne(detailTarget); }}
+        onRemove={(() => {
+          if (!detailTarget) return undefined;
+          const lines = cartLines.filter(l => l.item.id === detailTarget.id);
+          if (lines.length !== 1) return undefined;
+          const only = lines[0];
+          return () => setQty(only.key, only.qty - 1);
+        })()}
       />
 
       {/* v-shop-pin-map — Leaflet-based location picker. Customer drops
@@ -1745,12 +1761,18 @@ function FullPageState({ children }: { children: React.ReactNode }) {
  *  The image-count badge (+N extra images) sits top-left so it's the
  *  first thing the eye lands on above the product name. */
 function PublicShopCard({
-  item, qtyInCart, onOpen, onAdd, orderingDisabled = false,
+  item, qtyInCart, onOpen, onAdd, onRemove, orderingDisabled = false,
 }: {
   item: shopApi.PublicShopItem;
   qtyInCart: number;
   onOpen: () => void;
   onAdd: () => void;
+  /** Drop one from the cart. Passed ONLY when this item sits on
+   *  exactly one cart line — with two lines (same item, different
+   *  modifiers) the card cannot say which the customer meant, so it
+   *  keeps the plain + and the corner badge, and the cart drawer
+   *  stays the place to edit them. */
+  onRemove?: () => void;
   /** V277 — shop is in frozen / orders-paused state. The card still
    *  renders (menu stays browsable), but every add-to-cart affordance
    *  is disabled so the customer can't queue up an order the BE would
@@ -1821,16 +1843,52 @@ function PublicShopCard({
               broken", whereas hiding matches the operator's "Order
               Available off" intent (menu-preview only). */}
           {!orderingDisabled && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onAdd(); }}
-              disabled={!item.inStock}
-              aria-label={`Add ${item.name} to cart`}
-              title="Add to cart"
-              className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            onRemove ? (
+              /* v-shop-card-stepper — once the item is in the cart the
+                 card becomes a stepper, the way a POS cart line is one.
+                 Before this the only "−" on the whole page lived in the
+                 cart drawer, so correcting a double-tap meant opening
+                 the cart, finding the line and coming back. The quantity
+                 sits between the buttons instead of in the corner badge,
+                 so the card never shows the same number twice. */
+              <div className="inline-flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                  aria-label={qtyInCart <= 1
+                    ? `Remove ${item.name} from cart`
+                    : `Remove one ${item.name}`}
+                  title={qtyInCart <= 1 ? 'Remove from cart' : 'Remove one'}
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-blue-600 text-blue-600 hover:bg-blue-50 shadow-sm transition"
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-sm font-semibold tabular-nums text-center min-w-[1.25rem]">
+                  {qtyInCart}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onAdd(); }}
+                  disabled={!item.inStock}
+                  aria-label={`Add another ${item.name}`}
+                  title="Add one"
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onAdd(); }}
+                disabled={!item.inStock}
+                aria-label={`Add ${item.name} to cart`}
+                title="Add to cart"
+                className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )
           )}
         </div>
         {/* v-shop-card-stock-line + v-shop-warehouse-badge — stock
@@ -1859,7 +1917,10 @@ function PublicShopCard({
           </div>
         ) : null}
       </div>
-      {qtyInCart > 0 && (
+      {/* Only when the stepper above is not showing the count already
+          — that is, ordering is off, or this item sits on more than one
+          cart line and the card cannot say which to decrement. */}
+      {qtyInCart > 0 && (orderingDisabled || !onRemove) && (
         <div className="absolute top-1.5 right-1.5 bg-blue-600 text-white text-[11px] font-bold rounded-full h-6 min-w-[1.5rem] px-1.5 flex items-center justify-center shadow-md">
           {qtyInCart}
         </div>
@@ -1877,7 +1938,7 @@ function PublicShopCard({
  *  through the existing picker.
  * =================================================================== */
 function ItemDetailDialog({
-  item, qtyInCart, orderingDisabled = false, onClose, onAdd,
+  item, qtyInCart, orderingDisabled = false, onClose, onAdd, onRemove,
 }: {
   item: shopApi.PublicShopItem | null;
   qtyInCart: number;
@@ -1887,6 +1948,9 @@ function ItemDetailDialog({
   orderingDisabled?: boolean;
   onClose: () => void;
   onAdd: () => void;
+  /** Same rule as the card: only when this item is on exactly one
+   *  cart line, so "remove one" has a single meaning. */
+  onRemove?: () => void;
 }) {
   const images = item ? shopApi.itemImages(item) : [];
   const [idx, setIdx] = useState(0);
@@ -2023,10 +2087,44 @@ function ItemDetailDialog({
           {item.description && (
             <p className="text-sm text-gray-700 whitespace-pre-line pt-1">{item.description}</p>
           )}
+          {/* v-shop-card-stepper — the chip reported what was in the
+              cart but gave no way to change it, so a customer who
+              tapped + once too often had to close the dialog and open
+              the cart. With ordering on and a single line for this
+              item it is a stepper; otherwise it stays the plain chip
+              it was. */}
           {qtyInCart > 0 && (
-            <div className="text-xs text-blue-700 bg-blue-50 rounded px-2.5 py-1.5 inline-flex items-center gap-1.5">
+            <div className="text-xs text-blue-700 bg-blue-50 rounded px-2.5 py-1.5 inline-flex items-center gap-2">
               <ShoppingCart className="h-3.5 w-3.5" />
-              Already {qtyInCart} in cart
+              {!orderingDisabled && onRemove ? (
+                <>
+                  <span>In cart</span>
+                  <button
+                    type="button"
+                    onClick={onRemove}
+                    aria-label={qtyInCart <= 1
+                      ? `Remove ${item.name} from cart`
+                      : `Remove one ${item.name}`}
+                    title={qtyInCart <= 1 ? 'Remove from cart' : 'Remove one'}
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full border border-blue-600 text-blue-600 hover:bg-blue-100 transition"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="font-semibold tabular-nums min-w-[1rem] text-center">{qtyInCart}</span>
+                  <button
+                    type="button"
+                    onClick={onAdd}
+                    disabled={!item.inStock}
+                    aria-label={`Add another ${item.name}`}
+                    title="Add one"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </>
+              ) : (
+                <span>Already {qtyInCart} in cart</span>
+              )}
             </div>
           )}
         </div>
