@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send, ShoppingBag, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '../ui/button';
@@ -115,6 +115,13 @@ export function NotificationsBell({ onNavigate }: {
     // An approval ping is only useful if it takes you to the thing
     // you're being asked to decide — drop the user on the Approvals
     // inbox rather than leaving them to find it in the sidebar.
+    // Public shop page activity (online / table orders, Spin & Win)
+    // and counter orders all live on the POS page.
+    if (n.entityType && /^(shop-order|pos-order|shop-spin)/.test(n.entityType) && onNavigate) {
+      onNavigate('pos');
+      setOpen(false);
+      return;
+    }
     if (n.entityType === 'approval' && onNavigate) {
       onNavigate('approvals');
       setOpen(false);
@@ -223,6 +230,10 @@ function TypeIcon({ type }: { type: api.NotificationType }) {
     case 'approval_approved':    return <CircleCheck   className={`${cls} text-emerald-600`} />;
     case 'approval_rejected':    return <CircleX       className={`${cls} text-rose-600`} />;
     case 'reminder_sent':        return <Send          className={`${cls} text-sky-600`} />;
+    case 'shop-order-created':
+    case 'pos-order-created':    return <ShoppingBag   className={`${cls} text-emerald-600`} />;
+    case 'shop-spin-won':
+    case 'shop-spin-claimed':    return <Gift          className={`${cls} text-pink-600`} />;
     case 'OTHERS':
     default:                     return <Inbox         className={`${cls} text-gray-500`} />;
   }
