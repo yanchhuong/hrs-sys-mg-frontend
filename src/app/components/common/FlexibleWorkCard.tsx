@@ -126,6 +126,9 @@ export function FlexibleWorkCard({ scanRule }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => empty(scanRule));
   const [deleteTarget, setDeleteTarget] = useState<FlexibleSchedule | null>(null);
+  // Stored workDays per employee — the dialog doesn't edit it, but the
+  // upsert replaces every field, so a save must carry it or wipe it.
+  const [workDaysByEmp, setWorkDaysByEmp] = useState<Record<string, string | null>>({});
 
   // Resolve departmentId → name. The adapter stores the UUID on
   // `employee.department`; we never want to leak that into the UI.
@@ -139,7 +142,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
     }
     try {
       const list = await flexApi.list();
-      setRows(list.map(adaptApiSchedule));
+      setRows(list.map(adaptApiSchedule)); setWorkDaysByEmp(Object.fromEntries(list.map(r => [r.employeeId, r.workDays ?? null])));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load overrides');
     }
@@ -163,7 +166,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
           departmentsApi.list(),
         ]);
         if (cancelled) return;
-        setRows(list.map(adaptApiSchedule));
+        setRows(list.map(adaptApiSchedule)); setWorkDaysByEmp(Object.fromEntries(list.map(r => [r.employeeId, r.workDays ?? null])));
         setEmployees(emps.content.map(adaptApiEmployee));
         setDeptList(deps);
       } catch (err) {
@@ -291,6 +294,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
         graceOutMinutes: override.graceOutMinutes ?? null,
         halfDayCountsAsHalfScan: override.halfDayCountsAsHalfScan ?? null,
         note: override.note ?? '',
+        workDays: workDaysByEmp[form.employeeId] ?? null,
       });
       toast.success(form.id
         ? `Override updated for ${empLabel}`

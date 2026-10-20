@@ -16,6 +16,9 @@ export interface FlexibleSchedule {
   graceInMinutes?: number | null;
   graceOutMinutes?: number | null;
   halfDayCountsAsHalfScan?: boolean | null;
+  /** 7-char Mon..Sun mask. Not edited by the dialog; the POST replaces
+   *  every field, so a save must send the stored value back. */
+  workDays?: string | null;
   note?: string | null;
   updatedAt?: string;
 }
