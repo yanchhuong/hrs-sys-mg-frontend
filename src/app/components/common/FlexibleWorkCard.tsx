@@ -14,16 +14,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Popover, PopoverContent, PopoverTrigger,
-} from '../ui/popover';
-import {
-  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
-} from '../ui/command';
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw, ChevronsUpDown, Check, Info } from 'lucide-react';
+import { UserCog, Plus, Pencil, Trash2, Search, X, RefreshCw, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -34,6 +28,7 @@ import {
   deleteFlexibleSchedule,
 } from '../../utils/flexibleSchedule';
 import { ScanRule, ScanMode } from '../../utils/scanRule';
+import { SearchablePicker, type PickerOption } from './SearchablePicker';
 import { makeDeptName } from '../../utils/deptName';
 import * as flexApi from '../../api/flexibleSchedules';
 import * as employeesApi from '../../api/employees';
@@ -183,6 +178,33 @@ export function FlexibleWorkCard({ scanRule }: Props) {
 
   const findEmp = (id: string | undefined): Employee | undefined =>
     id ? employees.find(e => e.id === id || (e as any).apiId === id) : undefined;
+
+  /**
+   * Options for the Add-override employee picker. Active only — an
+   * override on a leaver has nothing to apply to.
+   *
+   * `value` is the API id so it round-trips to the backend, while
+   * `searchKey` carries name + employee number + department so all
+   * three still match what the user types. The old local picker put
+   * that haystack in cmdk's `value`, which conflated identity with
+   * search text.
+   */
+  const employeeOptions = useMemo<PickerOption[]>(
+    () => employees
+      .filter(e => e.status === 'active')
+      .map(e => {
+        const dept = deptName(e.department);
+        return {
+          value: (e as any).apiId ?? e.id,
+          label: e.name,
+          secondary: `— ${e.id}${dept ? ` · ${dept}` : ''}`,
+          searchKey: `${e.name} ${e.id} ${dept}`,
+        };
+      }),
+    // deptName is rebuilt each render from deptList; depend on that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [employees, deptList],
+  );
 
   const filtered = useMemo(() => {
     const kw = q.trim().toLowerCase();
@@ -456,11 +478,20 @@ export function FlexibleWorkCard({ scanRule }: Props) {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Employee <span className="text-red-500">*</span></Label>
-              <EmployeePicker
-                employees={employees}
-                deptName={deptName}
+              {/* The shared picker, not a local one. This dialog used
+                  to carry its own cmdk combobox; it was the only
+                  bespoke copy left against 28 files on
+                  SearchablePicker, and the one where arrow-key
+                  navigation did not keep the highlighted row in
+                  view. */}
+              <SearchablePicker
+                options={employeeOptions}
                 value={form.employeeId}
                 onChange={v => setForm({ ...form, employeeId: v })}
+                placeholder="Pick an employee"
+                searchPlaceholder="Search name, ID, department…"
+                emptyResultsLabel="No active employees match that."
+                allowClear={false}
                 disabled={!!form.id}
               />
             </div>
@@ -593,75 +624,6 @@ export function FlexibleWorkCard({ scanRule }: Props) {
  * `value` is whatever the backend stores on `employeeId` (UUID in live mode,
  * empNo in mock mode), so `e.apiId ?? e.id` is what we emit.
  */
-function EmployeePicker({
-  employees, deptName, value, onChange, disabled,
-}: {
-  employees: Employee[];
-  deptName: (d: string | undefined) => string;
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const active = employees.filter(e => e.status === 'active');
-
-  const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
-  const selectedLabel = selected
-    ? `${selected.name} — ${selected.id}${deptName(selected.department) ? ` · ${deptName(selected.department)}` : ''}`
-    : 'Pick an employee';
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="w-full justify-between font-normal"
-        >
-          <span className={selected ? '' : 'text-gray-400'}>{selectedLabel}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search name, ID, department…" />
-          <CommandList>
-            <CommandEmpty>No active employees match that.</CommandEmpty>
-            <CommandGroup>
-              {active.map(e => {
-                const val = (e as any).apiId ?? e.id;
-                const dept = deptName(e.department);
-                // `value` for cmdk is what gets matched against the search
-                // string — concatenate name + empNo + dept so all three match.
-                const haystack = `${e.name} ${e.id} ${dept}`;
-                return (
-                  <CommandItem
-                    key={val}
-                    value={haystack}
-                    onSelect={() => {
-                      onChange(val);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check className={`mr-2 h-4 w-4 ${value === val ? 'opacity-100' : 'opacity-0'}`} />
-                    <span className="flex-1 truncate">
-                      {e.name} <span className="text-gray-400">— {e.id}</span>
-                      {dept ? <span className="text-gray-400"> · {dept}</span> : null}
-                    </span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function OverrideCell({
   value, fallback, visible = true,
 }: { value?: string; fallback: string; visible?: boolean }) {
