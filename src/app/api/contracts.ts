@@ -10,7 +10,7 @@ export interface Contract {
   startDate: string;
   endDate: string;
   status: ContractStatus | string;
-  /** One of UDC | FDC | Probation | Internship (V64). */
+  /** One of UDC | FDC | Probation | Internship (V64) | Part-time (V364). */
   contractType: string;
   salary?: number;
   notes?: string;

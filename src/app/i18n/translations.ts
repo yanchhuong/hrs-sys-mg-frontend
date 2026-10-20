@@ -346,6 +346,7 @@ export const dict: Dict = {
   'contract.type.fdc':            { en: 'FDC — Fixed Duration',        km: 'FDC — រយៈពេលកំណត់',     zh: 'FDC — 固定期限' },
   'contract.type.probation':      { en: 'Probation',                   km: 'រយៈពេលសាកល្បង',         zh: '试用期' },
   'contract.type.internship':     { en: 'Internship',                  km: 'កម្មសិក្សា',           zh: '实习' },
+  'contract.type.parttime':      { en: 'Part-time',                   km: 'ក្រៅម៉ោង',             zh: '兼职' },
   'contract.type.helper':         { en: 'UDC: open-ended; qualifies for seniority indemnity (7.5d × 2/year). FDC: fixed term; entitled to 5% of total wages severance on expiry.', km: 'UDC: មិនកំណត់ ; មានសិទ្ធិទទួលប្រាក់ចូលនិវត្តន៍ (៧.៥ ថ្ងៃ × ២/ឆ្នាំ)។ FDC: រយៈពេលកំណត់ ; មានសិទ្ធិទទួលសំណង ៥% ពេលផុតកំណត់។', zh: 'UDC：无固定期，符合工龄抚恤金资格（每年 2 × 7.5 天）。FDC：定期，到期可获得总工资 5% 的解雇赔偿。' },
   'contract.probation.cap_prefix':{ en: 'Probation cap for',            km: 'ដែនកំណត់រយៈពេលសាកល្បងសម្រាប់', zh: '试用期上限：' },
   'contract.probation.cap_suffix':{ en: 'month(s) (Cambodian Labour Law).', km: 'ខែ (ច្បាប់ការងារកម្ពុជា)។', zh: '月（柬埔寨劳动法）' },

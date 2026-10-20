@@ -2928,6 +2928,7 @@ export function Employees() {
                                           contract.contractType === 'FDC' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                                           contract.contractType === 'Probation' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                           contract.contractType === 'Internship' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                          contract.contractType === 'Part-time' ? 'bg-teal-50 text-teal-700 border-teal-200' :
                                           'bg-slate-50 text-slate-700 border-slate-200'
                                         }
                                       >
@@ -3197,6 +3198,7 @@ export function Employees() {
                   <option value="FDC">{t('contract.type.fdc')}</option>
                   <option value="Probation">{t('contract.type.probation')}</option>
                   <option value="Internship">{t('contract.type.internship')}</option>
+                  <option value="Part-time">{t('contract.type.parttime')}</option>
                 </select>
                 <p className="text-[11px] text-gray-500">
                   {t('contract.type.helper')}
