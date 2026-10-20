@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { LogIn, LogOut, MapPin, Loader2, Ban } from 'lucide-react';
+import { LogIn, LogOut, MapPin, Loader2, Ban, CalendarOff } from 'lucide-react';
 import { toast } from 'sonner';
 import * as meApi from '../../api/attendanceMe';
 import { useAuth } from '../../context/AuthContext';
@@ -193,14 +193,23 @@ export function AttendanceCheckInWidget() {
     return null; // tenant hasn't set this up — don't pollute the bar
   }
 
-  if (status.phase === 'out_of_range') {
+  // Blocked before the first punch. Each used to fall through to the
+  // button below with isCheckIn=false, offering a Check-Out the server
+  // then refused with "You haven't checked in yet today."
+  if (status.phase === 'out_of_range' || status.phase === 'off_day'
+      || status.phase === 'office_not_assigned') {
+    const blocked = status.phase === 'off_day'
+      ? { icon: <CalendarOff className="h-3.5 w-3.5" />, label: 'Not a work day', cls: 'bg-gray-100 text-gray-600' }
+      : status.phase === 'office_not_assigned'
+        ? { icon: <Ban className="h-3.5 w-3.5" />, label: 'Not your office', cls: 'bg-amber-50 text-amber-700' }
+        : { icon: <MapPin className="h-3.5 w-3.5" />, label: 'Off-site', cls: 'bg-amber-50 text-amber-700' };
     return (
       <TooltipProvider delayDuration={120}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 text-xs cursor-help">
-              <MapPin className="h-3.5 w-3.5" />
-              Off-site
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs cursor-help ${blocked.cls}`}>
+              {blocked.icon}
+              {blocked.label}
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs text-xs">

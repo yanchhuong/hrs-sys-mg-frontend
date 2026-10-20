@@ -9,9 +9,15 @@ export interface CheckStatus {
    *  'checked_out'  — both set, done for the day
    *  'pending'      — not yet checked in, in range
    *  'out_of_range' — not within any office's radius
-   *  'no_offices'   — tenant hasn't configured any offices yet */
-  phase: 'checked_in' | 'checked_out' | 'pending' | 'out_of_range' | 'no_offices';
+   *  'no_offices'   — tenant hasn't configured any offices yet
+   *  'office_not_assigned' — in range of an office that isn't theirs
+   *  'off_day'      — today isn't one of their working days (Flexible
+   *                   Work mask); the server refuses check-in */
+  phase: 'checked_in' | 'checked_out' | 'pending' | 'out_of_range' | 'no_offices'
+       | 'office_not_assigned' | 'off_day';
   message: string;
+  /** False when the employee's Flexible Work mask excludes today. */
+  scheduledWorkDay?: boolean;
   checkInTime?: string | null;
   checkOutTime?: string | null;
   officeName?: string | null;
