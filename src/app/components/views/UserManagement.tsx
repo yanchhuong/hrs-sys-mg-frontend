@@ -1704,6 +1704,12 @@ export function UserManagement() {
                           <UserEmployeePicker
                             employees={employees}
                             deptName={deptName}
+                            // Employees who already have a login belong to
+                            // another user — leave them out. The user being
+                            // edited keeps their own employee in the list.
+                            takenEmployeeIds={new Set(users
+                              .filter(u => u.id !== editingUser?.id && u.employeeId)
+                              .map(u => u.employeeId as string))}
                             value={formData.employeeId}
                             onChange={v => {
                               // Selecting an employee pulls their email + dept
@@ -2499,17 +2505,26 @@ const ModuleRow = memo(function ModuleRow({
  * across name + empNo + department, active employees only, and the value
  * emitted is whatever the backend stores (UUID in live mode, empNo in
  * mock mode) via `e.apiId ?? e.id`.
+ *
+ * `takenEmployeeIds` are employees already linked to another user; they
+ * are left out so one employee can't end up with two logins (the server
+ * doesn't stop it). The current `value` always stays listed.
  */
 function UserEmployeePicker({
-  employees, deptName, value, onChange,
+  employees, deptName, value, onChange, takenEmployeeIds,
 }: {
   employees: Employee[];
   deptName: (id?: string) => string;
   value: string;
   onChange: (v: string) => void;
+  takenEmployeeIds?: Set<string>;
 }) {
   const [open, setOpen] = useState(false);
-  const active = employees.filter(e => e.status === 'active');
+  const active = employees.filter(e => {
+    if (e.status !== 'active') return false;
+    const key = (e as any).apiId ?? e.id;
+    return key === value || !takenEmployeeIds?.has(key);
+  });
   const selected = employees.find(e => ((e as any).apiId ?? e.id) === value);
   const selectedDept = deptName(selected?.department) || (selected?.department === '-' ? '' : selected?.department ?? '');
   const selectedLabel = selected
@@ -2540,7 +2555,7 @@ function UserEmployeePicker({
         <Command>
           <CommandInput placeholder="Search name, ID, department…" />
           <CommandList>
-            <CommandEmpty>No active employees match that.</CommandEmpty>
+            <CommandEmpty>No employees without a login match that.</CommandEmpty>
             <CommandGroup>
               {active.map(e => {
                 const val = (e as any).apiId ?? e.id;
