@@ -87,6 +87,13 @@ function adaptApiSchedule(r: flexApi.FlexibleSchedule): FlexibleSchedule {
 
 interface Props {
   scanRule: ScanRule;
+  /**
+   * The tenant's own week as a Mon..Sun mask ('1' full, '2' half,
+   * '0' off). The day picker opens on this instead of on a guess, and
+   * an override is only stored when the two differ — the same rule
+   * the times and the scan mode follow.
+   */
+  companyWeek: string;
 }
 
 /**
@@ -101,28 +108,54 @@ const WEEK = [
   { i: 6, short: 'Sun' },
 ] as const;
 
-const maskHas = (mask: string, i: number) => mask.length === 7 && mask[i] === '1';
+/** '1' full day · '2' half day · '0' off — the three states the
+ *  tenant week has carried since V169. */
+type MaskDay = '0' | '1' | '2';
 
-const toggleDay = (mask: string, i: number): string => {
+const dayAt = (mask: string, i: number): MaskDay =>
+  (mask.length === 7 ? (mask[i] as MaskDay) : '1');
+
+/**
+ * Cycle one day full → half → off → full.
+ *
+ * The step that would clear the last remaining day is skipped rather
+ * than taken: all-off is a lockout, not a schedule, and the server
+ * coerces "0000000" to inherit anyway.
+ */
+const cycleDay = (mask: string, i: number): string => {
   const base = (mask.length === 7 ? mask : '1111111').split('');
-  base[i] = base[i] === '1' ? '0' : '1';
+  base[i] = base[i] === '1' ? '2' : base[i] === '2' ? '0' : '1';
   const next = base.join('');
-  // All-off is not a schedule, it is a lockout. The server coerces it
-  // to inherit too; refusing it here means the operator sees why.
   return next === '0000000' ? mask : next;
+};
+
+/** "5 days" · "5 days + 1 half" — a half day is not a whole one, so
+ *  the summary must not round it away. */
+const describeWeek = (mask: string): string => {
+  const full = mask.split('').filter(c => c === '1').length;
+  const half = mask.split('').filter(c => c === '2').length;
+  const a = `${full} day${full === 1 ? '' : 's'}`;
+  return half === 0 ? a : `${a} + ${half} half`;
 };
 
 type FormState = {
   id?: string;
   employeeId: string;
-  mode: ScanMode | 'inherit';
+  /** Always a concrete mode. 'inherit' was removed with the
+     *  dropdown row that offered it; the form starts on the company
+     *  value and the save stores a mode only when it differs. */
+  mode: ScanMode;
   morningIn: string;
   morningOut: string;
   afternoonIn: string;
   eveningOut: string;
   graceInMinutes: string;
   graceOutMinutes: string;
-  halfDayOverride: 'inherit' | 'on' | 'off';
+  /** On / Off only. Mobile dropped 'Inherit' here for the same
+   *  reason the scan mode lost it — it sat beside the option it
+   *  equalled. Starts on the company value, stored only when it
+   *  differs. */
+  halfDayOverride: 'on' | 'off';
   /** Seven-char Mon..Sun mask, or '' to inherit the tenant's week. */
   workDays: string;
   note: string;
@@ -131,20 +164,20 @@ type FormState = {
 function empty(rule: ScanRule): FormState {
   return {
     employeeId: '',
-    mode: 'inherit',
+    mode: rule.mode,
     morningIn:   rule.morningIn,
     morningOut:  rule.morningOut,
     afternoonIn: rule.afternoonIn,
     eveningOut:  rule.eveningOut,
     graceInMinutes:  '',
     graceOutMinutes: '',
-    halfDayOverride: 'inherit',
+    halfDayOverride: rule.halfDayCountsAsHalfScan ? 'on' : 'off',
     workDays: '',
     note: '',
   };
 }
 
-export function FlexibleWorkCard({ scanRule }: Props) {
+export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
   const [rows, setRows] = useState<FlexibleSchedule[]>(USE_MOCKS ? listFlexibleSchedules() : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
@@ -219,6 +252,10 @@ export function FlexibleWorkCard({ scanRule }: Props) {
    * that haystack in cmdk's `value`, which conflated identity with
    * search text.
    */
+  // What the picker shows: the override's own mask when it has one,
+  // otherwise the company week it would inherit.
+  const days = form.workDays.length === 7 ? form.workDays : companyWeek;
+
   const employeeOptions = useMemo<PickerOption[]>(
     () => employees
       .filter(e => e.status === 'active')
@@ -256,7 +293,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
     setForm({
       id: row.id,
       employeeId: row.employeeId,
-      mode: row.mode ?? 'inherit',
+      mode: row.mode ?? scanRule.mode,
       morningIn:   row.morningIn   ?? scanRule.morningIn,
       morningOut:  row.morningOut  ?? scanRule.morningOut,
       afternoonIn: row.afternoonIn ?? scanRule.afternoonIn,
@@ -264,8 +301,9 @@ export function FlexibleWorkCard({ scanRule }: Props) {
       graceInMinutes:  row.graceInMinutes  != null ? String(row.graceInMinutes)  : '',
       graceOutMinutes: row.graceOutMinutes != null ? String(row.graceOutMinutes) : '',
       halfDayOverride:
-        row.halfDayCountsAsHalfScan === undefined ? 'inherit'
-        : row.halfDayCountsAsHalfScan ? 'on' : 'off',
+        row.halfDayCountsAsHalfScan == null
+          ? (scanRule.halfDayCountsAsHalfScan ? 'on' : 'off')
+          : row.halfDayCountsAsHalfScan ? 'on' : 'off',
       workDays: row.workDays ?? '',
       note: row.note ?? '',
     });
@@ -279,10 +317,10 @@ export function FlexibleWorkCard({ scanRule }: Props) {
     }
     // Only persist fields that actually differ from the default — keeps the
     // override minimal so "inherit" truly inherits on later edits.
-    const effectiveMode = form.mode === 'inherit' ? scanRule.mode : form.mode;
+    const effectiveMode = form.mode;
     const override = {
       employeeId: form.employeeId,
-      mode: form.mode === 'inherit' ? undefined : form.mode,
+      mode: form.mode !== scanRule.mode ? form.mode : undefined,
       morningIn:   form.morningIn   !== scanRule.morningIn   ? form.morningIn   : undefined,
       morningOut:  effectiveMode === 'four' && form.morningOut  !== scanRule.morningOut  ? form.morningOut  : undefined,
       afternoonIn: effectiveMode === 'four' && form.afternoonIn !== scanRule.afternoonIn ? form.afternoonIn : undefined,
@@ -290,8 +328,10 @@ export function FlexibleWorkCard({ scanRule }: Props) {
       graceInMinutes:  form.graceInMinutes.trim()  !== '' ? Number(form.graceInMinutes)  : undefined,
       graceOutMinutes: form.graceOutMinutes.trim() !== '' ? Number(form.graceOutMinutes) : undefined,
       halfDayCountsAsHalfScan:
-        form.halfDayOverride === 'inherit' ? undefined : form.halfDayOverride === 'on',
-      workDays: form.workDays.length === 7 ? form.workDays : undefined,
+        form.halfDayOverride !== (scanRule.halfDayCountsAsHalfScan ? 'on' : 'off')
+          ? form.halfDayOverride === 'on'
+          : undefined,
+      workDays: days !== companyWeek ? days : undefined,
       note: form.note.trim() || undefined,
     };
 
@@ -356,7 +396,7 @@ export function FlexibleWorkCard({ scanRule }: Props) {
     }
   };
 
-  const effectiveMode: ScanMode = form.mode === 'inherit' ? scanRule.mode : form.mode;
+  const effectiveMode: ScanMode = form.mode;
 
   return (
     <Card>
@@ -534,9 +574,14 @@ export function FlexibleWorkCard({ scanRule }: Props) {
               <Select value={form.mode} onValueChange={v => setForm({ ...form, mode: v as FormState['mode'] })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit">Inherit from Scan Rule ({scanRule.mode === 'four' ? '4-scan' : '2-scan'})</SelectItem>
-                  <SelectItem value="two">Force 2 scans per day</SelectItem>
-                  <SelectItem value="four">Force 4 scans per day</SelectItem>
+                  {/* No "Inherit" row. It sat beside the option it
+                      equals — "Inherit (2-scan)" and "2 scans" are one
+                      choice wearing two hats — and read as a decision
+                      when only one of them was. The select starts on
+                      the company value and is stored only when it
+                      differs, like the times below it. */}
+                  <SelectItem value="two">2 scans per day</SelectItem>
+                  <SelectItem value="four">4 scans per day</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -590,8 +635,9 @@ export function FlexibleWorkCard({ scanRule }: Props) {
                 <p className="text-sm font-medium inline-flex items-center gap-1.5">
                   Half-day leave counts as half-scan
                   <HelpHint>
-                    Inherit = follows the tenant Scan Rule. Override only if this employee
-                    has a different half-day policy.
+                    Starts on the tenant Scan Rule's setting and is only stored as an
+                    override once you change it — so leaving it alone keeps following
+                    the rule.
                   </HelpHint>
                 </p>
                 <Select
@@ -600,7 +646,6 @@ export function FlexibleWorkCard({ scanRule }: Props) {
                 >
                   <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="inherit">Inherit</SelectItem>
                     <SelectItem value="on">On</SelectItem>
                     <SelectItem value="off">Off</SelectItem>
                   </SelectContent>
@@ -617,35 +662,39 @@ export function FlexibleWorkCard({ scanRule }: Props) {
               <Label className="text-xs text-gray-600">
                 Working days
                 <HelpHint>
-                  Which days this employee is expected in. Check-in is refused on the
-                  others. Switch a weekend on and they can check in then — the override
-                  is the rule for this employee, not a filter on the standard week.
-                  Inherit leaves the tenant's week in place.
+                  Which days this employee is expected in. Tap a day to cycle it
+                  full → half → off. Check-in is refused on the days that are off.
+                  Switch a weekend on and they can check in then — the override is the
+                  rule for this employee, not a filter on the standard week. It starts
+                  on the company's week and is only stored once it differs.
                 </HelpHint>
               </Label>
               <div className="flex flex-wrap items-center gap-1.5">
                 {WEEK.map(d => {
-                  const on = maskHas(form.workDays, d.i);
-                  const inherit = form.workDays.length !== 7;
+                  const state = dayAt(days, d.i);
                   return (
                     <button
                       key={d.i}
                       type="button"
-                      onClick={() => setForm({ ...form, workDays: toggleDay(form.workDays, d.i) })}
-                      aria-pressed={on}
-                      className={`h-8 w-12 rounded-md border text-xs font-medium transition ${
-                        inherit
-                          ? 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
-                          : on
-                            ? 'border-blue-600 bg-blue-600 text-white'
+                      onClick={() => setForm({ ...form, workDays: cycleDay(days, d.i) })}
+                      aria-pressed={state !== '0'}
+                      title={state === '1' ? 'Full day' : state === '2' ? 'Half day' : 'Not a working day'}
+                      className={`relative h-8 w-12 rounded-md border text-xs font-medium transition ${
+                        state === '1'
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : state === '2'
+                            ? 'border-blue-600 bg-blue-50 text-blue-700'
                             : 'border-gray-300 text-gray-400 hover:border-gray-400'
                       }`}
                     >
                       {d.short}
+                      {state === '2' && (
+                        <span className="absolute top-0 right-1 text-[9px] font-bold text-blue-600">½</span>
+                      )}
                     </button>
                   );
                 })}
-                {form.workDays.length === 7 && (
+                {days !== companyWeek && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -653,14 +702,14 @@ export function FlexibleWorkCard({ scanRule }: Props) {
                     className="h-8 px-2 text-xs text-gray-500"
                     onClick={() => setForm({ ...form, workDays: '' })}
                   >
-                    Inherit
+                    Reset
                   </Button>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500">
-                {form.workDays.length === 7
-                  ? `${form.workDays.split('').filter(c => c === '1').length} days a week`
-                  : 'Inheriting the tenant’s week — no day restriction.'}
+              <p className={`text-[11px] ${days !== companyWeek ? 'text-blue-700' : 'text-gray-500'}`}>
+                {days === companyWeek
+                  ? `Company default · ${describeWeek(days)}`
+                  : `Custom · ${describeWeek(days)}`}
               </p>
             </div>
 

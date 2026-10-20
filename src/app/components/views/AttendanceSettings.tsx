@@ -532,7 +532,21 @@ export function AttendanceSettings() {
 
         {/* ═══════════════ FLEXIBLE WORK TAB ═══════════════ */}
         <TabsContent value="flexible" className="space-y-6">
-          <FlexibleWorkCard scanRule={scanRule} />
+          {/* The company week as the seven-character Mon..Sun mask the
+              override stores, computed here because this is where
+              generalSettings already lives. '1' full, '2' half, '0'
+              off — matching flexible_schedules.work_days (V366). */}
+          <FlexibleWorkCard
+            scanRule={scanRule}
+            companyWeek={(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const)
+              .map(short => {
+                const long = SHORT_TO_LONG[short] ?? short;
+                if (generalSettings.weekendDays.includes(long)) return '0';
+                if (generalSettings.halfDayDays.includes(long)) return '2';
+                return '1';
+              })
+              .join('')}
+          />
         </TabsContent>
 
 
@@ -1315,9 +1329,36 @@ function TimeField({
   label: string; value: string; onChange: (v: string) => void;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-sm">{label}</Label>
+    <div className="space-y-1.5 w-40">
+      <Label className="text-xs text-gray-600">{label}</Label>
       <Input type="time" value={value} onChange={e => onChange(e.target.value)} className="h-9" />
+    </div>
+  );
+}
+
+/** Grace input: 0–60 minutes, compact, with the explanation in a hint. */
+function MinutesField({
+  label, hint, value, onChange,
+}: {
+  label: string; hint: string; value: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1.5 w-40">
+      <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+        {label}
+        <HelpHint>{hint}</HelpHint>
+      </Label>
+      <div className="relative">
+        <Input
+          type="number"
+          min={0}
+          max={60}
+          value={value}
+          onChange={e => onChange(clamp(Number(e.target.value), 0, 60))}
+          className="h-9 pr-12"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">min</span>
+      </div>
     </div>
   );
 }
@@ -1401,134 +1442,116 @@ function ScanRuleCard({
             <Badge variant="outline" className="text-[11px]">
               Last updated {format(new Date(rule.updatedAt), 'MMM dd, HH:mm')}
             </Badge>
+            {/* Actions live in the title row so they stay in reach
+                without scrolling past the preview. */}
+            <Button variant="ghost" size="sm" onClick={handleReset} disabled={saving || loading}>
+              Reset to defaults
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={!dirty || saving || loading}>
+              <Save className="h-4 w-4 mr-1.5" />
+              Save rule
+            </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Mode selector */}
-        <div>
-          <Label className="text-sm font-semibold">Scan mode</Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-            <ScanModeOption
-              active={draft.mode === 'two'}
-              title="2 scans per day"
-              subtitle="Morning check-in + evening check-out (one continuous session)"
-              onClick={() => setMode('two')}
-            />
-            <ScanModeOption
-              active={draft.mode === 'four'}
-              title="4 scans per day"
-              subtitle="Morning in/out + afternoon in/out (two sessions)"
-              onClick={() => setMode('four')}
-            />
+      {/* Two columns on wide screens: the inputs on the left at compact
+          fixed widths (a time or a minute count never needs a full
+          half-card), the live preview on the right so the effect of an
+          edit is visible next to it. Stacks below lg. */}
+      <CardContent className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-3 space-y-5">
+          {/* Mode selector */}
+          <div>
+            <Label className="text-sm font-semibold">Scan mode</Label>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <ScanModeOption
+                active={draft.mode === 'two'}
+                title="2 scans per day"
+                subtitle="Morning check-in + evening check-out (one continuous session)"
+                onClick={() => setMode('two')}
+              />
+              <ScanModeOption
+                active={draft.mode === 'four'}
+                title="4 scans per day"
+                subtitle="Morning in/out + afternoon in/out (two sessions)"
+                onClick={() => setMode('four')}
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Target times */}
-        <div className="space-y-3">
-          <Label className="text-sm font-semibold">Target times</Label>
-          {draft.mode === 'four' ? (
-            <div className="grid grid-cols-2 gap-3">
+          {/* Target times */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Target times</Label>
+            <div className="flex flex-wrap gap-x-4 gap-y-3">
               <TimeField
-                label="Morning check-in (on or before)"
+                label="Morning in (on or before)"
                 value={draft.morningIn}
                 onChange={v => setDraft({ ...draft, morningIn: v })}
               />
+              {draft.mode === 'four' && (
+                <>
+                  <TimeField
+                    label="Morning out (on or after)"
+                    value={draft.morningOut}
+                    onChange={v => setDraft({ ...draft, morningOut: v })}
+                  />
+                  <TimeField
+                    label="Afternoon in (on or before)"
+                    value={draft.afternoonIn}
+                    onChange={v => setDraft({ ...draft, afternoonIn: v })}
+                  />
+                </>
+              )}
               <TimeField
-                label="Morning check-out (on or after)"
-                value={draft.morningOut}
-                onChange={v => setDraft({ ...draft, morningOut: v })}
-              />
-              <TimeField
-                label="Afternoon check-in (on or before)"
-                value={draft.afternoonIn}
-                onChange={v => setDraft({ ...draft, afternoonIn: v })}
-              />
-              <TimeField
-                label="Evening check-out (on or after)"
+                label="Evening out (on or after)"
                 value={draft.eveningOut}
                 onChange={v => setDraft({ ...draft, eveningOut: v })}
               />
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <TimeField
-                label="Morning check-in (on or before)"
-                value={draft.morningIn}
-                onChange={v => setDraft({ ...draft, morningIn: v })}
+          </div>
+
+          {/* Grace window */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Grace window</Label>
+            <div className="flex flex-wrap gap-x-4 gap-y-3">
+              <MinutesField
+                label="After check-in"
+                // Recomputed from draft so the hint reflects the in-flight
+                // value, not the saved rule.
+                hint={`Late after ${addGrace(draft.morningIn, draft.graceInMinutes)}.`}
+                value={draft.graceInMinutes}
+                onChange={v => setDraft({ ...draft, graceInMinutes: v })}
               />
-              <TimeField
-                label="Evening check-out (on or after)"
-                value={draft.eveningOut}
-                onChange={v => setDraft({ ...draft, eveningOut: v })}
+              <MinutesField
+                label="Before check-out"
+                hint="A check-out this many minutes early still counts as on-time."
+                value={draft.graceOutMinutes}
+                onChange={v => setDraft({ ...draft, graceOutMinutes: v })}
+              />
+            </div>
+          </div>
+
+          {/* Half-day toggle (2-scan only) */}
+          {draft.mode === 'two' && (
+            <div className="flex items-center justify-between gap-4 p-3 rounded-md border bg-gray-50">
+              <p className="text-sm font-medium inline-flex items-center gap-1.5">
+                Half-day leave counts as half-scan
+                <HelpHint>
+                  When an employee has approved half-day leave (AM or PM), skip the absent half
+                  and only evaluate the half they worked.
+                </HelpHint>
+              </p>
+              <Switch
+                checked={draft.halfDayCountsAsHalfScan}
+                onCheckedChange={v => setDraft({ ...draft, halfDayCountsAsHalfScan: v })}
               />
             </div>
           )}
         </div>
 
-        {/* Grace window */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
-              Grace minutes after IN
-              {/* Dynamic hint — recomputes from draft so the tooltip
-                  always reflects the in-flight value, not the saved
-                  rule. Late-after time stays in the tooltip instead
-                  of below the input to keep the row tight. */}
-              <HelpHint>Late after {addGrace(draft.morningIn, draft.graceInMinutes)}.</HelpHint>
-            </Label>
-            <Input
-              type="number"
-              min={0}
-              max={60}
-              value={draft.graceInMinutes}
-              onChange={e => setDraft({ ...draft, graceInMinutes: clamp(Number(e.target.value), 0, 60) })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
-              Grace minutes before OUT
-              <HelpHint>A check-out this many minutes early still counts as on-time.</HelpHint>
-            </Label>
-            <Input
-              type="number"
-              min={0}
-              max={60}
-              value={draft.graceOutMinutes}
-              onChange={e => setDraft({ ...draft, graceOutMinutes: clamp(Number(e.target.value), 0, 60) })}
-            />
-          </div>
-        </div>
-
-        {/* Half-day toggle (2-scan only) */}
-        {draft.mode === 'two' && (
-          <div className="flex items-center justify-between gap-4 p-3 rounded-md border bg-gray-50">
-            <p className="text-sm font-medium inline-flex items-center gap-1.5">
-              Half-day leave counts as half-scan
-              <HelpHint>
-                When an employee has approved half-day leave (AM or PM), skip the absent half
-                and only evaluate the half they worked.
-              </HelpHint>
-            </p>
-            <Switch
-              checked={draft.halfDayCountsAsHalfScan}
-              onCheckedChange={v => setDraft({ ...draft, halfDayCountsAsHalfScan: v })}
-            />
-          </div>
-        )}
-
         {/* Live preview */}
-        <ScanRulePreview rule={draft} />
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t">
-          <Button variant="ghost" size="sm" onClick={handleReset} disabled={saving || loading}>
-            Reset to defaults
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty || saving || loading}>
-            <Save className="h-4 w-4 mr-1.5" />
-            Save rule
-          </Button>
+        <div className="lg:col-span-2">
+          <ScanRulePreview rule={draft} />
         </div>
       </CardContent>
     </Card>
@@ -1569,13 +1592,20 @@ function ScanModeOption({
 function ScanRulePreview({ rule }: { rule: ScanRule }) {
   const scenarios = previewScenarios(rule.mode);
   return (
-    <div className="rounded-md border bg-gray-50 p-3 space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Preview</p>
-      <div className="space-y-1.5">
+    <div className="h-full rounded-md border bg-gray-50 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Preview</p>
+        {/* Derived, never typed — and it is what the engine compares
+            worked hours against, so show it beside the scenarios. */}
+        <span className="text-xs text-gray-600">
+          Required <strong className="text-gray-900 tabular-nums">{requiredHoursFor(rule)}h</strong>/day
+        </span>
+      </div>
+      <div className="space-y-2.5">
         {scenarios.map(sc => (
-          <div key={sc.label} className="flex items-start gap-3 text-xs">
-            <span className="w-40 shrink-0 text-gray-700 font-medium">{sc.label}</span>
-            <div className="flex-1 flex flex-wrap gap-2">
+          <div key={sc.label} className="space-y-1 text-xs">
+            <span className="block text-gray-700 font-medium">{sc.label}</span>
+            <div className="flex flex-wrap gap-1.5">
               {evaluate(rule, sc.punches).map((s, i) => <VerdictChip key={i} session={s} />)}
             </div>
           </div>
