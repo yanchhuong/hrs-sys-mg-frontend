@@ -44,6 +44,12 @@ export interface PaymentReceiptProps {
   dueOn?: string | null;
   /** Customer name (already resolved). */
   customerName: string;
+  /** Customer's own phone / address — NOT the company's, which are
+   *  addressLine1/2 under the logo. Each row is omitted when the
+   *  field is empty, so a walk-in with neither looks exactly as the
+   *  receipt did before. */
+  customerPhone?: string | null;
+  customerAddress?: string | null;
   /** Document number, e.g. "PO-233000-#001". */
   receiptNo: string;
   /** Payment-date string ("01 Feb 2025"). */
@@ -70,6 +76,7 @@ const MUTED  = '#6B7280';
 export const PaymentReceiptCard = forwardRef<HTMLDivElement, PaymentReceiptProps>(
   function PaymentReceiptCard({
     logoUrl, companyName, addressLine1, addressLine2,
+    customerPhone, customerAddress,
     totalDue, dueOn,
     customerName, receiptNo, dateText,
     items,
@@ -140,6 +147,25 @@ export const PaymentReceiptCard = forwardRef<HTMLDivElement, PaymentReceiptProps
         <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: 4, columnGap: 12 }}>
           <div style={{ color: MUTED }}>Customer</div>
           <div style={{ textAlign: 'right', fontWeight: 500 }}>{customerName}</div>
+
+          {/* Only when the customer record carries them. A blank row
+              reading "Phone —" tells the reader nothing and costs a
+              line on a receipt that may be printed to 80mm paper. */}
+          {customerPhone?.trim() ? (
+            <>
+              <div style={{ color: MUTED }}>Phone</div>
+              <div style={{ textAlign: 'right' }}>{customerPhone}</div>
+            </>
+          ) : null}
+
+          {customerAddress?.trim() ? (
+            <>
+              <div style={{ color: MUTED }}>Address</div>
+              {/* Wraps rather than truncating: a cut-off delivery
+                  address on a receipt is worse than a taller one. */}
+              <div style={{ textAlign: 'right', whiteSpace: 'pre-wrap' }}>{customerAddress}</div>
+            </>
+          ) : null}
 
           <div style={{ color: MUTED }}>Receipt No.</div>
           <div style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{receiptNo}</div>

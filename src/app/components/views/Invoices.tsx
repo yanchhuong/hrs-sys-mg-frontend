@@ -4260,6 +4260,8 @@ function PaymentReceiptDialog({
             totalDue={money(invoice.total ?? 0)}
             dueOn={invoice.dueDate ? `Due on ${fmtDate(invoice.dueDate)}` : null}
             customerName={customer?.name ?? 'Walk-in'}
+            customerPhone={customer?.phone ?? null}
+            customerAddress={customer?.address ?? null}
             receiptNo={payment.documentNo}
             dateText={fmtDate(payment.paymentDate)}
             items={items}
