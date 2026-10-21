@@ -199,7 +199,12 @@ function TemplateCard({
   onClearDefault,
   onThumbnailClick,
   actions,
+  landscape = false,
 }: {
+  /** Thumbnail on the left, details on the right — one card fills a
+   *  section's width instead of leaving most of it empty. Used by the
+   *  template lists; the gallery keeps the upright card. */
+  landscape?: boolean;
   variant: 'builtin' | 'custom';
   title: string;
   caption: string;
@@ -217,23 +222,30 @@ function TemplateCard({
 }) {
   const isBuiltin = variant === 'builtin';
   return (
-    <div className={`group relative rounded-lg border bg-white overflow-hidden flex flex-col transition hover:shadow-md ${
+    <div className={`group relative rounded-lg border bg-white overflow-hidden flex ${
+      landscape ? 'flex-col sm:flex-row' : 'flex-col'
+    } transition hover:shadow-md ${
       isDefault ? 'ring-2 ring-emerald-300 border-emerald-200' : 'border-gray-200'
     }`}>
-      {/* Live-preview thumbnail — scale-42 render of the actual
-          template config. Same trick as the gallery cards so the
-          two UIs feel unified. */}
+      {/* Live-preview thumbnail — a scaled render of the actual
+          template config. Upright: full card width at 0.42. Landscape:
+          a fixed 220 px column at 0.28, so a whole A4 sheet's width
+          (≈ 790 px) still fits and the receipt strip shows top to
+          bottom further. */}
       <button
         type="button"
         onClick={onThumbnailClick}
         disabled={!onThumbnailClick}
         title={onThumbnailClick ? 'Click to preview' : undefined}
-        className={`relative bg-gray-50 border-b p-2 text-left w-full overflow-hidden ${
-          onThumbnailClick ? 'cursor-zoom-in' : 'cursor-default'
-        }`}
-        style={{ height: 200 }}
+        className={`relative bg-gray-50 p-2 text-left overflow-hidden shrink-0 ${
+          landscape ? 'w-full sm:w-[220px] border-b sm:border-b-0 sm:border-r' : 'w-full border-b'
+        } ${onThumbnailClick ? 'cursor-zoom-in' : 'cursor-default'}`}
+        style={{ height: landscape ? 210 : 200 }}
       >
-        <div style={{ transform: 'scale(0.42)', transformOrigin: 'top left', width: '238%', pointerEvents: 'none' }}>
+        <div style={{
+          transform: `scale(${landscape ? 0.28 : 0.42})`, transformOrigin: 'top left',
+          width: landscape ? '357%' : '238%', pointerEvents: 'none',
+        }}>
           <TemplatePreview config={config} kind={kind} />
         </div>
         {isDefault && (
@@ -244,10 +256,12 @@ function TemplateCard({
       </button>
 
       {/* Body */}
-      <div className="p-3 flex flex-col gap-2 flex-1">
+      <div className={`p-3 flex flex-col gap-2 flex-1 min-w-0 ${landscape ? 'sm:p-4' : ''}`}>
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="font-medium text-sm inline-flex items-center gap-1.5 truncate">
+          {/* flex-1 + min-w-0 so a long name truncates before the kind
+              badge instead of running underneath it. */}
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-sm flex items-center gap-1.5 min-w-0" title={title}>
               {isBuiltin && <Lock className="h-3 w-3 text-gray-400 shrink-0" />}
               <span className="truncate">{title}</span>
             </div>
@@ -263,14 +277,14 @@ function TemplateCard({
               <button
                 type="button"
                 onClick={onClearDefault}
-                className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 font-semibold hover:bg-emerald-200 transition"
+                className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold hover:bg-emerald-200 transition"
                 title={isBuiltin ? 'Built-in is currently active' : 'Unset default — built-in template will take over'}
               >
                 <Star className="h-3 w-3 fill-current" /> Active default
                 {!isBuiltin && <span className="opacity-70">· unset</span>}
               </button>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 font-semibold">
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold">
                 <Star className="h-3 w-3 fill-current" /> Active default
               </span>
             )
@@ -478,10 +492,13 @@ export function InvoiceTemplates() {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    // One landscape card per row: the section's full width
+                    // instead of a narrow upright card beside empty space.
+                    <div className="grid grid-cols-1 gap-3">
                       {kindRows.map(r => (
                         <TemplateCard
                           key={r.id}
+                          landscape
                           variant="custom"
                           title={r.name}
                           caption={`${KIND_META[r.kind].label} layout · updated ${new Date(r.updatedAt).toLocaleDateString()}`}
