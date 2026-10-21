@@ -1256,6 +1256,13 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
       style={{
         padding: '20px 24px', color: '#000', fontSize: 11,
         fontFamily: "'Battambang','Noto Sans Khmer',system-ui,sans-serif",
+        // Paper-shaped and a column, so the thank-you band can be
+        // pushed to the foot with margin-top:auto exactly as it is on
+        // the printed sheet. aspect-ratio yields to content, so a
+        // preview with more rows than fit simply grows instead of
+        // clipping.
+        display: 'flex', flexDirection: 'column',
+        aspectRatio: '210 / 297',
       }}
     >
       {/* Company header — three fixed slots so:
@@ -1428,21 +1435,23 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         </tbody>
       </table>
 
-      {/* Notes + exchange rate — two-column layout so the KHQR
-          cards sit top-right ALIGNED with the "Notes" label instead
-          of stacking below the Payment method line. */}
+      {/* Notes and the KHQR cards as opposite columns, reversing with
+          the QR-position setting — the same arrangement the printed
+          document uses, so the preview is not describing a different
+          layout from the one that comes out of the printer. */}
       <div style={{
         marginTop: 10, fontSize: 10, lineHeight: 1.5,
         display: 'flex', gap: 12, alignItems: 'flex-start',
+        flexDirection: f.qrPosition === 'left' ? 'row-reverse' : 'row',
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
           <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
           {f.showBanking && (
-            <div style={{ marginTop: 6, color: '#555' }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method</div>
-          )}
-          {f.showThankYou && (
-            <div style={{ marginTop: 6, fontWeight: 600 }}>{f.thankYouText ?? 'Thank you for your business!'}</div>
+            <div style={{
+              marginTop: 6, color: '#555',
+              textAlign: f.qrPosition === 'left' ? 'left' : 'right',
+            }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method</div>
           )}
           {f.showTerms && (
             <div style={{ marginTop: 6, fontStyle: 'italic', color: '#666' }}>Terms &amp; Conditions apply.</div>
@@ -1452,7 +1461,10 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
             Two placeholder cards; real cards come from bank settings
             on the actual print. */}
         {f.showBanking && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 10, flexShrink: 0,
+            justifyContent: f.qrPosition === 'left' ? 'flex-start' : 'flex-end',
+          }}>
             {[0, 1].map(i => (
               <div
                 key={i}
@@ -1507,6 +1519,28 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           </div>
         );
       })()}
+
+      {/* Thank-you band — a page footer, so it is drawn at the foot of
+          the preview sheet rather than as a line inside Notes, which
+          is where it used to sit and is not where it prints. */}
+      {f.showThankYou !== false && (
+        <div style={{
+          marginTop: 'auto',
+          padding: '7px 10px',
+          background: h.headerBackgroundColor || '#F3EFE9',
+          display: 'flex', alignItems: 'baseline',
+          justifyContent: 'space-between', gap: 8,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {f.thankYouText ?? 'Thank you for your business!'}
+          </div>
+          {f.showPageName !== false && (
+            <div style={{ fontSize: 8, color: '#555' }}>
+              {(f.pageName ?? '').trim() || 'Company name'}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
