@@ -207,12 +207,19 @@ export function findQrRect(rgba: ArrayLike<number>, width: number, height: numbe
   if (!width || !height) return null;
 
   const bin = toBinary(rgba, width, height);
-  let box = boundsFromFinders(findFinders(bin, width, height));
+  const finders = findFinders(bin, width, height);
+  let box = boundsFromFinders(finders);
   let quiet: number;
 
   if (box) {
-    // 4 modules is the quiet zone the QR spec asks for.
-    const module = Math.max(box.w, box.h) / 25;
+    // 4 modules is the quiet zone the QR spec asks for. Take the
+    // module size from the finders themselves — an earlier version
+    // derived it from the code's width assuming 25 modules, which
+    // is only true of a version-2 QR. A real KHQR is version 7
+    // (45 modules), so that guess came out nearly twice too big;
+    // on a version-1 code it came out too small, which is the
+    // direction that actually costs scans.
+    const module = (finders[0].module + finders[1].module + finders[2].module) / 3;
     quiet = module * 4;
   } else {
     box = boundsFromDarkPixels(rgba, width, height);
