@@ -57,6 +57,8 @@ import { KdsOrderCard } from '../common/KdsOrderCard';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
 import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
 import { printPosReceipt } from '../../utils/posReceipt';
+import { invoiceTemplates } from '../../api/invoiceTemplates';
+import type { TemplateConfig } from '../../api/invoiceTemplates';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
 import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
 import {
@@ -291,6 +293,12 @@ export function POS() {
   // on the printed receipt so the tenant's contact info reaches the
   // customer without the operator hand-editing the POS Settings block.
   const [companyInfo, setCompanyInfo] = useState<companyApi.CompanyInfo | null>(null);
+  /* v-receipt-follows-template — the tenant's default RECEIPT
+   * template, which the printed receipt now follows. Null until it
+   * loads, and null forever for a tenant who has not made one; the
+   * builder treats that as "POS settings alone", which is how
+   * receipts printed before. */
+  const [receiptTpl, setReceiptTpl] = useState<TemplateConfig | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // V306 — Share to Kitchen dialog. Reached from a button inside
@@ -449,6 +457,11 @@ export function POS() {
         companyApi.getCompanyInfo()
           .then(setCompanyInfo)
           .catch(() => setCompanyInfo(null));
+        // Same fire-and-forget: 404 (no default receipt template) is
+        // the normal case, not an error.
+        invoiceTemplates.getDefault('receipt')
+          .then(t => setReceiptTpl(t.config))
+          .catch(() => setReceiptTpl(null));
         // Same fire-and-forget shape for warehouses — the filter chip
         // row hides itself when fewer than 2 warehouses exist, so a
         // fetch failure is silently equivalent to "feature off".
@@ -1972,6 +1985,7 @@ export function POS() {
         settings={posSettings}
         items={items}
         companyInfo={companyInfo}
+        receiptTpl={receiptTpl}
         customer={receipt?.customerId ? customers.find(c => c.id === receipt.customerId) ?? null : null}
         onClose={() => setReceipt(null)}
       />
@@ -3510,13 +3524,19 @@ interface ReceiptDialogProps {
    *  name on the receipt. Null when the fetch failed / isn't loaded
    *  yet; the receipt drops those lines silently. */
   companyInfo: companyApi.CompanyInfo | null;
+  /** v-receipt-follows-template — the tenant's default RECEIPT
+   *  template. Null when they have not made one, which the builder
+   *  reads as "POS settings alone", i.e. how receipts printed
+   *  before. Passed down rather than fetched here so one request
+   *  serves the page instead of one per sale. */
+  receiptTpl: TemplateConfig | null;
   /** The sale's customer record — its phone / address print on the
    *  receipt. Null for a walk-in or a name typed without a record. */
   customer: { phone?: string | null; address?: string | null } | null;
   onClose: () => void;
 }
 
-function PosReceiptDialog({ order, settings, items, companyInfo, customer, onClose }: ReceiptDialogProps) {
+function PosReceiptDialog({ order, settings, items, companyInfo, receiptTpl, customer, onClose }: ReceiptDialogProps) {
   // Auto-print once when the dialog first appears for a given order
   // and the tenant opted in. Tracking the last-printed id stops a
   // re-render from re-firing the print job.
@@ -3529,7 +3549,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, customer, onClo
     // Slight delay so the dialog has painted before window.open —
     // some browsers refuse a pop-up triggered mid-render.
     const t = setTimeout(() => {
-      const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined });
+      const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined, template: receiptTpl });
       if (!ok) toast.error('Could not open the print dialog.');
     }, 200);
     return () => clearTimeout(t);
@@ -3558,7 +3578,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, customer, onClo
 
         <DialogFooter>
           <Button variant="outline" onClick={() => {
-            const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined });
+            const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined, template: receiptTpl });
             if (!ok) toast.error('Could not open the print dialog.');
           }}>
             <Printer className="h-4 w-4 mr-1.5" /> Print

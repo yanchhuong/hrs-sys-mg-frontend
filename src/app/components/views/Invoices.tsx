@@ -2465,6 +2465,12 @@ function InvoiceDetailDialog({
    *  in that window (and permanently when the tenant has no custom
    *  default active). */
   const [invoiceTemplate, setInvoiceTemplate] = useState<InvoiceTemplate | null>(null);
+  /* v-receipt-follows-template — the RECEIPT template, for the
+   * "print as receipt" path below. Separate from the invoice one
+   * above: a tenant can run a different default per kind. Null when
+   * they have not made one, which the builder reads as "POS
+   * settings alone". */
+  const [receiptTemplate, setReceiptTemplate] = useState<TemplateConfig | null>(null);
   // Payments augmented with the source document they were recorded
   // against — so the unified table on a root invoice can show
   // payments + DN receipts + CN refunds in one chronological view.
@@ -2610,6 +2616,10 @@ function InvoiceDetailDialog({
         // own phone / address in the customer block.
         company: companyInfo,
         customer: customer ?? null,
+        // v-receipt-follows-template — a re-print from the invoice
+        // follows the same Receipt template the POS page uses, so
+        // the two produce the same document.
+        template: receiptTemplate,
       });
       if (!ok) toast.error('Could not open the print dialog.');
     } catch (e) {
@@ -2719,6 +2729,9 @@ function InvoiceDetailDialog({
   /** Fetch the active default template on mount. 404 → null → the
    *  print component uses the built-in config. */
   useEffect(() => {
+    invoiceTemplates.getDefault('receipt')
+      .then(t => setReceiptTemplate(t.config))
+      .catch(() => setReceiptTemplate(null));
     invoiceTemplates.getDefault('invoice')
       .then(setInvoiceTemplate)
       .catch(() => setInvoiceTemplate(null));

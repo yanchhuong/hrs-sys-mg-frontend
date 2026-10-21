@@ -15,6 +15,7 @@ import type { PosOrder } from '../api/pos';
 import type { AccountingSettings } from '../api/accountingSettings';
 import type { Item } from '../api/items';
 import { printHtmlViaIframe } from './printHtml';
+import type { TemplateConfig } from '../api/invoiceTemplates';
 
 function esc(s: string | null | undefined): string {
   if (s == null) return '';
@@ -58,6 +59,25 @@ interface BuildArgs {
    *  name). Each row prints only when filled in, so a walk-in looks as
    *  before. */
   customer?: { phone?: string | null; address?: string | null } | null;
+  /**
+   * v-receipt-follows-template — the tenant's default RECEIPT
+   * template.
+   *
+   * Until now nothing called getDefault('receipt'): a Receipt
+   * template could be configured, set as default and previewed, and
+   * no print path ever read it. The receipt was driven entirely by
+   * POS settings instead.
+   *
+   * Where the two describe the same thing the TEMPLATE wins — title,
+   * logo, company block, thank-you line, paper size. POS settings
+   * keep everything the template has no field for: the SKU prefix,
+   * the queue number, the cashier line, the PAID stamp.
+   *
+   * Null (no default receipt template saved) means POS settings
+   * alone, exactly as receipts printed before, so a tenant who never
+   * made one sees no change.
+   */
+  template?: TemplateConfig | null;
 }
 
 export function buildPosReceiptInner(args: BuildArgs): string {
@@ -90,7 +110,22 @@ export function buildPosReceiptInner(args: BuildArgs): string {
     : datePart;
   const shopName = (settings.posShopName ?? '').trim() || shopNameFallback || 'SHOP NAME';
 
-  const logo = (settings.posLogoUrl ?? '').trim()
+  /* The saved Receipt template. Each test below mirrors the one the
+   * thermal preview uses, so what the operator configured is what
+   * comes off the printer. With no template every old behaviour is
+   * kept verbatim — and there is no legacy to preserve for a tenant
+   * who HAS one, because this config has never reached a printer. */
+  const tpl = args.template ?? null;
+  const th  = tpl?.header ?? {};
+  const tf  = tpl?.footer ?? {};
+  const accent     = th.accentColor ?? '#dc2626';
+  const showLogo   = tpl ? !!th.showLogo : true;
+  const showCoBlk  = tpl ? th.showCompanyBlock !== false : true;
+  const titleText  = (th.title ?? '').trim() || 'Receipt';
+  const showThanks = tpl ? tf.showThankYou !== false : true;
+  const thanksText = (tf.thankYouText ?? '').trim() || 'Thank you!';
+
+  const logo = showLogo && (settings.posLogoUrl ?? '').trim()
     ? `<div class="logo-wrap"><img src="${esc(settings.posLogoUrl!)}" alt="" class="logo" /></div>`
     : '';
   const cashierParts: string[] = [];
@@ -108,7 +143,7 @@ export function buildPosReceiptInner(args: BuildArgs): string {
   // only when set (same order as the mobile receipt).
   const companyAddress = (company?.address ?? '').trim();
   const companyPhone = (company?.phone ?? '').trim();
-  const shopContact = [
+  const shopContact = !showCoBlk ? '' : [
     companyAddress ? `<div class="shop-sub">${esc(companyAddress)}</div>` : '',
     companyPhone ? `<div class="shop-sub">Tel: ${esc(companyPhone)}</div>` : '',
   ].join('');
@@ -188,10 +223,10 @@ export function buildPosReceiptInner(args: BuildArgs): string {
     : '';
 
   return `
-    <div class="receipt">
-      <div class="title">Receipt</div>
+    <div class="receipt" style="--rcpt-accent: ${esc(accent)}">
+      <div class="title">${esc(titleText)}</div>
       ${logo}
-      <div class="shop">${esc(shopName)}</div>
+      ${showCoBlk ? `<div class="shop">${esc(shopName)}</div>` : ''}
       ${shopContact}
       ${cashier}
 
@@ -223,17 +258,22 @@ export function buildPosReceiptInner(args: BuildArgs): string {
 
       ${stampRow}
 
-      <div class="thanks">Thank you!</div>
+      ${showThanks ? `<div class="thanks">${esc(thanksText)}</div>` : ''}
       ${queueFooter}
     </div>
   `;
 }
 
 function buildPosReceiptDoc(args: BuildArgs): string {
+  /* The template's paper wins when it names a roll width; otherwise
+   * the POS setting decides, as before. */
+  const tplPaper = args.template?.paperSize;
   const paper = args.settings.posPaperSize;
-  const pageCss = paper === 'thermal_80'
-    ? '@page { size: 80mm auto; margin: 4mm; }'
-    : `@page { size: ${paper.toUpperCase()}; margin: 10mm; }`;
+  const pageCss =
+      tplPaper === '58mm'    ? '@page { size: 58mm auto; margin: 3mm; }'
+    : tplPaper === '80mm'    ? '@page { size: 80mm auto; margin: 4mm; }'
+    : paper === 'thermal_80' ? '@page { size: 80mm auto; margin: 4mm; }'
+    :                          `@page { size: ${paper.toUpperCase()}; margin: 10mm; }`;
   const inner = buildPosReceiptInner(args);
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt</title>
@@ -259,7 +299,10 @@ function buildPosReceiptDoc(args: BuildArgs): string {
       .rule { border-top: 1px solid #e5e7eb; margin: 10px 0; }
 
       .big-total {
-        color: #dc2626;
+        /* v-receipt-follows-template — the template's accent, with
+           the old red as the fallback for any caller rendering this
+           markup without the custom property. */
+        color: var(--rcpt-accent, #dc2626);
         font-size: 24px;
         font-weight: 700;
         line-height: 1.1;
@@ -294,11 +337,11 @@ function buildPosReceiptDoc(args: BuildArgs): string {
         margin-top: 14px;
         min-height: 36px;
       }
-      .stamp-date { color: #dc2626; font-size: 11px; font-weight: 500; }
+      .stamp-date { color: var(--rcpt-accent, #dc2626); font-size: 11px; font-weight: 500; }
       .paid-stamp {
         display: inline-block;
-        border: 2px solid #ef4444;
-        color: #dc2626;
+        border: 2px solid var(--rcpt-accent, #ef4444);
+        color: var(--rcpt-accent, #dc2626);
         padding: 2px 12px;
         font-weight: 700;
         letter-spacing: 0.15em;
