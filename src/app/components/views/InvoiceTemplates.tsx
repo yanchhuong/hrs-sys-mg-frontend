@@ -1074,6 +1074,52 @@ function TemplateEditorDialog({
                         disabled={!config.footer?.showThankYou}
                       />
                     </div>
+
+                    {/* The thank-you prints as a band across the foot
+                        of the page; this is the small name at its other
+                        end. Tied to the thank-you toggle because there
+                        is no band to put it on without one. */}
+                    <SwitchRow
+                      label="Show name on the thank-you band"
+                      checked={config.footer?.showPageName !== false}
+                      onChange={v => patchFooter({ showPageName: v })}
+                      disabled={!config.footer?.showThankYou}
+                    />
+                    <div className="space-y-1">
+                      <Label className="text-xs">Band name</Label>
+                      <Input
+                        value={config.footer?.pageName ?? ''}
+                        placeholder="Company name"
+                        onChange={e => patchFooter({ pageName: e.target.value })}
+                        disabled={!config.footer?.showThankYou || config.footer?.showPageName === false}
+                      />
+                      <p className="text-[11px] text-gray-500">
+                        Blank uses the company name.
+                      </p>
+                    </div>
+
+                    {/* Which end the payment QR / bank cards sit at.
+                        Thermal receipts are too narrow to have a side,
+                        so the choice is Invoice-only. */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Payment QR position</Label>
+                      <Select
+                        value={config.footer?.qrPosition ?? 'right'}
+                        onValueChange={v => patchFooter({ qrPosition: v as 'left' | 'right' })}
+                        disabled={isReceipt || !config.footer?.showBanking}
+                      >
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="left">Left</SelectItem>
+                          <SelectItem value="right">Right</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {!isReceipt && !config.footer?.showBanking && (
+                        <p className="text-[11px] text-gray-500">
+                          Turn on banking / payment info to place the QR.
+                        </p>
+                      )}
+                    </div>
                     {/* Signature toggles — a POS thermal receipt never
                         has a hand-signature block, so both are forced
                         off + disabled on Receipt kind. On Invoice the

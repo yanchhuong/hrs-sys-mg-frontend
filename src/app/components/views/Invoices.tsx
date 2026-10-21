@@ -4029,7 +4029,13 @@ export function PrintTaxInvoice({
                 space on the LEFT, matching where the tenant expects
                 the "please pay here" panel. `banks` is already
                 capped at MAX_BANK_ACCOUNTS_ON_INVOICE (= 2). */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px', justifyContent: 'flex-end' }}>
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px',
+              // Template-driven. Defaults to the right, which is where
+              // these have always printed, so an untouched template is
+              // unchanged.
+              justifyContent: cfgFooter.qrPosition === 'left' ? 'flex-start' : 'flex-end',
+            }}>
               {banks.map(b => (
                 <div
                   key={b.id}
@@ -4094,9 +4100,6 @@ export function PrintTaxInvoice({
         {/* Template-configurable thank-you line + terms line. Both
             live under Notes so they end up near the bottom of the
             document without competing with banking. */}
-        {cfgFooter.showThankYou && (cfgFooter.thankYouText ?? '').trim() && (
-          <div style={{ marginTop: '8px', fontWeight: 600 }}>{cfgFooter.thankYouText}</div>
-        )}
         {cfgFooter.showTerms && (
           <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
             Terms &amp; Conditions apply.
@@ -4134,6 +4137,30 @@ export function PrintTaxInvoice({
           </div>
         );
       })()}
+
+      {/* Thank-you band — the foot of the page, not a line buried in
+          the notes. Sized and tinted like a letterhead sign-off: the
+          message at one end, who sent it at the other. Omitted whole
+          when the template turns the message off, so nothing prints
+          an empty stripe. */}
+      {cfgFooter.showThankYou !== false && !!((cfgFooter.thankYouText ?? '').trim()) && (
+        <div style={{
+          marginTop: '18px',
+          padding: '10px 14px',
+          background: cfgHeader.headerBackgroundColor || '#F3EFE9',
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: '12px',
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: 600 }}>{cfgFooter.thankYouText}</div>
+          {cfgFooter.showPageName !== false && (
+            <div style={{ fontSize: '10px', color: '#555', textAlign: 'right' }}>
+              {(cfgFooter.pageName ?? '').trim() || companyKh || companyEn}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
   // createPortal's return type changed between React 17 / 18 type defs

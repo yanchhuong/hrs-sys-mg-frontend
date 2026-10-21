@@ -88,6 +88,20 @@ export interface TemplateConfig {
     showCustomerSignature?: boolean;
     /** Seller signature block at the bottom. Default: true. */
     showSellerSignature?: boolean;
+    /**
+     * Which end of the page the payment QR / bank cards sit at.
+     * Default 'right', which is where they have always been — an
+     * existing template keeps its layout without being touched.
+     */
+    qrPosition?: 'left' | 'right';
+    /**
+     * The thank-you line is drawn as a tinted band across the foot
+     * of the page. This puts a small name at its other end, the way
+     * a printed letterhead signs off.
+     */
+    showPageName?: boolean;
+    /** Blank falls back to the company name. */
+    pageName?: string;
   };
 }
 
@@ -143,6 +157,8 @@ export function defaultTemplateConfig(): TemplateConfig {
       thankYouText: 'Thank you for your business!',
       showCustomerSignature: true,
       showSellerSignature: true,
+      qrPosition: 'right',
+      showPageName: true,
     },
   };
 }
