@@ -1188,7 +1188,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           <span className="flex flex-col items-center justify-center gap-1 w-full aspect-square border-2 border-dashed rounded-md text-gray-500 cursor-pointer hover:bg-gray-50">
                             <Upload className="h-5 w-5" />
                             <span className="text-xs">Upload KHQR</span>
-                            <span className="text-[10px]">PNG / JPG, &lt; 1 MB</span>
+                            <span className="text-[10px]">PNG / JPG · crop it next</span>
                           </span>
                         </label>
                       )}
