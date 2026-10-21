@@ -106,3 +106,22 @@ export function toBandTint(rgb: Rgb): string {
   const sat = Math.round(Math.min(s, 0.45) * 100);
   return `hsl(${Math.round(h)}, ${sat}%, 90%)`;
 }
+
+/**
+ * '#rgb' / '#rrggbb' → Rgb, or null if it isn't one.
+ *
+ * Added for the footer band's 'theme' mode: the template stores its
+ * accent as a hex string, and toBandTint works in Rgb. Returns null
+ * rather than black on a malformed value, so a bad colour falls
+ * through to the stock cream instead of printing a dark band.
+ */
+export function hexToRgb(hex: string): Rgb | null {
+  const h = hex.trim().replace(/^#/, '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  return {
+    r: parseInt(full.slice(0, 2), 16),
+    g: parseInt(full.slice(2, 4), 16),
+    b: parseInt(full.slice(4, 6), 16),
+  };
+}

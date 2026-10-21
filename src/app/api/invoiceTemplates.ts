@@ -49,10 +49,21 @@ export interface TemplateConfig {
     title?: string;
     /** Optional accent colour (hex) for header bar / dividers. */
     accentColor?: string;
-    /** Header strip background — dark theme when set. */
+    /**
+     * Explicit override for the thank-you band's background.
+     *
+     * No editor control writes this. It is kept so a config that
+     * already carries one still wins, but the band's 'theme' mode
+     * now tints accentColor, which IS settable. Before that it
+     * resolved to this field alone — and since nothing ever set it,
+     * "Template colour" quietly meant "the stock cream" for
+     * everyone.
+     *
+     * headerTextColor used to sit here too: no control wrote it and
+     * no renderer read it, so it was removed rather than left
+     * looking like a feature.
+     */
     headerBackgroundColor?: string;
-    /** Text colour when a dark background is used. */
-    headerTextColor?: string;
   };
   columns?: {
     /** Description column — renders item name on line 1 and its

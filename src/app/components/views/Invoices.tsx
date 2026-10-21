@@ -50,6 +50,7 @@ import * as paywayApi from '../../api/payway';
 import * as currencyApi from '../../api/currencySettings';
 import { invoiceTemplates, defaultTemplateConfig } from '../../api/invoiceTemplates';
 import { useLogoTint } from '../../utils/useLogoTint';
+import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
@@ -3647,7 +3648,9 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
         whiteSpace: 'nowrap',
       }}>{kh}</div>
       <div style={{
-        fontSize: '9px', color: '#555', display: 'block',
+        // v-print-accent — falls back to the old grey outside the
+        // print root, where the property is not defined.
+        fontSize: '9px', color: 'var(--tpl-accent, #555)', display: 'block',
         lineHeight: '12px', marginTop: '1px', whiteSpace: 'nowrap',
       }}>{en}</div>
     </div>
@@ -3694,7 +3697,15 @@ export function PrintTaxInvoice({
    * through the template's own colour to the stock cream and the
    * band is never left unpainted. */
   const logoTint = useLogoTint(company?.logoUrl, cfgFooter.bandColorMode === 'logo');
-  const bandBackground = logoTint || cfgHeader.headerBackgroundColor || '#F3EFE9';
+  /* Explicit override → a wash of the template's accent → the stock
+   * cream. The accent step is what makes "Template colour" mean
+   * anything: it is the one colour the editor actually exposes.
+   * Washed out rather than used raw — the band carries near-black
+   * text, and a saturated accent behind it is unreadable. A
+   * malformed hex gives null, not black, so it falls through. */
+  const accentRgb  = cfgHeader.accentColor ? hexToRgb(cfgHeader.accentColor) : null;
+  const accentTint = accentRgb ? toBandTint(accentRgb) : null;
+  const bandBackground = logoTint || cfgHeader.headerBackgroundColor || accentTint || '#F3EFE9';
   // Primary currency comes from the invoice itself (per-doc snapshot);
   // secondary comes from tenant settings so it can be USD/KHR/KRW.
   const primaryCode = invoice.currency || 'USD';
@@ -3758,9 +3769,23 @@ export function PrintTaxInvoice({
   // Banking gated by template config too — a receipt-style template
   // might switch it off even when the tenant has bank cards saved.
   const showBank = qrCards.length > 0 && cfgFooter.showBanking !== false;
+  /* v-print-accent — the template's accent colour, which the editor
+   * exposes and both previews already paint with, but no print path
+   * read: the printed document came out with grey sub-labels and
+   * black column headings whatever the operator picked.
+   *
+   * Published as a CSS custom property on the print root rather than
+   * threaded through all fourteen BiLabel call sites and the shared
+   * thStyle. Those read it through var() with their old values as
+   * the fallback, so anything rendering outside this root is
+   * unchanged. Same default as the preview, so the two agree. */
+  const accent = cfgHeader.accentColor ?? '#2563eb';
 
   const tree = (
     <div className="print-tax-invoice" style={{
+      // Custom property; cast because React's CSSProperties has no
+      // index signature for them.
+      ...({ '--tpl-accent': accent } as React.CSSProperties),
       fontSize: '12px',
       color: '#000',
       display: 'none',
@@ -4291,6 +4316,8 @@ const thStyle: React.CSSProperties = {
   textAlign: 'center',
   verticalAlign: 'middle',
   fontWeight: 600,
+  // v-print-accent — matches the preview's column headings.
+  color: 'var(--tpl-accent, #000)',
   boxSizing: 'border-box',
 };
 const tdStyle: React.CSSProperties = {

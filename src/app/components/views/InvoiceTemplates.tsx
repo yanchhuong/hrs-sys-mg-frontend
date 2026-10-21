@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useLogoTint } from '../../utils/useLogoTint';
+import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import { useCompanyLogo, useCompanyInfo } from '../../hooks/useCompanyLogo';
 import {
   invoiceTemplates, defaultTemplateConfig,
@@ -1300,7 +1301,15 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
    * is the thing being configured here. */
   const companyLogo = useCompanyLogo();
   const logoTint = useLogoTint(companyLogo, f.bandColorMode === 'logo');
-  const bandBackground = logoTint || h.headerBackgroundColor || '#F3EFE9';
+  /* Explicit override → a wash of the template's accent → the stock
+   * cream. The accent step is what makes "Template colour" mean
+   * anything: it is the one colour the editor actually exposes.
+   * Washed out rather than used raw — the band carries near-black
+   * text, and a saturated accent behind it is unreadable. A
+   * malformed hex gives null, not black, so it falls through. */
+  const accentRgb  = h.accentColor ? hexToRgb(h.accentColor) : null;
+  const accentTint = accentRgb ? toBandTint(accentRgb) : null;
+  const bandBackground = logoTint || h.headerBackgroundColor || accentTint || '#F3EFE9';
 
   /* Sample lines chosen to mirror the real invoice — bilingual
    * Khmer / English cells with USD unit prices, so the operator
