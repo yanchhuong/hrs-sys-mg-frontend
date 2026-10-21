@@ -1089,18 +1089,6 @@ function TemplateEditorDialog({
                       onChange={v => patchFooter({ showPageName: v })}
                       disabled={!config.footer?.showThankYou}
                     />
-                    <div className="space-y-1">
-                      <Label className="text-xs">Band name</Label>
-                      <Input
-                        value={config.footer?.pageName ?? ''}
-                        placeholder="Company name"
-                        onChange={e => patchFooter({ pageName: e.target.value })}
-                        disabled={!config.footer?.showThankYou || config.footer?.showPageName === false}
-                      />
-                      <p className="text-[11px] text-gray-500">
-                        Blank uses the company name.
-                      </p>
-                    </div>
 
                     {/* Where the band's colour comes from. 'Logo'
                         reads the brand hue off the company logo; it
@@ -1191,17 +1179,34 @@ function TemplateEditorDialog({
                       />
                     </div>
 
-                    {/* Last in the section, under its own rule: it is
-                        the words printed across the very foot of the
-                        page, so it reads in the order the page does.
-                        Still tied to the thank-you toggle above. */}
-                    <div className="space-y-1 pt-2 border-t mt-2">
-                      <Label className="text-xs">Thank-you text</Label>
-                      <Input
-                        value={config.footer?.thankYouText ?? ''}
-                        onChange={e => patchFooter({ thankYouText: e.target.value })}
-                        disabled={!config.footer?.showThankYou}
-                      />
+                    {/* Both of the band's wordings, last in the
+                        section under their own rule: the message at
+                        one end of the printed band and the name at
+                        the other. Kept together because they are
+                        edited together, and placed last so the panel
+                        reads in the order the page does. Both stay
+                        tied to the toggles above. */}
+                    <div className="space-y-3 pt-2 border-t mt-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Thank-you text</Label>
+                        <Input
+                          value={config.footer?.thankYouText ?? ''}
+                          onChange={e => patchFooter({ thankYouText: e.target.value })}
+                          disabled={!config.footer?.showThankYou}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Band name</Label>
+                        <Input
+                          value={config.footer?.pageName ?? ''}
+                          placeholder="Company name"
+                          onChange={e => patchFooter({ pageName: e.target.value })}
+                          disabled={!config.footer?.showThankYou || config.footer?.showPageName === false}
+                        />
+                        <p className="text-[11px] text-gray-500">
+                          Blank uses the company name.
+                        </p>
+                      </div>
                     </div>
                   </>
                 );
