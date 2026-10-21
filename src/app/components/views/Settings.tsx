@@ -5,7 +5,6 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ImageDropZone } from '../common/ImageDropZone';
-import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   Dialog,
@@ -15,11 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { mockAttendanceRules } from '../../data/settingsData';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import {
-  Settings as SettingsIcon, ShieldCheck, Save, 
+  Settings as SettingsIcon, Save, 
   AlertTriangle, 
   RefreshCw, KeyRound, Coins, Loader2, Info,
   Handshake, FileText, Building2, Search,
@@ -42,17 +40,6 @@ import { PageTitleTooltip } from './agency/PageTitleTooltip';
 export function Settings() {
   const { t } = useI18n();
   const { currentUser } = useAuth();
-  const rules = mockAttendanceRules;
-  const [activeRule, setActiveRule] = useState(rules[0]);
-
-  const handleSaveRule = () => {
-    toast.success('Attendance rules saved successfully');
-  };
-
-  const handleToggleMode = (mode: 'auto' | 'manual') => {
-    setActiveRule({ ...activeRule, otCalculationMode: mode });
-  };
-
   const isAdmin = currentUser?.role === 'admin';
 
   return (
@@ -75,10 +62,6 @@ export function Settings() {
             <KeyRound className="mr-2 h-4 w-4" />
             PayWay (ABA) Integration
           </TabsTrigger>
-          <TabsTrigger value="policy">
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            Policy
-          </TabsTrigger>
           <TabsTrigger value="agency">
             <Handshake className="mr-2 h-4 w-4" />
             Agency
@@ -87,120 +70,6 @@ export function Settings() {
 
         <TabsContent value="agency" className="space-y-6">
           <AgencyRequestTab />
-        </TabsContent>
-
-        <TabsContent value="policy" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Company Policy</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="checkIn">Standard Check-In Time</Label>
-                  <Input
-                    id="checkIn"
-                    type="time"
-                    value={activeRule.standardCheckIn}
-                    onChange={(e) =>
-                      setActiveRule({ ...activeRule, standardCheckIn: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="checkOut">Standard Check-Out Time</Label>
-                  <Input
-                    id="checkOut"
-                    type="time"
-                    value={activeRule.standardCheckOut}
-                    onChange={(e) =>
-                      setActiveRule({ ...activeRule, standardCheckOut: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="lateThreshold">Late Threshold (Minutes)</Label>
-                <Input
-                  id="lateThreshold"
-                  type="number"
-                  value={activeRule.lateThresholdMinutes}
-                  onChange={(e) =>
-                    setActiveRule({
-                      ...activeRule,
-                      lateThresholdMinutes: parseInt(e.target.value),
-                    })
-                  }
-                />
-                <p className="text-sm text-gray-500">
-                  Check-in after {activeRule.lateThresholdMinutes} minutes will be marked as late
-                </p>
-              </div>
-
-              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                <Label className="text-base font-semibold">Overtime Calculation Mode</Label>
-
-                <div className="space-y-3">
-                  <div
-                    className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer transition-all ${
-                      activeRule.otCalculationMode === 'auto'
-                        ? 'bg-blue-50 border-blue-500'
-                        : 'bg-white border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => handleToggleMode('auto')}
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">Factory Mode (Automatic)</p>
-                      <p className="text-sm text-gray-600">
-                        Auto-calculate OT based on late check-out. No approval needed.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={activeRule.otCalculationMode === 'auto'}
-                      onCheckedChange={() => handleToggleMode('auto')}
-                    />
-                  </div>
-
-                  <div
-                    className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer transition-all ${
-                      activeRule.otCalculationMode === 'manual'
-                        ? 'bg-blue-50 border-blue-500'
-                        : 'bg-white border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => handleToggleMode('manual')}
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">Office Mode (Manual Approval)</p>
-                      <p className="text-sm text-gray-600">
-                        Employees request OT and managers approve manually.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={activeRule.otCalculationMode === 'manual'}
-                      onCheckedChange={() => handleToggleMode('manual')}
-                    />
-                  </div>
-                </div>
-
-                {activeRule.otCalculationMode === 'auto' && (
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      <strong>Factory Mode Active:</strong> Any check-out time after{' '}
-                      {activeRule.standardCheckOut} will automatically count as overtime hours.
-                      Upload Excel files to batch import attendance records.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <Button onClick={handleSaveRule} className="w-full">
-                <Save className="mr-2 h-4 w-4" />
-                Save Policy
-              </Button>
-            </CardContent>
-          </Card>
-
         </TabsContent>
 
         <TabsContent value="company" className="space-y-6">
