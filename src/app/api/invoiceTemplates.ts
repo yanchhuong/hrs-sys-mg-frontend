@@ -102,6 +102,19 @@ export interface TemplateConfig {
     showPageName?: boolean;
     /** Blank falls back to the company name. */
     pageName?: string;
+    /**
+     * Where the band's background colour comes from.
+     *
+     * 'theme' (default) uses header.headerBackgroundColor, which is
+     * what it has always done. 'logo' samples the company logo and
+     * uses a pale wash of its dominant hue, so the footer matches the
+     * mark without anyone picking a hex by eye.
+     *
+     * 'logo' degrades to 'theme' on its own: a mono logo has no hue
+     * to take, and a logo pasted as a remote URL cannot be read off a
+     * canvas at all.
+     */
+    bandColorMode?: 'theme' | 'logo';
   };
 }
 
@@ -159,6 +172,7 @@ export function defaultTemplateConfig(): TemplateConfig {
       showSellerSignature: true,
       qrPosition: 'right',
       showPageName: true,
+      bandColorMode: 'theme',
     },
   };
 }

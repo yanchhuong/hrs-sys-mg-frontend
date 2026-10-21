@@ -49,6 +49,7 @@ import * as posApi from '../../api/pos';
 import * as paywayApi from '../../api/payway';
 import * as currencyApi from '../../api/currencySettings';
 import { invoiceTemplates, defaultTemplateConfig } from '../../api/invoiceTemplates';
+import { useLogoTint } from '../../utils/useLogoTint';
 import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates';
 import { formatMoneyForCurrency } from '../../utils/format';
 import {
@@ -3669,6 +3670,18 @@ export function PrintTaxInvoice({
   const cfgCols    = { ...defaults.columns,      ...(cfg.columns ?? {}) };
   const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
   const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
+
+  /* v-footer-logo-tint — the thank-you band's background colour.
+   *
+   * On 'logo' the dominant hue is read off the company mark and
+   * washed out to a pale tint, so the band matches the brand without
+   * anyone picking a hex by eye. The hook returns null whenever
+   * there is nothing to take a colour from — no logo, a mono logo, a
+   * remote logo URL that taints the canvas — so the chain falls back
+   * through the template's own colour to the stock cream and the
+   * band is never left unpainted. */
+  const logoTint = useLogoTint(company?.logoUrl, cfgFooter.bandColorMode === 'logo');
+  const bandBackground = logoTint || cfgHeader.headerBackgroundColor || '#F3EFE9';
   // Primary currency comes from the invoice itself (per-doc snapshot);
   // secondary comes from tenant settings so it can be USD/KHR/KRW.
   const primaryCode = invoice.currency || 'USD';
@@ -4207,7 +4220,7 @@ export function PrintTaxInvoice({
           // thing CSS can express.
           marginTop: 'auto',
           padding: '10px 14px',
-          background: cfgHeader.headerBackgroundColor || '#F3EFE9',
+          background: bandBackground,
           display: 'flex',
           alignItems: 'baseline',
           justifyContent: 'space-between',

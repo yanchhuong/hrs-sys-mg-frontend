@@ -19,6 +19,8 @@ import {
   Info,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { useLogoTint } from '../../utils/useLogoTint';
+import { useCompanyLogo } from '../../hooks/useCompanyLogo';
 import {
   invoiceTemplates, defaultTemplateConfig,
 } from '../../api/invoiceTemplates';
@@ -1098,6 +1100,29 @@ function TemplateEditorDialog({
                       </p>
                     </div>
 
+                    {/* Where the band's colour comes from. 'Logo'
+                        reads the brand hue off the company logo; it
+                        quietly stays on the template colour when the
+                        logo has no colour to give (a black-and-white
+                        mark) or cannot be read. */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Band colour</Label>
+                      <Select
+                        value={config.footer?.bandColorMode ?? 'theme'}
+                        onValueChange={v => patchFooter({ bandColorMode: v as 'theme' | 'logo' })}
+                        disabled={!config.footer?.showThankYou}
+                      >
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="theme">Template colour</SelectItem>
+                          <SelectItem value="logo">From company logo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-gray-500">
+                        A logo with no colour in it keeps the template colour.
+                      </p>
+                    </div>
+
                     {/* Which end the payment QR / bank cards sit at.
                         Thermal receipts are too narrow to have a side,
                         so the choice is Invoice-only. */}
@@ -1208,6 +1233,15 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
   const c = config.columns ?? {};
   const l = config.columnLabels ?? {};
   const f = config.footer  ?? {};
+
+  /* The same chain the printed document uses, fed the same logo, so
+   * the band previews in the colour it will actually print. The
+   * header above still draws a dashed LOGO placeholder — the preview
+   * is about layout — but the colour is the real one, because that
+   * is the thing being configured here. */
+  const companyLogo = useCompanyLogo();
+  const logoTint = useLogoTint(companyLogo, f.bandColorMode === 'logo');
+  const bandBackground = logoTint || h.headerBackgroundColor || '#F3EFE9';
 
   /* Sample lines chosen to mirror the real invoice — bilingual
    * Khmer / English cells with USD unit prices, so the operator
@@ -1527,7 +1561,7 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         <div style={{
           marginTop: 'auto',
           padding: '7px 10px',
-          background: h.headerBackgroundColor || '#F3EFE9',
+          background: bandBackground,
           display: 'flex', alignItems: 'baseline',
           justifyContent: 'space-between', gap: 8,
         }}>
