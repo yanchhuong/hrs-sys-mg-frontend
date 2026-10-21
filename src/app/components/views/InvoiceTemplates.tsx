@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useLogoTint } from '../../utils/useLogoTint';
-import { useCompanyLogo } from '../../hooks/useCompanyLogo';
+import { useCompanyLogo, useCompanyInfo } from '../../hooks/useCompanyLogo';
 import {
   invoiceTemplates, defaultTemplateConfig,
 } from '../../api/invoiceTemplates';
@@ -1515,7 +1515,15 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         display: 'flex', gap: 12, alignItems: 'flex-start',
         flexDirection: f.qrPosition === 'left' ? 'row-reverse' : 'row',
       }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Aligned to the outer edge, away from the QR: the
+              column is flex: 1, so without this the text starts
+              against the gap between the two blocks and a short
+              note reads as floating mid-page. Flips with the QR
+              so each block sits on its own margin. */}
+        <div style={{
+          flex: 1, minWidth: 0,
+          textAlign: f.qrPosition === 'left' ? 'right' : 'left',
+        }}>
           {f.showNotes !== false && (
             <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
           )}
@@ -1641,6 +1649,7 @@ function ThermalReceiptPreview({ config, paperSize }: { config: TemplateConfig; 
   const c = config.columns ?? {};
   const f = config.footer  ?? {};
   const accent = h.accentColor ?? '#dc2626';
+  const company = useCompanyInfo();
 
   // Width matches the physical paper (approx px = mm * 3). We render
   // the strip on a light gray canvas so the operator can see the
@@ -1703,8 +1712,18 @@ function ThermalReceiptPreview({ config, paperSize }: { config: TemplateConfig; 
           <div style={{ fontSize: 13 }}>{h.title || 'Receipt'}</div>
           {h.showCompanyBlock !== false && (
             <>
-              <div style={{ fontWeight: 700, marginTop: 2 }}>SHOP NAME</div>
-              <div style={{ color: '#555', fontSize: 10 }}>Cashier: Chheng Udam</div>
+              <div style={{ fontWeight: 700, marginTop: 2 }}>{company?.name?.trim() || 'SHOP NAME'}</div>
+              {/* The company's own contact — address then phone, as the
+                  printed receipts carry it. Real values when set in
+                  Settings → Company, otherwise a sample so the operator
+                  sees where they go. */}
+              <div style={{ color: '#444', fontSize: 9, whiteSpace: 'pre-line', lineHeight: 1.35, marginTop: 1 }}>
+                {company?.address?.trim() || '#12, St. 271, Phnom Penh'}
+              </div>
+              <div style={{ color: '#444', fontSize: 9 }}>
+                Tel: {company?.phone?.trim() || '012 345 678'}
+              </div>
+              <div style={{ color: '#555', fontSize: 10, marginTop: 2 }}>Cashier: Chheng Udam</div>
             </>
           )}
         </div>
@@ -1716,14 +1735,21 @@ function ThermalReceiptPreview({ config, paperSize }: { config: TemplateConfig; 
 
         {/* Meta lines */}
         <div style={{ marginTop: 8, fontSize: 10, lineHeight: 1.55 }}>
+          {/* Customer name, then their phone / address (printed only when
+              the customer record has them). The date isn't repeated —
+              it sits once under the total. */}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Customer</span><span>—</span>
+            <span>Customer</span><span>Sok Dara</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Phone</span><span>098 765 432</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ flexShrink: 0 }}>Address</span>
+            <span style={{ textAlign: 'right' }}>#45, St. 63, Boeng Keng Kang, Phnom Penh</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Receipt No</span><span>#002</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Date</span><span>07/20/2026 · 01:54 PM</span>
           </div>
         </div>
 

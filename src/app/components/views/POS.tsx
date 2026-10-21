@@ -1972,6 +1972,7 @@ export function POS() {
         settings={posSettings}
         items={items}
         companyInfo={companyInfo}
+        customer={receipt?.customerId ? customers.find(c => c.id === receipt.customerId) ?? null : null}
         onClose={() => setReceipt(null)}
       />
 
@@ -3509,10 +3510,13 @@ interface ReceiptDialogProps {
    *  name on the receipt. Null when the fetch failed / isn't loaded
    *  yet; the receipt drops those lines silently. */
   companyInfo: companyApi.CompanyInfo | null;
+  /** The sale's customer record — its phone / address print on the
+   *  receipt. Null for a walk-in or a name typed without a record. */
+  customer: { phone?: string | null; address?: string | null } | null;
   onClose: () => void;
 }
 
-function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: ReceiptDialogProps) {
+function PosReceiptDialog({ order, settings, items, companyInfo, customer, onClose }: ReceiptDialogProps) {
   // Auto-print once when the dialog first appears for a given order
   // and the tenant opted in. Tracking the last-printed id stops a
   // re-render from re-firing the print job.
@@ -3525,18 +3529,19 @@ function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: Rece
     // Slight delay so the dialog has painted before window.open —
     // some browsers refuse a pop-up triggered mid-render.
     const t = setTimeout(() => {
-      const ok = printPosReceipt({ order, settings, items });
+      const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined });
       if (!ok) toast.error('Could not open the print dialog.');
     }, 200);
     return () => clearTimeout(t);
-  }, [order, settings, items]);
+  }, [order, settings, items, companyInfo, customer]);
 
   if (!order) return null;
 
   const when = new Date(order.checkedOutAt ?? order.createdAt);
   const datePart = when.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timePart = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
-  const shopName = settings.posShopName?.trim() || 'SHOP NAME';
+  // No POS shop name set → the company's own name, as the printout uses.
+  const shopName = settings.posShopName?.trim() || companyInfo?.name?.trim() || 'SHOP NAME';
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
@@ -3548,12 +3553,12 @@ function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: Rece
 
         <PosReceiptBody order={order} settings={settings} items={items}
                         shopName={shopName}
-                        companyInfo={companyInfo}
+                        companyInfo={companyInfo} customer={customer}
                         datePart={datePart} timePart={timePart} />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => {
-            const ok = printPosReceipt({ order, settings, items });
+            const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined });
             if (!ok) toast.error('Could not open the print dialog.');
           }}>
             <Printer className="h-4 w-4 mr-1.5" /> Print
@@ -3572,7 +3577,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, onClose }: Rece
  *  shape used for both the in-dialog preview and the print window
  *  (innerHTML copy). */
 function PosReceiptBody({
-  order, settings, items, shopName, companyInfo, datePart, timePart,
+  order, settings, items, shopName, companyInfo, customer, datePart, timePart,
 }: {
   order: PosOrder;
   settings: settingsApi.AccountingSettings;
@@ -3582,6 +3587,7 @@ function PosReceiptBody({
    *  printed receipt carries the same contact block that appears on
    *  the invoice PDF. Optional; the rows drop when unset. */
   companyInfo: companyApi.CompanyInfo | null;
+  customer?: { phone?: string | null; address?: string | null } | null;
   datePart: string;
   timePart: string;
 }) {
@@ -3612,7 +3618,7 @@ function PosReceiptBody({
       )}
       {(companyInfo?.phone ?? '').trim() && (
         <div className="text-center text-xs text-gray-600 mt-0.5 tabular-nums">
-          {companyInfo!.phone}
+          Tel: {companyInfo!.phone}
         </div>
       )}
       {cashierParts && (
@@ -3632,13 +3638,24 @@ function PosReceiptBody({
           <span className="text-gray-500">Customer</span>
           <span className="font-medium truncate">{customerName}</span>
         </div>
+        {/* The customer record's phone / address — each only when set,
+            so a walk-in reads as before. The date isn't repeated: it is
+            printed once, under the total. */}
+        {(customer?.phone ?? '').trim() && (
+          <div className="flex justify-between gap-2">
+            <span className="text-gray-500">Phone</span>
+            <span className="font-medium tabular-nums">{customer!.phone}</span>
+          </div>
+        )}
+        {(customer?.address ?? '').trim() && (
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500 shrink-0">Address</span>
+            <span className="font-medium text-right whitespace-pre-line break-words">{customer!.address}</span>
+          </div>
+        )}
         <div className="flex justify-between gap-2">
           <span className="text-gray-500">Receipt No.</span>
           <span className="font-medium">{receiptNo}</span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-gray-500">Date</span>
-          <span className="font-medium">{datePart}</span>
         </div>
       </div>
 

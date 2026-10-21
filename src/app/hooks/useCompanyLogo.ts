@@ -16,22 +16,29 @@
 import { useEffect, useState } from 'react';
 import * as settingsApi from '../api/settings';
 
-let cached: Promise<string | null> | null = null;
+// One cached company record shared by both hooks below, so the previews
+// that want the logo and the ones that want address / phone (the
+// thermal receipt) still make a single request.
+let cached: Promise<settingsApi.CompanyInfo | null> | null = null;
 
-function loadLogo(): Promise<string | null> {
-  // Soft-fail: a preview without a logo is a preview, not an error.
-  cached ??= settingsApi.getCompanyInfo()
-    .then(info => info.logoUrl ?? null)
-    .catch(() => null);
+function loadCompany(): Promise<settingsApi.CompanyInfo | null> {
+  // Soft-fail: a preview without company details is a preview, not an error.
+  cached ??= settingsApi.getCompanyInfo().catch(() => null);
   return cached;
 }
 
-export function useCompanyLogo(): string | null {
-  const [logo, setLogo] = useState<string | null>(null);
+/** The whole company record (name, address, phone, logo…) — null until
+ *  loaded or when the fetch failed. */
+export function useCompanyInfo(): settingsApi.CompanyInfo | null {
+  const [info, setInfo] = useState<settingsApi.CompanyInfo | null>(null);
   useEffect(() => {
     let live = true;
-    void loadLogo().then(url => { if (live) setLogo(url); });
+    void loadCompany().then(c => { if (live) setInfo(c); });
     return () => { live = false; };
   }, []);
-  return logo;
+  return info;
+}
+
+export function useCompanyLogo(): string | null {
+  return useCompanyInfo()?.logoUrl ?? null;
 }

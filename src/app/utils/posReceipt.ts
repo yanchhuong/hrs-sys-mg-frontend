@@ -51,10 +51,17 @@ interface BuildArgs {
    *  or undefined → fall back to the order's checkout date. Accepts
    *  an ISO YYYY-MM-DD string or a Date. */
   paidDateOverride?: string | Date | null;
+  /** The company's own address / phone, printed under the shop name so
+   *  the receipt says who issued it and how to reach them. */
+  company?: { address?: string | null; phone?: string | null } | null;
+  /** The customer RECORD's phone / address (a POS order carries only a
+   *  name). Each row prints only when filled in, so a walk-in looks as
+   *  before. */
+  customer?: { phone?: string | null; address?: string | null } | null;
 }
 
 export function buildPosReceiptInner(args: BuildArgs): string {
-  const { order, settings, items, shopNameFallback, issueDateOverride, paidDateOverride } = args;
+  const { order, settings, items, shopNameFallback, issueDateOverride, paidDateOverride, company, customer } = args;
   const when = new Date(order.checkedOutAt ?? order.createdAt);
   // Time portion — always from the transaction (checkedOutAt). The
   // date can drift (via edited issueDate or backdated payment) but
@@ -97,10 +104,31 @@ export function buildPosReceiptInner(args: BuildArgs): string {
   const seq = String(order.queueSeq).padStart(3, '0');
   const receiptNo = `#${seq}`;
 
+  // Company contact under the shop name — address, then phone, each
+  // only when set (same order as the mobile receipt).
+  const companyAddress = (company?.address ?? '').trim();
+  const companyPhone = (company?.phone ?? '').trim();
+  const shopContact = [
+    companyAddress ? `<div class="shop-sub">${esc(companyAddress)}</div>` : '',
+    companyPhone ? `<div class="shop-sub">Tel: ${esc(companyPhone)}</div>` : '',
+  ].join('');
+
+  // Customer phone / address rows. An address may run long, so its
+  // value wraps instead of being cut at the paper edge. The date is
+  // printed once, under the big total — not repeated here.
+  const custPhone = (customer?.phone ?? '').trim();
+  const custAddress = (customer?.address ?? '').trim();
+  const phoneRow = custPhone
+    ? `<div class="kv"><span class="kv-k">Phone</span><span class="kv-v">${esc(custPhone)}</span></div>`
+    : '';
+  const addressRow = custAddress
+    ? `<div class="kv"><span class="kv-k">Address</span><span class="kv-v kv-wrap">${esc(custAddress)}</span></div>`
+    : '';
   const customerBlock = `
     <div class="kv"><span class="kv-k">Customer</span><span class="kv-v">${esc(customerName || '—')}</span></div>
+    ${phoneRow}
+    ${addressRow}
     <div class="kv"><span class="kv-k">Receipt No</span><span class="kv-v">${receiptNo}</span></div>
-    <div class="kv"><span class="kv-k">Date</span><span class="kv-v">${esc(datePart)} · ${esc(timePart)}</span></div>
   `;
 
   const lines = order.items.map(i => {
@@ -164,6 +192,7 @@ export function buildPosReceiptInner(args: BuildArgs): string {
       <div class="title">Receipt</div>
       ${logo}
       <div class="shop">${esc(shopName)}</div>
+      ${shopContact}
       ${cashier}
 
       <div class="rule"></div>
@@ -224,6 +253,7 @@ function buildPosReceiptDoc(args: BuildArgs): string {
       .logo-wrap { text-align: center; margin: 6px 0 4px; }
       .logo { max-height: 56px; max-width: 100%; object-fit: contain; }
       .shop { text-align: center; font-weight: 700; margin-top: 4px; }
+      .shop-sub { text-align: center; font-size: 10px; color: #4b5563; margin-top: 1px; white-space: pre-line; }
       .cashier { text-align: center; font-size: 10px; color: #6b7280; margin-top: 2px; }
 
       .rule { border-top: 1px solid #e5e7eb; margin: 10px 0; }
@@ -240,6 +270,7 @@ function buildPosReceiptDoc(args: BuildArgs): string {
       .customer .kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 2px 0; }
       .customer .kv-k { color: #6b7280; }
       .customer .kv-v { color: #111827; text-align: right; }
+      .customer .kv-wrap { white-space: pre-wrap; word-break: break-word; max-width: 62%; }
 
       .th { display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; color: #111827; }
       .th-rule { border-top: 1px solid #111827; margin: 2px 0 6px; }

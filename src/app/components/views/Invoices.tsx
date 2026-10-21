@@ -2605,6 +2605,10 @@ function InvoiceDetailDialog({
         // receipt matches what the operator sees on the invoice.
         issueDateOverride: inv.issueDate ?? null,
         paidDateOverride: paidWhen ?? null,
+        // Company address / phone under the shop name; the customer's
+        // own phone / address in the customer block.
+        company: companyInfo,
+        customer: customer ?? null,
       });
       if (!ok) toast.error('Could not open the print dialog.');
     } catch (e) {
@@ -4085,7 +4089,15 @@ export function PrintTaxInvoice({
         gap: '16px',
       }}>
         {/* Notes column */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Aligned to the outer edge, away from the QR: the
+              column is flex: 1, so without this the text starts
+              against the gap between the two blocks and a short
+              note reads as floating mid-page. Flips with the QR
+              so each block sits on its own margin. */}
+        <div style={{
+          flex: 1, minWidth: 0,
+          textAlign: cfgFooter.qrPosition === 'left' ? 'right' : 'left',
+        }}>
           {/* The notes block is the heading plus the document's own
               notes. The exchange rate below is not part of it — the
               invoice has to state the rate whatever the template
