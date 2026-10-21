@@ -67,6 +67,7 @@ import { useForwardShare } from '../common/ForwardShareDialog';
 import * as telegramApi from '../../api/telegram';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
+import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -2474,6 +2475,7 @@ function InvoiceDetailDialog({
   // Payments augmented with the source document they were recorded
   // against — so the unified table on a root invoice can show
   // payments + DN receipts + CN refunds in one chronological view.
+  const confirm = useConfirm();
   type LedgerPayment = paymentsApi.Payment & {
     documentNo: string;
     documentKind: invoicesApi.InvoiceKind;
@@ -3386,8 +3388,17 @@ function InvoiceDetailDialog({
                               <Button
                                 size="sm" variant="ghost"
                                 className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"
-                                onClick={() => doAction('Payment removed',
-                                  () => paymentsApi.remove(p.id))}
+                                onClick={async () => {
+                                  // Removing a payment changes the balance — never on one click.
+                                  if (!(await confirm({
+                                    title: 'Delete this payment?',
+                                    message: `${fmtMoney(p.amount, p.currency)}${p.paymentDate ? ` on ${p.paymentDate}` : ''} is taken off this invoice and the balance goes back up by that amount. This can't be undone.`,
+                                    confirmLabel: 'Delete',
+                                    variant: 'destructive',
+                                  }))) return;
+                                  void doAction('Payment removed', () => paymentsApi.remove(p.id));
+                                }}
+                                disabled={busy}
                                 title="Delete payment"
                               >
                                 <Trash2 className="h-3 w-3" />

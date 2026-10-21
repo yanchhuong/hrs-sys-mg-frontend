@@ -33,6 +33,7 @@ import {
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Copy, Plus, Ban, Trash2, Smartphone, Globe, Building2, Info } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '../../../context/ConfirmContext';
 import * as appKeysApi from '../../../api/platformMobileAppKeys';
 import type { MobileAppKey, TenantEmailDomain } from '../../../api/platformMobileAppKeys';
 import * as platformApi from '../../../api/platform';
@@ -47,6 +48,7 @@ const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' }) : '—';
 
 export function MobileAppKeys() {
+  const confirm = useConfirm();
   const [keys, setKeys] = useState<MobileAppKey[]>([]);
   const [domains, setDomains] = useState<TenantEmailDomain[]>([]);
   const [tenants, setTenants] = useState<PlatformTenant[]>([]);
@@ -156,6 +158,12 @@ export function MobileAppKeys() {
   };
 
   const dropDomain = async (d: TenantEmailDomain) => {
+    if (!(await confirm({
+      title: `Remove ${d.domain}?`,
+      message: `Users signing in with an @${d.domain} email will no longer be routed to this company automatically.`,
+      confirmLabel: 'Remove',
+      variant: 'destructive',
+    }))) return;
     try {
       await appKeysApi.removeDomain(d.id);
       setDomains(prev => prev.filter(x => x.id !== d.id));

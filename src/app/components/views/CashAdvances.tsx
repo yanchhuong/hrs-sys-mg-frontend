@@ -977,7 +977,15 @@ function CashAdvanceDetailDialog({
                         <Button
                           size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
                           disabled={busy}
-                          onClick={() => void action(() => cashAdvancesApi.deleteExpense(e.id), 'Receipt deleted')}
+                          onClick={async () => {
+                            if (!(await confirm({
+                              title: 'Remove this receipt?',
+                              message: `${e.receiptNo ? `Receipt ${e.receiptNo}, ` : ''}${fmtMoney(Math.abs(Number(e.amount)), e.currency)}, is removed from this advance. This can't be undone.`,
+                              confirmLabel: 'Remove',
+                              variant: 'destructive',
+                            }))) return;
+                            void action(() => cashAdvancesApi.deleteExpense(e.id), 'Receipt deleted');
+                          }}
                           title="Remove receipt"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

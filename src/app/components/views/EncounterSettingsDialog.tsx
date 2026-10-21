@@ -14,6 +14,7 @@ import {
   Loader2, Upload, Trash2, Image as ImageIcon, Building2, Hash, Plus, Pencil, Check, X, Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import * as attachmentsApi from '../../api/attachments';
@@ -49,6 +50,7 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }) {
+  const confirm = useConfirm();
   const { currentUser } = useAuth();
   const tenantId = currentUser?.tenantId ?? null;
 
@@ -161,6 +163,12 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
 
   const removeLogo = async () => {
     if (!logo) return;
+    if (!(await confirm({
+      title: 'Remove the logo?',
+      message: 'Printed documents go back to showing no logo.',
+      confirmLabel: 'Remove',
+      variant: 'destructive',
+    }))) return;
     try {
       await attachmentsApi.remove(logo.id);
       setLogo(null);
