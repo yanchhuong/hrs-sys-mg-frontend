@@ -1115,22 +1115,6 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     <div key={b.id} className={`border rounded-lg p-2 bg-white space-y-1.5 relative ${
                       checked ? 'ring-2 ring-blue-200 border-blue-300' : ''
                     }`}>
-                      <label className={`flex items-center gap-2 text-[11px] ${
-                        disableShowOnInvoice ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer'
-                      }`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disableShowOnInvoice || loading || saving}
-                          onChange={e => updateBank(b.id, { showOnInvoice: e.target.checked })}
-                          className="h-3.5 w-3.5"
-                        />
-                        <span className="font-medium">Show on invoice</span>
-                        {disableShowOnInvoice && (
-                          <span className="text-[10px] text-gray-400">(limit {MAX_BANK_ACCOUNTS_ON_INVOICE} reached)</span>
-                        )}
-                      </label>
-
                       {/* Image area — only when mode='manual'. In
                        *  'auto' mode we show a "PayWay will mint a
                        *  dynamic QR per sale" hint instead so the
@@ -1244,6 +1228,22 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           className="text-xs h-8"
                         />
                       </div>
+
+                      <label className={`flex items-center gap-2 text-[11px] ${
+                        disableShowOnInvoice ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 cursor-pointer'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disableShowOnInvoice || loading || saving}
+                          onChange={e => updateBank(b.id, { showOnInvoice: e.target.checked })}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="font-medium">Show on invoice</span>
+                        {disableShowOnInvoice && (
+                          <span className="text-[10px] text-gray-400">(limit {MAX_BANK_ACCOUNTS_ON_INVOICE} reached)</span>
+                        )}
+                      </label>
 
                       <button
                         type="button"
