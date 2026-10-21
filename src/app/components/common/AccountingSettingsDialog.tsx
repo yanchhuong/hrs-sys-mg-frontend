@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins, Gift, Percent as PercentIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
-import { findQrRect } from '../../utils/qrCrop';
+import { QrCropDialog } from './QrCropDialog';
 import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
@@ -86,55 +86,6 @@ function HelpHint({ children }: { children: React.ReactNode }) {
       </Tooltip>
     </TooltipProvider>
   );
-}
-
-/** Auto-crop an uploaded KHQR image to just the QR square, dropping
- *  the surrounding red brand frame. We classify a pixel as "QR ink"
- *  when all three RGB channels are below 100 — that catches the QR's
- *  neutral-black squares and the center-mark outline without being
- *  fooled by the saturated red frame (R≥150, G/B≈0). The bounding box
- *  of those pixels is the QR's body; we pad by 4% to preserve the
- *  quiet zone, snap to a square (max(w,h)), and re-encode as PNG.
- *
- *  Falls back to the original on any failure (cross-origin canvas
- *  taint, decode error, image without enough dark pixels). */
-async function cropToQrSquare(dataUrl: string): Promise<string> {
-  const img: HTMLImageElement = await new Promise((resolve, reject) => {
-    const el = new Image();
-    el.onload  = () => resolve(el);
-    el.onerror = () => reject(new Error('decode failed'));
-    el.src = dataUrl;
-  });
-  const W = img.naturalWidth;
-  const H = img.naturalHeight;
-  if (!W || !H) return dataUrl;
-
-  const src = document.createElement('canvas');
-  src.width  = W;
-  src.height = H;
-  const sctx = src.getContext('2d', { willReadFrequently: true });
-  if (!sctx) return dataUrl;
-  sctx.drawImage(img, 0, 0);
-
-  // v-qr-crop-finders — where the QR is, not where the ink is. The
-  // old code took the bounding box of every dark pixel, which on a
-  // banking-app screenshot is the whole screenshot. findQrRect looks
-  // for the three finder patterns first and only falls back to the
-  // dark-pixel box when it cannot see a code.
-  const rect = findQrRect(sctx.getImageData(0, 0, W, H).data, W, H);
-  if (!rect) return dataUrl;
-
-  const out = document.createElement('canvas');
-  out.width  = rect.w;
-  out.height = rect.h;
-  const octx = out.getContext('2d');
-  if (!octx) return dataUrl;
-  // White behind it: the source may be transparent, and a QR on a
-  // transparent background prints as nothing.
-  octx.fillStyle = '#ffffff';
-  octx.fillRect(0, 0, rect.w, rect.h);
-  octx.drawImage(src, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
-  return out.toDataURL('image/png');
 }
 
 /** "x time ago" formatter — small + dependency-free. Falls back to
@@ -384,11 +335,18 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are
    *  ~30 KB; anything bigger is almost certainly a wrong file.
    *
-   *  After load we auto-crop to the QR square — see {@link cropToQrSquare} —
-   *  so the saved image is just the QR pattern, not the surrounding red
-   *  KHQR brand frame. The print template wraps it in its own
-   *  bank-name / account-number layout, so a second branded frame
-   *  inside ours would look amateur. */
+   *  What gets SAVED is the crop the operator confirms in
+   *  QrCropDialog: just the QR pattern, not the red KHQR brand frame
+   *  around it, because the print template wraps it in its own
+   *  bank-name / account-number layout and a second branded frame
+   *  inside ours would look amateur.
+   *
+   *  v-qr-crop-box — the picked file opens that dialog rather
+   * than being cropped silently and saved. The detector still does
+   * the work; it now positions a box the operator can see and
+   * correct, because a crop that lands in the wrong place is only
+   * discovered by a customer who cannot pay. */
+  const [cropFor, setCropFor] = useState<{ id: string; src: string } | null>(null);
   const handleQrUpload = (id: string, file: File) => {
     if (file.size > 1024 * 1024) {
       toast.error('Image too large — keep KHQR under 1 MB');
@@ -399,21 +357,13 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       return;
     }
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const raw = String(reader.result || '');
       if (!raw) {
         toast.error('Could not read image');
         return;
       }
-      try {
-        const cropped = await cropToQrSquare(raw);
-        updateBank(id, { qrDataUrl: cropped });
-      } catch {
-        // Cropping is opportunistic — if anything fails (canvas
-        // tainted, image decode error, …) fall through to the
-        // original so the operator still sees their upload.
-        updateBank(id, { qrDataUrl: raw });
-      }
+      setCropFor({ id, src: raw });
     };
     reader.onerror = () => toast.error('Could not read image');
     reader.readAsDataURL(file);
@@ -1481,6 +1431,18 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
         open={paywayDialogOpen}
         onOpenChange={setPaywayDialogOpen}
         onSaved={next => setPaywayStatus(next)}
+      />
+
+      {/* v-qr-crop-box — opens on a picked file, saves the square the
+          operator confirms. Nothing is written to the card until
+          then, so cancelling leaves the previous QR in place. */}
+      <QrCropDialog
+        src={cropFor?.src ?? null}
+        onCancel={() => setCropFor(null)}
+        onConfirm={dataUrl => {
+          if (cropFor) updateBank(cropFor.id, { qrDataUrl: dataUrl });
+          setCropFor(null);
+        }}
       />
     </Dialog>
   );
