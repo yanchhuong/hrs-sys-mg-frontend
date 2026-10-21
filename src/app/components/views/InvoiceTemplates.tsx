@@ -1056,6 +1056,17 @@ function TemplateEditorDialog({
                       disabled={isReceipt}
                       title={noThermal}
                     />
+                    {/* The Notes heading + the document's own notes.
+                        The exchange rate shares that column and is
+                        not covered: an invoice states its rate
+                        whatever the template says about notes. */}
+                    <SwitchRow
+                      label="Show notes"
+                      checked={isReceipt ? false : (config.footer?.showNotes !== false)}
+                      onChange={v => patchFooter({ showNotes: v })}
+                      disabled={isReceipt}
+                      title={noThermal}
+                    />
                     <SwitchRow
                       label="Show terms & conditions"
                       checked={isReceipt ? false : !!config.footer?.showTerms}
@@ -1068,15 +1079,6 @@ function TemplateEditorDialog({
                       checked={!!config.footer?.showThankYou}
                       onChange={v => patchFooter({ showThankYou: v })}
                     />
-                    <div className="space-y-1">
-                      <Label className="text-xs">Thank-you text</Label>
-                      <Input
-                        value={config.footer?.thankYouText ?? ''}
-                        onChange={e => patchFooter({ thankYouText: e.target.value })}
-                        disabled={!config.footer?.showThankYou}
-                      />
-                    </div>
-
                     {/* The thank-you prints as a band across the foot
                         of the page; this is the small name at its other
                         end. Tied to the thank-you toggle because there
@@ -1145,6 +1147,28 @@ function TemplateEditorDialog({
                         </p>
                       )}
                     </div>
+
+                    {/* How many bank cards print. Capped at two by
+                        bank settings already; this narrows it to one
+                        without making the operator untick an account
+                        they still want on file. */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Payment QR count</Label>
+                      <Select
+                        value={String(config.footer?.qrCount ?? 2)}
+                        onValueChange={v => patchFooter({ qrCount: Number(v) as 1 | 2 })}
+                        disabled={isReceipt || !config.footer?.showBanking}
+                      >
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 — larger</SelectItem>
+                          <SelectItem value="2">2 — side by side</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-gray-500">
+                        A single QR prints bigger, in the same place.
+                      </p>
+                    </div>
                     {/* Signature toggles — a POS thermal receipt never
                         has a hand-signature block, so both are forced
                         off + disabled on Receipt kind. On Invoice the
@@ -1164,6 +1188,19 @@ function TemplateEditorDialog({
                         onChange={v => patchFooter({ showSellerSignature: v })}
                         disabled={isReceipt}
                         title={noThermal}
+                      />
+                    </div>
+
+                    {/* Last in the section, under its own rule: it is
+                        the words printed across the very foot of the
+                        page, so it reads in the order the page does.
+                        Still tied to the thank-you toggle above. */}
+                    <div className="space-y-1 pt-2 border-t mt-2">
+                      <Label className="text-xs">Thank-you text</Label>
+                      <Input
+                        value={config.footer?.thankYouText ?? ''}
+                        onChange={e => patchFooter({ thankYouText: e.target.value })}
+                        disabled={!config.footer?.showThankYou}
                       />
                     </div>
                   </>
@@ -1479,48 +1516,55 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         flexDirection: f.qrPosition === 'left' ? 'row-reverse' : 'row',
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-          <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
-          {f.showBanking && (
-            <div style={{
-              marginTop: 6, color: '#555',
-              textAlign: f.qrPosition === 'left' ? 'left' : 'right',
-            }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method</div>
+          {f.showNotes !== false && (
+            <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
           )}
+          <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
           {f.showTerms && (
             <div style={{ marginTop: 6, fontStyle: 'italic', color: '#666' }}>Terms &amp; Conditions apply.</div>
           )}
         </div>
-        {/* KHQR column — sits at the top of the Notes row, right side.
-            Two placeholder cards; real cards come from bank settings
-            on the actual print. */}
+        {/* Payment column — the heading belongs over the cards, as it
+            prints. It used to be rendered inside the Notes column and
+            right-aligned to fake the position, which put it on the
+            wrong side of the gap and above the wrong block whenever
+            the notes ran long. Placeholder cards; the real ones come
+            from bank settings on the actual print. */}
         {f.showBanking && (
-          <div style={{
-            display: 'flex', flexWrap: 'wrap', gap: 10, flexShrink: 0,
-            justifyContent: f.qrPosition === 'left' ? 'flex-start' : 'flex-end',
-          }}>
-            {[0, 1].map(i => (
-              <div
-                key={i}
-                style={{
-                  width: 68, textAlign: 'center', display: 'flex',
-                  flexDirection: 'column', alignItems: 'center', gap: 3,
-                }}
-              >
-                <div style={{ fontSize: 8, fontWeight: 600, color: '#1e3a8a' }}>Bank {i + 1}</div>
+          <div style={{ flexShrink: 0 }}>
+            <div style={{
+              color: '#555',
+              textAlign: f.qrPosition === 'left' ? 'left' : 'right',
+            }}>** គណនីសម្រាប់បង់ប្រាក់ / Payment method:</div>
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6,
+              justifyContent: f.qrPosition === 'left' ? 'flex-start' : 'flex-end',
+            }}>
+              {Array.from({ length: f.qrCount === 1 ? 1 : 2 }, (_, i) => (
                 <div
+                  key={i}
                   style={{
-                    width: '100%', aspectRatio: '1 / 1',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#999', fontSize: 8, border: '1px dashed #ccc', borderRadius: 6,
+                    // Mirrors the print: one card is drawn wider.
+                    width: f.qrCount === 1 ? 95 : 68,
+                    textAlign: 'center', display: 'flex',
+                    flexDirection: 'column', alignItems: 'center', gap: 3,
                   }}
                 >
-                  KHQR
+                  <div style={{ fontSize: 8, fontWeight: 600, color: '#1e3a8a' }}>Bank {i + 1}</div>
+                  <div
+                    style={{
+                      width: '100%', aspectRatio: '1 / 1',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#999', fontSize: 8, border: '1px dashed #ccc', borderRadius: 6,
+                    }}
+                  >
+                    KHQR
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#666' }}>0000-0000</div>
+                  <div style={{ fontSize: 8, fontWeight: 600, color: '#333', textTransform: 'uppercase' }}>Account</div>
                 </div>
-                <div style={{ fontFamily: 'monospace', fontSize: 8, color: '#666' }}>0000-0000</div>
-                <div style={{ fontSize: 8, fontWeight: 600, color: '#333', textTransform: 'uppercase' }}>Account</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -79,6 +79,15 @@ export interface TemplateConfig {
   footer?: {
     /** Payment / bank account block. */
     showBanking?: boolean;
+    /**
+     * The "សម្គាល់ / Notes" block — its heading and the document's
+     * own notes text. Default true.
+     *
+     * Exchange rate and T&C share the same column but are not part
+     * of it: the rate is a figure the invoice has to state, and the
+     * terms have their own toggle.
+     */
+    showNotes?: boolean;
     /** T&C block from the doc. */
     showTerms?: boolean;
     /** "Thank you for your business" line. */
@@ -94,6 +103,16 @@ export interface TemplateConfig {
      * existing template keeps its layout without being touched.
      */
     qrPosition?: 'left' | 'right';
+    /**
+     * How many payment QR cards print: 1 or 2.
+     *
+     * Default 2, the cap bank settings already enforced, so an
+     * existing template prints exactly as before. On 1 the single
+     * card is drawn larger — it keeps the panel's visual weight
+     * instead of leaving half the block empty — and stays at the
+     * end of the row qrPosition picked, so only the size changes.
+     */
+    qrCount?: 1 | 2;
     /**
      * The thank-you line is drawn as a tinted band across the foot
      * of the page. This puts a small name at its other end, the way
@@ -171,6 +190,8 @@ export function defaultTemplateConfig(): TemplateConfig {
       showCustomerSignature: true,
       showSellerSignature: true,
       qrPosition: 'right',
+      qrCount: 2,
+      showNotes: true,
       showPageName: true,
       bandColorMode: 'theme',
     },

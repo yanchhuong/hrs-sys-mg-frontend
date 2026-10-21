@@ -3743,9 +3743,17 @@ export function PrintTaxInvoice({
   );
   const ticked = filledBanks.filter(b => b.showOnInvoice);
   const banks = (ticked.length > 0 ? ticked : filledBanks).slice(0, MAX_BANK_ACCOUNTS_ON_INVOICE);
+  /* v-footer-qr-count — the template decides whether one card or two
+   * print, within whatever the bank settings supply. A lone card is
+   * drawn wider so the panel does not read as a two-card block with
+   * one missing; it stays at the end of the row qrPosition picked,
+   * so choosing 1 changes the size and nothing else. */
+  const qrCount     = cfgFooter.qrCount === 1 ? 1 : 2;
+  const qrCards     = banks.slice(0, qrCount);
+  const qrCardWidth = qrCount === 1 ? '56mm' : '40mm';
   // Banking gated by template config too — a receipt-style template
   // might switch it off even when the tenant has bank cards saved.
-  const showBank = banks.length > 0 && cfgFooter.showBanking !== false;
+  const showBank = qrCards.length > 0 && cfgFooter.showBanking !== false;
 
   const tree = (
     <div className="print-tax-invoice" style={{
@@ -4078,9 +4086,17 @@ export function PrintTaxInvoice({
       }}>
         {/* Notes column */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-          {invoice.notes && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
+          {/* The notes block is the heading plus the document's own
+              notes. The exchange rate below is not part of it — the
+              invoice has to state the rate whatever the template
+              says about notes. */}
+          {cfgFooter.showNotes !== false && (
+            <>
+              <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+              {invoice.notes && (
+                <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
+              )}
+            </>
           )}
           {(invoice.exchangeRate || 0) > 0 && (
             <div style={{ marginTop: '6px' }}>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
@@ -4120,11 +4136,11 @@ export function PrintTaxInvoice({
               // unchanged.
               justifyContent: cfgFooter.qrPosition === 'left' ? 'flex-start' : 'flex-end',
             }}>
-              {banks.map(b => (
+              {qrCards.map(b => (
                 <div
                   key={b.id}
                   style={{
-                    width: '40mm',
+                    width: qrCardWidth,
                     textAlign: 'center',
                     display: 'flex',
                     flexDirection: 'column',
