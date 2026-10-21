@@ -100,7 +100,7 @@ export interface PublicShopPayload {
    *  a menu preview only. Absent (undefined) treated as true. */
   orderingEnabled?: boolean;
   /** V303 — true when the tenant has PayWay (KHQR) credentials on
-   *  file. When false the FE hides the KHRQR payment button because
+   *  file. When false the FE hides the KHQR payment button because
    *  the mint call would fail. */
   khqrEnabled?: boolean;
   /** V315 — populated only when the customer arrived via a per-table
@@ -202,7 +202,7 @@ export async function submitPublicOrderByTable(
 }
 
 /* ============================================================== */
-/*                 Public KHRQR (PayWay) flow                     */
+/*                 Public KHQR (PayWay) flow                     */
 /* ============================================================== */
 
 export type PublicPayWaySessionStatus = 'pending' | 'paid' | 'cancelled' | 'failed';

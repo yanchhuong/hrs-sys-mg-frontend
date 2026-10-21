@@ -2289,7 +2289,7 @@ interface CheckoutProps {
    *  knows which receipt the sale will produce. */
   invoiceKind: 'commercial' | 'tax';
   /** Bank account cards from POS Settings → Bank Account. Used to
-   *  render the KHRQR for scan-to-pay when the cashier picks KHQR. */
+   *  render the KHQR for scan-to-pay when the cashier picks KHQR. */
   banks: BankAccount[];
   /** Controlled payment method — POS.tsx owns this so the value can
    *  be broadcast to the customer-display window for the scan-to-pay
@@ -2651,7 +2651,7 @@ function PosCheckoutDialog({
     onLoyaltyChanged();
     return true;
   };
-  /** Active PayWay session for the KHRQR flow (V164). Null while no
+  /** Active PayWay session for the KHQR flow (V164). Null while no
    *  session is open. Polled at 2s intervals; flipping to status='paid'
    *  auto-fires onSubmit. The polling effect is also responsible for
    *  cancelling the session if the cashier closes the dialog before
@@ -2850,7 +2850,7 @@ function PosCheckoutDialog({
                 <div className="flex flex-col items-center gap-2">
                   <img
                     src={paywaySession.qrDataUrl}
-                    alt="PayWay KHRQR"
+                    alt="PayWay KHQR"
                     className="h-56 w-56 object-contain bg-white border rounded"
                   />
                   <div className="text-[11px] text-gray-500 font-mono">{paywaySession.tranId}</div>
@@ -2875,19 +2875,19 @@ function PosCheckoutDialog({
                 <>
                   {paywayError && (
                     <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-                      PayWay error: {paywayError}. Showing saved KHRQR fallback.
+                      PayWay error: {paywayError}. Showing saved KHQR fallback.
                     </div>
                   )}
                   {qrCards.length === 0 ? (
                     <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                      No KHRQR uploaded yet. Open <b>POS Settings → Bank Account</b> and add a QR before using this method.
+                      No KHQR uploaded yet. Open <b>POS Settings → Bank Account</b> and add a QR before using this method.
                     </div>
                   ) : (
                     <div className={`grid gap-3 ${qrCards.length > 1 ? 'grid-cols-2' : 'grid-cols-1 justify-items-center'}`}>
                       {qrCards.map(b => (
                         <div key={b.id} className="rounded border bg-gray-50 p-2 text-center">
-                          <img src={b.qrDataUrl} alt={b.bankName || 'KHRQR'} className="mx-auto h-44 w-44 object-contain bg-white" />
-                          <div className="mt-1 text-xs font-medium text-gray-800 truncate">{b.bankName || 'KHRQR'}</div>
+                          <img src={b.qrDataUrl} alt={b.bankName || 'KHQR'} className="mx-auto h-44 w-44 object-contain bg-white" />
+                          <div className="mt-1 text-xs font-medium text-gray-800 truncate">{b.bankName || 'KHQR'}</div>
                           {b.accountName && <div className="text-[10px] text-gray-500 truncate">{b.accountName}</div>}
                           {b.accountNumber && <div className="text-[10px] tabular-nums text-gray-600 truncate">{b.accountNumber}</div>}
                         </div>

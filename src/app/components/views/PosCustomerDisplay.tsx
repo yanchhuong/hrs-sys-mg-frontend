@@ -524,7 +524,7 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
 
         {qrCards.length === 0 ? (
           <div className="rounded-2xl bg-amber-900/40 border border-amber-700 text-amber-100 px-8 py-6 max-w-md text-center">
-            <div className="text-lg font-semibold">No KHRQR configured</div>
+            <div className="text-lg font-semibold">No KHQR configured</div>
             <p className="text-sm mt-1 text-amber-200">
               Please pay at the counter — your cashier will help.
             </p>
@@ -535,10 +535,10 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
               <div key={b.id} className="bg-white rounded-2xl shadow-2xl p-6 text-center">
                 <img
                   src={b.qrDataUrl}
-                  alt={b.bankName || 'KHRQR'}
+                  alt={b.bankName || 'KHQR'}
                   className="mx-auto h-72 w-72 object-contain"
                 />
-                <div className="mt-3 text-xl font-bold text-slate-900">{b.bankName || 'KHRQR'}</div>
+                <div className="mt-3 text-xl font-bold text-slate-900">{b.bankName || 'KHQR'}</div>
                 {b.accountName && (
                   <div className="text-sm text-slate-600 mt-0.5 truncate">{b.accountName}</div>
                 )}

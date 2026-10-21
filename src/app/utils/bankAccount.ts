@@ -1,5 +1,5 @@
 /**
- * Bank-account + KHRQR cards for each accounting scope (sale / purchase
+ * Bank-account + KHQR cards for each accounting scope (sale / purchase
  * / receipt). Persisted in browser localStorage keyed by the active
  * tenant; the printed Invoice / Bill / Receipt renders the list so
  * customers can scan whichever rail (Bakong / Wing / ABA) they prefer.
@@ -18,7 +18,7 @@ export interface BankAccount {
   accountName: string;
   accountNumber: string;
   notes: string;
-  /** KHRQR image as a base64 data URL (e.g. `data:image/png;base64,…`).
+  /** KHQR image as a base64 data URL (e.g. `data:image/png;base64,…`).
    *  Empty string when no image uploaded yet. */
   qrDataUrl: string;
   /** When true this card is one of the rails printed on the invoice.
@@ -28,9 +28,9 @@ export interface BankAccount {
    *  value; {@link loadBankAccounts} defaults missing values to
    *  false so a stored card doesn't suddenly start printing. */
   showOnInvoice?: boolean;
-  /** {@code manual} — operator uploads a fixed KHRQR image (default,
+  /** {@code manual} — operator uploads a fixed KHQR image (default,
    *  legacy behaviour). {@code auto} — POS asks PayWay to mint a
-   *  dynamic KHRQR per transaction with the cart total baked in.
+   *  dynamic KHQR per transaction with the cart total baked in.
    *  Optional for legacy rows; missing value treated as {@code manual}. */
   mode?: 'manual' | 'auto';
 }

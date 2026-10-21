@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as XIcon, Plus, Trash2, Info, BellRing, Printer, MonitorPlay, Coins, Gift, Percent as PercentIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
+import { findQrRect } from '../../utils/qrCrop';
 import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
@@ -111,56 +112,28 @@ async function cropToQrSquare(dataUrl: string): Promise<string> {
   const src = document.createElement('canvas');
   src.width  = W;
   src.height = H;
-  const sctx = src.getContext('2d');
+  const sctx = src.getContext('2d', { willReadFrequently: true });
   if (!sctx) return dataUrl;
   sctx.drawImage(img, 0, 0);
-  const { data } = sctx.getImageData(0, 0, W, H);
 
-  let minX = W, minY = H, maxX = -1, maxY = -1;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = (y * W + x) * 4;
-      // Skip transparent pixels — a PNG with alpha 0 isn't QR ink.
-      if (data[i + 3] < 200) continue;
-      // QR ink = neutral-dark. Red frame fails this because its R
-      // channel is high while G/B are near zero.
-      if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] < 100) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX < 0) return dataUrl;
-
-  const w = maxX - minX;
-  const h = maxY - minY;
-  // Padding for the QR quiet zone — without it scanners on some
-  // phones miss the corner finder patterns.
-  const pad = Math.round(Math.max(w, h) * 0.04);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const size = Math.max(w, h) + pad * 2;
-  let sx = Math.round(cx - size / 2);
-  let sy = Math.round(cy - size / 2);
-  // Bound the crop window inside the source — a centered QR on a
-  // tall card can otherwise spill above / below the source image.
-  if (sx < 0) sx = 0;
-  if (sy < 0) sy = 0;
-  const sSize = Math.min(size, Math.min(W - sx, H - sy));
-  if (sSize < 16) return dataUrl;
+  // v-qr-crop-finders — where the QR is, not where the ink is. The
+  // old code took the bounding box of every dark pixel, which on a
+  // banking-app screenshot is the whole screenshot. findQrRect looks
+  // for the three finder patterns first and only falls back to the
+  // dark-pixel box when it cannot see a code.
+  const rect = findQrRect(sctx.getImageData(0, 0, W, H).data, W, H);
+  if (!rect) return dataUrl;
 
   const out = document.createElement('canvas');
-  out.width  = sSize;
-  out.height = sSize;
+  out.width  = rect.w;
+  out.height = rect.h;
   const octx = out.getContext('2d');
   if (!octx) return dataUrl;
-  // Fill white first so any padding outside the source ends up as
-  // the standard QR quiet-zone color, not transparent.
+  // White behind it: the source may be transparent, and a QR on a
+  // transparent background prints as nothing.
   octx.fillStyle = '#ffffff';
-  octx.fillRect(0, 0, sSize, sSize);
-  octx.drawImage(src, sx, sy, sSize, sSize, 0, 0, sSize, sSize);
+  octx.fillRect(0, 0, rect.w, rect.h);
+  octx.drawImage(src, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
   return out.toDataURL('image/png');
 }
 
@@ -207,8 +180,8 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // shows every one. Lives in localStorage (per tenant + scope);
   // graduates to the backend settings row when the UX is confirmed.
   const [banks, setBanks] = useState<BankAccount[]>([]);
-  /** Tab inside the Bank Account section — Manual (uploaded KHRQR PNG)
-   *  vs ABA PayWay (dynamic KHRQR minted per transaction). Filters the
+  /** Tab inside the Bank Account section — Manual (uploaded KHQR PNG)
+   *  vs ABA PayWay (dynamic KHQR minted per transaction). Filters the
    *  card grid + drives the default mode for newly-added cards. */
   const [bankTab, setBankTab] = useState<'manual' | 'auto'>('manual');
 
@@ -407,7 +380,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     setBanks(prev => prev.filter(b => b.id !== id));
   };
 
-  /** Read a file as a base64 data URL so the KHRQR survives a page
+  /** Read a file as a base64 data URL so the KHQR survives a page
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are
    *  ~30 KB; anything bigger is almost certainly a wrong file.
    *
@@ -418,7 +391,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
    *  inside ours would look amateur. */
   const handleQrUpload = (id: string, file: File) => {
     if (file.size > 1024 * 1024) {
-      toast.error('Image too large — keep KHRQR under 1 MB');
+      toast.error('Image too large — keep KHQR under 1 MB');
       return;
     }
     if (!file.type.startsWith('image/')) {
@@ -499,7 +472,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     ] : []),
     ...(scope === 'sale' ? [
       { key: 'reminders' as Section, label: 'Reminders', hint: 'Telegram pings: before due, after due, paid', icon: <BellRing className="h-4 w-4" /> },
-      { key: 'bank' as Section, label: 'Bank Account', hint: 'Payment info + KHRQR printed on the invoice', icon: <Landmark className="h-4 w-4" /> },
+      { key: 'bank' as Section, label: 'Bank Account', hint: 'Payment info + KHQR printed on the invoice', icon: <Landmark className="h-4 w-4" /> },
     ] : []),
     // POS-only "Receipt" section — controls what prints on the
     // counter-checkout receipt (PAID stamp, SKU prefix, paper size,
@@ -508,7 +481,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     // for "scan to pay" at checkout.
     ...(scope === 'pos' ? [
       { key: 'receipt' as Section, label: 'Receipt', hint: 'Print layout: PAID stamp, SKU, paper size', icon: <Printer className="h-4 w-4" /> },
-      { key: 'bank' as Section, label: 'Bank Account', hint: 'KHRQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
+      { key: 'bank' as Section, label: 'Bank Account', hint: 'KHQR + bank details for scan-to-pay at checkout', icon: <Landmark className="h-4 w-4" /> },
       { key: 'slides' as Section, label: 'Display Ads', hint: 'Carousel shown on the customer screen when idle', icon: <MonitorPlay className="h-4 w-4" /> },
       { key: 'loyalty' as Section, label: 'Loyalty', hint: 'Point / Stamp / Birthday reward programs', icon: <Gift className="h-4 w-4" /> },
       // v-commission-mvp — sales-commission plans (per-seller
@@ -1092,7 +1065,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
 
                 {/* Section-level tabs: Manual cards (uploaded PNG QR)
                     vs ABA PayWay (POS asks PayWay to mint a per-sale
-                    KHRQR with the cart amount baked in). The tab is
+                    KHQR with the cart amount baked in). The tab is
                     the mode — cards saved in one tab don't show in the
                     other, and `Add` seeds the new card's mode from
                     whichever tab is active. */}
@@ -1146,7 +1119,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         </button>
                       </div>
                       <p>
-                        ABA PayWay mints a fresh KHRQR per transaction with the cart amount baked in — no image
+                        ABA PayWay mints a fresh KHQR per transaction with the cart amount baked in — no image
                         upload needed. Set Merchant ID + API key + toggle <strong>Enabled</strong> in the PayWay
                         settings dialog; the card below is just for the account name / number that appears next
                         to the QR on the checkout screen.
@@ -1200,7 +1173,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                        *  operator knows nothing needs uploading. */}
                       {mode === 'auto' ? (
                         <div className="flex flex-col items-center justify-center gap-1 w-full aspect-square border-2 border-dashed border-blue-200 rounded-md text-blue-700 bg-blue-50/40 text-center px-2">
-                          <span className="text-[11px] font-medium">Auto KHRQR</span>
+                          <span className="text-[11px] font-medium">Auto KHQR</span>
                           <span className="text-[9px] text-blue-600/80 leading-tight">
                             PayWay mints the QR per transaction with the cart amount baked in.
                           </span>
@@ -1209,7 +1182,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         <div className="relative">
                           <img
                             src={b.qrDataUrl}
-                            alt="KHRQR"
+                            alt="KHQR"
                             className="w-full aspect-square object-contain bg-gray-50 rounded-md border"
                           />
                           <label className="absolute bottom-1 right-1 inline-flex">
@@ -1250,7 +1223,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           />
                           <span className="flex flex-col items-center justify-center gap-1 w-full aspect-square border-2 border-dashed rounded-md text-gray-500 cursor-pointer hover:bg-gray-50">
                             <Upload className="h-5 w-5" />
-                            <span className="text-xs">Upload KHRQR</span>
+                            <span className="text-xs">Upload KHQR</span>
                             <span className="text-[10px]">PNG / JPG, &lt; 1 MB</span>
                           </span>
                         </label>

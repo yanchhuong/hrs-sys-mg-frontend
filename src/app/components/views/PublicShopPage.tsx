@@ -250,12 +250,12 @@ export function PublicShopPage() {
   const [orderMode, setOrderMode] = useState<'pickup' | 'delivery'>('pickup');
   /** Customer's payment preference for delivery orders. Cash means
    *  "Cash on hand" — they pay the delivery person on arrival.
-   *  KHRQR means they'll scan a QR sent by the merchant. Recorded
+   *  KHQR means they'll scan a QR sent by the merchant. Recorded
    *  in the order's notes so the cashier knows which channel to
    *  arrange. Pickup orders keep "Payment happens in person" and
    *  skip this picker. */
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'khrqr'>('cash');
-  /** Active PayWay session for the KHRQR flow. Null while no
+  /** Active PayWay session for the KHQR flow. Null while no
    *  session is open. Polled at 2s intervals; flipping to
    *  status='paid' marks the order as pre-paid before submit. */
   const [paywaySession, setPaywaySession] = useState<shopApi.PublicPayWaySession | null>(null);
@@ -578,8 +578,8 @@ export function PublicShopPage() {
     [cartLines],
   );
 
-  /** Mint a PayWay KHRQR session whenever the customer has Delivery
-   *  + KHRQR active AND there's a positive cart total. One attempt
+  /** Mint a PayWay KHQR session whenever the customer has Delivery
+   *  + KHQR active AND there's a positive cart total. One attempt
    *  per (cart-total, mode, method) tuple — a 4xx surfaces an error
    *  and stops; toggling the picker resets the guard so a retry is
    *  one tap away. Declared after {@code cartTotal} so the deps array
@@ -625,7 +625,7 @@ export function PublicShopPage() {
   }, [paywaySession?.tranId, paywaySession?.status, code]);
 
   /** Reset PayWay state whenever the dialog closes or the customer
-   *  switches away from Delivery+KHRQR. Clears the attempt-key ref
+   *  switches away from Delivery+KHQR. Clears the attempt-key ref
    *  so reopening with the same picks retries cleanly. */
   useEffect(() => {
     if (checkoutOpen && orderMode === 'delivery' && paymentMethod === 'khrqr') return;
@@ -734,7 +734,7 @@ export function PublicShopPage() {
       // Compose the order-level notes from fulfilment mode + (when
       // delivery) payment method + kitchen note + pickup-location URL.
       // The cashier sees all of this on the ticket — payment tells
-      // them whether to send a KHRQR or expect cash; the URL opens
+      // them whether to send a KHQR or expect cash; the URL opens
       // the customer's pinned spot in Google Maps.
       const noteParts: string[] = [];
       noteParts.push(`Mode: ${orderMode === 'delivery' ? 'Delivery' : 'Pickup'}`);
@@ -746,9 +746,9 @@ export function PublicShopPage() {
         // arrived yet — the cashier should confirm before fulfilling.
         if (paymentMethod === 'khrqr' && paywaySession) {
           const tag = paywaySession.status === 'paid' ? 'paid' : 'pending';
-          noteParts.push(`Payment: KHRQR (${tag} · ${paywaySession.tranId})`);
+          noteParts.push(`Payment: KHQR (${tag} · ${paywaySession.tranId})`);
         } else {
-          noteParts.push(`Payment: ${paymentMethod === 'khrqr' ? 'KHRQR' : 'Cash on hand'}`);
+          noteParts.push(`Payment: ${paymentMethod === 'khrqr' ? 'KHQR' : 'Cash on hand'}`);
         }
       }
       if (custNote.trim()) noteParts.push(custNote.trim());
@@ -877,7 +877,7 @@ export function PublicShopPage() {
   // Combined gate — anything that hides cart / add-to-cart /
   // checkout reads off this so the two states behave the same.
   const orderingBlocked = frozen || !orderingEnabled;
-  // V303 — KHRQR payment button is hidden when the tenant hasn't
+  // V303 — KHQR payment button is hidden when the tenant hasn't
   // configured PayWay credentials. Undefined on legacy payloads →
   // treated as false to be safe (better to hide than to show a
   // button whose mint would 500).
@@ -1484,7 +1484,7 @@ export function PublicShopPage() {
             {/* Payment method — surfaces only for Delivery. Pickup
                 orders are paid at the counter, so the picker would
                 just add noise. The choice is recorded on the order's
-                notes so the cashier knows whether to send a KHRQR or
+                notes so the cashier knows whether to send a KHQR or
                 expect cash on delivery. */}
             {orderMode === 'delivery' && (
               <div className="space-y-2 pt-2">
@@ -1492,7 +1492,7 @@ export function PublicShopPage() {
                   Payment method
                 </p>
                 <div className={khqrEnabled ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
-                  {/* V303 — KHRQR hidden entirely when the tenant
+                  {/* V303 — KHQR hidden entirely when the tenant
                       hasn't uploaded PayWay credentials. Only the
                       Cash option shows in that case (single-col
                       layout). */}
@@ -1507,7 +1507,7 @@ export function PublicShopPage() {
                       }`}
                     >
                       <QrCode className="h-4 w-4" />
-                      KHRQR
+                      KHQR
                     </button>
                   )}
                   <button
@@ -1524,7 +1524,7 @@ export function PublicShopPage() {
                   </button>
                 </div>
 
-                {/* KHRQR — render the dynamic PayWay QR. Mirrors the
+                {/* KHQR — render the dynamic PayWay QR. Mirrors the
                     POS scan-to-pay flow: busy spinner while minting,
                     error banner on credential / gateway failure,
                     QR image when the session is live, green "Paid"
@@ -1535,7 +1535,7 @@ export function PublicShopPage() {
                     {paywayBusy && !paywaySession && (
                       <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-6">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Minting your KHRQR…
+                        Minting your KHQR…
                       </div>
                     )}
 
@@ -1556,7 +1556,7 @@ export function PublicShopPage() {
                         <div className="relative">
                           <img
                             src={paywaySession.qrDataUrl}
-                            alt="PayWay KHRQR"
+                            alt="PayWay KHQR"
                             className="w-44 h-44 object-contain bg-gray-50 rounded-md border"
                           />
                           {paywaySession.status === 'paid' && (

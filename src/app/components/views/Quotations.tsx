@@ -2336,7 +2336,7 @@ function PrintQuotation({
                   padding: '4px', textAlign: 'center', background: '#fff',
                 }}>
                   {b.qrDataUrl ? (
-                    <img src={b.qrDataUrl} alt="KHRQR" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain' }} />
+                    <img src={b.qrDataUrl} alt="KHQR" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain' }} />
                   ) : (
                     <div style={{
                       width: '100%', aspectRatio: '1 / 1',

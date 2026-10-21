@@ -1,6 +1,6 @@
 /**
  * Shared file → base64 data-URL reader for image uploads (logo on
- * POS Settings, drag-drop on Items, KHRQR cards, …). Keeping the
+ * POS Settings, drag-drop on Items, KHQR cards, …). Keeping the
  * read + validation in one place means every dropper enforces the
  * same size cap and rejects the same non-image MIME types.
  *
