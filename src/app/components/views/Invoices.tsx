@@ -4020,17 +4020,49 @@ export function PrintTaxInvoice({
         </tbody>
       </table>
 
-      {/* Notes block — text on the left, optional KHRQR on the right so
-       *  customers can scan to pay. Bank info comes from the Settings
-       *  popup's "Bank Account" tab and only renders when configured. */}
-      <div style={{ marginTop: '14px', fontSize: '11px', lineHeight: 1.5 }}>
-        <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-        {invoice.notes && (
-          <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
-        )}
+      {/* Notes and payment sit side by side, on OPPOSITE sides. The
+       *  template picks where the QR goes and the notes take the other
+       *  column — they used to be stacked, so choosing "left" for the
+       *  QR left a band of white space to its right and the notes
+       *  above it rather than beside it.
+       *
+       *  row-reverse rather than reordering the JSX: the notes column
+       *  stays first in the document, so it is also first for a screen
+       *  reader and in a copy-paste, whichever side it is painted on.
+       *
+       *  Bank info comes from the Settings popup's "Bank Account" tab
+       *  and only renders when configured; with it off the notes
+       *  column simply takes the full width. */}
+      <div style={{
+        marginTop: '14px', fontSize: '11px', lineHeight: 1.5,
+        display: 'flex',
+        flexDirection: cfgFooter.qrPosition === 'left' ? 'row-reverse' : 'row',
+        alignItems: 'flex-start',
+        gap: '16px',
+      }}>
+        {/* Notes column */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+          {invoice.notes && (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
+          )}
+          {(invoice.exchangeRate || 0) > 0 && (
+            <div style={{ marginTop: '6px' }}>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
+          )}
+          {cfgFooter.showTerms && (
+            <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
+              Terms &amp; Conditions apply.
+            </div>
+          )}
+        </div>
+
+        {/* Payment column */}
         {showBank && (
-          <>
-            <div style={{ color: '#555', marginTop: invoice.notes ? '6px' : '0' }}>
+          <div style={{ flexShrink: 0 }}>
+            <div style={{
+              color: '#555',
+              textAlign: cfgFooter.qrPosition === 'left' ? 'left' : 'right',
+            }}>
               ** គណនីសម្រាប់បង់ប្រាក់ / Payment method:
             </div>
             {/* KHQR-card layout (customer-facing). The uploaded image
@@ -4108,17 +4140,6 @@ export function PrintTaxInvoice({
                 </div>
               ))}
             </div>
-          </>
-        )}
-        {(invoice.exchangeRate || 0) > 0 && (
-          <div style={{ marginTop: '6px' }}>អត្រាប្តូរប្រាក់ / Exchange rate : {invoice.exchangeRate}</div>
-        )}
-        {/* Template-configurable thank-you line + terms line. Both
-            live under Notes so they end up near the bottom of the
-            document without competing with banking. */}
-        {cfgFooter.showTerms && (
-          <div style={{ marginTop: '6px', fontStyle: 'italic', color: '#666' }}>
-            Terms &amp; Conditions apply.
           </div>
         )}
       </div>
