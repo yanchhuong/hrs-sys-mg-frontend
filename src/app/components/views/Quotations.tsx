@@ -2209,29 +2209,48 @@ function PrintQuotation({
           quote — sales typically address the procurement contact, not
           the legal entity. Falls back to the customer name when empty. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><QBiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
-          <div style={{ fontWeight: 600 }}>{quotation.recipientName || customer?.name || ''}</div>
+        {/* Two stacked columns, not a left/right-interleaved grid, so a
+            row with no value (no address, no phone…) can drop out —
+            label included — without shifting the other side. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(quotation.recipientName || customer?.name || '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><QBiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+              <div style={{ fontWeight: 600 }}>{quotation.recipientName || customer?.name || ''}</div>
+            </div>
+          )}
+          {!!String(customer?.address ?? '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><QBiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
+              <div>{customer?.address ?? ''}</div>
+            </div>
+          )}
+          {!!String([quotation.recipientPhone || customer?.phone, customer?.representative].filter(Boolean).join(', ')).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><QBiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
+              <div>{[quotation.recipientPhone || customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><QBiLabel kh="លេខរៀងសំណើតម្លៃ" en="Quotation N°" /></div>
-          <div style={{ fontFamily: 'monospace' }}>{quotation.quotationNo}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><QBiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
-          <div>{customer?.address ?? ''}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><QBiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
-          <div>{fmtDate(quotation.issueDate)}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><QBiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
-          <div>{[quotation.recipientPhone || customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><QBiLabel kh="ថ្ងៃផុតកំណត់" en="Expiry Date" /></div>
-          <div>{fmtDate(quotation.expiryDate)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(quotation.quotationNo).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><QBiLabel kh="លេខរៀងសំណើតម្លៃ" en="Quotation N°" /></div>
+              <div style={{ fontFamily: 'monospace' }}>{quotation.quotationNo}</div>
+            </div>
+          )}
+          {!!String(fmtDate(quotation.issueDate)).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><QBiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+              <div>{fmtDate(quotation.issueDate)}</div>
+            </div>
+          )}
+          {!!String(fmtDate(quotation.expiryDate)).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><QBiLabel kh="ថ្ងៃផុតកំណត់" en="Expiry Date" /></div>
+              <div>{fmtDate(quotation.expiryDate)}</div>
+            </div>
+          )}
         </div>
         {customer?.tin && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: '1 / span 2' }}>
@@ -2248,7 +2267,6 @@ function PrintQuotation({
             <th style={{ ...qThStyle, textAlign: 'left' }}><QBiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en="Description" /></th>
             <th style={qThStyle}><QBiLabel kh="បរិមាណ" en="Quantity" /></th>
             <th style={{ ...qThStyle, textAlign: 'right' }}><QBiLabel kh="ថ្លៃឯកតា" en="Unit Price" /></th>
-            <th style={{ ...qThStyle, textAlign: 'right' }}><QBiLabel kh="បញ្ចុះតម្លៃ" en="Discount" /></th>
             <th style={{ ...qThStyle, textAlign: 'right' }}><QBiLabel kh="ថ្លៃទំនិញ" en="Amount" /></th>
           </tr>
         </thead>
@@ -2262,17 +2280,16 @@ function PrintQuotation({
               </td>
               <td style={{ ...qTdStyle, textAlign: 'center' }}>{it.quantity}</td>
               <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
-              <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
               <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
             </tr>
           ))}
           <tr>
-            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+            <td colSpan={4} style={{ ...qTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
             <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(quotation.subtotal)}</td>
           </tr>
           {showDiscount && (
             <tr>
-              <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>
+              <td colSpan={4} style={{ ...qTdStyle, textAlign: 'right' }}>
                 បញ្ចុះតម្លៃ{quotation.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode}) / Discount{quotation.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode})
               </td>
               <td style={{ ...qTdStyle, textAlign: 'right' }}>− {fmtPrimary(quotation.discountAmount ?? 0)}</td>
@@ -2280,19 +2297,19 @@ function PrintQuotation({
           )}
           {showVat && (
             <tr>
-              <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right' }}>
+              <td colSpan={4} style={{ ...qTdStyle, textAlign: 'right' }}>
                 អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
               </td>
               <td style={{ ...qTdStyle, textAlign: 'right' }}>{fmtPrimary(quotation.taxAmount)}</td>
             </tr>
           )}
           <tr>
-            <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+            <td colSpan={4} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
             <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(quotation.total)}</td>
           </tr>
           {showSecondary && (
             <tr>
-              <td colSpan={5} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+              <td colSpan={4} style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
               <td style={{ ...qTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
             </tr>
           )}

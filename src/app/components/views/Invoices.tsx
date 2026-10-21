@@ -3840,29 +3840,48 @@ export function PrintTaxInvoice({
 
       {/* Customer block (left) + Invoice meta (right) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><BiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
-          <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
+        {/* Two stacked columns, not a left/right-interleaved grid, so a
+            row with no value (no address, no phone…) can drop out —
+            label included — without shifting the other side. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(customer?.name ?? '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><BiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+              <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
+            </div>
+          )}
+          {!!String(customer?.address ?? '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><BiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
+              <div>{customer?.address ?? ''}</div>
+            </div>
+          )}
+          {!!String([customer?.phone, customer?.representative].filter(Boolean).join(', ')).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><BiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
+              <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><BiLabel kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" /></div>
-          <div style={{ fontFamily: 'monospace' }}>{invoice.invoiceNo}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><BiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
-          <div>{customer?.address ?? ''}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><BiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
-          <div>{fmtDate(invoice.issueDate)}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><BiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
-          <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><BiLabel kh="ថ្ងៃផុតកំណត់បង់ប្រាក់" en="Payment Due Date" /></div>
-          <div>{fmtDate(invoice.dueDate)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(invoice.invoiceNo).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><BiLabel kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" /></div>
+              <div style={{ fontFamily: 'monospace' }}>{invoice.invoiceNo}</div>
+            </div>
+          )}
+          {!!String(fmtDate(invoice.issueDate)).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><BiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+              <div>{fmtDate(invoice.issueDate)}</div>
+            </div>
+          )}
+          {!!String(fmtDate(invoice.dueDate)).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><BiLabel kh="ថ្ងៃផុតកំណត់បង់ប្រាក់" en="Payment Due Date" /></div>
+              <div>{fmtDate(invoice.dueDate)}</div>
+            </div>
+          )}
         </div>
         {customer?.tin && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: '1 / span 2' }}>
@@ -3899,7 +3918,6 @@ export function PrintTaxInvoice({
             {cfgCols.uom       && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
             {cfgCols.quantity  && <th style={thStyle}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} /></th>}
             {cfgCols.unitPrice && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} /></th>}
-            <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="បញ្ចុះតម្លៃ" en="Discount" /></th>
             {cfgCols.total     && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} /></th>}
           </tr>
         </thead>
@@ -3916,7 +3934,6 @@ export function PrintTaxInvoice({
               {cfgCols.uom       && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.unit ?? ''}</td>}
               {cfgCols.quantity  && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>}
               {cfgCols.unitPrice && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
-              <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
               {cfgCols.total     && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
             </tr>
           ))}
@@ -3928,8 +3945,7 @@ export function PrintTaxInvoice({
             const dataCols =
               1 /* N° */ +
               (cfgCols.item ? 1 : 0) + (cfgCols.uom ? 1 : 0) +
-              (cfgCols.quantity ? 1 : 0) + (cfgCols.unitPrice ? 1 : 0) +
-              1 /* Discount column always prints */;
+              (cfgCols.quantity ? 1 : 0) + (cfgCols.unitPrice ? 1 : 0);
             const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
             const AmountCell = ({ value, bold }: { value: string; bold?: boolean }) =>
               cfgCols.total

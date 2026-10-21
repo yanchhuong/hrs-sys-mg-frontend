@@ -249,17 +249,23 @@ export function PublicInvoiceView() {
           </div>
 
           {/* Customer + meta block */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: '14px' }}>
-            <BiRow kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" value={customer?.name} bold />
-            <BiRow kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" value={inv.invoiceNo} bold />
-            <BiRow kh="អាសយដ្ឋាន" en="Address" value={customer?.address} />
-            <BiRow kh="កាលបរិច្ឆេទ" en="Issue Date" value={fmtDate(inv.issueDate)} />
-            <BiRow
-              kh="ទូរស័ព្ទលេខ , អ្នកតំណាង"
-              en="Telephone No. , Representative"
-              value={[customer?.phone, customer?.representative].filter(Boolean).join(' , ')}
-            />
-            <BiRow kh="ថ្ងៃផុតកំណត់សង់ប្រាក់" en="Payment Due Date" value={fmtDate(inv.dueDate)} />
+          {/* Two stacked columns so an empty row (BiRow renders nothing)
+              drops out without shifting the other side. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <BiRow kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" value={customer?.name} bold />
+              <BiRow kh="អាសយដ្ឋាន" en="Address" value={customer?.address} />
+              <BiRow
+                kh="ទូរស័ព្ទលេខ , អ្នកតំណាង"
+                en="Telephone No. , Representative"
+                value={[customer?.phone, customer?.representative].filter(Boolean).join(' , ')}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <BiRow kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" value={inv.invoiceNo} bold />
+              <BiRow kh="កាលបរិច្ឆេទ" en="Issue Date" value={fmtDate(inv.issueDate)} />
+              <BiRow kh="ថ្ងៃផុតកំណត់សង់ប្រាក់" en="Payment Due Date" value={fmtDate(inv.dueDate)} />
+            </div>
           </div>
 
           {/* Items table */}
@@ -271,7 +277,6 @@ export function PublicInvoiceView() {
                 <Th kh="ឯកតា" en="UOM" width="60px" />
                 <Th kh="បរិមាណ" en="Qty" width="60px" align="right" />
                 <Th kh="តម្លៃឯកតា" en="Unit Price" width="90px" align="right" />
-                <Th kh="បញ្ចុះតម្លៃ" en="Discount" width="90px" align="right" />
                 <Th kh="តម្លៃទាំងអស់" en="Total" width="100px" align="right" />
               </tr>
             </thead>
@@ -286,34 +291,33 @@ export function PublicInvoiceView() {
                   <Td align="center">{it.unit || ''}</Td>
                   <Td align="right">{it.quantity}</Td>
                   <Td align="right">{fmtMoney(it.unitPrice)}</Td>
-                  <Td align="right">{fmtMoney(0)}</Td>
                   <Td align="right">{fmtMoney(it.lineTotal)}</Td>
                 </tr>
               ))}
               {/* Totals rows */}
               <tr>
-                <Td colSpan={6} align="right" bold>សរុប (USD) / Sub Total ({currency})</Td>
+                <Td colSpan={5} align="right" bold>សរុប (USD) / Sub Total ({currency})</Td>
                 <Td align="right" bold>{fmtMoney(inv.subtotal)}</Td>
               </tr>
               {inv.discountAmount > 0 && (
                 <tr>
-                  <Td colSpan={6} align="right">បញ្ចុះតម្លៃ / Discount</Td>
+                  <Td colSpan={5} align="right">បញ្ចុះតម្លៃ / Discount</Td>
                   <Td align="right">-{fmtMoney(inv.discountAmount)}</Td>
                 </tr>
               )}
               {inv.taxAmount > 0 && (
                 <tr>
-                  <Td colSpan={6} align="right">អាករ / VAT</Td>
+                  <Td colSpan={5} align="right">អាករ / VAT</Td>
                   <Td align="right">{fmtMoney(inv.taxAmount)}</Td>
                 </tr>
               )}
               <tr>
-                <Td colSpan={6} align="right" bold>សរុប ({currency}) / Grand Total ({currency})</Td>
+                <Td colSpan={5} align="right" bold>សរុប ({currency}) / Grand Total ({currency})</Td>
                 <Td align="right" bold>{fmtMoney(inv.total)}</Td>
               </tr>
               {currency !== 'KHR' && grandKhr > 0 && (
                 <tr>
-                  <Td colSpan={6} align="right" bold>សរុប (KHR) / Grand Total (KHR)</Td>
+                  <Td colSpan={5} align="right" bold>សរុប (KHR) / Grand Total (KHR)</Td>
                   <Td align="right" bold>៛ {grandKhr.toLocaleString('en-US')}</Td>
                 </tr>
               )}
@@ -373,6 +377,8 @@ export function PublicInvoiceView() {
 /* -------------------------------------------------------------------------- */
 
 function BiRow({ kh, en, value, bold }: { kh: string; en: string; value?: string | null; bold?: boolean }) {
+  // No value, no row — the label alone is noise on a printed invoice.
+  if (!value || !value.trim()) return null;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px', alignItems: 'baseline' }}>
       <div>

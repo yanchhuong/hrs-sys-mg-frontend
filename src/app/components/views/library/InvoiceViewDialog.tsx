@@ -522,11 +522,10 @@ function ProInvoicePrint({
           <div style={{ fontWeight: 700 }}>{invoice.invoiceNo}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 160px 1fr', gap: 6, marginBottom: 6 }}>
-          <div>
-            <div>អាសយដ្ឋាន</div>
-            <div className="kh-label">Address</div>
-          </div>
-          <div>—</div>
+          {/* No address on a library member — leave the cells blank
+              rather than print a label over a dash. */}
+          <div />
+          <div />
           <div>
             <div>កាលបរិច្ឆេទ</div>
             <div className="kh-label">Issue Date</div>
@@ -534,11 +533,8 @@ function ProInvoicePrint({
           <div>{formatDate(invoice.issueDate)}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 160px 1fr', gap: 6 }}>
-          <div>
-            <div>ទូរស័ព្ទលេខ , អ្នកតំណាង</div>
-            <div className="kh-label">Telephone No. , Representative</div>
-          </div>
-          <div>—</div>
+          <div />
+          <div />
           <div>
             <div>ថ្ងៃផុតកំណត់បង់ប្រាក់</div>
             <div className="kh-label">Payment Due Date</div>

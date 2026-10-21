@@ -1929,29 +1929,48 @@ function PrintVoucher({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><VBiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
-          <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
+        {/* Two stacked columns, not a left/right-interleaved grid, so a
+            row with no value (no address, no phone…) can drop out —
+            label included — without shifting the other side. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(customer?.name ?? '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><VBiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+              <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
+            </div>
+          )}
+          {!!String(customer?.address ?? '').trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><VBiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
+              <div>{customer?.address ?? ''}</div>
+            </div>
+          )}
+          {!!String([customer?.phone, customer?.representative].filter(Boolean).join(', ')).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '140px' }}><VBiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
+              <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><VBiLabel kh="លេខរៀងប័ណ្ណផ្តល់" en="Voucher N°" /></div>
-          <div style={{ fontFamily: 'monospace' }}>{voucher.voucherNo}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><VBiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
-          <div>{customer?.address ?? ''}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><VBiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
-          <div>{fmtDate(voucher.issueDate)}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '140px' }}><VBiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
-          <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ minWidth: '120px' }}><VBiLabel kh="គោលបំណង" en="Purpose" /></div>
-          <div style={{ fontWeight: 600 }}>{vouchersApi.PURPOSE_LABELS[voucher.purpose]}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {!!String(voucher.voucherNo).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><VBiLabel kh="លេខរៀងប័ណ្ណផ្តល់" en="Voucher N°" /></div>
+              <div style={{ fontFamily: 'monospace' }}>{voucher.voucherNo}</div>
+            </div>
+          )}
+          {!!String(fmtDate(voucher.issueDate)).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><VBiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+              <div>{fmtDate(voucher.issueDate)}</div>
+            </div>
+          )}
+          {!!String(vouchersApi.PURPOSE_LABELS[voucher.purpose]).trim() && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ minWidth: '120px' }}><VBiLabel kh="គោលបំណង" en="Purpose" /></div>
+              <div style={{ fontWeight: 600 }}>{vouchersApi.PURPOSE_LABELS[voucher.purpose]}</div>
+            </div>
+          )}
         </div>
         {customer?.tin && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: '1 / span 2' }}>
@@ -1968,7 +1987,6 @@ function PrintVoucher({
             <th style={{ ...vThStyle, textAlign: 'left' }}><VBiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en="Description" /></th>
             <th style={vThStyle}><VBiLabel kh="បរិមាណ" en="Quantity" /></th>
             <th style={{ ...vThStyle, textAlign: 'right' }}><VBiLabel kh="ថ្លៃឯកតា" en="Unit Price" /></th>
-            <th style={{ ...vThStyle, textAlign: 'right' }}><VBiLabel kh="បញ្ចុះតម្លៃ" en="Discount" /></th>
             <th style={{ ...vThStyle, textAlign: 'right' }}><VBiLabel kh="ថ្លៃទំនិញ" en="Amount" /></th>
           </tr>
         </thead>
@@ -1982,37 +2000,32 @@ function PrintVoucher({
               </td>
               <td style={{ ...vTdStyle, textAlign: 'center' }}>{it.quantity}</td>
               <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>
-              {/* Per-line Discount column stays 0 — the 100% discount
-                  is shown once at the totals block so each line still
-                  prints its fair value in the Amount column. Mirrors
-                  Invoice's column ordering. */}
-              <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(0)}</td>
               <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>
             </tr>
           ))}
           <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
+            <td colSpan={4} style={{ ...vTdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
             <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(voucher.subtotal)}</td>
           </tr>
           {showVat && (
             <tr>
-              <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>
+              <td colSpan={4} style={{ ...vTdStyle, textAlign: 'right' }}>
                 អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
               </td>
               <td style={{ ...vTdStyle, textAlign: 'right' }}>{fmtPrimary(voucher.taxAmount)}</td>
             </tr>
           )}
           <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right' }}>បញ្ចុះតម្លៃ 100% / Discount 100%</td>
+            <td colSpan={4} style={{ ...vTdStyle, textAlign: 'right' }}>បញ្ចុះតម្លៃ 100% / Discount 100%</td>
             <td style={{ ...vTdStyle, textAlign: 'right' }}>− {fmtPrimary(voucher.subtotal)}</td>
           </tr>
           <tr>
-            <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
+            <td colSpan={4} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
             <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtPrimary(voucher.total)}</td>
           </tr>
           {showSecondary && (
             <tr>
-              <td colSpan={5} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
+              <td colSpan={4} style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
               <td style={{ ...vTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtSecondary(grandSecondary)}</td>
             </tr>
           )}
