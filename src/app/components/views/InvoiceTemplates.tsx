@@ -1343,6 +1343,48 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
     </span>
   );
 
+  /* The VAT TIN prints as one bordered cell per character — a GDT
+   * convention, not decoration — and the preview was showing it as
+   * plain monospace text, the one part of the header that did not
+   * look like the page it describes.
+   *
+   * MIRROR OF: Invoices.tsx VatTinBoxes, scaled to the preview's
+   * smaller type. Same inline-block cells rather than flex, for the
+   * renderer-consistency reasons documented there; keeping the shape
+   * identical also means the label + boxes wrap off the phone line
+   * here exactly as they do on paper. */
+  const TinBoxes = ({ tin }: { tin: string }) => {
+    const chars = tin.trim().split('');
+    return (
+      <span style={{ display: 'inline-block', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+        {chars.map((ch, i) => (
+          <span
+            key={i}
+            style={{
+              display: 'inline-block',
+              width: 13,
+              height: 15,
+              fontSize: 9,
+              lineHeight: '15px',
+              // Tabular numerals on a fixed advance width, so every
+              // cell lines up however the glyph falls.
+              fontFamily: 'Arial, sans-serif',
+              fontVariantNumeric: 'tabular-nums',
+              textAlign: 'center',
+              verticalAlign: 'middle',
+              // The separator is not a digit, so it gets no box.
+              border: ch === '-' ? 'none' : '1px solid #000',
+              boxSizing: 'border-box',
+              marginRight: i < chars.length - 1 ? 2 : 0,
+            }}
+          >
+            {ch}
+          </span>
+        ))}
+      </span>
+    );
+  };
+
   return (
     <div
       className="border rounded-md bg-white overflow-hidden"
@@ -1405,9 +1447,9 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
               alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center',
             }}>
               <span>(+855) 23 900 530</span>
-              <span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <BiLbl kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
-                <span style={{ marginLeft: 6, fontFamily: 'monospace' }}>L001-105018384</span>
+                <TinBoxes tin="L001-105018384" />
               </span>
             </div>
           </div>
