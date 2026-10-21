@@ -3405,7 +3405,21 @@ function InvoiceDetailDialog({
                 html, body { background: white !important; }
                 body > *:not(.print-tax-invoice) { display: none !important; }
                 body > .print-tax-invoice {
-                  display: block !important;
+                  /* A column at least one page tall, so the thank-you
+                     band can be pushed to the foot of the paper with
+                     margin-top:auto instead of stopping wherever the
+                     content happens to end. A short invoice used to
+                     leave the band floating mid-page above a third of
+                     a page of white.
+                     min-height, not height: a long invoice still grows
+                     and paginates, and the band lands at the bottom of
+                     the last sheet. border-box so the 14mm padding
+                     counts inside the 297mm rather than pushing a
+                     second, nearly-empty page. */
+                  display: flex !important;
+                  flex-direction: column !important;
+                  min-height: 297mm !important;
+                  box-sizing: border-box !important;
                   position: relative !important;
                   padding: 14mm !important;
                   color: black !important;
@@ -4157,7 +4171,11 @@ export function PrintTaxInvoice({
           <div style={{
             display: 'grid',
             gridTemplateColumns: (showCust && showSell) ? '1fr 1fr' : '1fr',
-            gap: '64px', marginTop: '110px', fontSize: '11px', textAlign: 'center',
+            // marginBottom guarantees a gap above the thank-you band:
+            // the band is pushed down with margin-top:auto, which is 0 on
+            // a full page, so the separation has to come from this side.
+            gap: '64px', marginTop: '110px', marginBottom: '18px',
+            fontSize: '11px', textAlign: 'center',
           }}>
             {showCust && (
               <div style={{ borderTop: '1px solid #000', paddingTop: '6px' }}>
@@ -4182,7 +4200,12 @@ export function PrintTaxInvoice({
           an empty stripe. */}
       {cfgFooter.showThankYou !== false && !!((cfgFooter.thankYouText ?? '').trim()) && (
         <div style={{
-          marginTop: '18px',
+          // Pushed to the foot of the sheet by the flex column above.
+          // 'auto' collapses to 0 on a full page, so the gap above is
+          // the signature block's marginBottom rather than a margin
+          // here — a margin-top of both auto and a length is not a
+          // thing CSS can express.
+          marginTop: 'auto',
           padding: '10px 14px',
           background: cfgHeader.headerBackgroundColor || '#F3EFE9',
           display: 'flex',
