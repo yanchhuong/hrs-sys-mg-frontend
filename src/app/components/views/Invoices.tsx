@@ -2728,13 +2728,21 @@ function InvoiceDetailDialog({
   }, []);
   /** Fetch the active default template on mount. 404 → null → the
    *  print component uses the built-in config. */
+  /* v-forward-waits-for-template — SETTLED, not "has a value". The
+   * template is null both while the request is in flight and for a
+   * tenant with no default, so anything waiting on a non-null value
+   * would wait forever in the second case. The auto-send below
+   * needs to know the difference. */
+  const [templatesSettled, setTemplatesSettled] = useState(false);
   useEffect(() => {
-    invoiceTemplates.getDefault('receipt')
-      .then(t => setReceiptTemplate(t.config))
-      .catch(() => setReceiptTemplate(null));
-    invoiceTemplates.getDefault('invoice')
-      .then(setInvoiceTemplate)
-      .catch(() => setInvoiceTemplate(null));
+    void Promise.allSettled([
+      invoiceTemplates.getDefault('receipt')
+        .then(t => setReceiptTemplate(t.config))
+        .catch(() => setReceiptTemplate(null)),
+      invoiceTemplates.getDefault('invoice')
+        .then(setInvoiceTemplate)
+        .catch(() => setInvoiceTemplate(null)),
+    ]).then(() => setTemplatesSettled(true));
   }, []);
 
   /** Auto-send-Telegram one-shot — used by the Save & Close create
@@ -2749,6 +2757,13 @@ function InvoiceDetailDialog({
     if (!autoSendTelegram) return;
     if (autoSentRef.current) return;
     if (!invoice || !companyInfo) return;            // wait for both
+    // v-forward-waits-for-template — and for the template fetch to
+    // settle. Without this the capture raced it: company info and
+    // the template are separate requests, and whenever the template
+    // lost, the customer was sent an image of the BUILT-IN layout
+    // rather than the tenant's own. Silent, and only on slower
+    // connections, which is the worst shape for a bug like this.
+    if (!templatesSettled) return;
     if (invoice.status !== 'progress') return;       // skip drafts / voids
     autoSentRef.current = true;
     const handle = setTimeout(async () => {
@@ -2772,7 +2787,7 @@ function InvoiceDetailDialog({
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [autoSendTelegram, invoice, companyInfo, onAutoSendConsumed]);
+  }, [autoSendTelegram, invoice, companyInfo, templatesSettled, onAutoSendConsumed]);
 
   const doAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
