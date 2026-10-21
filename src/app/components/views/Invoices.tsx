@@ -2103,23 +2103,26 @@ function InvoiceFormDialog({
                       onChange={raw => {
                         const total = Number(raw);
                         const qty = Number(it.quantity) || 0;
-                        // Round to the cent, because that is all the
-                        // column can hold: unit_price is numeric(14,2).
+                        // Round to the column's scale, not to the cent.
                         //
-                        // Sending full precision looked better on screen
-                        // but wrote a row that contradicted itself. With
-                        // qty=3 and total=100 the client sent unitPrice
-                        // 33.333333333333336; Postgres rounded that to
-                        // 33.33 while the server computed line_total from
-                        // the unrounded value and stored 100.00 — yet
-                        // 3 x 33.33 is 99.99. Reopening the dialog
-                        // recomputed the line from the stored 33.33, so a
-                        // no-op re-save silently rewrote the invoice down
-                        // to 99.99. Rounding here surfaces that cent
-                        // immediately instead, and the stored row agrees
-                        // with itself.
+                        // This rounded to 2 because unit_price was
+                        // numeric(14,2): sending full precision wrote a
+                        // row that contradicted itself — qty=3, total=100
+                        // sent 33.333333333333336, Postgres kept 33.33,
+                        // the server computed line_total from the
+                        // unrounded value and stored 100.00, and 3 x
+                        // 33.33 is 99.99. Reopening recomputed from 33.33
+                        // so a no-op re-save wrote the invoice down a
+                        // cent.
+                        //
+                        // V367 widened the column to numeric(14,4), so
+                        // the honest rounding point moved with it: at 4,
+                        // 100 / 3 stores as 33.3333 and the row still
+                        // agrees with itself. Rounding is still REQUIRED
+                        // — full float precision would reintroduce the
+                        // same mismatch one scale further out.
                         const nextUnitPrice = qty > 0 && raw !== '' && Number.isFinite(total)
-                          ? (total / qty).toFixed(2)
+                          ? (total / qty).toFixed(4)
                           : it.unitPrice;
                         updateItem(idx, {
                           unitPrice: nextUnitPrice,
