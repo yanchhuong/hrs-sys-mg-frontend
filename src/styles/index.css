@@ -348,6 +348,13 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
     left: 50% !important;
     transform: translateX(-50%) !important;
     box-shadow: none !important;
+    /* Print the card's fills. Browsers drop background colours on
+       print by default, which took the blue header band with them —
+       and the company name and role sitting on it are white text, so
+       they disappeared onto white paper rather than merely losing
+       their backdrop. Inherits to the card's children. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 

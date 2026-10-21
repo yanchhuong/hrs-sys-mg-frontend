@@ -3424,6 +3424,15 @@ function InvoiceDetailDialog({
                   position: relative !important;
                   padding: 14mm !important;
                   color: black !important;
+                  /* Print every background we asked for. Browsers drop
+                     background colours on print by default to save ink,
+                     which silently flattened the tinted thank-you band
+                     to white on paper while the same markup rendered
+                     correctly on screen and in the forwarded image. The
+                     property inherits, so the band and anything else
+                     with a fill inside the template is covered. */
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
                   /* Khmer body uses Battambang; titles get Moul (a
                    *  Khmer display face) via .kh-title below. Latin
                    *  text falls through to the system stack. */
