@@ -109,3 +109,26 @@ export function initialBox(
 export function snapBox(b: Box): Box {
   return { x: Math.round(b.x), y: Math.round(b.y), size: Math.round(b.size) };
 }
+
+/**
+ * Decoded byte size of a `data:` URL.
+ *
+ * Here because both crop UIs already import this module and both
+ * need it for the same reason: the size limit belongs on the CROP,
+ * not on the file that was picked. A phone screenshot is routinely
+ * megabytes and the QR cut out of it is tens of kilobytes, so
+ * checking the source first rejected uploads that would have been
+ * fine — and rejected them before the operator could crop, which
+ * left no way forward at all.
+ *
+ * Base64 carries 3 bytes per 4 characters, minus whatever the
+ * trailing '=' padding stands in for.
+ */
+export function dataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return 0;
+  const body = dataUrl.slice(comma + 1);
+  if (!/;base64/i.test(dataUrl.slice(0, comma))) return body.length;
+  const pad = body.endsWith('==') ? 2 : body.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor(body.length * 3 / 4) - pad);
+}

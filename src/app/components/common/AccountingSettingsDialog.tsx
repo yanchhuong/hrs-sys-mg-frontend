@@ -11,6 +11,7 @@ import { Clock, User, Eye, Hash, Receipt as ReceiptIcon, Landmark, Upload, X as 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { QrCropDialog } from './QrCropDialog';
+import { dataUrlBytes } from '../../utils/cropBox';
 import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
@@ -23,6 +24,13 @@ import * as paywayApi from '../../api/payway';
 import { PayWaySettingsDialog } from './PayWaySettingsDialog';
 import { Loyalty } from '../views/Loyalty';
 import { CommissionSettings } from '../views/CommissionSettings';
+
+/** v-qr-crop-size-after — what is worth DECODING, versus what is
+ *  worth STORING. The first is generous: a phone screenshot is a
+ *  few MB and has to get as far as the crop step. The second is the
+ *  real limit, and it applies to the cropped square. */
+const MAX_SOURCE_BYTES = 12 * 1024 * 1024;
+const MAX_SAVED_BYTES  = 1024 * 1024;
 
 /** Reference lists of taxation patterns. Sale + Purchase share the
  *  original 5-pattern VAT+WHT set; Receipt has its own 4-pattern WHT
@@ -348,12 +356,18 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
    * discovered by a customer who cannot pay. */
   const [cropFor, setCropFor] = useState<{ id: string; src: string } | null>(null);
   const handleQrUpload = (id: string, file: File) => {
-    if (file.size > 1024 * 1024) {
-      toast.error('Image too large — keep KHQR under 1 MB');
-      return;
-    }
     if (!file.type.startsWith('image/')) {
       toast.error('Only image files (PNG / JPG) are supported');
+      return;
+    }
+    /* v-qr-crop-size-after — the 1 MB limit belongs on the SAVED
+     * crop, not on the file that was picked. It used to run here,
+     * which rejected ordinary phone screenshots (routinely several
+     * MB) before the operator could crop the QR out of them — and
+     * the QR itself is tens of kilobytes. The only limit left at
+     * this point is a sanity cap on what is worth decoding at all. */
+    if (file.size > MAX_SOURCE_BYTES) {
+      toast.error('Image too large to open — pick one under 12 MB');
       return;
     }
     const reader = new FileReader();
@@ -1440,6 +1454,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
         src={cropFor?.src ?? null}
         onCancel={() => setCropFor(null)}
         onConfirm={dataUrl => {
+          // The real limit, applied to what will actually be stored.
+          // A cropped QR is ~30 KB, so this only fires if someone
+          // saved most of a large photo — and it says so, instead of
+          // refusing the file before they had a chance to crop it.
+          if (dataUrlBytes(dataUrl) > MAX_SAVED_BYTES) {
+            toast.error('Cropped image is still over 1 MB — crop closer to the QR');
+            return;
+          }
           if (cropFor) updateBank(cropFor.id, { qrDataUrl: dataUrl });
           setCropFor(null);
         }}
