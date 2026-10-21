@@ -4088,12 +4088,11 @@ export function PrintTaxInvoice({
         alignItems: 'flex-start',
         gap: '16px',
       }}>
-        {/* Notes column */}
-          {/* Aligned to the outer edge, away from the QR: the
-              column is flex: 1, so without this the text starts
-              against the gap between the two blocks and a short
-              note reads as floating mid-page. Flips with the QR
-              so each block sits on its own margin. */}
+        {/* Notes column, aligned to the outer edge away from the
+            QR. It is flex: 1, so without the alignment its text
+            starts against the gap between the two blocks and a
+            short note reads as floating mid-page. Flips with the
+            QR so each block sits on its own margin. */}
         <div style={{
           flex: 1, minWidth: 0,
           textAlign: cfgFooter.qrPosition === 'left' ? 'right' : 'left',

@@ -1515,11 +1515,8 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         display: 'flex', gap: 12, alignItems: 'flex-start',
         flexDirection: f.qrPosition === 'left' ? 'row-reverse' : 'row',
       }}>
-          {/* Aligned to the outer edge, away from the QR: the
-              column is flex: 1, so without this the text starts
-              against the gap between the two blocks and a short
-              note reads as floating mid-page. Flips with the QR
-              so each block sits on its own margin. */}
+        {/* Notes column, aligned to the outer edge away from the
+            QR, exactly as it prints. */}
         <div style={{
           flex: 1, minWidth: 0,
           textAlign: f.qrPosition === 'left' ? 'right' : 'left',
