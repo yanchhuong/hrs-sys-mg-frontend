@@ -248,6 +248,12 @@ export async function issue(id: string, notifyTelegram = true): Promise<Invoice>
 }
 
 /** Mark an invoice as void (legal-document soft delete). */
+/** Due date + note only — the edit an OVERDUE invoice allows (its lines
+ *  and amounts are locked server-side). Null dueDate clears it. */
+export async function updateTerms(id: string, req: { dueDate: string | null; notes: string | null }): Promise<Invoice> {
+  return apiJson(`/api/v1/invoices/${id}/terms`, { method: 'PATCH', json: req });
+}
+
 export async function voidInvoice(id: string): Promise<Invoice> {
   return apiJson(`/api/v1/invoices/${id}/void`, { method: 'POST' });
 }

@@ -2791,6 +2791,18 @@ function InvoiceDetailDialog({
     return () => clearTimeout(handle);
   }, [autoSendTelegram, invoice, companyInfo, templatesSettled, onAutoSendConsumed]);
 
+  // Overdue invoices: Edit opens a due date + note dialog instead of the
+  // full form — the lines and amounts are locked server-side.
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsDue, setTermsDue] = useState('');
+  const [termsNote, setTermsNote] = useState('');
+  const openTerms = () => {
+    if (!invoice) return;
+    setTermsDue(invoice.dueDate ?? '');
+    setTermsNote(invoice.notes ?? '');
+    setTermsOpen(true);
+  };
+
   const doAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -2945,6 +2957,14 @@ function InvoiceDetailDialog({
                   <Button size="sm" variant="outline" disabled={busy}
                     onClick={() => onEdit(invoice)}
                   >
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Button>
+                )}
+                {/* Overdue: issued and past due, so its items and amounts
+                    stand — only the due date and note can change. */}
+                {canEdit && invoice.status === 'overdue' && (
+                  <Button size="sm" variant="outline" disabled={busy} onClick={openTerms}
+                    title="Change the due date or note — items and amounts stay as issued">
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                   </Button>
                 )}
@@ -3528,6 +3548,57 @@ function InvoiceDetailDialog({
             company={companyInfo}
             onClose={() => setReceiptForPayment(null)}
           />
+        )}
+
+        {/* Overdue edit — due date + note only. */}
+        {termsOpen && invoice && (
+          <Dialog open onOpenChange={o => { if (!o) setTermsOpen(false); }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Due date &amp; note — {invoice.invoiceNo}</DialogTitle>
+                <DialogDescription>
+                  This invoice is overdue, so its items and amounts stay as issued.
+                  You can move the due date or update the note.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="terms-due">Due date</Label>
+                  <Input id="terms-due" type="date" value={termsDue}
+                    min={invoice.issueDate ?? undefined}
+                    onChange={e => setTermsDue(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="terms-note">Note</Label>
+                  <Textarea id="terms-note" rows={3} value={termsNote}
+                    placeholder="e.g. Customer agreed to pay by the 30th"
+                    onChange={e => setTermsNote(e.target.value)} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setTermsOpen(false)} disabled={busy}>Cancel</Button>
+                <Button disabled={busy} onClick={async () => {
+                  // Own try/catch rather than doAction: the dialog must
+                  // stay open (with what was typed) when the save fails.
+                  setBusy(true);
+                  try {
+                    await invoicesApi.updateTerms(invoice.id, {
+                      dueDate: termsDue || null,
+                      notes: termsNote.trim() || null,
+                    });
+                    toast.success('Due date & note saved');
+                    setTermsOpen(false);
+                    await load();
+                    onChanged();
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : 'Could not save');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>Save</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
       </DialogContent>
       {forwardShare.dialog}
