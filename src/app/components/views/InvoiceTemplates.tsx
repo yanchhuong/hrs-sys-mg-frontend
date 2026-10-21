@@ -692,7 +692,12 @@ export function InvoiceTemplates() {
           source is a gallery preset, offers a "Use this preset"
           primary action; otherwise it's read-only. */}
       <Dialog open={!!previewingConfig} onOpenChange={o => { if (!o) setPreviewingConfig(null); }}>
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+        {/* Close button removed (by request) — the X is the close control.
+            The X is `absolute` on DialogContent, so DialogContent must NOT be
+            the scroll container or a full-size preview scrolls the X off the
+            top (why Close was once restored). Only the preview body scrolls;
+            header + X stay put. Footer only for "Use this preset". */}
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {previewingConfig?.title}
@@ -700,28 +705,22 @@ export function InvoiceTemplates() {
               <span className="text-xs font-normal text-gray-500">· Preview</span>
             </DialogTitle>
           </DialogHeader>
-          {previewingConfig && <TemplatePreview config={previewingConfig.config} kind={previewingConfig.kind} />}
-          {/* v-dialog-close-x-only — Close RESTORED and the footer made
-              unconditional again. This DialogContent is itself the scroll
-              container (max-h-[85vh] overflow-y-auto) and the X is `absolute`,
-              so on a full-size preview the X scrolls off the top. Guarding the
-              whole footer on `preset` meant a CUSTOM template — which has none —
-              rendered a full-page preview with no close control at all. Close is
-              unconditional; "Use this preset" stays guarded. */}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewingConfig(null)}>Close</Button>
-            {previewingConfig?.preset && (
-                <Button
-                  onClick={() => {
-                    const p = previewingConfig.preset!;
-                    setPreviewingConfig(null);
-                    startFromPreset(p);
-                  }}
-                >
-                  <Copy className="h-4 w-4 mr-1.5" /> Use this preset
-                </Button>
-            )}
-          </DialogFooter>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {previewingConfig && <TemplatePreview config={previewingConfig.config} kind={previewingConfig.kind} />}
+          </div>
+          {previewingConfig?.preset && (
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  const p = previewingConfig.preset!;
+                  setPreviewingConfig(null);
+                  startFromPreset(p);
+                }}
+              >
+                <Copy className="h-4 w-4 mr-1.5" /> Use this preset
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -729,11 +728,15 @@ export function InvoiceTemplates() {
           the editor uses so the operator sees exactly what a
           duplicated copy would start from. */}
       <Dialog open={previewingBuiltin} onOpenChange={setPreviewingBuiltin}>
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+        {/* Same layout as the preview above: only the body scrolls, so the
+            X never scrolls off. */}
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Default Template · Preview</DialogTitle>
           </DialogHeader>
-          <TemplatePreview config={defaultTemplateConfig()} kind="invoice" />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <TemplatePreview config={defaultTemplateConfig()} kind="invoice" />
+          </div>
           {/* v-dialog-close-x-only — "Close" dropped; the X closes this
               read-only preview. Footer kept for the one real action, which
               only seeds the editor locally (the create happens on submit). */}
