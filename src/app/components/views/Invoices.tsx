@@ -4494,9 +4494,12 @@ function PaymentReceiptDialog({
   const items = (invoice.items ?? []).map(l => ({
     name: l.name,
     note: l.description ?? null,
-    quantityHint: l.quantity > 0 && l.unit
-      ? `${l.quantity} x ${l.unit}`
-      : (l.quantity > 0 ? `Qty ${l.quantity}` : null),
+    // v-qty-uom-order — "x 5 m": the quantity then its unit. The app
+    // showed "m x 5" and this showed "5 x m", so the same line read
+    // two different ways depending on the screen it was on.
+    quantityHint: l.quantity > 0
+      ? `x ${l.quantity}${l.unit ? ` ${l.unit}` : ''}`
+      : null,
     amount: money(l.lineTotal ?? 0),
   }));
 
