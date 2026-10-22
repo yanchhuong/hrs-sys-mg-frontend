@@ -197,6 +197,24 @@ export function buildPosReceiptInner(args: BuildArgs): string {
   const methodLabel = (order.paymentMethod ?? 'cash').toUpperCase();
   const received = order.paymentReceived ?? order.total;
   const change   = order.paymentChange ?? 0;
+  /* v-receipt-deposit-remain — a part payment says so.
+   *
+   * The receipt printed "Paid Amount" and stopped, so a customer who
+   * put money down saw what they had paid and no sign of what was
+   * left — the one number that matters on a deposit. The A4 invoice
+   * has carried Deposit / Remain for this case all along; the
+   * receipt now uses the same two words for the same situation.
+   *
+   * Partial means money taken but not all of it. A full payment
+   * keeps the single "Paid Amount" line it has always had, and
+   * overpayment stays Paid Amount + Change rather than a negative
+   * remainder. */
+  const remaining = order.total - received;
+  const isPartial = received > 0 && remaining > 0.005;
+  const paidRows = isPartial
+    ? `<div class="kv"><span class="kv-k">Deposit</span><span class="kv-v">${received.toFixed(2)}</span></div>
+       <div class="kv"><span class="kv-k">Remain</span><span class="kv-v">${remaining.toFixed(2)}</span></div>`
+    : `<div class="kv"><span class="kv-k">Paid Amount</span><span class="kv-v">${received.toFixed(2)}</span></div>`;
   const changeRow = change > 0
     ? `<div class="kv"><span class="kv-k">Change</span><span class="kv-v">$${change.toFixed(2)}</span></div>`
     : '';
@@ -251,7 +269,7 @@ export function buildPosReceiptInner(args: BuildArgs): string {
       ${discountRow}
       ${taxRow}
       <div class="kv total"><span class="kv-k">Total Due</span><span class="kv-v">$${order.total.toFixed(2)}</span></div>
-      <div class="kv"><span class="kv-k">Paid Amount</span><span class="kv-v">$${received.toFixed(2)}</span></div>
+      ${paidRows}
       ${changeRow}
       ${khrRow}
       <div class="kv"><span class="kv-k">Method</span><span class="kv-v">${esc(methodLabel)}</span></div>
