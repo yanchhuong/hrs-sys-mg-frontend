@@ -29,7 +29,9 @@ export interface LeaveRequest {
   reason?: string;
   correctedCheckIn?: string | null;
   correctedCheckOut?: string | null;
+  /** Legacy name — the server sends approvedById (LeaveRequestDto). */
   approvedBy?: string | null;
+  approvedById?: string | null;
   approvedAt?: string | null;
   submittedAt: string;
   /** Legacy flag — kept for backwards compatibility with V46 rows.

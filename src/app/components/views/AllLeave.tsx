@@ -101,7 +101,9 @@ function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
     status,
     submittedBy: r.employeeId,
     submittedAt: r.submittedAt,
-    approvedBy: r.approvedBy ?? undefined,
+    // The DTO field is approvedById; approvedBy never arrived, so the
+    // detail's "Approved By" block could not render.
+    approvedBy: r.approvedById ?? r.approvedBy ?? undefined,
     approvedAt: r.approvedAt ?? undefined,
     correctedCheckIn: r.correctedCheckIn ?? undefined,
     correctedCheckOut: r.correctedCheckOut ?? undefined,
@@ -907,14 +909,12 @@ export function AllLeave() {
                   <p className="text-xs text-gray-500">Reason</p>
                   <p className="whitespace-pre-wrap">{viewTarget.reason || <span className="text-gray-300">—</span>}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500">Remark</p>
-                  <p className="whitespace-pre-wrap">{viewTarget.notes || <span className="text-gray-300">—</span>}</p>
-                </div>
-                {approver && (
+                {/* "Remark" (notes) removed — leave requests carry no notes
+                    field, so it always read "—". */}
+                {(approver || viewTarget.approvedAt) && viewTarget.status !== 'pending' && (
                   <div>
-                    <p className="text-xs text-gray-500">Approved By</p>
-                    <p className="font-medium">{approver.name}</p>
+                    <p className="text-xs text-gray-500">{viewTarget.status === 'rejected' ? 'Rejected' : 'Approved'}{approver ? ' By' : ''}</p>
+                    {approver && <p className="font-medium">{approver.name}</p>}
                     {viewTarget.approvedAt && (
                       <p className="text-xs text-gray-500">{safeFmt(viewTarget.approvedAt, 'MMM dd, yyyy HH:mm')}</p>
                     )}

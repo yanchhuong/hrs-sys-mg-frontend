@@ -770,7 +770,9 @@ export function Attendance({ onNavigate }: Props = {}) {
       return true;
     });
     return isTenantWide ? rows : rows.filter(a => matchesScope(a.employeeId, scopeMode, employees));
-  }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode]);
+    // `employees` is read by matchesScope — without it a manager's team
+    // view stayed on the pre-load (empty) roster result.
+  }, [attendance, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode, employees]);
 
   // Employee lookup shared by every roster-derived memo below (daily
   // filters, scan history, export). Attendance rows can key
