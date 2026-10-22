@@ -775,7 +775,9 @@ export function Bills() {
                   {pagination.paginatedItems.map(inv => {
                     const isAdjustment = !!inv.parentBillId;
                     return (
-                    <TableRow key={inv.id} className={isAdjustment ? 'bg-slate-50/50' : ''}>
+                    <TableRow key={inv.id}
+                      className={`cursor-pointer hover:bg-gray-50 ${isAdjustment ? 'bg-slate-50/50' : ''}`}
+                      onClick={() => setDetailId(inv.id)}>
                       <TableCell className="tabular-nums text-sm">
                         {isAdjustment && (
                           <span className="text-gray-400 mr-1.5" title="Adjusts the parent bill above">↳</span>
@@ -875,7 +877,9 @@ export function Bills() {
                           {STATUS_LABEL[inv.status] ?? inv.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      {/* Actions swallow the click so a button does its
+                          own job instead of also opening the dialog. */}
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="inline-flex gap-1">
                           <Button size="sm" variant="ghost" className="h-7" onClick={() => setDetailId(inv.id)}>
                             <Eye className="h-3 w-3 mr-1" /> View

@@ -380,7 +380,8 @@ export function Vouchers() {
                 {pagination.paginatedItems.map(v => {
                   const c = customerById.get(v.customerId);
                   return (
-                    <TableRow key={v.id} className="hover:bg-gray-50">
+                    <TableRow key={v.id} className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setDetailId(v.id)}>
                       <TableCell className="tabular-nums text-sm">{v.voucherNo}</TableCell>
                       <TableCell className="text-sm">{vouchersApi.PURPOSE_LABELS[v.purpose]}</TableCell>
                       <TableCell>{c?.name ?? <span className="text-gray-400">(unknown)</span>}</TableCell>
@@ -396,7 +397,9 @@ export function Vouchers() {
                           {v.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      {/* Actions swallow the click so a button does its
+                          own job instead of also opening the dialog. */}
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
                           <Button size="sm" variant="ghost" onClick={() => setDetailId(v.id)} title="View details">
                             <Eye className="h-3.5 w-3.5" />
