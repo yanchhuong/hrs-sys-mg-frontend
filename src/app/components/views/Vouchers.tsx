@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { LEN, toNum } from '../../utils/validation';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
@@ -386,7 +387,11 @@ export function Vouchers() {
                       <TableCell className="tabular-nums text-sm">{v.voucherNo}</TableCell>
                       <TableCell className="text-sm">{vouchersApi.PURPOSE_LABELS[v.purpose]}</TableCell>
                       <TableCell>{c?.name ?? <span className="text-gray-400">(unknown)</span>}</TableCell>
-                      <TableCell className="text-sm">{formatDate(v.issueDate)}</TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(v.issueDate)}
+                        {/* v-doc-audit-line — creator / last editor */}
+                        <DocAuditLine compact createdBy={v.createdByName} updatedBy={v.updatedByName} className="max-w-[180px]" />
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-gray-500">
                         {/* Subtotal = fair value being given away. The
                             actual total is always 0; we surface the
@@ -1472,6 +1477,10 @@ function VoucherDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {/* v-doc-audit-line — creator / last editor under the meta row */}
+              {voucher && (
+                <DocAuditLine createdBy={voucher.createdByName} updatedBy={voucher.updatedByName} className="mt-1" />
+              )}
             </div>
             {voucher && (
               <div className="flex gap-1.5 mr-8 print:hidden">

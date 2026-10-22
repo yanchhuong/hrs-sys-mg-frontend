@@ -62,6 +62,7 @@ import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { LinkifiedText } from '../common/LinkifiedText';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
 import * as telegramApi from '../../api/telegram';
@@ -959,6 +960,12 @@ export function Invoices({
                       </TableCell>
                       <TableCell className="text-sm text-gray-600 truncate max-w-[130px]" title={inv.createdByName ?? ''}>
                         {inv.createdByName ?? '—'}
+                        {/* v-doc-audit-line — last editor under the seller, only when it's someone else */}
+                        {inv.updatedByName && inv.updatedByName !== inv.createdByName && (
+                          <div className="text-[11px] text-gray-500 truncate" title={`Edited by ${inv.updatedByName}`}>
+                            edited by {inv.updatedByName}
+                          </div>
+                        )}
                       </TableCell>
                       {/* Actions swallow the click so a button does its
                           own job instead of also opening the detail
@@ -2902,6 +2909,10 @@ function InvoiceDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {/* v-doc-audit-line — creator / last editor under the meta row */}
+              {invoice && (
+                <DocAuditLine createdBy={invoice.createdByName} updatedBy={invoice.updatedByName} className="mt-1" />
+              )}
             </div>
             {/* v-invoice-detail-close-inline — the X is now the last
                 button in this row (see below) instead of Radix's

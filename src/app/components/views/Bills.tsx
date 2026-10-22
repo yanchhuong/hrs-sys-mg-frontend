@@ -29,6 +29,7 @@ import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { LinkifiedText } from '../common/LinkifiedText';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import * as accountingSettingsApi from '../../api/accountingSettings';
@@ -793,7 +794,11 @@ export function Bills() {
                       <TableCell className="text-sm">
                         {vendorById.get(inv.vendorId)?.name ?? <span className="text-gray-400">(unknown)</span>}
                       </TableCell>
-                      <TableCell className="text-sm text-gray-600">{formatDate(inv.issueDate)}</TableCell>
+                      <TableCell className="text-sm text-gray-600">
+                        {formatDate(inv.issueDate)}
+                        {/* v-doc-audit-line — creator / last editor */}
+                        <DocAuditLine compact createdBy={inv.createdByName} updatedBy={inv.updatedByName} className="max-w-[180px]" />
+                      </TableCell>
                       {/* CN amount represents money we owe customer →
                           render signed negative in red so the column
                           and footer sum match the ledger direction. */}
@@ -2319,6 +2324,10 @@ function BillDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {/* v-doc-audit-line — creator / last editor under the meta row */}
+              {invoice && (
+                <DocAuditLine createdBy={invoice.createdByName} updatedBy={invoice.updatedByName} className="mt-1" />
+              )}
             </div>
             {/* mr-8 reserves room for the dialog's built-in close (X)
                 button at top:1rem right:1rem — without the inset the

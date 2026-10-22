@@ -98,6 +98,9 @@ export interface Bill {
    *  children. Populated on the single-invoice GET; list payloads
    *  fall back to `total − paidAmount`. */
   netBalance?: number;
+  /** v-doc-audit-line — creator / last saver display names; null on legacy rows. */
+  createdByName?: string | null;
+  updatedByName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

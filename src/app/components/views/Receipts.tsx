@@ -23,6 +23,7 @@ import { LEN } from '../../utils/validation';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { BulkUploadReceiptsDialog } from '../common/BulkUploadReceiptsDialog';
 import { Pagination } from '../common/Pagination';
@@ -309,7 +310,11 @@ export function Receipts() {
                       <TableCell className="capitalize text-sm">
                         {(receiptsApi.SUPPLIER_TYPES.find(s => s.key === r.supplierType)?.label) ?? r.supplierType}
                       </TableCell>
-                      <TableCell className="text-sm">{formatDate(r.issueDate)}</TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(r.issueDate)}
+                        {/* v-doc-audit-line — creator / last editor */}
+                        <DocAuditLine compact createdBy={r.createdByName} updatedBy={r.updatedByName} className="max-w-[180px]" />
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.amount, r.currency)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(r.taxAmount, r.currency)}</TableCell>
                       {/* Per-currency Paid columns. Signed the same as
@@ -1010,6 +1015,10 @@ function ReceiptDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {/* v-doc-audit-line — creator / last editor under the meta row */}
+              {receipt && (
+                <DocAuditLine createdBy={receipt.createdByName} updatedBy={receipt.updatedByName} className="mt-1" />
+              )}
             </div>
             {receipt && (
               <div className="flex gap-1.5 mr-8">

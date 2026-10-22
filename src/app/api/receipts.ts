@@ -65,6 +65,9 @@ export interface Receipt {
    *  is on. */
   purpose?: string | null;
   status: ReceiptStatus;
+  /** v-doc-audit-line — creator / last saver display names; null on legacy rows. */
+  createdByName?: string | null;
+  updatedByName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

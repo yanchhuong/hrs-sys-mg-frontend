@@ -46,6 +46,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { NumericInput } from '../common/NumericInput';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import { useForwardShare } from '../common/ForwardShareDialog';
@@ -416,7 +417,11 @@ export function Quotations() {
                           <RecipientsPopover quotation={q} customer={c} />
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm">{formatDate(q.issueDate)}</TableCell>
+                      <TableCell className="text-sm">
+                        {formatDate(q.issueDate)}
+                        {/* v-doc-audit-line — creator / last editor */}
+                        <DocAuditLine compact createdBy={q.createdByName} updatedBy={q.updatedByName} className="max-w-[180px]" />
+                      </TableCell>
                       <TableCell className="text-sm">{q.expiryDate ?? '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(q.total, q.currency)}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm text-gray-600">
@@ -1675,6 +1680,10 @@ function QuotationDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {/* v-doc-audit-line — creator / last editor under the meta row */}
+              {quotation && (
+                <DocAuditLine createdBy={quotation.createdByName} updatedBy={quotation.updatedByName} className="mt-1" />
+              )}
             </div>
             {quotation && (
               <div className="flex gap-1.5 mr-10 print:hidden">

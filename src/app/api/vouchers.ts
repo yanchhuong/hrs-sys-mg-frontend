@@ -85,6 +85,9 @@ export interface Voucher {
   notes?: string | null;
   terms?: string | null;
   items: VoucherItem[];
+  /** v-doc-audit-line — creator / last saver display names; null on legacy rows. */
+  createdByName?: string | null;
+  updatedByName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
