@@ -28,6 +28,9 @@ export interface Notification {
   entityType: string | null;
   entityId: string | null;
   read: boolean;
+  /** Who caused it; null for system-generated / pre-existing rows. */
+  actorUserId?: string | null;
+  actorName?: string | null;
 }
 
 export async function list(): Promise<Notification[]> {

@@ -11,6 +11,7 @@ import { TenantDocCommentDialog } from './TenantDocCommentDialog';
 import type { PortfolioDocType } from '../../api/agencyPortfolioDocs';
 import { updateAppBadge } from '../../utils/appBadge';
 import { formatNotificationTime } from '../../utils/format';
+import { useAuth } from '../../context/AuthContext';
 
 const DOC_TYPES = new Set<string>(['invoice', 'bill', 'expense']);
 
@@ -30,6 +31,7 @@ export function NotificationsBell({ onNavigate }: {
    *  which case an approval ping just marks itself read. */
   onNavigate?: (view: string) => void;
 } = {}) {
+  const { currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<api.Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -198,9 +200,15 @@ export function NotificationsBell({ onNavigate }: {
                   {!n.read && <span className="h-1.5 w-1.5 rounded-full bg-blue-600 shrink-0" />}
                 </div>
                 <div className="text-[11px] text-gray-500 truncate mt-0.5">{n.body}</div>
-                {n.publishAt && (
+                {/* Actor ("You" when it's me) joins the time meta; omitted when null. */}
+                {(n.publishAt || n.actorName) && (
                   <div className="text-[10px] text-gray-400 mt-1">
-                    {formatNotificationTime(n.publishAt)}
+                    {[
+                      n.actorName
+                        ? (currentUser && n.actorUserId && String(currentUser.id) === n.actorUserId ? 'You' : n.actorName)
+                        : null,
+                      n.publishAt ? formatNotificationTime(n.publishAt) : null,
+                    ].filter(Boolean).join(' · ')}
                   </div>
                 )}
               </div>
