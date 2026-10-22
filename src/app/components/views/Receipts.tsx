@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
+import { LEN } from '../../utils/validation';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
@@ -570,6 +571,7 @@ function ReceiptFormDialog({
   const validate = (): boolean => {
     if (!vendorId) { toast.error('Vendor is required'); return false; }
     if (!amount || isNaN(Number(amount))) { toast.error('Amount must be a number'); return false; }
+    if (!(Number(amount) > 0)) { toast.error('Amount must be more than 0'); return false; }
     return true;
   };
 
@@ -677,7 +679,7 @@ function ReceiptFormDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Expense No</Label>
               <Input value={receiptNo} onChange={e => setReceiptNo(e.target.value)}
-                     className="tabular-nums" />
+                     className="tabular-nums" maxLength={LEN.docNo} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Date *</Label>
@@ -731,7 +733,7 @@ function ReceiptFormDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Tax ID</Label>
               <Input value={taxId} onChange={e => setTaxId(e.target.value)}
-                     placeholder="E/K/L000-000000000 if in Cambodia" />
+                     placeholder="E/K/L000-000000000 if in Cambodia" maxLength={LEN.taxId} />
             </div>
           </div>
 
@@ -839,7 +841,7 @@ function ReceiptFormDialog({
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>
             <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
-                      placeholder="Internal memo" />
+                      placeholder="Internal memo" maxLength={LEN.longText} />
           </div>
 
           {/* Chain approvers — manual-assign chain (V172, Phase 3b).
@@ -1407,12 +1409,11 @@ function RecordReceiptPaymentDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>
               {/* KHR has no sub-units → step 1; USD keeps cents step 0.01. */}
-              <Input
-                type="number"
-                min={0}
-                step={payCurrency === 'KHR' ? '1' : '0.01'}
+              <NumericInput
+                decimals={payCurrency === 'KHR' ? 0 : 2}
+                maxInt={12}
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
+                onChange={setAmount}
               />
             </div>
           </div>
@@ -1497,11 +1498,12 @@ function RecordReceiptPaymentDialog({
               onChange={e => setReferenceNo(e.target.value)}
               disabled={method === 'cash_advance'}
               placeholder={method === 'cash_advance' ? 'Pick an advance above' : 'Cheque #, bank ref, auth code'}
+              maxLength={LEN.referenceNo}
             />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>
-            <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+            <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} maxLength={LEN.longText} />
           </div>
         </div>
         <DialogFooter>

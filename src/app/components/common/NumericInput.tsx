@@ -1,6 +1,7 @@
 import React, { forwardRef, useState } from 'react';
 import { Input } from '../ui/input';
 import { cn } from '../ui/utils';
+import { maskNumber } from '../../utils/validation';
 
 /**
  * Common numeric input for money, rates, counts.
@@ -36,24 +37,16 @@ interface NumericInputProps
   value: string;
   onChange: (rawDigits: string) => void;
   decimals?: number;
+  /** Max integer digits (numeric(p,s) → p − s). Defaults to 10 for
+   *  4-decimal fields (numeric(14,4)) and 12 otherwise (numeric(14,2)),
+   *  so a typo can't overflow the column and come back as a 409. */
+  maxInt?: number;
   className?: string;
 }
 
-/** Digit-only masker. Keeps at most one dot and up to `decimals`
- *  fractional digits. Also caps a leading dot to "0." so the value
- *  parses cleanly on the receiving side. */
-function mask(raw: string, decimals: number): string {
-  let s = raw.replace(/[^\d.]/g, '');
-  const first = s.indexOf('.');
-  if (first !== -1) {
-    s = s.slice(0, first + 1) + s.slice(first + 1).replace(/\./g, '');
-  }
-  if (decimals === 0) {
-    // Integer-only — strip anything after the dot (and the dot itself)
-    return s.split('.')[0] ?? '';
-  }
-  const [intPart, decPart] = s.split('.');
-  return decPart !== undefined ? `${intPart}.${decPart.slice(0, decimals)}` : s;
+/** Digit-only masker — the shared one in utils/validation. */
+function mask(raw: string, decimals: number, maxInt: number): string {
+  return maskNumber(raw, { int: maxInt, dec: decimals });
 }
 
 /** "4100" → "4,100"; "1.5" → "1.5"; "" → "".
@@ -67,14 +60,15 @@ function formatWithCommas(raw: string, decimals: number): string {
 }
 
 export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
-  ({ value, onChange, decimals = 2, className, onFocus, onBlur, ...rest }, ref) => {
+  ({ value, onChange, decimals = 2, maxInt, className, onFocus, onBlur, ...rest }, ref) => {
+    const intCap = maxInt ?? (decimals >= 4 ? 10 : 12);
     const [focused, setFocused] = useState(false);
     return (
       <Input
         ref={ref}
         inputMode="decimal"
         value={focused ? value : formatWithCommas(value, decimals)}
-        onChange={e => onChange(mask(e.target.value, decimals))}
+        onChange={e => onChange(mask(e.target.value, decimals, intCap))}
         onFocus={e => { setFocused(true); onFocus?.(e); }}
         onBlur={e => { setFocused(false); onBlur?.(e); }}
         className={cn('tabular-nums text-right', className)}

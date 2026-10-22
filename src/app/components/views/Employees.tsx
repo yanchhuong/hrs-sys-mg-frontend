@@ -76,6 +76,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { isWithinInterval, parseISO, differenceInMonths, differenceInYears } from 'date-fns';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
+import { LEN, NUM, maskNumber, maskPhone, isEmail, isPhone } from '../../utils/validation';
 import { makeDeptName } from '../../utils/deptName';
 import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
 import { managerLadder, managerKeyOf, reportsUpTo, LADDER_LABELS } from '../../utils/managerLadder';
@@ -867,6 +868,12 @@ export function Employees() {
     if (!editedEmployee.email?.trim()) missing.push('Email');
     if (missing.length > 0) {
       notify.validate(`Missing on Profile tab: ${missing.join(', ')}`);
+      return;
+    }
+    if (!isEmail(editedEmployee.email)) { notify.validate('Email address looks wrong'); return; }
+    if (!isPhone(editedEmployee.contactNumber)) { notify.validate('Contact number looks wrong'); return; }
+    if (!Number.isFinite(editedEmployee.baseSalary) || editedEmployee.baseSalary < 0) {
+      notify.validate('Base salary must be ≥ 0');
       return;
     }
 
@@ -2125,6 +2132,7 @@ export function Employees() {
                       value={editedEmployee.name}
                       onChange={(e) => setEditedEmployee({ ...editedEmployee, name: e.target.value })}
                       className="text-base h-9 font-semibold"
+                      maxLength={LEN.name}
                       placeholder="Full Name *"
                     />
                   ) : (
@@ -2135,6 +2143,7 @@ export function Employees() {
                       value={editedEmployee.khmerName || ''}
                       onChange={(e) => setEditedEmployee({ ...editedEmployee, khmerName: e.target.value })}
                       className="text-sm h-8"
+                      maxLength={LEN.khmerName}
                       placeholder="Khmer Name"
                     />
                   ) : (
@@ -2282,7 +2291,7 @@ export function Employees() {
                               value={editedEmployee.numberOfChildren ?? 0}
                               onChange={(e) => setEditedEmployee({
                                 ...editedEmployee,
-                                numberOfChildren: Math.max(0, Number(e.target.value) || 0),
+                                numberOfChildren: Math.max(0, Number(maskNumber(e.target.value, NUM.count)) || 0),
                               })}
                               className="h-9"
                             />
@@ -2366,6 +2375,7 @@ export function Employees() {
                             value={editedEmployee.placeOfBirth || ''}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, placeOfBirth: e.target.value })}
                             className="h-9"
+                            maxLength={LEN.placeOfBirth}
                           />
                         ) : (
                           <p>{selectedEmployee.placeOfBirth || '—'}</p>
@@ -2377,6 +2387,7 @@ export function Employees() {
                             value={editedEmployee.nffNo || ''}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, nffNo: e.target.value })}
                             className="h-9"
+                            maxLength={LEN.nffNo}
                           />
                         ) : (
                           <p>{selectedEmployee.nffNo || '—'}</p>
@@ -2432,6 +2443,7 @@ export function Employees() {
                               value={editedEmployee.tid || ''}
                               onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
                               className="h-9"
+                              maxLength={LEN.tid}
                             />
                           </div>
                         ) : (
@@ -2475,6 +2487,7 @@ export function Employees() {
                             value={editedEmployee.email}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, email: e.target.value })}
                             className="h-9"
+                            maxLength={LEN.email}
                           />
                         ) : (
                           <p className="break-all">{selectedEmployee.email}</p>
@@ -2483,9 +2496,12 @@ export function Employees() {
                       <FieldRow label="Contact Number" isEditing={isEditing} icon={<Phone className="h-3.5 w-3.5" />}>
                         {isEditing && editedEmployee ? (
                           <Input
+                            type="tel"
+                            inputMode="tel"
                             value={editedEmployee.contactNumber}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, contactNumber: e.target.value })}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, contactNumber: maskPhone(e.target.value) })}
                             className="h-9"
+                            maxLength={LEN.phone}
                           />
                         ) : (
                           <p>{selectedEmployee.contactNumber}</p>
@@ -2497,6 +2513,7 @@ export function Employees() {
                             value={editedEmployee.currentAddress || ''}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, currentAddress: e.target.value })}
                             className="h-9"
+                            maxLength={LEN.longText}
                           />
                         ) : (
                           <p>{selectedEmployee.currentAddress || '—'}</p>
@@ -2718,8 +2735,10 @@ export function Employees() {
                         {isEditing && editedEmployee ? (
                           <Input
                             type="number"
+                            min={0}
+                            step="0.01"
                             value={editedEmployee.baseSalary}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, baseSalary: parseFloat(e.target.value) })}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, baseSalary: parseFloat(maskNumber(e.target.value, NUM.salary)) })}
                             className="h-9"
                           />
                         ) : (
@@ -2733,7 +2752,7 @@ export function Employees() {
                             min={0}
                             step="0.01"
                             value={editedEmployee.positionAllowance ?? 0}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, positionAllowance: parseFloat(e.target.value) || 0 })}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, positionAllowance: parseFloat(maskNumber(e.target.value, NUM.salary)) || 0 })}
                             className="h-9"
                             placeholder="0.00"
                           />
@@ -2748,7 +2767,7 @@ export function Employees() {
                             min={0}
                             step="0.01"
                             value={editedEmployee.evaluationAllowance ?? 0}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, evaluationAllowance: parseFloat(e.target.value) || 0 })}
+                            onChange={(e) => setEditedEmployee({ ...editedEmployee, evaluationAllowance: parseFloat(maskNumber(e.target.value, NUM.salary)) || 0 })}
                             className="h-9"
                             placeholder="0.00"
                           />
@@ -2855,6 +2874,7 @@ export function Employees() {
                             value={editedEmployee.bankAccount || ''}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, bankAccount: e.target.value })}
                             className="h-9"
+                            maxLength={LEN.bankAccount}
                             placeholder="000-123-456"
                           />
                         ) : (
@@ -3217,7 +3237,7 @@ export function Employees() {
                   min={0}
                   step={0.01}
                   value={contractForm.salary}
-                  onChange={(e) => setContractForm({ ...contractForm, salary: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setContractForm({ ...contractForm, salary: parseFloat(maskNumber(e.target.value, NUM.salary)) || 0 })}
                 />
               </div>
             </div>
@@ -3256,6 +3276,7 @@ export function Employees() {
                 value={contractForm.notes}
                 onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
                 className="w-full px-3 py-2 border rounded-md text-sm"
+                maxLength={LEN.longText}
                 placeholder={
                   contractMode === 'renew' ? t('contract.notes.placeholder.renew')
                     : t('contract.notes.placeholder')

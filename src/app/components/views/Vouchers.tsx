@@ -33,6 +33,7 @@ import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
+import { LEN, toNum } from '../../utils/validation';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { NumericInput } from '../common/NumericInput';
 import { Pagination } from '../common/Pagination';
@@ -724,6 +725,9 @@ function VoucherFormDialog({
     if (!purpose) { toast.error('Purpose is required'); return false; }
     const hasLine = lines.some(l => l.name.trim());
     if (!hasLine) { toast.error('At least one line item is required'); return false; }
+    // Blank-name rows are dropped from the payload, so only named lines count.
+    const badQty = lines.findIndex(l => l.name.trim() && !(toNum(l.quantity) > 0));
+    if (badQty !== -1) { toast.error(`Line ${badQty + 1}: quantity must be more than 0`); return false; }
     return true;
   };
 
@@ -846,6 +850,7 @@ function VoucherFormDialog({
                 value={voucherNo}
                 onChange={e => setVoucherNo(e.target.value)}
                 className="tabular-nums"
+                maxLength={LEN.docNo}
                 placeholder="Auto-generated"
                 readOnly={isEdit}
                 disabled={isEdit}
@@ -898,7 +903,7 @@ function VoucherFormDialog({
                 <Label className="text-xs">
                   Exchange rate ({currencySettings.secondaryCurrency} per 1 {currency || 'USD'})
                 </Label>
-                <Input value={exchangeRate} onChange={e => setExchangeRate(e.target.value)} />
+                <NumericInput value={exchangeRate} onChange={setExchangeRate} decimals={4} />
               </div>
             )}
           </div>
@@ -1002,6 +1007,7 @@ function VoucherFormDialog({
                       onFocus={() => setFocusedLineId(l.localId)}
                       onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
                       placeholder="Item or service name"
+                      maxLength={LEN.name}
                     />
                     {focusedLineId === l.localId && !l.name && recentItems.length > 0 && (
                       <div className="absolute top-full left-0 mt-1 w-72 z-20 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
@@ -1055,6 +1061,7 @@ function VoucherFormDialog({
                     value={l.description}
                     onChange={e => updateLine(l.localId, { description: e.target.value })}
                     placeholder="Model, size, variant…"
+                    maxLength={LEN.longText}
                   />
                   {/* v-numeric-input-common — shared masking +
                       comma-on-blur across the app. */}
@@ -1069,6 +1076,7 @@ function VoucherFormDialog({
                     value={l.unit}
                     onChange={e => updateLine(l.localId, { unit: e.target.value })}
                     placeholder="pcs"
+                    maxLength={LEN.unit}
                   />
                   <NumericInput
                     className="col-span-2 h-8 text-sm"
@@ -1194,13 +1202,13 @@ function VoucherFormDialog({
               {settings.showNotes && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Notes</Label>
-                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Internal memo" />
+                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Internal memo" maxLength={LEN.longText} />
               </div>
               )}
               {settings.showTerms && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Terms &amp; conditions</Label>
-                <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3} placeholder="Customer-facing terms" />
+                <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3} placeholder="Customer-facing terms" maxLength={LEN.longText} />
               </div>
               )}
             </div>

@@ -10,6 +10,7 @@ import { User, Briefcase, CreditCard, UserPlus, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
+import { LEN, NUM, maskNumber, maskPhone, isEmail, isPhone } from '../../utils/validation';
 import {
   ID_TYPE_OPTIONS, tidTypeFor, visaExpireFor, type NationalityType,
 } from '../../utils/idType';
@@ -140,7 +141,8 @@ export function AddEmployeeDialog({
     if (!form.id?.trim())        return 'Employee ID is required';
     if (!form.name?.trim())      return 'Name is required';
     if (!form.email?.trim())     return 'Email is required';
-    if (!/^\S+@\S+\.\S+$/.test(form.email!)) return 'Email is not valid';
+    if (!isEmail(form.email)) return 'Email address looks wrong';
+    if (!isPhone(form.contactNumber)) return 'Contact number looks wrong';
     // Department + Position optional — an operator may want to add a
     // new hire before the org chart / job title is finalised.
     if (!form.joinDate)          return 'Join date is required';
@@ -305,6 +307,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.id ?? ''}
                   onChange={(e) => patch({ id: e.target.value.trim() })}
+                  maxLength={LEN.empNo}
                   placeholder="EMP128"
                 />
               </Field>
@@ -324,6 +327,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.name ?? ''}
                   onChange={(e) => patch({ name: e.target.value })}
+                  maxLength={LEN.name}
                   placeholder="Dara Sok"
                 />
               </Field>
@@ -331,6 +335,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.khmerName ?? ''}
                   onChange={(e) => patch({ khmerName: e.target.value })}
+                  maxLength={LEN.khmerName}
                   placeholder="តារា សុខ"
                 />
               </Field>
@@ -362,12 +367,16 @@ export function AddEmployeeDialog({
                   value={form.email ?? ''}
                   onChange={(e) => patch({ email: e.target.value })}
                   placeholder="dara@company.com"
+                  maxLength={LEN.email}
                 />
               </Field>
               <Field label="Contact Number">
                 <Input
+                  type="tel"
+                  inputMode="tel"
                   value={form.contactNumber ?? ''}
-                  onChange={(e) => patch({ contactNumber: e.target.value })}
+                  onChange={(e) => patch({ contactNumber: maskPhone(e.target.value) })}
+                  maxLength={LEN.phone}
                   placeholder="+855-12-345-678"
                 />
               </Field>
@@ -377,6 +386,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.placeOfBirth ?? ''}
                   onChange={(e) => patch({ placeOfBirth: e.target.value })}
+                  maxLength={LEN.placeOfBirth}
                   placeholder="Phnom Penh"
                 />
               </Field>
@@ -384,6 +394,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.currentAddress ?? ''}
                   onChange={(e) => patch({ currentAddress: e.target.value })}
+                  maxLength={LEN.longText}
                   placeholder="Street, District, City"
                 />
               </Field>
@@ -440,7 +451,7 @@ export function AddEmployeeDialog({
                   min={0}
                   step={0.01}
                   value={form.baseSalary ?? 0}
-                  onChange={(e) => patch({ baseSalary: parseFloat(e.target.value) })}
+                  onChange={(e) => patch({ baseSalary: parseFloat(maskNumber(e.target.value, NUM.salary)) })}
                 />
               </Field>
               {/* Only the direct leader is stored. The levels above are
@@ -473,7 +484,7 @@ export function AddEmployeeDialog({
                   step={0.01}
                   placeholder="0.00"
                   value={form.positionAllowance ?? 0}
-                  onChange={(e) => patch({ positionAllowance: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => patch({ positionAllowance: parseFloat(maskNumber(e.target.value, NUM.salary)) || 0 })}
                 />
               </Field>
               <Field label="Evaluation Allowance ($)">
@@ -483,7 +494,7 @@ export function AddEmployeeDialog({
                   step={0.01}
                   placeholder="0.00"
                   value={form.evaluationAllowance ?? 0}
-                  onChange={(e) => patch({ evaluationAllowance: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => patch({ evaluationAllowance: parseFloat(maskNumber(e.target.value, NUM.salary)) || 0 })}
                 />
               </Field>
             </div>
@@ -540,6 +551,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.nffNo ?? ''}
                   onChange={(e) => patch({ nffNo: e.target.value })}
+                  maxLength={LEN.nffNo}
                   placeholder="NFF000128"
                 />
               </Field>
@@ -577,6 +589,7 @@ export function AddEmployeeDialog({
                   <Input
                     value={form.tid ?? ''}
                     onChange={(e) => patch({ tid: e.target.value })}
+                    maxLength={LEN.tid}
                     // Bare digits on purpose. The prefix is RENDERED from the
                     // type select beside this input, so an example of
                     // "TID000128" teaches HR to type it in as well and the
@@ -621,6 +634,7 @@ export function AddEmployeeDialog({
                 <Input
                   value={form.bankAccount ?? ''}
                   onChange={(e) => patch({ bankAccount: e.target.value })}
+                  maxLength={LEN.bankAccount}
                   placeholder="000-123-456"
                 />
               </Field>

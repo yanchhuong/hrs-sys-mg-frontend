@@ -27,6 +27,7 @@ import { BulkUploadCustomersDialog } from '../common/BulkUploadCustomersDialog';
 import { exportListToExcel } from '../../utils/excelExport';
 import { CustomerTelegramBotSettingsDialog } from '../common/CustomerTelegramBotSettingsDialog';
 import { toast } from 'sonner';
+import { LEN, NUM, maskNumber, maskPhone, isEmail, isPhone } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -439,6 +440,12 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
         return;
       }
       if (!form.representative?.trim()) { toast.error('Representative is required for a business customer'); return; }
+    }
+    if (!isPhone(form.phone)) { toast.error('Phone number looks wrong'); return; }
+    if (!isEmail(form.email)) { toast.error('Email address looks wrong'); return; }
+    if (isStudent) {
+      if (!isPhone(form.guardianPhone)) { toast.error('Guardian phone looks wrong'); return; }
+      if (!isEmail(form.guardianEmail)) { toast.error('Guardian email looks wrong'); return; }
     }
     setSaving(true);
     try {
@@ -1078,6 +1085,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 id="cust-name"
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                maxLength={LEN.name}
                 placeholder={isStudent ? 'Sopheaktra Pich' : isPatient ? 'Sopheaktra Pich' : form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
               />
             </div>
@@ -1087,8 +1095,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 <Label htmlFor="cust-phone" className="text-xs">Phone</Label>
                 <Input
                   id="cust-phone"
+                  type="tel"
+                  inputMode="tel"
                   value={form.phone ?? ''}
-                  onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))}
+                  onChange={(e) => setForm(f => ({ ...f, phone: maskPhone(e.target.value) }))}
+                  maxLength={LEN.phone}
                   placeholder="+855 12 345 678"
                 />
               </div>
@@ -1100,6 +1111,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                   value={form.email ?? ''}
                   onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="name@example.com"
+                  maxLength={LEN.email}
                 />
               </div>
             </div>
@@ -1115,6 +1127,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                   id="cust-cid"
                   value={form.cid ?? ''}
                   onChange={(e) => setForm(f => ({ ...f, cid: e.target.value }))}
+                  maxLength={LEN.cid}
                   placeholder="CID-001"
                 />
                 <div className="text-[10px] text-gray-500">
@@ -1143,7 +1156,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       value={form.studentNo ?? ''}
                       onChange={(e) => setForm(f => ({ ...f, studentNo: e.target.value }))}
                       placeholder="e.g. STU-001"
-                      maxLength={32}
+                      maxLength={LEN.studentNo}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1191,6 +1204,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       id="cust-student-remark"
                       value={form.remark ?? ''}
                       onChange={(e) => setForm(f => ({ ...f, remark: e.target.value }))}
+                      maxLength={LEN.longText}
                       placeholder="Optional note"
                     />
                   </div>
@@ -1202,20 +1216,22 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       value={form.guardianName ?? ''}
                       onChange={(e) => setForm(f => ({ ...f, guardianName: e.target.value }))}
                       placeholder="Full name"
-                      maxLength={255}
+                      maxLength={LEN.guardianName}
                     />
                     <Input
+                      type="tel"
+                      inputMode="tel"
                       value={form.guardianPhone ?? ''}
-                      onChange={(e) => setForm(f => ({ ...f, guardianPhone: e.target.value }))}
+                      onChange={(e) => setForm(f => ({ ...f, guardianPhone: maskPhone(e.target.value) }))}
                       placeholder="+855 12 345 678"
-                      maxLength={64}
+                      maxLength={LEN.phone}
                     />
                     <Input
                       type="email"
                       value={form.guardianEmail ?? ''}
                       onChange={(e) => setForm(f => ({ ...f, guardianEmail: e.target.value }))}
                       placeholder="guardian@example.com"
-                      maxLength={255}
+                      maxLength={LEN.email}
                     />
                   </div>
                 </div>
@@ -1269,7 +1285,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       className="tabular-nums"
                       value={form.heightCm == null ? '' : String(form.heightCm)}
                       onChange={(e) => {
-                        const v = e.target.value;
+                        const v = maskNumber(e.target.value, NUM.measure);
                         setForm(f => ({ ...f, heightCm: v === '' ? null : Number(v) }));
                       }}
                       placeholder="e.g. 168"
@@ -1283,7 +1299,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       className="tabular-nums"
                       value={form.weightKg == null ? '' : String(form.weightKg)}
                       onChange={(e) => {
-                        const v = e.target.value;
+                        const v = maskNumber(e.target.value, NUM.measure);
                         setForm(f => ({ ...f, weightKg: v === '' ? null : Number(v) }));
                       }}
                       placeholder="e.g. 62"
@@ -1297,7 +1313,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     value={form.insurance ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, insurance: e.target.value }))}
                     placeholder="Provider / policy number"
-                    maxLength={255}
+                    maxLength={LEN.insurance}
                   />
                 </div>
               </div>
@@ -1355,6 +1371,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       value={form.tin ?? ''}
                       onChange={(e) => setForm(f => ({ ...f, tin: e.target.value }))}
                       placeholder="K001-1234567"
+                      maxLength={LEN.tin}
                     />
                   </div>
                 )}
@@ -1368,6 +1385,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     value={form.representative ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, representative: e.target.value }))}
                     placeholder="Name of the contact person"
+                    maxLength={LEN.representative}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1377,6 +1395,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     value={form.site ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, site: e.target.value }))}
                     placeholder="https://example.com or @social-handle"
+                    maxLength={LEN.site}
                   />
                 </div>
               </>
@@ -1390,6 +1409,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
                 placeholder="Street, sangkat, khan, province"
                 rows={2}
+                maxLength={LEN.longText}
               />
             </div>
           </div>

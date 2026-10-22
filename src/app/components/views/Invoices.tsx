@@ -67,6 +67,7 @@ import { useForwardShare } from '../common/ForwardShareDialog';
 import * as telegramApi from '../../api/telegram';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
+import { LEN, toNum, dueNotBeforeIssue, isValidPercent } from '../../utils/validation';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -1581,9 +1582,16 @@ function InvoiceFormDialog({
   const validate = (): boolean => {
     if (!invoiceNo) { toast.error('Invoice No. is required'); return false; }
     if (!issueDate) { toast.error('Issue date is required'); return false; }
+    if (!dueNotBeforeIssue(issueDate, dueDate)) { toast.error("Due date can't be before the issue date"); return false; }
     if (isAdjustment && !parentInvoiceId) { toast.error('Pick the invoice this note adjusts'); return false; }
     if (items.length === 0 || items.some(it => !it.name.trim())) {
       toast.error('Each line item needs a name');
+      return false;
+    }
+    const badQty = items.findIndex(it => !(toNum(it.quantity) > 0));
+    if (badQty !== -1) { toast.error(`Line ${badQty + 1}: quantity must be more than 0`); return false; }
+    if (discountType === 'percent' && discountValue.trim() !== '' && !isValidPercent(discountValue)) {
+      toast.error('Discount % must be between 0 and 100');
       return false;
     }
     return true;
@@ -1828,6 +1836,7 @@ function InvoiceFormDialog({
                 value={invoiceNo}
                 onChange={e => setInvoiceNo(e.target.value)}
                 className="tabular-nums"
+                maxLength={LEN.docNo}
                 placeholder="Auto-generated"
                 readOnly={isEdit}
                 disabled={isEdit}
@@ -1982,6 +1991,7 @@ function InvoiceFormDialog({
                         // net for keyboard / touch focus transitions.
                         onBlur={() => setTimeout(() => setFocusedItemIdx(p => p === idx ? null : p), 120)}
                         placeholder="Item or service name"
+                        maxLength={LEN.name}
                       />
                       {/* Recent-items typeahead. Renders only when this
                           row is focused AND empty — once HR starts
@@ -2047,6 +2057,7 @@ function InvoiceFormDialog({
                     value={it.description ?? ''}
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
+                    maxLength={LEN.longText}
                   />
                   <div className="col-span-1 flex flex-col gap-0.5">
                     {/* v-numeric-input-common — NumericInput handles
@@ -2083,6 +2094,7 @@ function InvoiceFormDialog({
                     value={it.unit ?? ''}
                     onChange={e => updateItem(idx, { unit: e.target.value })}
                     placeholder="pcs"
+                    maxLength={LEN.unit}
                   />
                   <NumericInput
                     className="col-span-2 h-8 text-sm"
@@ -2322,6 +2334,7 @@ function InvoiceFormDialog({
                 rows={8}
                 value={notes} onChange={e => setNotes(e.target.value)}
                 placeholder="Internal note or memo (not printed on the invoice)"
+                maxLength={LEN.longText}
                 className="flex-1 resize-none"
               />
             </div>
@@ -2334,6 +2347,7 @@ function InvoiceFormDialog({
                   rows={3}
                   value={terms} onChange={e => setTerms(e.target.value)}
                   placeholder="Payment terms, bank details, or disclaimers — printed on the invoice"
+                  maxLength={LEN.longText}
                   className="flex-1 resize-none"
                 />
               </div>
@@ -3581,6 +3595,7 @@ function InvoiceDetailDialog({
                   <Label htmlFor="terms-note">Note</Label>
                   <Textarea id="terms-note" rows={3} value={termsNote}
                     placeholder="e.g. Customer agreed to pay by the 30th"
+                    maxLength={LEN.longText}
                     onChange={e => setTermsNote(e.target.value)} />
                 </div>
               </div>
@@ -3589,6 +3604,10 @@ function InvoiceDetailDialog({
                 <Button disabled={busy} onClick={async () => {
                   // Own try/catch rather than doAction: the dialog must
                   // stay open (with what was typed) when the save fails.
+                  if (!dueNotBeforeIssue(invoice.issueDate, termsDue)) {
+                    toast.error("Due date can't be before the issue date");
+                    return;
+                  }
                   setBusy(true);
                   try {
                     await invoicesApi.updateTerms(invoice.id, {
@@ -4858,12 +4877,11 @@ function RecordPaymentDialog({
               {/* Step / min track the currency — riel has no sub-units,
                *  so KHR amounts step by 1 and reject decimals; USD keeps
                *  the cents-grade 0.01 step. */}
-              <Input
-                type="number"
-                min={currency === 'KHR' ? '1' : '0.01'}
-                step={currency === 'KHR' ? '1' : '0.01'}
+              <NumericInput
+                decimals={currency === 'KHR' ? 0 : 2}
+                maxInt={12}
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
+                onChange={setAmount}
               />
             </div>
             {/* Payment currency buttons — one per enabled currency in
@@ -4915,11 +4933,11 @@ function RecordPaymentDialog({
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Reference number</Label>
-            <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="Bank ref / cheque no / auth code" />
+            <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="Bank ref / cheque no / auth code" maxLength={LEN.referenceNo} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Notes</Label>
-            <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+            <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} maxLength={LEN.longText} />
           </div>
         </div>
 

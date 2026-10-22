@@ -31,6 +31,8 @@ import { Plus, Pencil, Trash2, RefreshCw, Info, PackagePlus, Settings, Warehouse
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
+import { NumericInput } from '../common/NumericInput';
+import { LEN, NUM, maskNumber } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StockItemUsageSettingsDialog } from '../common/StockItemUsageSettingsDialog';
@@ -287,11 +289,10 @@ function ReceiveStockPopover({
                 <Label className="text-xs">
                   + Stock <span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  type="number" step="0.01" min="0.01"
+                <NumericInput
                   autoFocus
                   value={qty}
-                  onChange={(e) => setQty(e.target.value)}
+                  onChange={setQty}
                   placeholder="e.g. 50"
                   className="h-8 text-sm tabular-nums"
                   disabled={busy}
@@ -303,10 +304,9 @@ function ReceiveStockPopover({
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">New Cost</Label>
-                <Input
-                  type="number" step="0.01" min="0"
+                <NumericInput
                   value={cost}
-                  onChange={(e) => setCost(e.target.value)}
+                  onChange={setCost}
                   placeholder="0.00"
                   className="h-8 text-sm tabular-nums"
                   disabled={busy}
@@ -314,10 +314,9 @@ function ReceiveStockPopover({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Selling Price</Label>
-                <Input
-                  type="number" step="0.01" min="0"
+                <NumericInput
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={setPrice}
                   placeholder="0.00"
                   className="h-8 text-sm tabular-nums"
                   disabled={busy}
@@ -2148,7 +2147,7 @@ export function Items() {
                   value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
                   placeholder="Product or service name"
-                  maxLength={255}
+                  maxLength={LEN.name}
                 />
               </div>
               <div className="space-y-1.5">
@@ -2157,7 +2156,7 @@ export function Items() {
                   value={form.sku}
                   onChange={e => setForm({ ...form, sku: e.target.value })}
                   placeholder="Optional"
-                  maxLength={64}
+                  maxLength={LEN.sku}
                   className="tabular-nums"
                 />
               </div>
@@ -2196,7 +2195,7 @@ export function Items() {
                     value={form.barcode}
                     onChange={e => setForm({ ...form, barcode: e.target.value })}
                     placeholder="Scan or type"
-                    maxLength={64}
+                    maxLength={LEN.barcode}
                     className="tabular-nums flex-1"
                   />
                   <Button
@@ -2240,6 +2239,7 @@ export function Items() {
                 onChange={e => setForm({ ...form, description: e.target.value })}
                 placeholder="Optional"
                 rows={2}
+                maxLength={LEN.longText}
               />
             </div>
 
@@ -2249,25 +2249,23 @@ export function Items() {
                 value={form.unit}
                 onChange={e => setForm({ ...form, unit: e.target.value })}
                 placeholder="pcs, kg, hour…"
-                maxLength={32}
+                maxLength={LEN.unit}
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600">Cost Price</Label>
-                <Input
-                  type="number" step="0.01" min="0"
+                <NumericInput
                   value={form.unitCost}
-                  onChange={e => setForm({ ...form, unitCost: e.target.value })}
+                  onChange={v => setForm({ ...form, unitCost: v })}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600">Selling Price</Label>
-                <Input
-                  type="number" step="0.01" min="0"
+                <NumericInput
                   value={form.unitPrice}
-                  onChange={e => setForm({ ...form, unitPrice: e.target.value })}
+                  onChange={v => setForm({ ...form, unitPrice: v })}
                 />
               </div>
             </div>
@@ -2293,9 +2291,10 @@ export function Items() {
                   </TooltipProvider>
                 </Label>
                 <Input
-                  type="number" step="0.01"
+                  type="text" inputMode="decimal"
+                  className="tabular-nums text-right"
                   value={form.stockQty}
-                  onChange={e => setForm({ ...form, stockQty: e.target.value })}
+                  onChange={e => setForm({ ...form, stockQty: maskNumber(e.target.value, NUM.signedMoney) })}
                 />
               </div>
               <div className="space-y-1.5">
@@ -2317,10 +2316,9 @@ export function Items() {
                     </Tooltip>
                   </TooltipProvider>
                 </Label>
-                <Input
-                  type="number" step="0.01" min="0"
+                <NumericInput
                   value={form.minStock}
-                  onChange={e => setForm({ ...form, minStock: e.target.value })}
+                  onChange={v => setForm({ ...form, minStock: v })}
                 />
               </div>
               <div className="flex items-center justify-between border rounded-md px-3 py-2 h-10">
@@ -2493,7 +2491,7 @@ export function Items() {
                 value={form.category}
                 onChange={e => setForm({ ...form, category: e.target.value })}
                 disabled={saving}
-                maxLength={64}
+                maxLength={LEN.category}
                 placeholder="Or type your own label — leave blank for none"
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
@@ -2662,7 +2660,7 @@ function ModifiersEditor({
                   <Input
                     type="number" step="0.01"
                     value={o.priceAdj}
-                    onChange={e => setOption(gi, oi, { priceAdj: parseFloat(e.target.value) || 0 })}
+                    onChange={e => setOption(gi, oi, { priceAdj: parseFloat(maskNumber(e.target.value, NUM.signedMoney)) || 0 })}
                     className="h-7 text-sm w-20 text-right"
                     disabled={disabled}
                   />

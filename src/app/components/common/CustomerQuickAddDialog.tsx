@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Loader2 } from 'lucide-react';
 import * as customersApi from '../../api/customers';
+import { LEN, maskPhone, isPhone } from '../../utils/validation';
 
 /**
  * v-customer-quickadd — inline "Add customer" flow packaged as a
@@ -89,6 +90,7 @@ export function useCustomerQuickAdd(opts: UseCustomerQuickAddOptions): UseCustom
   const save = async () => {
     const trimmed = name.trim();
     if (!trimmed) { toast.error('Name is required'); return; }
+    if (!isPhone(phone)) { toast.error('Phone number looks wrong'); return; }
     setSaving(true);
     try {
       const created = await customersApi.create({
@@ -128,7 +130,7 @@ export function useCustomerQuickAdd(opts: UseCustomerQuickAddOptions): UseCustom
               onChange={e => setName(e.target.value)}
               className="h-9 mt-1"
               placeholder="Full name"
-              maxLength={255}
+              maxLength={LEN.name}
               autoFocus
             />
           </div>
@@ -136,11 +138,12 @@ export function useCustomerQuickAdd(opts: UseCustomerQuickAddOptions): UseCustom
             <Label className="text-xs">Phone (optional)</Label>
             <Input
               value={phone}
-              onChange={e => setPhone(e.target.value)}
+              onChange={e => setPhone(maskPhone(e.target.value))}
               className="h-9 mt-1"
               placeholder="012 345 678"
+              type="tel"
               inputMode="tel"
-              maxLength={64}
+              maxLength={LEN.phone}
             />
           </div>
         </div>

@@ -35,6 +35,7 @@ import { capturePrintPdf } from '../../utils/capturePrintPdf';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import * as accountingSettingsApi from '../../api/accountingSettings';
 import { toast } from 'sonner';
+import { LEN, maskPhone, isEmail, isPhone, toNum, dueNotBeforeIssue, isValidPercent } from '../../utils/validation';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
@@ -788,6 +789,16 @@ function QuotationFormDialog({
     if (!customerId) { toast.error('Customer is required'); return false; }
     const hasLine = lines.some(l => l.name.trim());
     if (!hasLine) { toast.error('At least one line item is required'); return false; }
+    if (!dueNotBeforeIssue(issueDate, expiryDate)) { toast.error("Expiry date can't be before the issue date"); return false; }
+    if (!isEmail(recipientEmail)) { toast.error('Recipient email looks wrong'); return false; }
+    if (!isPhone(recipientPhone)) { toast.error('Recipient phone looks wrong'); return false; }
+    // Blank-name rows are dropped from the payload, so only named lines count.
+    const badQty = lines.findIndex(l => l.name.trim() && !(toNum(l.quantity) > 0));
+    if (badQty !== -1) { toast.error(`Line ${badQty + 1}: quantity must be more than 0`); return false; }
+    if (discountType === 'percent' && discountValue.trim() !== '' && !isValidPercent(discountValue)) {
+      toast.error('Discount % must be between 0 and 100');
+      return false;
+    }
     return true;
   };
 
@@ -910,7 +921,7 @@ function QuotationFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Quotation No.</Label>
-              <Input value={quotationNo} onChange={e => setQuotationNo(e.target.value)} className="tabular-nums" />
+              <Input value={quotationNo} onChange={e => setQuotationNo(e.target.value)} className="tabular-nums" maxLength={LEN.docNo} />
             </div>
           </div>
 
@@ -918,15 +929,15 @@ function QuotationFormDialog({
           <div className="grid grid-cols-3 gap-3 p-3 border rounded-md bg-slate-50/40">
             <div className="space-y-1.5">
               <Label className="text-xs">Recipient name</Label>
-              <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="(uses customer's representative)" />
+              <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="(uses customer's representative)" maxLength={LEN.recipientName} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Recipient email</Label>
-              <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} />
+              <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} maxLength={LEN.email} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Recipient phone</Label>
-              <Input value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} />
+              <Input type="tel" inputMode="tel" value={recipientPhone} onChange={e => setRecipientPhone(maskPhone(e.target.value))} maxLength={LEN.phone} />
             </div>
           </div>
 
@@ -1063,6 +1074,7 @@ function QuotationFormDialog({
                                 // match-invoice).
                                 onBlur={() => setTimeout(() => setFocusedLineId(p => p === l.localId ? null : p), 120)}
                                 placeholder="Item name"
+                                maxLength={LEN.name}
                               />
                               {/* v-recent-item-match-invoice — inline
                                   Recent-items dropdown, mirrors the
@@ -1140,7 +1152,7 @@ function QuotationFormDialog({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Input value={l.description} onChange={e => updateLine(l.localId, { description: e.target.value })} placeholder="—" />
+                          <Input value={l.description} onChange={e => updateLine(l.localId, { description: e.target.value })} placeholder="—" maxLength={LEN.longText} />
                         </TableCell>
                         <TableCell>
                           {/* v-numeric-input-common — shared masking +
@@ -1158,7 +1170,7 @@ function QuotationFormDialog({
                           />
                         </TableCell>
                         <TableCell>
-                          <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
+                          <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" maxLength={LEN.unit} />
                         </TableCell>
                         <TableCell>
                           <NumericInput
@@ -1320,13 +1332,13 @@ function QuotationFormDialog({
             {settings.showNotes && (
             <div className="space-y-1.5">
               <Label className="text-xs">Notes</Label>
-              <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Internal memo" />
+              <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Internal memo" maxLength={LEN.longText} />
             </div>
             )}
             {settings.showTerms && (
             <div className="space-y-1.5">
               <Label className="text-xs">Terms &amp; conditions</Label>
-              <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3} placeholder="Customer-facing terms" />
+              <Textarea value={terms} onChange={e => setTerms(e.target.value)} rows={3} placeholder="Customer-facing terms" maxLength={LEN.longText} />
             </div>
             )}
           </div>

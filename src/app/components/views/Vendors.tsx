@@ -21,6 +21,7 @@ import * as vendorsApi from '../../api/vendors';
 import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Upload } from 'lucide-react';
 import { BulkUploadVendorsDialog } from '../common/BulkUploadVendorsDialog';
 import { toast } from 'sonner';
+import { LEN, maskPhone, isPhone } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -135,6 +136,7 @@ export function Vendors() {
       if (!form.tin?.trim()) { toast.error('TIN is required for a business vendor'); return; }
       if (!form.representative?.trim()) { toast.error('Representative is required for a business vendor'); return; }
     }
+    if (!isPhone(form.phone)) { toast.error('Phone number looks wrong'); return; }
     setSaving(true);
     try {
       if (editing) {
@@ -374,6 +376,7 @@ export function Vendors() {
                 id="cust-name"
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                maxLength={LEN.name}
                 placeholder={form.type === 'business' ? 'ACME Co., Ltd.' : 'Sopheaktra Pich'}
               />
             </div>
@@ -382,8 +385,11 @@ export function Vendors() {
               <Label htmlFor="cust-phone" className="text-xs">Phone</Label>
               <Input
                 id="cust-phone"
+                type="tel"
+                inputMode="tel"
                 value={form.phone ?? ''}
-                onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))}
+                onChange={(e) => setForm(f => ({ ...f, phone: maskPhone(e.target.value) }))}
+                maxLength={LEN.phone}
                 placeholder="+855 12 345 678"
               />
             </div>
@@ -398,6 +404,7 @@ export function Vendors() {
                     id="cust-tin"
                     value={form.tin ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, tin: e.target.value }))}
+                    maxLength={LEN.tin}
                     placeholder="K001-1234567"
                   />
                 </div>
@@ -409,6 +416,7 @@ export function Vendors() {
                     id="cust-rep"
                     value={form.representative ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, representative: e.target.value }))}
+                    maxLength={LEN.representative}
                     placeholder="Name of the contact person"
                   />
                 </div>
@@ -418,6 +426,7 @@ export function Vendors() {
                     id="cust-site"
                     value={form.site ?? ''}
                     onChange={(e) => setForm(f => ({ ...f, site: e.target.value }))}
+                    maxLength={LEN.site}
                     placeholder="https://example.com or @social-handle"
                   />
                 </div>
@@ -432,6 +441,7 @@ export function Vendors() {
                 onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
                 placeholder="Street, sangkat, khan, province"
                 rows={2}
+                maxLength={LEN.longText}
               />
             </div>
           </div>
