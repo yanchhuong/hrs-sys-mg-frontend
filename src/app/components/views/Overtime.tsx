@@ -687,13 +687,21 @@ export function Overtime() {
       map.set(req.employeeId, entry);
     });
     return Array.from(map.entries()).map(([employeeId, hours]) => {
-      const employee = mockEmployees.find(e => e.id === employeeId);
+      // Live roster, matched the way By Request matches (id or apiId).
+      // This used mockEmployees, so on real data every employee came
+      // back undefined: a blank Employee cell and a $0 total.
+      const employee = employees.find(e => e.id === employeeId || (e as any).apiId === employeeId);
       const hourlyRate = (employee?.baseSalary ?? 0) / 160; // 160 hrs/month baseline
-      const totalAmount =
-        hourlyRate * (hours.workday * 1 + hours.weekend * 1.5 + hours.holiday * 2);
+      // Sum of the same per-request amount By Request shows — the OT
+      // Rules rates, per-day split and night overlay — instead of the
+      // old fixed ×1 / ×1.5 / ×2, so both tabs agree on the money.
+      const totalAmount = approved
+        .filter(r => r.employeeId === employeeId)
+        .reduce((sum, r) => sum + calculateOTAmount(employee?.baseSalary, r), 0);
       return { employeeId, employee, ...hours, hourlyRate, totalAmount };
     }).sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [otRequests]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otRequests, employees, otRates]);
 
   const byEmployeePagination = usePagination(byEmployeeRows, 10);
 
@@ -1100,7 +1108,7 @@ export function Overtime() {
           </div>
           {viewMode === 'by-employee' && (
             <p className="text-xs text-gray-500 mt-2">
-              Totals from approved OT only. Rates: workday ×1, weekend ×1.5, holiday ×2. Hourly rate = base salary ÷ 160.
+              Totals from approved OT only. Rates from OT Rules: workday ×{otRates.weekday}, weekend ×{otRates.weekend}, holiday ×{otRates.holiday}{otRates.nightEnabled ? `, night ×${otRates.nightRate}` : ''}. Hourly rate = base salary ÷ 160.
             </p>
           )}
         </CardHeader>
@@ -1352,9 +1360,9 @@ export function Overtime() {
             <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
               <TableRow>
                 <TableHead>Employee</TableHead>
-                <TableHead className="text-right">Workday OT (×1)</TableHead>
-                <TableHead className="text-right">Weekend OT (×1.5)</TableHead>
-                <TableHead className="text-right">Holiday OT (×2)</TableHead>
+                <TableHead className="text-right">Workday OT (×{otRates.weekday})</TableHead>
+                <TableHead className="text-right">Weekend OT (×{otRates.weekend})</TableHead>
+                <TableHead className="text-right">Holiday OT (×{otRates.holiday})</TableHead>
                 <TableHead className="text-right">Total Hours</TableHead>
                 <TableHead className="text-right">Total Amount</TableHead>
               </TableRow>
