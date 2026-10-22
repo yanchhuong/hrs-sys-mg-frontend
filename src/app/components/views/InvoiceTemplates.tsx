@@ -1061,7 +1061,7 @@ function TemplateEditorDialog({
               <p className="text-[11px] text-gray-500">
                 {kind === 'receipt'
                   ? 'Receipt columns are locked on — labels are still editable.'
-                  : 'Description shows the item name on line 1 and its specification on line 2. Toggle the switch to include the column; label lets you rename it.'}
+                  : 'Description shows the item name on line 1 and its specification on line 2. Quantity and UOM print in one column ("5 m"), under the Quantity label. Toggle the switch to include the column; label lets you rename it.'}
               </p>
             </div>
 
@@ -1539,8 +1539,10 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           <tr>
             <th style={th}><BiLbl kh="ល.រ." en="N°" /></th>
             {c.item      && <th style={{ ...th, textAlign: 'left' }}><BiLbl kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={l.item ?? 'Description'} /></th>}
+            {/* Qty and UOM share one column — "1 m" reads as the quantity it
+                is. The template's two toggles still decide what goes in it. */}
             {c.quantity  && <th style={th}><BiLbl kh="បរិមាណ" en={l.quantity ?? 'Quantity'} /></th>}
-            {c.uom       && <th style={th}><BiLbl kh="ឯកតា" en={l.uom ?? 'UOM'} /></th>}
+            {!c.quantity && c.uom && <th style={th}><BiLbl kh="ឯកតា" en={l.uom ?? 'UOM'} /></th>}
             {c.unitPrice && <th style={{ ...th, textAlign: 'right' }}><BiLbl kh="ថ្លៃឯកតា" en={l.unitPrice ?? 'Unit Price'} /></th>}
             {c.total     && <th style={{ ...th, textAlign: 'right' }}><BiLbl kh="ថ្លៃទំនិញ" en={l.total ?? 'Amount'} /></th>}
           </tr>
@@ -1558,16 +1560,19 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
                   <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
                 </td>
               )}
-              {c.quantity  && <td style={{ ...td, textAlign: 'center' }}>{row.qty}</td>}
-              {c.uom       && <td style={{ ...td, textAlign: 'center' }}>ea</td>}
+              {(c.quantity || c.uom) && (
+                <td style={{ ...td, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {[c.quantity ? row.qty : null, c.uom ? 'ea' : null].filter(v => v != null).join(' ')}
+                </td>
+              )}
               {c.unitPrice && <td style={{ ...td, textAlign: 'right' }}>${row.unit.toFixed(2)}</td>}
               {c.total     && <td style={{ ...td, textAlign: 'right' }}>${(row.qty * row.unit).toFixed(2)}</td>}
             </tr>
           ))}
           {(() => {
             const dataCols =
-              (c.item ? 1 : 0) + (c.uom ? 1 : 0) +
-              (c.quantity ? 1 : 0) + (c.unitPrice ? 1 : 0);
+              (c.item ? 1 : 0) + (c.quantity || c.uom ? 1 : 0) +
+              (c.unitPrice ? 1 : 0);
             const totalsSpan = 1 + Math.max(dataCols, 1);
             return (
               <>

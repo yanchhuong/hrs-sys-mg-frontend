@@ -3095,18 +3095,15 @@ function InvoiceDetailDialog({
               )}
             </div>
 
-            {/* Line items — Specification + UOM surfaced as their own
-                columns so the read view matches what the create dialog
-                captures and what the printed invoice will eventually
-                show. */}
+            {/* Line items — Specification as its own column; Qty and UOM
+                share one ("1 m"), as on the printed invoice. */}
             <div className="border rounded-md overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item Name</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="text-right w-[80px]">Qty</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
+                    <TableHead className="text-right w-[100px]">Qty</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
@@ -3116,8 +3113,9 @@ function InvoiceDetailDialog({
                     <TableRow key={it.id}>
                       <TableCell className="text-sm">{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
-                      <TableCell className="text-right text-sm">{it.quantity}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
+                      <TableCell className="text-right text-sm whitespace-nowrap">
+                        {it.quantity}{it.unit ? <span className="text-gray-600"> {it.unit}</span> : null}
+                      </TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, invoice.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, invoice.currency)}</TableCell>
                     </TableRow>
@@ -4101,8 +4099,10 @@ export function PrintTaxInvoice({
           <tr>
             <th style={thStyle}><BiLabel kh="ល.រ." en="N°" /></th>
             {cfgCols.item      && <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
+            {/* Qty and UOM share one column — "1 m" reads as the quantity it
+                is. The template's two toggles still decide what goes in it. */}
             {cfgCols.quantity  && <th style={thStyle}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} /></th>}
-            {cfgCols.uom       && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
+            {!cfgCols.quantity && cfgCols.uom && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
             {cfgCols.unitPrice && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} /></th>}
             {cfgCols.total     && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} /></th>}
           </tr>
@@ -4117,8 +4117,12 @@ export function PrintTaxInvoice({
                   {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
                 </td>
               )}
-              {cfgCols.quantity  && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>}
-              {cfgCols.uom       && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.unit ?? ''}</td>}
+              {(cfgCols.quantity || cfgCols.uom) && (
+                <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {[cfgCols.quantity ? it.quantity : null, cfgCols.uom ? it.unit : null]
+                    .filter(v => v != null && v !== '').join(' ')}
+                </td>
+              )}
               {cfgCols.unitPrice && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
               {cfgCols.total     && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
             </tr>
@@ -4130,8 +4134,8 @@ export function PrintTaxInvoice({
           {(() => {
             const dataCols =
               1 /* N° */ +
-              (cfgCols.item ? 1 : 0) + (cfgCols.uom ? 1 : 0) +
-              (cfgCols.quantity ? 1 : 0) + (cfgCols.unitPrice ? 1 : 0);
+              (cfgCols.item ? 1 : 0) + (cfgCols.quantity || cfgCols.uom ? 1 : 0) +
+              (cfgCols.unitPrice ? 1 : 0);
             const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
             const AmountCell = ({ value, bold }: { value: string; bold?: boolean }) =>
               cfgCols.total

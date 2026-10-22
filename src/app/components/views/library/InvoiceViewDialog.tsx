@@ -549,8 +549,8 @@ function ProInvoicePrint({
           <tr>
             <th style={{ width: 40 }}>ល.រ.<br /><span className="kh-label">N°</span></th>
             <th>មុខទំនិញឬសេវាកម្ម ឬ សេវាកម្ម<br /><span className="kh-label">Item</span></th>
-            <th style={{ width: 60 }}>ចំនួន<br /><span className="kh-label">Qty</span></th>
-            <th style={{ width: 60 }}>ឯកតា<br /><span className="kh-label">UOM</span></th>
+            {/* Qty and UOM share one column — "1 m", as on the A4 print. */}
+            <th style={{ width: 80 }}>ចំនួន<br /><span className="kh-label">Qty</span></th>
             <th style={{ width: 90 }}>តម្លៃរាយ<br /><span className="kh-label">Unit Price</span></th>
             <th style={{ width: 90 }}>បញ្ចុះតម្លៃ<br /><span className="kh-label">Discount</span></th>
             <th style={{ width: 90 }}>តម្លៃទំនិញ<br /><span className="kh-label">Total</span></th>
@@ -561,8 +561,7 @@ function ProInvoicePrint({
             <tr key={it.id}>
               <td style={{ textAlign: 'center' }}>{i + 1}</td>
               <td>{it.name}{it.description ? ` — ${it.description}` : ''}</td>
-              <td style={{ textAlign: 'center' }}>{Number(it.quantity).toLocaleString()}</td>
-              <td style={{ textAlign: 'center' }}>{it.unit ?? 'pcs'}</td>
+              <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>{Number(it.quantity).toLocaleString()} {it.unit ?? 'pcs'}</td>
               <td style={{ textAlign: 'right' }}>{fmtMoney(it.unitPrice, primary)}</td>
               <td style={{ textAlign: 'right' }}>{fmtMoney(0, primary)}</td>
               <td style={{ textAlign: 'right' }}>{fmtMoney(Number(it.quantity) * Number(it.unitPrice), primary)}</td>
@@ -570,16 +569,16 @@ function ProInvoicePrint({
           ))}
           {/* Totals */}
           <tr className="totals-row">
-            <td colSpan={6} style={{ textAlign: 'right' }}>សរុប ({primary}) / Sub Total ({primary})</td>
+            <td colSpan={5} style={{ textAlign: 'right' }}>សរុប ({primary}) / Sub Total ({primary})</td>
             <td>{fmtMoney(invoice.subtotal, primary)}</td>
           </tr>
           <tr className="totals-row">
-            <td colSpan={6} style={{ textAlign: 'right' }}>សរុប ({primary}) / Grand Total ({primary})</td>
+            <td colSpan={5} style={{ textAlign: 'right' }}>សរុប ({primary}) / Grand Total ({primary})</td>
             <td>{fmtMoney(invoice.total, primary)}</td>
           </tr>
           {showKhr && (
             <tr className="totals-row">
-              <td colSpan={6} style={{ textAlign: 'right' }}>សរុប (KHR) / Grand Total (KHR)</td>
+              <td colSpan={5} style={{ textAlign: 'right' }}>សរុប (KHR) / Grand Total (KHR)</td>
               <td>៛ {khrTotal.toLocaleString()}</td>
             </tr>
           )}
