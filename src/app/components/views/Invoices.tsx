@@ -831,11 +831,16 @@ export function Invoices({
                     // render (operators want to see *what* was voided),
                     // they just no longer count in the footer sum.
                     const rowClass = [
+                      // v-invoice-row-click — the whole row opens the
+                      // detail dialog, same as the eye button. Matches
+                      // Bookings / Approvals / Announcements, which
+                      // already treat a list row as a link.
+                      'cursor-pointer hover:bg-gray-50',
                       isAdjustment ? 'bg-slate-50/50' : '',
                       isVoid ? 'line-through text-gray-400' : '',
                     ].filter(Boolean).join(' ');
                     return (
-                    <TableRow key={inv.id} className={rowClass}>
+                    <TableRow key={inv.id} className={rowClass} onClick={() => setDetailId(inv.id)}>
                       <TableCell className="tabular-nums text-sm">
                         {isAdjustment && (
                           <span className="text-gray-400 mr-1.5" title="Adjusts the parent invoice above">↳</span>
@@ -954,7 +959,10 @@ export function Invoices({
                       <TableCell className="text-sm text-gray-600 truncate max-w-[130px]" title={inv.createdByName ?? ''}>
                         {inv.createdByName ?? '—'}
                       </TableCell>
-                      <TableCell className="text-right">
+                      {/* Actions swallow the click so a button does its
+                          own job instead of also opening the detail
+                          dialog underneath it. */}
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="inline-flex gap-1">
                           {/* View — icon-only, tooltip carries the
                               label. Frees width in the Actions column
