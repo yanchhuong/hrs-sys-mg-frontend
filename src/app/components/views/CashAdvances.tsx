@@ -17,6 +17,7 @@ import {
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { ApproverChainPicker } from '../common/ApproverChainPicker';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
@@ -36,6 +37,7 @@ import { CashAdvancePurposesDialog } from '../common/CashAdvancePurposesDialog';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_TABS: { value: '' | cashAdvancesApi.CashAdvanceStatus; label: string }[] = [
   { value: '',                  label: 'All' },
@@ -369,6 +371,10 @@ function CashAdvanceFormDialog({
    *  parent list (and the next open of this dialog) sees it. */
   onPurposesChanged: () => Promise<void>;
 }) {
+  // The requester can't approve their own advance — the server drops a
+  // self-pick (ApprovalService), which would silently skip approval — so
+  // they are not offered, as on mobile.
+  const { currentUser } = useAuth();
   const [employees, setEmployees] = useState<employeesApi.Employee[]>([]);
   const [employeeId, setEmployeeId] = useState(editing?.employeeId ?? '');
   const [purpose, setPurpose] = useState(editing?.purpose ?? '');
@@ -400,9 +406,8 @@ function CashAdvanceFormDialog({
   // ignores the field on update to keep the chain stable across
   // routine edits.
   const [users, setUsers] = useState<usersApi.User[]>([]);
-  const [approver1, setApprover1] = useState('');
-  const [approver2, setApprover2] = useState('');
-  const [approver3, setApprover3] = useState('');
+  /** Ordered approver user ids; '' is a row added but not yet picked. */
+  const [approvers, setApprovers] = useState<string[]>(['']);
   // Tenant currency settings — hide the picker when only one currency
   // is enabled (single-currency tenant has nothing to pick). Refetched
   // on each open so a currency change made via Settings picks up.
@@ -455,7 +460,7 @@ function CashAdvanceFormDialog({
       // wire payload tidy.
       const orderedApprovers: string[] = [];
       const seen = new Set<string>();
-      for (const raw of [approver1, approver2, approver3]) {
+      for (const raw of approvers) {
         const v = raw?.trim();
         if (!v || seen.has(v)) continue;
         seen.add(v);
@@ -606,71 +611,14 @@ function CashAdvanceFormDialog({
               the existing draft → disburse flow. Only shown on create;
               editing an existing advance doesn't re-spawn the chain. */}
           {!editing && (
-            <div className="space-y-2 rounded-md border border-dashed border-gray-200 p-3 bg-gray-50/40">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs font-medium">Approvers (optional, ordered — up to 3)</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-gray-400 hover:text-gray-600"
-                        aria-label="Approvers help"
-                      >
-                        <Info className="h-3 w-3" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-xs">
-                      Leave blank to skip approval. Otherwise the advance waits until each picked approver acts, in order.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                {(approver1 || approver2 || approver3) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px] text-gray-500"
-                    onClick={() => { setApprover1(''); setApprover2(''); setApprover3(''); }}
-                    type="button"
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-              {[
-                { label: '1st', value: approver1, set: setApprover1 },
-                { label: '2nd', value: approver2, set: setApprover2 },
-                { label: '3rd', value: approver3, set: setApprover3 },
-              ].map((slot, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <span className="text-[11px] text-gray-500 w-6 shrink-0">{slot.label}</span>
-                  <div className="flex-1">
-                    <SearchablePicker
-                      value={slot.value}
-                      onChange={slot.set}
-                      placeholder="— none —"
-                      emptyLabel="— none —"
-                      searchPlaceholder="Search users by name, email, or role…"
-                      options={users
-                        .filter(u => u.isActive)
-                        // Exclude users already picked in other slots.
-                        .filter(u => u.id !== approver1 || slot.value === approver1)
-                        .filter(u => u.id !== approver2 || slot.value === approver2)
-                        .filter(u => u.id !== approver3 || slot.value === approver3)
-                        .map(u => ({
-                          value: u.id,
-                          // V140 — prefer the display name; null falls
-                          // back to email, same precedence User.name's
-                          // own doc comment declares.
-                          label: u.name || u.email,
-                          secondary: u.role,
-                          searchKey: `${u.name ?? ''} ${u.email} ${u.role}`,
-                        }))}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+            // One row to start; + after a filled row adds the next, up
+            // to 3 (common/ApproverChainPicker, same as mobile).
+            <ApproverChainPicker
+              value={approvers}
+              onChange={setApprovers}
+              candidates={users.filter(u => u.isActive && u.id !== currentUser?.id)}
+              noun="advance"
+            />
           )}
         </div>
         <DialogFooter>
