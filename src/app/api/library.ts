@@ -112,7 +112,12 @@ export interface ActivityParticipant {
 
 export interface ReadingRecord {
   id: string;
-  customerId: string;
+  /** Optional since V370 — a member the activity is for. */
+  customerId: string | null;
+  /** V370 — the user who hosts (created it); null on older rows. */
+  hostUserId?: string | null;
+  /** The host's name: the user, else the older member host. */
+  hostName?: string | null;
   memberNo: string | null;
   memberName: string | null;
   activityType: ActivityType;
@@ -141,7 +146,9 @@ export interface ReadingRecord {
 }
 
 export interface ReadingInput {
-  customerId: string;
+  /** Optional: the host is the signed-in user (V370). On update null
+   *  keeps the row's member. */
+  customerId?: string | null;
   activityType?: ActivityType;
   stockItemId?: string | null;   // required only when activityType='reading'
   subject?: string;               // free-text title for non-book activities

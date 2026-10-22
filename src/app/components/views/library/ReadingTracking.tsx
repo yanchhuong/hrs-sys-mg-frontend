@@ -11,12 +11,15 @@
  * link) and a guest list with RSVPs (going / maybe / invited /
  * can't go). The operator records answers on the guests' behalf.</p>
  *
- * <p>Add / edit form:</p>
+ * <p>Add / edit form — compact "create event" layout:</p>
  * <ul>
- *   <li>Cover photo (optional), then Title — Reading links a book
- *       (picked or inline-created), other types take free text</li>
- *   <li>Activity type, Host, Date &amp; time, Location, Invitees</li>
- *   <li>Status, Term, Details</li>
+ *   <li>Title (Reading links a book, picked or inline-created; other
+ *       types take free text) with an inline "Add details" toggle;
+ *       optional cover via "Add cover" in the header (slim banner)</li>
+ *   <li>Type chips; Date | Time | Duration (Duration writes the end
+ *       time, "Ends on another day" opens end date/time) + summary</li>
+ *   <li>Location (place / online), Add guests (avatars) — no Host field: the signed-in user hosts (V370)</li>
+ *   <li>Status chips, Term</li>
  * </ul>
  */
 
@@ -24,7 +27,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
   Plus, Pencil, Trash2, RefreshCw, Activity, BookOpen, Users2, Presentation, MoreHorizontal, Info, Search,
-  Eye, CalendarDays, Clock, MapPin, ImageIcon, UserPlus, X, Check, Crown, Users,
+  Eye, CalendarDays, Clock, MapPin, ImageIcon, UserPlus, X, Check, Crown, Users, Video,
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -44,13 +47,12 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '../../ui/tooltip';
-import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from '../../ui/command';
 import { SearchablePicker } from '../../common/SearchablePicker';
 import { DateInput } from '../../common/DateInput';
-import { ImageDropZone } from '../../common/ImageDropZone';
 import * as library from '../../../api/library';
 import { useAuth } from '../../../context/AuthContext';
 import { useConfirm } from '../../../context/ConfirmContext';
@@ -105,12 +107,34 @@ const EMPTY: FormState = {
   notes: '',
 };
 
-const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType; banner: string }> = [
-  { value: 'reading',    label: 'Reading',    icon: BookOpen,       banner: 'from-emerald-500 to-teal-600' },
-  { value: 'meeting',    label: 'Meeting',    icon: Users2,         banner: 'from-sky-500 to-blue-600' },
-  { value: 'conference', label: 'Conference', icon: Presentation,   banner: 'from-violet-500 to-purple-600' },
-  { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600' },
+const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType; banner: string; chip: string }> = [
+  { value: 'reading',    label: 'Reading',    icon: BookOpen,       banner: 'from-emerald-500 to-teal-600',  chip: 'bg-emerald-600 text-white border-emerald-600' },
+  { value: 'meeting',    label: 'Meeting',    icon: Users2,         banner: 'from-sky-500 to-blue-600',      chip: 'bg-sky-600 text-white border-sky-600' },
+  { value: 'conference', label: 'Conference', icon: Presentation,   banner: 'from-violet-500 to-purple-600', chip: 'bg-violet-600 text-white border-violet-600' },
+  { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600',    chip: 'bg-slate-600 text-white border-slate-600' },
 ];
+
+/** Form status chips — selected tone mirrors the list Badge intent. */
+/** Status dropdown options — dot colour per status. */
+const STATUS_CHIPS: Array<{ value: Status; label: string; dot: string }> = [
+  { value: 'progress', label: 'Progress', dot: 'bg-amber-500' },
+  { value: 'delay',    label: 'Delay',    dot: 'bg-red-500' },
+  { value: 'done',     label: 'Done',     dot: 'bg-emerald-500' },
+];
+
+/* ─── Compact "create event" form styling ───────────────────────── */
+/** Small bold label. */
+const FORM_LABEL = 'text-xs font-semibold text-gray-700';
+/** Light-grey filled input. */
+const FORM_INPUT = 'h-9 bg-gray-100 border-transparent shadow-none focus-visible:bg-white';
+/** Grey field row that hosts an input plus an inline right-side button. */
+const FORM_ROW = 'flex items-center gap-1 rounded-md bg-gray-100 pr-1 focus-within:bg-white focus-within:ring-[3px] focus-within:ring-ring/50 transition-[color,box-shadow]';
+/** Input living inside {@link FORM_ROW} — the row draws the chrome. */
+const FORM_ROW_INPUT = 'h-9 flex-1 min-w-0 bg-transparent border-0 shadow-none focus-visible:ring-0';
+/** Small ghost button on the right edge of a {@link FORM_ROW}. */
+const FORM_ROW_BTN = 'h-7 shrink-0 px-2 text-xs font-medium text-gray-600 hover:bg-gray-200';
+/** Guests shown before the list collapses into a "+N" circle. */
+const GUESTS_VISIBLE = 6;
 
 const metaOf = (t: ActivityType) => ACTIVITY_TYPES.find(a => a.value === t) ?? ACTIVITY_TYPES[3];
 
@@ -147,6 +171,55 @@ function parseYmd(d: string | null | undefined): Date | null {
   const [y, m, day] = d.split('-').map(Number);
   if (!y || !m || !day) return null;
   return new Date(y, m - 1, day);
+}
+
+/** "HH:mm" → minutes after midnight. */
+function hmToMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** Minutes after midnight → "HH:mm". */
+function minToHm(n: number): string {
+  return `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+}
+
+/** "YYYY-MM-DD" + n days (local calendar). */
+function addDaysYmd(d: string, n: number): string {
+  const dt = parseYmd(d);
+  if (!dt) return d;
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+/** Whole days from {@code a} to {@code b} (0 when either is blank). */
+function dayDiff(a: string, b: string): number {
+  const da = parseYmd(a), db = parseYmd(b);
+  if (!da || !db) return 0;
+  return Math.round((db.getTime() - da.getTime()) / 86_400_000);
+}
+
+/** 130 → "2h 10m", 1560 → "1d 2h". */
+function fmtSpan(min: number): string {
+  const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+  const parts = [d ? `${d}d` : '', h ? `${h}h` : '', m ? `${m}m` : ''].filter(Boolean);
+  return parts.length ? parts.join(' ') : '0m';
+}
+
+const DURATION_PRESETS = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480];
+
+/** Start → end span in minutes, or null when either time is missing. */
+function spanOf(f: Pick<FormState, 'startDate' | 'startTime' | 'returnDate' | 'endTime'>): number | null {
+  if (!f.startTime || !f.endTime) return null;
+  const days = f.returnDate ? dayDiff(f.startDate, f.returnDate) : 0;
+  return days * 1440 + hmToMin(f.endTime) - hmToMin(f.startTime);
+}
+
+/** Ends the next morning, under 24h — a Duration, not a multi-day event. */
+function isOvernight(f: Pick<FormState, 'startDate' | 'startTime' | 'returnDate' | 'endTime'>): boolean {
+  return !!f.returnDate && !!f.startTime && !!f.endTime
+    && dayDiff(f.startDate, f.returnDate) === 1
+    && hmToMin(f.endTime) < hmToMin(f.startTime);
 }
 
 const looksLikeUrl = (s: string) => /^(https?:\/\/|www\.)\S+$/i.test(s.trim());
@@ -200,8 +273,9 @@ function MemberChecklist({ options, selected, onToggle }: {
   );
 }
 
-/** Popover multi-select for the form — selection applies live. */
-function MemberMultiSelect({ options, value, onChange, disabled }: {
+/** Form "Add guests" field — a search-style row with an inline Add
+ *  button; both open the member checklist (selection applies live). */
+function GuestSearchField({ options, value, onChange, disabled }: {
   options: library.Member[];
   value: string[];
   onChange: (next: string[]) => void;
@@ -210,13 +284,22 @@ function MemberMultiSelect({ options, value, onChange, disabled }: {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="h-8" disabled={disabled}>
-          <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-          Invite members
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="start">
+      <PopoverAnchor asChild>
+        <div className={FORM_ROW}>
+          <PopoverTrigger asChild>
+            <button type="button" disabled={disabled}
+                    className="h-9 flex-1 min-w-0 flex items-center gap-2 pl-3 text-left text-sm text-gray-400 outline-none disabled:opacity-50">
+              <Search className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Search members to invite…</span>
+            </button>
+          </PopoverTrigger>
+          <Button type="button" variant="ghost" size="sm" className={FORM_ROW_BTN} disabled={disabled}
+                  onClick={() => setOpen(true)}>
+            <UserPlus className="h-3.5 w-3.5 mr-1" /> Add
+          </Button>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-72 p-0" align="start">
         <MemberChecklist
           options={options}
           selected={value}
@@ -293,6 +376,11 @@ export function ReadingTracking() {
   const [coverLoading, setCoverLoading] = useState(false);
   const coverReq = useRef(0);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  // Form-only UI toggles (layout state — none of these are sent).
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [multiDayOpen, setMultiDayOpen] = useState(false);
+  const [guestsExpanded, setGuestsExpanded] = useState(false);
+  const [locationOnline, setLocationOnline] = useState(false);
 
   // Detail view (Facebook-Event style).
   const [view, setView] = useState<library.ReadingRecord | null>(null);
@@ -320,10 +408,24 @@ export function ReadingTracking() {
   const openNew = () => {
     coverReq.current++;
     setCoverLoading(false);
-    setEditingId(null); setForm(EMPTY); setDialogOpen(true);
+    setEditingId(null); setForm(EMPTY);
+    setDetailsOpen(false); setMultiDayOpen(false); setGuestsExpanded(false); setLocationOnline(false);
+    setDialogOpen(true);
   };
   const openEdit = (r: library.ReadingRecord) => {
     setEditingId(r.id);
+    const loaded = {
+      startDate: r.startDate,
+      startTime: toHm(r.startTime),
+      returnDate: r.returnDate ?? '',
+      endTime: toHm(r.endTime),
+    };
+    setDetailsOpen(!!(r.notes ?? '').trim());
+    // Multi-day panel opens for a real multi-day span; an overnight
+    // (< 24h) end reads as a Duration instead.
+    setMultiDayOpen(!!loaded.returnDate && loaded.returnDate !== loaded.startDate && !isOvernight(loaded));
+    setGuestsExpanded(false);
+    setLocationOnline(looksLikeUrl(r.location ?? ''));
     setForm({
       customerId: r.customerId,
       activityType: r.activityType,
@@ -367,7 +469,6 @@ export function ReadingTracking() {
     if (form.activityType !== 'reading' && !form.subject.trim()) {
       toast.error('Add a title'); return;
     }
-    if (!form.customerId) { toast.error('Pick a host'); return; }
     if (form.returnDate && form.startDate && form.returnDate < form.startDate) {
       toast.error("End date can't be before the start date"); return;
     }
@@ -379,7 +480,9 @@ export function ReadingTracking() {
     setSaving(true);
     try {
       const payload: library.ReadingInput = {
-        customerId: form.customerId,
+        // Host = the session user (server). Keep an older row's member;
+        // a new activity sends none.
+        customerId: form.customerId || null,
         activityType: form.activityType,
         stockItemId: form.activityType === 'reading' ? form.stockItemId : null,
         subject: form.activityType === 'reading' ? undefined : form.subject.trim(),
@@ -486,16 +589,6 @@ export function ReadingTracking() {
   const activeMembers = useMemo(() => members.filter(m => m.status === 'active'), [members]);
   const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
 
-  // Host picker: active members, plus the current host on edit even
-  // if their card has since lapsed (so the field doesn't read blank).
-  const hostOptions = useMemo(() => {
-    const list = [...activeMembers];
-    if (form.customerId && !list.some(m => m.id === form.customerId)) {
-      const cur = memberById.get(form.customerId);
-      if (cur) list.unshift(cur);
-    }
-    return list;
-  }, [activeMembers, memberById, form.customerId]);
 
   // Invitee options exclude the host.
   const inviteOptions = useMemo(
@@ -569,13 +662,103 @@ export function ReadingTracking() {
     }
   };
 
+  /* ─── Date | Time | Duration helpers (form only) ──────────────── */
+
+  // Single-day mode keeps the end date at the same day offset (0, or 1
+  // for an overnight Duration) when the start date moves.
+  const changeStartDate = (d: string) => setForm(f => {
+    if (multiDayOpen || !f.returnDate || !d || !f.startDate) return { ...f, startDate: d };
+    const offset = Math.max(0, dayDiff(f.startDate, f.returnDate));
+    return { ...f, startDate: d, returnDate: addDaysYmd(d, offset) };
+  });
+
+  // Single-day mode keeps the chosen Duration when the start time moves;
+  // clearing the start time makes it all day.
+  const changeStartTime = (t: string) => setForm(f => {
+    if (multiDayOpen) return { ...f, startTime: t };
+    if (!t) return { ...f, startTime: '', endTime: '', returnDate: f.returnDate ? f.startDate : '' };
+    const span = spanOf(f);
+    if (span == null || span <= 0 || span >= 1440) return { ...f, startTime: t };
+    const end = hmToMin(t) + span;
+    return {
+      ...f,
+      startTime: t,
+      endTime: minToHm(end % 1440),
+      returnDate: end >= 1440 ? addDaysYmd(f.startDate, 1) : (f.returnDate ? f.startDate : ''),
+    };
+  });
+
+  /** Duration pick → endTime = start + duration (past midnight → next day). */
+  const applyDuration = (v: string) => {
+    if (v === 'custom') return;
+    if (v === 'allday') {
+      setForm(f => ({
+        ...f, startTime: '', endTime: '',
+        returnDate: !multiDayOpen && f.returnDate ? f.startDate : f.returnDate,
+      }));
+      return;
+    }
+    setForm(f => {
+      if (!f.startTime) return f;
+      const end = hmToMin(f.startTime) + Number(v);
+      return {
+        ...f,
+        endTime: minToHm(end % 1440),
+        returnDate: end >= 1440 ? addDaysYmd(f.startDate, 1) : (f.returnDate ? f.startDate : ''),
+      };
+    });
+    setMultiDayOpen(false);
+  };
+
+  /** Collapse "Ends on another day" back to a single-day event. */
+  const collapseMultiDay = () => {
+    setMultiDayOpen(false);
+    setForm(f => ({
+      ...f,
+      returnDate: f.returnDate ? f.startDate : '',
+      endTime: f.startTime && f.endTime && f.endTime > f.startTime ? f.endTime : '',
+    }));
+  };
+
+  const formSpan = spanOf(form);
+  const formOvernight = isOvernight(form);
+  const durationValue = !form.startTime || formSpan == null || formSpan <= 0
+    ? ''
+    : DURATION_PRESETS.includes(formSpan) ? String(formSpan) : 'custom';
+
+  /** Muted sentence under Date | Time | Duration. */
+  const formSummary = (() => {
+    const f = form;
+    if (!f.startDate) return 'Pick a date for this event.';
+    const sd = formatDate(f.startDate);
+    if (f.returnDate && f.returnDate !== f.startDate && !formOvernight) {
+      return `This event will run from ${sd}${f.startTime ? ` at ${fmtTime(f.startTime)}` : ''}`
+        + ` until ${formatDate(f.returnDate)}${f.endTime ? ` at ${fmtTime(f.endTime)}` : ''}`;
+    }
+    if (!f.startTime) {
+      return f.endTime
+        ? `This event will take place on ${sd}, ending at ${fmtTime(f.endTime)}`
+        : `This event will take place on ${sd}, all day`;
+    }
+    if (!f.endTime) return `This event will take place on ${sd} starting at ${fmtTime(f.startTime)}`;
+    return `This event will take place on ${sd} from ${fmtTime(f.startTime)} until ${fmtTime(f.endTime)}`
+      + (formOvernight ? ` the next day (${formatDate(f.returnDate)})` : '');
+  })();
+
+  const removeInvitee = (id: string) =>
+    setForm(f => ({ ...f, inviteeIds: f.inviteeIds.filter(v => v !== id) }));
+  const visibleInvitees = guestsExpanded ? form.inviteeIds : form.inviteeIds.slice(0, GUESTS_VISIBLE);
+  const hiddenInvitees = form.inviteeIds.length - visibleInvitees.length;
+
   const viewMeta = view ? metaOf(view.activityType) : null;
   const viewDate = view ? parseYmd(view.startDate) : null;
   const viewParticipants: library.ActivityParticipant[] = view
     ? (view.participants && view.participants.length > 0
         ? view.participants
         // Pre-V369 rows have no guest rows yet — show the host alone.
-        : [{ customerId: view.customerId, memberNo: view.memberNo, name: view.memberName, rsvp: 'going', host: true, respondedAt: null }])
+        : view.customerId
+          ? [{ customerId: view.customerId, memberNo: view.memberNo, name: view.memberName, rsvp: 'going', host: true, respondedAt: null }]
+          : [])
     : [];
   const viewInviteOptions = view
     ? activeMembers.filter(m => m.id !== view.customerId && !viewParticipants.some(p => p.customerId === m.id))
@@ -693,8 +876,8 @@ export function ReadingTracking() {
                   return (
                     <TableRow key={r.id}>
                       <TableCell>
-                        <div className="font-medium">{r.memberName ?? '—'}</div>
-                        <div className="text-xs text-gray-500 font-mono">{r.memberNo ?? ''}</div>
+                        <div className="font-medium">{r.hostName ?? r.memberName ?? '—'}</div>
+                        {!r.hostUserId && <div className="text-xs text-gray-500 font-mono">{r.memberNo ?? ''}</div>}
                       </TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs">
@@ -797,134 +980,151 @@ export function ReadingTracking() {
         </CardContent>
       </Card>
 
-      {/* ─── New / Edit — Facebook "Create event" layout ─────────── */}
+      {/* ─── New / Edit — compact "create event" form ────────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {editingId ? 'Edit Activity' : 'New Activity'}
-              <TooltipProvider delayDuration={100}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button"
-                            className="text-gray-400 hover:text-gray-600 cursor-help"
-                            aria-label="What this form does">
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-xs">
-                    Set up a member activity — reading, meeting, conference, or other — and invite members to it.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </DialogTitle>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto gap-3">
+          <DialogHeader className="pr-8">
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle className="flex items-center gap-2">
+                {editingId ? 'Edit Activity' : 'New Activity'}
+                <TooltipProvider delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button"
+                              className="text-gray-400 hover:text-gray-600 cursor-help"
+                              aria-label="What this form does">
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      Set up a member activity — reading, meeting, conference, or other — and invite members to it.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </DialogTitle>
+              {/* Cover photo — compact "Add cover" until one is set. */}
+              {!form.coverImageUrl && !coverLoading && (
+                <Button type="button" variant="ghost" size="sm"
+                        className="h-7 shrink-0 px-2 text-xs text-gray-600"
+                        title="Optional cover photo · up to 2 MB"
+                        onClick={() => coverInputRef.current?.click()}>
+                  <ImageIcon className="h-3.5 w-3.5 mr-1" /> Add cover
+                </Button>
+              )}
+            </div>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            {/* Cover photo — optional wide banner. */}
-            <div className="col-span-2">
-              {coverLoading ? (
-                <div className="h-36 rounded-md border bg-gray-100 animate-pulse flex items-center justify-center text-xs text-gray-500">
-                  Loading cover photo…
-                </div>
-              ) : form.coverImageUrl ? (
-                <div className="relative h-36 rounded-md overflow-hidden border bg-gray-100">
-                  <img src={form.coverImageUrl} alt="" className="w-full h-full object-cover" />
-                  <div className="absolute right-2 bottom-2 flex gap-1.5">
-                    <Button type="button" size="sm" variant="secondary" className="h-7 shadow-sm"
-                            onClick={() => coverInputRef.current?.click()}>
-                      <ImageIcon className="h-3.5 w-3.5 mr-1" /> Change
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" className="h-7 shadow-sm text-red-600"
-                            onClick={() => setForm(f => ({ ...f, coverImageUrl: null }))}>
-                      <X className="h-3.5 w-3.5 mr-1" /> Remove
-                    </Button>
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) void pickCover(f);
+              e.target.value = '';
+            }}
+          />
+
+          {/* Slim cover banner once set (or while the edit loads it). */}
+          {coverLoading ? (
+            <div className="h-24 rounded-md bg-gray-100 animate-pulse flex items-center justify-center text-xs text-gray-500">
+              Loading cover photo…
+            </div>
+          ) : form.coverImageUrl ? (
+            <div className="relative h-24 rounded-md overflow-hidden bg-gray-100">
+              <img src={form.coverImageUrl} alt="" className="w-full h-full object-cover" />
+              <div className="absolute right-2 bottom-2 flex gap-1.5">
+                <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-xs shadow-sm"
+                        onClick={() => coverInputRef.current?.click()}>
+                  <ImageIcon className="h-3 w-3 mr-1" /> Change
+                </Button>
+                <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-xs shadow-sm text-red-600"
+                        onClick={() => setForm(f => ({ ...f, coverImageUrl: null }))}>
+                  <X className="h-3 w-3 mr-1" /> Remove
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            {/* Title — Reading links a book; other types take free
+                text. Inline "Add details" reveals the Details box. */}
+            <div className="space-y-1">
+              <Label className={FORM_LABEL}>Title <span className="text-red-500">*</span></Label>
+              <div className={FORM_ROW}>
+                {form.activityType === 'reading' ? (
+                  <div className="flex-1 min-w-0">
+                    {/* V-library-activity-book-picker — searchable +
+                        inline-create, same pattern as the Invoice Purpose
+                        picker. Typing a title that doesn't exist offers
+                        "Add '{query}' as a new title" — the callback POSTs
+                        to the Books endpoint, appends to the local list
+                        so the picker refreshes without a full reload,
+                        and auto-selects the new row. */}
+                    <SearchablePicker
+                      className="bg-transparent border-0 shadow-none hover:bg-transparent focus-visible:ring-0"
+                      value={form.stockItemId}
+                      onChange={v => setForm({ ...form, stockItemId: v })}
+                      placeholder="Pick a title"
+                      searchPlaceholder="Search or type a title…"
+                      emptyResultsLabel="No match — type a new title to add."
+                      createLabel={q => `Add "${q}" as a new title`}
+                      allowClear={false}
+                      onCreate={async (label) => {
+                        const trimmed = label.trim();
+                        try {
+                          const created = await library.books.create({ title: trimmed });
+                          setBooks(prev => [...prev, created]);
+                          toast.success(`Title "${created.title}" added`);
+                          return {
+                            value: created.id,
+                            label: created.title,
+                            secondary: created.author ?? undefined,
+                          };
+                        } catch (e) {
+                          // Surface the BE reason instead of the picker
+                          // silently staying open on a 403 / validation
+                          // fail — otherwise the operator has no idea
+                          // why the "+ Add" click did nothing.
+                          const msg = e instanceof Error ? e.message : 'Could not add title';
+                          toast.error(msg);
+                          throw e;
+                        }
+                      }}
+                      options={books.map(b => ({
+                        value: b.id,
+                        label: b.title,
+                        secondary: b.author ?? undefined,
+                        searchKey: `${b.title} ${b.author ?? ''} ${b.isbn ?? ''}`,
+                      }))}
+                    />
                   </div>
-                  <input
-                    ref={coverInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => {
-                      const f = e.target.files?.[0];
-                      if (f) void pickCover(f);
-                      e.target.value = '';
-                    }}
-                  />
-                </div>
-              ) : (
-                <ImageDropZone
-                  value={null}
-                  onChange={v => setForm(f => ({ ...f, coverImageUrl: v }))}
-                  hint="Optional cover photo · up to 2 MB"
-                  height={110}
-                  maxBytes={COVER_MAX_BYTES}
-                />
+                ) : (
+                  <Input placeholder="e.g. Q4 Board Meeting"
+                         className={`${FORM_ROW_INPUT} font-medium`}
+                         maxLength={LEN.name}
+                         value={form.subject}
+                         onChange={e => setForm({ ...form, subject: e.target.value })} />
+                )}
+                <Button type="button" variant="ghost" size="sm" className={FORM_ROW_BTN}
+                        aria-expanded={detailsOpen}
+                        onClick={() => setDetailsOpen(o => !o)}>
+                  {detailsOpen ? 'Hide details' : 'Add details'}
+                </Button>
+              </div>
+              {detailsOpen && (
+                <Textarea rows={3} value={form.notes} maxLength={DETAILS_MAX}
+                          aria-label="Details"
+                          className="mt-1.5 min-h-0 bg-gray-100 border-transparent shadow-none text-sm focus-visible:bg-white"
+                          placeholder="What's this activity about?"
+                          onChange={e => setForm({ ...form, notes: e.target.value })} />
               )}
             </div>
 
-            {/* Title — prominent. Reading links a book; other types
-                take free text. */}
-            {form.activityType === 'reading' ? (
-              <div className="col-span-2 space-y-1.5">
-                <Label>Title <span className="text-red-500">*</span></Label>
-                {/* V-library-activity-book-picker — searchable +
-                    inline-create, same pattern as the Invoice Purpose
-                    picker. Typing a title that doesn't exist offers
-                    "Add '{query}' as a new title" — the callback POSTs
-                    to the Books endpoint, appends to the local list
-                    so the picker refreshes without a full reload,
-                    and auto-selects the new row. */}
-                <SearchablePicker
-                  value={form.stockItemId}
-                  onChange={v => setForm({ ...form, stockItemId: v })}
-                  placeholder="Pick a title"
-                  searchPlaceholder="Search or type a title…"
-                  emptyResultsLabel="No match — type a new title to add."
-                  createLabel={q => `Add "${q}" as a new title`}
-                  allowClear={false}
-                  onCreate={async (label) => {
-                    const trimmed = label.trim();
-                    try {
-                      const created = await library.books.create({ title: trimmed });
-                      setBooks(prev => [...prev, created]);
-                      toast.success(`Title "${created.title}" added`);
-                      return {
-                        value: created.id,
-                        label: created.title,
-                        secondary: created.author ?? undefined,
-                      };
-                    } catch (e) {
-                      // Surface the BE reason instead of the picker
-                      // silently staying open on a 403 / validation
-                      // fail — otherwise the operator has no idea
-                      // why the "+ Add" click did nothing.
-                      const msg = e instanceof Error ? e.message : 'Could not add title';
-                      toast.error(msg);
-                      throw e;
-                    }
-                  }}
-                  options={books.map(b => ({
-                    value: b.id,
-                    label: b.title,
-                    secondary: b.author ?? undefined,
-                    searchKey: `${b.title} ${b.author ?? ''} ${b.isbn ?? ''}`,
-                  }))}
-                />
-              </div>
-            ) : (
-              <div className="col-span-2 space-y-1.5">
-                <Label>Title <span className="text-red-500">*</span></Label>
-                <Input placeholder="e.g. Q4 Board Meeting"
-                       className="h-11 text-base font-medium"
-                       maxLength={LEN.name}
-                       value={form.subject}
-                       onChange={e => setForm({ ...form, subject: e.target.value })} />
-              </div>
-            )}
-
-            <div className="col-span-2 space-y-1.5">
-              <Label>Activity Type <span className="text-red-500">*</span></Label>
-              <div className="grid grid-cols-4 gap-2 mt-1">
+            {/* Type — small tag chips, selected one filled in its tone. */}
+            <div className="space-y-1">
+              <Label className={FORM_LABEL}>Type <span className="text-red-500">*</span></Label>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Activity type">
                 {ACTIVITY_TYPES.map(a => {
                   const Icon = a.icon;
                   const active = form.activityType === a.value;
@@ -932,14 +1132,14 @@ export function ReadingTracking() {
                     <button
                       key={a.value}
                       type="button"
+                      role="radio"
+                      aria-checked={active}
                       onClick={() => setForm({ ...form, activityType: a.value })}
-                      className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors ${
-                        active
-                          ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                        active ? a.chip : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                       }`}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-3 w-3" />
                       {a.label}
                     </button>
                   );
@@ -947,134 +1147,181 @@ export function ReadingTracking() {
               </div>
             </div>
 
-            <div className="col-span-2 space-y-1.5">
-              <Label>Host <span className="text-red-500">*</span></Label>
-              <SearchablePicker
-                value={form.customerId}
-                onChange={v => setForm(f => ({
-                  ...f,
-                  customerId: v,
-                  // The host is never also a guest.
-                  inviteeIds: f.inviteeIds.filter(id => id !== v),
-                }))}
-                placeholder="Pick the host member"
-                searchPlaceholder="Search members…"
-                emptyResultsLabel="No members found."
-                allowClear={false}
-                options={hostOptions.map(m => ({
-                  value: m.id,
-                  label: m.name,
-                  secondary: m.memberNo ?? undefined,
-                  searchKey: `${m.name} ${m.memberNo ?? ''} ${m.phone ?? ''}`,
-                }))}
-              />
-            </div>
-
-            {/* Date & time */}
+            {/* Date | Time | Duration + summary sentence. */}
             <div className="space-y-1.5">
-              <Label>Start Date</Label>
-              <Input type="date" value={form.startDate}
-                     onChange={e => setForm({ ...form, startDate: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Start Time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
-              <Input type="time" value={form.startTime}
-                     onChange={e => setForm({ ...form, startTime: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>End Date <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
-              <Input type="date" value={form.returnDate} min={form.startDate || undefined}
-                     onChange={e => setForm({ ...form, returnDate: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>End Time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
-              <Input type="time" value={form.endTime}
-                     onChange={e => setForm({ ...form, endTime: e.target.value })} />
-            </div>
-
-            <div className="col-span-2 space-y-1.5">
-              <Label>Location</Label>
-              <div className="relative">
-                <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input className="pl-8"
-                       placeholder="Add a place or an online link"
-                       maxLength={LOCATION_MAX}
-                       value={form.location}
-                       onChange={e => setForm({ ...form, location: e.target.value })} />
+              <div className="grid grid-cols-2 sm:grid-cols-[1.3fr_1fr_1fr] gap-2">
+                <div className="space-y-1">
+                  <Label className={FORM_LABEL}>Date</Label>
+                  <Input type="date" className={FORM_INPUT} value={form.startDate}
+                         onChange={e => changeStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className={FORM_LABEL}>Time</Label>
+                  <Input type="time" className={FORM_INPUT} value={form.startTime}
+                         onChange={e => changeStartTime(e.target.value)} />
+                </div>
+                <div className="col-span-2 sm:col-span-1 space-y-1" title={form.startTime ? undefined : 'Set a time first'}>
+                  <Label className={FORM_LABEL}>Duration</Label>
+                  <Select value={durationValue} onValueChange={applyDuration} disabled={!form.startTime}>
+                    <SelectTrigger className={`${FORM_INPUT} w-full text-sm`}>
+                      <SelectValue placeholder={form.startTime ? 'Duration' : 'All day'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {durationValue === 'custom' && formSpan != null && (
+                        <SelectItem value="custom">Custom · {fmtSpan(formSpan)}</SelectItem>
+                      )}
+                      {DURATION_PRESETS.map(m => (
+                        <SelectItem key={m} value={String(m)}>{fmtSpan(m)}</SelectItem>
+                      ))}
+                      <SelectItem value="allday">All day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-
-            {/* Invitees — guests besides the host. */}
-            <div className="col-span-2 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Guests {form.inviteeIds.length > 0 && <span className="text-xs text-gray-500 font-normal">({form.inviteeIds.length})</span>}</Label>
-                <MemberMultiSelect
-                  options={inviteOptions}
-                  value={form.inviteeIds}
-                  onChange={ids => setForm(f => ({ ...f, inviteeIds: ids }))}
-                />
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-gray-500">{formSummary}</p>
+                <button type="button"
+                        className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                        onClick={() => {
+                          if (multiDayOpen) { collapseMultiDay(); return; }
+                          setMultiDayOpen(true);
+                          setForm(f => (f.startDate && (!f.returnDate || f.returnDate === f.startDate)
+                            ? { ...f, returnDate: addDaysYmd(f.startDate, 1) }
+                            : f));
+                        }}>
+                  {multiDayOpen ? 'Ends same day' : 'Ends on another day'}
+                </button>
               </div>
-              {form.inviteeIds.length === 0 ? (
-                <p className="text-xs text-gray-500">No guests yet — invite members to this activity.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {form.inviteeIds.map(id => (
-                    <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 py-0.5 pl-0.5 pr-1.5 text-xs">
-                      <InitialsAvatar name={guestName(id)} size="sm" />
-                      {guestName(id)}
-                      <button type="button" aria-label="Remove guest"
-                              className="text-gray-400 hover:text-red-600"
-                              onClick={() => setForm(f => ({ ...f, inviteeIds: f.inviteeIds.filter(v => v !== id) }))}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+              {multiDayOpen && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className={FORM_LABEL}>End date <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
+                    <Input type="date" className={FORM_INPUT} value={form.returnDate} min={form.startDate || undefined}
+                           onChange={e => setForm({ ...form, returnDate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className={FORM_LABEL}>End time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
+                    <Input type="time" className={FORM_INPUT} value={form.endTime}
+                           onChange={e => setForm({ ...form, endTime: e.target.value })} />
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Status })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="progress">Progress</SelectItem>
-                  <SelectItem value="delay">Delay</SelectItem>
-                  <SelectItem value="done">Done</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Location — place or online link (same `location` value). */}
+            <div className="space-y-1">
+              <Label className={FORM_LABEL}>Location</Label>
+              <div className={FORM_ROW}>
+                <MapPin className="ml-2.5 h-4 w-4 shrink-0 text-gray-400" />
+                <Input className={`${FORM_ROW_INPUT} pl-1.5`}
+                       placeholder={locationOnline ? 'Paste a meeting link' : 'Add a place'}
+                       maxLength={LOCATION_MAX}
+                       value={form.location}
+                       onChange={e => setForm({ ...form, location: e.target.value })} />
+                <Button type="button" variant="ghost" size="sm"
+                        aria-pressed={locationOnline}
+                        className={`${FORM_ROW_BTN} ${locationOnline ? 'bg-blue-100 text-blue-700 hover:bg-blue-100' : ''}`}
+                        onClick={() => setLocationOnline(o => !o)}>
+                  <Video className="h-3.5 w-3.5 mr-1" /> Online
+                </Button>
+              </div>
             </div>
+
+            {/* Guests — besides the host; round avatars with × badges. */}
             <div className="space-y-1.5">
-              <Label>Term</Label>
-              {/* V-library-activity-term — same SearchablePicker
-                  pattern as the Title field: filter by typing, and
-                  "+ Add" inline-creates a new term (just a distinct
-                  label — no separate table). */}
-              <SearchablePicker
-                value={form.term}
-                onChange={v => setForm({ ...form, term: v })}
-                placeholder="Pick or type a term"
-                searchPlaceholder="Search or type a new term…"
-                emptyResultsLabel="No match — type a new term to add."
-                createLabel={q => `Add "${q}" as a new term`}
-                allowClear
-                onCreate={async (label) => {
-                  const trimmed = label.trim();
-                  // No backend persist — new terms come into the
-                  // distinct list the moment the parent Activity
-                  // saves. Add locally so the picker refreshes for
-                  // the rest of the session.
-                  setTerms(prev => prev.includes(trimmed) ? prev : [...prev, trimmed].sort());
-                  return { value: trimmed, label: trimmed };
-                }}
-                options={terms.map(t => ({ value: t, label: t }))}
+              <Label className={FORM_LABEL}>
+                Add guests {form.inviteeIds.length > 0 && <span className="text-xs text-gray-500 font-normal">({form.inviteeIds.length})</span>}
+              </Label>
+              <GuestSearchField
+                options={inviteOptions}
+                value={form.inviteeIds}
+                onChange={ids => setForm(f => ({ ...f, inviteeIds: ids }))}
               />
+              {form.inviteeIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {visibleInvitees.map(id => (
+                    <div key={id} className="relative" title={guestName(id)}>
+                      <span className="h-9 w-9 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold inline-flex items-center justify-center">
+                        {initials(guestName(id))}
+                      </span>
+                      <button type="button" aria-label={`Remove ${guestName(id)}`}
+                              className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-gray-700 text-white ring-2 ring-white inline-flex items-center justify-center hover:bg-red-600"
+                              onClick={() => removeInvitee(id)}>
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {hiddenInvitees > 0 && (
+                    <button type="button"
+                            className="h-9 w-9 rounded-full bg-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-300"
+                            title={`Show ${hiddenInvitees} more`}
+                            onClick={() => setGuestsExpanded(true)}>
+                      +{hiddenInvitees}
+                    </button>
+                  )}
+                  {guestsExpanded && form.inviteeIds.length > GUESTS_VISIBLE && (
+                    <button type="button" className="text-xs font-medium text-blue-600 hover:underline"
+                            onClick={() => setGuestsExpanded(false)}>
+                      Show less
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="col-span-2 space-y-1.5">
-              <Label>Details</Label>
-              <Textarea rows={3} value={form.notes} maxLength={DETAILS_MAX}
-                        placeholder="What's this activity about?"
-                        onChange={e => setForm({ ...form, notes: e.target.value })} />
+
+            {/* No Host field: the signed-in user hosts (V370). */}
+
+            {/* Status — edit only: a new activity starts as Progress (the
+                server's default too), so the field would only be noise. */}
+            <div className={`grid grid-cols-1 gap-3 ${editingId ? 'sm:grid-cols-2' : ''}`}>
+              {editingId && (
+              <div className="space-y-1">
+                <Label className={FORM_LABEL}>Status</Label>
+                {/* A dropdown, not a button row — three fixed choices. */}
+                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Status })}>
+                  <SelectTrigger className={`${FORM_INPUT} w-full text-sm`} aria-label="Status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_CHIPS.map(st => (
+                      <SelectItem key={st.value} value={st.value}>
+                        <span className="inline-flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${st.dot}`} />
+                          {st.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              )}
+              <div className="space-y-1">
+                <Label className={FORM_LABEL}>Term</Label>
+                {/* V-library-activity-term — same SearchablePicker
+                    pattern as the Title field: filter by typing, and
+                    "+ Add" inline-creates a new term (just a distinct
+                    label — no separate table). */}
+                <SearchablePicker
+                  className={FORM_INPUT}
+                  value={form.term}
+                  onChange={v => setForm({ ...form, term: v })}
+                  placeholder="Pick or type a term"
+                  searchPlaceholder="Search or type a new term…"
+                  emptyResultsLabel="No match — type a new term to add."
+                  createLabel={q => `Add "${q}" as a new term`}
+                  allowClear
+                  onCreate={async (label) => {
+                    const trimmed = label.trim();
+                    // No backend persist — new terms come into the
+                    // distinct list the moment the parent Activity
+                    // saves. Add locally so the picker refreshes for
+                    // the rest of the session.
+                    setTerms(prev => prev.includes(trimmed) ? prev : [...prev, trimmed].sort());
+                    return { value: trimmed, label: trimmed };
+                  }}
+                  options={terms.map(t => ({ value: t, label: t }))}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1140,7 +1387,7 @@ export function ReadingTracking() {
                   )}
                   {infoRow(
                     <Crown className="h-4 w-4" />,
-                    <span>Hosted by <span className="font-medium">{view.memberName ?? 'Member'}</span></span>,
+                    <span>Hosted by <span className="font-medium">{view.hostName ?? view.memberName ?? '—'}</span></span>,
                   )}
                   {infoRow(
                     <Users className="h-4 w-4" />,
