@@ -6,17 +6,26 @@
  * from {@code startDate} → {@code returnDate} (or today for
  * still-active rows).</p>
  *
+ * <p>V369 — activities read like a Facebook Event: optional cover
+ * photo, title, host, date + time range, location (place or online
+ * link) and a guest list with RSVPs (going / maybe / invited /
+ * can't go). The operator records answers on the guests' behalf.</p>
+ *
  * <p>Add / edit form:</p>
  * <ul>
- *   <li>Type picker first — chooses the activity kind</li>
- *   <li>Reading → Book dropdown appears (required)</li>
- *   <li>Non-reading → free-text Subject field appears</li>
+ *   <li>Cover photo (optional), then Title — Reading links a book
+ *       (picked or inline-created), other types take free text</li>
+ *   <li>Activity type, Host, Date &amp; time, Location, Invitees</li>
+ *   <li>Status, Term, Details</li>
  * </ul>
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, RefreshCw, Activity, BookOpen, Users2, Presentation, MoreHorizontal, Info, Search } from 'lucide-react';
+import {
+  Plus, Pencil, Trash2, RefreshCw, Activity, BookOpen, Users2, Presentation, MoreHorizontal, Info, Search,
+  Eye, CalendarDays, Clock, MapPin, ImageIcon, UserPlus, X, Check, Crown, Users,
+} from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -35,17 +44,32 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '../../ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '../../ui/command';
 import { SearchablePicker } from '../../common/SearchablePicker';
 import { DateInput } from '../../common/DateInput';
+import { ImageDropZone } from '../../common/ImageDropZone';
 import * as library from '../../../api/library';
 import { useAuth } from '../../../context/AuthContext';
 import { useConfirm } from '../../../context/ConfirmContext';
 import { useDateFormat } from '../../../context/DateFormatContext';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { LEN } from '../../../utils/validation';
+import { readImageAsDataUrl } from '../../../utils/imageUpload';
 
 type Status = 'progress' | 'delay' | 'done';
 type ActivityType = 'reading' | 'meeting' | 'conference' | 'other';
+type Rsvp = library.ActivityRsvp;
+
+/** Cover photo cap — the BE column takes ~3 MB of base64, so 2 MB
+ *  of image (≈2.67 MB as a data URL) leaves a safe margin. */
+const COVER_MAX_BYTES = 2 * 1024 * 1024;
+/** BE caps `notes` at 4000 (below LEN.longText), so match the server. */
+const DETAILS_MAX = Math.min(LEN.longText, 4000);
+const LOCATION_MAX = 255;
 
 interface FormState {
   customerId: string;
@@ -53,7 +77,12 @@ interface FormState {
   stockItemId: string;
   subject: string;
   startDate: string;
+  startTime: string;
   returnDate: string;
+  endTime: string;
+  location: string;
+  coverImageUrl: string | null;
+  inviteeIds: string[];
   status: Status;
   term: string;
   notes: string;
@@ -65,18 +94,186 @@ const EMPTY: FormState = {
   stockItemId: '',
   subject: '',
   startDate: new Date().toISOString().slice(0, 10),
+  startTime: '',
   returnDate: '',
+  endTime: '',
+  location: '',
+  coverImageUrl: null,
+  inviteeIds: [],
   status: 'progress',
   term: '',
   notes: '',
 };
 
-const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType }> = [
-  { value: 'reading',    label: 'Reading',    icon: BookOpen },
-  { value: 'meeting',    label: 'Meeting',    icon: Users2 },
-  { value: 'conference', label: 'Conference', icon: Presentation },
-  { value: 'other',      label: 'Other',      icon: MoreHorizontal },
+const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType; banner: string }> = [
+  { value: 'reading',    label: 'Reading',    icon: BookOpen,       banner: 'from-emerald-500 to-teal-600' },
+  { value: 'meeting',    label: 'Meeting',    icon: Users2,         banner: 'from-sky-500 to-blue-600' },
+  { value: 'conference', label: 'Conference', icon: Presentation,   banner: 'from-violet-500 to-purple-600' },
+  { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600' },
 ];
+
+const metaOf = (t: ActivityType) => ACTIVITY_TYPES.find(a => a.value === t) ?? ACTIVITY_TYPES[3];
+
+const RSVP_GROUPS: Array<{ value: Rsvp; label: string }> = [
+  { value: 'going',    label: 'Going' },
+  { value: 'maybe',    label: 'Maybe' },
+  { value: 'invited',  label: 'Invited' },
+  { value: 'declined', label: "Can't go" },
+];
+
+const RSVP_CHOICES: Array<{ value: Rsvp; label: string; active: string }> = [
+  { value: 'going',    label: 'Going',    active: 'bg-emerald-600 text-white border-emerald-600' },
+  { value: 'maybe',    label: 'Maybe',    active: 'bg-amber-500 text-white border-amber-500' },
+  { value: 'declined', label: "Can't go", active: 'bg-gray-600 text-white border-gray-600' },
+];
+
+/** "HH:mm:ss" | "HH:mm" → "HH:mm" for the time input. */
+const toHm = (t: string | null | undefined) => (t ? t.slice(0, 5) : '');
+
+/** "14:30[:00]" → "2:30 PM". */
+function fmtTime(t: string | null | undefined): string {
+  if (!t) return '';
+  const [hs, ms] = t.split(':');
+  const h = Number(hs);
+  if (Number.isNaN(h)) return t;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${ms ?? '00'} ${suffix}`;
+}
+
+/** Local-date parse of "YYYY-MM-DD" (no UTC shift). */
+function parseYmd(d: string | null | undefined): Date | null {
+  if (!d) return null;
+  const [y, m, day] = d.split('-').map(Number);
+  if (!y || !m || !day) return null;
+  return new Date(y, m - 1, day);
+}
+
+const looksLikeUrl = (s: string) => /^(https?:\/\/|www\.)\S+$/i.test(s.trim());
+const hrefOf = (s: string) => (/^https?:\/\//i.test(s.trim()) ? s.trim() : `https://${s.trim()}`);
+
+function initials(name: string | null | undefined): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+function InitialsAvatar({ name, size = 'md' }: { name: string | null | undefined; size?: 'sm' | 'md' }) {
+  const cls = size === 'sm' ? 'h-5 w-5 text-[9px]' : 'h-8 w-8 text-xs';
+  return (
+    <span className={`${cls} shrink-0 rounded-full bg-emerald-100 text-emerald-700 font-semibold inline-flex items-center justify-center`}>
+      {initials(name)}
+    </span>
+  );
+}
+
+/** Checklist of members inside a cmdk list — shared by the form's
+ *  "Invite members" picker and the detail view's Invite button. */
+function MemberChecklist({ options, selected, onToggle }: {
+  options: library.Member[];
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <Command>
+      <CommandInput placeholder="Search members…" />
+      <CommandList className="hover-scroll-y max-h-56">
+        <CommandEmpty>No members found.</CommandEmpty>
+        <CommandGroup>
+          {options.map(m => {
+            const on = selected.includes(m.id);
+            return (
+              <CommandItem key={m.id} value={`${m.name} ${m.memberNo ?? ''} ${m.id}`} onSelect={() => onToggle(m.id)}>
+                <span className={`mr-2 h-4 w-4 shrink-0 rounded border inline-flex items-center justify-center ${
+                  on ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-gray-300'
+                }`}>
+                  {on && <Check className="h-3 w-3" />}
+                </span>
+                <span className="truncate">{m.name}</span>
+                {m.memberNo && <span className="ml-1.5 text-xs text-gray-500 font-mono">{m.memberNo}</span>}
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+      </CommandList>
+    </Command>
+  );
+}
+
+/** Popover multi-select for the form — selection applies live. */
+function MemberMultiSelect({ options, value, onChange, disabled }: {
+  options: library.Member[];
+  value: string[];
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="h-8" disabled={disabled}>
+          <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+          Invite members
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        <MemberChecklist
+          options={options}
+          selected={value}
+          onToggle={id => onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id])}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Detail-view Invite button — pick several, then send in one call. */
+function InviteButton({ options, onInvite, disabled }: {
+  options: library.Member[];
+  onInvite: (ids: string[]) => Promise<boolean>;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  useEffect(() => { if (!open) setPicked([]); }, [open]);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" size="sm" className="h-8" disabled={disabled}>
+          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Invite
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="end">
+        {options.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-gray-500">Every active member is already on the list.</p>
+        ) : (
+          <>
+            <MemberChecklist
+              options={options}
+              selected={picked}
+              onToggle={id => setPicked(p => (p.includes(id) ? p.filter(v => v !== id) : [...p, id]))}
+            />
+            <div className="flex justify-end gap-2 border-t p-2">
+              <Button type="button" variant="ghost" size="sm" className="h-7" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button
+                type="button" size="sm" className="h-7"
+                disabled={picked.length === 0 || sending}
+                onClick={async () => {
+                  setSending(true);
+                  try { if (await onInvite(picked)) setOpen(false); }
+                  finally { setSending(false); }
+                }}
+              >
+                {sending ? 'Inviting…' : `Invite${picked.length ? ` (${picked.length})` : ''}`}
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ReadingTracking() {
   const { canView, canCreate, canUpdate, canDelete } = useAuth();
@@ -91,6 +288,17 @@ export function ReadingTracking() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
+  /** The list omits covers, so Edit fetches GET /{id} for it; Save
+   *  waits for that — a PUT without the cover would clear it. */
+  const [coverLoading, setCoverLoading] = useState(false);
+  const coverReq = useRef(0);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Detail view (Facebook-Event style).
+  const [view, setView] = useState<library.ReadingRecord | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [guestBusy, setGuestBusy] = useState<string | null>(null);
+  const viewReq = useRef(0);
 
   const load = async () => {
     setLoading(true);
@@ -109,7 +317,11 @@ export function ReadingTracking() {
   };
   useEffect(() => { void load(); }, []);
 
-  const openNew = () => { setEditingId(null); setForm(EMPTY); setDialogOpen(true); };
+  const openNew = () => {
+    coverReq.current++;
+    setCoverLoading(false);
+    setEditingId(null); setForm(EMPTY); setDialogOpen(true);
+  };
   const openEdit = (r: library.ReadingRecord) => {
     setEditingId(r.id);
     setForm({
@@ -118,26 +330,52 @@ export function ReadingTracking() {
       stockItemId: r.stockItemId ?? '',
       // For non-reading activities the subject IS what the user
       // typed; for reading rows the BE returns the book title as the
-      // subject too, but the form's Subject field is hidden so we
+      // subject too, but the form's free-text Title is hidden so we
       // leave this at the stored value and it never surfaces.
       subject: r.subject ?? '',
       startDate: r.startDate,
+      startTime: toHm(r.startTime),
       returnDate: r.returnDate ?? '',
+      endTime: toHm(r.endTime),
+      location: r.location ?? '',
+      coverImageUrl: r.coverImageUrl ?? null,
+      inviteeIds: (r.participants ?? []).filter(p => !p.host && p.customerId !== r.customerId).map(p => p.customerId),
       status: r.status,
       term: r.term ?? '',
       notes: r.notes ?? '',
     });
+    const token = ++coverReq.current;
+    if (r.hasCover && !r.coverImageUrl) {
+      setCoverLoading(true);
+      library.getReading(r.id)
+        .then(full => {
+          if (coverReq.current !== token) return;
+          setForm(f => ({ ...f, coverImageUrl: full.coverImageUrl ?? null }));
+        })
+        .catch(e => { if (coverReq.current === token) toast.error(e instanceof Error ? e.message : 'Could not load the cover photo'); })
+        .finally(() => { if (coverReq.current === token) setCoverLoading(false); });
+    } else {
+      setCoverLoading(false);
+    }
     setDialogOpen(true);
   };
 
   const save = async () => {
-    if (!form.customerId) { toast.error('Pick a member'); return; }
     if (form.activityType === 'reading' && !form.stockItemId) {
-      toast.error('Pick a book for a Reading activity'); return;
+      toast.error('Pick a title for a Reading activity'); return;
     }
     if (form.activityType !== 'reading' && !form.subject.trim()) {
-      toast.error('Add a subject'); return;
+      toast.error('Add a title'); return;
     }
+    if (!form.customerId) { toast.error('Pick a host'); return; }
+    if (form.returnDate && form.startDate && form.returnDate < form.startDate) {
+      toast.error("End date can't be before the start date"); return;
+    }
+    const sameDay = !form.returnDate || form.returnDate === form.startDate;
+    if (sameDay && form.startTime && form.endTime && form.endTime <= form.startTime) {
+      toast.error('End time must be after the start time'); return;
+    }
+    if (coverLoading) { toast.error('Still loading the cover photo — try again in a moment'); return; }
     setSaving(true);
     try {
       const payload: library.ReadingInput = {
@@ -150,6 +388,14 @@ export function ReadingTracking() {
         status: form.status,
         term: form.term.trim() || undefined,
         notes: form.notes || undefined,
+        startTime: form.startTime || null,
+        endTime: form.endTime || null,
+        location: form.location.trim() || null,
+        // '' removes the cover; null would mean "keep" on the server.
+        coverImageUrl: form.coverImageUrl || '',
+        // Create: the guests to invite. Edit: the full kept list —
+        // the BE invites new ones, drops missing ones, keeps answers.
+        inviteeIds: form.inviteeIds.filter(id => id !== form.customerId),
       };
       if (editingId) await library.readings.update(editingId, payload);
       else            await library.readings.create(payload);
@@ -173,12 +419,101 @@ export function ReadingTracking() {
     catch (e) { toast.error(e instanceof Error ? e.message : 'Delete failed'); }
   };
 
+  /* ─── Detail view ─────────────────────────────────────────────── */
+
+  const openView = (r: library.ReadingRecord) => {
+    setView(r);
+    const token = ++viewReq.current;
+    // Re-fetch for the cover (the list omits it) + a fresh guest list.
+    setViewLoading(true);
+    library.getReading(r.id)
+      .then(full => { if (viewReq.current === token) setView(full); })
+      .catch(e => { if (viewReq.current === token) toast.error(e instanceof Error ? e.message : 'Could not load activity'); })
+      .finally(() => { if (viewReq.current === token) setViewLoading(false); });
+  };
+
+  /** Close + invalidate any in-flight fetch so it can't reopen the view. */
+  const closeView = () => { viewReq.current++; setView(null); setViewLoading(false); };
+
+  /** Push a write response into the view + the list row. The list
+   *  never carries covers, so drop it there to keep rows light. */
+  const applyUpdated = (updated: library.ReadingRecord) => {
+    setView(v => (v && v.id === updated.id ? updated : v));
+    setRows(prev => prev.map(r => (r.id === updated.id ? { ...updated, coverImageUrl: null } : r)));
+  };
+
+  const inviteGuests = async (ids: string[]): Promise<boolean> => {
+    if (!view || ids.length === 0) return false;
+    try {
+      const updated = await library.inviteToActivity(view.id, ids);
+      applyUpdated(updated);
+      toast.success(ids.length === 1 ? 'Member invited' : `${ids.length} members invited`);
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Invite failed');
+      return false;
+    }
+  };
+
+  const setRsvp = async (p: library.ActivityParticipant, rsvp: Rsvp) => {
+    if (!view) return;
+    setGuestBusy(p.customerId);
+    try { applyUpdated(await library.setActivityRsvp(view.id, p.customerId, rsvp)); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save the answer'); }
+    finally { setGuestBusy(null); }
+  };
+
+  const removeGuest = async (p: library.ActivityParticipant) => {
+    if (!view) return;
+    const ok = await confirm({
+      title: 'Remove guest?',
+      message: `${p.name ?? 'This member'} will be taken off the guest list.`,
+      confirmLabel: 'Remove',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    setGuestBusy(p.customerId);
+    try { applyUpdated(await library.removeActivityGuest(view.id, p.customerId)); toast.success('Guest removed'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not remove guest'); }
+    finally { setGuestBusy(null); }
+  };
+
   const statusVariant = (s: Status): 'default' | 'secondary' | 'destructive' | 'outline' =>
     s === 'progress' ? 'default' : s === 'done' ? 'outline' : 'destructive';
 
   // Only show ACTIVE members in the picker — no point starting a new
   // reading against a suspended / expired card.
   const activeMembers = useMemo(() => members.filter(m => m.status === 'active'), [members]);
+  const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+
+  // Host picker: active members, plus the current host on edit even
+  // if their card has since lapsed (so the field doesn't read blank).
+  const hostOptions = useMemo(() => {
+    const list = [...activeMembers];
+    if (form.customerId && !list.some(m => m.id === form.customerId)) {
+      const cur = memberById.get(form.customerId);
+      if (cur) list.unshift(cur);
+    }
+    return list;
+  }, [activeMembers, memberById, form.customerId]);
+
+  // Invitee options exclude the host.
+  const inviteOptions = useMemo(
+    () => activeMembers.filter(m => m.id !== form.customerId),
+    [activeMembers, form.customerId],
+  );
+
+  // Names for the invitee chips — member list first, then whatever
+  // the edited row's participants carried (covers lapsed members).
+  const editingRow = useMemo(() => rows.find(r => r.id === editingId) ?? null, [rows, editingId]);
+  const guestName = (id: string) =>
+    memberById.get(id)?.name
+    ?? editingRow?.participants?.find(p => p.customerId === id)?.name
+    ?? 'Member';
+
+  const canEditActivity = canUpdate('reading') && canView('member') && canView('book');
+  const canManageGuests = canUpdate('reading');
+  const canInvite = canUpdate('reading') && canView('member');
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ActivityType | 'all'>('all');
@@ -201,12 +536,57 @@ export function ReadingTracking() {
         (r.memberName ?? '').toLowerCase().includes(q)
         || (r.memberNo ?? '').toLowerCase().includes(q)
         || (r.subject ?? '').toLowerCase().includes(q)
+        || (r.location ?? '').toLowerCase().includes(q)
         || (r.notes ?? '').toLowerCase().includes(q)
       );
     });
   }, [rows, search, typeFilter, dateFrom, dateTo]);
 
   const pagination = usePagination(filteredRows, 25);
+
+  /** "Sat, 25 Oct 2026 · 2:00 PM – 4:00 PM" style range. */
+  const whenText = (r: library.ReadingRecord): string => {
+    const weekday = (d: string) => parseYmd(d)?.toLocaleDateString('en-US', { weekday: 'short' }) ?? '';
+    const day = (d: string) => `${weekday(d)}, ${formatDate(d)}`;
+    let s = r.startDate ? day(r.startDate) : '—';
+    if (r.startTime) s += ` · ${fmtTime(r.startTime)}`;
+    const multiDay = !!r.returnDate && r.returnDate !== r.startDate;
+    if (multiDay) {
+      s += ` – ${day(r.returnDate!)}`;
+      if (r.endTime) s += ` · ${fmtTime(r.endTime)}`;
+    } else if (r.endTime) {
+      s += ` – ${fmtTime(r.endTime)}`;
+    }
+    return s;
+  };
+
+  const pickCover = async (file: File) => {
+    try {
+      const url = await readImageAsDataUrl(file, { maxBytes: COVER_MAX_BYTES });
+      setForm(f => ({ ...f, coverImageUrl: url }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to read image');
+    }
+  };
+
+  const viewMeta = view ? metaOf(view.activityType) : null;
+  const viewDate = view ? parseYmd(view.startDate) : null;
+  const viewParticipants: library.ActivityParticipant[] = view
+    ? (view.participants && view.participants.length > 0
+        ? view.participants
+        // Pre-V369 rows have no guest rows yet — show the host alone.
+        : [{ customerId: view.customerId, memberNo: view.memberNo, name: view.memberName, rsvp: 'going', host: true, respondedAt: null }])
+    : [];
+  const viewInviteOptions = view
+    ? activeMembers.filter(m => m.id !== view.customerId && !viewParticipants.some(p => p.customerId === m.id))
+    : [];
+
+  const infoRow = (icon: ReactNode, body: ReactNode) => (
+    <div className="flex items-start gap-3 text-sm">
+      <span className="mt-0.5 text-gray-500 shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">{body}</div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -274,7 +654,7 @@ export function ReadingTracking() {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search member, subject, notes…"
+                  placeholder="Search host, title, location, notes…"
                   className="h-8 pl-7 w-64 text-sm"
                 />
               </div>
@@ -295,20 +675,20 @@ export function ReadingTracking() {
             <Table>
               <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
-                  <TableHead>Member</TableHead>
+                  <TableHead>Host</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Subject</TableHead>
+                  <TableHead>Title</TableHead>
                   <TableHead>Start</TableHead>
                   <TableHead>End Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Duration</TableHead>
                   <TableHead>Term</TableHead>
-                  <TableHead className="text-right w-[110px]">Actions</TableHead>
+                  <TableHead className="text-right w-[130px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pagination.paginatedItems.map(r => {
-                  const activityMeta = ACTIVITY_TYPES.find(a => a.value === r.activityType) ?? ACTIVITY_TYPES[3];
+                  const activityMeta = metaOf(r.activityType);
                   const Icon = activityMeta.icon;
                   return (
                     <TableRow key={r.id}>
@@ -322,9 +702,48 @@ export function ReadingTracking() {
                           {activityMeta.label}
                         </span>
                       </TableCell>
-                      <TableCell>{r.subject}</TableCell>
-                      <TableCell>{r.startDate ? formatDate(r.startDate) : '—'}</TableCell>
-                      <TableCell>{r.returnDate ? formatDate(r.returnDate) : '—'}</TableCell>
+                      <TableCell>
+                        <button type="button" onClick={() => openView(r)}
+                                className="inline-flex items-center gap-1.5 text-left font-medium hover:underline">
+                          {r.subject}
+                          {r.hasCover && (
+                            <ImageIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" aria-label="Has cover photo" />
+                          )}
+                        </button>
+                        {(r.location || (r.goingCount ?? 0) > 0) && (
+                          <div className="mt-0.5 flex items-center gap-3 text-xs text-gray-500">
+                            {r.location && (
+                              <span className="inline-flex items-center gap-1 max-w-[220px]">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{r.location}</span>
+                              </span>
+                            )}
+                            {(r.goingCount ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-1 shrink-0">
+                                <Users className="h-3 w-3" /> {r.goingCount} going
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div>{r.startDate ? formatDate(r.startDate) : '—'}</div>
+                        {r.startTime && (
+                          <div className="text-xs text-gray-500 inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {fmtTime(r.startTime)}
+                            {r.endTime && (!r.returnDate || r.returnDate === r.startDate) ? ` – ${fmtTime(r.endTime)}` : ''}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div>{r.returnDate ? formatDate(r.returnDate) : '—'}</div>
+                        {r.endTime && r.returnDate && r.returnDate !== r.startDate && (
+                          <div className="text-xs text-gray-500 inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" /> {fmtTime(r.endTime)}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(r.status)} className="capitalize">{r.status}</Badge>
                       </TableCell>
@@ -336,18 +755,21 @@ export function ReadingTracking() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1 justify-end">
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openView(r)} title="View">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
                           {/* Edit needs member + book pickers too, so gate
                               the pencil on the same combo as the New
                               Activity button. Delete only touches the
                               reading row — no cross-module fetch — so it
                               stays on the base `reading:delete` gate. */}
-                          {canUpdate('reading') && canView('member') && canView('book') && (
-                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)}>
+                          {canEditActivity && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canDelete('reading') && (
-                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(r)}>
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(r)} title="Delete">
                               <Trash2 className="h-3.5 w-3.5 text-red-600" />
                             </Button>
                           )}
@@ -375,8 +797,9 @@ export function ReadingTracking() {
         </CardContent>
       </Card>
 
+      {/* ─── New / Edit — Facebook "Create event" layout ─────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {editingId ? 'Edit Activity' : 'New Activity'}
@@ -390,28 +813,115 @@ export function ReadingTracking() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs">
-                    Log a member activity — reading, meeting, conference, or other.
+                    Set up a member activity — reading, meeting, conference, or other — and invite members to it.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 space-y-1.5">
-              <Label>Member <span className="text-red-500">*</span></Label>
-              <Select value={form.customerId} onValueChange={v => setForm({ ...form, customerId: v })}>
-                <SelectTrigger><SelectValue placeholder="Pick a member" /></SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {activeMembers.map(m => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name} {m.memberNo ? `(${m.memberNo})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Cover photo — optional wide banner. */}
+            <div className="col-span-2">
+              {coverLoading ? (
+                <div className="h-36 rounded-md border bg-gray-100 animate-pulse flex items-center justify-center text-xs text-gray-500">
+                  Loading cover photo…
+                </div>
+              ) : form.coverImageUrl ? (
+                <div className="relative h-36 rounded-md overflow-hidden border bg-gray-100">
+                  <img src={form.coverImageUrl} alt="" className="w-full h-full object-cover" />
+                  <div className="absolute right-2 bottom-2 flex gap-1.5">
+                    <Button type="button" size="sm" variant="secondary" className="h-7 shadow-sm"
+                            onClick={() => coverInputRef.current?.click()}>
+                      <ImageIcon className="h-3.5 w-3.5 mr-1" /> Change
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" className="h-7 shadow-sm text-red-600"
+                            onClick={() => setForm(f => ({ ...f, coverImageUrl: null }))}>
+                      <X className="h-3.5 w-3.5 mr-1" /> Remove
+                    </Button>
+                  </div>
+                  <input
+                    ref={coverInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) void pickCover(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
+              ) : (
+                <ImageDropZone
+                  value={null}
+                  onChange={v => setForm(f => ({ ...f, coverImageUrl: v }))}
+                  hint="Optional cover photo · up to 2 MB"
+                  height={110}
+                  maxBytes={COVER_MAX_BYTES}
+                />
+              )}
             </div>
-            {/* V-library-membership-activity — activity type first,
-                then a conditional Book picker OR free-text Subject. */}
+
+            {/* Title — prominent. Reading links a book; other types
+                take free text. */}
+            {form.activityType === 'reading' ? (
+              <div className="col-span-2 space-y-1.5">
+                <Label>Title <span className="text-red-500">*</span></Label>
+                {/* V-library-activity-book-picker — searchable +
+                    inline-create, same pattern as the Invoice Purpose
+                    picker. Typing a title that doesn't exist offers
+                    "Add '{query}' as a new title" — the callback POSTs
+                    to the Books endpoint, appends to the local list
+                    so the picker refreshes without a full reload,
+                    and auto-selects the new row. */}
+                <SearchablePicker
+                  value={form.stockItemId}
+                  onChange={v => setForm({ ...form, stockItemId: v })}
+                  placeholder="Pick a title"
+                  searchPlaceholder="Search or type a title…"
+                  emptyResultsLabel="No match — type a new title to add."
+                  createLabel={q => `Add "${q}" as a new title`}
+                  allowClear={false}
+                  onCreate={async (label) => {
+                    const trimmed = label.trim();
+                    try {
+                      const created = await library.books.create({ title: trimmed });
+                      setBooks(prev => [...prev, created]);
+                      toast.success(`Title "${created.title}" added`);
+                      return {
+                        value: created.id,
+                        label: created.title,
+                        secondary: created.author ?? undefined,
+                      };
+                    } catch (e) {
+                      // Surface the BE reason instead of the picker
+                      // silently staying open on a 403 / validation
+                      // fail — otherwise the operator has no idea
+                      // why the "+ Add" click did nothing.
+                      const msg = e instanceof Error ? e.message : 'Could not add title';
+                      toast.error(msg);
+                      throw e;
+                    }
+                  }}
+                  options={books.map(b => ({
+                    value: b.id,
+                    label: b.title,
+                    secondary: b.author ?? undefined,
+                    searchKey: `${b.title} ${b.author ?? ''} ${b.isbn ?? ''}`,
+                  }))}
+                />
+              </div>
+            ) : (
+              <div className="col-span-2 space-y-1.5">
+                <Label>Title <span className="text-red-500">*</span></Label>
+                <Input placeholder="e.g. Q4 Board Meeting"
+                       className="h-11 text-base font-medium"
+                       maxLength={LEN.name}
+                       value={form.subject}
+                       onChange={e => setForm({ ...form, subject: e.target.value })} />
+              </div>
+            )}
+
             <div className="col-span-2 space-y-1.5">
               <Label>Activity Type <span className="text-red-500">*</span></Label>
               <div className="grid grid-cols-4 gap-2 mt-1">
@@ -436,71 +946,93 @@ export function ReadingTracking() {
                 })}
               </div>
             </div>
-            {form.activityType === 'reading' ? (
-              <div className="col-span-2 space-y-1.5">
-                <Label>Book <span className="text-red-500">*</span></Label>
-                {/* V-library-activity-book-picker — searchable +
-                    inline-create, same pattern as the Invoice Purpose
-                    picker. Typing a title that doesn't exist offers
-                    "Add '{query}' as a new book" — the callback POSTs
-                    to the Books endpoint, appends to the local list
-                    so the picker refreshes without a full reload,
-                    and auto-selects the new row. */}
-                <SearchablePicker
-                  value={form.stockItemId}
-                  onChange={v => setForm({ ...form, stockItemId: v })}
-                  placeholder="Pick a book"
-                  searchPlaceholder="Search or type a new book title…"
-                  emptyResultsLabel="No match — type a new book to add."
-                  createLabel={q => `Add "${q}" as a new book`}
-                  allowClear={false}
-                  onCreate={async (label) => {
-                    const trimmed = label.trim();
-                    try {
-                      const created = await library.books.create({ title: trimmed });
-                      setBooks(prev => [...prev, created]);
-                      toast.success(`Book "${created.title}" added`);
-                      return {
-                        value: created.id,
-                        label: created.title,
-                        secondary: created.author ?? undefined,
-                      };
-                    } catch (e) {
-                      // Surface the BE reason instead of the picker
-                      // silently staying open on a 403 / validation
-                      // fail — otherwise the operator has no idea
-                      // why the "+ Add" click did nothing.
-                      const msg = e instanceof Error ? e.message : 'Could not add book';
-                      toast.error(msg);
-                      throw e;
-                    }
-                  }}
-                  options={books.map(b => ({
-                    value: b.id,
-                    label: b.title,
-                    secondary: b.author ?? undefined,
-                    searchKey: `${b.title} ${b.author ?? ''} ${b.isbn ?? ''}`,
-                  }))}
-                />
-              </div>
-            ) : (
-              <div className="col-span-2 space-y-1.5">
-                <Label>Subject <span className="text-red-500">*</span></Label>
-                <Input placeholder="e.g. Q4 Board Meeting"
-                       value={form.subject}
-                       onChange={e => setForm({ ...form, subject: e.target.value })} />
-              </div>
-            )}
+
+            <div className="col-span-2 space-y-1.5">
+              <Label>Host <span className="text-red-500">*</span></Label>
+              <SearchablePicker
+                value={form.customerId}
+                onChange={v => setForm(f => ({
+                  ...f,
+                  customerId: v,
+                  // The host is never also a guest.
+                  inviteeIds: f.inviteeIds.filter(id => id !== v),
+                }))}
+                placeholder="Pick the host member"
+                searchPlaceholder="Search members…"
+                emptyResultsLabel="No members found."
+                allowClear={false}
+                options={hostOptions.map(m => ({
+                  value: m.id,
+                  label: m.name,
+                  secondary: m.memberNo ?? undefined,
+                  searchKey: `${m.name} ${m.memberNo ?? ''} ${m.phone ?? ''}`,
+                }))}
+              />
+            </div>
+
+            {/* Date & time */}
             <div className="space-y-1.5">
               <Label>Start Date</Label>
               <Input type="date" value={form.startDate}
                      onChange={e => setForm({ ...form, startDate: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>End Date</Label>
-              <Input type="date" value={form.returnDate}
+              <Label>Start Time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
+              <Input type="time" value={form.startTime}
+                     onChange={e => setForm({ ...form, startTime: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>End Date <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
+              <Input type="date" value={form.returnDate} min={form.startDate || undefined}
                      onChange={e => setForm({ ...form, returnDate: e.target.value })} />
             </div>
+            <div className="space-y-1.5">
+              <Label>End Time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
+              <Input type="time" value={form.endTime}
+                     onChange={e => setForm({ ...form, endTime: e.target.value })} />
+            </div>
+
+            <div className="col-span-2 space-y-1.5">
+              <Label>Location</Label>
+              <div className="relative">
+                <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input className="pl-8"
+                       placeholder="Add a place or an online link"
+                       maxLength={LOCATION_MAX}
+                       value={form.location}
+                       onChange={e => setForm({ ...form, location: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Invitees — guests besides the host. */}
+            <div className="col-span-2 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Guests {form.inviteeIds.length > 0 && <span className="text-xs text-gray-500 font-normal">({form.inviteeIds.length})</span>}</Label>
+                <MemberMultiSelect
+                  options={inviteOptions}
+                  value={form.inviteeIds}
+                  onChange={ids => setForm(f => ({ ...f, inviteeIds: ids }))}
+                />
+              </div>
+              {form.inviteeIds.length === 0 ? (
+                <p className="text-xs text-gray-500">No guests yet — invite members to this activity.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.inviteeIds.map(id => (
+                    <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 py-0.5 pl-0.5 pr-1.5 text-xs">
+                      <InitialsAvatar name={guestName(id)} size="sm" />
+                      {guestName(id)}
+                      <button type="button" aria-label="Remove guest"
+                              className="text-gray-400 hover:text-red-600"
+                              onClick={() => setForm(f => ({ ...f, inviteeIds: f.inviteeIds.filter(v => v !== id) }))}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as Status })}>
@@ -515,7 +1047,7 @@ export function ReadingTracking() {
             <div className="space-y-1.5">
               <Label>Term</Label>
               {/* V-library-activity-term — same SearchablePicker
-                  pattern as the Book field: filter by typing, and
+                  pattern as the Title field: filter by typing, and
                   "+ Add" inline-creates a new term (just a distinct
                   label — no separate table). */}
               <SearchablePicker
@@ -539,17 +1071,171 @@ export function ReadingTracking() {
               />
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label>Notes</Label>
-              <Textarea rows={3} value={form.notes}
+              <Label>Details</Label>
+              <Textarea rows={3} value={form.notes} maxLength={DETAILS_MAX}
+                        placeholder="What's this activity about?"
                         onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => void save()} disabled={saving}>
+            <Button onClick={() => void save()} disabled={saving || coverLoading}>
               {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Activity'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Detail view — Facebook-Event layout ─────────────────── */}
+      <Dialog open={!!view} onOpenChange={o => { if (!o) closeView(); }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+          {view && viewMeta && (
+            <>
+              {/* Cover banner, or a coloured header by activity type. */}
+              {view.coverImageUrl ? (
+                <img src={view.coverImageUrl} alt="" className="w-full h-44 object-cover rounded-t-lg" />
+              ) : view.hasCover && viewLoading ? (
+                <div className="w-full h-44 bg-gray-100 animate-pulse rounded-t-lg" />
+              ) : (
+                <div className={`w-full h-28 rounded-t-lg bg-gradient-to-br ${viewMeta.banner} flex items-center justify-center`}>
+                  <viewMeta.icon className="h-10 w-10 text-white/80" />
+                </div>
+              )}
+
+              <div className="p-5 space-y-4">
+                <DialogHeader className="text-left">
+                  <div className="flex items-start gap-3">
+                    {viewDate && (
+                      <div className="shrink-0 w-14 rounded-md border bg-white text-center overflow-hidden shadow-sm">
+                        <div className="bg-red-500 text-white text-[10px] font-semibold uppercase py-0.5">
+                          {viewDate.toLocaleDateString('en-US', { month: 'short' })}
+                        </div>
+                        <div className="text-2xl font-bold leading-9 tabular-nums">{viewDate.getDate()}</div>
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <DialogTitle className="text-xl leading-snug break-words">{view.subject}</DialogTitle>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs">
+                          <viewMeta.icon className="h-3.5 w-3.5 text-gray-600" />
+                          {viewMeta.label}
+                        </span>
+                        <Badge variant={statusVariant(view.status)} className="capitalize">{view.status}</Badge>
+                        {view.term && (
+                          <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs">{view.term}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-2.5">
+                  {infoRow(<CalendarDays className="h-4 w-4" />, whenText(view))}
+                  {view.location && infoRow(
+                    <MapPin className="h-4 w-4" />,
+                    looksLikeUrl(view.location)
+                      ? <a href={hrefOf(view.location)} target="_blank" rel="noopener noreferrer"
+                           className="text-blue-600 hover:underline break-all">{view.location}</a>
+                      : <span className="break-words">{view.location}</span>,
+                  )}
+                  {infoRow(
+                    <Crown className="h-4 w-4" />,
+                    <span>Hosted by <span className="font-medium">{view.memberName ?? 'Member'}</span></span>,
+                  )}
+                  {infoRow(
+                    <Users className="h-4 w-4" />,
+                    <span>
+                      {view.goingCount ?? 0} going · {view.maybeCount ?? 0} maybe · {view.invitedCount ?? 0} invited
+                      {(view.declinedCount ?? 0) > 0 ? ` · ${view.declinedCount} can't go` : ''}
+                    </span>,
+                  )}
+                </div>
+
+                {view.notes && (
+                  <div className="rounded-md bg-gray-50 border px-3 py-2 text-sm whitespace-pre-wrap break-words">
+                    {view.notes}
+                  </div>
+                )}
+
+                {/* Guest list grouped by RSVP. */}
+                <div className="space-y-3 border-t pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold">Guests</h3>
+                    {canInvite && (
+                      <InviteButton options={viewInviteOptions} onInvite={inviteGuests} disabled={!!guestBusy} />
+                    )}
+                  </div>
+                  {RSVP_GROUPS.map(g => {
+                    const list = viewParticipants.filter(p => p.rsvp === g.value);
+                    if (list.length === 0) return null;
+                    return (
+                      <div key={g.value} className="space-y-1.5">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          {g.label} · {list.length}
+                        </div>
+                        {list.map(p => (
+                          <div key={p.customerId} className="flex items-center gap-2.5 rounded-md px-1 py-1 hover:bg-gray-50">
+                            <InitialsAvatar name={p.name} />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                                {p.name ?? 'Member'}
+                                {p.host && (
+                                  <span className="rounded bg-emerald-100 text-emerald-700 px-1.5 py-px text-[10px] font-semibold">Host</span>
+                                )}
+                              </div>
+                              {p.memberNo && <div className="text-xs text-gray-500 font-mono">{p.memberNo}</div>}
+                            </div>
+                            {canManageGuests && !p.host && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <div className="inline-flex rounded-md border overflow-hidden">
+                                  {RSVP_CHOICES.map(c => {
+                                    const on = p.rsvp === c.value;
+                                    return (
+                                      <button
+                                        key={c.value}
+                                        type="button"
+                                        disabled={guestBusy === p.customerId}
+                                        // Clicking the current answer resets it to "invited".
+                                        onClick={() => void setRsvp(p, on ? 'invited' : c.value)}
+                                        title={on ? 'Clear answer' : `Mark as ${c.label.toLowerCase()}`}
+                                        className={`px-2 py-0.5 text-[11px] border-l first:border-l-0 transition-colors disabled:opacity-50 ${
+                                          on ? c.active : 'bg-white text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        {c.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0"
+                                        disabled={guestBusy === p.customerId}
+                                        onClick={() => void removeGuest(p)}
+                                        title="Remove guest" aria-label="Remove guest">
+                                  <X className="h-3.5 w-3.5 text-red-600" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {viewParticipants.length <= 1 && (
+                    <p className="text-xs text-gray-500">No guests invited yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="px-5 pb-5">
+                <Button variant="outline" onClick={closeView}>Close</Button>
+                {canEditActivity && (
+                  <Button onClick={() => { const r = view; closeView(); openEdit(r); }}>
+                    <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

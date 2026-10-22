@@ -98,6 +98,18 @@ export const books = {
 
 export type ActivityType = 'reading' | 'meeting' | 'conference' | 'other';
 
+/** V369 — a guest's answer on an activity's invite list. */
+export type ActivityRsvp = 'invited' | 'going' | 'maybe' | 'declined';
+
+export interface ActivityParticipant {
+  customerId: string;
+  memberNo: string | null;
+  name: string | null;
+  rsvp: ActivityRsvp;
+  host: boolean;                // the activity's host member (always first)
+  respondedAt: string | null;   // ISO instant; null while still 'invited'
+}
+
 export interface ReadingRecord {
   id: string;
   customerId: string;
@@ -114,6 +126,18 @@ export interface ReadingRecord {
   progress: number | null;      // legacy — hidden in FE
   term: string | null;          // V-library-activity-term
   notes: string | null;
+  // V369 — event details + guest list.
+  startTime: string | null;     // "HH:mm:ss"
+  endTime: string | null;       // "HH:mm:ss"
+  location: string | null;      // place or online link
+  /** Data URL — only on GET /{id} and write responses; null in the list. */
+  coverImageUrl: string | null;
+  hasCover: boolean;
+  participants: ActivityParticipant[];   // host first
+  goingCount: number;
+  maybeCount: number;
+  invitedCount: number;
+  declinedCount: number;
 }
 
 export interface ReadingInput {
@@ -127,6 +151,14 @@ export interface ReadingInput {
   progress?: number;              // legacy
   term?: string;                  // free-text label; picker + inline add
   notes?: string;
+  // V369 — event details. All optional; older payloads still work.
+  startTime?: string | null;      // "HH:mm"
+  endTime?: string | null;        // "HH:mm"
+  location?: string | null;       // ≤255, place or online link
+  coverImageUrl?: string | null;  // data URL; on update null = keep, "" = remove
+  /** Guests besides the host. On update: omitted/null = leave the
+   *  list alone; a list = the exact set of non-host guests to keep. */
+  inviteeIds?: string[] | null;
 }
 
 /* ─── Library Settings (tenant-scoped reminder config) ──────────── */
@@ -217,3 +249,20 @@ export const readings = {
   update: (id: string, r: ReadingInput) => apiJson<ReadingRecord>(`/api/v1/library/readings/${id}`, { method: 'PUT', json: r }),
   remove: (id: string) =>     apiVoid(`/api/v1/library/readings/${id}`, { method: 'DELETE' }),
 };
+
+/* ─── Activity guests (V369) — all gated on reading:update ──────── */
+
+/** Full activity incl. cover image (the list omits covers). */
+export const getReading = (id: string) => readings.get(id);
+
+/** Invite more members; already-invited ones are left as they are. */
+export const inviteToActivity = (id: string, customerIds: string[]) =>
+  apiJson<ReadingRecord>(`/api/v1/library/readings/${id}/participants`, { method: 'POST', json: { customerIds } });
+
+/** Record a guest's answer (or reset it to 'invited'). */
+export const setActivityRsvp = (id: string, customerId: string, rsvp: ActivityRsvp) =>
+  apiJson<ReadingRecord>(`/api/v1/library/readings/${id}/participants/${customerId}`, { method: 'PUT', json: { rsvp } });
+
+/** Take a guest off the list — the host can't be removed (400). */
+export const removeActivityGuest = (id: string, customerId: string) =>
+  apiJson<ReadingRecord>(`/api/v1/library/readings/${id}/participants/${customerId}`, { method: 'DELETE' });
