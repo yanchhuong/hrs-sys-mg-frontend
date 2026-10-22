@@ -48,6 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
@@ -83,6 +84,13 @@ function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
     isWeekend: dow === 0 || dow === 6,
     isHoliday: false,
     payrollBatchSubject: o.payrollBatchSubject ?? null,
+    // v-doc-audit-line — carry the server-resolved names through the adapter
+    // (submitter / approver names were previously dropped here, leaving the
+    // "Submitted By" / approver cells blank).
+    submittedByName: o.submittedByName ?? undefined,
+    approvedByName: o.approvedByName ?? undefined,
+    createdByName: o.createdByName ?? null,
+    updatedByName: o.updatedByName ?? null,
   };
 }
 
@@ -1172,7 +1180,11 @@ export function Overtime() {
                           assigned" reads as data somebody forgot to fill in. */}
                       {leader && <EmployeeCell employee={leader} subtitle={leader.position} />}
                     </TableCell>
-                    <TableCell>{formatDate(request.date)}</TableCell>
+                    <TableCell>
+                      {formatDate(request.date)}
+                      {/* v-doc-audit-line — creator / last editor */}
+                      <DocAuditLine compact createdBy={request.createdByName} updatedBy={request.updatedByName} className="max-w-[180px]" />
+                    </TableCell>
                     <TableCell className="text-center text-sm">
                       {request.startHour || <span className="text-gray-300">—</span>}
                     </TableCell>
@@ -1463,6 +1475,10 @@ export function Overtime() {
             <DialogDescription className="sr-only">
               Adjust the start / end hour, force a day-type bucket, or pin a custom rate. Empty rate falls back to the OT settings.
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor of the row being edited */}
+            {editingOt && (
+              <DocAuditLine createdBy={editingOt.createdByName} updatedBy={editingOt.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">

@@ -67,6 +67,9 @@ export interface Item {
   type?: ItemType;
   createdAt?: string;
   updatedAt?: string;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 /** V182 — item discriminator. */

@@ -257,6 +257,9 @@ export interface OTRequest {
    *  e.g. "Salary of July 2026"). Populated only for status='paid'
    *  so the OT table can render a "Paid · <batch>" reference. */
   payrollBatchSubject?: string | null;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface PayrollItem {

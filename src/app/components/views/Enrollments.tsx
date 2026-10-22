@@ -27,6 +27,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { EnrollmentSettingsDialog } from '../common/EnrollmentSettingsDialog';
 import { InvoicePreviewDialog } from '../common/InvoicePreviewDialog';
 import { SearchablePicker } from '../common/SearchablePicker';
@@ -612,6 +613,10 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               Pick a student + course schedule. Unit price defaults from the
               schedule's tuition fee.
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor, edit mode only */}
+            {editing && (
+              <DocAuditLine createdBy={editing.createdByName} updatedBy={editing.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">

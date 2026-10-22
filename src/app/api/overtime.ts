@@ -69,6 +69,9 @@ export interface OtRequest {
   approvedAt?: string | null;
   /** ISO timestamp of when the request was filed. */
   requestedAt: string;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CreateOtRequest {

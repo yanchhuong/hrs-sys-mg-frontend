@@ -18,6 +18,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { InlineTextCell } from '../common/InlineTextCell';
+import { DocAuditLine } from '../common/DocAuditLine';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
 import * as invoicesApi from '../../api/invoices';
@@ -757,6 +758,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                             <span>{c.name}</span>
                           )}
                         </div>
+                        {/* v-doc-audit-line — creator / last editor (Students
+                            lens shows it under its Date column instead) */}
+                        {!isStudent && (
+                          <DocAuditLine compact createdBy={c.createdByName} updatedBy={c.updatedByName} className="max-w-[180px] mt-0.5 font-normal" />
+                        )}
                       </TableCell>
                       {/* v-customers-inline-cell — Phone / TIN /
                           Representative / Site edit in-place. Click
@@ -877,6 +883,8 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                       {isStudent && (
                         <TableCell className="text-sm text-gray-600 tabular-nums">
                           {c.createdAt ? c.createdAt.slice(0, 10) : '—'}
+                          {/* v-doc-audit-line — creator / last editor */}
+                          <DocAuditLine compact createdBy={c.createdByName} updatedBy={c.updatedByName} className="max-w-[180px]" />
                         </TableCell>
                       )}
                       {isPatient && (
@@ -1029,6 +1037,10 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                     ? 'Business customer — TIN and representative are required.'
                     : 'Individual customer — only name is required.'}
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor, edit mode only */}
+            {editing && (
+              <DocAuditLine createdBy={editing.createdByName} updatedBy={editing.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
 
           {/* Scrollable form body — overflow-y-auto here, not on the

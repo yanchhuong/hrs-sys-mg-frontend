@@ -49,6 +49,8 @@ export interface CashAdvance {
   remarks: string | null;
   createdAt: string;
   createdByName: string | null;
+  /** Display name of the last editor (server-resolved). */
+  updatedByName?: string | null;
   disbursementTxnId: string | null;
   settlementTxnId: string | null;
   expenses: CashAdvanceExpense[];

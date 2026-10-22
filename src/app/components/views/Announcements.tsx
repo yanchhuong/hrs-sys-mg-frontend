@@ -41,6 +41,7 @@ import * as systemHolidaysApi from '../../api/systemHolidays';
 import * as telegramApi from '../../api/telegram';
 import * as hrTelegramApi from '../../api/hrTelegramBots';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { DocAuditLine } from '../common/DocAuditLine';
 
 /**
  * Announcements (V122). Admin / manager publishes a broadcast to
@@ -590,6 +591,8 @@ export function Announcements() {
                     {a.publishAt
                       ? new Date(a.publishAt).toLocaleString()
                       : <span className="text-gray-400 italic">draft</span>}
+                    {/* v-doc-audit-line — creator / last editor */}
+                    <DocAuditLine compact createdBy={a.createdByName} updatedBy={a.updatedByName} className="max-w-[180px]" />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" className="h-7" onClick={(e) => { e.stopPropagation(); void openDetail(a); }}>
@@ -1181,6 +1184,10 @@ export function Announcements() {
                 <AudienceBadge type={detail.audienceType} />
               </>}
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor under the meta row */}
+            {detail && (
+              <DocAuditLine createdBy={detail.createdByName} updatedBy={detail.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
           {detail && (
             <div className="space-y-4 px-6 py-4 overflow-y-auto flex-1 min-h-0">

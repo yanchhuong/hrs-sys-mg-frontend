@@ -27,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { mockExceptions } from '../../data/timeworkData';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -108,6 +109,11 @@ function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
     correctedCheckIn: r.correctedCheckIn ?? undefined,
     correctedCheckOut: r.correctedCheckOut ?? undefined,
     isException: r.isException ?? false,
+    // v-doc-audit-line — keep the audit fields; they were dropped here,
+    // which left the Author / Modifier columns blank.
+    createdByName: r.createdByName ?? null,
+    updatedByName: r.updatedByName ?? null,
+    updatedAt: r.updatedAt ?? null,
   };
 }
 
@@ -855,6 +861,10 @@ export function AllLeave() {
             <DialogDescription>
               Read-only view. Approve / Reject is only available while pending.
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor under the meta row */}
+            {viewTarget && (
+              <DocAuditLine createdBy={viewTarget.createdByName} updatedBy={viewTarget.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
           {viewTarget && (() => {
             const employee = employees.find(

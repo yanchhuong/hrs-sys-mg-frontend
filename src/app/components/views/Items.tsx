@@ -24,6 +24,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DocAuditLine } from '../common/DocAuditLine';
 import * as itemsApi from '../../api/items';
 import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
@@ -1878,6 +1879,8 @@ export function Items() {
                           {it.description && (
                             <div className="text-[11px] text-gray-500 truncate max-w-md">{it.description}</div>
                           )}
+                          {/* v-doc-audit-line — creator / last editor */}
+                          <DocAuditLine compact createdBy={it.createdByName} updatedBy={it.updatedByName} className="max-w-[180px] font-normal" />
                         </TableCell>
                         <TableCell className="text-xs text-gray-700">
                           {/* v-items-inline-category — SearchablePicker
@@ -2137,6 +2140,10 @@ export function Items() {
             <DialogDescription className="sr-only">
               Catalog item with unit price, cost, unit, and stock quantity.
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor, edit mode only */}
+            {editing && (
+              <DocAuditLine createdBy={editing.createdByName} updatedBy={editing.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">

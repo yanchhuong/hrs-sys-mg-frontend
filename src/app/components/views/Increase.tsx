@@ -3,6 +3,7 @@ import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { AuditCell } from '../common/AuditCell';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
@@ -98,6 +99,12 @@ function adaptApiIncrease(r: increasesApi.SalaryIncrease): SalaryIncrease {
     reason: r.reason ?? '',
     approvedBy: r.approvedBy ?? '',
     approvedAt: r.createdAt ?? '',
+    // v-doc-audit-line — keep the audit fields; they were dropped here,
+    // which left the Author / Modifier columns blank.
+    createdAt: r.createdAt ?? null,
+    createdByName: r.createdByName ?? null,
+    updatedAt: r.updatedAt ?? null,
+    updatedByName: r.updatedByName ?? null,
   };
 }
 
@@ -1021,6 +1028,10 @@ export function Increase() {
               Salary Increase Details
             </DialogTitle>
             <DialogDescription>Read-only record. Create a correction entry if anything here is wrong.</DialogDescription>
+            {/* v-doc-audit-line — creator / last editor under the meta row */}
+            {detailsTarget && (
+              <DocAuditLine createdBy={detailsTarget.createdByName} updatedBy={detailsTarget.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
           {detailsTarget && (() => {
             const employee = employees.find(

@@ -27,6 +27,8 @@ export interface StockAdjustment {
   createdById?: string | null;
   /** Hydrated user display label (name → email fallback). V151. */
   createdByName?: string | null;
+  /** Display name of the last editor (server-resolved). */
+  updatedByName?: string | null;
 }
 
 export interface StockAdjustmentRequest {

@@ -80,6 +80,9 @@ export interface Announcement {
   createdAt: string;
   updatedAt: string;
   createdById: string | null;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 /** One row of the plate's facts strip. Three optional fields; the

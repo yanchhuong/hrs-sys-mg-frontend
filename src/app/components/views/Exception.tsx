@@ -125,6 +125,11 @@ function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
     correctedCheckIn: r.correctedCheckIn ?? undefined,
     correctedCheckOut: r.correctedCheckOut ?? undefined,
     isException: r.isException ?? false,
+    // v-doc-audit-line — keep the audit fields; they were dropped here,
+    // which left the Author / Modifier columns blank.
+    createdByName: r.createdByName ?? null,
+    updatedByName: r.updatedByName ?? null,
+    updatedAt: r.updatedAt ?? null,
   };
 }
 

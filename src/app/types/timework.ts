@@ -76,6 +76,10 @@ export interface AttendanceException {
   /** Legacy flag — pre-V47 rows used this boolean alone. Now equivalent
    *  to category in ('maternity', 'exception'). */
   isException?: boolean;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface SalaryDeduction {
@@ -90,6 +94,11 @@ export interface SalaryDeduction {
   endDate?: string;
   isRecurring: boolean;
   status: 'active' | 'completed' | 'cancelled';
+  /** Author / modifier audit (server-resolved display names). */
+  createdAt?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface SalaryIncrease {
@@ -112,4 +121,9 @@ export interface SalaryIncrease {
   reason: string;
   approvedBy: string;
   approvedAt: string;
+  /** Author / modifier audit (server-resolved display names). */
+  createdAt?: string | null;
+  createdByName?: string | null;
+  updatedAt?: string | null;
+  updatedByName?: string | null;
 }

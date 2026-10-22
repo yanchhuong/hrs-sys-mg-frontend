@@ -29,6 +29,8 @@ export interface Enrollment {
   /** v-creator-column — Registror (display name of the user who
    *  created the enrollment). Hydrated on list only. */
   createdByName?: string | null;
+  /** Display name of the last editor (server-resolved). */
+  updatedByName?: string | null;
   currency: string;
   exchangeRate: number;
   unitPrice: number;

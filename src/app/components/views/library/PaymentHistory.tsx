@@ -28,6 +28,11 @@ import { useDateFormat } from '../../../context/DateFormatContext';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 import { InvoiceViewDialog } from './InvoiceViewDialog';
+import { DocAuditLine } from '../../common/DocAuditLine';
+
+// v-doc-audit-line — server adds creator / last-editor names to each
+// payment row. Widened locally because api/library.ts is owned elsewhere.
+type PaymentAudit = { createdByName?: string | null; updatedByName?: string | null };
 
 type RemarkFilter = 'all' | 'New Registration' | 'Renewal';
 
@@ -205,7 +210,11 @@ export function PaymentHistory() {
               <TableBody>
                 {pagination.paginatedItems.map(r => (
                   <TableRow key={r.paymentId}>
-                    <TableCell className="whitespace-nowrap">{r.paymentDate ? formatDate(r.paymentDate) : '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {r.paymentDate ? formatDate(r.paymentDate) : '—'}
+                      {/* v-doc-audit-line — creator / last editor */}
+                      <DocAuditLine compact createdBy={(r as PaymentAudit).createdByName} updatedBy={(r as PaymentAudit).updatedByName} className="max-w-[180px]" />
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium">{r.memberName ?? '—'}</div>
                       <div className="text-xs text-gray-500 font-mono">{r.memberNo ?? ''}</div>

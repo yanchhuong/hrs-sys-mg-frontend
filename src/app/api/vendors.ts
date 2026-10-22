@@ -14,6 +14,9 @@ export interface Vendor {
   site?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface VendorRequest {

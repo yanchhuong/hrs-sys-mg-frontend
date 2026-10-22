@@ -98,6 +98,12 @@ function adaptApiDeduction(d: deductionsApi.SalaryDeduction): SalaryDeduction {
     startDate: d.startDate,
     endDate: d.endDate ?? undefined,
     status: narrowDeductionStatus(d.status),
+    // v-doc-audit-line — keep the audit fields; they were dropped here,
+    // which left the Author / Modifier columns + detail rows blank.
+    createdAt: d.createdAt ?? null,
+    createdByName: d.createdByName ?? null,
+    updatedAt: d.updatedAt ?? null,
+    updatedByName: d.updatedByName ?? null,
   };
 }
 

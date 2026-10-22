@@ -62,6 +62,9 @@ export interface Customer {
   enrollmentCount?: number;
   createdAt?: string;
   updatedAt?: string;
+  /** Display names of the creator / last editor (server-resolved). */
+  createdByName?: string | null;
+  updatedByName?: string | null;
 }
 
 export interface CustomerRequest {

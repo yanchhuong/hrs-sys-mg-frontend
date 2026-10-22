@@ -17,6 +17,7 @@ import {
 } from '../ui/table';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DocAuditLine } from '../common/DocAuditLine';
 import * as vendorsApi from '../../api/vendors';
 import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Upload } from 'lucide-react';
 import { BulkUploadVendorsDialog } from '../common/BulkUploadVendorsDialog';
@@ -274,7 +275,11 @@ export function Vendors() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {c.name}
+                        {/* v-doc-audit-line — creator / last editor */}
+                        <DocAuditLine compact createdBy={c.createdByName} updatedBy={c.updatedByName} className="max-w-[180px] font-normal" />
+                      </TableCell>
                       <TableCell className="text-sm text-gray-600">{c.phone || '—'}</TableCell>
                       <TableCell className="text-sm text-gray-600">{c.tin || '—'}</TableCell>
                       <TableCell className="text-sm text-gray-600">{c.representative || '—'}</TableCell>
@@ -331,6 +336,10 @@ export function Vendors() {
                 ? 'Business vendor — TIN and representative are required.'
                 : 'Individual vendor — only name is required.'}
             </DialogDescription>
+            {/* v-doc-audit-line — creator / last editor, edit mode only */}
+            {editing && (
+              <DocAuditLine createdBy={editing.createdByName} updatedBy={editing.updatedByName} className="mt-1" />
+            )}
           </DialogHeader>
 
           {/* Type picker — segmented control, disabled when editing so a

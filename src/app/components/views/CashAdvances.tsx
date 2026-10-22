@@ -20,6 +20,7 @@ import { SearchablePicker } from '../common/SearchablePicker';
 import { ApproverChainPicker } from '../common/ApproverChainPicker';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { DateInput } from '../common/DateInput';
 import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as cashAdvancePurposesApi from '../../api/cashAdvancePurposes';
@@ -257,7 +258,11 @@ export function CashAdvances() {
                     className="cursor-pointer hover:bg-slate-50"
                     onClick={() => setDetail(r)}
                   >
-                    <TableCell className="text-xs">{formatDate(r.createdAt)}</TableCell>
+                    <TableCell className="text-xs">
+                      {formatDate(r.createdAt)}
+                      {/* v-doc-audit-line — creator / last editor */}
+                      <DocAuditLine compact createdBy={r.createdByName} updatedBy={r.updatedByName} className="max-w-[180px]" />
+                    </TableCell>
                     <TableCell className="tabular-nums text-xs">{r.advanceNo}</TableCell>
                     <TableCell>{r.employeeName ?? '—'}</TableCell>
                     <TableCell className="truncate max-w-[280px]" title={r.purpose}>{r.purpose}</TableCell>
@@ -833,6 +838,8 @@ function CashAdvanceDetailDialog({
           <DialogDescription>
             {advance.employeeName ?? 'Unknown employee'} · {advance.purpose}
           </DialogDescription>
+          {/* v-doc-audit-line — creator / last editor under the meta row */}
+          <DocAuditLine createdBy={advance.createdByName} updatedBy={advance.updatedByName} className="mt-1" />
         </DialogHeader>
 
         {/* Money summary */}

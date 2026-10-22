@@ -45,6 +45,7 @@ import {
 } from '../ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { AuditCell } from '../common/AuditCell';
+import { DocAuditLine } from '../common/DocAuditLine';
 import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit, Coins } from 'lucide-react';
 import { CashCountDialog } from '../common/CashCountDialog';
 import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
@@ -147,6 +148,11 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
     rejectedAt: b.rejectedAt ?? undefined,
     rejectionReason: b.rejectionReason ?? undefined,
     approverIds: b.approverIds ?? [],
+    // v-doc-audit-line — keep the audit fields; they were dropped here,
+    // which left the Modifier column blank.
+    createdByName: b.createdByName ?? null,
+    updatedByName: b.updatedByName ?? null,
+    updatedAt: b.updatedAt ?? null,
   };
 }
 
@@ -3110,6 +3116,8 @@ export function Payroll() {
                 <div>
                   <CardTitle>Payroll Details: {selectedBatch.subject}</CardTitle>
                   <p className="text-sm text-gray-500 mt-1">Month/Year: {selectedBatch.monthYear} | Type: {selectedBatch.type}</p>
+                  {/* v-doc-audit-line — creator / last editor under the meta row */}
+                  <DocAuditLine createdBy={selectedBatch.createdByName ?? selectedBatch.uploadedByName} updatedBy={selectedBatch.updatedByName} className="mt-1" />
                 </div>
               </div>
               <div className="flex items-center gap-2">
