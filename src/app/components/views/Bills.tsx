@@ -1632,7 +1632,7 @@ function BillFormDialog({
             )}
           </div>
 
-          {/* Line items editor — Item / Specification / UOM / Qty /
+          {/* Line items editor — Item / Specification / Qty / UOM /
               Unit price / Line total. Specification is a free-form
               detail ("Coke 330ml can" / "WD-40 1L spray", etc.); UOM
               is the unit it's sold in. Both feed the printed invoice
@@ -1649,8 +1649,8 @@ function BillFormDialog({
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
               <div className="col-span-2">Specification</div>
-              <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
+              <div className="col-span-1">UOM</div>
               <div className="col-span-2 text-right">Unit price</div>
               {/* Total header + empty trash header collapsed into one
                   col-span-3 slot so it lines up with the row below. */}
@@ -1763,12 +1763,6 @@ function BillFormDialog({
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm"
-                    value={it.unit ?? ''}
-                    onChange={e => updateItem(idx, { unit: e.target.value })}
-                    placeholder="pcs"
-                  />
                   {/* v-numeric-input-common — shared masking +
                       comma-on-blur across the app. Qty + Unit price
                       also clear the Total override so the display
@@ -1778,6 +1772,12 @@ function BillFormDialog({
                     value={it.quantity}
                     decimals={2}
                     onChange={raw => updateItem(idx, { quantity: raw, totalEditing: undefined })}
+                  />
+                  <Input
+                    className="col-span-1 h-8 text-sm"
+                    value={it.unit ?? ''}
+                    onChange={e => updateItem(idx, { unit: e.target.value })}
+                    placeholder="pcs"
                   />
                   <NumericInput
                     className="col-span-2 h-8 text-sm"
@@ -2408,8 +2408,8 @@ function BillDetailDialog({
                   <TableRow>
                     <TableHead>Item</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
@@ -2419,8 +2419,8 @@ function BillDetailDialog({
                     <TableRow key={it.id}>
                       <TableCell className="text-sm">{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{it.quantity}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, invoice.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, invoice.currency)}</TableCell>
                     </TableRow>

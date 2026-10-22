@@ -274,8 +274,8 @@ export function PublicInvoiceView() {
               <tr style={{ backgroundColor: '#f4f4f4' }}>
                 <Th kh="ល.រ." en="N°" width="42px" />
                 <Th kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en="Description" />
-                <Th kh="ឯកតា" en="UOM" width="60px" />
                 <Th kh="បរិមាណ" en="Qty" width="60px" align="right" />
+                <Th kh="ឯកតា" en="UOM" width="60px" />
                 <Th kh="តម្លៃឯកតា" en="Unit Price" width="90px" align="right" />
                 <Th kh="តម្លៃទាំងអស់" en="Total" width="100px" align="right" />
               </tr>
@@ -288,8 +288,8 @@ export function PublicInvoiceView() {
                     <div style={{ fontWeight: 600 }}>{it.name}</div>
                     {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
                   </Td>
-                  <Td align="center">{it.unit || ''}</Td>
                   <Td align="right">{it.quantity}</Td>
+                  <Td align="center">{it.unit || ''}</Td>
                   <Td align="right">{fmtMoney(it.unitPrice)}</Td>
                   <Td align="right">{fmtMoney(it.lineTotal)}</Td>
                 </tr>

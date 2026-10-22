@@ -952,8 +952,8 @@ function VoucherFormDialog({
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item</div>
               <div className="col-span-2">Specification</div>
-              <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
+              <div className="col-span-1">UOM</div>
               <div className="col-span-2 text-right">Unit price</div>
               {/* Total header + empty trash header collapsed into one
                   col-span-3 slot so it lines up with the row below. */}
@@ -1053,12 +1053,6 @@ function VoucherFormDialog({
                     onChange={e => updateLine(l.localId, { description: e.target.value })}
                     placeholder="Model, size, variant…"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm"
-                    value={l.unit}
-                    onChange={e => updateLine(l.localId, { unit: e.target.value })}
-                    placeholder="pcs"
-                  />
                   {/* v-numeric-input-common — shared masking +
                       comma-on-blur across the app. */}
                   <NumericInput
@@ -1066,6 +1060,12 @@ function VoucherFormDialog({
                     value={l.quantity}
                     decimals={2}
                     onChange={raw => updateLine(l.localId, { quantity: raw })}
+                  />
+                  <Input
+                    className="col-span-1 h-8 text-sm"
+                    value={l.unit}
+                    onChange={e => updateLine(l.localId, { unit: e.target.value })}
+                    placeholder="pcs"
                   />
                   <NumericInput
                     className="col-span-2 h-8 text-sm"
@@ -1593,8 +1593,8 @@ function VoucherDetailDialog({
                   <TableRow>
                     <TableHead>Item</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
@@ -1611,8 +1611,8 @@ function VoucherDetailDialog({
                     <TableRow key={it.id}>
                       <TableCell>{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
-                      <TableCell className="text-sm">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{it.quantity}</TableCell>
+                      <TableCell className="text-sm">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, voucher.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, voucher.currency)}</TableCell>
                     </TableRow>

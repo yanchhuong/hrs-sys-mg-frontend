@@ -1039,7 +1039,7 @@ function TemplateEditorDialog({
                   thermal receipt without an amount column is not
                   useful, so we don't let the operator strip them. */}
               <div className="grid grid-cols-2 gap-2">
-                {(['item', 'uom', 'quantity', 'unitPrice', 'total'] as const).map(col => {
+                {(['item', 'quantity', 'uom', 'unitPrice', 'total'] as const).map(col => {
                   const isReceipt = kind === 'receipt';
                   return (
                     <div key={col} className="flex items-center gap-2">
@@ -1539,8 +1539,8 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           <tr>
             <th style={th}><BiLbl kh="ល.រ." en="N°" /></th>
             {c.item      && <th style={{ ...th, textAlign: 'left' }}><BiLbl kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={l.item ?? 'Description'} /></th>}
-            {c.uom       && <th style={th}><BiLbl kh="ឯកតា" en={l.uom ?? 'UOM'} /></th>}
             {c.quantity  && <th style={th}><BiLbl kh="បរិមាណ" en={l.quantity ?? 'Quantity'} /></th>}
+            {c.uom       && <th style={th}><BiLbl kh="ឯកតា" en={l.uom ?? 'UOM'} /></th>}
             {c.unitPrice && <th style={{ ...th, textAlign: 'right' }}><BiLbl kh="ថ្លៃឯកតា" en={l.unitPrice ?? 'Unit Price'} /></th>}
             {c.total     && <th style={{ ...th, textAlign: 'right' }}><BiLbl kh="ថ្លៃទំនិញ" en={l.total ?? 'Amount'} /></th>}
           </tr>
@@ -1558,8 +1558,8 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
                   <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
                 </td>
               )}
-              {c.uom       && <td style={{ ...td, textAlign: 'center' }}>ea</td>}
               {c.quantity  && <td style={{ ...td, textAlign: 'center' }}>{row.qty}</td>}
+              {c.uom       && <td style={{ ...td, textAlign: 'center' }}>ea</td>}
               {c.unitPrice && <td style={{ ...td, textAlign: 'right' }}>${row.unit.toFixed(2)}</td>}
               {c.total     && <td style={{ ...td, textAlign: 'right' }}>${(row.qty * row.unit).toFixed(2)}</td>}
             </tr>

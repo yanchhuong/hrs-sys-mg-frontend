@@ -1881,7 +1881,7 @@ function InvoiceFormDialog({
             )}
           </div>
 
-          {/* Line items editor — Item / Specification / UOM / Qty /
+          {/* Line items editor — Item / Specification / Qty / UOM /
               Unit price / Line total. Specification is a free-form
               detail ("Coke 330ml can" / "WD-40 1L spray", etc.); UOM
               is the unit it's sold in. Both feed the printed invoice
@@ -1900,8 +1900,8 @@ function InvoiceFormDialog({
             <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
               <div className="col-span-3">Item Name</div>
               <div className="col-span-2">Specification</div>
-              <div className="col-span-1">UOM</div>
               <div className="col-span-1 text-right">Qty</div>
+              <div className="col-span-1">UOM</div>
               <div className="col-span-2 text-right">Unit price</div>
               {/* Total header + empty trash header collapsed into one
                   col-span-3 slot so it lines up with the row below. */}
@@ -2040,12 +2040,6 @@ function InvoiceFormDialog({
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
                   />
-                  <Input
-                    className="col-span-1 h-8 text-sm"
-                    value={it.unit ?? ''}
-                    onChange={e => updateItem(idx, { unit: e.target.value })}
-                    placeholder="pcs"
-                  />
                   <div className="col-span-1 flex flex-col gap-0.5">
                     {/* v-numeric-input-common — NumericInput handles
                         masking + focus-toggle format; the stock-cap
@@ -2076,6 +2070,12 @@ function InvoiceFormDialog({
                       </span>
                     )}
                   </div>
+                  <Input
+                    className="col-span-1 h-8 text-sm"
+                    value={it.unit ?? ''}
+                    onChange={e => updateItem(idx, { unit: e.target.value })}
+                    placeholder="pcs"
+                  />
                   <NumericInput
                     className="col-span-2 h-8 text-sm"
                     value={it.unitPrice}
@@ -3105,8 +3105,8 @@ function InvoiceDetailDialog({
                   <TableRow>
                     <TableHead>Item Name</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
@@ -3116,8 +3116,8 @@ function InvoiceDetailDialog({
                     <TableRow key={it.id}>
                       <TableCell className="text-sm">{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{it.quantity}</TableCell>
+                      <TableCell className="text-sm text-gray-600">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, invoice.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, invoice.currency)}</TableCell>
                     </TableRow>
@@ -4101,8 +4101,8 @@ export function PrintTaxInvoice({
           <tr>
             <th style={thStyle}><BiLabel kh="ល.រ." en="N°" /></th>
             {cfgCols.item      && <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
-            {cfgCols.uom       && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
             {cfgCols.quantity  && <th style={thStyle}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} /></th>}
+            {cfgCols.uom       && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
             {cfgCols.unitPrice && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} /></th>}
             {cfgCols.total     && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} /></th>}
           </tr>
@@ -4117,8 +4117,8 @@ export function PrintTaxInvoice({
                   {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
                 </td>
               )}
-              {cfgCols.uom       && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.unit ?? ''}</td>}
               {cfgCols.quantity  && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.quantity}</td>}
+              {cfgCols.uom       && <td style={{ ...tdStyle, textAlign: 'center' }}>{it.unit ?? ''}</td>}
               {cfgCols.unitPrice && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
               {cfgCols.total     && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
             </tr>

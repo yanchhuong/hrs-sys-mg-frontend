@@ -885,8 +885,8 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead>Specification</TableHead>
-              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-28 text-right">Unit price</TableHead>
               <TableHead className="w-28 text-right">Total</TableHead>
             </TableRow>
@@ -896,8 +896,8 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
               <TableRow key={it.id}>
                 <TableCell className="font-medium">{it.name}</TableCell>
                 <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
-                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
               </TableRow>
@@ -995,8 +995,8 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead>Specification</TableHead>
-              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-28 text-right">Unit price</TableHead>
               <TableHead className="w-28 text-right">Total</TableHead>
             </TableRow>
@@ -1006,8 +1006,8 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
               <TableRow key={it.id}>
                 <TableCell className="font-medium">{it.name}</TableCell>
                 <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
-                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
               </TableRow>
@@ -1105,8 +1105,8 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead>Specification</TableHead>
-              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-20 text-right">Qty</TableHead>
+              <TableHead className="w-20">UOM</TableHead>
               <TableHead className="w-28 text-right">Unit price</TableHead>
               <TableHead className="w-28 text-right">Total</TableHead>
             </TableRow>
@@ -1116,8 +1116,8 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
               <TableRow key={it.id}>
                 <TableCell className="font-medium">{it.name}</TableCell>
                 <TableCell className="text-gray-600">{it.description || '—'}</TableCell>
-                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                <TableCell>{it.unit || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.unitPrice, ccy)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmt(it.lineTotal, ccy)}</TableCell>
               </TableRow>

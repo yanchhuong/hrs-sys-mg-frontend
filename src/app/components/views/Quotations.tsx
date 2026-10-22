@@ -1003,8 +1003,8 @@ function QuotationFormDialog({
                   <TableRow>
                     <TableHead>Item *</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     {/* Total cell spans 2 in the body (see below) to
                         hold Total + trash together with a tight gap.
@@ -1140,9 +1140,6 @@ function QuotationFormDialog({
                           <Input value={l.description} onChange={e => updateLine(l.localId, { description: e.target.value })} placeholder="—" />
                         </TableCell>
                         <TableCell>
-                          <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
-                        </TableCell>
-                        <TableCell>
                           {/* v-numeric-input-common — shared masking +
                               comma-on-blur across the app. */}
                           <NumericInput
@@ -1156,6 +1153,9 @@ function QuotationFormDialog({
                               totalEditing: undefined,
                             })}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Input value={l.unit} onChange={e => updateLine(l.localId, { unit: e.target.value })} placeholder="pcs" />
                         </TableCell>
                         <TableCell>
                           <NumericInput
@@ -1804,8 +1804,8 @@ function QuotationDetailDialog({
                   <TableRow>
                     <TableHead>Item</TableHead>
                     <TableHead>Specification</TableHead>
-                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right w-[80px]">Qty</TableHead>
+                    <TableHead className="w-[80px]">UOM</TableHead>
                     <TableHead className="text-right">Unit price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
@@ -1815,8 +1815,8 @@ function QuotationDetailDialog({
                     <TableRow key={it.id}>
                       <TableCell>{it.name}</TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
-                      <TableCell className="text-sm">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{it.quantity}</TableCell>
+                      <TableCell className="text-sm">{it.unit || '—'}</TableCell>
                       <TableCell className="text-right text-sm">{fmtMoney(it.unitPrice, quotation.currency)}</TableCell>
                       <TableCell className="text-right text-sm tabular-nums">{fmtMoney(it.lineTotal, quotation.currency)}</TableCell>
                     </TableRow>
