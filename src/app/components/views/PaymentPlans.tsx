@@ -9,10 +9,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { DateInput } from '../common/DateInput';
@@ -22,8 +21,14 @@ import { Plus, Search, Eye, Ban, Trash2, FileText, DollarSign, Calendar, Info, S
 import { PaymentPlanItemsDialog } from '../common/PaymentPlanItemsDialog';
 import * as paymentPlanItemsApi from '../../api/paymentPlanItems';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import { format, addDays, addWeeks, addMonths, addYears } from 'date-fns';
+import { format, parseISO, addDays, addWeeks, addMonths, addYears } from 'date-fns';
+import { NumericInput } from '../common/NumericInput';
+import { Checkbox } from '../ui/checkbox';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatMoney } from '../../utils/format';
@@ -33,13 +38,6 @@ import * as invoicesApi from '../../api/invoices';
 import { PaymentPlanDetailDialog } from '../common/PaymentPlanDetailDialog';
 
 type PlanRow = paymentPlansApi.PaymentPlan;
-
-const STATUS_BADGE: Record<string, string> = {
-  draft:     'bg-gray-100 text-gray-700 hover:bg-gray-100',
-  active:    'bg-blue-100 text-blue-800 hover:bg-blue-100',
-  completed: 'bg-green-100 text-green-800 hover:bg-green-100',
-  cancelled: 'bg-red-100 text-red-800 hover:bg-red-100',
-};
 
 const PLAN_TYPE_BADGE: Record<string, string> = {
   installment: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -58,6 +56,7 @@ export function PaymentPlans() {
   const canAdd    = canCreate('payment_plan');
   const canModify = canUpdate('payment_plan');
   const canRemove = canDelete('payment_plan');
+  const confirmDialog = useConfirm();
 
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
@@ -67,6 +66,7 @@ export function PaymentPlans() {
    *  share the same fetch. */
   const [allItems, setAllItems] = useState<paymentPlanItemsApi.PaymentPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | paymentPlansApi.PlanStatus>('all');
   const [typeFilter,   setTypeFilter]   = useState<'all' | paymentPlansApi.PlanType>('all');
@@ -80,11 +80,14 @@ export function PaymentPlans() {
 
   const loadPlans = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await paymentPlansApi.list({ size: 200 });
       setPlans(res.data);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load payment plans');
+      const msg = e instanceof Error ? e.message : 'Failed to load payment plans';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -138,11 +141,21 @@ export function PaymentPlans() {
     });
   }, [plans, statusFilter, typeFilter, search]);
 
+  const anyFilter = !!(search.trim() || statusFilter !== 'all' || typeFilter !== 'all');
+  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setTypeFilter('all'); };
+
   const pagination = usePagination(filtered, 15);
   useEffect(() => { pagination.resetPage(); }, [statusFilter, typeFilter, search]);
 
   const handleCancel = async (plan: PlanRow) => {
-    if (!confirm(`Cancel plan ${plan.planNo}? Recorded payments stay on the row; no new payments will be accepted.`)) return;
+    const ok = await confirmDialog({
+      title: `Cancel plan ${plan.planNo}?`,
+      message: 'Recorded payments stay on the row; no new payments will be accepted.',
+      confirmLabel: 'Cancel plan',
+      cancelLabel: 'Keep plan',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
       await paymentPlansApi.cancel(plan.id);
       toast.success('Plan cancelled');
@@ -153,7 +166,13 @@ export function PaymentPlans() {
   };
 
   const handleDelete = async (plan: PlanRow) => {
-    if (!confirm(`Delete draft plan ${plan.planNo}? This wipes the schedule too. Cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete draft plan ${plan.planNo}?`,
+      message: 'This wipes the schedule too. Cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
       await paymentPlansApi.remove(plan.id);
       toast.success('Plan deleted');
@@ -218,37 +237,47 @@ export function PaymentPlans() {
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search plan #, customer, invoice #"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8 h-9"
+                className="h-9 pl-7 w-64"
               />
             </div>
-            <Select value={typeFilter} onValueChange={v => setTypeFilter(v as any)}>
-              <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {(Object.entries(paymentPlansApi.PLAN_TYPE_LABELS) as [paymentPlansApi.PlanType, string][])
-                  .map(([k, label]) => (
-                    <SelectItem key={k} value={k}>{label}</SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              <option value="all">Status : All ({statusCounts.all})</option>
+              <option value="draft">Status : Draft ({statusCounts.draft})</option>
+              <option value="active">Status : Active ({statusCounts.active})</option>
+              <option value="completed">Status : Completed ({statusCounts.completed})</option>
+              <option value="cancelled">Status : Cancelled ({statusCounts.cancelled})</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All</option>
+              {(Object.entries(paymentPlansApi.PLAN_TYPE_LABELS) as [paymentPlansApi.PlanType, string][])
+                .map(([k, label]) => (
+                  <option key={k} value={k}>Type : {label}</option>
+                ))}
+            </select>
+            {anyFilter && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as any)}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="all">All <Badge variant="secondary" className="ml-2">{statusCounts.all}</Badge></TabsTrigger>
-              <TabsTrigger value="draft">Draft <Badge variant="secondary" className="ml-2">{statusCounts.draft}</Badge></TabsTrigger>
-              <TabsTrigger value="active">Active <Badge variant="secondary" className="ml-2">{statusCounts.active}</Badge></TabsTrigger>
-              <TabsTrigger value="completed">Completed <Badge variant="secondary" className="ml-2">{statusCounts.completed}</Badge></TabsTrigger>
-              <TabsTrigger value="cancelled">Cancelled <Badge variant="secondary" className="ml-2">{statusCounts.cancelled}</Badge></TabsTrigger>
-            </TabsList>
-          </Tabs>
 
           {/* v-list-table-invoice-shape — border+scroll wrapper +
               sticky header, same shell as Invoices / Vendors. */}
@@ -272,13 +301,12 @@ export function PaymentPlans() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
-                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-500 py-8">Loading…</TableCell></TableRow>
+              {loading && plans.length === 0 && <TableBodySkeletonRows columns={13} />}
+              {!loading && loadError && plans.length === 0 && (
+                <ListError colSpan={13} message={loadError} onRetry={() => void loadPlans()} />
               )}
-              {!loading && pagination.paginatedItems.length === 0 && (
-                <TableRow><TableCell colSpan={13} className="text-center text-sm text-gray-500 py-8">
-                  {plans.length === 0 ? 'No plans yet. Click "New Plan" to start.' : 'No plans match the filters.'}
-                </TableCell></TableRow>
+              {!loading && !(loadError && plans.length === 0) && pagination.paginatedItems.length === 0 && (
+                <ListEmpty colSpan={13} noun="plans" filtered={anyFilter} />
               )}
               {pagination.paginatedItems.map(p => {
                 const progress = p.numberOfTerms > 0
@@ -360,7 +388,7 @@ export function PaymentPlans() {
                       ) : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell>
-                      <Badge className={STATUS_BADGE[p.status]}>{p.status}</Badge>
+                      <Badge variant="outline" className={`capitalize ${statusBadgeClass(p.status)}`}>{p.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1 flex-nowrap">
@@ -435,6 +463,7 @@ function CreatePlanDialogContent({
   const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
+  const { formatDate } = useDateFormat();
 
   // Invoice has no resolved customer name of its own — look it up
   // from the customers list already loaded for the picker above.
@@ -671,7 +700,9 @@ function CreatePlanDialogContent({
   const maturityDate = useMemo(() => {
     const n = Number(numberOfTerms) || 0;
     if (!startDate || n <= 0) return '';
-    const start = new Date(startDate);
+    // parseISO → local midnight; new Date('yyyy-MM-dd') is UTC and can
+    // land on the previous day west of Greenwich.
+    const start = parseISO(startDate);
     if (Number.isNaN(start.getTime())) return '';
     const steps = n - 1;
     const last =
@@ -680,8 +711,8 @@ function CreatePlanDialogContent({
       : frequency === 'quarterly' ? addMonths(start, steps * 3)
       : frequency === 'yearly'    ? addYears(start, steps)
       :                             addMonths(start, steps);
-    return format(last, 'MMM dd, yyyy');
-  }, [startDate, numberOfTerms, frequency]);
+    return formatDate(last);
+  }, [startDate, numberOfTerms, frequency, formatDate]);
 
   /** Rental / Installment plans MUST reference a catalogue item —
    *  the plan's Total Amount is derived from the item's price so a
@@ -749,21 +780,22 @@ function CreatePlanDialogContent({
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1">
           <Label>Source Invoice (optional)</Label>
-          <Select
-            value={invoiceId || 'none'}
-            onValueChange={v => setInvoiceId(v === 'none' ? '' : v)}
-          >
-            <SelectTrigger><SelectValue placeholder="No invoice — standalone plan" /></SelectTrigger>
-            <SelectContent>
-              {/* Radix rejects empty-string SelectItem values, so we
-                  route "no invoice" through the sentinel 'none' and
-                  translate back to empty on write. */}
-              <SelectItem value="none">— Standalone —</SelectItem>
-              {(Array.isArray(invoices) ? invoices : []).slice(0, 100).map(i => (
-                <SelectItem key={i.id} value={i.id}>{i.invoiceNo}{customerNameById.get(i.customerId) ? ` · ${customerNameById.get(i.customerId)}` : ''}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Searchable over every loaded invoice — the old Select was
+              capped at the first 100 with no search. Clearing the pick
+              means a standalone plan. */}
+          <SearchablePicker
+            value={invoiceId}
+            onChange={setInvoiceId}
+            options={(Array.isArray(invoices) ? invoices : []).map(i => ({
+              value: i.id,
+              label: i.invoiceNo,
+              secondary: customerNameById.get(i.customerId) ?? undefined,
+              searchKey: `${i.invoiceNo} ${customerNameById.get(i.customerId) ?? ''}`,
+            }))}
+            placeholder="No invoice — standalone plan"
+            searchPlaceholder="Search invoice # or customer…"
+            allowClear
+          />
         </div>
         <div className="col-span-2 space-y-1">
           <Label>Customer <span className="text-red-500">*</span></Label>
@@ -909,12 +941,10 @@ function CreatePlanDialogContent({
                     }`}
                   >
                     <span className="flex items-center gap-2 min-w-0">
-                      <input
-                        type={pickedItem.selectMode === 'multi' ? 'checkbox' : 'radio'}
-                        name={`opts-${pickedItem.id}`}
+                      <Checkbox
                         checked={checked}
-                        onChange={toggle}
-                        className="shrink-0"
+                        onCheckedChange={toggle}
+                        className={`shrink-0 ${pickedItem.selectMode === 'multi' ? '' : 'rounded-full'}`}
                       />
                       <span className="truncate">{o.name}</span>
                     </span>
@@ -949,20 +979,16 @@ function CreatePlanDialogContent({
               </span>
             )}
           </Label>
-          <Input
-            type="number" step="0.01" min="0"
+          <NumericInput
             value={totalAmount}
-            onChange={e => setTotalAmountFromUser(e.target.value)}
-            className="text-right tabular-nums"
+            onChange={setTotalAmountFromUser}
           />
         </div>
         <div className="space-y-1">
           <Label>Down Payment</Label>
-          <Input
-            type="number" step="0.01" min="0"
+          <NumericInput
             value={downPayment}
-            onChange={e => setDownPaymentFromUser(e.target.value)}
-            className="text-right tabular-nums"
+            onChange={setDownPaymentFromUser}
           />
         </div>
         {/* v-regular-pay — bidirectional twin of Total Amount.
@@ -979,11 +1005,9 @@ function CreatePlanDialogContent({
               </span>
             )}
           </Label>
-          <Input
-            type="number" step="0.01" min="0"
+          <NumericInput
             value={regularPay}
-            onChange={e => setRegularPayFromUser(e.target.value)}
-            className="text-right tabular-nums"
+            onChange={setRegularPayFromUser}
           />
         </div>
         {/* Spacer to keep the two-column grid alignment stable —
@@ -993,7 +1017,7 @@ function CreatePlanDialogContent({
 
         <div className="space-y-1">
           <Label># of Terms <span className="text-red-500">*</span></Label>
-          <Input type="number" min="1" max="360" value={numberOfTerms} onChange={e => setNumberOfTerms(e.target.value)} className="text-right tabular-nums" />
+          <NumericInput decimals={0} maxInt={3} value={numberOfTerms} onChange={setNumberOfTerms} />
         </div>
         {/* Interest Rate — input flanked by a small "annual / monthly"
             segmented toggle. Monthly-mode entries get × 12'd on the
@@ -1008,12 +1032,13 @@ function CreatePlanDialogContent({
             </span>
           </Label>
           <div className="flex items-stretch gap-1">
-            <Input
-              type="number" step="0.001" min="0" max="100"
+            <NumericInput
+              decimals={3}
+              maxInt={3}
               value={interestRate}
-              onChange={e => setInterestRate(e.target.value)}
+              onChange={setInterestRate}
               disabled={planType !== 'loan'}
-              className="text-right tabular-nums flex-1"
+              className="flex-1"
             />
             <div
               role="radiogroup"
@@ -1076,7 +1101,7 @@ function CreatePlanDialogContent({
           </div>
           <div className="text-[11px] text-gray-500 inline-flex items-center gap-1">
             <Calendar className="h-3 w-3" />
-            First due {startDate ? format(new Date(startDate), 'MMM dd, yyyy') : '—'}, then every {paymentPlansApi.FREQUENCY_LABELS[frequency].toLowerCase()}.
+            First due {startDate ? formatDate(startDate) : '—'}, then every {paymentPlansApi.FREQUENCY_LABELS[frequency].toLowerCase()}.
           </div>
         </div>
       </div>
@@ -1084,6 +1109,9 @@ function CreatePlanDialogContent({
         {/* Two save paths on the footer — Draft (outline) skips
             activation so the plan lands as status='draft'; Create
             Plan (primary) saves as 'active' immediately. */}
+        <DialogClose asChild>
+          <Button variant="outline" disabled={saving}>Cancel</Button>
+        </DialogClose>
         <Button variant="outline" disabled={!canSave || saving} onClick={() => handleSave(false)}>
           {saving ? 'Saving…' : 'Save Draft'}
         </Button>

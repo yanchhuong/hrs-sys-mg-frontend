@@ -28,6 +28,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
+import { NumericInput } from '../common/NumericInput';
 // v-perf-lazy-scanner — @zxing/library is ~250KB gz. Deferred
 // until the operator first opens the scanner dialog.
 const CameraBarcodeScanner = lazy(() =>
@@ -279,6 +280,21 @@ export function POS() {
    *  total when the Discount row is hidden — before this, the points
    *  were burned and the sale went through at full price. */
   const [loyaltyDiscount, setLoyaltyDiscount] = useState<number>(0);
+  /** Rewards applied from the cart's LoyaltyPanel. Like the checkout
+   *  dialog's ticks, they only take the discount off the cart — the
+   *  balance is burned after Confirm Payment succeeds (onCheckoutSubmit),
+   *  so an abandoned or cancelled sale never costs the customer points. */
+  const [panelRewards, setPanelRewards] = useState<{
+    customerId: string | null;
+    entries: Map<string, { delta: number; programName: string }>;
+  }>({ customerId: null, entries: new Map() });
+  const panelRewardsRef = useRef(panelRewards);
+  panelRewardsRef.current = panelRewards;
+  const clearPanelRewards = () => {
+    const empty = { customerId: null, entries: new Map<string, { delta: number; programName: string }>() };
+    panelRewardsRef.current = empty;
+    setPanelRewards(empty);
+  };
   const [taxType, setTaxType] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -532,6 +548,15 @@ export function POS() {
   // picker flips. Walk-in (customerId = null) clears the panel.
   // Best-effort — an error here never blocks the sale.
   useEffect(() => {
+    // Customer switched with cart-panel rewards still pending → take
+    // their discount back off; nothing was burned yet.
+    const pending = panelRewardsRef.current;
+    if (pending.entries.size > 0 && pending.customerId !== customerId) {
+      const sum = [...pending.entries.values()].reduce((s, e) => s + e.delta, 0);
+      setDiscountValue(v => Math.max(0, Number(v) - sum));
+      setLoyaltyDiscount(v => Math.max(0, v - sum));
+      clearPanelRewards();
+    }
     if (!customerId) { setLoyaltyState(null); return; }
     let cancelled = false;
     loyaltyPos.state(customerId)
@@ -863,6 +888,7 @@ export function POS() {
   const newSale = () => {
     setCart([]); setCurrentOrder(null); setCustomerId(null);
     setDiscountType('amount'); setDiscountValue(0); setLoyaltyDiscount(0); setTaxType(null); setNotes('');
+    clearPanelRewards();
     // Intentionally don't reset paidSnapshot here — checkout calls
     // newSale() right after setting the splash and we want the
     // customer screen to keep showing "Thank you" until the cashier
@@ -946,6 +972,20 @@ export function POS() {
           }
         } catch { /* silent — loyalty never blocks checkout */ }
       }
+      // Burn the rewards applied from the cart's LoyaltyPanel now that
+      // the sale is paid (deferred, same as the checkout dialog's ticks).
+      const pendingPanel = panelRewardsRef.current;
+      const burnCustomer = checked.customerId ?? pendingPanel.customerId;
+      if (burnCustomer && pendingPanel.entries.size > 0) {
+        for (const [programId, entry] of pendingPanel.entries.entries()) {
+          try {
+            await loyaltyPos.applyReward(burnCustomer, programId, { discountAmount: entry.delta });
+          } catch (e) {
+            toast.error(`Loyalty apply failed on "${entry.programName}": ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+        clearPanelRewards();
+      }
       setOpenOrders(prev => prev.filter(o => o.id !== checked.id));
       // V165 — the just-paid order enters the kitchen pipeline at
       // 'requested'. Prepend it so the Active Orders drawer reflects
@@ -1022,6 +1062,7 @@ export function POS() {
   }, [activeDrawerOpen]);
 
   const resumeOrder = async (o: PosOrder) => {
+    clearPanelRewards();
     setCurrentOrder(o);
     setCart(o.items.map(i => ({ ...i })));
     setCustomerId(o.customerId);
@@ -1296,22 +1337,31 @@ export function POS() {
 
       <LoyaltyPanel
         state={loyaltyState}
-        onApplyReward={async (programId, discount) => {
+        appliedProgramIds={new Set(panelRewards.entries.keys())}
+        onApplyReward={(programId, discount, programName) => {
           if (!customerId) return;
-          try {
-            await loyaltyPos.applyReward(customerId, programId);
-            // Move the redeemed discount into the cart's own
-            // discount slot so it's reflected in Total. Amount-mode
-            // sums with any manual discount already keyed in.
+          const delta = Number(discount);
+          const cur = panelRewardsRef.current;
+          const entries = new Map(cur.customerId === customerId ? cur.entries : []);
+          const existing = entries.get(programId);
+          if (existing) {
+            // Second click = undo. Nothing was burned, so just take the
+            // discount back off.
+            entries.delete(programId);
+            setDiscountValue(v => Math.max(0, Number(v) - existing.delta));
+            setLoyaltyDiscount(v => Math.max(0, v - existing.delta));
+          } else {
+            // Move the reward into the cart's own discount slot so
+            // Total reflects it. Points are burned only after payment.
+            entries.set(programId, { delta, programName });
             setDiscountType('amount');
-            setDiscountValue(v => Number(v) + Number(discount));
-            setLoyaltyDiscount(v => v + Number(discount));
-            toast.success(`Applied $${discount.toFixed(2)} loyalty discount.`);
-            const next = await loyaltyPos.state(customerId);
-            setLoyaltyState(next);
-          } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Failed to apply reward');
+            setDiscountValue(v => Number(v) + delta);
+            setLoyaltyDiscount(v => v + delta);
+            toast.success(`Applied $${delta.toFixed(2)} loyalty discount — redeemed when payment is confirmed.`);
           }
+          const next = { customerId, entries };
+          panelRewardsRef.current = next;
+          setPanelRewards(next);
         }}
       />
 
@@ -1358,15 +1408,17 @@ export function POS() {
           {/* Gear icon — opens the POS-scope AccountingSettingsDialog
               where the cashier can toggle PAID stamp, auto-print, SKU
               prefix, paper size, and the printed shop name. */}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setSettingsOpen(true)}
-            className="text-gray-400 hover:text-gray-700 transition"
+            className="h-7 w-7 text-gray-500 hover:text-gray-700"
             aria-label="POS settings"
             title="POS settings"
           >
             <SettingsIcon className="h-4 w-4" />
-          </button>
+          </Button>
           {currentOrder && (
             <span
               className={`ml-2 text-sm tabular-nums px-2 py-0.5 rounded border transition-all duration-300 ease-out ${
@@ -2250,13 +2302,13 @@ function CartLineRow({
 
       {noteOpen && (
         <div className="mt-2 space-y-1.5 bg-gray-50 rounded-md p-2 border">
-          <textarea
+          <Textarea
             value={noteDraft}
             onChange={e => setNoteDraft(e.target.value)}
             placeholder="e.g. Sugar 50%, Size M — Less ice"
             maxLength={500}
             rows={2}
-            className="w-full rounded border border-input bg-white px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+            className="min-h-0 bg-white px-2 py-1 text-sm resize-y"
             autoFocus
           />
           <div className="flex justify-end gap-1.5">
@@ -2390,6 +2442,12 @@ function PosCheckoutDialog({
   const committedRef = useRef(false);
   const appliedRef = useRef(applied);
   appliedRef.current = applied;
+  // String draft for the NumericInput so a half-typed "1." survives;
+  // re-synced when the value changes from outside (loyalty ticks).
+  const [discountDraft, setDiscountDraft] = useState(discountValue ? String(discountValue) : '');
+  useEffect(() => {
+    setDiscountDraft(d => ((parseFloat(d) || 0) === Number(discountValue) ? d : (discountValue ? String(discountValue) : '')));
+  }, [discountValue]);
   const discountValueRef = useRef(discountValue);
   discountValueRef.current = discountValue;
   useEffect(() => {
@@ -3063,11 +3121,10 @@ function PosCheckoutDialog({
                     <SelectItem value="percent">%</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input
-                  type="number"
-                  value={discountValue}
-                  onChange={e => onDiscountValueChange(parseFloat(e.target.value) || 0)}
-                  className="h-7 w-20 text-right"
+                <NumericInput
+                  value={discountDraft}
+                  onChange={raw => { setDiscountDraft(raw); onDiscountValueChange(parseFloat(raw) || 0); }}
+                  className="h-7 w-20"
                 />
               </div>
             )}
@@ -3618,6 +3675,11 @@ function PosReceiptBody({
   const customerName = order.customerName || 'Walk-in';
   const receiptNo = `PO-${String(order.queueSeq).padStart(3, '0')}`;
   const cashierParts = [order.createdByName, order.createdByPhone].filter(Boolean).join(' · ');
+  // discountValue is the raw input (10 for "10%"), not money — print the
+  // amount it took off, using the same rule as the cart total.
+  const receiptDiscountAmount = order.discountType === 'percent'
+    ? (Number(order.subtotal) * Number(order.discountValue)) / 100
+    : Number(order.discountValue) || 0;
 
   return (
     <div id="pos-receipt" className="tabular-nums text-sm leading-relaxed bg-white px-6 py-5 border rounded-md w-full">
@@ -3720,10 +3782,10 @@ function PosReceiptBody({
           <span className="tabular-nums">${order.subtotal.toFixed(2)}</span>
         </div>
       )}
-      {order.discountValue > 0 && (
+      {receiptDiscountAmount > 0 && (
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Discount</span>
-          <span className="tabular-nums">−${order.discountValue.toFixed(2)}</span>
+          <span className="text-gray-600">Discount{order.discountType === 'percent' ? ` (${Number(order.discountValue)}%)` : ''}</span>
+          <span className="tabular-nums">−${receiptDiscountAmount.toFixed(2)}</span>
         </div>
       )}
       {order.taxAmount > 0 && (
@@ -3907,10 +3969,13 @@ function ModifierPickerDialog({
  * balance yet (walk-in customers never see this block).
  */
 function LoyaltyPanel({
-  state, onApplyReward,
+  state, onApplyReward, appliedProgramIds,
 }: {
   state: CustomerLoyaltyState | null;
-  onApplyReward: (programId: string, discountAmount: number) => void;
+  /** Adds (or, when already applied, removes) the reward discount on the
+   *  cart. Nothing is redeemed until payment is confirmed. */
+  onApplyReward: (programId: string, discountAmount: number, programName: string) => void;
+  appliedProgramIds: Set<string>;
 }) {
   if (!state) return null;
   const anyBalance = state.programs.some(p =>
@@ -3935,22 +4000,28 @@ function LoyaltyPanel({
                 ? <>{p.currentStamp}{p.stampTarget ? ` / ${p.stampTarget}` : ''} stamps</>
                 : <>{p.currentPoint} pts</>}
             </span>
-            {p.rewards.map((r, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() =>
-                  r.kind === 'discount' && r.discountAmount != null
-                    ? onApplyReward(p.programId, Number(r.discountAmount))
-                    : undefined
-                }
-                disabled={r.kind !== 'discount'}
-                className="text-[10px] px-1.5 py-0.5 rounded border border-purple-300 bg-white text-purple-800 hover:bg-purple-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                title={r.label}
-              >
-                {r.kind === 'discount' ? `Apply ${r.label}` : r.label}
-              </button>
-            ))}
+            {p.rewards.map((r, idx) => {
+              const applied = r.kind === 'discount' && appliedProgramIds.has(p.programId);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() =>
+                    r.kind === 'discount' && r.discountAmount != null
+                      ? onApplyReward(p.programId, Number(r.discountAmount), p.programName)
+                      : undefined
+                  }
+                  disabled={r.kind !== 'discount'}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border disabled:opacity-60 disabled:cursor-not-allowed ${
+                    applied
+                      ? 'border-purple-500 bg-purple-100 text-purple-900 hover:bg-purple-200'
+                      : 'border-purple-300 bg-white text-purple-800 hover:bg-purple-100'}`}
+                  title={applied ? 'Applied — redeemed when payment is confirmed. Click to undo.' : r.label}
+                >
+                  {r.kind === 'discount' ? (applied ? `Applied ${r.label} ✕` : `Apply ${r.label}`) : r.label}
+                </button>
+              );
+            })}
           </div>
         );
       })}

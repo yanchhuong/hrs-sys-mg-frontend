@@ -42,14 +42,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
-import { Calendar } from '../ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateRangeFilter } from '../common/DateRangeFilter';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { StatCard } from '../common/StatCard';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { DocAuditLine } from '../common/DocAuditLine';
-import { Plus, CalendarIcon, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info } from 'lucide-react';
+import { Plus, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info, FileSpreadsheet } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
 import { useAuth } from '../../context/AuthContext';
@@ -227,11 +231,15 @@ export function Overtime() {
       nightCompose: 'replace' },
   );
 
+  const [otLoading, setOtLoading] = useState<boolean>(!USE_MOCKS);
+  const [otLoadError, setOtLoadError] = useState<string | null>(null);
   const loadOtRequests = async () => {
     if (USE_MOCKS) {
       setAllOtRequests([...mockOTRequests]);
       return;
     }
+    setOtLoading(true);
+    setOtLoadError(null);
     try {
       const res = await overtimeApi.list({
         from: dateFilter.start ?? undefined,
@@ -240,7 +248,11 @@ export function Overtime() {
       });
       setAllOtRequests(res.data.map(adaptApiOt));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load OT requests');
+      const msg = err instanceof Error ? err.message : 'Failed to load OT requests';
+      setOtLoadError(msg);
+      toast.error(msg);
+    } finally {
+      setOtLoading(false);
     }
   };
 
@@ -561,18 +573,10 @@ export function Overtime() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
-      approved: 'bg-green-100 text-green-800 hover:bg-green-100',
-      rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
-      // Slate rather than blue: closed is "in a batch, not signed off
-      // yet", and giving it the paid colour would read as money out.
-      closed: 'bg-slate-200 text-slate-700 hover:bg-slate-200',
-      paid: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
-    };
-    return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
-  };
+  // App-wide palette (utils/statusTones): pending amber, approved /
+  // paid green, rejected red, closed slate ("in a batch, not signed off
+  // yet" — never the paid colour).
+  const getStatusBadge = (status: string) => statusBadgeClass(status);
 
   /**
    * Bucket an OT request by calendar day so each day gets its own
@@ -750,11 +754,11 @@ export function Overtime() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold">{t('page.overtime.title')}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
           <DateRangeFilter onFilterChange={handleDateFilterChange} />
           <Button
@@ -763,8 +767,9 @@ export function Overtime() {
             onClick={handleExportExcel}
             disabled={statusFiltered.length === 0}
             title="Download Excel"
+            aria-label="Download Excel"
           >
-            <Download className="h-4 w-4" />
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
           {canBulkUploadOt && isTenantWide && (
             <Button
@@ -792,53 +797,35 @@ export function Overtime() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label>Start Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {formatDate(selectedDate)}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={selectedDate}
-                          onSelect={(date) => date && setSelectedDate(date)}
-                        />
-                      </PopoverContent>
-                    </Popover>
+                    <Label>Start Date <span className="text-red-500">*</span></Label>
+                    <DateInput
+                      value={format(selectedDate, 'yyyy-MM-dd')}
+                      onChange={(v) => { if (v) setSelectedDate(parseISO(v)); }}
+                      clearable={false}
+                      className="w-full"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label className="flex items-center gap-1.5">
-                      End Date
+                      End Date <span className="text-red-500">*</span>
                       {selectedEndDate > selectedDate && (
                         <Badge variant="outline" className="px-1 py-0 text-[10px] border-indigo-300 text-indigo-700 bg-indigo-50">
                           cross-date
                         </Badge>
                       )}
                     </Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {formatDate(selectedEndDate)}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={selectedEndDate}
-                          onSelect={(date) => date && setSelectedEndDate(date)}
-                          disabled={(d) => d < selectedDate}
-                        />
-                      </PopoverContent>
-                    </Popover>
+                    <DateInput
+                      value={format(selectedEndDate, 'yyyy-MM-dd')}
+                      onChange={(v) => { if (v) setSelectedEndDate(parseISO(v)); }}
+                      min={format(selectedDate, 'yyyy-MM-dd')}
+                      clearable={false}
+                      className="w-full"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="ot-start">Start Hour</Label>
+                    <Label htmlFor="ot-start">Start Hour <span className="text-red-500">*</span></Label>
                     <Input
                       id="ot-start"
                       type="time"
@@ -847,7 +834,7 @@ export function Overtime() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="ot-end">End Hour</Label>
+                    <Label htmlFor="ot-end">End Hour <span className="text-red-500">*</span></Label>
                     <Input
                       id="ot-end"
                       type="time"
@@ -860,12 +847,10 @@ export function Overtime() {
                   <Label htmlFor="hours">Hours <span className="text-xs text-gray-400">(auto)</span></Label>
                   <Input
                     id="hours"
-                    type="number"
-                    step="0.25"
                     placeholder="e.g., 2"
                     value={hours}
                     readOnly
-                    className="bg-gray-50"
+                    className="bg-gray-50 text-right tabular-nums"
                   />
                   {startHour && endHour && Number(hours) > 0 && (() => {
                     const crosses = endHour <= startHour;
@@ -888,7 +873,7 @@ export function Overtime() {
                   })()}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reason">Reason</Label>
+                  <Label htmlFor="reason">Reason <span className="text-red-500">*</span></Label>
                   <Textarea
                     id="reason"
                     placeholder="Explain why overtime is needed..."
@@ -976,12 +961,10 @@ export function Overtime() {
                           <div className="space-y-1">
                             <Label className="text-[11px] text-gray-500">Custom rate</Label>
                             <div className="flex items-center gap-1.5">
-                              <Input
-                                type="number"
-                                step="0.1"
-                                min="0"
+                              <NumericInput
+                                maxInt={3}
                                 value={reqOtRateOverride}
-                                onChange={(e) => setReqOtRateOverride(e.target.value)}
+                                onChange={setReqOtRateOverride}
                                 placeholder={String(rule.effectiveRate)}
                                 className="h-8"
                               />
@@ -1012,10 +995,11 @@ export function Overtime() {
                   );
                 })()}
 
-                <Button onClick={handleSubmitRequest} className="w-full">
-                  Submit Request
-                </Button>
               </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleSubmitRequest}>Submit Request</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
           )}
@@ -1026,43 +1010,30 @@ export function Overtime() {
           Employee-only since admins / managers see the same numbers via
           the by-employee view + Reports. */}
       {isEmployee && (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <TimerIcon className="h-5 w-5 text-gray-600" />
-                <span className="text-2xl font-bold text-gray-700">
-                  {otRequests
-                    .filter(req => isApprovedOnward(req.status))
-                    .reduce((sum, req) => sum + req.hours, 0)}h
-                </span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Total OT Hours</p>
-              <p className="text-[11px] text-gray-500 truncate">Approved this period</p>
-            </CardContent>
-          </Card>
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <TimerIcon className="h-5 w-5 text-yellow-600" />
-                <span className="text-2xl font-bold text-yellow-600">{pendingRequests.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Pending</p>
-              <p className="text-[11px] text-gray-500 truncate">Awaiting approval</p>
-            </CardContent>
-          </Card>
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <TimerIcon className="h-5 w-5 text-green-600" />
-                <span className="text-2xl font-bold text-green-600">
-                  {otRequests.filter(req => isApprovedOnward(req.status)).length}
-                </span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Approved</p>
-              <p className="text-[11px] text-gray-500 truncate">Requests approved</p>
-            </CardContent>
-          </Card>
+        <div className="stat-strip">
+          <StatCard
+            label="Total OT Hours"
+            value={`${otRequests
+              .filter(req => isApprovedOnward(req.status))
+              .reduce((sum, req) => sum + req.hours, 0)}h`}
+            icon={TimerIcon}
+            tone="blue"
+            hint="Approved this period"
+          />
+          <StatCard
+            label="Pending"
+            value={pendingRequests.length}
+            icon={TimerIcon}
+            tone="amber"
+            hint="Awaiting approval"
+          />
+          <StatCard
+            label="Approved"
+            value={otRequests.filter(req => isApprovedOnward(req.status)).length}
+            icon={TimerIcon}
+            tone="green"
+            hint="Requests approved"
+          />
         </div>
       )}
 
@@ -1147,12 +1118,12 @@ export function Overtime() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {overtimePagination.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={15} className="text-center text-sm text-gray-500 py-8">
-                    No OT requests in this status.
-                  </TableCell>
-                </TableRow>
+              {otLoading && allOtRequests.length === 0 && <TableBodySkeletonRows columns={15} />}
+              {!otLoading && otLoadError && allOtRequests.length === 0 && (
+                <ListError colSpan={15} message={otLoadError} onRetry={() => void loadOtRequests()} />
+              )}
+              {!otLoading && !(otLoadError && allOtRequests.length === 0) && overtimePagination.paginatedItems.length === 0 && (
+                <ListEmpty colSpan={15} noun="OT requests" filtered={!!search.trim() || statusFilter !== 'all' || !!dateFilter.start || !!dateFilter.end} />
               )}
               {overtimePagination.paginatedItems.map((request) => {
                 const employee = employees.find(e => e.id === request.employeeId || (e as any).apiId === request.employeeId);
@@ -1265,7 +1236,7 @@ export function Overtime() {
                     </TableCell>
                     <TableCell className="max-w-xs truncate" title={request.reason}>{request.reason}</TableCell>
                     <TableCell>
-                      <Badge className={getStatusBadge(request.status)}>
+                      <Badge variant="outline" className={`capitalize ${getStatusBadge(request.status)}`}>
                         {request.status}
                       </Badge>
                     </TableCell>
@@ -1483,7 +1454,7 @@ export function Overtime() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Check-In Hour</Label>
+                <Label className="text-xs">Start Hour</Label>
                 <Input
                   type="time"
                   value={editOtRowStartHour}
@@ -1491,7 +1462,7 @@ export function Overtime() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Check-Out Hour</Label>
+                <Label className="text-xs">End Hour</Label>
                 <Input
                   type="time"
                   value={editOtRowEndHour}
@@ -1518,12 +1489,10 @@ export function Overtime() {
               <div className="space-y-1">
                 <Label className="text-xs">Custom Rate</Label>
                 <div className="flex items-center gap-1.5">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
+                  <NumericInput
+                    maxInt={3}
                     value={editOtRowRateOverride}
-                    onChange={(e) => setEditOtRowRateOverride(e.target.value)}
+                    onChange={setEditOtRowRateOverride}
                     placeholder="e.g. 2.5"
                   />
                   <span className="text-sm font-medium text-indigo-600">×</span>

@@ -233,12 +233,15 @@ export function PosCustomerDisplay() {
 /* -------------------------------------------------------------------- */
 
 function Header({
-  shopName, logoUrl, queueNo, customerName, onToggleFullscreen, isFullscreen,
+  shopName, logoUrl, queueNo, customerName, onToggleFullscreen, isFullscreen, dark = false,
 }: {
   shopName: string; logoUrl: string | null;
   queueNo: string | null; customerName: string | null;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
+  /** Light text for dark backdrops (the KHQR pay overlay) — the default
+   *  slate-900 title was invisible on its slate-900→black gradient. */
+  dark?: boolean;
 }) {
   return (
     <header className="w-full p-8 pb-6 flex items-start justify-between gap-4">
@@ -258,19 +261,19 @@ function Header({
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 truncate">
+          <h1 className={`text-3xl font-bold tracking-tight truncate ${dark ? 'text-white' : 'text-slate-900'}`}>
             {/* Greeting-first, shop name secondary. Matches the mockup
                 where the display leads with "Welcome" and the shop
                 identity sits in the logo mark. Falls back to the
                 shop name if the tenant hasn't set one. */}
             {shopName === 'Welcome' ? 'Welcome' : shopName}
           </h1>
-          <p className="text-slate-500 mt-1 text-sm">
+          <p className={`mt-1 text-sm ${dark ? 'text-slate-300' : 'text-slate-500'}`}>
             {customerName ?? 'Walk-in'} · {new Date().toLocaleDateString()}
             {queueNo && (
               <>
                 {' · '}
-                <span className="text-teal-700 font-semibold tabular-nums">Order {queueNo}</span>
+                <span className={`font-semibold tabular-nums ${dark ? 'text-teal-300' : 'text-teal-700'}`}>Order {queueNo}</span>
               </>
             )}
           </p>
@@ -506,6 +509,7 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
         logoUrl={state.logoUrl}
         queueNo={state.queueNo}
         customerName={state.customerName}
+        dark
       />
 
       <main className="flex-1 flex flex-col items-center justify-center px-8 pb-8">

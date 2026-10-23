@@ -6,14 +6,15 @@ import { Input } from '../ui/input';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../ui/select';
+import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
+import { StatCard } from '../common/StatCard';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { toast } from 'sonner';
-import { ArrowDownLeft, RefreshCw, Info, Search } from 'lucide-react';
+import { ArrowDownLeft, RefreshCw, Info, Search, Wallet, CalendarCheck, Layers } from 'lucide-react';
 import { format as fmtDate, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -42,18 +43,24 @@ export function PaymentCollections() {
   const [typeFilter, setTypeFilter] = useState<'all' | collectionsApi.IncomeSubType>('all');
   const [rows, setRows] = useState<collectionsApi.IncomeItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await collectionsApi.income({
         from: from || undefined,
         to:   to   || undefined,
       }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load collections');
+      const msg = e instanceof Error ? e.message : 'Failed to load collections';
+      setLoadError(msg);
+      toast.error(msg);
     } finally { setLoading(false); }
   };
+  const anyFilter = !!(search.trim() || typeFilter !== 'all' || from || to);
+  const clearFilters = () => { setSearch(''); setTypeFilter('all'); setFrom(''); setTo(''); };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to]);
 
   const filtered = useMemo(() => {
@@ -70,17 +77,19 @@ export function PaymentCollections() {
   const pagination = usePagination(filtered, 15);
   useEffect(() => { pagination.resetPage(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, typeFilter, from, to]);
 
+  // Tiles follow the current filter (search + type + dates), as the
+  // header tooltip promises — they used to sum every loaded row.
   const counts = useMemo(() => ({
-    all:     rows.length,
-    plan:    rows.filter(r => r.sourceType === 'plan').length,
-    booking: rows.filter(r => r.sourceType === 'booking').length,
-  }), [rows]);
+    all:     filtered.length,
+    plan:    filtered.filter(r => r.sourceType === 'plan').length,
+    booking: filtered.filter(r => r.sourceType === 'booking').length,
+  }), [filtered]);
 
   const sums = useMemo(() => ({
-    all:     rows.reduce((s, r) => s + Number(r.amount ?? 0), 0),
-    plan:    rows.filter(r => r.sourceType === 'plan').reduce((s, r) => s + Number(r.amount ?? 0), 0),
-    booking: rows.filter(r => r.sourceType === 'booking').reduce((s, r) => s + Number(r.amount ?? 0), 0),
-  }), [rows]);
+    all:     filtered.reduce((s, r) => s + Number(r.amount ?? 0), 0),
+    plan:    filtered.filter(r => r.sourceType === 'plan').reduce((s, r) => s + Number(r.amount ?? 0), 0),
+    booking: filtered.filter(r => r.sourceType === 'booking').reduce((s, r) => s + Number(r.amount ?? 0), 0),
+  }), [filtered]);
 
   const filteredSum = useMemo(
     () => filtered.reduce((s, r) => s + Number(r.amount ?? 0), 0),
@@ -118,10 +127,6 @@ export function PaymentCollections() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-xs text-gray-500 mr-1">From</div>
-          <DateInput value={from} onChange={v => setFrom(v ?? '')} />
-          <div className="text-xs text-gray-500 mr-1">To</div>
-          <DateInput value={to} onChange={v => setTo(v ?? '')} />
           <Button variant="outline" onClick={load} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
@@ -129,39 +134,48 @@ export function PaymentCollections() {
       </div>
 
       <div className="stat-strip stat-cols-3">
-        <IncomeTile label="Total Income" count={counts.all}     amount={sums.all}     tone="emerald" />
-        <IncomeTile label="Plan Payments" count={counts.plan}    amount={sums.plan}    tone="indigo" />
-        <IncomeTile label="Bookings"      count={counts.booking} amount={sums.booking} tone="emerald" />
+        <StatCard label={`Total Income (${counts.all})`}    value={`$${formatMoney(sums.all)}`}     icon={Wallet}        tone="green" />
+        <StatCard label={`Plan Payments (${counts.plan})`}  value={`$${formatMoney(sums.plan)}`}    icon={Layers}        tone="purple" />
+        <StatCard label={`Bookings (${counts.booking})`}    value={`$${formatMoney(sums.booking)}`} icon={CalendarCheck} tone="green" />
       </div>
 
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search reference #, customer"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8"
+                className="h-9 pl-7 w-64"
               />
             </div>
             {/* v-collections-type-filter — one dropdown across all
                 Plan variants + Booking. Replaces the Plans / Bookings
                 tabs so Installment / Rental / Loan / Tuition /
                 Custom are pickable directly. */}
-            <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)}>
-              <SelectTrigger className="h-9 w-56 text-sm shrink-0"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types ({counts.all})</SelectItem>
-                {(Object.entries(collectionsApi.INCOME_TYPE_META) as [collectionsApi.IncomeSubType, { label: string }][])
-                  .map(([k, m]) => (
-                    <SelectItem key={k} value={k}>
-                      {m.label} ({typeCounts[k] ?? 0})
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All ({rows.length})</option>
+              {(Object.entries(collectionsApi.INCOME_TYPE_META) as [collectionsApi.IncomeSubType, { label: string }][])
+                .map(([k, m]) => (
+                  <option key={k} value={k}>Type : {m.label} ({typeCounts[k] ?? 0})</option>
+                ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={to || null} onChange={v => setTo(v ?? '')} min={from || undefined} /></div>
+            {anyFilter && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -181,19 +195,12 @@ export function PaymentCollections() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">Loading…</TableCell>
-                </TableRow>
+              {loading && rows.length === 0 && <TableBodySkeletonRows columns={7} />}
+              {!loading && loadError && rows.length === 0 && (
+                <ListError colSpan={7} message={loadError} onRetry={() => void load()} />
               )}
-              {!loading && filtered.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
-                    {rows.length === 0
-                      ? 'No income yet in this date range.'
-                      : 'No rows match the current filter.'}
-                  </TableCell>
-                </TableRow>
+              {!loading && !(loadError && rows.length === 0) && filtered.length === 0 && (
+                <ListEmpty colSpan={7} noun="collections" filtered={anyFilter} />
               )}
               {pagination.paginatedItems.map(r => {
                 // Prefer subType (Installment / Rental / Booking) for
@@ -277,20 +284,5 @@ export function PaymentCollections() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function IncomeTile({ label, count, amount, tone }: {
-  label: string; count: number; amount: number; tone?: 'emerald' | 'indigo';
-}) {
-  const cls = tone === 'indigo' ? 'text-indigo-700' : 'text-emerald-700';
-  return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="text-xs text-gray-500">{label}</div>
-        <div className={`text-xl font-bold ${cls}`}>{count}</div>
-        <div className="text-sm text-gray-600 tabular-nums">${formatMoney(amount)}</div>
-      </CardContent>
-    </Card>
   );
 }

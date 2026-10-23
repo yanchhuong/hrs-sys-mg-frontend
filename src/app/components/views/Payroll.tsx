@@ -48,6 +48,12 @@ import { AuditCell } from '../common/AuditCell';
 import { DocAuditLine } from '../common/DocAuditLine';
 import { DollarSign, Download, FileText, Upload, FileSpreadsheet, Package, ArrowLeft, AlertCircle, AlertTriangle, CheckCircle, Circle, Clock, Check, X as XIcon, Lock, Wallet, Mail, MessageSquare, Landmark, Info, Settings as SettingsIcon, Pencil, Send, FileEdit, Coins } from 'lucide-react';
 import { CashCountDialog } from '../common/CashCountDialog';
+import { StatCard } from '../common/StatCard';
+import { NumericInput } from '../common/NumericInput';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { ListEmpty } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ApproverChainPicker } from '../common/ApproverChainPicker';
 import { PayrollCategoryToggleDialog } from '../common/PayrollCategoryToggleDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Textarea } from '../ui/textarea';
@@ -56,7 +62,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
@@ -70,6 +76,7 @@ import {
 } from '../ui/dropdown-menu';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 
 // ---------------------------------------------------------------------------
 // API → UI adapters
@@ -156,6 +163,18 @@ function adaptApiBatch(b: payrollApi.PayrollBatch): PayrollBatch {
   };
 }
 
+/** Pay period of a batch as { year: 'yyyy', month: 'MM' }. monthYear is
+ *  "yyyy-MM" (some seed rows carry "MM-yyyy"); falls back to batch date. */
+function batchPeriod(b: PayrollBatch): { year: string; month: string } {
+  const my = (b.monthYear ?? '').trim();
+  let m = /^(\d{1,2})[-/](\d{4})$/.exec(my);
+  if (m) return { year: m[2], month: m[1].padStart(2, '0') };
+  m = /^(\d{4})[-/](\d{1,2})/.exec(my);
+  if (m) return { year: m[1], month: m[2].padStart(2, '0') };
+  const d = (b.date ?? '').slice(0, 7);
+  return { year: d.slice(0, 4), month: d.slice(5, 7) };
+}
+
 // Codes whose dollar value comes from a formula, not from a fixed
 // number HR enters. We mark them with an info icon next to the label
 // so admins don't accidentally type an override into the spreadsheet.
@@ -224,7 +243,7 @@ function FormulaHint({ text }: { text: string }) {
 
 export function Payroll() {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   const { currentUser, currentEmployee, canUpdate, canCreate } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<typeof mockPayroll[0] | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -649,7 +668,7 @@ export function Payroll() {
     if (USE_MOCKS) return;
     try {
       // Approver candidates = every active user in the tenant. The
-      // ApproverPicker filters out the uploader (segregation of duties)
+      // approver picker filters out the uploader (segregation of duties)
       // so the operator can't nominate themselves. Backend enforces
       // decision permissions at the endpoint level — nominating a
       // user without Approval/Payroll perm just means they can't
@@ -853,9 +872,19 @@ export function Payroll() {
     { value: '12', label: 'December' },
   ];
 
-  // Get unique years from payroll data
+  // Unique years from the data actually on screen — batches (admin) and
+  // payslips (self / admin), not the mock seed, which only matches in
+  // mock mode.
   const availableYears = Array.from(
-    new Set(mockPayroll.map(p => p.month.split('-')[0]))
+    new Set(
+      USE_MOCKS
+        ? mockPayroll.map(p => p.month.split('-')[0])
+        : [
+            ...batches.map(b => batchPeriod(b).year),
+            ...myPayrollItems.map(i => (i.month ?? '').slice(0, 4)),
+            ...adminPayrollItems.map(i => (i.month ?? '').slice(0, 4)),
+          ].filter(y => /^\d{4}$/.test(y)),
+    ),
   ).sort((a, b) => b.localeCompare(a));
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -948,7 +977,7 @@ export function Payroll() {
         type: batchType,
         subject: batchName,
         currency: 'USD',
-        approverIds: batchApproverIds.length > 0 ? batchApproverIds : undefined,
+        approverIds: batchApproverIds.some(Boolean) ? batchApproverIds.filter(Boolean) : undefined,
         items,
       });
       toast.success(`Payroll batch "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
@@ -1088,6 +1117,16 @@ export function Payroll() {
     return true;
   });
 
+  // The admin view lists batches, not payslips — apply the same header
+  // Year / Month filter to them (it used to filter only the payslip list,
+  // which admins never see).
+  const periodBatches = batches.filter(b => {
+    const { year, month } = batchPeriod(b);
+    if (selectedYear !== 'all' && year !== selectedYear) return false;
+    if (selectedMonth !== 'all' && month !== selectedMonth) return false;
+    return true;
+  });
+
   /** Batch-load PayWay beneficiaries (V168) every time the selected
    *  batch flips or its items load. One round-trip per batch view;
    *  the Map is keyed by employeeId so the table render does O(1)
@@ -1172,9 +1211,9 @@ export function Payroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBatch, batchItems]);
 
-  const handleDownloadPayslip = (payrollId: string) => {
-    toast.success('Payslip downloaded successfully');
-  };
+  // No payslip PDF generator exists yet (capturePrintPdf only captures
+  // the sale-document template), so the payslip dialog shows no
+  // "Download PDF" button rather than a fake success toast.
 
   /**
    * Opens the existing Bulk Payroll dialog in generate mode — same
@@ -1792,7 +1831,7 @@ export function Payroll() {
         type: batchType,
         subject: batchName.trim(),
         currency: 'USD',
-        approverIds: batchApproverIds.length > 0 ? batchApproverIds : undefined,
+        approverIds: batchApproverIds.some(Boolean) ? batchApproverIds.filter(Boolean) : undefined,
         items,
       }, asDraft);
       toast.success(asDraft
@@ -1915,26 +1954,32 @@ export function Payroll() {
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-500">Year</Label>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
-              className="px-3 py-2 border rounded-md bg-white"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by year"
             >
-              <option value="all">All Years</option>
+              <option value="all">Year : All</option>
               {availableYears.map(year => (
-                <option key={year} value={year}>{year}</option>
+                <option key={year} value={year}>Year : {year}</option>
               ))}
             </select>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-2 border rounded-md bg-white"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by month"
             >
               {months.map(month => (
-                <option key={month.value} value={month.value}>{month.label}</option>
+                <option key={month.value} value={month.value}>Month : {month.value === 'all' ? 'All' : month.label}</option>
               ))}
             </select>
+            {(selectedYear !== 'all' || selectedMonth !== 'all') && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => { setSelectedYear('all'); setSelectedMonth('all'); }}>
+                Clear
+              </Button>
+            )}
           </div>
           {isAdminOrManager && (
           <div className="flex gap-2">
@@ -1990,16 +2035,14 @@ export function Payroll() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="batchType">Type</Label>
-                      <select
-                        id="batchType"
-                        value={batchType}
-                        onChange={(e) => setBatchType(e.target.value as typeof batchType)}
-                        className="w-full px-3 py-2 border rounded-md h-9"
-                      >
-                        <option value="One Time Salary">One Time Salary</option>
-                        <option value="1st Salary">1st Salary</option>
-                        <option value="2nd Salary">2nd Salary</option>
-                      </select>
+                      <Select value={batchType} onValueChange={(v) => setBatchType(v as typeof batchType)}>
+                        <SelectTrigger id="batchType" className="w-full h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="One Time Salary">One Time Salary</SelectItem>
+                          <SelectItem value="1st Salary">1st Salary</SelectItem>
+                          <SelectItem value="2nd Salary">2nd Salary</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 
@@ -2009,14 +2052,13 @@ export function Payroll() {
                     </Label>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 space-y-1">
-                        <Input
+                        <NumericInput
                           id="periodStart"
-                          type="number"
-                          min={1}
-                          max={12}
+                          decimals={0}
+                          maxInt={2}
                           placeholder="MM"
                           value={periodStart}
-                          onChange={(e) => setPeriodStart(e.target.value)}
+                          onChange={setPeriodStart}
                           className="text-center"
                           required
                           aria-required="true"
@@ -2025,14 +2067,15 @@ export function Payroll() {
                       </div>
                       <span className="text-gray-400 text-lg font-medium self-start mt-2">-</span>
                       <div className="flex-1 space-y-1">
+                        {/* Plain digit field, not NumericInput — that one
+                            would show the year as "2,026" on blur. */}
                         <Input
                           id="periodEnd"
-                          type="number"
-                          min={2000}
-                          max={2100}
+                          inputMode="numeric"
+                          maxLength={4}
                           placeholder="YYYY"
                           value={periodEnd}
-                          onChange={(e) => setPeriodEnd(e.target.value)}
+                          onChange={(e) => setPeriodEnd(e.target.value.replace(/\D/g, '').slice(0, 4))}
                           className="text-center"
                           required
                           aria-required="true"
@@ -2047,32 +2090,23 @@ export function Payroll() {
                       Settings → Display to expose this block. When off,
                       the batch auto-approves on upload as before. */}
                   {payrollSettings.showApproval && (
-                    <div className="space-y-2">
-                      <Label className="inline-flex items-center gap-1.5">
-                        Approvers <span className="text-xs font-normal text-gray-500">(optional, up to {(payrollSettings.approverCount ?? 3)})</span>
-                        <TooltipProvider delayDuration={120}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help">
-                                <Info className="h-3.5 w-3.5" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                              Pick up to {(payrollSettings.approverCount ?? 3)} admins who may approve or reject this batch.
-                              Leave empty to auto-approve on upload (useful when no second admin is available).
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <ApproverPicker
-                        adminUsers={adminUsers}
-                        employees={employees}
-                        uploaderUserId={currentUser?.id}
-                        value={batchApproverIds}
-                        onChange={setBatchApproverIds}
-                        max={(payrollSettings.approverCount ?? 3)}
-                      />
-                    </div>
+                    // Shared ordered approver chain (same as Cash Advance).
+                    // The uploader is left out (segregation of duties);
+                    // linked employee names replace bare emails.
+                    <ApproverChainPicker
+                      value={batchApproverIds}
+                      onChange={setBatchApproverIds}
+                      max={(payrollSettings.approverCount ?? 3)}
+                      noun="batch"
+                      candidates={adminUsers
+                        .filter(u => u.id !== currentUser?.id)
+                        .map(u => {
+                          const emp = u.employeeId
+                            ? employees.find(e => (e as Employee).apiId === u.employeeId || e.id === u.employeeId)
+                            : undefined;
+                          return { id: u.id, email: u.email, name: emp?.name ?? null, role: u.role ?? null };
+                        })}
+                    />
                   )}
 
                   {uploadDialogMode === 'upload' && (
@@ -2658,118 +2692,72 @@ export function Payroll() {
       />
 
       {isAdminOrManager && !selectedBatch && (() => {
-        // In live mode, summary cards are sourced from the batches list — the
-        // backend DTO already exposes totalEarnings/deductions/netSalary per
-        // batch. Mock mode keeps the existing per-item rollup. Note: backend
-        // batches don't surface a separate "base salaries" or "OT payments"
-        // total, so those tiles fall back to 0 in live mode (deferred to a
-        // follow-up that aggregates `getBatchItems(batchId)`).
+        // In live mode, summary cards follow the Year / Month filter.
+        // Net + deductions come from the batch DTO totals; Base Salaries
+        // and OT Payments come from the per-employee payslips of those
+        // batches (adminPayrollItems — loaded for the last 12 months).
+        const periodBatchIds = new Set(periodBatches.map(b => b.id));
+        const periodItems = adminPayrollItems.filter(it => periodBatchIds.has(it.batchId));
         const totalPayroll = USE_MOCKS
-          ? mockPayroll.reduce((sum, p) => sum + p.totalPay, 0)
-          : batches.reduce((sum, b) => sum + b.netSalary, 0);
+          ? payrollRecords.reduce((sum, p) => sum + p.totalPay, 0)
+          : periodBatches.reduce((sum, b) => sum + b.netSalary, 0);
         const totalBase = USE_MOCKS
-          ? mockPayroll.reduce((sum, p) => sum + p.baseSalary, 0)
-          : 0;
+          ? payrollRecords.reduce((sum, p) => sum + p.baseSalary, 0)
+          : periodItems.reduce((sum, it) => sum + Number(it.baseSalary ?? 0), 0);
         const totalOt = USE_MOCKS
-          ? mockPayroll.reduce((sum, p) => sum + p.otPay, 0)
-          : 0;
+          ? payrollRecords.reduce((sum, p) => sum + p.otPay, 0)
+          : periodItems.reduce((sum, it) => sum + Number(it.otPay ?? 0), 0);
         const totalDeductions = USE_MOCKS
-          ? mockPayroll.reduce((sum, p) => sum + p.deductions, 0)
-          : batches.reduce((sum, b) => sum + b.deductions, 0);
+          ? payrollRecords.reduce((sum, p) => sum + p.deductions, 0)
+          : periodBatches.reduce((sum, b) => sum + b.deductions, 0);
+        const itemsHint = USE_MOCKS ? undefined : 'Summed from payslips of the last 12 months.';
         return (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-2xl font-bold">${formatMoney(totalPayroll)}</p>
-                <p className="text-xs text-gray-500 mt-1">Total Payroll</p>
-              </div>
-              <div className="p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-700">${formatMoney(totalBase)}</p>
-                <p className="text-xs text-gray-500 mt-1">Base Salaries</p>
-              </div>
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-2xl font-bold text-blue-700">${formatMoney(totalOt)}</p>
-                <p className="text-xs text-gray-500 mt-1">OT Payments</p>
-              </div>
-              <div className="p-4 bg-red-50 rounded-lg">
-                <p className="text-2xl font-bold text-red-700">${formatMoney(totalDeductions)}</p>
-                <p className="text-xs text-gray-500 mt-1">Total Deductions</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="stat-strip">
+          <StatCard label="Total Payroll"    value={`$${formatMoney(totalPayroll)}`}    icon={Wallet}     tone="purple" />
+          <StatCard label="Base Salaries"    value={`$${formatMoney(totalBase)}`}       icon={DollarSign} tone="green" hint={itemsHint} />
+          <StatCard label="OT Payments"      value={`$${formatMoney(totalOt)}`}         icon={Clock}      tone="blue"  hint={itemsHint} />
+          <StatCard label="Total Deductions" value={`$${formatMoney(totalDeductions)}`} icon={Coins}      tone="red" />
+        </div>
         );
       })()}
 
       {isSelfPayslipView && currentEmployee && (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          {/* Base Salary + OT Rate come from the employee profile (the
-              configured terms), not payroll history. The "configured"
-              subtitle keeps a reader from mistaking the cards for
-              payment activity when the records table is empty. */}
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <DollarSign className="h-5 w-5 text-green-600" />
-                <span className="text-2xl font-bold text-green-600">${formatMoney(currentEmployee.baseSalary)}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Base Salary</p>
-              <p className="text-[11px] text-gray-500 truncate">Per month · configured</p>
-            </CardContent>
-          </Card>
-
-          {/* OT Rate (1.5x) card removed for Employee + Manager —
-              the configured hourly rate is more of a payroll-admin
-              reference than something a self-view needs at the top
-              of the page. Admins look at OT inside the batch detail
-              anyway, where the per-employee numbers live. */}
-
-          {/* Last Payment is the only card that reflects history. With
-              no payslip on file it renders an em-dash so it doesn't
-              read as "paid $0". */}
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <DollarSign className="h-5 w-5 text-purple-600" />
-                <span className={`text-2xl font-bold ${payrollRecords[0] ? 'text-purple-600' : 'text-gray-300'}`}>
-                  {payrollRecords[0] ? `$${formatMoney(payrollRecords[0].totalPay)}` : '—'}
-                </span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Last Payment</p>
-              <p className="text-[11px] text-gray-500 truncate">
-                {payrollRecords[0]
-                  ? format(new Date(payrollRecords[0].month + '-01'), 'MM/yyyy')
-                  : 'No payments yet'}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Total Annual Payroll — sum of the user's own payslip
-              totals for the current calendar year. Self-only view, so
-              Manager and Employee both see their personal YTD total.
-              Empty state mirrors Last Payment's em-dash for symmetry. */}
+        <div className="stat-strip">
+          {/* Base Salary comes from the employee profile (the configured
+              terms), not payroll history — the hint says so, so the
+              card isn't mistaken for payment activity. Last Payment and
+              Total Annual Payroll reflect history and show an em-dash
+              (never "$0") when nothing is on file. */}
+          <StatCard
+            label="Base Salary"
+            value={`$${formatMoney(currentEmployee.baseSalary)}`}
+            icon={DollarSign}
+            tone="green"
+            hint="Per month · configured on your profile"
+          />
+          <StatCard
+            label="Last Payment"
+            value={payrollRecords[0] ? `$${formatMoney(payrollRecords[0].totalPay)}` : '—'}
+            icon={Wallet}
+            tone="purple"
+            hint={payrollRecords[0]
+              ? format(parseISO(payrollRecords[0].month + '-01'), 'MM/yyyy')
+              : 'No payments yet'}
+          />
           {(() => {
             const currentYear = String(new Date().getFullYear());
             const annualRecords = payrollRecords.filter(r => r.month?.startsWith(currentYear));
             const total = annualRecords.reduce((s, r) => s + (r.totalPay ?? 0), 0);
             return (
-              <Card className="border-gray-200">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <DollarSign className="h-5 w-5 text-amber-600" />
-                    <span className={`text-2xl font-bold ${annualRecords.length > 0 ? 'text-amber-600' : 'text-gray-300'}`}>
-                      {annualRecords.length > 0 ? `$${formatMoney(total)}` : '—'}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-gray-700 truncate">Total Annual Payroll</p>
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {annualRecords.length > 0
-                      ? `${currentYear} · ${annualRecords.length} payslip${annualRecords.length === 1 ? '' : 's'}`
-                      : `${currentYear} · no payslips`}
-                  </p>
-                </CardContent>
-              </Card>
+              <StatCard
+                label="Total Annual Payroll"
+                value={annualRecords.length > 0 ? `$${formatMoney(total)}` : '—'}
+                icon={Coins}
+                tone="amber"
+                hint={annualRecords.length > 0
+                  ? `${currentYear} · ${annualRecords.length} payslip${annualRecords.length === 1 ? '' : 's'}`
+                  : `${currentYear} · no payslips`}
+              />
             );
           })()}
         </div>
@@ -2777,16 +2765,16 @@ export function Payroll() {
 
       {isAdminOrManager && !selectedBatch && (() => {
         const statusCounts: Record<'all' | PayrollBatchStatus, number> = {
-          all: batches.length,
-          draft: batches.filter(b => b.status === 'draft').length,
-          pending: batches.filter(b => b.status === 'pending').length,
-          approved: batches.filter(b => b.status === 'approved').length,
-          done: batches.filter(b => b.status === 'done').length,
-          rejected: batches.filter(b => b.status === 'rejected').length,
+          all: periodBatches.length,
+          draft: periodBatches.filter(b => b.status === 'draft').length,
+          pending: periodBatches.filter(b => b.status === 'pending').length,
+          approved: periodBatches.filter(b => b.status === 'approved').length,
+          done: periodBatches.filter(b => b.status === 'done').length,
+          rejected: periodBatches.filter(b => b.status === 'rejected').length,
         };
         const visibleBatches = batchStatusTab === 'all'
-          ? [...batches].sort((a, b) => b.date.localeCompare(a.date))
-          : [...batches].filter(b => b.status === batchStatusTab).sort((a, b) => b.date.localeCompare(a.date));
+          ? [...periodBatches].sort((a, b) => b.date.localeCompare(a.date))
+          : [...periodBatches].filter(b => b.status === batchStatusTab).sort((a, b) => b.date.localeCompare(a.date));
         return (
         <Card>
           <CardHeader className="pb-3">
@@ -2831,25 +2819,25 @@ export function Payroll() {
                   {statusCounts.draft > 0 && (
                     <TabsTrigger value="draft">
                       Draft
-                      <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-100">{statusCounts.draft}</Badge>
+                      <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${statusBadgeClass('draft')}`}>{statusCounts.draft}</Badge>
                     </TabsTrigger>
                   )}
                   <TabsTrigger value="pending">
                     Pending
-                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
+                    <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${statusBadgeClass('pending')}`}>{statusCounts.pending}</Badge>
                   </TabsTrigger>
                   <TabsTrigger value="approved">
                     Approved
-                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-800 hover:bg-blue-100">{statusCounts.approved}</Badge>
+                    <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${statusBadgeClass('approved')}`}>{statusCounts.approved}</Badge>
                   </TabsTrigger>
                   <TabsTrigger value="done">
                     Done
-                    <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">{statusCounts.done}</Badge>
+                    <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${statusBadgeClass('done')}`}>{statusCounts.done}</Badge>
                   </TabsTrigger>
                   {statusCounts.rejected > 0 && (
                     <TabsTrigger value="rejected">
                       Rejected
-                      <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">{statusCounts.rejected}</Badge>
+                      <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${statusBadgeClass('rejected')}`}>{statusCounts.rejected}</Badge>
                     </TabsTrigger>
                   )}
                 </TabsList>
@@ -2926,15 +2914,15 @@ export function Payroll() {
                         ${formatMoney(batch.netSalary)}
                       </TableCell>
                       <TableCell className="text-[11px] text-gray-600 leading-snug">
-                        <p>📥 {uploaderName} · {format(new Date(batch.uploadedAt), 'MMM dd HH:mm')}</p>
+                        <p>📥 {uploaderName} · {formatDateTime(batch.uploadedAt)}</p>
                         {approverName && batch.approvedAt && (
-                          <p>✅ {approverName} · {format(new Date(batch.approvedAt), 'MMM dd HH:mm')}</p>
+                          <p>✅ {approverName} · {formatDateTime(batch.approvedAt)}</p>
                         )}
                         {completerName && batch.completedAt && (
-                          <p>💰 {completerName} · {format(new Date(batch.completedAt), 'MMM dd HH:mm')}</p>
+                          <p>💰 {completerName} · {formatDateTime(batch.completedAt)}</p>
                         )}
                         {rejecterName && batch.rejectedAt && (
-                          <p className="text-red-700">❌ {rejecterName} · {format(new Date(batch.rejectedAt), 'MMM dd HH:mm')}</p>
+                          <p className="text-red-700">❌ {rejecterName} · {formatDateTime(batch.rejectedAt)}</p>
                         )}
                       </TableCell>
                       <TableCell>
@@ -3032,15 +3020,11 @@ export function Payroll() {
               </TableHeader>
               <TableBody>
                 {payrollRecords.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
-                      No payroll records yet.
-                    </TableCell>
-                  </TableRow>
+                  <ListEmpty colSpan={9} noun="payroll records" filtered={selectedYear !== 'all' || selectedMonth !== 'all'} />
                 )}
                 {payrollRecords.map((record) => (
                   <TableRow key={record.id}>
-                    <TableCell>{format(new Date(record.month + '-01'), 'MM/yyyy')}</TableCell>
+                    <TableCell>{format(parseISO(record.month + '-01'), 'MM/yyyy')}</TableCell>
                     <TableCell className="text-sm">
                       {(record as { batchSubject?: string }).batchSubject ?? <span className="text-gray-400">—</span>}
                     </TableCell>
@@ -3079,7 +3063,6 @@ export function Payroll() {
                               employees={employees}
                               earningCategories={earningCategories}
                               deductionCategories={deductionCategories}
-                              onDownload={handleDownloadPayslip}
                               remark={selectedBatch?.remarks}
                             />
                           )}
@@ -3208,38 +3191,16 @@ export function Payroll() {
                     {submitDraftPending ? 'Submitting…' : 'Submit for Approval'}
                   </Button>
                 )}
-                <Badge className={
-                  selectedBatch.status === 'approved'
-                    ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                    : selectedBatch.status === 'draft'
-                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-100'
-                    : selectedBatch.status === 'done'
-                    ? 'bg-blue-100 text-blue-800 hover:bg-blue-100'
-                    : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100'
-                }>
-                  {selectedBatch.status}
-                </Badge>
+                <StatusBadge status={selectedBatch.status} />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-6 grid grid-cols-4 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Total Employees</p>
-                <p className="text-2xl font-bold">{selectedBatch.totalEmployees} person</p>
-              </div>
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Net Salary</p>
-                <p className="text-2xl font-bold">${formatMoney(selectedBatch.netSalary)}</p>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Total Earnings</p>
-                <p className="text-2xl font-bold">${formatMoney(selectedBatch.totalEarnings)}</p>
-              </div>
-              <div className="bg-red-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Deductions</p>
-                <p className="text-2xl font-bold">${formatMoney(selectedBatch.deductions)}</p>
-              </div>
+            <div className="stat-strip mb-6">
+              <StatCard label="Total Employees" value={`${selectedBatch.totalEmployees} person`}            icon={Package}    tone="purple" />
+              <StatCard label="Net Salary"      value={`$${formatMoney(selectedBatch.netSalary)}`}      icon={Wallet}     tone="blue" />
+              <StatCard label="Total Earnings"  value={`$${formatMoney(selectedBatch.totalEarnings)}`}  icon={DollarSign} tone="green" />
+              <StatCard label="Deductions"      value={`$${formatMoney(selectedBatch.deductions)}`}     icon={Coins}      tone="red" />
             </div>
 
             {(() => {
@@ -3420,18 +3381,10 @@ export function Payroll() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {batchItemsLoading ? (
-                        <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 15 : 11} className="text-center py-8 text-gray-400">
-                            Loading payroll items…
-                          </TableCell>
-                        </TableRow>
+                      {batchItemsLoading && detailRows.length === 0 ? (
+                        <TableBodySkeletonRows columns={dispatchEnabled ? 15 : 11} />
                       ) : detailRows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={dispatchEnabled ? 15 : 11} className="text-center py-8 text-gray-400">
-                            No items in this batch
-                          </TableCell>
-                        </TableRow>
+                        <ListEmpty colSpan={dispatchEnabled ? 15 : 11} noun="items in this batch" />
                       ) : detailRows.map((record) => {
                     const employee = empByRowId.get(record.id);
                     const dept = deptName(employee?.department);
@@ -3601,7 +3554,6 @@ export function Payroll() {
                                 employees={employees}
                                 earningCategories={earningCategories}
                                 deductionCategories={deductionCategories}
-                                onDownload={handleDownloadPayslip}
                                 remark={selectedBatch?.remarks}
                               />
                             )}
@@ -3683,15 +3635,13 @@ export function Payroll() {
                       <Label htmlFor="adjust-workdays" className="text-xs">
                         Work days {std > 0 && <span className="text-gray-400">(standard {std})</span>}
                       </Label>
-                      <Input
+                      <NumericInput
                         id="adjust-workdays"
-                        type="number"
-                        min={0}
-                        max={31}
-                        step={0.5}
+                        decimals={1}
+                        maxInt={2}
                         placeholder="e.g. 10"
                         value={adjustWorkDays}
-                        onChange={e => setAdjustWorkDays(e.target.value)}
+                        onChange={setAdjustWorkDays}
                       />
                     </div>
                     <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-0.5">
@@ -3714,13 +3664,10 @@ export function Payroll() {
                 {adjustPayType === 'month' && (
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-base" className="text-xs">Base salary (override)</Label>
-                    <Input
+                    <NumericInput
                       id="adjust-base"
-                      type="number"
-                      min={0}
-                      step="0.01"
                       value={adjustBaseSalary}
-                      onChange={e => setAdjustBaseSalary(e.target.value)}
+                      onChange={setAdjustBaseSalary}
                     />
                     <p className="text-[11px] text-gray-500">Full-month payment. Leave the value as-generated unless you need a custom base.</p>
                   </div>
@@ -4077,13 +4024,12 @@ function RemarkCell({
 }
 
 function PayslipBody({
-  payslip, employees, earningCategories, deductionCategories, onDownload, remark,
+  payslip, employees, earningCategories, deductionCategories, remark,
 }: {
   payslip: AnyPayslip;
   employees: Employee[];
   earningCategories: PayrollCategory[];
   deductionCategories: PayrollCategory[];
-  onDownload: (id: string) => void;
   /** Batch-level remark. There is no per-payslip remark column, so this
    *  is the same note for everyone in the run. */
   remark?: string | null;
@@ -4134,7 +4080,7 @@ function PayslipBody({
               synthesised year/month label for legacy rows that pre-date
               the batchSubject field. */}
           {payslip.batchSubject
-            ?? `Year ${format(new Date(payslip.month + '-01'), 'yyyy')} Month ${format(new Date(payslip.month + '-01'), 'MM')} Salary`}
+            ?? `Year ${format(parseISO(payslip.month + '-01'), 'yyyy')} Month ${format(parseISO(payslip.month + '-01'), 'MM')} Salary`}
         </h3>
         <div className="text-left space-y-1">
           <p className="text-sm">
@@ -4231,10 +4177,6 @@ function PayslipBody({
           <Coins className="mr-2 h-4 w-4" />
           Cash Count
         </Button>
-        <Button onClick={() => onDownload(payslip.id)} className="flex-1">
-          <Download className="mr-2 h-4 w-4" />
-          Download PDF
-        </Button>
       </div>
 
       <CashCountDialog
@@ -4248,118 +4190,21 @@ function PayslipBody({
 }
 
 // ---------------------------------------------------------------------------
-// Approver picker — multi-select dropdown bound to active admin users.
-// Filters out the uploader (segregation of duties), shows the linked
-// employee name when available so the admin recognises faces, not UUIDs.
-// ---------------------------------------------------------------------------
-function ApproverPicker({
-  adminUsers, employees, uploaderUserId, value, onChange, max,
-}: {
-  adminUsers: usersApi.User[];
-  employees: Employee[];
-  uploaderUserId: string | undefined;
-  value: string[];
-  onChange: (next: string[]) => void;
-  max: number;
-}) {
-  const candidates = adminUsers.filter(u => u.id !== uploaderUserId);
-  const empByUserId = new Map<string, Employee | undefined>();
-  candidates.forEach(u => {
-    const link = u.employeeId
-      ? employees.find(e => (e as any).apiId === u.employeeId || e.id === u.employeeId)
-      : undefined;
-    empByUserId.set(u.id, link);
-  });
-
-  const toggle = (id: string) => {
-    if (value.includes(id)) {
-      onChange(value.filter(x => x !== id));
-      return;
-    }
-    if (value.length >= max) return;
-    onChange([...value, id]);
-  };
-
-  const labelFor = (u: usersApi.User) => {
-    const emp = empByUserId.get(u.id);
-    return emp?.name ?? u.email;
-  };
-
-  if (candidates.length === 0) {
-    return (
-      <p className="text-xs text-gray-400 italic px-3 py-2 border rounded-md">
-        No other active users to nominate.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {value.map(id => {
-            const u = adminUsers.find(x => x.id === id);
-            if (!u) return null;
-            return (
-              <Badge key={id} variant="secondary" className="gap-1 pr-1">
-                {labelFor(u)}
-                <button
-                  type="button"
-                  className="ml-1 rounded hover:bg-gray-200 px-1"
-                  onClick={() => toggle(id)}
-                  aria-label={`Remove ${labelFor(u)}`}
-                >
-                  <XIcon className="h-3 w-3" />
-                </button>
-              </Badge>
-            );
-          })}
-        </div>
-      )}
-      <div className="max-h-40 overflow-y-auto border rounded-md divide-y">
-        {candidates.map(u => {
-          const checked = value.includes(u.id);
-          const disabled = !checked && value.length >= max;
-          return (
-            <label
-              key={u.id}
-              className={`flex items-start gap-2 px-3 py-2 text-sm cursor-pointer ${
-                disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={disabled}
-                onChange={() => toggle(u.id)}
-                className="mt-0.5"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{labelFor(u)}</p>
-                <p className="text-xs text-gray-500 truncate">{u.email}</p>
-              </div>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Payroll status badge
 // ---------------------------------------------------------------------------
 function StatusBadge({ status }: { status: PayrollBatchStatus }) {
-  const map: Record<PayrollBatchStatus, { label: string; cls: string; Icon: typeof Clock }> = {
-    draft:    { label: 'Draft',    cls: 'bg-slate-100 text-slate-700 hover:bg-slate-100',    Icon: FileEdit },
-    pending:  { label: 'Pending',  cls: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100', Icon: Clock },
-    approved: { label: 'Approved', cls: 'bg-blue-100 text-blue-800 hover:bg-blue-100',       Icon: Check },
-    done:     { label: 'Done',     cls: 'bg-green-100 text-green-800 hover:bg-green-100',    Icon: Wallet },
-    rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-800 hover:bg-red-100',          Icon: XIcon },
+  const map: Record<PayrollBatchStatus, { label: string; Icon: typeof Clock }> = {
+    draft:    { label: 'Draft',    Icon: FileEdit },
+    pending:  { label: 'Pending',  Icon: Clock },
+    approved: { label: 'Approved', Icon: Check },
+    done:     { label: 'Done',     Icon: Wallet },
+    rejected: { label: 'Rejected', Icon: XIcon },
   };
-  const { label, cls, Icon } = map[status];
+  // Colours come from the app-wide palette (utils/statusTones) so the
+  // list and the batch detail always agree.
+  const { label, Icon } = map[status] ?? { label: String(status), Icon: Circle };
   return (
-    <Badge className={`${cls} gap-1`}>
+    <Badge variant="outline" className={`${statusBadgeClass(status)} gap-1`}>
       <Icon className="h-3 w-3" />
       {label}
     </Badge>

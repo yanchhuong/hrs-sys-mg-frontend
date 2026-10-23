@@ -57,6 +57,7 @@ import {
   TableRow,
 } from '../ui/table';
 import { useI18n } from '../../i18n/I18nContext';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { useAuth } from '../../context/AuthContext';
 import {
   PayrollCategory,
@@ -91,11 +92,12 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
         <br />• <strong>7.5 days in December</strong> (covers Jul–Dec)
       </p>
       <p>
-        Wage base = <strong>average net salary</strong> across the
-        6 months of payroll (skipping <em>1st Salary</em> advances).
+        Wage base = <strong>average gross salary</strong> (total earnings,
+        before deductions) across the 6 months of payroll (skipping
+        <em> 1st Salary</em> advances).
       </p>
       <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1">
-        amount = (avg_net ÷ working_days) × days
+        amount = (avg_gross ÷ working_days) × days
       </p>
       <p>
         <strong>working_days</strong> is derived from your tenant's General Attendance
@@ -173,8 +175,10 @@ const CATEGORY_HELP: Record<string, React.ReactNode> = {
       <p>
         Progressive monthly tax published by NBC, applied to the
         employee's gross in KHR after dependent deductions
-        (<strong>150,000 KHR per dependent</strong>; spouse + children
-        when <em>marital_status = married</em>).
+        (<strong>150,000 KHR per dependent</strong>). Dependents count
+        only for employees with <em>Claim Dependents</em> (Decouple) = Yes;
+        the spouse counts only when <em>Claim Spouse</em> is also Yes —
+        so one partner of a working couple claims the children.
       </p>
       <p className="text-[11px]">Monthly brackets (KHR):</p>
       <table className="text-[11px] w-full border-separate border-spacing-y-0.5">
@@ -208,11 +212,11 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
     <div className="space-y-1.5">
       <p className="font-semibold">OT — Cambodia Labour Law overtime</p>
       <p>
-        Hourly wage is derived from the employee's Basic + Position +
-        Evaluation Allowance and the configured working days:
+        Hourly wage is the employee's base salary over a 160-hour
+        month (20 working days × 8 h):
       </p>
       <p className="tabular-nums text-[11px] bg-black/20 rounded px-2 py-1 whitespace-pre-wrap">
-{`hourly_wage = (basic + position + evaluation) ÷ (working_days × 8)
+{`hourly_wage = base_salary ÷ 160
 ot_pay      = hourly_wage × hours × rate_multiplier`}
       </p>
       <p className="text-[11px]">Default multipliers (editable per tenant):</p>
@@ -220,7 +224,7 @@ ot_pay      = hourly_wage × hours × rate_multiplier`}
         <tbody>
           <tr><td className="opacity-80">Weekday (after work hours)</td><td className="text-right">1.50×</td></tr>
           <tr><td className="opacity-80">Weekend (Sat / Sun off)</td><td className="text-right">2.00×</td></tr>
-          <tr><td className="opacity-80">Public Holiday</td><td className="text-right">2.50×</td></tr>
+          <tr><td className="opacity-80">Public Holiday</td><td className="text-right">3.00×</td></tr>
         </tbody>
       </table>
       <p className="text-[11px]">
@@ -288,7 +292,7 @@ export function PayrollCategorySettings() {
   const [categories, setCategories] = useState<PayrollCategory[]>(() =>
     USE_MOCKS ? loadPayrollCategories() : [],
   );
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PayrollCategory | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PayrollCategory | null>(null);
@@ -565,7 +569,10 @@ export function PayrollCategorySettings() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 && editingId === null && (
+              {loading && categories.length === 0 && (
+                <TableBodySkeletonRows columns={isAdmin ? 7 : 6} />
+              )}
+              {!(loading && categories.length === 0) && rows.length === 0 && editingId === null && (
                 <TableRow>
                   <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-gray-500 py-8">
                     {t('payrollCat.empty')}
@@ -790,7 +797,7 @@ export function PayrollCategorySettings() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-rose-600 hover:bg-rose-700"
+              className="bg-red-600 text-white hover:bg-red-700"
               onClick={() => confirmDelete && deleteCategory(confirmDelete)}
             >
               {t('action.delete')}
@@ -807,7 +814,7 @@ export function PayrollCategorySettings() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={doReset}>{t('action.confirm')}</AlertDialogAction>
+            <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={doReset}>{t('action.confirm')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
