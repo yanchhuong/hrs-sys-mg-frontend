@@ -2806,11 +2806,10 @@ function InvoiceDetailDialog({
         const res = await invoicesApi.sendTelegram(invoice.id, imageDataUrl ?? undefined);
         if (res.status === 'sent') {
           toast.success(`Invoice ${invoice.invoiceNo} sent via Telegram`);
-        } else if (res.status === 'not_linked') {
-          toast.info('Customer has not connected Telegram yet — share the link from Customers.');
-        } else if (res.status === 'disabled') {
-          // Telegram not configured — stay quiet on auto-send so the
-          // operator isn't spammed every time they save.
+        } else if (res.status === 'not_linked' || res.status === 'disabled') {
+          // Customer has no Telegram link / Telegram not configured —
+          // stay quiet on auto-send so the operator isn't nagged on
+          // every save.
         } else {
           toast.error(`Telegram send failed: ${res.message ?? 'unknown error'}`);
         }
