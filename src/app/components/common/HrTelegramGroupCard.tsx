@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { Switch } from '../ui/switch';
 import { Badge } from '../ui/badge';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { Users, Loader2, Copy, Check, Plus, Unlink, X } from 'lucide-react';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import * as groupApi from '../../api/hrTelegramGroup';
 import type { HrTelegramBot } from '../../api/hrTelegramBots';
 
@@ -13,17 +15,19 @@ type Group = groupApi.HrTelegramGroup;
 type EventKey = 'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'
   | 'postAttendance' | 'postOvertime' | 'postLeave' | 'postPayroll' | 'postEmployee';
 
-const EVENTS: { key: EventKey; label: string }[] = [
-  { key: 'postInvoices',    label: 'Invoices' },
-  { key: 'postExpenses',    label: 'Expenses & Bills' },
-  { key: 'postApprovals',   label: 'Approvals' },
-  { key: 'postCashAdvance', label: 'Cash advance & Voucher' },
-  { key: 'postActivity',    label: 'Activities' },
-  { key: 'postAttendance',  label: 'Attendance' },
-  { key: 'postOvertime',    label: 'Overtime' },
-  { key: 'postLeave',       label: 'Leave' },
-  { key: 'postPayroll',     label: 'Payroll' },
-  { key: 'postEmployee',    label: 'Employees' },
+/** Each event is offered only when at least one of its modules is
+ *  available to the tenant (declared + enabled). */
+const EVENTS: { key: EventKey; label: string; modules: string[] }[] = [
+  { key: 'postInvoices',    label: 'Invoices',               modules: ['invoice'] },
+  { key: 'postExpenses',    label: 'Expenses & Bills',       modules: ['expenses', 'bill'] },
+  { key: 'postApprovals',   label: 'Approvals',              modules: ['approval'] },
+  { key: 'postCashAdvance', label: 'Cash advance & Voucher', modules: ['cashadvance', 'voucher'] },
+  { key: 'postActivity',    label: 'Activities',             modules: ['reading'] },
+  { key: 'postAttendance',  label: 'Attendance',             modules: ['attendance'] },
+  { key: 'postOvertime',    label: 'Overtime',               modules: ['overtime'] },
+  { key: 'postLeave',       label: 'Leave',                  modules: ['all-leave'] },
+  { key: 'postPayroll',     label: 'Payroll',                modules: ['payroll'] },
+  { key: 'postEmployee',    label: 'Employees',              modules: ['employees'] },
 ];
 
 const POLL_MS = 5000;
@@ -68,15 +72,20 @@ function errMsg(e: unknown, fallback: string): string {
 
 /**
  * "Team group" card — connects one or more Telegram groups where the HR
- * bot posts team activity, each with its own event switches. Flow:
+ * bot posts team activity, each with its own "Posts" tags. Flow:
  * Add group → server mints a pending row with a `/link CODE` → admin
  * sends it in the group → card polls GET every 5 s (only while a live
  * code exists, tab visible, for at most 5 min) until the row is linked.
- * Event switches save on toggle (pending rows can be preset).
+ * Tags save on add/remove (pending rows can be preset); only events whose
+ * module the tenant has are shown.
  */
 export function HrTelegramGroupCard({ bot, active }: Props) {
   const confirm = useConfirm();
+  const { isModuleAvailable } = useAuth();
   const disabled = !bot;
+  /** Events this tenant can actually produce; hidden ones keep their
+   *  server value untouched — they're just never rendered. */
+  const availableEvents = EVENTS.filter(ev => ev.modules.some(m => isModuleAvailable(m)));
 
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -271,45 +280,80 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     }
   };
 
-  const renderSwitches = (g: Group | null) => (
-    <div className="divide-y rounded-md border bg-white">
-      {EVENTS.map(ev => (
-        <label
-          key={ev.key}
-          className={`flex items-center justify-between gap-3 px-3 py-2 ${disabled || !g ? '' : 'cursor-pointer'}`}
-        >
-          <Label className="text-sm font-normal cursor-[inherit]">{ev.label}</Label>
-          <Switch
-            checked={g?.[ev.key] ?? false}
-            onCheckedChange={v => { if (g) toggle(g.id, ev.key, v); }}
-            disabled={disabled || !g}
-          />
-        </label>
-      ))}
-    </div>
-  );
+  /** "Posts" tag editor: enabled (and available) events as removable
+   *  pills, plus a "+ Add" menu for the available ones still off. */
+  const renderTags = (g: Group) => {
+    const on = availableEvents.filter(ev => g[ev.key]);
+    const off = availableEvents.filter(ev => !g[ev.key]);
+    return (
+      <div className="space-y-1.5">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Posts</div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {on.length === 0 && (
+            <span className="text-xs text-gray-500 mr-1">Nothing posts yet — add activities</span>
+          )}
+          {on.map(ev => (
+            <span
+              key={ev.key}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 pl-2.5 pr-1 py-0.5 text-xs text-sky-800"
+            >
+              {ev.label}
+              <button
+                type="button"
+                aria-label={`Remove ${ev.label}`}
+                className="rounded-full p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
+                onClick={() => toggle(g.id, ev.key, false)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {off.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-0.5 text-xs text-gray-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                {off.map(ev => (
+                  <DropdownMenuItem key={ev.key} onSelect={() => toggle(g.id, ev.key, true)}>
+                    {ev.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderLinked = (g: Group) => {
     const isBusy = !!busy[g.id];
     return (
-      <div key={g.id} className="space-y-2">
-        <div className="flex items-center justify-between gap-3 bg-slate-50 border rounded-md px-3 py-2">
-          <div className="text-sm min-w-0">
-            ✅ Connected to <span className="font-medium">«{g.title ?? 'Telegram group'}»</span>
-            {g.linkedAt && <> since {fmtDate(g.linkedAt)}</>}
+      <div key={g.id} className="rounded-md border px-3 py-2.5 space-y-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm min-w-0 truncate">
+            ✅ <span className="font-medium">«{g.title ?? 'Telegram group'}»</span>
+            {g.linkedAt && <span className="text-[11px] text-gray-500"> · since {fmtDate(g.linkedAt)}</span>}
           </div>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="text-red-700 border-red-200 hover:bg-red-50 shrink-0"
+            className="h-7 px-2 text-red-700 hover:bg-red-50 hover:text-red-800 shrink-0"
             onClick={() => disconnect(g)}
             disabled={isBusy}
           >
-            {isBusy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Unlink className="h-4 w-4 mr-1.5" />}
+            {isBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Unlink className="h-3.5 w-3.5 mr-1" />}
             Disconnect
           </Button>
         </div>
-        {renderSwitches(g)}
+        {renderTags(g)}
       </div>
     );
   };
@@ -320,15 +364,26 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     const codeExpired = !isNaN(exp) && now >= exp;
     const copied = copiedId === g.id;
     return (
-      <div key={g.id} className="space-y-2">
-        <div className="bg-slate-50 border rounded-md px-3 py-3 space-y-2 text-sm">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-gray-600">New group — waiting for /link</span>
+      <div key={g.id} className="rounded-md border px-3 py-2.5 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium text-gray-700 min-w-0 truncate">New group — waiting for /link</span>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              type="button"
+              variant={codeExpired ? 'outline' : 'ghost'}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => newCode(g)}
+              disabled={isBusy}
+            >
+              {isBusy && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              New code
+            </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 text-gray-600"
+              className="h-7 px-2 text-gray-600"
               onClick={() => cancelPending(g)}
               disabled={isBusy}
             >
@@ -336,6 +391,8 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               Cancel
             </Button>
           </div>
+        </div>
+        <div className="bg-slate-50 border rounded-md px-3 py-2.5 space-y-2 text-sm">
           <ol className="list-decimal pl-5 space-y-2">
             <li>
               Add the HR bot{bot?.botUsername && <> (<span className="font-medium">@{bot.botUsername}</span>)</>} to your Telegram group.
@@ -360,27 +417,15 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               )}
             </li>
           </ol>
-          <div className="flex items-center justify-between gap-2 pt-1">
-            {g.linkCodeExpiresAt ? (
-              <p className={`text-[11px] ${codeExpired ? 'text-red-600' : 'text-gray-500'}`}>
-                {codeExpired
-                  ? `Code expired ${fmt(g.linkCodeExpiresAt)} — generate a new one.`
-                  : `Code expires ${fmt(g.linkCodeExpiresAt)}`}
-              </p>
-            ) : <span />}
-            <Button
-              variant={codeExpired ? 'outline' : 'ghost'}
-              size="sm"
-              className="h-7"
-              onClick={() => newCode(g)}
-              disabled={isBusy}
-            >
-              {isBusy && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-              New code
-            </Button>
-          </div>
+          {g.linkCodeExpiresAt && (
+            <p className={`text-[11px] ${codeExpired ? 'text-red-600' : 'text-gray-500'}`}>
+              {codeExpired
+                ? `Code expired ${fmt(g.linkCodeExpiresAt)} — generate a new one.`
+                : `Code expires ${fmt(g.linkCodeExpiresAt)}`}
+            </p>
+          )}
         </div>
-        {renderSwitches(g)}
+        {renderTags(g)}
       </div>
     );
   };
@@ -415,13 +460,12 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
           <Loader2 className="h-4 w-4 mr-2 animate-spin inline" /> Loading…
         </div>
       ) : hasGroups ? (
-        <div className="space-y-4">
+        <div className="space-y-2.5">
           {groups!.map(g => (g.linked ? renderLinked(g) : renderPending(g)))}
         </div>
-      ) : null}
-
-      {/* Preview of what the feature posts while no group exists yet. */}
-      {!hasGroups && renderSwitches(null)}
+      ) : (
+        <p className="text-xs text-gray-500">No groups yet — add one, then pick what the bot posts there.</p>
+      )}
 
       <Button size="sm" variant={hasGroups ? 'outline' : 'default'} onClick={addGroup} disabled={disabled || adding || (loading && !groups)}>
         {adding ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
