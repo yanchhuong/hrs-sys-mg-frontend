@@ -16,10 +16,12 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader } from '../../ui/card';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../../ui/select';
 import { DateInput } from '../../common/DateInput';
+import { StatCard } from '../../common/StatCard';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { statusBadgeClass, TONE_CLASS } from '../../../utils/statusTones';
+import { formatMoneyForCurrency } from '../../../utils/format';
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '../../ui/table';
@@ -40,6 +42,7 @@ export function PaymentHistory() {
   const { formatDate } = useDateFormat();
   const [rows, setRows] = useState<library.MemberPayment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [remarkFilter, setRemarkFilter] = useState<RemarkFilter>('all');
   // v-library-filter-strip — inclusive From/To range on paymentDate.
@@ -52,8 +55,13 @@ export function PaymentHistory() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try { setRows(await library.payments.list()); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Load failed'); }
+    catch (e) {
+      const msg = e instanceof Error ? e.message : 'Load failed';
+      setLoadError(msg);
+      toast.error(msg);
+    }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
@@ -83,22 +91,34 @@ export function PaymentHistory() {
 
   const pagination = usePagination(filtered, 25);
 
-  const totalAmount = useMemo(
-    () => filtered.reduce((acc, r) => acc + (Number(r.amount) || 0), 0),
-    [filtered],
-  );
+  // Per-currency totals — USD and KHR are never added into one number.
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of filtered) {
+      const cur = r.currency || 'USD';
+      m.set(cur, (m.get(cur) ?? 0) + (Number(r.amount) || 0));
+    }
+    return Array.from(m.entries());
+  }, [filtered]);
 
-  const statusVariant = (s: string | null): 'default' | 'secondary' | 'destructive' | 'outline' => {
-    if (!s) return 'secondary';
-    if (s === 'paid') return 'default';
-    if (s === 'void' || s === 'overdue') return 'destructive';
-    return 'outline';
+  const moneyLabel = (amount: number, currency: string | null | undefined) => {
+    const cur = currency || 'USD';
+    const amt = formatMoneyForCurrency(amount, cur);
+    const sym = cur === 'USD' ? '$' : cur === 'KHR' ? '៛' : null;
+    return sym ? `${sym} ${amt}` : `${amt} ${cur}`;
   };
 
+  const totalAmountLabel = totalsByCurrency.length === 0
+    ? moneyLabel(0, 'USD')
+    : totalsByCurrency.map(([cur, amt]) => moneyLabel(amt, cur)).join(' · ');
+
+  const filtersActive = !!(search.trim() || remarkFilter !== 'all' || dateFrom || dateTo);
+  const clearFilters = () => { setSearch(''); setRemarkFilter('all'); setDateFrom(''); setDateTo(''); };
+
   const REMARK_FILTERS: Array<{ value: RemarkFilter; label: string }> = [
-    { value: 'all',              label: 'All' },
-    { value: 'New Registration', label: 'New Registration' },
-    { value: 'Renewal',          label: 'Renewal' },
+    { value: 'all',              label: 'Type : All' },
+    { value: 'New Registration', label: 'Type : New Registration' },
+    { value: 'Renewal',          label: 'Type : Renewal' },
   ];
 
   return (
@@ -121,74 +141,58 @@ export function PaymentHistory() {
       {/* v-library-payment-history-summary — hero band mirrors the
           Members page (Total Records / Total Amount) so the three
           Membership list pages share one visual rhythm. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="rounded-lg border bg-white p-4 flex items-center gap-3">
-          <div className="rounded-md bg-teal-100 text-teal-700 p-2"><Receipt className="h-5 w-5" /></div>
-          <div>
-            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Records</div>
-            <div className="text-2xl font-bold">{filtered.length.toLocaleString('en-US')}</div>
-          </div>
-        </div>
-        <div className="rounded-lg border bg-white p-4 flex items-center gap-3">
-          <div className="rounded-md bg-emerald-100 text-emerald-700 p-2"><Receipt className="h-5 w-5" /></div>
-          <div>
-            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Amount</div>
-            <div className="text-2xl font-bold">
-              $ {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
+      <div className="stat-strip">
+        <StatCard label="Total Records" value={filtered.length.toLocaleString('en-US')} icon={Receipt} tone="blue" />
+        <StatCard
+          label="Total Amount"
+          value={totalAmountLabel}
+          hint={totalsByCurrency.length > 1 ? 'Totalled separately per currency' : undefined}
+          icon={Receipt}
+          tone="green"
+        />
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          {/* v-library-filter-strip — Invoice-shape strip. */}
+          {/* v-library-filter-strip — Transactions-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">Type</Label>
-              <Select value={remarkFilter} onValueChange={(v) => setRemarkFilter(v as RemarkFilter)}>
-                <SelectTrigger className="h-8 w-44 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REMARK_FILTERS.map(f => (
-                    <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <select
+              value={remarkFilter}
+              onChange={e => setRemarkFilter(e.target.value as RemarkFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              {REMARK_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search member / receipt / invoice…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">From</Label>
-              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
-              <Label className="text-xs text-gray-600">To</Label>
-              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
-                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
-                  Clear
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search member / receipt / invoice…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
-            </div>
+            {filtersActive && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading && filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton rows={8} columns={9} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">
-              {rows.length === 0 ? 'No membership payments yet.' : 'No matches — try clearing the filter.'}
-            </p>
+            <ListEmpty noun="membership payments" filtered={filtersActive && rows.length > 0} />
           ) : (
             // v-list-table-invoice-shape — border+scroll wrapper +
             // sticky header, same shell as Invoices / Quotations.
@@ -232,11 +236,11 @@ export function PaymentHistory() {
                     </TableCell>
                     <TableCell>
                       {r.remark === 'New Registration' ? (
-                        <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${TONE_CLASS.success}`}>
                           New Registration
                         </span>
                       ) : r.remark === 'Renewal' ? (
-                        <span className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${TONE_CLASS.info}`}>
                           Renewal
                         </span>
                       ) : (
@@ -248,14 +252,10 @@ export function PaymentHistory() {
                     <TableCell className="font-mono text-xs">{r.receiptNo ?? '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {/* V-library-money-symbol-prefix — "$ 560.00" */}
-                      {(() => {
-                        const amt = (Number(r.amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        const sym = r.currency === 'USD' ? '$' : r.currency === 'KHR' ? '៛' : null;
-                        return sym ? `${sym} ${amt}` : (r.currency ? `${amt} ${r.currency}` : amt);
-                      })()}
+                      {moneyLabel(Number(r.amount) || 0, r.currency)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(r.invoiceStatus)} className="capitalize">
+                      <Badge variant="outline" className={`capitalize ${statusBadgeClass(r.invoiceStatus)}`}>
                         {r.invoiceStatus ?? '—'}
                       </Badge>
                     </TableCell>

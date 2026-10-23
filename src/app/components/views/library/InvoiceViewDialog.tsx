@@ -25,6 +25,10 @@ import {
 import * as invoicesApi from '../../../api/invoices';
 import * as settingsApi from '../../../api/settings';
 import { useDateFormat } from '../../../context/DateFormatContext';
+import { statusBadgeClass } from '../../../utils/statusTones';
+import { formatMoneyForCurrency } from '../../../utils/format';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListError } from '../../common/ListStates';
 
 interface Props {
   open: boolean;
@@ -38,6 +42,8 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
   const { formatDate } = useDateFormat();
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [sending, setSending] = useState(false);
   // V-library-invoice-print-pro — company info feeds the print
   // template's header (name, address, phone, logo, VAT TIN).
@@ -72,24 +78,18 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
     if (!open || !invoiceId) return;
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     setInvoice(null);
     invoicesApi.get(invoiceId)
       .then(inv => { if (!cancelled) setInvoice(inv); })
-      .catch(e => { if (!cancelled) toast.error(e instanceof Error ? e.message : 'Load failed'); })
+      .catch(e => { if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Load failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, invoiceId]);
+  }, [open, invoiceId, reloadKey]);
 
-  const statusBadge = (s: string) => {
-    const map: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      paid: 'default',
-      issued: 'default',
-      draft: 'outline',
-      void: 'destructive',
-      overdue: 'destructive',
-    };
-    return <Badge variant={map[s] ?? 'secondary'} className="capitalize">{s}</Badge>;
-  };
+  const statusBadge = (s: string) => (
+    <Badge variant="outline" className={`capitalize ${statusBadgeClass(s)}`}>{s}</Badge>
+  );
 
   // V-library-money-symbol-prefix — render amounts as
   // "$ 560.00" / "៛ 5,600" instead of the trailing "560.00 USD"
@@ -103,7 +103,8 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
     return null;
   };
   const fmtMoney = (n: number | null | undefined, currency?: string | null) => {
-    const amt = (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Currency-aware decimals: KHR has none, USD two.
+    const amt = formatMoneyForCurrency(Number(n) || 0, currency || 'USD');
     const sym = currencySymbol(currency);
     return sym ? `${sym} ${amt}` : (currency ? `${amt} ${currency}` : amt);
   };
@@ -147,10 +148,10 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
           <DialogTitle>Invoice {invoice?.invoiceNo ?? ''}</DialogTitle>
         </DialogHeader>
 
-        {loading && (
-          <div className="py-8 flex items-center justify-center gap-2 text-gray-500">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-          </div>
+        {loading && <TableRowsSkeleton rows={6} columns={4} />}
+
+        {!loading && loadError && (
+          <ListError message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
         )}
 
         {invoice && !loading && (
@@ -313,7 +314,7 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
           </DropdownMenu>
 
           <Button onClick={doPrint} disabled={!invoice || loading}
-                  title="Open the professional invoice template in a new tab">
+                  title="Print this invoice on the professional A4 template">
             <Printer className="h-4 w-4 mr-2" /> Print
           </Button>
         </DialogFooter>

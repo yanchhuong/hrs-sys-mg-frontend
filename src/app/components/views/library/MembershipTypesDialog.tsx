@@ -28,6 +28,9 @@ import {
 } from '../../ui/select';
 import * as library from '../../../api/library';
 import { useConfirm } from '../../../context/ConfirmContext';
+import { NumericInput } from '../../common/NumericInput';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListError } from '../../common/ListStates';
 
 interface Props {
   open: boolean;
@@ -167,10 +170,16 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
             </div>
             <div className="max-h-80 overflow-y-auto">
               {rows.map(t => (
-                <button
+                <div
                   key={t.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => startEdit(t)}
-                  className={`w-full text-left px-3 py-2 border-b hover:bg-gray-50 flex items-center justify-between ${editingId === t.id ? 'bg-indigo-50' : ''}`}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(t); }
+                  }}
+                  className={`w-full text-left px-3 py-2 border-b hover:bg-gray-50 cursor-pointer flex items-center justify-between focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${editingId === t.id ? 'bg-indigo-50' : ''}`}
                 >
                   <div>
                     <div className="font-medium text-sm">{t.name}
@@ -182,13 +191,20 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon"
-                            onClick={(e) => { e.stopPropagation(); void remove(t); }}>
-                      <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                    <Button type="button" variant="ghost" size="icon"
+                            className="h-7 w-7 text-red-600 hover:text-red-700"
+                            aria-label={`Delete ${t.name}`}
+                            title="Delete"
+                            onClick={(e) => { e.stopPropagation(); void remove(t); }}
+                            onKeyDown={(e) => e.stopPropagation()}>
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                </button>
+                </div>
               ))}
+              {loading && rows.length === 0 && (
+                <div className="px-3"><TableRowsSkeleton rows={4} columns={2} /></div>
+              )}
               {rows.length === 0 && !loading && (
                 <div className="px-3 py-6 text-center text-sm text-gray-500">
                   No types yet — add one on the right →
@@ -210,8 +226,8 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2 space-y-1.5">
                 <Label>Price</Label>
-                <Input type="number" step="0.01" min="0" value={form.price}
-                       onChange={e => setForm({ ...form, price: e.target.value })} />
+                <NumericInput decimals={form.currency === 'KHR' ? 0 : 2} value={form.price}
+                              onChange={v => setForm({ ...form, price: v })} />
               </div>
               <div className="space-y-1.5">
                 <Label>Currency</Label>
@@ -226,9 +242,9 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
             </div>
             <div className="space-y-1.5">
               <Label>Duration (days) — optional</Label>
-              <Input type="number" min="0" placeholder="30, 365, blank = bespoke"
-                     value={form.durationDays}
-                     onChange={e => setForm({ ...form, durationDays: e.target.value })} />
+              <NumericInput decimals={0} maxInt={5} placeholder="30, 365, blank = bespoke"
+                            value={form.durationDays}
+                            onChange={v => setForm({ ...form, durationDays: v })} />
             </div>
             <div className="space-y-1.5">
               <Label>Notes</Label>
@@ -275,14 +291,20 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
 function RemindersPanel({ onSaved }: { onSaved?: () => void }) {
   const [s, setS] = useState<library.LibrarySettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadSettings = () => {
+    setLoadError(null);
     library.settings.get()
       .then(setS)
-      .catch(e => toast.error(e instanceof Error ? e.message : 'Load failed'));
-  }, []);
+      .catch(e => setLoadError(e instanceof Error ? e.message : 'Load failed'));
+  };
+  useEffect(() => { loadSettings(); }, []);
 
-  if (!s) return <div className="py-8 text-center text-sm text-gray-500">Loading settings…</div>;
+  if (!s) {
+    if (loadError) return <ListError message={loadError} onRetry={loadSettings} />;
+    return <TableRowsSkeleton rows={4} columns={2} />;
+  }
 
   const save = async () => {
     setSaving(true);
@@ -322,9 +344,9 @@ function RemindersPanel({ onSaved }: { onSaved?: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Days before expiry</Label>
-            <Input type="number" min="1" max="365"
-                   value={s.renewalReminderDaysBefore}
-                   onChange={e => setS({ ...s, renewalReminderDaysBefore: Number(e.target.value) || 0 })} />
+            <NumericInput decimals={0} maxInt={3}
+                          value={String(s.renewalReminderDaysBefore ?? '')}
+                          onChange={v => setS({ ...s, renewalReminderDaysBefore: Math.min(365, Number(v) || 0) })} />
             <p className="text-xs text-gray-500 mt-1">Common: 7 · 14 · 30 · 60</p>
           </div>
           <div className="rounded-md border p-3 text-xs text-gray-600 self-start">

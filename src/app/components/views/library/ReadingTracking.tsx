@@ -61,6 +61,10 @@ import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 import { LEN } from '../../../utils/validation';
 import { readImageAsDataUrl } from '../../../utils/imageUpload';
+import { TONE_CLASS, type Tone } from '../../../utils/statusTones';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { format } from 'date-fns';
 
 type Status = 'progress' | 'delay' | 'done';
 type ActivityType = 'reading' | 'meeting' | 'conference' | 'other';
@@ -95,7 +99,8 @@ const EMPTY: FormState = {
   activityType: 'reading',
   stockItemId: '',
   subject: '',
-  startDate: new Date().toISOString().slice(0, 10),
+  // Overwritten with the local "today" on every openNew (see below).
+  startDate: format(new Date(), 'yyyy-MM-dd'),
   startTime: '',
   returnDate: '',
   endTime: '',
@@ -114,13 +119,17 @@ const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.El
   { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600',    chip: 'bg-slate-600 text-white border-slate-600' },
 ];
 
-/** Form status chips — selected tone mirrors the list Badge intent. */
-/** Status dropdown options — dot colour per status. */
-const STATUS_CHIPS: Array<{ value: Status; label: string; dot: string }> = [
-  { value: 'progress', label: 'Progress', dot: 'bg-amber-500' },
-  { value: 'delay',    label: 'Delay',    dot: 'bg-red-500' },
-  { value: 'done',     label: 'Done',     dot: 'bg-emerald-500' },
+/** ONE status map for the form dropdown dots AND the list / detail
+ *  badges, so they always agree. Tones come from the app-wide palette
+ *  (utils/statusTones): Progress = blue (info), Delay = red (danger),
+ *  Done = green (success). */
+const STATUS_CHIPS: Array<{ value: Status; label: string; tone: Tone; dot: string }> = [
+  { value: 'progress', label: 'Progress', tone: 'info',    dot: 'bg-blue-500' },
+  { value: 'delay',    label: 'Delay',    tone: 'danger',  dot: 'bg-red-500' },
+  { value: 'done',     label: 'Done',     tone: 'success', dot: 'bg-emerald-500' },
 ];
+const statusBadgeCls = (s: Status) =>
+  TONE_CLASS[(STATUS_CHIPS.find(c => c.value === s) ?? STATUS_CHIPS[0]).tone];
 
 /* ─── Compact "create event" form styling ───────────────────────── */
 /** Small bold label. */
@@ -367,6 +376,7 @@ export function ReadingTracking() {
   const [books, setBooks] = useState<library.Book[]>([]);
   const [terms, setTerms] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -390,6 +400,7 @@ export function ReadingTracking() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // Fan-out all three in parallel; the picker dropdowns need
       // them anyway so we amortise the load.
@@ -400,7 +411,11 @@ export function ReadingTracking() {
         library.readings.terms().catch(() => [] as string[]),
       ]);
       setRows(rs); setMembers(ms); setBooks(bs); setTerms(ts);
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Load failed'); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Load failed';
+      setLoadError(msg);
+      toast.error(msg);
+    }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
@@ -408,7 +423,9 @@ export function ReadingTracking() {
   const openNew = () => {
     coverReq.current++;
     setCoverLoading(false);
-    setEditingId(null); setForm(EMPTY);
+    // Local-date today (the old UTC toISOString() gave yesterday before
+    // 07:00 in UTC+7, and EMPTY's value went stale past midnight).
+    setEditingId(null); setForm({ ...EMPTY, startDate: format(new Date(), 'yyyy-MM-dd') });
     setDetailsOpen(false); setMultiDayOpen(false); setGuestsExpanded(false); setLocationOnline(false);
     setDialogOpen(true);
   };
@@ -581,8 +598,6 @@ export function ReadingTracking() {
     finally { setGuestBusy(null); }
   };
 
-  const statusVariant = (s: Status): 'default' | 'secondary' | 'destructive' | 'outline' =>
-    s === 'progress' ? 'default' : s === 'done' ? 'outline' : 'destructive';
 
   // Only show ACTIVE members in the picker — no point starting a new
   // reading against a suspended / expired card.
@@ -634,6 +649,9 @@ export function ReadingTracking() {
       );
     });
   }, [rows, search, typeFilter, dateFrom, dateTo]);
+
+  const filtersActive = !!(search.trim() || typeFilter !== 'all' || dateFrom || dateTo);
+  const clearFilters = () => { setSearch(''); setTypeFilter('all'); setDateFrom(''); setDateTo(''); };
 
   const pagination = usePagination(filteredRows, 25);
 
@@ -805,52 +823,44 @@ export function ReadingTracking() {
         <CardHeader className="pb-3">
           {/* v-library-filter-strip — Invoice-shape strip. */}
           <div className="filter-strip">
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">Type</Label>
-              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ActivityType | 'all')}>
-                <SelectTrigger className="h-8 w-40 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {ACTIVITY_TYPES.map(a => (
-                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as ActivityType | 'all')}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All</option>
+              {ACTIVITY_TYPES.map(a => (
+                <option key={a.value} value={a.value}>Type : {a.label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search host, title, location, notes…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">From</Label>
-              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
-              <Label className="text-xs text-gray-600">To</Label>
-              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
-                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
-                  Clear
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search host, title, location, notes…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
-            </div>
+            {filtersActive && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading && filteredRows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton rows={8} columns={9} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filteredRows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">
-              {rows.length === 0 ? 'No activities yet.' : 'No matches — try clearing the filter.'}
-            </p>
+            <ListEmpty noun="activities" filtered={filtersActive && rows.length > 0} />
           ) : (
             // v-list-table-invoice-shape — border+scroll wrapper +
             // sticky header, same shell as Invoices / Quotations.
@@ -928,7 +938,7 @@ export function ReadingTracking() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(r.status)} className="capitalize">{r.status}</Badge>
+                        <Badge variant="outline" className={`capitalize ${statusBadgeCls(r.status)}`}>{r.status}</Badge>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{r.durationDays}d</TableCell>
                       <TableCell>
@@ -938,7 +948,7 @@ export function ReadingTracking() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1 justify-end">
-                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openView(r)} title="View">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openView(r)} title="View" aria-label="View">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                           {/* Edit needs member + book pickers too, so gate
@@ -947,12 +957,12 @@ export function ReadingTracking() {
                               reading row — no cross-module fetch — so it
                               stays on the base `reading:delete` gate. */}
                           {canEditActivity && (
-                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)} title="Edit">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit" aria-label="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canDelete('reading') && (
-                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(r)} title="Delete">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void remove(r)} title="Delete" aria-label="Delete">
                               <Trash2 className="h-3.5 w-3.5 text-red-600" />
                             </Button>
                           )}
@@ -1152,8 +1162,8 @@ export function ReadingTracking() {
               <div className="grid grid-cols-2 sm:grid-cols-[1.3fr_1fr_1fr] gap-2">
                 <div className="space-y-1">
                   <Label className={FORM_LABEL}>Date</Label>
-                  <Input type="date" className={FORM_INPUT} value={form.startDate}
-                         onChange={e => changeStartDate(e.target.value)} />
+                  <DateInput className={`${FORM_INPUT} w-full`} value={form.startDate || null} clearable={false}
+                             onChange={v => changeStartDate(v ?? '')} />
                 </div>
                 <div className="space-y-1">
                   <Label className={FORM_LABEL}>Time</Label>
@@ -1196,8 +1206,8 @@ export function ReadingTracking() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className={FORM_LABEL}>End date <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
-                    <Input type="date" className={FORM_INPUT} value={form.returnDate} min={form.startDate || undefined}
-                           onChange={e => setForm({ ...form, returnDate: e.target.value })} />
+                    <DateInput className={`${FORM_INPUT} w-full`} value={form.returnDate || null} min={form.startDate || undefined}
+                               onChange={v => setForm({ ...form, returnDate: v ?? '' })} />
                   </div>
                   <div className="space-y-1">
                     <Label className={FORM_LABEL}>End time <span className="text-xs text-gray-400 font-normal">(optional)</span></Label>
@@ -1367,7 +1377,7 @@ export function ReadingTracking() {
                           <viewMeta.icon className="h-3.5 w-3.5 text-gray-600" />
                           {viewMeta.label}
                         </span>
-                        <Badge variant={statusVariant(view.status)} className="capitalize">{view.status}</Badge>
+                        <Badge variant="outline" className={`capitalize ${statusBadgeCls(view.status)}`}>{view.status}</Badge>
                         {view.term && (
                           <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs">{view.term}</span>
                         )}

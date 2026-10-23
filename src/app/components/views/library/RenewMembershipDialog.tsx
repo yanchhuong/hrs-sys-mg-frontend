@@ -22,6 +22,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
 import * as library from '../../../api/library';
+import { format } from 'date-fns';
+import { DateInput } from '../../common/DateInput';
+import { NumericInput } from '../../common/NumericInput';
 
 interface Props {
   open: boolean;
@@ -44,15 +47,19 @@ interface FormState {
   notes: string;
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+// Local-date "today" — toISOString() is UTC and gave yesterday's date
+// before 07:00 in Phnom Penh (UTC+7).
+const todayIso = () => format(new Date(), 'yyyy-MM-dd');
 
-/** Add `days` to an ISO date string, returning ISO. Null-safe. */
+/** Add `days` to an ISO date string, returning ISO. Null-safe.
+ *  Parses and formats in local time — the old toISOString() round-trip
+ *  shifted the expiry one day early in UTC+ zones. */
 function addDays(dateIso: string | undefined, days: number | null | undefined): string {
   if (!dateIso || days == null) return '';
   const d = new Date(dateIso + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return '';
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return format(d, 'yyyy-MM-dd');
 }
 
 export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }: Props) {
@@ -68,6 +75,7 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{ membershipType?: string; effectiveDate?: string }>({});
 
   // Load types when the dialog opens; seed form defaults from the
   // member's current tier if we have one.
@@ -79,6 +87,7 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
       const currentType = member.membershipType ?? '';
       const matched = ts.find(t => t.name === currentType);
       const start = todayIso();
+      setErrors({});
       setForm({
         membershipType: currentType,
         amount: matched ? String(matched.price) : '0',
@@ -96,6 +105,7 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
 
   const pickType = (name: string) => {
     const t = types.find(x => x.name === name);
+    if (name.trim()) setErrors(prev => ({ ...prev, membershipType: undefined }));
     setForm(prev => ({
       ...prev,
       membershipType: name,
@@ -119,12 +129,20 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
 
   const submit = async () => {
     if (!member) return;
+    const nextErrors: { membershipType?: string; effectiveDate?: string } = {};
+    if (!form.membershipType.trim()) nextErrors.membershipType = 'Membership type is required';
+    if (!form.effectiveDate) nextErrors.effectiveDate = 'Effective date is required';
+    setErrors(nextErrors);
+    if (nextErrors.membershipType || nextErrors.effectiveDate) {
+      toast.error(nextErrors.membershipType ?? nextErrors.effectiveDate!);
+      return;
+    }
     const amt = Number(form.amount);
     if (!amt || amt <= 0) { toast.error('Amount must be greater than zero'); return; }
     setSaving(true);
     try {
       const updated = await library.members.renew(member.id, {
-        membershipType: form.membershipType || undefined,
+        membershipType: form.membershipType.trim(),
         amount: amt,
         currency: form.currency,
         method: form.method,
@@ -165,7 +183,10 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
             <Label>Membership Type <span className="text-red-500">*</span></Label>
             {activeTypes.length > 0 ? (
               <Select value={form.membershipType} onValueChange={pickType}>
-                <SelectTrigger><SelectValue placeholder="Pick a tier" /></SelectTrigger>
+                <SelectTrigger aria-invalid={!!errors.membershipType}
+                               className={errors.membershipType ? 'border-red-500' : undefined}>
+                  <SelectValue placeholder="Pick a tier" />
+                </SelectTrigger>
                 <SelectContent>
                   {activeTypes.map(t => (
                     <SelectItem key={t.id} value={t.name}>
@@ -176,14 +197,21 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
               </Select>
             ) : (
               <Input placeholder="Free-form tier label"
+                     aria-invalid={!!errors.membershipType}
+                     className={errors.membershipType ? 'border-red-500' : undefined}
                      value={form.membershipType}
-                     onChange={e => setForm({ ...form, membershipType: e.target.value })} />
+                     onChange={e => {
+                       const v = e.target.value;
+                       if (v.trim()) setErrors(prev => ({ ...prev, membershipType: undefined }));
+                       setForm({ ...form, membershipType: v });
+                     }} />
             )}
+            {errors.membershipType && <p className="text-xs text-red-600">{errors.membershipType}</p>}
           </div>
           <div className="space-y-1.5">
             <Label>Amount <span className="text-red-500">*</span></Label>
-            <Input type="number" step="0.01" min="0.01" value={form.amount}
-                   onChange={e => setForm({ ...form, amount: e.target.value })} />
+            <NumericInput decimals={form.currency === 'KHR' ? 0 : 2} value={form.amount}
+                          onChange={v => setForm({ ...form, amount: v })} />
           </div>
           <div className="space-y-1.5">
             <Label>Currency</Label>
@@ -211,18 +239,24 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
           </div>
           <div className="space-y-1.5">
             <Label>Payment Date</Label>
-            <Input type="date" value={form.paymentDate}
-                   onChange={e => setForm({ ...form, paymentDate: e.target.value })} />
+            <DateInput className="w-full" value={form.paymentDate || null}
+                       onChange={v => setForm({ ...form, paymentDate: v ?? '' })} />
           </div>
           <div className="space-y-1.5">
             <Label>Effective Date <span className="text-red-500">*</span></Label>
-            <Input type="date" value={form.effectiveDate}
-                   onChange={e => recalcExpiry(e.target.value)} />
+            <DateInput className={`w-full ${errors.effectiveDate ? 'border-red-500' : ''}`}
+                       value={form.effectiveDate || null}
+                       onChange={v => {
+                         if (v) setErrors(prev => ({ ...prev, effectiveDate: undefined }));
+                         recalcExpiry(v ?? '');
+                       }} />
+            {errors.effectiveDate && <p className="text-xs text-red-600">{errors.effectiveDate}</p>}
           </div>
           <div className="space-y-1.5">
             <Label>Expiry Date</Label>
-            <Input type="date" value={form.expiryDate}
-                   onChange={e => setForm({ ...form, expiryDate: e.target.value })} />
+            <DateInput className="w-full" value={form.expiryDate || null}
+                       min={form.effectiveDate || undefined}
+                       onChange={v => setForm({ ...form, expiryDate: v ?? '' })} />
           </div>
           <div className="col-span-2 space-y-1.5">
             <Label>Notes (optional)</Label>

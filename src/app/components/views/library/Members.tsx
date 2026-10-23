@@ -52,6 +52,12 @@ import { SearchablePicker } from '../../common/SearchablePicker';
 import { RenewMembershipDialog } from './RenewMembershipDialog';
 import { MemberIdCardDialog } from './MemberIdCardDialog';
 import * as settingsApi from '../../../api/settings';
+import { format } from 'date-fns';
+import { StatCard } from '../../common/StatCard';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { NumericInput } from '../../common/NumericInput';
+import { statusBadgeClass } from '../../../utils/statusTones';
 
 type Status = 'active' | 'expired' | 'suspended';
 type StatusFilter = 'all' | Status;
@@ -91,8 +97,9 @@ const EMPTY_FORM: FormState = {
   occupation: '',
   profileImage: '',
   membershipType: '',
-  registrationDate: new Date().toISOString().slice(0, 10),
-  effectiveDate: new Date().toISOString().slice(0, 10),
+  // Local-date today; refreshed again on every openNew.
+  registrationDate: format(new Date(), 'yyyy-MM-dd'),
+  effectiveDate: format(new Date(), 'yyyy-MM-dd'),
   expiryDate: '',
   status: 'active',
   recordPayment: true,
@@ -102,10 +109,10 @@ const EMPTY_FORM: FormState = {
 };
 
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
-  { value: 'all',       label: 'All' },
-  { value: 'active',    label: 'Active' },
-  { value: 'expired',   label: 'Expired' },
-  { value: 'suspended', label: 'Suspended' },
+  { value: 'all',       label: 'Status : All' },
+  { value: 'active',    label: 'Status : Active' },
+  { value: 'expired',   label: 'Status : Expired' },
+  { value: 'suspended', label: 'Status : Suspended' },
 ];
 
 export function Members() {
@@ -121,6 +128,7 @@ export function Members() {
   // feeding the Business picker. Locally augmented on inline-create.
   const [businesses, setBusinesses] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   // v-library-filter-strip — inclusive From/To range on
   // registrationDate. Empty string means "unbounded on that side"
@@ -146,6 +154,7 @@ export function Members() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // Fetch both in parallel — the Type dropdown needs `types` too.
       const [rs, ts, ss, bs] = await Promise.all([
@@ -158,7 +167,11 @@ export function Members() {
       setTypes(ts);
       setSettings(ss);
       setBusinesses(bs);
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Load failed'); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Load failed';
+      setLoadError(msg);
+      toast.error(msg);
+    }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
@@ -190,7 +203,17 @@ export function Members() {
     });
   }, [rows, statusFilter, search, dateFrom, dateTo]);
 
-  const openNew = () => { setEditingId(null); setForm(EMPTY_FORM); setDialogOpen(true); };
+  const filtersActive = !!(search.trim() || statusFilter !== 'all' || dateFrom || dateTo);
+  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setDateFrom(''); setDateTo(''); };
+
+  const openNew = () => {
+    // Local-date today — the old UTC toISOString() gave yesterday before
+    // 07:00 in UTC+7, and EMPTY_FORM's value went stale past midnight.
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM, registrationDate: today, effectiveDate: today });
+    setDialogOpen(true);
+  };
   const openEdit = (m: library.Member) => {
     setEditingId(m.id);
     setForm({
@@ -223,7 +246,8 @@ export function Members() {
     const d = new Date(dateIso + 'T00:00:00');
     if (Number.isNaN(d.getTime())) return '';
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    // Local format — toISOString() shifted the expiry a day early in UTC+ zones.
+    return format(d, 'yyyy-MM-dd');
   };
 
   /** Type-picker in the Add/Edit form: mirror the Renew popup's
@@ -329,10 +353,7 @@ export function Members() {
   }, [activeTypes, form.membershipType]);
 
   const statusBadge = (s: Status | string) => (
-    <Badge
-      variant={s === 'active' ? 'default' : s === 'expired' ? 'destructive' : 'secondary'}
-      className="capitalize"
-    >
+    <Badge variant="outline" className={`capitalize ${statusBadgeClass(s)}`}>
       {s}
     </Badge>
   );
@@ -437,40 +458,10 @@ export function Members() {
       {/* V-library-member-summary-cards — three headline tiles
           (Total / Active / Expiring or Expired). Same visual family
           as the Items page tiles for consistency. */}
-      <div className="flex gap-3 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
-        <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-          <div className="h-9 w-9 rounded-md bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Users className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Members</div>
-            <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-              {stats.total.toLocaleString('en-US')}
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-          <div className="h-9 w-9 rounded-md bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Active</div>
-            <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-              {stats.active.toLocaleString('en-US')}
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-          <div className="h-9 w-9 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-            <AlertTriangle className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase text-gray-500 tracking-wide">Expiring / Expired</div>
-            <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-              {stats.expiringOrExpired.toLocaleString('en-US')}
-            </div>
-          </div>
-        </div>
+      <div className="stat-strip">
+        <StatCard label="Total Members" value={stats.total.toLocaleString('en-US')} icon={Users} tone="purple" />
+        <StatCard label="Active" value={stats.active.toLocaleString('en-US')} icon={CheckCircle2} tone="green" />
+        <StatCard label="Expiring / Expired" value={stats.expiringOrExpired.toLocaleString('en-US')} icon={AlertTriangle} tone="red" />
       </div>
 
       {/* Card + filter-strip — same visual rhythm as the sale-side
@@ -482,51 +473,43 @@ export function Members() {
               Clear ghost, Search right. One horizontal line;
               overflow scrolls (see .filter-strip in index.css). */}
           <div className="filter-strip">
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">Status</Label>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-                <SelectTrigger className="h-8 w-40 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map(f => (
-                    <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {STATUS_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, phone, business, type…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Label className="text-xs text-gray-600">From</Label>
-              <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || null} className="h-8 w-36" />
-              <Label className="text-xs text-gray-600">To</Label>
-              <DateInput value={dateTo   || null} onChange={v => setDateTo(v   ?? '')} min={dateFrom || null} className="h-8 w-36" />
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-gray-500"
-                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
-                  Clear
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0 ml-auto">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, phone, business, type…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
-            </div>
+            {filtersActive && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading && filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton rows={8} columns={12} hasThumbnail />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">
-              {rows.length === 0 ? 'No members yet.' : 'No matches — try clearing the filter.'}
-            </p>
+            <ListEmpty noun="members" filtered={filtersActive && rows.length > 0} />
           ) : (
             // v-list-table-invoice-shape — border+scroll wrapper +
             // sticky header + Actions column width. Same shell the
@@ -597,25 +580,25 @@ export function Members() {
                     <TableCell>{statusBadge(m.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1 justify-end">
-                        <Button variant="ghost" size="sm" className="h-7 px-2"
+                        <Button variant="ghost" size="icon" className="h-7 w-7"
                                 title="Preview / print ID card"
                                 onClick={() => setIdCardTarget(m)}>
                           <IdCard className="h-3.5 w-3.5 text-indigo-600" />
                         </Button>
                         {canUpdate('member') && (
-                          <Button variant="ghost" size="sm" className="h-7 px-2"
+                          <Button variant="ghost" size="icon" className="h-7 w-7"
                                   title="Renew membership"
                                   onClick={() => setRenewTarget(m)}>
                             <RefreshCcw className="h-3.5 w-3.5 text-emerald-600" />
                           </Button>
                         )}
                         {canUpdate('member') && (
-                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(m)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" aria-label="Edit" onClick={() => openEdit(m)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {canDelete('member') && (
-                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => void remove(m)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" aria-label="Delete" onClick={() => void remove(m)}>
                             <Trash2 className="h-3.5 w-3.5 text-red-600" />
                           </Button>
                         )}
@@ -786,18 +769,19 @@ export function Members() {
             </div>
             <div className="space-y-1.5">
               <Label>Registration Date</Label>
-              <Input type="date" value={form.registrationDate}
-                     onChange={e => setForm({ ...form, registrationDate: e.target.value })} />
+              <DateInput className="w-full" value={form.registrationDate || null}
+                         onChange={v => setForm({ ...form, registrationDate: v ?? '' })} />
             </div>
             <div className="space-y-1.5">
               <Label>Effective Date</Label>
-              <Input type="date" value={form.effectiveDate}
-                     onChange={e => setForm({ ...form, effectiveDate: e.target.value })} />
+              <DateInput className="w-full" value={form.effectiveDate || null}
+                         onChange={v => setForm({ ...form, effectiveDate: v ?? '' })} />
             </div>
             <div className="space-y-1.5">
               <Label>Expiry Date</Label>
-              <Input type="date" value={form.expiryDate}
-                     onChange={e => setForm({ ...form, expiryDate: e.target.value })} />
+              <DateInput className="w-full" value={form.expiryDate || null}
+                         min={form.effectiveDate || undefined}
+                         onChange={v => setForm({ ...form, expiryDate: v ?? '' })} />
             </div>
           </div>
 
@@ -823,8 +807,8 @@ export function Members() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Amount</Label>
-                    <Input type="number" step="0.01" min="0" value={form.amount}
-                           onChange={e => setForm({ ...form, amount: e.target.value })} />
+                    <NumericInput decimals={form.currency === 'KHR' ? 0 : 2} value={form.amount}
+                                  onChange={v => setForm({ ...form, amount: v })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Currency</Label>
