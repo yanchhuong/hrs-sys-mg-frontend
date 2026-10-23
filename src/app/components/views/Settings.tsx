@@ -89,10 +89,6 @@ export function Settings() {
             <SettingsIcon className="mr-2 h-4 w-4" />
             Company
           </TabsTrigger>
-          <TabsTrigger value="currency">
-            <Coins className="mr-2 h-4 w-4" />
-            Currency
-          </TabsTrigger>
           <TabsTrigger value="payway">
             <KeyRound className="mr-2 h-4 w-4" />
             PayWay (ABA) Integration
@@ -113,14 +109,15 @@ export function Settings() {
 
         <TabsContent value="company" className="space-y-6">
           <CompanyInformationCard />
+          {/* Currency settings, previously a tab of their own. They
+              belong with the company profile: same question, and this
+              is the copy that actually drives invoices, POS and
+              quotations. Admin-only, as the tab was. */}
+          {isAdmin && <CurrencySettingsCard />}
           {/* Cloud Connection — hidden temporarily. Re-enable by
               uncommenting the line below when the sync surface is
               ready to ship. */}
           {/* {isAdmin && <CloudConnectionCard />} */}
-        </TabsContent>
-
-        <TabsContent value="currency" className="space-y-6">
-          {isAdmin && <CurrencySettingsCard />}
         </TabsContent>
 
         <TabsContent value="payway" className="space-y-6">
@@ -388,16 +385,13 @@ function CompanyInformationCard() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ci-currency">Currency</Label>
-            <Input
-              id="ci-currency"
-              value={info.currency ?? ''}
-              onChange={(e) => patch({ currency: e.target.value })}
-              placeholder="USD"
-              disabled={loading}
-            />
-          </div>
+          {/* Currency was a free-text field here. It is CompanyInfo's
+              own column, which nothing reads for behaviour, and it sat
+              a tab away from the real setting; the two could disagree
+              and the disagreement meant nothing. The Currency Settings
+              card below the company card owns this now. The stored
+              value still goes up with every save: info carries it and
+              the server requires the field. */}
 
           <div className="space-y-2">
             <Label htmlFor="ci-date-format" className="inline-flex items-center gap-1.5">
