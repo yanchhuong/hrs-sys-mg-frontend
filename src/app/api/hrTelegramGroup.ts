@@ -19,10 +19,16 @@ export interface HrTelegramGroup {
   postApprovals: boolean;
   postCashAdvance: boolean;
   postActivity: boolean;
+  postAttendance: boolean;
+  postOvertime: boolean;
+  postLeave: boolean;
+  postPayroll: boolean;
+  postEmployee: boolean;
 }
 
 export type HrTelegramGroupEvents = Partial<Pick<HrTelegramGroup,
-  'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'>>;
+  'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'
+  | 'postAttendance' | 'postOvertime' | 'postLeave' | 'postPayroll' | 'postEmployee'>>;
 
 const BASE = '/api/v1/hr-telegram/groups';
 

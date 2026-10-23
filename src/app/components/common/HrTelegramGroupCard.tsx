@@ -10,7 +10,8 @@ import * as groupApi from '../../api/hrTelegramGroup';
 import type { HrTelegramBot } from '../../api/hrTelegramBots';
 
 type Group = groupApi.HrTelegramGroup;
-type EventKey = 'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity';
+type EventKey = 'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'
+  | 'postAttendance' | 'postOvertime' | 'postLeave' | 'postPayroll' | 'postEmployee';
 
 const EVENTS: { key: EventKey; label: string }[] = [
   { key: 'postInvoices',    label: 'Invoices' },
@@ -18,6 +19,11 @@ const EVENTS: { key: EventKey; label: string }[] = [
   { key: 'postApprovals',   label: 'Approvals' },
   { key: 'postCashAdvance', label: 'Cash advance & Voucher' },
   { key: 'postActivity',    label: 'Activities' },
+  { key: 'postAttendance',  label: 'Attendance' },
+  { key: 'postOvertime',    label: 'Overtime' },
+  { key: 'postLeave',       label: 'Leave' },
+  { key: 'postPayroll',     label: 'Payroll' },
+  { key: 'postEmployee',    label: 'Employees' },
 ];
 
 const POLL_MS = 5000;
