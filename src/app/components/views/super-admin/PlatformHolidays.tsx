@@ -5,6 +5,11 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import * as platformApi from '../../../api/platform';
 import { platformHolidays, type Holiday, type HolidayRequest } from '../../../api/platformSettings';
 import { useConfirm } from '../../../context/ConfirmContext';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
+import { DateInput } from '../../common/DateInput';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -29,6 +34,7 @@ import {
  */
 export function PlatformHolidays() {
   const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
   const currentYear = new Date().getFullYear();
   const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
   const [tenantId, setTenantId] = useState<string>('');
@@ -37,6 +43,8 @@ export function PlatformHolidays() {
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [rowsError, setRowsError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -58,21 +66,25 @@ export function PlatformHolidays() {
     if (!tenantId) return;
     let cancelled = false;
     (async () => {
+      // Clear the previous tenant/year's rows so the skeleton shows
+      // instead of a stale list while the new one loads.
+      setRows([]);
+      setRowsError(null);
       setLoadingRows(true);
       try {
         const list = await platformHolidays.list(tenantId, year);
         if (!cancelled) setRows(list);
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load holidays');
+        if (!cancelled) setRowsError(err instanceof Error ? err.message : 'Failed to load holidays');
       } finally {
         if (!cancelled) setLoadingRows(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [tenantId, year]);
+  }, [tenantId, year, reloadTick]);
 
   const handleDelete = async (row: Holiday) => {
-    if (!(await confirm({ title: `Delete "${row.name}" (${row.date})?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
+    if (!(await confirm({ title: `Delete "${row.name}" (${formatDate(row.date)})?`, variant: 'destructive', confirmLabel: 'Delete' }))) return;
     const prev = rows;
     setRows(rs => rs.filter(r => r.id !== row.id));
     try {
@@ -164,23 +176,16 @@ export function PlatformHolidays() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loadingRows && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                    <Loader2 className="inline h-4 w-4 animate-spin mr-1" /> Loading…
-                  </TableCell>
-                </TableRow>
+              {loadingRows && rows.length === 0 && <TableBodySkeletonRows rows={5} columns={6} />}
+              {!loadingRows && rowsError && (
+                <ListError message={rowsError} onRetry={() => setReloadTick(t => t + 1)} colSpan={6} />
               )}
-              {!loadingRows && rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                    No holidays for {year}.
-                  </TableCell>
-                </TableRow>
+              {!loadingRows && !rowsError && rows.length === 0 && (
+                <ListEmpty noun={`holidays for ${year}`} colSpan={6} />
               )}
-              {!loadingRows && rows.map(r => (
+              {rows.map(r => (
                 <TableRow key={r.id}>
-                  <TableCell className="tabular-nums text-xs">{r.date}</TableCell>
+                  <TableCell className="tabular-nums text-xs">{formatDate(r.date)}</TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>
@@ -190,9 +195,7 @@ export function PlatformHolidays() {
                       type="button"
                       onClick={() => handleTogglePaid(r, !r.paid)}
                       className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border transition ${
-                        r.paid
-                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200'
-                          : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                        r.paid ? TONE_CLASS.success : TONE_CLASS.neutral
                       }`}
                       title="Click to toggle"
                     >
@@ -201,7 +204,7 @@ export function PlatformHolidays() {
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">{r.description ?? '—'}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(r)} title="Delete">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700" onClick={() => handleDelete(r)} title="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </TableCell>
@@ -274,13 +277,13 @@ function AddHolidayDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
             <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="King's Birthday" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Date</Label>
-              <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+              <DateInput value={form.date} onChange={v => setForm({ ...form, date: v ?? '' })} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Type</Label>

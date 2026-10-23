@@ -10,6 +10,8 @@ import { Layers, Save, RotateCcw, Building2, Link2, Search, X, LayoutGrid, Plus,
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 import { NAV_LEAVES } from '../../../config/nav';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { StatCardsSkeleton } from '../../common/LoadingSkeletons';
 
 /**
  * v-tenant-modules-icons — module → nav-leaf icon lookup so every
@@ -133,6 +135,7 @@ export function TenantModules() {
   // when they need to grant a new module.
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<'all' | 'enabled' | 'disabled'>('enabled');
+  const confirm = useConfirm();
 
   useEffect(() => {
     (async () => {
@@ -186,6 +189,19 @@ export function TenantModules() {
     () => catalog.some(k => Boolean(draft[k]) !== Boolean(original[k])),
     [catalog, draft, original],
   );
+
+  /** Switching company reloads the flags and would silently drop any
+   *  unsaved toggles — ask first. Cancel keeps the current company. */
+  const handleTenantChange = async (id: string) => {
+    if (id === selectedTenantId) return;
+    if (dirty && !(await confirm({
+      title: 'Discard unsaved changes?',
+      message: `Your module changes for ${tenants.find(t => t.id === selectedTenantId)?.name ?? 'this company'} have not been saved. Switching company discards them.`,
+      confirmLabel: 'Discard',
+      variant: 'destructive',
+    }))) return;
+    setSelectedTenantId(id);
+  };
 
   const handleToggle = (key: string) =>
     setDraft(d => ({ ...d, [key]: !d[key] }));
@@ -277,10 +293,6 @@ export function TenantModules() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold">Tenant Modules</h2>
-      </div>
-
       <Card>
         <CardHeader className="pb-3 space-y-3">
           <div className="filter-strip items-end justify-between">
@@ -288,7 +300,7 @@ export function TenantModules() {
               <label className="text-xs font-medium text-gray-600 mb-1.5 block flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5" /> Company
               </label>
-              <Select value={selectedTenantId} onValueChange={setSelectedTenantId} disabled={loadingTenants}>
+              <Select value={selectedTenantId} onValueChange={v => void handleTenantChange(v)} disabled={loadingTenants}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={loadingTenants ? 'Loading…' : 'Pick a company'} />
                 </SelectTrigger>
@@ -368,8 +380,8 @@ export function TenantModules() {
           </div>
         </CardHeader>
         <CardContent>
-          {loadingFlags ? (
-            <p className="text-sm text-gray-500">Loading module flags…</p>
+          {loadingFlags || (loadingTenants && tenants.length === 0) ? (
+            <StatCardsSkeleton cards={8} className="grid grid-cols-2 md:grid-cols-4 gap-3" />
           ) : selectedTenant == null ? (
             <p className="text-sm text-gray-500">No company selected.</p>
           ) : (

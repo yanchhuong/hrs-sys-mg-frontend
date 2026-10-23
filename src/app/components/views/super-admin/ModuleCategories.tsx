@@ -21,6 +21,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListError } from '../../common/ListStates';
 
 /**
  * Super Admin → Module Categories. Plans the platform-wide menu
@@ -73,6 +75,7 @@ function flatten(nodes: platformApi.ModuleNode[], depth = 0): Array<platformApi.
 export function ModuleCategories() {
   const [catalog, setCatalog] = useState<platformApi.ModuleCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Category create / edit dialog state
   const [catEditOpen, setCatEditOpen] = useState(false);
@@ -137,10 +140,11 @@ export function ModuleCategories() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setCatalog(await platformApi.moduleCategories.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load catalog');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load catalog');
     } finally {
       setLoading(false);
     }
@@ -501,9 +505,10 @@ export function ModuleCategories() {
 
   return (
     <div className="space-y-6">
-      <div className="page-header-strip">
-        <div className="flex items-center gap-1.5">
-          <h2 className="text-xl font-semibold">Module Categories</h2>
+      {/* Title lives in SuperAdminLayout's top bar; this row holds the
+          help tip + page actions only. */}
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 mr-auto">
           <TooltipProvider delayDuration={120}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -565,7 +570,9 @@ export function ModuleCategories() {
       </div>
 
       {loading && !catalog ? (
-        <p className="text-sm text-gray-500">Loading catalog…</p>
+        <Card><CardContent className="p-4"><TableRowsSkeleton rows={5} columns={4} /></CardContent></Card>
+      ) : loadError && !catalog ? (
+        <Card><CardContent className="p-0"><ListError message={loadError} onRetry={() => void load()} /></CardContent></Card>
       ) : (
         <div className="space-y-4">
           {allCats.map((cat, idx) => {

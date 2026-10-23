@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDateFormat } from '../../../context/DateFormatContext';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent, CardHeader } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
@@ -17,7 +17,6 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import { Label } from '../../ui/label';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { mockCompanies, mockPlatformUsers } from '../../../data/platformData';
 import { USE_MOCKS } from '../../../api/client';
@@ -25,17 +24,28 @@ import * as platformApi from '../../../api/platform';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { StatCard } from '../../common/StatCard';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { statusBadgeClass } from '../../../utils/statusTones';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+
+const FILTER_SELECT_CLS =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
 
 /** Compact "time ago" formatter for the Last Login column. Ladder:
  *   • < 45 sec         → "just now"
  *   • 45s – 59 min     → "12m ago"
  *   • 1h  – 23h        → "5h ago"
- *   • ≥ 24h            → absolute date ("Jul 22, 2026")
+ *   • ≥ 24h            → absolute date in the tenant date format
  *
  * Older than a day drops to a bare date because "3 days ago" reads
  * fine but "27 days ago" doesn't — a calendar date is easier to skim
  * once the recency signal stops mattering. */
-function formatLastLogin(iso: string | null | undefined): string {
+function formatLastLogin(
+  iso: string | null | undefined,
+  formatDate: (d: string) => string,
+): string {
   if (!iso) return '—';
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '—';
@@ -46,13 +56,15 @@ function formatLastLogin(iso: string | null | undefined): string {
   if (min < 60)          return `${min}m ago`;
   const hr = Math.round(diffMs / 3600000);
   if (hr < 24)           return `${hr}h ago`;
-  return format(new Date(iso), 'MMM dd, yyyy');
+  return formatDate(iso);
 }
 
 export function CrossTenantUsers() {
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<platformApi.PlatformUser[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   // Real tenant list for the Company filter dropdown — mock seed IDs
@@ -75,8 +87,6 @@ export function CrossTenantUsers() {
     if (prev.dir === 'asc') return { key, dir: 'desc' };
     return null;
   });
-  const [resetTarget, setResetTarget] = useState<platformApi.PlatformUser | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<platformApi.PlatformUser | null>(null);
   // Merge dialog state — surfaces every user sharing the same email and lets
   // the admin pick one to keep; the others get hard-deleted.
   const [mergeEmail, setMergeEmail] = useState<string | null>(null);
@@ -198,26 +208,38 @@ export function CrossTenantUsers() {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
+      // Role is NOT sent to the server: the role tabs filter client-side
+      // (see `filtered`) so the tab counts and KPI tiles keep showing every
+      // role's total instead of dropping to 0 for the unselected tabs.
       const data = await platformApi.users.list({
         tenantId: companyFilter !== 'all' ? companyFilter : undefined,
         q: search.trim() || undefined,
-        role: roleTab !== 'all' ? roleTab : undefined,
         online: presence,
       });
       setUsers(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load users');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load users');
     } finally {
       setLoading(false);
     }
   };
 
-  // Reload on mount + whenever filters change. Server applies q/role/tenantId.
+  // Reload on mount + whenever server-side filters change (q / tenantId /
+  // presence). The role tab is applied client-side.
   useEffect(() => {
     void loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyFilter, roleTab, presence, search]);
+  }, [companyFilter, presence, search]);
+
+  const hasFilters = search.trim() !== '' || companyFilter !== 'all' || presence !== 'all' || roleTab !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setCompanyFilter('all');
+    setPresence('all');
+    setRoleTab('all');
+  };
 
   // Populate the Company filter dropdown from the real tenants endpoint
   // (live mode) or the mock seed (mock mode). Loaded once on mount.
@@ -251,7 +273,8 @@ export function CrossTenantUsers() {
   }), [users]);
 
   const filtered = useMemo(() => {
-    // Server-side filtering; keep client filter as a no-op safety net.
+    // q / tenantId are filtered server-side (kept here as a safety net);
+    // the role tab is filtered here only.
     const q = search.trim().toLowerCase();
     const rows = users.filter(u => {
       if (roleTab !== 'all' && u.role !== roleTab) return false;
@@ -309,12 +332,16 @@ export function CrossTenantUsers() {
     );
   };
 
-  const handleResetPassword = async () => {
-    if (!resetTarget) return;
-    const target = resetTarget;
-    setResetTarget(null);
+  const handleResetPassword = async (target: platformApi.PlatformUser) => {
+    const ok = await confirm({
+      title: `Reset password for ${target.email}?`,
+      message: "A temporary password is generated and shown to you once — pass it to the user. Their current password stops working immediately.",
+      confirmLabel: 'Reset password',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     if (USE_MOCKS) {
-      toast.success(`Password reset email sent to ${target.email}`);
+      toast.info(`Mock mode — no password was reset for ${target.email}.`);
       return;
     }
     try {
@@ -398,10 +425,20 @@ export function CrossTenantUsers() {
     }
   };
 
-  const handleToggleActive = async () => {
-    if (!suspendTarget) return;
-    const target = suspendTarget;
-    setSuspendTarget(null);
+  const handleToggleActive = async (target: platformApi.PlatformUser) => {
+    const ok = await confirm(target.isActive
+      ? {
+          title: `Suspend ${target.email}?`,
+          message: 'Active sessions are revoked and the user cannot sign in until reactivated.',
+          confirmLabel: 'Suspend',
+          variant: 'destructive',
+        }
+      : {
+          title: `Reactivate ${target.email}?`,
+          message: 'The user regains immediate access. Their role and permissions are unchanged.',
+          confirmLabel: 'Reactivate',
+        });
+    if (!ok) return;
     if (USE_MOCKS) {
       setUsers(prev => prev.map(u => u.id === target.id ? { ...u, isActive: !u.isActive } : u));
       toast.success(target.isActive ? `Suspended ${target.email}` : `Reactivated ${target.email}`);
@@ -419,32 +456,23 @@ export function CrossTenantUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        {([
-          { key: 'all',      label: 'Total Users', value: counts.all,      cls: 'text-gray-900',   Icon: UsersRound },
-          { key: 'admin',    label: 'Admins',      value: counts.admin,    cls: 'text-red-700',    Icon: Shield },
-          { key: 'manager',  label: 'Managers',    value: counts.manager,  cls: 'text-blue-700',   Icon: UserCheck },
-          { key: 'employee', label: 'Employees',   value: counts.employee, cls: 'text-gray-700',   Icon: UsersRound },
-        ] as const).map(s => {
-          const Icon = s.Icon;
-          return (
-            <Card key={s.key} className="border-gray-200">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Icon className={`h-5 w-5 ${s.cls}`} />
-                  <span className={`text-2xl font-bold ${s.cls}`}>{s.value}</span>
-                </div>
-                <p className="text-xs font-medium text-gray-700 truncate">{s.label}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
+      <div className="flex items-center justify-end gap-2">
+        <Button onClick={() => { resetAddForm(); setAddOpen(true); }}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          Add User
+        </Button>
+      </div>
+
+      <div className="stat-strip">
+        <StatCard label="Total Users" value={counts.all}      icon={UsersRound} tone="blue" />
+        <StatCard label="Admins"      value={counts.admin}    icon={Shield}     tone="red" />
+        <StatCard label="Managers"    value={counts.manager}  icon={UserCheck}  tone="purple" />
+        <StatCard label="Employees"   value={counts.employee} icon={UsersRound} tone="green" />
       </div>
 
       <Card>
         <CardHeader className="pb-3 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>All Users (across tenants)</CardTitle>
             <Tabs value={roleTab} onValueChange={(v) => setRoleTab(v as typeof roleTab)}>
               <TabsList>
                 <TabsTrigger value="all">All <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{counts.all}</Badge></TabsTrigger>
@@ -454,24 +482,25 @@ export function CrossTenantUsers() {
               </TabsList>
             </Tabs>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[240px] max-w-md">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search by name, email, or company…"
-                className="pl-8 h-9"
+                className="pl-7 h-9 w-64"
               />
             </div>
             <select
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
-              className="h-9 px-3 border rounded-md text-sm min-w-[200px]"
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by company"
             >
-              <option value="all">All companies</option>
+              <option value="all">Company : All</option>
               {tenantOptions.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>Company : {c.name}</option>
               ))}
             </select>
             {/* V266 — presence filter. Server treats the value as a
@@ -480,17 +509,18 @@ export function CrossTenantUsers() {
             <select
               value={presence}
               onChange={(e) => setPresence(e.target.value as typeof presence)}
-              className="h-9 px-3 border rounded-md text-sm min-w-[130px]"
+              className={FILTER_SELECT_CLS}
               aria-label="Filter by online status"
             >
-              <option value="all">All statuses</option>
-              <option value="online">Online</option>
-              <option value="offline">Offline</option>
+              <option value="all">Presence : All</option>
+              <option value="online">Presence : Online</option>
+              <option value="offline">Presence : Offline</option>
             </select>
-            <Button size="sm" className="ml-auto" onClick={() => { resetAddForm(); setAddOpen(true); }}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -525,12 +555,11 @@ export function CrossTenantUsers() {
               {loading && pager.paginatedItems.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={8} />
               )}
-              {!loading && pager.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    No users match these filters.
-                  </TableCell>
-                </TableRow>
+              {!loading && loadError && pager.paginatedItems.length === 0 && (
+                <ListError message={loadError} onRetry={() => void loadUsers()} colSpan={8} />
+              )}
+              {!loading && !loadError && pager.paginatedItems.length === 0 && (
+                <ListEmpty noun="users" filtered={hasFilters} colSpan={8} />
               )}
               {pager.paginatedItems.map(u => {
                 // Cross-tenant duplicate emails are valid (the same person can
@@ -564,14 +593,14 @@ export function CrossTenantUsers() {
                     </TableCell>
                     <TableCell>{roleBadge(u.role)}</TableCell>
                     <TableCell>
-                      {u.isActive
-                        ? <Badge className="bg-green-100 text-green-800">Active</Badge>
-                        : <Badge className="bg-gray-100 text-gray-700">Suspended</Badge>}
+                      <Badge variant="outline" className={statusBadgeClass(u.isActive ? 'active' : 'suspended')}>
+                        {u.isActive ? 'Active' : 'Suspended'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <span
                         className="inline-flex items-center gap-1.5 text-xs"
-                        title={u.lastSeen ? `Last seen ${format(new Date(u.lastSeen), 'MMM dd, HH:mm:ss')}` : 'Never seen'}
+                        title={u.lastSeen ? `Last seen ${formatDateTime(u.lastSeen)}` : 'Never seen'}
                       >
                         <span
                           className={`inline-block h-2 w-2 rounded-full ${
@@ -584,8 +613,8 @@ export function CrossTenantUsers() {
                       </span>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
-                      <span title={u.lastLogin ? format(new Date(u.lastLogin), 'MMM dd, yyyy · HH:mm:ss') : 'Never'}>
-                        {formatLastLogin(u.lastLogin)}
+                      <span title={u.lastLogin ? formatDateTime(u.lastLogin) : 'Never'}>
+                        {formatLastLogin(u.lastLogin, formatDate)}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
@@ -595,32 +624,33 @@ export function CrossTenantUsers() {
                       <div className="flex items-center justify-end gap-1">
                         {sameEmailCount > 1 && (
                           <Button
-                            variant="ghost" size="sm"
-                            className="h-7 text-xs text-blue-700 hover:bg-blue-50"
+                            variant="ghost" size="icon"
+                            className="h-7 w-7 text-blue-700 hover:bg-blue-50"
                             onClick={() => openMerge(u.email)}
                             title={`${sameEmailCount} users share this email — merge`}
+                            aria-label="Merge duplicates"
                           >
-                            <GitMerge className="h-3.5 w-3.5 mr-1" />
-                            Merge
+                            <GitMerge className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         <Button
-                          variant="ghost" size="sm" className="h-7 text-xs"
-                          onClick={() => setResetTarget(u)}
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => void handleResetPassword(u)}
                           title="Reset password"
+                          aria-label="Reset password"
                         >
-                          <KeyRound className="h-3.5 w-3.5 mr-1" />
-                          Reset
+                          <KeyRound className="h-3.5 w-3.5" />
                         </Button>
                         <Button
-                          variant="ghost" size="sm"
-                          className={`h-7 text-xs ${u.isActive ? 'text-amber-700 hover:bg-amber-50' : 'text-green-700 hover:bg-green-50'}`}
-                          onClick={() => setSuspendTarget(u)}
+                          variant="ghost" size="icon"
+                          className={`h-7 w-7 ${u.isActive ? 'text-red-600 hover:bg-red-50' : 'text-green-700 hover:bg-green-50'}`}
+                          onClick={() => void handleToggleActive(u)}
                           title={u.isActive ? 'Suspend' : 'Reactivate'}
+                          aria-label={u.isActive ? 'Suspend' : 'Reactivate'}
                         >
                           {u.isActive
-                            ? <><UserX className="h-3.5 w-3.5 mr-1" />Suspend</>
-                            : <><UserCheck className="h-3.5 w-3.5 mr-1" />Reactivate</>}
+                            ? <UserX className="h-3.5 w-3.5" />
+                            : <UserCheck className="h-3.5 w-3.5" />}
                         </Button>
                       </div>
                     </TableCell>
@@ -640,51 +670,13 @@ export function CrossTenantUsers() {
         </CardContent>
       </Card>
 
-      {/* Reset password confirmation */}
-      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset password for {resetTarget?.email}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              A one-time password-reset link will be emailed. The user's current password stops working immediately.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleResetPassword}>Send reset email</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Suspend / reactivate confirmation */}
-      <AlertDialog open={!!suspendTarget} onOpenChange={(o) => !o && setSuspendTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {suspendTarget?.isActive ? 'Suspend' : 'Reactivate'} {suspendTarget?.email}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {suspendTarget?.isActive
-                ? 'Active sessions are revoked and the user cannot sign in until reactivated.'
-                : 'The user regains immediate access. Their role and permissions are unchanged.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleToggleActive}>
-              {suspendTarget?.isActive ? 'Suspend' : 'Reactivate'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Merge duplicate users — pick one to keep, others get deleted. */}
       <AlertDialog open={!!mergeEmail} onOpenChange={(o) => !o && closeMerge()}>
         <AlertDialogContent className="max-w-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <GitMerge className="h-5 w-5 text-blue-600" />
-              Merge {mergeCandidates.length} users sharing {mergeEmail}
+              <GitMerge className="h-5 w-5 text-red-600" />
+              Merge {mergeCandidates.length} users sharing {mergeEmail}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               Pick the canonical record to keep. The other {mergeCandidates.length - 1}{' '}
@@ -718,9 +710,9 @@ export function CrossTenantUsers() {
                         {u.tenantName?.trim() || u.tenantSlug || '—'}
                       </span>
                       {roleBadge(u.role)}
-                      {u.isActive
-                        ? <Badge className="bg-green-100 text-green-800">Active</Badge>
-                        : <Badge className="bg-gray-100 text-gray-700">Suspended</Badge>}
+                      <Badge variant="outline" className={statusBadgeClass(u.isActive ? 'active' : 'suspended')}>
+                        {u.isActive ? 'Active' : 'Suspended'}
+                      </Badge>
                       <span
                         className="tabular-nums text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
                         title={`User ID: ${u.id}`}
@@ -731,7 +723,7 @@ export function CrossTenantUsers() {
                     <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-3">
                       <span>Created {formatDate(u.createdAt)}</span>
                       <span>
-                        Last login {formatLastLogin(u.lastLogin)}
+                        Last login {formatLastLogin(u.lastLogin, formatDate)}
                       </span>
                     </div>
                   </div>
@@ -759,7 +751,7 @@ export function CrossTenantUsers() {
             <AlertDialogAction
               onClick={handleMerge}
               disabled={merging || !keepUserId || mergeCandidates.length < 2}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-red-600 hover:bg-red-700 text-white"
             >
               {merging ? 'Merging…' : `Keep 1, delete ${mergeCandidates.length - 1}`}
             </AlertDialogAction>
@@ -865,18 +857,18 @@ export function CrossTenantUsers() {
               // and by admin when addAdminMode === 'existing'.
               <div>
                 <Label className="text-xs uppercase tracking-wide text-gray-500">
-                  {addRole === 'admin' ? 'Attach to Company' : 'Company'}
+                  {addRole === 'admin' ? 'Attach to Company' : 'Company'} <span className="text-red-500">*</span>
                 </Label>
-                <select
-                  value={addTenantId}
-                  onChange={e => setAddTenantId(e.target.value)}
-                  className="mt-1 h-9 px-3 border rounded-md text-sm w-full"
-                >
-                  <option value="">Pick a company…</option>
-                  {tenantOptions.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={addTenantId} onValueChange={setAddTenantId}>
+                  <SelectTrigger className="mt-1 h-9 w-full">
+                    <SelectValue placeholder="Pick a company…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenantOptions.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

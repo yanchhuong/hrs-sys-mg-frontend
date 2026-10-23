@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Globe, Info } from 'lucide-react';
+import { Loader2, Plus, Trash2, Info } from 'lucide-react';
 
 import * as api from '../../../api/systemHolidays';
 import { useConfirm } from '../../../context/ConfirmContext';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
+import { DateInput } from '../../common/DateInput';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
 import { Card, CardContent } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -30,18 +35,24 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../
  */
 export function SystemHolidays() {
   const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState<number>(currentYear);
   const [rows, setRows] = useState<api.SystemHoliday[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
+    // Clear the previous year's rows so the skeleton shows instead of
+    // a stale list while the new year loads.
+    setRows([]);
+    setLoadError(null);
     setLoading(true);
     try {
       setRows(await api.adminList(year));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load system holidays');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load system holidays');
     } finally {
       setLoading(false);
     }
@@ -61,7 +72,7 @@ export function SystemHolidays() {
 
   const handleDelete = async (r: api.SystemHoliday) => {
     if (!(await confirm({
-      title: `Remove "${r.name}" (${r.date}) from the system catalog?`,
+      title: `Remove "${r.name}" (${formatDate(r.date)}) from the system catalog?`,
       message: 'Tenants who already copied it keep their copy.',
       variant: 'destructive',
       confirmLabel: 'Remove',
@@ -77,38 +88,30 @@ export function SystemHolidays() {
 
   return (
     <div className="space-y-6">
-      <div className="page-header-strip">
-        <div className="flex items-start gap-3">
-          <div className="bg-blue-50 p-2 rounded-md">
-            <Globe className="h-5 w-5 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              System Holidays
-              <TooltipProvider delayDuration={150}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" tabIndex={-1}
-                      className="text-gray-400 hover:text-gray-600" aria-label="About system holidays">
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-sm">
-                    Shared, system-wide holiday catalog. Every tenant —
-                    including freshly created ones — sees these
-                    automatically and can one-click <strong>Copy</strong>
-                    any of them into their own holidays table to
-                    customise (change paid flag, add notes, …).
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </h1>
-            <p className="text-sm text-gray-500">
-              Single source of truth. Edits here don't touch a tenant's
-              already-copied rows; deletes leave existing copies alone.
-            </p>
-          </div>
-        </div>
+      {/* Title lives in SuperAdminLayout's top bar; the subtitle below
+          adds the copy semantics the nav description doesn't carry. */}
+      <div className="flex items-start gap-1.5">
+        <p className="text-sm text-gray-500">
+          Single source of truth. Edits here don't touch a tenant's
+          already-copied rows; deletes leave existing copies alone.
+        </p>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" tabIndex={-1}
+                className="text-gray-400 hover:text-gray-600" aria-label="About system holidays">
+                <Info className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-sm">
+              Shared, system-wide holiday catalog. Every tenant —
+              including freshly created ones — sees these
+              automatically and can one-click <strong>Copy</strong>
+              any of them into their own holidays table to
+              customise (change paid flag, add notes, …).
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       <Card>
@@ -148,19 +151,18 @@ export function SystemHolidays() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
-                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                  <Loader2 className="inline h-4 w-4 animate-spin mr-1" /> Loading…
-                </TableCell></TableRow>
+              {loading && rows.length === 0 && <TableBodySkeletonRows rows={5} columns={6} />}
+              {!loading && loadError && (
+                <ListError message={loadError} onRetry={() => void load()} colSpan={6} />
               )}
-              {!loading && rows.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                  No system holidays for {year}. Click <strong>Add Holiday</strong> to seed the first one.
-                </TableCell></TableRow>
+              {!loading && !loadError && rows.length === 0 && (
+                <ListEmpty noun={`system holidays for ${year}`} colSpan={6}>
+                  <p className="text-xs text-gray-400 mt-1">Click <strong>Add Holiday</strong> to seed the first one.</p>
+                </ListEmpty>
               )}
-              {!loading && rows.map(r => (
+              {rows.map(r => (
                 <TableRow key={r.id}>
-                  <TableCell className="tabular-nums text-xs">{r.date}</TableCell>
+                  <TableCell className="tabular-nums text-xs">{formatDate(r.date)}</TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>
@@ -168,16 +170,14 @@ export function SystemHolidays() {
                   <TableCell className="text-center">
                     <button type="button" onClick={() => togglePaid(r, !r.isPaid)}
                       className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border transition ${
-                        r.isPaid
-                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200'
-                          : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                        r.isPaid ? TONE_CLASS.success : TONE_CLASS.neutral
                       }`} title="Click to toggle">
                       {r.isPaid ? 'Paid' : 'Unpaid'}
                     </button>
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">{r.description ?? '—'}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(r)} title="Delete">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700" onClick={() => handleDelete(r)} title="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </TableCell>
@@ -243,13 +243,13 @@ function AddDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
             <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Khmer New Year" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Date</Label>
-              <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+              <DateInput value={form.date} onChange={v => setForm({ ...form, date: v ?? '' })} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Type</Label>
@@ -276,7 +276,7 @@ function AddDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Add
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

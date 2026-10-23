@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../
 import { toast } from 'sonner';
 import * as telegramApi from '../../../api/telegram';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListError } from '../../common/ListStates';
 
 /**
  * Super-Admin "Telegram Bots" page.
@@ -47,6 +48,7 @@ import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 export function PlatformTelegram() {
   const [rows, setRows] = useState<telegramApi.PlatformBotListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,10 +80,11 @@ export function PlatformTelegram() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await telegramApi.listAllBots());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load bots');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load bots');
     } finally {
       setLoading(false);
     }
@@ -306,46 +309,34 @@ export function PlatformTelegram() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="bg-blue-50 p-2 rounded-md">
-            <Bot className="h-5 w-5 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              Telegram Bots
-              {/* Verbose intro lives behind an Info hover so the
-                  header stays compact for the return visit (Super
-                  Admin already knows the Public/Private split), while
-                  first-timers still get the explanation one hover
-                  away. Matches the tooltip pattern used on
-                  CustomerTelegramBotSettingsDialog. */}
-              <TooltipProvider delayDuration={150}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="text-gray-400 hover:text-gray-600"
-                      aria-label="About this page"
-                    >
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-sm">
-                    <span className="font-medium text-blue-700">Public</span> bots
-                    belong to Super Admin and are shared across every tenant without their
-                    own — one for <span className="font-medium text-sky-700">Customer</span>{' '}
-                    (invoice) and one for{' '}
-                    <span className="font-medium text-amber-700">Employee</span> (check-in / out).{' '}
-                    <span className="font-medium text-purple-700">Private</span> bots
-                    are owned by tenants and listed here for visibility.{' '}
-                    <span className="font-medium text-red-700">Error</span> bot receives
-                    unhandled server exceptions to a Super-Admin ops channel.
-                  </TooltipContent>
-                </Tooltip>
+      {/* Title lives in SuperAdminLayout's top bar. The Info hover keeps
+          the Public/Private/Error explainer one hover away. */}
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+    <div className="mr-auto flex items-center">
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="About this page"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-sm">
+                <span className="font-medium text-blue-700">Public</span> bots
+                belong to Super Admin and are shared across every tenant without their
+                own — one for <span className="font-medium text-sky-700">Customer</span>{' '}
+                (invoice) and one for{' '}
+                <span className="font-medium text-amber-700">Employee</span> (check-in / out).{' '}
+                <span className="font-medium text-purple-700">Private</span> bots
+                are owned by tenants and listed here for visibility.{' '}
+                <span className="font-medium text-red-700">Error</span> bot receives
+                unhandled server exceptions to a Super-Admin ops channel.
+              </TooltipContent>
+            </Tooltip>
               </TooltipProvider>
-            </h1>
-          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -393,11 +384,14 @@ export function PlatformTelegram() {
               {loading && rows.length === 0 && (
                 <TableBodySkeletonRows rows={5} columns={8} />
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && loadError && rows.length === 0 && (
+                <ListError message={loadError} onRetry={() => void load()} colSpan={8} />
+              )}
+              {!loading && !loadError && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    No bots registered yet. Click <strong>Add Customer Bot</strong> for the shared invoice fallback,{' '}
-                    <strong>Add Employee Bot</strong> for the shared HR check-in/out fallback,
+                    No bots registered yet. Click <strong>Add Public Bot</strong> for the shared
+                    customer (invoice) or employee (check-in/out) fallback,
                     or <strong>Add Error Bot</strong> to receive unhandled server errors on Telegram.
                   </TableCell>
                 </TableRow>

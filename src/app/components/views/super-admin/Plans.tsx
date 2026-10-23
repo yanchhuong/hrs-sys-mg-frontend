@@ -18,6 +18,9 @@ import { Plus, Pencil, Trash2, Layers, Users, HardDrive, Server, DollarSign } fr
 import { toast } from 'sonner';
 import * as platformApi from '../../../api/platform';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { StatCard } from '../../common/StatCard';
+import { NumericInput } from '../../common/NumericInput';
+import { ListEmpty, ListError } from '../../common/ListStates';
 
 /** Cents → $X.XX. Server stores prices in cents to avoid float drift; UI
  *  shows dollars for the admin. Free plans render as "Free". */
@@ -57,6 +60,7 @@ const slugify = (s: string) =>
 export function Plans() {
   const [plans, setPlans] = useState<platformApi.PlanLimits[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTier, setEditingTier] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -65,12 +69,13 @@ export function Plans() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await platformApi.plans.list();
       // Sort by price ASC so Free → Enterprise reads top to bottom.
       setPlans([...list].sort((a, b) => a.monthlyPriceCents - b.monthlyPriceCents));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load plans');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load plans');
     } finally {
       setLoading(false);
     }
@@ -171,18 +176,18 @@ export function Plans() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <StatCard label="Plans" value={String(plans.length)} Icon={Layers} tone="text-blue-700" />
-        <StatCard label="Tenants on a plan" value={String(totalTenants)} Icon={Users} tone="text-emerald-700" />
+      <div className="stat-strip">
+        <StatCard label="Plans" value={plans.length} icon={Layers} tone="blue" />
+        <StatCard label="Tenants on a plan" value={totalTenants} icon={Users} tone="green" />
         <StatCard
           label="Highest price"
           value={fmtUsd(plans.reduce((m, p) => Math.max(m, p.monthlyPriceCents), 0))}
-          Icon={DollarSign} tone="text-violet-700"
+          icon={DollarSign} tone="purple"
         />
         <StatCard
           label="Largest storage cap"
           value={fmtStorage(plans.reduce((m, p) => Math.max(m, p.maxStorageMb), 0))}
-          Icon={HardDrive} tone="text-amber-700"
+          icon={HardDrive} tone="amber"
         />
       </div>
 
@@ -208,20 +213,21 @@ export function Plans() {
                 <TableHead className="text-right">Max employees</TableHead>
                 <TableHead className="text-right">Storage</TableHead>
                 <TableHead className="text-right">Local installs</TableHead>
+                <TableHead className="text-right">Max users</TableHead>
+                <TableHead className="text-right">Max items</TableHead>
                 <TableHead className="text-center">Adoption</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && plans.length === 0 && (
-                <TableBodySkeletonRows rows={5} columns={7} />
+                <TableBodySkeletonRows rows={5} columns={9} />
               )}
-              {!loading && plans.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No plans yet. Click <span className="font-medium">New Plan</span> to add one.
-                  </TableCell>
-                </TableRow>
+              {!loading && loadError && plans.length === 0 && (
+                <ListError message={loadError} onRetry={() => void load()} colSpan={9} />
+              )}
+              {!loading && !loadError && plans.length === 0 && (
+                <ListEmpty noun="plans" colSpan={9} />
               )}
               {plans.map(p => {
                 const inUse = p.tenantsOnPlan ?? 0;
@@ -249,6 +255,16 @@ export function Plans() {
                         {p.maxLocalInstalls}
                       </span>
                     </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {(p.maxUsers ?? 0) > 0
+                        ? (p.maxUsers ?? 0).toLocaleString()
+                        : <span className="text-gray-400">Unlimited</span>}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {(p.maxItems ?? 0) > 0
+                        ? (p.maxItems ?? 0).toLocaleString()
+                        : <span className="text-gray-400">Unlimited</span>}
+                    </TableCell>
                     <TableCell className="text-center">
                       {inUse === 0 ? (
                         <span className="text-xs text-gray-400">unused</span>
@@ -259,16 +275,16 @@ export function Plans() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(p)} title="Edit">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)} title="Edit">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => setDeleteTarget(p)}
                         disabled={inUse > 0}
                         title={inUse > 0 ? `Used by ${inUse} tenant${inUse === 1 ? '' : 's'} — reassign before deleting` : 'Delete'}
-                        className={inUse > 0 ? '' : 'text-red-600 hover:text-red-700'}
+                        className={inUse > 0 ? 'h-7 w-7' : 'h-7 w-7 text-red-600 hover:text-red-700'}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -309,13 +325,11 @@ export function Plans() {
 
             <div className="space-y-1.5">
               <Label htmlFor="plan-price">Price per month (USD)</Label>
-              <Input
+              <NumericInput
                 id="plan-price"
-                type="number"
-                step="0.01"
-                min="0"
+                decimals={2}
                 value={form.priceDollars}
-                onChange={e => setForm({ ...form, priceDollars: e.target.value })}
+                onChange={v => setForm({ ...form, priceDollars: v })}
                 placeholder="29.00"
               />
               <p className="text-[11px] text-gray-500">Enter <code>0</code> for a free tier.</p>
@@ -324,23 +338,21 @@ export function Plans() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plan-employees">Max employees</Label>
-                <Input
+                <NumericInput
                   id="plan-employees"
-                  type="number"
-                  min="0"
+                  decimals={0}
                   value={form.maxEmployees}
-                  onChange={e => setForm({ ...form, maxEmployees: e.target.value })}
+                  onChange={v => setForm({ ...form, maxEmployees: v })}
                   placeholder="50"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="plan-installs">Max local installs</Label>
-                <Input
+                <NumericInput
                   id="plan-installs"
-                  type="number"
-                  min="0"
+                  decimals={0}
                   value={form.maxLocalInstalls}
-                  onChange={e => setForm({ ...form, maxLocalInstalls: e.target.value })}
+                  onChange={v => setForm({ ...form, maxLocalInstalls: v })}
                   placeholder="1"
                 />
               </div>
@@ -348,12 +360,11 @@ export function Plans() {
 
             <div className="space-y-1.5">
               <Label htmlFor="plan-storage">Max storage (MB)</Label>
-              <Input
+              <NumericInput
                 id="plan-storage"
-                type="number"
-                min="0"
+                decimals={0}
                 value={form.maxStorageMb}
-                onChange={e => setForm({ ...form, maxStorageMb: e.target.value })}
+                onChange={v => setForm({ ...form, maxStorageMb: v })}
                 placeholder="1024"
               />
               <p className="text-[11px] text-gray-500">
@@ -368,12 +379,11 @@ export function Plans() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plan-users">Max users</Label>
-                <Input
+                <NumericInput
                   id="plan-users"
-                  type="number"
-                  min="0"
+                  decimals={0}
                   value={form.maxUsers}
-                  onChange={e => setForm({ ...form, maxUsers: e.target.value })}
+                  onChange={v => setForm({ ...form, maxUsers: v })}
                   placeholder="25"
                 />
                 <p className="text-[11px] text-gray-500">
@@ -382,12 +392,11 @@ export function Plans() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="plan-items">Max items</Label>
-                <Input
+                <NumericInput
                   id="plan-items"
-                  type="number"
-                  min="0"
+                  decimals={0}
                   value={form.maxItems}
-                  onChange={e => setForm({ ...form, maxItems: e.target.value })}
+                  onChange={v => setForm({ ...form, maxItems: v })}
                   placeholder="1000"
                 />
                 <p className="text-[11px] text-gray-500">
@@ -431,19 +440,5 @@ export function Plans() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function StatCard({ label, value, Icon, tone }: { label: string; value: string; Icon: typeof Layers; tone: string }) {
-  return (
-    <Card className="border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Icon className={`h-5 w-5 ${tone}`} />
-          <span className={`text-2xl font-bold ${tone}`}>{value}</span>
-        </div>
-        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
-      </CardContent>
-    </Card>
   );
 }

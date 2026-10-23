@@ -10,7 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
-import { Building2, Loader2, Plus, RefreshCw, Users, Briefcase, PauseCircle, PlayCircle, ChevronLeft, UserPlus, Link2Off, Edit3, Save } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
+import { Loader2, Plus, RefreshCw, Users, Briefcase, PauseCircle, PlayCircle, ChevronLeft, UserPlus, Link2Off, Edit3, Save } from 'lucide-react';
+import { NumericInput } from '../../common/NumericInput';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { statusBadgeClass } from '../../../utils/statusTones';
 import * as api from '../../../api/platformAgencies';
 import * as platformApi from '../../../api/platform';
 
@@ -27,16 +34,18 @@ type Tab = 'general' | 'users' | 'assignments';
 export function Agencies() {
   const [rows, setRows] = useState<api.PlatformAgency[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const list = await api.agencies.list();
       setRows(list);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load agencies');
+      setError(e instanceof Error ? e.message : 'Failed to load agencies');
     } finally {
       setLoading(false);
     }
@@ -48,23 +57,15 @@ export function Agencies() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-blue-600" />
-            Agencies
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New agency
-          </Button>
-        </div>
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4 mr-1.5" />
+          New agency
+        </Button>
       </div>
 
       {!picked ? (
@@ -76,13 +77,11 @@ export function Agencies() {
           </CardHeader>
           <CardContent>
             {loading && rows.length === 0 ? (
-              <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-              </div>
+              <TableRowsSkeleton rows={5} columns={3} />
+            ) : error && rows.length === 0 ? (
+              <ListError message={error} onRetry={() => void load()} />
             ) : rows.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">
-                No agencies yet. Click New agency to add one.
-              </p>
+              <ListEmpty noun="agencies" />
             ) : (
               <ul className="divide-y">
                 {rows.map(a => (
@@ -90,7 +89,7 @@ export function Agencies() {
                     <button
                       type="button"
                       onClick={() => setPickedId(a.id)}
-                      className="w-full text-left py-3 px-1 hover:bg-gray-50 flex items-start gap-3"
+                      className="w-full text-left py-3 px-1 hover:bg-gray-50 cursor-pointer flex items-start gap-3"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -132,11 +131,7 @@ export function Agencies() {
 }
 
 function StatusBadge({ status }: { status: api.PlatformAgency['status'] }) {
-  const cls =
-    status === 'active'     ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
-    status === 'suspended'  ? 'border-amber-200 bg-amber-50 text-amber-700' :
-                              'border-rose-200 bg-rose-50 text-rose-700';
-  return <Badge className={`border ${cls} text-[10px] px-1.5 py-0`}>{status}</Badge>;
+  return <Badge variant="outline" className={`${statusBadgeClass(status)} text-[10px] px-1.5 py-0`}>{status}</Badge>;
 }
 
 /* -------------------- detail -------------------- */
@@ -153,23 +148,16 @@ function AgencyDetail({ agency, onBack, onChanged }: { agency: api.PlatformAgenc
         <span className="text-xs text-gray-500">({agency.slug})</span>
         <StatusBadge status={agency.status} />
       </div>
-      <div className="flex items-center gap-2 border-b">
-        {(['general', 'users', 'assignments'] as Tab[]).map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-3 h-9 text-xs font-medium capitalize transition border-b-2 -mb-px ${
-              tab === t ? 'border-blue-500 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {tab === 'general'     && <GeneralPanel agency={agency} onChanged={onChanged} />}
-      {tab === 'users'       && <UsersPanel agencyId={agency.id} />}
-      {tab === 'assignments' && <AssignmentsPanel agencyId={agency.id} />}
+      <Tabs value={tab} onValueChange={v => setTab(v as Tab)}>
+        <TabsList>
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="assignments">Assignments</TabsTrigger>
+        </TabsList>
+        <TabsContent value="general"><GeneralPanel agency={agency} onChanged={onChanged} /></TabsContent>
+        <TabsContent value="users"><UsersPanel agencyId={agency.id} /></TabsContent>
+        <TabsContent value="assignments"><AssignmentsPanel agencyId={agency.id} /></TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -187,6 +175,7 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
    *  on active client engagements. */
   const [maxClients, setMaxClients] = useState<string>(agency.maxClients != null ? String(agency.maxClients) : '');
   const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
 
   const save = async () => {
     setSaving(true);
@@ -220,6 +209,12 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
   };
 
   const toggle = async () => {
+    if (agency.status === 'active' && !(await confirm({
+      title: 'Suspend this agency?',
+      message: `${agency.name} users will be blocked from logging in until the agency is reactivated.`,
+      confirmLabel: 'Suspend',
+      variant: 'destructive',
+    }))) return;
     setSaving(true);
     try {
       if (agency.status === 'active') {
@@ -275,10 +270,10 @@ function GeneralPanel({ agency, onChanged }: { agency: api.PlatformAgency; onCha
         <div>
           <Label className="text-xs">Max clients (active)</Label>
           <div className="flex items-center gap-2 mt-1">
-            <Input
-              type="number" min="0" step="1"
+            <NumericInput
+              decimals={0}
               value={maxClients}
-              onChange={e => setMaxClients(e.target.value.replace(/[^0-9]/g, ''))}
+              onChange={setMaxClients}
               placeholder="Unlimited"
               className="h-9 text-sm w-40"
             />
@@ -321,13 +316,16 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
   // v-super-admin-edit-agency-user — carries the row being edited
   // when non-null the EditAgencyUserDialog is mounted + shown.
   const [editing, setEditing] = useState<api.AgencyUser | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       setRows(await api.agencyUsers.list(agencyId));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load users');
+      setError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -336,6 +334,12 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
   useEffect(() => { void load(); }, [load]);
 
   const toggle = async (u: api.AgencyUser) => {
+    if (u.isActive && !(await confirm({
+      title: 'Deactivate this user?',
+      message: `${u.userName ?? u.email} will no longer be able to log in.`,
+      confirmLabel: 'Deactivate',
+      variant: 'destructive',
+    }))) return;
     try {
       if (u.isActive) await api.agencyUsers.deactivate(u.id);
       else            await api.agencyUsers.activate(u.id);
@@ -355,9 +359,11 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
       </CardHeader>
       <CardContent>
         {loading && rows.length === 0 ? (
-          <div className="text-center py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin inline mr-1" />Loading…</div>
+          <TableRowsSkeleton rows={3} columns={3} />
+        ) : error && rows.length === 0 ? (
+          <ListError message={error} onRetry={() => void load()} />
         ) : rows.length === 0 ? (
-          <p className="text-sm text-gray-500 py-4 text-center">No users yet. Add one to let them log in.</p>
+          <ListEmpty noun="users" />
         ) : (
           <ul className="divide-y">
             {rows.map(u => (
@@ -366,17 +372,22 @@ function UsersPanel({ agencyId }: { agencyId: string }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium">{u.userName ?? u.email}</span>
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0">{u.role}</Badge>
-                    {!u.isActive && <Badge className="border-rose-200 bg-rose-50 text-rose-700 border text-[10px] px-1.5 py-0">inactive</Badge>}
+                    {!u.isActive && <Badge variant="outline" className={`${statusBadgeClass('inactive')} text-[10px] px-1.5 py-0`}>inactive</Badge>}
                   </div>
                   <div className="text-xs text-gray-500">{u.email}</div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button size="sm" variant="outline" onClick={() => setEditing(u)}>
-                    <Edit3 className="h-3.5 w-3.5 mr-1" />
-                    Edit
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" aria-label="Edit" onClick={() => setEditing(u)}>
+                    <Edit3 className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => toggle(u)}>
-                    {u.isActive ? 'Deactivate' : 'Activate'}
+                  <Button
+                    variant="ghost" size="icon"
+                    className={`h-7 w-7 ${u.isActive ? 'text-red-600 hover:text-red-700' : 'text-emerald-600 hover:text-emerald-700'}`}
+                    title={u.isActive ? 'Deactivate' : 'Activate'}
+                    aria-label={u.isActive ? 'Deactivate' : 'Activate'}
+                    onClick={() => toggle(u)}
+                  >
+                    {u.isActive ? <PauseCircle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
               </li>
@@ -603,9 +614,13 @@ function AssignmentsPanel({ agencyId }: { agencyId: string }) {
   const [newTenantId, setNewTenantId] = useState<string>('');
   const [newScope, setNewScope] = useState<api.AgencyAssignment['scope']>('full');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const { formatDateTime } = useDateFormat();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [list, t] = await Promise.all([
         api.assignments.list(agencyId),
@@ -614,7 +629,7 @@ function AssignmentsPanel({ agencyId }: { agencyId: string }) {
       setRows(list);
       setTenants(t.filter(x => x.slug !== 'platform'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load assignments');
+      setError(e instanceof Error ? e.message : 'Failed to load assignments');
     } finally {
       setLoading(false);
     }
@@ -642,7 +657,12 @@ function AssignmentsPanel({ agencyId }: { agencyId: string }) {
   };
 
   const disengage = async (assignmentId: string) => {
-    if (!confirm('Disengage this client? The agency loses access to their data.')) return;
+    if (!(await confirm({
+      title: 'Disengage this client?',
+      message: 'The agency loses access to their data.',
+      confirmLabel: 'Disengage',
+      variant: 'destructive',
+    }))) return;
     setSaving(true);
     try {
       await api.assignments.disengage(assignmentId);
@@ -696,9 +716,11 @@ function AssignmentsPanel({ agencyId }: { agencyId: string }) {
         </div>
 
         {loading && rows.length === 0 ? (
-          <div className="text-center py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin inline mr-1" />Loading…</div>
+          <TableRowsSkeleton rows={3} columns={3} />
+        ) : error && rows.length === 0 ? (
+          <ListError message={error} onRetry={() => void load()} />
         ) : rows.length === 0 ? (
-          <p className="text-sm text-gray-500 py-4 text-center">No active client engagements yet.</p>
+          <ListEmpty noun="active client engagements" />
         ) : (
           <ul className="divide-y border-t">
             {rows.map(r => (
@@ -710,13 +732,17 @@ function AssignmentsPanel({ agencyId }: { agencyId: string }) {
                     {r.isPrimary && <Badge className="border-amber-200 bg-amber-50 text-amber-700 border text-[10px] px-1.5 py-0">primary</Badge>}
                   </div>
                   <div className="text-xs text-gray-500">
-                    engaged {r.engagedAt}
-                    {r.disengagedAt && ` · disengaged ${r.disengagedAt}`}
+                    engaged {formatDateTime(r.engagedAt)}
+                    {r.disengagedAt && ` · disengaged ${formatDateTime(r.disengagedAt)}`}
                   </div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => disengage(r.id)} disabled={saving}>
-                  <Link2Off className="h-3.5 w-3.5 mr-1" />
-                  Disengage
+                <Button
+                  variant="ghost" size="icon"
+                  className="h-7 w-7 text-red-600 hover:text-red-700 shrink-0"
+                  title="Disengage" aria-label="Disengage"
+                  onClick={() => disengage(r.id)} disabled={saving}
+                >
+                  <Link2Off className="h-3.5 w-3.5" />
                 </Button>
               </li>
             ))}

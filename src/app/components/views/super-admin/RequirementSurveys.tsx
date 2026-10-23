@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -18,13 +18,18 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
-  Search, RefreshCw, Eye, UserPlus, Trash2, ArrowRightCircle, FileText, Loader2, X, Clock,
+  Search, RefreshCw, Eye, UserPlus, Trash2, ArrowRightCircle, FileText, Loader2, Clock,
+  Inbox, PhoneCall, Send, Trophy, XCircle,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
-import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { StatCard, type StatCardTone } from '../../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows, TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import * as platformApi from '../../../api/platform';
 import {
   platformSurveys, RequirementSurvey, SurveyStatus, SurveyPriority,
   SurveyStatusHistoryEntry, SURVEY_STATUSES, SURVEY_PRIORITIES,
@@ -34,6 +39,36 @@ const STATUS_BY_KEY: Record<SurveyStatus, typeof SURVEY_STATUSES[number]> =
   Object.fromEntries(SURVEY_STATUSES.map(s => [s.key, s])) as any;
 const PRIORITY_BY_KEY: Record<SurveyPriority, typeof SURVEY_PRIORITIES[number]> =
   Object.fromEntries(SURVEY_PRIORITIES.map(p => [p.key, p])) as any;
+
+const FILTER_SELECT_CLS =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
+
+/** Super-admin staff (users of the synthetic 'platform' tenant) — the
+ *  people a survey can be assigned to. Null = roster could not be
+ *  loaded; the Assign dialog then falls back to a raw user-ID field. */
+function usePlatformStaff() {
+  const [staff, setStaff] = useState<platformApi.PlatformUser[] | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const tenants = await platformApi.tenants.list();
+        const platform = tenants.find(t => t.slug === 'platform');
+        const list = platform
+          ? await platformApi.users.list({ tenantId: platform.id })
+          : null;
+        if (!cancelled) setStaff(list);
+      } catch {
+        if (!cancelled) setStaff(null);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  return { staff, loaded };
+}
 
 /**
  * Super Admin: Requirement Surveys management (V170).
@@ -47,6 +82,13 @@ export function RequirementSurveys() {
   const [rows, setRows] = useState<RequirementSurvey[]>([]);
   const [summary, setSummary] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { staff } = usePlatformStaff();
+  const { formatDateTime } = useDateFormat();
+  const staffLabel = useCallback((id: string | null | undefined) => {
+    if (!id) return null;
+    return staff?.find(u => u.id === id)?.email ?? id;
+  }, [staff]);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<SurveyStatus | ''>('');
@@ -59,6 +101,7 @@ export function RequirementSurveys() {
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const [list, sum] = await Promise.all([
         platformSurveys.list({
@@ -72,7 +115,7 @@ export function RequirementSurveys() {
       setRows(list);
       setSummary(sum);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load surveys');
+      setError(e instanceof Error ? e.message : 'Failed to load surveys');
     } finally {
       setLoading(false);
     }
@@ -97,24 +140,24 @@ export function RequirementSurveys() {
 
   // Summary tiles are hardcoded to the highest-signal statuses; the
   // full pipeline distribution is visible via the filter chips below.
-  const summaryTiles: { key: SurveyStatus | 'all'; label: string; tone: string }[] = [
-    { key: 'all',           label: 'Total',          tone: 'text-gray-800' },
-    { key: 'new',           label: 'New',            tone: 'text-blue-700' },
-    { key: 'contacted',     label: 'Contacted',      tone: 'text-sky-700' },
-    { key: 'quotation_sent',label: 'Quotation Sent', tone: 'text-violet-700' },
-    { key: 'won',           label: 'Won',            tone: 'text-emerald-700' },
-    { key: 'lost',          label: 'Lost',           tone: 'text-rose-700' },
+  const summaryTiles: {
+    key: SurveyStatus | 'all'; label: string; tone: StatCardTone;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
+    { key: 'all',           label: 'Total',          tone: 'purple', icon: FileText },
+    { key: 'new',           label: 'New',            tone: 'blue',   icon: Inbox },
+    { key: 'contacted',     label: 'Contacted',      tone: 'amber',  icon: PhoneCall },
+    { key: 'quotation_sent',label: 'Quotation Sent', tone: 'orange', icon: Send },
+    { key: 'won',           label: 'Won',            tone: 'green',  icon: Trophy },
+    { key: 'lost',          label: 'Lost',           tone: 'red',    icon: XCircle },
   ];
   const totalAll = Object.values(summary).reduce((a, b) => a + b, 0);
   const valueFor = (k: SurveyStatus | 'all') => k === 'all' ? totalAll : (summary[k] ?? 0);
+  const hasFilters = Boolean(search || status || priority);
 
   return (
     <div className="space-y-6">
-      {/* Header + refresh */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Requirement Surveys</h1>
-        </div>
+      <div className="flex items-center justify-end gap-2">
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -122,51 +165,55 @@ export function RequirementSurveys() {
       </div>
 
       {/* Summary cards */}
-      <div className="stat-strip stat-cols-6">
-        {summaryTiles.map(t => (
-          <Card key={t.key}>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{t.label}</p>
-              <p className={`text-2xl font-semibold mt-1 tabular-nums ${t.tone}`}>{valueFor(t.key)}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {loading && rows.length === 0 && totalAll === 0 ? (
+        <StatCardsSkeleton cards={6} className="stat-strip stat-cols-6" />
+      ) : (
+        <div className="stat-strip stat-cols-6">
+          {summaryTiles.map(t => (
+            <StatCard key={t.key} label={t.label} value={valueFor(t.key)} icon={t.icon} tone={t.tone} />
+          ))}
+        </div>
+      )}
 
       {/* Filter bar */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[240px] max-w-md">
+          <div className="filter-strip">
+            <div className="relative shrink-0">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search survey no, company, contact, email…"
-                className="pl-8 h-9"
+                className="pl-7 h-9 w-64"
               />
             </div>
-            <Select value={status || 'all'} onValueChange={v => setStatus(v === 'all' ? '' : v as SurveyStatus)}>
-              <SelectTrigger className="w-44 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {SURVEY_STATUSES.map(s => (
-                  <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={priority || 'all'} onValueChange={v => setPriority(v === 'all' ? '' : v as SurveyPriority)}>
-              <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Priority" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All priorities</SelectItem>
-                {SURVEY_PRIORITIES.map(p => (
-                  <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(search || status || priority) && (
-              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setStatus(''); setPriority(''); }}>
-                <X className="h-3.5 w-3.5 mr-1" /> Clear
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value as SurveyStatus | '')}
+              className={FILTER_SELECT_CLS}
+            >
+              <option value="">Status : All</option>
+              {SURVEY_STATUSES.map(s => (
+                <option key={s.key} value={s.key}>Status : {s.label}</option>
+              ))}
+            </select>
+            <select
+              value={priority}
+              onChange={e => setPriority(e.target.value as SurveyPriority | '')}
+              className={FILTER_SELECT_CLS}
+            >
+              <option value="">Priority : All</option>
+              {SURVEY_PRIORITIES.map(p => (
+                <option key={p.key} value={p.key}>Priority : {p.label}</option>
+              ))}
+            </select>
+            {hasFilters && (
+              <Button
+                variant="ghost" size="sm" className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setStatus(''); setPriority(''); }}
+              >
+                Clear
               </Button>
             )}
           </div>
@@ -190,12 +237,11 @@ export function RequirementSurveys() {
               {loading && pager.paginatedItems.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={8} />
               )}
-              {!loading && pager.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    No surveys match these filters.
-                  </TableCell>
-                </TableRow>
+              {!loading && error && rows.length === 0 && (
+                <ListError colSpan={8} message={error} onRetry={() => void load()} />
+              )}
+              {!loading && !(error && rows.length === 0) && pager.paginatedItems.length === 0 && (
+                <ListEmpty colSpan={8} noun="surveys" filtered={hasFilters} />
               )}
               {pager.paginatedItems.map(r => {
                 const s = STATUS_BY_KEY[r.status];
@@ -233,23 +279,24 @@ export function RequirementSurveys() {
                     </TableCell>
                     <TableCell className="text-xs">
                       <p>{formatDistanceToNow(new Date(r.submittedAt), { addSuffix: true })}</p>
-                      <p className="text-gray-400">{format(new Date(r.submittedAt), 'MMM dd, HH:mm')}</p>
+                      <p className="text-gray-400">{formatDateTime(r.submittedAt)}</p>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setDetail(r)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="View" aria-label="View"
+                                onClick={() => setDetail(r)}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-7 px-2" title="Change status"
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Change status" aria-label="Change status"
                                 onClick={() => setStatusEdit(r)}>
                           <ArrowRightCircle className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-7 px-2" title="Assign"
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Assign" aria-label="Assign"
                                 onClick={() => setAssignEdit(r)}>
                           <UserPlus className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                title="Delete" onClick={() => setDeleteTarget(r)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Delete" aria-label="Delete" onClick={() => setDeleteTarget(r)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -273,6 +320,7 @@ export function RequirementSurveys() {
       {detail && (
         <SurveyDetailDialog
           survey={detail}
+          assigneeLabel={staffLabel(detail.assignedUserId)}
           onClose={() => setDetail(null)}
         />
       )}
@@ -286,6 +334,7 @@ export function RequirementSurveys() {
       {assignEdit && (
         <AssignDialog
           survey={assignEdit}
+          staff={staff}
           onClose={() => setAssignEdit(null)}
           onSaved={() => { setAssignEdit(null); void load(); }}
         />
@@ -328,8 +377,11 @@ export function RequirementSurveys() {
  *  Detail dialog — full survey view with company / project / requirements
  *  / internal blocks. Also shows the status-change history timeline.
  * ----------------------------------------------------------------------- */
-function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; onClose: () => void }) {
+function SurveyDetailDialog({ survey, assigneeLabel, onClose }: {
+  survey: RequirementSurvey; assigneeLabel: string | null; onClose: () => void;
+}) {
   const [history, setHistory] = useState<SurveyStatusHistoryEntry[] | null>(null);
+  const { formatDateTime } = useDateFormat();
 
   useEffect(() => {
     void platformSurveys.history(survey.id)
@@ -353,7 +405,7 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
             <Badge variant="outline" className={p?.tone + ' text-[10px]'}>{p?.label}</Badge>
           </DialogTitle>
           <DialogDescription>
-            Submitted {format(new Date(survey.submittedAt), 'MMM dd, yyyy HH:mm')} · updated {formatDistanceToNow(new Date(survey.updatedAt), { addSuffix: true })}
+            Submitted {formatDateTime(survey.submittedAt)} · updated {formatDistanceToNow(new Date(survey.updatedAt), { addSuffix: true })}
           </DialogDescription>
         </DialogHeader>
 
@@ -414,7 +466,7 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
           <DetailSection title="Internal Management">
             <DetailGrid rows={[
               ['Assigned to',      survey.assignedUserId
-                ? <span className="tabular-nums text-xs">{survey.assignedUserId}</span>
+                ? <span className="text-sm">{assigneeLabel ?? survey.assignedUserId}</span>
                 : <span className="text-gray-400">Unassigned</span>],
               ['Assignment note',  survey.assignmentNote],
               ['Last status remark', survey.statusRemarks],
@@ -423,7 +475,7 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
 
           <DetailSection title="Status Timeline">
             {history === null
-              ? <p className="text-sm text-gray-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</p>
+              ? <TableRowsSkeleton rows={3} columns={2} />
               : history.length === 0
                 ? <p className="text-sm text-gray-400">No changes yet.</p>
                 : (
@@ -436,7 +488,7 @@ function SurveyDetailDialog({ survey, onClose }: { survey: RequirementSurvey; on
                           <span className="absolute -left-[22px] top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
                           <div className="flex items-center gap-2 flex-wrap text-xs">
                             <Clock className="h-3 w-3 text-gray-400" />
-                            <span className="text-gray-600">{format(new Date(h.updatedAt), 'MMM dd, HH:mm')}</span>
+                            <span className="text-gray-600">{formatDateTime(h.updatedAt)}</span>
                             {fromStatus && (
                               <>
                                 <Badge variant="outline" className={fromStatus.tone + ' text-[10px]'}>{fromStatus.label}</Badge>
@@ -566,12 +618,16 @@ function ChangeStatusDialog({ survey, onClose, onSaved }: {
 }
 
 /* -----------------------------------------------------------------------
- *  Assign dialog — MVP uses a free-text User ID field. Wiring in a real
- *  platform-users picker is a small follow-up when that roster is
- *  exposed via an API.
+ *  Assign dialog — picks from the super-admin staff roster (users of the
+ *  'platform' tenant via GET /platform/users?tenantId=…). Falls back to a
+ *  free-text user ID when that roster could not be loaded.
  * ----------------------------------------------------------------------- */
-function AssignDialog({ survey, onClose, onSaved }: {
-  survey: RequirementSurvey; onClose: () => void; onSaved: () => void;
+const NO_ASSIGNEE = '__none';
+
+function AssignDialog({ survey, staff, onClose, onSaved }: {
+  survey: RequirementSurvey;
+  staff: platformApi.PlatformUser[] | null;
+  onClose: () => void; onSaved: () => void;
 }) {
   const [userId, setUserId] = useState(survey.assignedUserId ?? '');
   const [note, setNote] = useState(survey.assignmentNote ?? '');
@@ -600,20 +656,46 @@ function AssignDialog({ survey, onClose, onSaved }: {
         <DialogHeader>
           <DialogTitle>Assign · {survey.surveyNo}</DialogTitle>
           <DialogDescription>
-            Assign the survey to a sales rep by user ID. Leave blank + click Clear to
-            return it to the Unassigned queue.
+            Assign the survey to a team member. Use Clear assignment to return it
+            to the Unassigned queue.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div>
-            <p className="text-xs text-gray-500 mb-1">Assigned user (UUID)</p>
-            <Input
-              value={userId}
-              onChange={e => setUserId(e.target.value)}
-              placeholder="00000000-0000-0000-0000-000000000000"
-              className="font-mono text-xs"
-            />
-          </div>
+          {staff ? (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Assigned user</p>
+              <Select
+                value={userId || NO_ASSIGNEE}
+                onValueChange={v => setUserId(v === NO_ASSIGNEE ? '' : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Pick a user" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_ASSIGNEE}>Unassigned</SelectItem>
+                  {/* Keep a stale assignee selectable so opening the dialog
+                      doesn't silently drop it. */}
+                  {userId && !staff.some(u => u.id === userId) && (
+                    <SelectItem value={userId}>{userId}</SelectItem>
+                  )}
+                  {staff.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.email}{!u.isActive ? ' (inactive)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Assigned user (UUID)</p>
+              <Input
+                value={userId}
+                onChange={e => setUserId(e.target.value)}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono text-xs"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">The staff list could not be loaded — enter the user ID.</p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-gray-500 mb-1">Note (optional)</p>
             <Textarea

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDateFormat } from '../../../context/DateFormatContext';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent, CardHeader } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -10,8 +10,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { Checkbox } from '../../ui/checkbox';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -34,6 +36,21 @@ import { SyncStatusBadge } from './SyncStatusBadge';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { NumericInput } from '../../common/NumericInput';
+import { DateInput } from '../../common/DateInput';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { format as fnsFormat, parseISO } from 'date-fns';
+
+const FILTER_SELECT_CLS =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
+
+/** Local "today" as yyyy-MM-dd (no UTC shift, unlike toISOString). */
+const todayLocal = () => fnsFormat(new Date(), 'yyyy-MM-dd');
+
+/** Date-only ISO strings ("2026-10-30") parse as LOCAL midnight via
+ *  parseISO; full timestamps keep their offset. */
+const toLocalDate = (s: string) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? parseISO(s) : new Date(s));
 
 // Adapter: PlatformTenant lacks usage/cost fields the JSX consumes (employeeCount,
 // storageMb, monthlyCostUsd, userCount, lastActiveAt). Fill with 0 / createdAt
@@ -182,8 +199,10 @@ const ALL_INSTALL_KEYS: string[] = INSTALL_GROUPS.flatMap(g => g.modules.map(m =
 
 export function Companies() {
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [companies, setCompanies] = useState<platformApi.PlatformTenant[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<'all' | CompanyStatus>('all');
@@ -192,7 +211,6 @@ export function Companies() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
   const [form, setForm] = useState<Partial<Company>>({});
-  const [suspendTarget, setSuspendTarget] = useState<Company | null>(null);
   /** v-tenant-freeze — target of the Freeze / Unfreeze dialog. */
   const [freezeTarget, setFreezeTarget] = useState<Company | null>(null);
   const [freezeReason, setFreezeReason] = useState<string>('');
@@ -226,7 +244,9 @@ export function Companies() {
   const [basesByTenant, setBasesByTenant] = useState<Record<string, platformApi.BusinessBase[]>>({});
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
   const [planChangeTarget, setPlanChangeTarget] = useState<Company | null>(null);
-  const [newPlan, setNewPlan] = useState<PlanTier>('starter');
+  // string, not PlanTier: live plans can define tiers beyond the four
+  // FE constants (Plans page lets the SA create any slug).
+  const [newPlan, setNewPlan] = useState<string>('starter');
 
   // Project the tenant list down to the legacy Company shape the JSX consumes.
   const companiesView: Company[] = useMemo(
@@ -242,10 +262,13 @@ export function Companies() {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
+      // Status is NOT sent to the server: the status tabs filter
+      // client-side (see `filtered`) so every tab's count stays correct
+      // instead of dropping to 0 for the tabs that aren't selected.
       const list = await platformApi.tenants.list({
         q: search.trim() || undefined,
-        status: statusTab !== 'all' ? statusTab : undefined,
         planTier: planFilter !== 'all' ? planFilter : undefined,
       });
       setCompanies(list);
@@ -256,28 +279,52 @@ export function Companies() {
       for (const t of list) next[t.id] = t.businessBases ?? [];
       setBasesByTenant(next);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to load companies';
-      toast.error(msg);
+      setLoadError(e instanceof Error ? e.message : 'Failed to load companies');
     } finally {
       setLoading(false);
     }
   };
 
-  // Reload on mount and whenever filters change. Server-side filtering is the
-  // source of truth in API mode; the client-side `filtered` memo below is kept
-  // so mock mode and search-as-you-type still narrow without a round-trip.
+  // Reload on mount and whenever server-side filters (q / plan) change. The
+  // status tab is applied client-side by the `filtered` memo below, which
+  // also lets mock mode narrow without a round-trip.
   useEffect(() => {
     loadCompanies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusTab, planFilter]);
+  }, [search, planFilter]);
 
   const counts = useMemo(() => ({
     all:       companiesView.length,
     active:    companiesView.filter(c => c.status === 'active').length,
     trial:     companiesView.filter(c => c.status === 'trial').length,
+    frozen:    companiesView.filter(c => c.status === 'frozen').length,
     suspended: companiesView.filter(c => c.status === 'suspended').length,
     cancelled: companiesView.filter(c => c.status === 'cancelled').length,
   }), [companiesView]);
+
+  const hasFilters = search.trim() !== '' || planFilter !== 'all' || statusTab !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setPlanFilter('all');
+    setStatusTab('all');
+  };
+
+  /** Live local-install counts per tenant (non-revoked), used for the
+   *  over-quota check. Mock mode reads mockLocalInstalls instead. */
+  const [installCountByTenant, setInstallCountByTenant] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    platformApi.installs.list()
+      .then(list => {
+        const m: Record<string, number> = {};
+        for (const i of list) {
+          if (i.revokedAt) continue;
+          m[i.tenantId] = (m[i.tenantId] ?? 0) + 1;
+        }
+        setInstallCountByTenant(m);
+      })
+      .catch(() => { /* silent — installs count as 0 for the quota check */ });
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -332,6 +379,50 @@ export function Companies() {
     return PLAN_LIMITS[tier as PlanTier]?.monthlyPriceUsd ?? 0;
   };
 
+  /** Caps for a plan tier — live plan row when loaded, FE constant
+   *  otherwise (mock mode / plans fetch still pending or failed). */
+  const limitsOf = (tier: string) => {
+    const live = plansByTier[tier];
+    if (live) {
+      return {
+        maxEmployees: live.maxEmployees,
+        maxStorageMb: live.maxStorageMb,
+        maxLocalInstalls: live.maxLocalInstalls,
+        monthlyPriceUsd: live.monthlyPriceCents / 100,
+      };
+    }
+    return PLAN_LIMITS[tier as PlanTier]
+      ?? { maxEmployees: 0, maxStorageMb: 0, maxLocalInstalls: 0, monthlyPriceUsd: 0 };
+  };
+
+  /** Usage vs plan caps. Live mode uses live install counts + live plan
+   *  caps; mock mode keeps the original computeUsage(mockLocalInstalls). */
+  const usageOf = (c: Company) => {
+    if (USE_MOCKS) return computeUsage(c, mockLocalInstalls);
+    const limits = limitsOf(c.planTier);
+    const mk = (used: number, cap: number) => ({
+      used,
+      cap,
+      pct: cap > 0 ? Math.min(999, Math.round((used / cap) * 100)) : 0,
+      over: used > cap,
+    });
+    return {
+      employees: mk(c.employeeCount, limits.maxEmployees),
+      storage:   mk(c.storageMb,     limits.maxStorageMb),
+      installs:  mk(installCountByTenant[c.id] ?? 0, limits.maxLocalInstalls),
+    };
+  };
+
+  /** Tiers offered in the Change-plan dialog: the live plan list
+   *  (price ASC) when loaded, else the four FE constants. */
+  const planOptions: string[] = useMemo(() => {
+    const live = Object.values(plansByTier);
+    if (live.length > 0) {
+      return [...live].sort((a, b) => a.monthlyPriceCents - b.monthlyPriceCents).map(p => p.planTier);
+    }
+    return ['free', 'starter', 'business', 'enterprise'];
+  }, [plansByTier]);
+
   /** Apply the click-to-sort order after all filters have run. Placed
    *  AFTER priceOf so the MRR sort can read the live-plans price map
    *  it depends on. Rank enums by hierarchy so asc/desc reads intuitively.
@@ -384,7 +475,11 @@ export function Companies() {
   // CRUD
   const handleOpenCreate = () => {
     setEditing(null);
-    setForm({ planTier: 'starter', status: 'trial', country: 'Cambodia' });
+    // The backend always creates tenants as 'active'; Suspended / Frozen
+    // picked here are applied right after create via the transition
+    // endpoints (see handleSave). Trial / Cancelled have no endpoint, so
+    // the create dialog doesn't offer them.
+    setForm({ planTier: 'starter', status: 'active', country: 'Cambodia' });
     // Fresh create — default to POS Base to match the legacy MVP so
     // the tenant admin's first-login sidebar is populated. Super
     // Admin can uncheck it in the dialog if they want a
@@ -431,7 +526,7 @@ export function Companies() {
           contactPhone: form.contactPhone,
           country: form.country ?? '',
           planTier: (form.planTier as PlanTier) ?? 'free',
-          status: (form.status as CompanyStatus) ?? 'trial',
+          status: (form.status as CompanyStatus) ?? 'active',
           userCount: 0,
           employeeCount: 0,
           storageMb: 0,
@@ -537,6 +632,18 @@ export function Companies() {
             console.warn('tenantModules.set after create failed', err);
           }
         }
+        // CreateTenantRequest has no status field (the backend always
+        // creates 'active'), so apply the dialog's Status choice through
+        // the matching transition endpoint right after create.
+        const desired = (form.status as CompanyStatus | undefined) ?? 'active';
+        if (desired !== 'active') {
+          try {
+            if (desired === 'suspended')   await platformApi.tenants.suspend(created.id);
+            else if (desired === 'frozen') await platformApi.tenants.freeze(created.id);
+          } catch (err) {
+            toast.warning(`Company created as Active — setting it to ${desired} failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+          }
+        }
         toast.success('Company created');
       }
       setDialogOpen(false);
@@ -548,9 +655,21 @@ export function Companies() {
       setSubmitting(false);
     }
   };
-  const handleSuspendToggle = async () => {
-    if (!suspendTarget) return;
+  const handleSuspendToggle = async (suspendTarget: Company) => {
     const willSuspend = suspendTarget.status !== 'suspended';
+    const ok = await confirm(willSuspend
+      ? {
+          title: `Suspend ${suspendTarget.name}?`,
+          message: 'All users in this tenant lose access immediately. Data is retained and can be re-enabled later.',
+          confirmLabel: 'Suspend',
+          variant: 'destructive',
+        }
+      : {
+          title: `Reactivate ${suspendTarget.name}?`,
+          message: 'Users will regain access and sync will resume.',
+          confirmLabel: 'Reactivate',
+        });
+    if (!ok) return;
 
     if (USE_MOCKS) {
       const next: CompanyStatus = willSuspend ? 'suspended' : 'active';
@@ -558,7 +677,6 @@ export function Companies() {
         t.id === suspendTarget.id ? { ...t, status: next } : t
       ));
       toast.success(willSuspend ? `Suspended ${suspendTarget.name}` : `Reactivated ${suspendTarget.name}`);
-      setSuspendTarget(null);
       return;
     }
 
@@ -571,7 +689,6 @@ export function Companies() {
         await platformApi.tenants.reactivate(suspendTarget.id);
         toast.success(`Reactivated ${suspendTarget.name}`);
       }
-      setSuspendTarget(null);
       await loadCompanies();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Action failed';
@@ -640,10 +757,10 @@ export function Companies() {
           frozenUntil,
         });
         const startBits = frozenFrom
-          ? ` — starts ${new Date(frozenFrom).toLocaleDateString()}`
+          ? ` — starts ${formatDate(toLocalDate(freezeStartDate))}`
           : '';
         const endBits = frozenUntil
-          ? ` — auto-unfreeze ${new Date(frozenUntil).toLocaleDateString()}`
+          ? ` — auto-unfreeze ${formatDate(frozenUntil)}`
           : (frozenFrom ? '' : ' — orders paused now');
         toast.success(`Scheduled freeze for ${freezeTarget.name}${startBits}${endBits}`);
       } else {
@@ -685,7 +802,7 @@ export function Companies() {
     if (!planChangeTarget) return;
 
     if (USE_MOCKS) {
-      const limits = PLAN_LIMITS[newPlan];
+      const limits = limitsOf(newPlan);
       setCompanies(prev => prev.map(t =>
         t.id === planChangeTarget.id
           ? { ...t, planTier: newPlan, monthlyCostUsd: limits.monthlyPriceUsd } as platformApi.PlatformTenant
@@ -712,46 +829,13 @@ export function Companies() {
 
   return (
     <div className="space-y-6">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <Input
-              /* type="search" tells Chrome this is a search field
-                 (not a form input), which sidesteps the saved-form-
-                 data autofill that was leaking values in from the
-                 Create dialog's Name field. name + autoComplete
-                 off is belt-and-braces for older browsers that
-                 ignore type="search" for autofill grouping. */
-              type="search"
-              name="sa-companies-search"
-              autoComplete="off"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search name, slug, contact, country…"
-              className="pl-8 h-9 w-[320px]"
-            />
-          </div>
-          <select
-            value={planFilter}
-            onChange={(e) => setPlanFilter(e.target.value as typeof planFilter)}
-            className="h-9 px-3 border rounded-md text-sm"
-          >
-            <option value="all">All plans</option>
-            <option value="free">Free</option>
-            <option value="starter">Starter</option>
-            <option value="business">Business</option>
-            <option value="enterprise">Enterprise</option>
-          </select>
-        </div>
+      {/* Page actions */}
+      <div className="flex items-center justify-end gap-2">
+        <Button onClick={handleOpenCreate}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Company
+        </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={handleOpenCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Company
-            </Button>
-          </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -762,17 +846,17 @@ export function Companies() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="c-name">Name *</Label>
+                  <Label htmlFor="c-name">Name <span className="text-red-500">*</span></Label>
                   <Input id="c-name" name="c-name" autoComplete="off" value={form.name ?? ''} onChange={e => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="c-slug">Slug *</Label>
+                  <Label htmlFor="c-slug">Slug <span className="text-red-500">*</span></Label>
                   <Input id="c-slug" name="c-slug" autoComplete="off" placeholder="acme" value={form.slug ?? ''} onChange={e => setForm({ ...form, slug: e.target.value })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="c-email">Contact Email *</Label>
+                  <Label htmlFor="c-email">Contact Email <span className="text-red-500">*</span></Label>
                   <Input id="c-email" name="c-email" autoComplete="off" type="email" value={form.contactEmail ?? ''} onChange={e => setForm({ ...form, contactEmail: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
@@ -787,30 +871,35 @@ export function Companies() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Plan</Label>
-                  <select
+                  <Select
                     value={form.planTier ?? 'starter'}
-                    onChange={e => setForm({ ...form, planTier: e.target.value as PlanTier })}
-                    className="w-full h-9 px-3 border rounded-md text-sm"
+                    onValueChange={v => setForm({ ...form, planTier: v as PlanTier })}
                   >
-                    <option value="free">Free</option>
-                    <option value="starter">Starter</option>
-                    <option value="business">Business</option>
-                    <option value="enterprise">Enterprise</option>
-                  </select>
+                    <SelectTrigger className="w-full h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {planOptions.map(tier => (
+                        <SelectItem key={tier} value={tier} className="capitalize">{tier}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Status</Label>
-                  <select
-                    value={form.status ?? 'trial'}
-                    onChange={e => setForm({ ...form, status: e.target.value as CompanyStatus })}
-                    className="w-full h-9 px-3 border rounded-md text-sm"
+                  <Select
+                    value={form.status ?? 'active'}
+                    onValueChange={v => setForm({ ...form, status: v as CompanyStatus })}
                   >
-                    <option value="trial">Trial</option>
-                    <option value="active">Active</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="frozen">Frozen (read-only)</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+                    <SelectTrigger className="w-full h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {/* Create: backend always creates 'active'; only the
+                          statuses with a transition endpoint are offered. */}
+                      {editing && <SelectItem value="trial">Trial</SelectItem>}
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="frozen">Frozen (read-only)</SelectItem>
+                      {editing && <SelectItem value="cancelled">Cancelled</SelectItem>}
+                    </SelectContent>
+                  </Select>
                   {editing && (
                     <p className="text-[11px] text-gray-500">
                       Changing here fires the matching transition on save. For a scheduled freeze
@@ -921,27 +1010,22 @@ export function Companies() {
                       return (
                         <div key={group.label} className="border rounded-md p-2 space-y-1.5">
                           <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={allOn}
-                              ref={el => { if (el) el.indeterminate = !allOn && someOn; }}
-                              onChange={e => {
+                            <Checkbox
+                              checked={allOn ? true : someOn ? 'indeterminate' : false}
+                              onCheckedChange={v => {
                                 const next = { ...moduleToggles };
-                                for (const m of group.modules) next[m.key] = e.target.checked;
+                                for (const m of group.modules) next[m.key] = v === true;
                                 setModuleToggles(next);
                               }}
-                              className="h-3.5 w-3.5"
                             />
                             {group.label}
                           </label>
                           <div className="pl-5 space-y-1">
                             {group.modules.map(m => (
                               <label key={m.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                                <input
-                                  type="checkbox"
+                                <Checkbox
                                   checked={!!moduleToggles[m.key]}
-                                  onChange={e => setModuleToggles({ ...moduleToggles, [m.key]: e.target.checked })}
-                                  className="h-3.5 w-3.5"
+                                  onCheckedChange={v => setModuleToggles({ ...moduleToggles, [m.key]: v === true })}
                                 />
                                 {m.label}
                               </label>
@@ -1009,12 +1093,11 @@ export function Companies() {
                           return (
                             <div key={r.key} className="space-y-1">
                               <Label className="text-xs">{r.label}</Label>
-                              <Input
-                                type="number"
-                                min={0}
+                              <NumericInput
+                                decimals={0}
                                 value={inputVal}
-                                onChange={e => {
-                                  const t = e.target.value.trim();
+                                onChange={v => {
+                                  const t = v.trim();
                                   setForm({
                                     ...form,
                                     [r.key]: t === '' ? null : Math.max(0, parseInt(t, 10) || 0),
@@ -1059,53 +1142,82 @@ export function Companies() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
-              <Button onClick={handleSave} disabled={submitting}>{editing ? 'Save' : 'Create'}</Button>
+              <Button onClick={handleSave} disabled={submitting}>{editing ? 'Save' : 'Create Company'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Status tabs */}
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>All Companies</CardTitle>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as typeof statusTab)}>
-                <TabsList>
-                  {([
-                    { key: 'all',       label: 'All',       cls: 'bg-gray-100 text-gray-700' },
-                    { key: 'active',    label: 'Active',    cls: 'bg-green-100 text-green-800' },
-                    { key: 'trial',     label: 'Trial',     cls: 'bg-blue-100 text-blue-800' },
-                    { key: 'suspended', label: 'Suspended', cls: 'bg-amber-100 text-amber-900' },
-                    { key: 'cancelled', label: 'Cancelled', cls: 'bg-gray-100 text-gray-700' },
-                  ] as const).map(chip => (
-                    <TabsTrigger key={chip.key} value={chip.key}>
-                      {chip.label}
-                      <Badge className={`ml-1.5 h-5 px-1.5 text-[10px] ${chip.cls}`}>
-                        {counts[chip.key]}
-                      </Badge>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              {/* v-companies-page-size — rows-per-page picker. Sits
-                  next to the status tabs so pagination is
-                  discoverable even when only one page's worth of
-                  rows exists. */}
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <span>Rows</span>
-                <select
-                  value={pageSize}
-                  onChange={e => { setPageSize(Number(e.target.value)); pager.goToPage(1); }}
-                  className="h-8 px-2 border rounded-md bg-white text-sm"
-                >
-                  {[5, 10, 20, 50, 100].map(n => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
+        <CardHeader className="pb-3 space-y-3">
+          {/* Status tabs — counts come from the unfiltered-by-status list. */}
+          <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as typeof statusTab)}>
+            <TabsList>
+              {([
+                { key: 'all',       label: 'All',       cls: 'bg-gray-100 text-gray-700' },
+                { key: 'active',    label: 'Active',    cls: 'bg-green-100 text-green-800' },
+                { key: 'trial',     label: 'Trial',     cls: 'bg-blue-100 text-blue-800' },
+                { key: 'frozen',    label: 'Frozen',    cls: 'bg-sky-100 text-sky-800' },
+                { key: 'suspended', label: 'Suspended', cls: 'bg-amber-100 text-amber-900' },
+                { key: 'cancelled', label: 'Cancelled', cls: 'bg-gray-100 text-gray-700' },
+              ] as const).map(chip => (
+                <TabsTrigger key={chip.key} value={chip.key}>
+                  {chip.label}
+                  <Badge className={`ml-1.5 h-5 px-1.5 text-[10px] ${chip.cls}`}>
+                    {counts[chip.key]}
+                  </Badge>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                /* type="search" tells Chrome this is a search field
+                   (not a form input), which sidesteps the saved-form-
+                   data autofill that was leaking values in from the
+                   Create dialog's Name field. name + autoComplete
+                   off is belt-and-braces for older browsers that
+                   ignore type="search" for autofill grouping. */
+                type="search"
+                name="sa-companies-search"
+                autoComplete="off"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name, slug, contact, country…"
+                className="pl-7 h-9 w-64"
+              />
             </div>
+            <select
+              value={planFilter}
+              onChange={(e) => setPlanFilter(e.target.value as typeof planFilter)}
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by plan"
+            >
+              <option value="all">Plan : All</option>
+              {planOptions.map(tier => (
+                <option key={tier} value={tier}>Plan : {tier.charAt(0).toUpperCase() + tier.slice(1)}</option>
+              ))}
+            </select>
+            {/* v-companies-page-size — rows-per-page picker, kept in the
+                strip so pagination is discoverable even when only one
+                page's worth of rows exists. */}
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); pager.goToPage(1); }}
+              className={FILTER_SELECT_CLS}
+              aria-label="Rows per page"
+            >
+              {[5, 10, 20, 50, 100].map(n => (
+                <option key={n} value={n}>Rows : {n}</option>
+              ))}
+            </select>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -1138,15 +1250,14 @@ export function Companies() {
               {loading && pager.paginatedItems.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={10} />
               )}
-              {!loading && pager.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-sm text-gray-400 py-10">
-                    No companies match these filters.
-                  </TableCell>
-                </TableRow>
+              {!loading && loadError && pager.paginatedItems.length === 0 && (
+                <ListError message={loadError} onRetry={() => void loadCompanies()} colSpan={10} />
+              )}
+              {!loading && !loadError && pager.paginatedItems.length === 0 && (
+                <ListEmpty noun="companies" filtered={hasFilters} colSpan={10} />
               )}
               {pager.paginatedItems.map(c => {
-                const usage = computeUsage(c, mockLocalInstalls);
+                const usage = usageOf(c);
                 const overQuota = usage.employees.over || usage.storage.over || usage.installs.over;
                 return (
                 <TableRow key={c.id} className={overQuota ? 'bg-red-50/30' : ''}>
@@ -1221,7 +1332,7 @@ export function Companies() {
                           ? (
                             <span className="inline-flex items-center gap-1 text-amber-800">
                               <Snowflake className="h-3 w-3" />
-                              Until {new Date(c.frozenUntil).toLocaleDateString()}
+                              Until {formatDate(c.frozenUntil)}
                             </span>
                           )
                           : <span className="text-gray-500 italic">Indefinite</span>)
@@ -1230,7 +1341,7 @@ export function Companies() {
                           <span className="inline-flex items-center gap-1 text-blue-700"
                                 title="Deferred freeze — nightly cron flips this tenant to frozen on/after the date shown.">
                             <Snowflake className="h-3 w-3" />
-                            Freezes {new Date(c.frozenFrom).toLocaleDateString()}
+                            Freezes {formatDate(c.frozenFrom)}
                           </span>
                         )
                         : <span className="text-gray-300">—</span>}
@@ -1268,7 +1379,7 @@ export function Companies() {
                         + inline base64 image bytes on stock_items, MB
                         with one-decimal precision. Uses UsageRow so
                         over-quota renders red like Employees. Plan cap
-                        comes from PLAN_LIMITS keyed by tier. */}
+                        comes from the live plan row (PLAN_LIMITS fallback). */}
                     <UsageRow
                       icon={HardDrive}
                       label="Storage"
@@ -1294,14 +1405,14 @@ export function Companies() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleOpenEdit(c)} title="Edit">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenEdit(c)} title="Edit">
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className={`h-7 w-7 p-0 ${c.status === 'suspended' ? 'text-green-700 hover:bg-green-50' : 'text-amber-700 hover:bg-amber-50'}`}
-                        onClick={() => setSuspendTarget(c)}
+                        size="icon"
+                        className={`h-7 w-7 ${c.status === 'suspended' ? 'text-green-700 hover:bg-green-50' : 'text-amber-700 hover:bg-amber-50'}`}
+                        onClick={() => void handleSuspendToggle(c)}
                         title={c.status === 'suspended' ? 'Reactivate' : 'Suspend'}
                       >
                         {c.status === 'suspended' ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
@@ -1315,8 +1426,8 @@ export function Companies() {
                           - active, no schedule: sky snowflake "Freeze". */}
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className={`h-7 w-7 p-0 ${
+                        size="icon"
+                        className={`h-7 w-7 ${
                           c.status === 'frozen'
                             ? 'text-yellow-600 hover:bg-yellow-50'
                             : c.frozenFrom
@@ -1328,7 +1439,7 @@ export function Companies() {
                           c.status === 'frozen'
                             ? 'Unfreeze (resume orders)'
                             : c.frozenFrom
-                              ? `Cancel scheduled freeze (${new Date(c.frozenFrom).toLocaleDateString()})`
+                              ? `Cancel scheduled freeze (${formatDate(c.frozenFrom)})`
                               : 'Freeze (pause customer orders)'
                         }
                         disabled={c.status === 'cancelled' || c.status === 'suspended'}
@@ -1339,8 +1450,8 @@ export function Companies() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                        size="icon"
+                        className="h-7 w-7 text-red-600 hover:bg-red-50"
                         onClick={() => setDeleteTarget(c)}
                         title="Delete"
                       >
@@ -1364,28 +1475,6 @@ export function Companies() {
         </CardContent>
       </Card>
 
-      {/* Suspend toggle confirmation */}
-      <AlertDialog open={!!suspendTarget} onOpenChange={(o) => !o && setSuspendTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {suspendTarget?.status === 'suspended' ? 'Reactivate' : 'Suspend'} {suspendTarget?.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {suspendTarget?.status === 'suspended'
-                ? 'Users will regain access and sync will resume.'
-                : 'All users in this tenant lose access immediately. Data is retained and can be re-enabled later.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleSuspendToggle}>
-              {suspendTarget?.status === 'suspended' ? 'Reactivate' : 'Suspend'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* v-tenant-freeze — Freeze / Unfreeze / Cancel-schedule confirmation */}
       <AlertDialog open={!!freezeTarget} onOpenChange={(o) => { if (!o) { setFreezeTarget(null); setFreezeReason(''); setFreezeStartDate(''); } }}>
         <AlertDialogContent>
@@ -1402,7 +1491,7 @@ export function Companies() {
               {freezeTarget?.status === 'frozen'
                 ? 'The public shop resumes accepting orders. Menu stays visible either way; only the "orders paused" banner disappears.'
                 : freezeTarget?.frozenFrom
-                  ? `The pending freeze (scheduled for ${new Date(freezeTarget.frozenFrom).toLocaleDateString()}) will be cancelled. The tenant stays active and the schedule is cleared.`
+                  ? `The pending freeze (scheduled for ${formatDate(freezeTarget.frozenFrom)}) will be cancelled. The tenant stays active and the schedule is cleared.`
                   : 'Public shop orders will be paused. The menu itself stays visible; customers see a "not accepting orders" banner and the add-to-cart controls are disabled. Admin operations (editing items, minting shop links) are unaffected — you can broaden this later.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1434,13 +1523,13 @@ export function Companies() {
                   ))}
                 </div>
                 {freezeDuration === 'custom' ? (
-                  <Input
-                    type="date"
-                    value={freezeCustomDate}
-                    onChange={e => setFreezeCustomDate(e.target.value)}
-                    min={new Date().toISOString().slice(0, 10)}
-                    className="h-8 w-40 text-sm mt-1"
-                  />
+                  <div className="mt-1">
+                    <DateInput
+                      value={freezeCustomDate || null}
+                      onChange={v => setFreezeCustomDate(v ?? '')}
+                      min={todayLocal()}
+                    />
+                  </div>
                 ) : freezeDuration === 'indefinite' ? (
                   <p className="text-[11px] text-gray-500 mt-1">
                     Stays frozen until you unfreeze it manually.
@@ -1453,7 +1542,7 @@ export function Companies() {
                       else if (freezeDuration === '3m') d.setMonth(d.getMonth() + 3);
                       else if (freezeDuration === '6m') d.setMonth(d.getMonth() + 6);
                       else if (freezeDuration === '1y') d.setFullYear(d.getFullYear() + 1);
-                      return d.toLocaleDateString();
+                      return formatDate(d);
                     })()}
                     .
                   </p>
@@ -1468,17 +1557,17 @@ export function Companies() {
                 <Label htmlFor="freeze-start" className="text-xs">
                   Freeze from <span className="text-gray-400">(optional — leave empty to freeze now)</span>
                 </Label>
-                <Input
-                  id="freeze-start"
-                  type="date"
-                  value={freezeStartDate}
-                  onChange={e => setFreezeStartDate(e.target.value)}
-                  min={new Date().toISOString().slice(0, 10)}
-                  className="h-8 w-40 text-sm"
-                />
+                <div id="freeze-start">
+                  <DateInput
+                    value={freezeStartDate || null}
+                    onChange={v => setFreezeStartDate(v ?? '')}
+                    min={todayLocal()}
+                    clearable
+                  />
+                </div>
                 {freezeStartDate && (
                   <p className="text-[11px] text-amber-700 mt-1">
-                    Tenant stays active until {new Date(freezeStartDate).toLocaleDateString()}, then flips to
+                    Tenant stays active until {formatDate(toLocalDate(freezeStartDate))}, then flips to
                     frozen automatically at 00:05.
                   </p>
                 )}
@@ -1497,7 +1586,13 @@ export function Companies() {
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={freezing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleFreezeToggle} disabled={freezing}>
+            <AlertDialogAction
+              onClick={handleFreezeToggle}
+              disabled={freezing}
+              className={freezeTarget?.status !== 'frozen' && !freezeTarget?.frozenFrom
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : undefined}
+            >
               {freezeTarget?.status === 'frozen'
                 ? 'Unfreeze'
                 : freezeTarget?.frozenFrom
@@ -1518,32 +1613,37 @@ export function Companies() {
             </DialogDescription>
           </DialogHeader>
           {planChangeTarget && (() => {
-            const usage = computeUsage(planChangeTarget, mockLocalInstalls);
-            const newLimits = PLAN_LIMITS[newPlan];
+            const usage = usageOf(planChangeTarget);
+            const newLimits = limitsOf(newPlan);
             return (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  {(['free', 'starter', 'business', 'enterprise'] as PlanTier[]).map(tier => (
-                    <button
-                      key={tier}
-                      onClick={() => setNewPlan(tier)}
-                      className={`p-3 rounded-md border text-left transition-colors ${
-                        newPlan === tier ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="capitalize font-medium text-sm">{tier}</p>
-                        <p className="text-xs text-gray-500">
-                          {PLAN_LIMITS[tier].monthlyPriceUsd === 0 ? 'Free' : `$${PLAN_LIMITS[tier].monthlyPriceUsd}/mo`}
-                        </p>
-                      </div>
-                      <div className="text-[11px] text-gray-500 mt-1 space-y-0.5">
-                        <p>{PLAN_LIMITS[tier].maxEmployees.toLocaleString()} employees</p>
-                        <p>{formatMb(PLAN_LIMITS[tier].maxStorageMb)} storage</p>
-                        <p>{PLAN_LIMITS[tier].maxLocalInstalls} local install{PLAN_LIMITS[tier].maxLocalInstalls !== 1 ? 's' : ''}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {planOptions.map(tier => {
+                    // Live plan row when loaded (SA edits on the Plans
+                    // page), FE constant otherwise.
+                    const l = limitsOf(tier);
+                    return (
+                      <button
+                        key={tier}
+                        onClick={() => setNewPlan(tier)}
+                        className={`p-3 rounded-md border text-left transition-colors ${
+                          newPlan === tier ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="capitalize font-medium text-sm">{tier}</p>
+                          <p className="text-xs text-gray-500">
+                            {l.monthlyPriceUsd === 0 ? 'Free' : `$${l.monthlyPriceUsd.toLocaleString()}/mo`}
+                          </p>
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-1 space-y-0.5">
+                          <p>{l.maxEmployees.toLocaleString()} employees</p>
+                          <p>{formatMb(l.maxStorageMb)} storage</p>
+                          <p>{l.maxLocalInstalls} local install{l.maxLocalInstalls !== 1 ? 's' : ''}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="rounded-md border p-3 bg-gray-50/50 space-y-2">

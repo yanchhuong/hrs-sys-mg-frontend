@@ -260,8 +260,14 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
               >
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
-              <div>
-                <h1 className="text-sm font-semibold capitalize">{activeMeta.label}</h1>
+              {/* The ONE page title for every super-admin view. Pages do
+                  not repeat it as an in-page h1/h2; the nav description
+                  sits under it as the subtitle. */}
+              <div className="min-w-0">
+                <h1 className="text-base font-semibold truncate">{activeMeta.label}</h1>
+                {activeMeta.description && (
+                  <p className="text-xs text-gray-500 truncate hidden sm:block">{activeMeta.description}</p>
+                )}
               </div>
             </div>
 

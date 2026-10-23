@@ -11,13 +11,19 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import {
-  AlertCircle, AlertTriangle, CheckCircle, Info, Search, RefreshCw,
-  Filter, Download, X as XIcon, Bell,
+  AlertCircle, AlertTriangle, CheckCircle, Info, Search,
+  Download, Bell, Eye, ListChecks,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { StatCard } from '../../common/StatCard';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
+import { exportListToExcel } from '../../../utils/excelExport';
 import { mockCompanies } from '../../../data/platformData';
 import {
   ActivityEvent, EventCategory, Severity, buildActivityLog,
@@ -61,22 +67,26 @@ function toActivityEvent(
   };
 }
 
+// Count badges on the severity tabs — shared status palette.
 const SEVERITIES: { key: 'all' | Severity; label: string; cls: string }[] = [
-  { key: 'all',     label: 'All',     cls: 'bg-gray-100 text-gray-700' },
-  { key: 'error',   label: 'Errors',  cls: 'bg-red-100 text-red-800' },
-  { key: 'warning', label: 'Warnings',cls: 'bg-amber-100 text-amber-900' },
-  { key: 'info',    label: 'Info',    cls: 'bg-blue-100 text-blue-800' },
+  { key: 'all',     label: 'All',     cls: TONE_CLASS.neutral },
+  { key: 'error',   label: 'Errors',  cls: TONE_CLASS.danger },
+  { key: 'warning', label: 'Warnings',cls: TONE_CLASS.attention },
+  { key: 'info',    label: 'Info',    cls: TONE_CLASS.info },
 ];
 
 const CATEGORIES: { key: 'all' | EventCategory; label: string }[] = [
-  { key: 'all', label: 'All categories' },
-  { key: 'sync', label: 'Sync' },
-  { key: 'auth', label: 'Auth' },
-  { key: 'admin', label: 'Admin' },
-  { key: 'tenant', label: 'Tenant' },
-  { key: 'policy', label: 'Policy' },
-  { key: 'system', label: 'System' },
+  { key: 'all', label: 'Category : All' },
+  { key: 'sync', label: 'Category : Sync' },
+  { key: 'auth', label: 'Category : Auth' },
+  { key: 'admin', label: 'Category : Admin' },
+  { key: 'tenant', label: 'Category : Tenant' },
+  { key: 'policy', label: 'Category : Policy' },
+  { key: 'system', label: 'Category : System' },
 ];
+
+const FILTER_SELECT_CLS =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
 
 const SEVERITY_ICON: Record<Severity, React.ComponentType<{ className?: string }>> = {
   info: Info,
@@ -90,12 +100,15 @@ const SEVERITY_TONE: Record<Severity, string> = {
 };
 
 export function ActivityLog() {
+  const { formatDateTime } = useDateFormat();
   const [events, setEvents] = useState<ActivityEvent[]>(
     USE_MOCKS ? buildActivityLog() : [],
   );
   const [tenantOptions, setTenantOptions] = useState<{ id: string; name: string }[]>(
     USE_MOCKS ? mockCompanies.map(c => ({ id: c.id, name: c.name })) : [],
   );
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [severityTab, setSeverityTab] = useState<'all' | Severity>('all');
   const [category, setCategory] = useState<'all' | EventCategory>('all');
@@ -117,13 +130,21 @@ export function ActivityLog() {
       setEvents(buildActivityLog());
       return;
     }
+    setLoading(true);
     try {
       const list = await platformApi.activity.list({
         tenantId: tenant !== 'all' ? tenant : undefined,
         unacked: onlyUnack || undefined,
       });
       setEvents(list.map(e => toActivityEvent(e, tenantNameById)));
-    } catch { /* leave previous events in place */ }
+      setLoadError(null);
+    } catch (err: unknown) {
+      // Keep the previous events in place, but say the refresh failed
+      // instead of letting a failed first load read as "no events".
+      setLoadError(err instanceof Error ? err.message : 'Could not load platform events.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Initial fetch — tenants for the dropdown + first events page.
@@ -172,11 +193,8 @@ export function ActivityLog() {
 
   const pager = usePagination(filtered, 15);
 
-  const activeFilters = [
-    category !== 'all' && `category: ${category}`,
-    tenant !== 'all' && `tenant: ${tenantOptions.find(c => c.id === tenant)?.name ?? tenant}`,
-    onlyUnack && 'unacknowledged only',
-  ].filter(Boolean);
+  const hasFilters =
+    !!search.trim() || severityTab !== 'all' || category !== 'all' || tenant !== 'all' || onlyUnack;
 
   const clearFilters = () => {
     setSearch('');
@@ -222,22 +240,38 @@ export function ActivityLog() {
       toast.error(msg);
     }
   };
-  const handleRetry = (ev: ActivityEvent) => {
-    toast.success(`Retrying sync for ${ev.actor}…`);
-    // In real life this enqueues a /api/sync/push retry for that install.
-  };
+  // Real export of exactly the rows the filters currently show. (The old
+  // button only toasted "Exported …" without producing a file.) The per-event
+  // "Retry sync" button was removed for the same reason: there is no
+  // platform API to re-queue an install's sync push.
   const handleExport = () => {
-    toast.success(`Exported ${filtered.length} events to CSV`);
+    exportListToExcel<ActivityEvent>({
+      filename: 'platform-activity',
+      sheetName: 'Activity',
+      rows: filtered,
+      columns: [
+        { header: 'When', value: e => formatDateTime(e.at), width: 20 },
+        { header: 'Severity', value: e => e.severity },
+        { header: 'Category', value: e => e.category },
+        { header: 'Event', value: e => e.action, width: 32 },
+        { header: 'Tenant', value: e => e.tenantName ?? '' , width: 24 },
+        { header: 'Actor', value: e => e.actor, width: 28 },
+        { header: 'Target', value: e => e.target, width: 24 },
+        { header: 'IP', value: e => e.ipAddress ?? '', width: 16 },
+        { header: 'Acknowledged', value: e => (e.acknowledged ? 'Yes' : 'No') },
+        { header: 'Message', value: e => e.message ?? '', width: 60 },
+      ],
+    });
   };
 
   return (
     <div className="space-y-6">
       {/* Top-level stats */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
+      <div className="stat-strip stat-cols-4">
         <StatCard label="Sync errors" value={counts.syncErrors} icon={AlertCircle} tone="red" />
         <StatCard label="Warnings" value={counts.warning} icon={AlertTriangle} tone="amber" />
         <StatCard label="Unacknowledged" value={counts.unack} icon={Bell} tone="blue" />
-        <StatCard label="Total events" value={counts.all} icon={CheckCircle} tone="gray" />
+        <StatCard label="Total events" value={counts.all} icon={ListChecks} tone="purple" />
       </div>
 
       {/* Table card */}
@@ -245,14 +279,14 @@ export function ActivityLog() {
         <CardHeader className="pb-3 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <CardTitle>Platform Events</CardTitle>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex items-center justify-end gap-2">
               <Button variant="outline" size="sm" onClick={handleAcknowledgeAllVisible} disabled={counts.unack === 0}>
                 <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
                 Acknowledge all
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
                 <Download className="h-3.5 w-3.5 mr-1.5" />
-                Export CSV
+                Export Excel
               </Button>
             </div>
           </div>
@@ -262,7 +296,7 @@ export function ActivityLog() {
               {SEVERITIES.map(s => (
                 <TabsTrigger key={s.key} value={s.key}>
                   {s.label}
-                  <Badge className={`ml-1.5 h-5 px-1.5 text-[10px] ${s.cls}`}>
+                  <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${s.cls}`}>
                     {s.key === 'all' ? counts.all : counts[s.key]}
                   </Badge>
                 </TabsTrigger>
@@ -270,20 +304,21 @@ export function ActivityLog() {
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[240px] max-w-md">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search action, actor, target, message…"
-                className="pl-8 h-9"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as typeof category)}
-              className="h-9 px-3 border rounded-md text-sm"
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by category"
             >
               {CATEGORIES.map(c => (
                 <option key={c.key} value={c.key}>{c.label}</option>
@@ -292,36 +327,29 @@ export function ActivityLog() {
             <select
               value={tenant}
               onChange={(e) => setTenant(e.target.value)}
-              className="h-9 px-3 border rounded-md text-sm min-w-[180px]"
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by tenant"
             >
-              <option value="all">All tenants</option>
+              <option value="all">Tenant : All</option>
               {tenantOptions.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>Tenant : {c.name}</option>
               ))}
             </select>
-            <label className="flex items-center gap-2 text-xs cursor-pointer select-none px-2">
-              <input
-                type="checkbox"
-                checked={onlyUnack}
-                onChange={(e) => setOnlyUnack(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
-              Unacknowledged only
-            </label>
-          </div>
-
-          {activeFilters.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap text-xs text-gray-600">
-              <Filter className="h-3.5 w-3.5" />
-              {activeFilters.map((f, i) => (
-                <Badge key={i} variant="outline" className="text-[10px]">{f}</Badge>
-              ))}
-              <button onClick={clearFilters} className="text-blue-600 hover:underline inline-flex items-center gap-1">
-                <XIcon className="h-3 w-3" />
+            <select
+              value={onlyUnack ? 'unack' : 'all'}
+              onChange={(e) => setOnlyUnack(e.target.value === 'unack')}
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by acknowledgement"
+            >
+              <option value="all">Acknowledged : All</option>
+              <option value="unack">Acknowledged : No</option>
+            </select>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear
-              </button>
-            </div>
-          )}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -337,33 +365,34 @@ export function ActivityLog() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pager.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-10">
-                    No events match these filters.
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && events.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={7} />
+              ) : loadError && events.length === 0 ? (
+                <ListError message={loadError} onRetry={() => { void loadEvents(); }} colSpan={7} />
+              ) : pager.paginatedItems.length === 0 ? (
+                <ListEmpty noun="events" filtered={hasFilters} colSpan={7} />
+              ) : null}
               {pager.paginatedItems.map(ev => {
                 const Icon = SEVERITY_ICON[ev.severity];
                 const unack = !ev.acknowledged;
                 return (
                   <TableRow
                     key={ev.id}
-                    className={ev.severity === 'error' ? 'bg-red-50/40' : ev.severity === 'warning' ? 'bg-amber-50/40' : ''}
+                    onClick={() => setDetail(ev)}
+                    className={`hover:bg-gray-50 cursor-pointer ${ev.severity === 'error' ? 'bg-red-50/40' : ev.severity === 'warning' ? 'bg-amber-50/40' : ''}`}
                   >
                     <TableCell>
                       <Icon className={`h-4 w-4 ${SEVERITY_TONE[ev.severity]}`} />
                     </TableCell>
                     <TableCell className="text-xs">
                       <p>{formatDistanceToNow(new Date(ev.at), { addSuffix: true })}</p>
-                      <p className="text-gray-400">{format(new Date(ev.at), 'MMM dd, HH:mm')}</p>
+                      <p className="text-gray-400">{formatDateTime(ev.at)}</p>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm">{ev.action}</p>
                         <Badge variant="outline" className="text-[10px] capitalize">{ev.category}</Badge>
-                        {unack && <Badge className="bg-blue-100 text-blue-800 text-[10px]">New</Badge>}
+                        {unack && <Badge variant="outline" className={`text-[10px] ${TONE_CLASS.info}`}>New</Badge>}
                       </div>
                       {ev.message && (
                         <p className={`text-xs truncate max-w-md ${ev.severity === 'error' ? 'text-red-700' : 'text-gray-500'}`} title={ev.message}>
@@ -380,31 +409,28 @@ export function ActivityLog() {
                     <TableCell className="text-xs tabular-nums text-gray-600">
                       {ev.ipAddress ?? <span className="text-gray-300">—</span>}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDetail(ev)}>
-                          Details
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => setDetail(ev)}
+                          title="Details"
+                          aria-label="Details"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {ev.category === 'sync' && ev.severity === 'error' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs text-blue-700 hover:bg-blue-50"
-                            onClick={() => handleRetry(ev)}
-                          >
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                            Retry
-                          </Button>
-                        )}
                         {unack && (
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs text-green-700 hover:bg-green-50"
+                            size="icon"
+                            className="h-7 w-7 text-green-700 hover:bg-green-50"
                             onClick={() => handleAcknowledge(ev)}
+                            title="Acknowledge"
+                            aria-label="Acknowledge"
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Ack
+                            <CheckCircle className="h-3.5 w-3.5" />
                           </Button>
                         )}
                       </div>
@@ -438,7 +464,7 @@ export function ActivityLog() {
             <div className="space-y-3 text-sm">
               <dl className="grid grid-cols-3 gap-y-2">
                 <dt className="text-gray-500">When</dt>
-                <dd className="col-span-2">{format(new Date(detail.at), 'MMM dd, yyyy HH:mm:ss')}</dd>
+                <dd className="col-span-2">{formatDateTime(detail.at)}</dd>
                 <dt className="text-gray-500">Severity</dt>
                 <dd className="col-span-2 capitalize">{detail.severity}</dd>
                 <dt className="text-gray-500">Category</dt>
@@ -468,44 +494,16 @@ export function ActivityLog() {
             </div>
           )}
           <DialogFooter>
-            {detail && detail.category === 'sync' && detail.severity === 'error' && (
-              <Button variant="outline" onClick={() => { handleRetry(detail); setDetail(null); }}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry sync
-              </Button>
-            )}
+            <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
             {detail && !detail.acknowledged && (
-              <Button variant="outline" onClick={() => { handleAcknowledge(detail); setDetail(null); }}>
+              <Button onClick={() => { handleAcknowledge(detail); setDetail(null); }}>
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Acknowledge
               </Button>
             )}
-            <Button onClick={() => setDetail(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-const TONE: Record<string, string> = {
-  red: 'text-red-700',
-  amber: 'text-amber-700',
-  blue: 'text-blue-700',
-  gray: 'text-gray-700',
-};
-function StatCard({ label, value, icon: Icon, tone }: {
-  label: string; value: number; icon: React.ComponentType<{ className?: string }>; tone: keyof typeof TONE;
-}) {
-  return (
-    <Card className="border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Icon className={`h-5 w-5 ${TONE[tone]}`} />
-          <span className={`text-2xl font-bold ${TONE[tone]}`}>{value}</span>
-        </div>
-        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
-      </CardContent>
-    </Card>
   );
 }

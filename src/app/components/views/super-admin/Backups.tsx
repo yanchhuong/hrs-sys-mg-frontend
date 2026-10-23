@@ -13,15 +13,12 @@ import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../../ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import {
   Database, HardDrive, CheckCircle, AlertTriangle, XCircle, RefreshCw,
   Download, RotateCcw, Trash2, Calendar, Shield, Plus, Search, Play,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import {
   Backup, BackupSchedule, BackupStatus, BackupType, StorageTarget,
@@ -29,6 +26,11 @@ import {
 } from '../../../data/platformData';
 import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
+import { StatCard } from '../../common/StatCard';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
 import { USE_MOCKS, API_BASE } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
 
@@ -61,6 +63,13 @@ function toPageBackup(b: platformApi.Backup): Backup {
   };
 }
 
+// The live restore endpoint (BackupController.restore) is a TODO that returns
+// the row untouched, and the worker only produces full dumps. Until the server
+// grows both, live mode disables Restore and the Incremental scope. Mock mode
+// keeps its simulated behaviour.
+const RESTORE_SUPPORTED = USE_MOCKS;
+const INCREMENTAL_SUPPORTED = USE_MOCKS;
+
 // Adapter: map a live BackupSchedule to the page's mock BackupSchedule shape.
 function toPageSchedule(s: platformApi.BackupSchedule): BackupSchedule {
   return {
@@ -79,7 +88,8 @@ function toPageSchedule(s: platformApi.BackupSchedule): BackupSchedule {
 }
 
 export function Backups() {
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
+  const confirm = useConfirm();
   const [backups, setBackups] = useState<Backup[]>(USE_MOCKS ? mockBackups : []);
   const [schedules, setSchedules] = useState<BackupSchedule[]>(
     USE_MOCKS ? mockBackupSchedules : [],
@@ -97,8 +107,12 @@ export function Backups() {
   const [bkTenant, setBkTenant] = useState<string>('');
   const [bkScope, setBkScope] = useState<'full' | 'incremental'>('full');
 
-  // Delete + restore targets
-  const [deleteTarget, setDeleteTarget] = useState<Backup | null>(null);
+  // Load state — a failed first load shows inline instead of an empty table.
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  // Restore target (type-to-confirm dialog)
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [restoreConfirm, setRestoreConfirm] = useState('');
 
@@ -111,6 +125,7 @@ export function Backups() {
       setBackups(mockBackups);
       return;
     }
+    setLoading(true);
     try {
       const list = await platformApi.backups.list({
         tenantId: tenantFilter !== 'all' ? tenantFilter : undefined,
@@ -119,7 +134,13 @@ export function Backups() {
           : undefined,
       });
       setBackups(list.map(toPageBackup));
-    } catch { /* leave previous backups in place */ }
+      setLoadError(null);
+    } catch (err: unknown) {
+      // Leave previous backups in place, but surface the failure.
+      setLoadError(err instanceof Error ? err.message : 'Could not load backups.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadSchedules = async () => {
@@ -130,7 +151,10 @@ export function Backups() {
     try {
       const list = await platformApi.backups.schedules.list();
       setSchedules(list.map(toPageSchedule));
-    } catch { /* leave previous schedules in place */ }
+      setScheduleError(null);
+    } catch (err: unknown) {
+      setScheduleError(err instanceof Error ? err.message : 'Could not load backup schedules.');
+    }
   };
 
   // Initial fetch — tenants for the picker + the two collections.
@@ -214,6 +238,7 @@ export function Backups() {
   }, [backups, search, statusTab, tenantFilter, companyById]);
 
   const pager = usePagination(filtered, 10);
+  const hasFilters = !!search.trim() || tenantFilter !== 'all' || statusTab !== 'all';
 
   // ---------------------------------------------------------------------------
   const handleTriggerBackup = async () => {
@@ -260,13 +285,20 @@ export function Backups() {
       }, 2500);
       return;
     }
+    if (!INCREMENTAL_SUPPORTED && bkScope === 'incremental') {
+      // The server only takes a full tenant dump (CreateBackupRequest.scope is
+      // tenant/department/custom) — never claim an incremental ran.
+      toast.error('Incremental backups are not supported by the server yet');
+      return;
+    }
     try {
       const retentionDays = BACKUP_PLAN_POLICY[company?.planTier ?? 'free'].maxRetentionDays;
+      // storageTarget omitted on purpose: the worker writes to local storage
+      // and the server defaults the row to 'local'; sending 's3' mislabelled it.
       await platformApi.backups.create({
         tenantId: bkTenant,
         scope: 'tenant',
         retentionDays,
-        storageTarget: 's3',
       });
       setBackupDialog(false);
       toast.success(`Backup started for ${company?.name ?? bkTenant}`);
@@ -277,18 +309,22 @@ export function Backups() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
+  const handleDelete = async (target: Backup) => {
+    const ok = await confirm({
+      title: 'Delete this backup?',
+      message: <>The archive at <code className="text-xs">{target.storageUri || target.id}</code> is removed permanently. The tenant's live data is unaffected.</>,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     if (USE_MOCKS) {
-      setBackups(prev => prev.filter(b => b.id !== deleteTarget.id));
+      setBackups(prev => prev.filter(b => b.id !== target.id));
       toast.success('Backup deleted');
-      setDeleteTarget(null);
       return;
     }
     try {
-      await platformApi.backups.remove(deleteTarget.id);
+      await platformApi.backups.remove(target.id);
       toast.success('Backup deleted');
-      setDeleteTarget(null);
       await loadBackups();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete backup';
@@ -315,14 +351,20 @@ export function Backups() {
       return;
     }
     if (USE_MOCKS) {
-      toast.success(`Restore of "${company?.name}" from ${format(new Date(restoreTarget.createdAt), 'MMM dd, HH:mm')} started. Tenant will be suspended for 2-5 minutes.`);
+      toast.success(`Restore of "${company?.name}" from ${formatDateTime(restoreTarget.createdAt)} started. Tenant will be suspended for 2-5 minutes.`);
       setRestoreTarget(null);
       setRestoreConfirm('');
       return;
     }
+    if (!RESTORE_SUPPORTED) {
+      // POST /backups/{id}/restore is still a server-side TODO (returns the
+      // row without restoring anything) — don't claim a restore started.
+      toast.error('Restore is not implemented on the server yet');
+      return;
+    }
     try {
       await platformApi.backups.restore(restoreTarget.id);
-      toast.success(`Restore of "${company?.name}" from ${format(new Date(restoreTarget.createdAt), 'MMM dd, HH:mm')} started. Tenant will be suspended for 2-5 minutes.`);
+      toast.success(`Restore of "${company?.name}" from ${formatDateTime(restoreTarget.createdAt)} started. Tenant will be suspended for 2-5 minutes.`);
       setRestoreTarget(null);
       setRestoreConfirm('');
       await loadBackups();
@@ -348,7 +390,6 @@ export function Backups() {
         tenantId: b.tenantId,
         scope: 'tenant',
         retentionDays: b.retentionDays,
-        storageTarget: 's3',
       });
       toast.success(`Retrying backup for ${companyById.get(b.tenantId)?.name ?? b.tenantId}`);
       await loadBackups();
@@ -358,11 +399,11 @@ export function Backups() {
     }
   };
 
+  // Opens Backup Now pre-filled for this tenant. Nothing is queued until
+  // "Start backup" succeeds — that handler toasts the real result.
   const handleRunSchedule = (tenantId: string) => {
-    const company = companyById.get(tenantId);
     setBkTenant(tenantId);
     setBkScope('full');
-    toast.success(`Manual backup queued for ${company?.name}`);
     setBackupDialog(true);
   };
 
@@ -401,11 +442,11 @@ export function Backups() {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <StatCard label="Total backups"   value={stats.total}          Icon={Database}   tone="gray" />
-        <StatCard label="Total stored"    value={formatBytes(stats.totalBytes)} Icon={HardDrive} tone="blue" />
-        <StatCard label="In progress"     value={stats.inProgress}     Icon={RefreshCw}  tone="amber" spin={stats.inProgress > 0} />
-        <StatCard label="Failed"          value={stats.failed}         Icon={XCircle}    tone={stats.failed > 0 ? 'red' : 'gray'} />
+      <div className="stat-strip stat-cols-4">
+        <StatCard label="Total backups"   value={stats.total}          icon={Database}   tone="purple" />
+        <StatCard label="Total stored"    value={formatBytes(stats.totalBytes)} icon={HardDrive} tone="blue" />
+        <StatCard label="In progress"     value={stats.inProgress}     icon={RefreshCw}  tone="amber" />
+        <StatCard label="Failed"          value={stats.failed}         icon={XCircle}    tone="red" />
       </div>
 
       {/* Failed alert */}
@@ -445,33 +486,43 @@ export function Backups() {
 
           <Tabs value={statusTab} onValueChange={v => setStatusTab(v as typeof statusTab)}>
             <TabsList>
-              <TabsTrigger value="all">All <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{counts.all}</Badge></TabsTrigger>
-              <TabsTrigger value="completed">Completed <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800">{counts.completed}</Badge></TabsTrigger>
-              <TabsTrigger value="in_progress">Running <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-800">{counts.in_progress}</Badge></TabsTrigger>
-              <TabsTrigger value="failed">Failed <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800">{counts.failed}</Badge></TabsTrigger>
+              <TabsTrigger value="all">All <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.neutral}`}>{counts.all}</Badge></TabsTrigger>
+              <TabsTrigger value="completed">Completed <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.success}`}>{counts.completed}</Badge></TabsTrigger>
+              <TabsTrigger value="in_progress">Running <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.info}`}>{counts.in_progress}</Badge></TabsTrigger>
+              <TabsTrigger value="failed">Failed <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.danger}`}>{counts.failed}</Badge></TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[240px] max-w-md">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search tenant, type, URI…"
-                className="pl-8 h-9"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
             <select
               value={tenantFilter}
               onChange={e => setTenantFilter(e.target.value)}
-              className="h-9 px-3 border rounded-md text-sm min-w-[180px]"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by tenant"
             >
-              <option value="all">All tenants</option>
+              <option value="all">Tenant : All</option>
               {companies.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>Tenant : {c.name}</option>
               ))}
             </select>
+            {hasFilters && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setTenantFilter('all'); setStatusTab('all'); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -489,13 +540,13 @@ export function Backups() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pager.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    No backups match these filters.
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && backups.length === 0 ? (
+                <TableBodySkeletonRows rows={5} columns={8} />
+              ) : loadError && backups.length === 0 ? (
+                <ListError message={loadError} onRetry={() => { void loadBackups(); }} colSpan={8} />
+              ) : pager.paginatedItems.length === 0 ? (
+                <ListEmpty noun="backups" filtered={hasFilters} colSpan={8} />
+              ) : null}
               {pager.paginatedItems.map(b => {
                 const company = companyById.get(b.tenantId);
                 return (
@@ -535,7 +586,7 @@ export function Backups() {
                     </TableCell>
                     <TableCell className="text-xs">
                       <p>{formatDistanceToNow(new Date(b.createdAt), { addSuffix: true })}</p>
-                      <p className="text-gray-400">{format(new Date(b.createdAt), 'MMM dd, HH:mm')}</p>
+                      <p className="text-gray-400">{formatDateTime(b.createdAt)}</p>
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums">
                       {b.status === 'completed' ? formatBytes(b.sizeBytes) : <span className="text-gray-400">—</span>}
@@ -563,9 +614,17 @@ export function Backups() {
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(b)} title="Download">
                               <Download className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-700 hover:bg-amber-50" onClick={() => setRestoreTarget(b)} title="Restore">
-                              <RotateCcw className="h-3.5 w-3.5" />
-                            </Button>
+                            <span title={RESTORE_SUPPORTED ? 'Restore' : 'Restore (coming soon — not implemented on the server yet)'}>
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 w-7 p-0 text-amber-700 hover:bg-amber-50"
+                                onClick={() => setRestoreTarget(b)}
+                                disabled={!RESTORE_SUPPORTED}
+                                aria-label="Restore"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </Button>
+                            </span>
                           </>
                         )}
                         {b.status === 'failed' && (
@@ -573,7 +632,7 @@ export function Backups() {
                             <RefreshCw className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50" onClick={() => setDeleteTarget(b)} title="Delete">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50" onClick={() => { void handleDelete(b); }} title="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -620,13 +679,11 @@ export function Backups() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {schedules.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    No backup schedules yet.
-                  </TableCell>
-                </TableRow>
-              )}
+              {schedules.length === 0 && (scheduleError ? (
+                <ListError message={scheduleError} onRetry={() => { void loadSchedules(); }} colSpan={8} />
+              ) : (
+                <ListEmpty noun="backup schedules" colSpan={8} />
+              ))}
               {schedules.map(s => {
                 const company = companyById.get(s.tenantId);
                 const policy = BACKUP_PLAN_POLICY[company?.planTier ?? 'free'];
@@ -689,7 +746,7 @@ export function Backups() {
               </p>
             </div>
           </div>
-          <Badge className="bg-green-100 text-green-800 gap-1">
+          <Badge variant="outline" className={`${TONE_CLASS.success} gap-1`}>
             <CheckCircle className="h-3 w-3" />
             Enabled
           </Badge>
@@ -707,37 +764,41 @@ export function Backups() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Tenant</Label>
-              <select
-                value={bkTenant}
-                onChange={e => setBkTenant(e.target.value)}
-                className="w-full h-9 px-3 border rounded-md text-sm"
-              >
-                <option value="">Select a tenant…</option>
-                {companies.filter(c => c.status !== 'cancelled').map(c => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.planTier})</option>
-                ))}
-              </select>
+              <Label>Tenant <span className="text-red-500">*</span></Label>
+              <Select value={bkTenant || undefined} onValueChange={setBkTenant}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select a tenant…" /></SelectTrigger>
+                <SelectContent>
+                  {companies.filter(c => c.status !== 'cancelled').map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name} ({c.planTier})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Scope</Label>
               <div className="grid grid-cols-2 gap-2">
-                {(['full', 'incremental'] as const).map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setBkScope(s)}
-                    className={`p-3 rounded-md border text-left transition-colors ${
-                      bkScope === s ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <p className="font-medium text-sm capitalize">{s}</p>
-                    <p className="text-[11px] text-gray-500">
-                      {s === 'full'
-                        ? 'Complete snapshot of tenant data + schema.'
-                        : 'Changes since last successful full/incremental.'}
-                    </p>
-                  </button>
-                ))}
+                {(['full', 'incremental'] as const).map(s => {
+                  const unsupported = s === 'incremental' && !INCREMENTAL_SUPPORTED;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setBkScope(s)}
+                      disabled={unsupported}
+                      title={unsupported ? 'Not supported by the server yet — every backup is a full dump' : undefined}
+                      className={`p-3 rounded-md border text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                        bkScope === s ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <p className="font-medium text-sm capitalize">{s}{unsupported && ' (coming soon)'}</p>
+                      <p className="text-[11px] text-gray-500">
+                        {s === 'full'
+                          ? 'Complete snapshot of tenant data + schema.'
+                          : 'Changes since last successful full/incremental.'}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -750,22 +811,6 @@ export function Backups() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete backup?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The archive at <code className="text-xs">{deleteTarget?.storageUri}</code> is removed permanently. The tenant's live data is unaffected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Restore confirmation — more dangerous, type-to-confirm */}
       <Dialog open={!!restoreTarget} onOpenChange={(o) => { if (!o) { setRestoreTarget(null); setRestoreConfirm(''); } }}>
@@ -785,7 +830,7 @@ export function Backups() {
               <div className="space-y-4">
                 <div className="rounded-md border p-3 bg-gray-50 text-sm space-y-1">
                   <p><span className="text-gray-500">Tenant:</span> <strong>{company?.name}</strong></p>
-                  <p><span className="text-gray-500">Backup:</span> {format(new Date(restoreTarget.createdAt), 'MMM dd, yyyy HH:mm')} ({restoreTarget.scope})</p>
+                  <p><span className="text-gray-500">Backup:</span> {formatDateTime(restoreTarget.createdAt)} ({restoreTarget.scope})</p>
                   <p><span className="text-gray-500">Size:</span> {formatBytes(restoreTarget.sizeBytes)}</p>
                   <p><span className="text-gray-500">Checksum:</span> <code className="text-[10px]">{restoreTarget.checksumSha256}</code></p>
                 </div>
@@ -860,26 +905,4 @@ function TypeBadge({ type }: { type: BackupType }) {
     'pre-migration':'bg-purple-100 text-purple-900',
   };
   return <Badge className={`${map[type]} text-[10px] capitalize`}>{type.replace('-', ' ')}</Badge>;
-}
-
-const TONE: Record<string, string> = {
-  gray:  'text-gray-700',
-  blue:  'text-blue-700',
-  amber: 'text-amber-700',
-  red:   'text-red-700',
-};
-function StatCard({ label, value, Icon, tone, spin }: {
-  label: string; value: string | number; Icon: any; tone: keyof typeof TONE; spin?: boolean;
-}) {
-  return (
-    <Card className="border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Icon className={`h-5 w-5 ${TONE[tone]} ${spin ? 'animate-spin' : ''}`} />
-          <span className={`text-2xl font-bold ${TONE[tone]}`}>{value}</span>
-        </div>
-        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
-      </CardContent>
-    </Card>
-  );
 }

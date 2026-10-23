@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
+import { Input } from '../../ui/input';
+import { Label } from '../../ui/label';
+import { Textarea } from '../../ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
@@ -9,14 +13,15 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../../ui/alert-dialog';
-import {
   Link2, Copy, RefreshCw, Trash2, CheckCircle, AlertTriangle, XCircle, Clock, Plus, Shield,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { StatCard } from '../../common/StatCard';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
 import { mockLocalInstalls, mockCompanies, SyncHealth } from '../../../data/platformData';
 import { API_BASE, USE_MOCKS } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
@@ -105,10 +110,10 @@ function randomMockKey(): string {
 export function SyncMonitor() {
   const [installs, setInstalls] = useState<platformApi.LocalInstall[]>([]);
   const [tenants, setTenants] = useState<platformApi.PlatformTenant[]>([]);
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<{ install: platformApi.LocalInstall; key: string } | null>(null);
-  const [rotateTarget, setRotateTarget] = useState<platformApi.LocalInstall | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<platformApi.LocalInstall | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newInstall, setNewInstall] = useState({ tenantId: '', siteName: '', allowedIps: '' });
   const [ipsTarget, setIpsTarget] = useState<platformApi.LocalInstall | null>(null);
@@ -140,8 +145,10 @@ export function SyncMonitor() {
       ]);
       setInstalls(i);
       setTenants(t);
-    } catch {
-      // Leave whatever was last loaded; toasts at the call site explain failure.
+      setLoadError(null);
+    } catch (e) {
+      // Leave whatever was last loaded, but show the failure inline.
+      setLoadError(e instanceof Error ? e.message : 'Could not load local installations.');
     } finally {
       setLoading(false);
     }
@@ -152,15 +159,26 @@ export function SyncMonitor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The cleartext API key is only available at issuance (create/rotate). After
-  // that the row only carries the last-four. Surfacing the inline copy button
-  // tells the admin to rotate if they need a key they can deliver.
-  const handleCopyKey = (install: platformApi.LocalInstall) => {
-    toast.info(`Key for ${install.siteName} ends in ${install.apiKeyLastFour}. Rotate to issue a new copyable key.`);
+  // Clipboard writes can fail (insecure context, denied permission) — only
+  // claim success once the write actually resolved.
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Could not copy ${label.toLowerCase()} — select the text and copy it manually`);
+    }
   };
 
-  const handleRotate = async () => {
-    if (!rotateTarget) return;
+  const handleRotate = async (rotateTarget: platformApi.LocalInstall) => {
+    const ok = await confirm({
+      title: `Rotate API key for ${rotateTarget.siteName}?`,
+      message: 'The current key stops working immediately. The site cannot sync until you deliver the new key and reconfigure its install.',
+      confirmLabel: 'Rotate key',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     if (USE_MOCKS) {
       const fresh = randomMockKey();
       setInstalls(prev => prev.map(i =>
@@ -177,7 +195,6 @@ export function SyncMonitor() {
       ));
       setRevealedKey({ install: { ...rotateTarget, apiKeyLastFour: fresh.slice(-4) }, key: fresh });
       toast.success(`Rotated API key for ${rotateTarget.siteName}. The previous key is now invalid.`);
-      setRotateTarget(null);
       return;
     }
     try {
@@ -187,27 +204,28 @@ export function SyncMonitor() {
       toast.success(warning || `Rotated API key for ${install.siteName}. The previous key is now invalid.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to rotate key');
-    } finally {
-      setRotateTarget(null);
     }
   };
 
-  const handleRevoke = async () => {
-    if (!revokeTarget) return;
+  const handleRevoke = async (revokeTarget: platformApi.LocalInstall) => {
+    const ok = await confirm({
+      title: `Revoke ${revokeTarget.siteName}?`,
+      message: "This removes the local install's record and its API key. Data already synced to the cloud is kept. To restore, issue a new key and reconfigure the site.",
+      confirmLabel: 'Revoke',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     if (USE_MOCKS) {
       setInstalls(prev => prev.filter(i => i.id !== revokeTarget.id));
       toast.success(`Revoked ${revokeTarget.siteName}`);
-      setRevokeTarget(null);
       return;
     }
     try {
       await platformApi.installs.revoke(revokeTarget.id);
       toast.success(`Revoked ${revokeTarget.siteName}`);
-      setRevokeTarget(null);
       await loadData();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to revoke');
-      setRevokeTarget(null);
     }
   };
 
@@ -285,11 +303,11 @@ export function SyncMonitor() {
   return (
     <div className="space-y-6">
       <div className="stat-strip stat-cols-5">
-        <HealthStat label="Total" value={summary.total} Icon={Link2} tone="gray" />
-        <HealthStat label="Healthy" value={summary.healthy} Icon={CheckCircle} tone="green" />
-        <HealthStat label="Degraded" value={summary.degraded} Icon={AlertTriangle} tone="amber" />
-        <HealthStat label="Down" value={summary.down} Icon={XCircle} tone="red" />
-        <HealthStat label="Never synced" value={summary.never} Icon={Clock} tone="blue" />
+        <StatCard label="Total" value={summary.total} icon={Link2} tone="purple" />
+        <StatCard label="Healthy" value={summary.healthy} icon={CheckCircle} tone="green" />
+        <StatCard label="Degraded" value={summary.degraded} icon={AlertTriangle} tone="amber" />
+        <StatCard label="Down" value={summary.down} icon={XCircle} tone="red" />
+        <StatCard label="Never synced" value={summary.never} icon={Clock} tone="blue" />
       </div>
 
       <Card>
@@ -320,11 +338,13 @@ export function SyncMonitor() {
             </TableHeader>
             <TableBody>
               {installs.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
-                    {loading ? 'Loading…' : 'No local installations issued yet.'}
-                  </TableCell>
-                </TableRow>
+                loading ? (
+                  <TableBodySkeletonRows rows={4} columns={8} />
+                ) : loadError ? (
+                  <ListError message={loadError} onRetry={() => { void loadData(); }} colSpan={8} />
+                ) : (
+                  <ListEmpty noun="local installations" colSpan={8} />
+                )
               )}
               {installs.map(inst => {
                 const tenant = tenantById.get(inst.tenantId);
@@ -365,13 +385,18 @@ export function SyncMonitor() {
                     <TableCell><HealthBadge health={inst.syncHealth as SyncHealth} /></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost" size="sm" className="h-7 w-7 p-0"
-                          onClick={() => handleCopyKey(inst)}
-                          title="Reveal & copy key"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
+                        {/* The server only returns the cleartext key once, at
+                            issue/rotate (InstallWithKey). There is no reveal
+                            endpoint, so this stays disabled and says why. */}
+                        <span title={`Full key can't be shown again (ends in ${inst.apiKeyLastFour}) — rotate to issue a new copyable key`}>
+                          <Button
+                            variant="ghost" size="sm" className="h-7 w-7 p-0"
+                            disabled
+                            aria-label="Copy key (unavailable after issue)"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-700 hover:bg-blue-50"
                           onClick={() => { setIpsDraft(inst.allowedIps ?? ''); setIpsTarget(inst); }}
@@ -381,14 +406,14 @@ export function SyncMonitor() {
                         </Button>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-700 hover:bg-amber-50"
-                          onClick={() => setRotateTarget(inst)}
+                          onClick={() => { void handleRotate(inst); }}
                           title="Rotate key"
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
-                          onClick={() => setRevokeTarget(inst)}
+                          onClick={() => { void handleRevoke(inst); }}
                           title="Revoke"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -414,39 +439,39 @@ export function SyncMonitor() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Company</label>
-              <select
-                value={newInstall.tenantId}
-                onChange={(e) => setNewInstall({ ...newInstall, tenantId: e.target.value })}
-                className="w-full h-9 px-3 border rounded-md text-sm"
+              <Label>Company <span className="text-red-500">*</span></Label>
+              <Select
+                value={newInstall.tenantId || undefined}
+                onValueChange={(v) => setNewInstall({ ...newInstall, tenantId: v })}
               >
-                <option value="">Select a tenant…</option>
-                {tenants.filter(t => t.status !== 'cancelled').map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select a tenant…" /></SelectTrigger>
+                <SelectContent>
+                  {tenants.filter(t => t.status !== 'cancelled').map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Site name</label>
-              <input
-                type="text"
+              <Label>Site name <span className="text-red-500">*</span></Label>
+              <Input
                 value={newInstall.siteName}
                 onChange={(e) => setNewInstall({ ...newInstall, siteName: e.target.value })}
                 placeholder="e.g. ACME Siem Reap"
-                className="w-full h-9 px-3 border rounded-md text-sm"
+                className="h-9"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium flex items-center gap-1.5">
+              <Label className="flex items-center gap-1.5">
                 <Shield className="h-3.5 w-3.5 text-blue-700" />
                 Allowed IPs <span className="text-xs text-gray-400 font-normal">(optional)</span>
-              </label>
-              <textarea
+              </Label>
+              <Textarea
                 value={newInstall.allowedIps}
                 onChange={(e) => setNewInstall({ ...newInstall, allowedIps: e.target.value })}
                 placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
                 rows={2}
-                className="w-full px-3 py-2 border rounded-md text-sm tabular-nums"
+                className="text-sm tabular-nums"
               />
               <p className="text-xs text-gray-500">
                 Comma-separated source IPs / CIDR ranges. Leave empty to allow any IP. Localhost is always permitted.
@@ -505,10 +530,7 @@ export function SyncMonitor() {
             }, null, 2);
             const curlPing = `curl -H "X-API-Key: ${key}" \\\n  ${ping.url}`;
             const curlScans = `curl -X POST ${scans.url} \\\n  -H "X-API-Key: ${key}" \\\n  -H "Content-Type: application/json" \\\n  -d '[{"empNo":"EMP001","scanAt":"${new Date().toISOString()}","deviceCode":"gate-1"}]'`;
-            const copy = (text: string, label: string) => {
-              navigator.clipboard.writeText(text).catch(() => {});
-              toast.success(`${label} copied`);
-            };
+            const copy = (text: string, label: string) => { void copyToClipboard(text, label); };
             return (
               <div className="space-y-4">
                 <div>
@@ -606,12 +628,12 @@ export function SyncMonitor() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <textarea
+            <Textarea
               value={ipsDraft}
               onChange={(e) => setIpsDraft(e.target.value)}
               placeholder="e.g. 203.0.113.12, 198.51.100.0/24"
               rows={3}
-              className="w-full px-3 py-2 border rounded-md text-sm tabular-nums"
+              className="text-sm tabular-nums"
             />
             {!ipsDraft.trim() && (
               <p className="text-xs text-amber-700">No restriction — the API key will be accepted from any IP.</p>
@@ -626,46 +648,15 @@ export function SyncMonitor() {
         </DialogContent>
       </Dialog>
 
-      {/* Rotate confirmation */}
-      <AlertDialog open={!!rotateTarget} onOpenChange={(o) => !o && setRotateTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Rotate API key for {rotateTarget?.siteName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The current key stops working immediately. The site cannot sync until you deliver the new key and reconfigure its install.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRotate}>Rotate key</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Revoke confirmation */}
-      <AlertDialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke {revokeTarget?.siteName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the local install's record and its API key. Data already synced to the cloud is kept. To restore, issue a new key and reconfigure the site.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRevoke} className="bg-red-600 hover:bg-red-700">Revoke</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
 const HEALTH_MAP: Record<SyncHealth, { label: string; cls: string; Icon: typeof CheckCircle }> = {
-  healthy:  { label: 'Healthy',  cls: 'bg-green-100 text-green-800', Icon: CheckCircle },
-  degraded: { label: 'Degraded', cls: 'bg-amber-100 text-amber-900', Icon: AlertTriangle },
-  down:     { label: 'Down',     cls: 'bg-red-100 text-red-800',     Icon: XCircle },
-  never:    { label: 'Never',    cls: 'bg-blue-100 text-blue-800',   Icon: Clock },
+  healthy:  { label: 'Healthy',  cls: TONE_CLASS.success,   Icon: CheckCircle },
+  degraded: { label: 'Degraded', cls: TONE_CLASS.attention, Icon: AlertTriangle },
+  down:     { label: 'Down',     cls: TONE_CLASS.danger,    Icon: XCircle },
+  never:    { label: 'Never',    cls: TONE_CLASS.neutral,   Icon: Clock },
 };
 
 /** Show first IP/CIDR + a "+N" suffix when the allowlist is long, so the
@@ -681,30 +672,9 @@ function HealthBadge({ health }: { health: SyncHealth }) {
   const entry = HEALTH_MAP[health] ?? HEALTH_MAP.never;
   const { label, cls, Icon } = entry;
   return (
-    <Badge className={`${cls} gap-1`}>
+    <Badge variant="outline" className={`${cls} gap-1`}>
       <Icon className="h-3 w-3" />
       {label}
     </Badge>
-  );
-}
-
-const TONE: Record<string, string> = {
-  gray:  'text-gray-700',
-  green: 'text-green-700',
-  amber: 'text-amber-700',
-  red:   'text-red-700',
-  blue:  'text-blue-700',
-};
-function HealthStat({ label, value, Icon, tone }: { label: string; value: number; Icon: any; tone: keyof typeof TONE }) {
-  return (
-    <Card className="border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Icon className={`h-5 w-5 ${TONE[tone]}`} />
-          <span className={`text-2xl font-bold ${TONE[tone]}`}>{value}</span>
-        </div>
-        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
-      </CardContent>
-    </Card>
   );
 }

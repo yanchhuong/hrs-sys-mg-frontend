@@ -31,12 +31,16 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import { Alert, AlertDescription } from '../../ui/alert';
-import { Copy, Plus, Ban, Trash2, Smartphone, Globe, Building2, Info } from 'lucide-react';
+import { Copy, Plus, Ban, Trash2, Globe, Building2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirm } from '../../../context/ConfirmContext';
 import * as appKeysApi from '../../../api/platformMobileAppKeys';
 import type { MobileAppKey, TenantEmailDomain } from '../../../api/platformMobileAppKeys';
 import * as platformApi from '../../../api/platform';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
 import type { PlatformTenant } from '../../../api/platform';
 
 /** Sentinel for the "public build" option in the tenant Select.
@@ -44,11 +48,10 @@ import type { PlatformTenant } from '../../../api/platform';
  *  needs an explicit token. */
 const PUBLIC_OPTION = '__public__';
 
-const fmtDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' }) : '—';
-
 export function MobileAppKeys() {
   const confirm = useConfirm();
+  const { formatDate: fmtDate } = useDateFormat();
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [keys, setKeys] = useState<MobileAppKey[]>([]);
   const [domains, setDomains] = useState<TenantEmailDomain[]>([]);
   const [tenants, setTenants] = useState<PlatformTenant[]>([]);
@@ -69,6 +72,7 @@ export function MobileAppKeys() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [k, d, t] = await Promise.all([
         appKeysApi.listAppKeys(),
@@ -79,7 +83,7 @@ export function MobileAppKeys() {
       setDomains(d);
       setTenants(t);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load app keys');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load app keys');
     } finally {
       setLoading(false);
     }
@@ -176,10 +180,7 @@ export function MobileAppKeys() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Smartphone className="h-6 w-6" /> Mobile App Keys
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-gray-500">
           Controls which tenant a mobile build talks to. Embed a key as{' '}
           <code className="text-xs bg-muted px-1 py-0.5 rounded">EXPO_PUBLIC_APP_KEY</code>{' '}
           in its EAS build profile.
@@ -226,7 +227,7 @@ export function MobileAppKeys() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Label *</Label>
+                <Label>Label <span className="text-red-500">*</span></Label>
                 <Input
                   value={newLabel}
                   onChange={e => setNewLabel(e.target.value)}
@@ -266,15 +267,14 @@ export function MobileAppKeys() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
-                      Loading…
-                    </TableCell></TableRow>
+                  {loading && keys.length === 0 && <TableBodySkeletonRows rows={4} columns={7} />}
+                  {!loading && loadError && keys.length === 0 && (
+                    <ListError message={loadError} onRetry={() => void load()} colSpan={7} />
                   )}
-                  {!loading && keys.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
-                      No app keys yet. Mint one above.
-                    </TableCell></TableRow>
+                  {!loading && !loadError && keys.length === 0 && (
+                    <ListEmpty noun="app keys" colSpan={7}>
+                      <p className="text-xs text-gray-400 mt-1">Mint one above.</p>
+                    </ListEmpty>
                   )}
                   {keys.map(k => (
                     <TableRow key={k.id} className={k.status === 'revoked' ? 'opacity-50' : ''}>
@@ -294,9 +294,9 @@ export function MobileAppKeys() {
                         <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{k.appKey}</code>
                       </TableCell>
                       <TableCell>
-                        <Badge className={k.status === 'active'
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                          : 'bg-rose-100 text-rose-800 border-rose-200'}>
+                        <Badge variant="outline" className={k.status === 'active'
+                          ? TONE_CLASS.success
+                          : TONE_CLASS.danger}>
                           {k.status}
                         </Badge>
                       </TableCell>
@@ -305,12 +305,12 @@ export function MobileAppKeys() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{fmtDate(k.createdAt)}</TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button size="sm" variant="ghost" onClick={() => void copy(k.appKey)} title="Copy key">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void copy(k.appKey)} title="Copy key">
                           <Copy className="h-4 w-4" />
                         </Button>
                         {k.status === 'active' && (
-                          <Button size="sm" variant="ghost" onClick={() => setRevokeTarget(k)}
-                                  title="Revoke key" className="text-rose-600">
+                          <Button size="icon" variant="ghost" onClick={() => setRevokeTarget(k)}
+                                  title="Revoke key" className="h-7 w-7 text-red-600">
                             <Ban className="h-4 w-4" />
                           </Button>
                         )}
@@ -337,7 +337,7 @@ export function MobileAppKeys() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <Label>Tenant *</Label>
+                <Label>Tenant <span className="text-red-500">*</span></Label>
                 <Select value={domTenant} onValueChange={setDomTenant}>
                   <SelectTrigger><SelectValue placeholder="Select a company" /></SelectTrigger>
                   <SelectContent>
@@ -348,7 +348,7 @@ export function MobileAppKeys() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Domain *</Label>
+                <Label>Domain <span className="text-red-500">*</span></Label>
                 <Input
                   value={domValue}
                   onChange={e => setDomValue(e.target.value)}
@@ -376,10 +376,14 @@ export function MobileAppKeys() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {!loading && domains.length === 0 && (
-                    <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">
-                      No domains mapped. The public build can't resolve any tenant until one is added.
-                    </TableCell></TableRow>
+                  {loading && domains.length === 0 && <TableBodySkeletonRows rows={3} columns={4} />}
+                  {!loading && loadError && domains.length === 0 && (
+                    <ListError message={loadError} onRetry={() => void load()} colSpan={4} />
+                  )}
+                  {!loading && !loadError && domains.length === 0 && (
+                    <ListEmpty noun="email domains" colSpan={4}>
+                      <p className="text-xs text-gray-400 mt-1">The public build can't resolve any tenant until one is added.</p>
+                    </ListEmpty>
                   )}
                   {domains.map(d => (
                     <TableRow key={d.id}>
@@ -387,7 +391,7 @@ export function MobileAppKeys() {
                       <TableCell className="font-medium">{d.tenantName ?? '(unknown)'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{fmtDate(d.createdAt)}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" variant="ghost" className="text-rose-600"
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600"
                                 onClick={() => void dropDomain(d)} title="Remove mapping">
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -413,7 +417,7 @@ export function MobileAppKeys() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRevoke} className="bg-rose-600 hover:bg-rose-700">
+            <AlertDialogAction onClick={confirmRevoke} className="bg-red-600 hover:bg-red-700 text-white">
               Revoke key
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -4,6 +4,9 @@ import { Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 import * as platformApi from '../../../api/platform';
 import { useConfirm } from '../../../context/ConfirmContext';
+import { NumericInput } from '../../common/NumericInput';
+import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
 import {
   platformPayrollCategories,
   type PayrollCategory,
@@ -40,6 +43,8 @@ export function PlatformPayrollCategories() {
   const [loadingTenants, setLoadingTenants] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [rowsError, setRowsError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -61,18 +66,22 @@ export function PlatformPayrollCategories() {
     if (!tenantId) return;
     let cancelled = false;
     (async () => {
+      // Drop the previous tenant's rows so the skeleton shows rather
+      // than a stale list while the new tenant loads.
+      setRows([]);
+      setRowsError(null);
       setLoadingRows(true);
       try {
         const list = await platformPayrollCategories.list(tenantId);
         if (!cancelled) setRows(list);
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load categories');
+        if (!cancelled) setRowsError(err instanceof Error ? err.message : 'Failed to load categories');
       } finally {
         if (!cancelled) setLoadingRows(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [tenantId, reloadTick]);
 
   const earnings   = useMemo(() => rows.filter(r => r.kind === 'earning'),   [rows]);
   const deductions = useMemo(() => rows.filter(r => r.kind === 'deduction'), [rows]);
@@ -169,8 +178,10 @@ export function PlatformPayrollCategories() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <CategoryTable title="Earnings" rows={earnings}   loading={loadingRows} onToggle={handleToggle} onDelete={handleDelete} />
-        <CategoryTable title="Deductions" rows={deductions} loading={loadingRows} onToggle={handleToggle} onDelete={handleDelete} />
+        <CategoryTable title="Earnings" rows={earnings}   loading={loadingRows && rows.length === 0} error={rowsError}
+                       onRetry={() => setReloadTick(t => t + 1)} onToggle={handleToggle} onDelete={handleDelete} />
+        <CategoryTable title="Deductions" rows={deductions} loading={loadingRows && rows.length === 0} error={rowsError}
+                       onRetry={() => setReloadTick(t => t + 1)} onToggle={handleToggle} onDelete={handleDelete} />
       </div>
 
       {tenantId && (
@@ -186,11 +197,13 @@ export function PlatformPayrollCategories() {
 }
 
 function CategoryTable({
-  title, rows, loading, onToggle, onDelete,
+  title, rows, loading, error, onRetry, onToggle, onDelete,
 }: {
   title: string;
   rows: PayrollCategory[];
   loading: boolean;
+  error: string | null;
+  onRetry: () => void;
   onToggle: (row: PayrollCategory, enabled: boolean) => void;
   onDelete: (row: PayrollCategory) => void;
 }) {
@@ -213,21 +226,12 @@ function CategoryTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                  <Loader2 className="inline h-4 w-4 animate-spin mr-1" /> Loading…
-                </TableCell>
-              </TableRow>
+            {loading && <TableBodySkeletonRows rows={4} columns={6} />}
+            {!loading && error && <ListError message={error} onRetry={onRetry} colSpan={6} />}
+            {!loading && !error && rows.length === 0 && (
+              <ListEmpty noun={`${title.toLowerCase()} for this tenant`} colSpan={6} />
             )}
-            {!loading && rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-6">
-                  No {title.toLowerCase()} for this tenant.
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && rows.map(r => (
+            {rows.map(r => (
               <TableRow key={r.id}>
                 <TableCell>
                   <span className="font-medium">{r.label}</span>
@@ -247,7 +251,7 @@ function CategoryTable({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-7 w-7 text-red-600 hover:text-red-700"
                     disabled={r.system}
                     title={r.system ? 'System categories cannot be deleted' : 'Delete'}
                     onClick={() => onDelete(r)}
@@ -276,10 +280,14 @@ function AddCategoryDialog({
     code: '', label: '', kind: 'earning', valueType: 'flat', defaultAmount: 0,
   });
   const [saving, setSaving] = useState(false);
+  // Raw string for the NumericInput so the field can be cleared while
+  // typing; parsed into form.defaultAmount on every change.
+  const [amountStr, setAmountStr] = useState('0');
 
   useEffect(() => {
     if (!open) return;
     setForm({ code: '', label: '', kind: 'earning', valueType: 'flat', defaultAmount: 0 });
+    setAmountStr('0');
   }, [open]);
 
   const handleSave = async () => {
@@ -312,11 +320,11 @@ function AddCategoryDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label className="text-xs">Label</Label>
+            <Label className="text-xs">Label <span className="text-red-500">*</span></Label>
             <Input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Health Insurance" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Code</Label>
+            <Label className="text-xs">Code <span className="text-red-500">*</span></Label>
             <Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} placeholder="health_insurance" />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -344,8 +352,8 @@ function AddCategoryDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Default amount</Label>
-            <Input type="number" min={0} step="0.01" value={form.defaultAmount ?? 0}
-                   onChange={e => setForm({ ...form, defaultAmount: parseFloat(e.target.value) || 0 })} />
+            <NumericInput value={amountStr}
+                          onChange={v => { setAmountStr(v); setForm({ ...form, defaultAmount: parseFloat(v) || 0 }); }} />
           </div>
         </div>
         <DialogFooter>

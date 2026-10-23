@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -7,20 +7,27 @@ import { Switch } from '../../ui/switch';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../../ui/alert-dialog';
-import {
-  KeyRound, Timer, Shield, Flag, Globe, Save, RefreshCw, Plus, Trash2, AlertTriangle,
+  KeyRound, Timer, Flag, Globe, Save, RefreshCw, Plus, Trash2, AlertTriangle, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   defaultPlatformPolicy, PlatformPolicy as Policy,
 } from '../../../data/platformData';
+import { NumericInput } from '../../common/NumericInput';
+import { ListError } from '../../common/ListStates';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { TONE_CLASS } from '../../../utils/statusTones';
+import { USE_MOCKS } from '../../../api/client';
+import * as platformApi from '../../../api/platform';
 
+// Mock mode keeps the whole policy in this browser. In live mode the policy
+// lives in the platform_policy row (GET/PUT /api/v1/platform/policy); only the
+// IP allowlist entries stay in localStorage because the server has no column
+// for them yet (it stores just the ipAllowlistEnabled flag).
 const POLICY_KEY = 'hrms:platformPolicy';
+const IP_LIST_KEY = 'hrms:platformPolicy:ipAllowlist';
 
-function loadPolicy(): Policy {
+function loadLocalPolicy(): Policy {
   try {
     const raw = localStorage.getItem(POLICY_KEY);
     if (!raw) return defaultPlatformPolicy;
@@ -30,57 +37,177 @@ function loadPolicy(): Policy {
   }
 }
 
+function loadLocalIpList(): string[] {
+  try {
+    const raw = localStorage.getItem(IP_LIST_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalIpList(list: string[]) {
+  try { localStorage.setItem(IP_LIST_KEY, JSON.stringify(list)); } catch { /* storage blocked */ }
+}
+
+/** Server row → page shape. Unknown / non-boolean flags are dropped; missing
+ *  known flags fall back to the defaults so every toggle still renders. */
+function fromServer(p: platformApi.PlatformPolicy): Policy {
+  const flags: Record<string, boolean> = { ...defaultPlatformPolicy.featureFlags };
+  for (const [k, v] of Object.entries(p.featureFlags ?? {})) {
+    if (typeof v === 'boolean') flags[k] = v;
+  }
+  return {
+    passwordMinLength: p.passwordMinLength,
+    passwordRequireNumber: p.passwordRequireNumber,
+    passwordRequireSymbol: p.passwordRequireSymbol,
+    passwordRequireUppercase: p.passwordRequireUppercase,
+    passwordExpiryDays: p.passwordExpiryDays,
+    mfaRequired: p.mfaRequired,
+    sessionTimeoutMinutes: p.sessionTimeoutMinutes,
+    minSyncIntervalSeconds: p.minSyncIntervalSeconds,
+    dataRetentionDays: p.dataRetentionDays,
+    auditLogRetentionDays: p.auditLogRetentionDays,
+    ipAllowlistEnabled: p.ipAllowlistEnabled,
+    ipAllowlist: loadLocalIpList(),
+    featureFlags: flags,
+  };
+}
+
+function toServer(p: Policy) {
+  return {
+    passwordMinLength: p.passwordMinLength,
+    passwordRequireNumber: p.passwordRequireNumber,
+    passwordRequireSymbol: p.passwordRequireSymbol,
+    passwordRequireUppercase: p.passwordRequireUppercase,
+    passwordExpiryDays: p.passwordExpiryDays,
+    mfaRequired: p.mfaRequired,
+    sessionTimeoutMinutes: p.sessionTimeoutMinutes,
+    minSyncIntervalSeconds: p.minSyncIntervalSeconds,
+    dataRetentionDays: p.dataRetentionDays,
+    auditLogRetentionDays: p.auditLogRetentionDays,
+    ipAllowlistEnabled: p.ipAllowlistEnabled,
+    featureFlags: p.featureFlags,
+  };
+}
+
 export function PlatformPolicy() {
-  const [policy, setPolicy] = useState<Policy>(() => loadPolicy());
+  const confirm = useConfirm();
+  const [policy, setPolicy] = useState<Policy>(() => (USE_MOCKS ? loadLocalPolicy() : defaultPlatformPolicy));
   const [dirty, setDirty] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
   const [newIp, setNewIp] = useState('');
+  const [loading, setLoading] = useState(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    if (USE_MOCKS) return;
+    setLoading(true);
+    try {
+      const p = await platformApi.policy.get();
+      setPolicy(fromServer(p));
+      setDirty(false);
+      setLoadError(null);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load the platform policy.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const patch = (p: Partial<Policy>) => { setPolicy({ ...policy, ...p }); setDirty(true); };
 
-  const handleSave = () => {
-    localStorage.setItem(POLICY_KEY, JSON.stringify(policy));
-    setDirty(false);
-    toast.success('Platform policy saved — applied to all tenants');
+  const persist = async (next: Policy): Promise<boolean> => {
+    if (USE_MOCKS) {
+      try {
+        localStorage.setItem(POLICY_KEY, JSON.stringify(next));
+        return true;
+      } catch {
+        toast.error('Could not save the policy in this browser');
+        return false;
+      }
+    }
+    setSaving(true);
+    try {
+      const saved = await platformApi.policy.update(toServer(next));
+      saveLocalIpList(next.ipAllowlist);
+      setPolicy({ ...fromServer(saved), ipAllowlist: next.ipAllowlist });
+      return true;
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save the platform policy');
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleReset = () => {
-    setPolicy(defaultPlatformPolicy);
-    localStorage.removeItem(POLICY_KEY);
+  const handleSave = async () => {
+    if (!(await persist(policy))) return;
     setDirty(false);
-    setResetOpen(false);
+    toast.success(USE_MOCKS ? 'Platform policy saved in this browser (demo mode)' : 'Platform policy saved');
+  };
+
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: 'Reset to default policy?',
+      message: 'All customizations are discarded and the defaults are saved immediately. Tenant admins keep their local tightening — only the platform ceiling resets.',
+      confirmLabel: 'Reset',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    if (USE_MOCKS) {
+      try { localStorage.removeItem(POLICY_KEY); } catch { /* storage blocked */ }
+      setPolicy(defaultPlatformPolicy);
+      setDirty(false);
+      toast.success('Reset to default policy');
+      return;
+    }
+    if (!(await persist(defaultPlatformPolicy))) return;
+    setDirty(false);
     toast.success('Reset to default policy');
   };
 
+  const busy = loading || saving;
+
   return (
     <div className="space-y-6">
-      {/* Status bar */}
-      <Card>
-        <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
-              <Shield className="h-5 w-5 text-amber-700" />
-            </div>
-            <div>
-              <p className="font-medium text-sm">Global platform policy</p>
-              <p className="text-xs text-gray-500">
-                These rules are the <strong>ceiling</strong>. Tenant admins can tighten them further but cannot loosen.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {dirty && <Badge className="bg-amber-100 text-amber-900">Unsaved changes</Badge>}
-            <Button variant="outline" onClick={() => setResetOpen(true)}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Reset Defaults
-            </Button>
-            <Button onClick={handleSave} disabled={!dirty}>
-              <Save className="h-4 w-4 mr-2" />
-              Save Policy
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-sm text-gray-500">
+          These rules are the <strong>ceiling</strong>. Tenant admins can tighten them further but cannot loosen.
+        </p>
+        <div className="flex items-center justify-end gap-2">
+          {dirty && <Badge variant="outline" className={TONE_CLASS.attention}>Unsaved changes</Badge>}
+          <Button variant="outline" onClick={handleReset} disabled={busy}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reset Defaults
+          </Button>
+          <Button onClick={handleSave} disabled={!dirty || busy}>
+            <Save className="h-4 w-4 mr-2" />
+            {saving ? 'Saving…' : 'Save Policy'}
+          </Button>
+        </div>
+      </div>
+
+      {USE_MOCKS && (
+        <div className="flex items-start gap-2 p-3 rounded-md border border-amber-200 bg-amber-50 text-sm text-amber-900">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+          <p>Demo mode: this policy is saved in this browser only and is not applied to any tenant.</p>
+        </div>
+      )}
+
+      {loadError && (
+        <Card>
+          <CardContent className="p-0">
+            <ListError message={loadError} onRetry={() => { void load(); }} />
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="password" className="space-y-6">
         <TabsList>
@@ -196,6 +323,11 @@ export function PlatformPolicy() {
 
               <div className="space-y-2">
                 <Label className="text-xs text-gray-600">Allowed IPs / CIDRs</Label>
+                {!USE_MOCKS && (
+                  <p className="text-xs text-amber-700">
+                    The address list below is kept in this browser only — the server does not store platform-wide IP entries yet.
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <Input
                     value={newIp}
@@ -226,10 +358,12 @@ export function PlatformPolicy() {
                         <code className="text-xs">{ip}</code>
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                          size="icon"
+                          className="h-7 w-7 text-red-600 hover:bg-red-50"
                           onClick={() => patch({ ipAllowlist: policy.ipAllowlist.filter((_, i) => i !== idx) })}
                           disabled={!policy.ipAllowlistEnabled}
+                          title="Remove"
+                          aria-label={`Remove ${ip}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -263,26 +397,11 @@ export function PlatformPolicy() {
         </TabsContent>
       </Tabs>
 
-      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset to default policy?</AlertDialogTitle>
-            <AlertDialogDescription>
-              All customizations are discarded. Tenant admins keep their local tightening — only the platform ceiling resets.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleReset}>Reset</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {dirty && (
         <div className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 rounded-md bg-amber-50 border border-amber-200 shadow-md">
           <AlertTriangle className="h-4 w-4 text-amber-700" />
           <span className="text-sm text-amber-900">Unsaved changes</span>
-          <Button size="sm" onClick={handleSave}>Save now</Button>
+          <Button size="sm" onClick={handleSave} disabled={busy}>Save now</Button>
         </div>
       )}
     </div>
@@ -304,22 +423,35 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
   bulkPayrollUpload:    'Admins can upload payroll via Excel template.',
 };
 
+/** Integer field: free typing while focused, clamped to [min, max] on blur
+ *  (clamping per keystroke made e.g. "120" impossible to type when min=15). */
 function NumberField({ label, value, min, max, onChange, hint }: {
   label: string; value: number; min: number; max: number;
   onChange: (v: number) => void; hint?: string;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  const commit = () => {
+    const v = parseInt(draft, 10);
+    const next = Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : value;
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
   return (
     <div className="space-y-1.5">
       <Label className="text-sm">{label}</Label>
-      <Input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => {
-          const v = parseInt(e.target.value, 10);
-          if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, v)));
+      <NumericInput
+        value={draft}
+        onChange={(raw) => {
+          setDraft(raw);
+          // Push in-range values straight away so Save sees them without a blur.
+          const v = parseInt(raw, 10);
+          if (Number.isFinite(v) && v >= min && v <= max && v !== value) onChange(v);
         }}
+        onBlur={commit}
+        decimals={0}
+        maxInt={5}
+        className="text-left"
       />
       {hint && <p className="text-xs text-gray-500">{hint}</p>}
     </div>
@@ -330,7 +462,7 @@ function ToggleRow({ label, description, value, onChange }: {
   label: string; description?: string; value: boolean; onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="page-header-strip p-3 rounded-md border">
+    <div className="flex items-center justify-between gap-4 p-3 rounded-md border">
       <div className="space-y-0.5 flex-1 min-w-0">
         <p className="font-medium text-sm">{label}</p>
         {description && <p className="text-xs text-gray-500">{description}</p>}
