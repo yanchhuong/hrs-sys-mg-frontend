@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import * as hrBotApi from '../../api/hrTelegramBots';
 import { HrTelegramGroupCard } from '../common/HrTelegramGroupCard';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as currencyApi from '../../api/currencySettings';
 import * as paywayApi from '../../api/payway';
 import { toast } from 'sonner';
@@ -79,7 +80,7 @@ export function Settings() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="page-header-strip">
         <h1 className="text-3xl font-bold">{t('page.settings.title')}</h1>
       </div>
 
@@ -89,18 +90,24 @@ export function Settings() {
             <SettingsIcon className="mr-2 h-4 w-4" />
             Company
           </TabsTrigger>
-          <TabsTrigger value="payway">
-            <KeyRound className="mr-2 h-4 w-4" />
-            PayWay (ABA) Integration
-          </TabsTrigger>
+          {/* Admin-only tabs are hidden for everyone else — their
+              content is admin-gated, so showing the tab gave a blank page. */}
+          {isAdmin && (
+            <TabsTrigger value="payway">
+              <KeyRound className="mr-2 h-4 w-4" />
+              PayWay (ABA) Integration
+            </TabsTrigger>
+          )}
           <TabsTrigger value="agency">
             <Handshake className="mr-2 h-4 w-4" />
             Agency
           </TabsTrigger>
-          <TabsTrigger value="teambot">
-            <Send className="mr-2 h-4 w-4" />
-            Team Activity Bot
-          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="teambot">
+              <Send className="mr-2 h-4 w-4" />
+              Team Activity Bot
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="agency" className="space-y-6">
@@ -120,15 +127,19 @@ export function Settings() {
           {/* {isAdmin && <CloudConnectionCard />} */}
         </TabsContent>
 
-        <TabsContent value="payway" className="space-y-6">
-          {isAdmin && <PayWayIntegrationCard />}
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="payway" className="space-y-6">
+            <PayWayIntegrationCard />
+          </TabsContent>
+        )}
 
         {/* Admin-only, like Currency and PayWay: it decides what the
             whole company sees in a shared chat. */}
-        <TabsContent value="teambot" className="space-y-6">
-          {isAdmin && <TeamBotCard />}
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="teambot" className="space-y-6">
+            <TeamBotCard />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -588,8 +599,8 @@ function CurrencySettingsCard() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+        {loading && !data ? (
+          <TableRowsSkeleton rows={3} columns={2} />
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -745,6 +756,7 @@ function PayWayIntegrationCard() {
  * ================================================================ */
 
 function AgencyRequestTab() {
+  const { formatDate } = useDateFormat();
   const [directory, setDirectory] = useState<TenantAgencyApi.AgencyDirectoryItem[]>([]);
   const [myRequests, setMyRequests] = useState<TenantAgencyApi.MyRequestDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -802,17 +814,17 @@ function AgencyRequestTab() {
               Expenses) and preparing your tax filings.
             </PageTitleTooltip>
           </CardTitle>
-          <div className="flex items-center gap-2 sm:justify-end sm:flex-wrap overflow-x-auto sm:overflow-visible">
-            <div className="relative flex-1 sm:flex-initial min-w-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+          <div className="filter-strip sm:justify-end">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search agencies…"
-                className="pl-8 h-9 w-full sm:w-64 text-sm"
+                className="pl-7 h-9 w-64 text-sm"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
@@ -820,9 +832,7 @@ function AgencyRequestTab() {
         </CardHeader>
         <CardContent className="p-0">
           {loading && directory.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading agencies…
-            </div>
+            <div className="px-6"><TableRowsSkeleton rows={4} columns={3} /></div>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-500 px-6 py-6">
               {directory.length === 0
@@ -864,7 +874,7 @@ function AgencyRequestTab() {
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <RequestStatusBadge status={my.status} />
                           <span className="text-[10px] text-gray-500">
-                            Sent {new Date(my.createdAt).toLocaleDateString()}
+                            Sent {formatDate(my.createdAt)}
                             {my.initiatedBy !== 'tenant' && (
                               <> · by {my.initiatedBy === 'super_admin' ? 'Super Admin' : 'Agency'}</>
                             )}
@@ -1028,6 +1038,7 @@ function RequestAgencyDialog({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [scrolledToBottom, setScrolledToBottom] = useState(false);
+  const termsRef = useRef<HTMLDivElement | null>(null);
   const open = !!agency;
 
   useEffect(() => {
@@ -1037,6 +1048,14 @@ function RequestAgencyDialog({
     // If the agency has no T&C published we can't require a scroll,
     // so treat that case as "bottom reached" up front.
     setScrolledToBottom(!agency.termsAndConditions);
+    // Short terms that fit the box never scroll, so the onScroll check
+    // below would never fire and "I agree" stayed disabled forever.
+    // Once the dialog has laid out, treat "no overflow" as read.
+    const raf = requestAnimationFrame(() => {
+      const el = termsRef.current;
+      if (el && el.scrollHeight <= el.clientHeight + 4) setScrolledToBottom(true);
+    });
+    return () => cancelAnimationFrame(raf);
   }, [agency]);
 
   const submit = async () => {
@@ -1073,6 +1092,7 @@ function RequestAgencyDialog({
         </DialogHeader>
 
         <div
+          ref={termsRef}
           className="max-h-72 overflow-y-auto border rounded-md p-3 text-xs leading-relaxed whitespace-pre-wrap bg-gray-50"
           onScroll={e => {
             const el = e.currentTarget;

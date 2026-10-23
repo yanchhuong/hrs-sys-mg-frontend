@@ -9,6 +9,8 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty } from '../common/ListStates';
 import * as txApi from '../../api/transactions';
 import * as currencyApi from '../../api/currencySettings';
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Info, RefreshCw, Wallet } from 'lucide-react';
@@ -347,11 +349,9 @@ export function Transactions() {
               </TableHeader>
               <TableBody>
                 {pagination.paginatedItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
-                      {loading ? 'Loading…' : 'No transactions match these filters.'}
-                    </TableCell>
-                  </TableRow>
+                  loading && rows.length === 0
+                    ? <TableBodySkeletonRows rows={8} columns={9} />
+                    : <ListEmpty noun="transactions" filtered={!!(from || to || refTypeFilter || dirFilter || currencyFilter)} colSpan={9} />
                 ) : pagination.paginatedItems.map(entry => {
                   const r = entry.row;
                   const isChild = entry.depth > 0;

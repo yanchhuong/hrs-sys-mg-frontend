@@ -22,7 +22,13 @@ import { DateInput } from '../common/DateInput';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import * as adjustmentsApi from '../../api/stockAdjustments';
 import * as itemsApi from '../../api/items';
-import { ClipboardEdit, Plus, Trash2, RefreshCw, Info, X } from 'lucide-react';
+import { ClipboardEdit, Plus, Trash2, RefreshCw, Info, Search } from 'lucide-react';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { NumericInput } from '../common/NumericInput';
+import { SearchablePicker } from '../common/SearchablePicker';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -73,21 +79,29 @@ export function StockAdjustments() {
   })();
   const [dateFrom, setDateFrom] = useState(monthStart);
   const [dateTo, setDateTo] = useState(todayIso);
-  const clearDates = () => { setDateFrom(''); setDateTo(''); };
-  const hasDateFilter = !!(dateFrom || dateTo);
+  // One Clear for every filter — search and the date range.
+  const clearFilters = () => { setSearch(''); setDateFrom(''); setDateTo(''); };
+  const hasFilter = !!(search || dateFrom || dateTo);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
+  const itemOptions = useMemo(
+    () => items.filter(i => i.active).map(i => ({ value: i.id, label: i.name, secondary: i.sku || undefined })),
+    [items],
+  );
+  const { formatDate } = useDateFormat();
   const [deleteTarget, setDeleteTarget] = useState<adjustmentsApi.StockAdjustment | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await adjustmentsApi.list(0, 200);
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load adjustments');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load adjustments');
     } finally {
       setLoading(false);
     }
@@ -236,35 +250,23 @@ export function StockAdjustments() {
               Slides horizontally on narrow screens via the shared
               .filter-strip utility (nowrap + overflow-x-auto). */}
           <div className="filter-strip">
-            <Input
-              placeholder="Search item, reason, note…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-8 w-[220px] text-sm"
-              aria-label="Search adjustments"
-            />
-            <span className="text-xs text-gray-500">From</span>
-            <DateInput
-              value={dateFrom || null}
-              onChange={v => setDateFrom(v ?? '')}
-              max={dateTo || undefined}
-            />
-            <span className="text-xs text-gray-500">To</span>
-            <DateInput
-              value={dateTo || null}
-              onChange={v => setDateTo(v ?? '')}
-              min={dateFrom || undefined}
-            />
-            {hasDateFilter && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={clearDates}
-                title="Clear date filter"
-                aria-label="Clear date filter"
-                className="h-8 w-8"
-              >
-                <X className="h-4 w-4" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search item, reason, note…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+                aria-label="Search adjustments"
+              />
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilter && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
               </Button>
             )}
           </div>
@@ -296,14 +298,13 @@ export function StockAdjustments() {
               {loading && rows.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={canRemove ? 10 : 9} />
               )}
-              {!loading && filtered.length === 0 && rows.length > 0 && (
-                <TableRow>
-                  <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
-                    No adjustments match your filters.
-                  </TableCell>
-                </TableRow>
+              {!loading && loadError && rows.length === 0 && (
+                <ListError message={loadError} onRetry={() => void load()} colSpan={canRemove ? 10 : 9} />
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && filtered.length === 0 && rows.length > 0 && (
+                <ListEmpty noun="adjustments" filtered colSpan={canRemove ? 10 : 9} />
+              )}
+              {!loading && !loadError && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={canRemove ? 10 : 9} className="text-center text-sm text-gray-400 py-8">
                     No adjustments yet.{canAdd && <> Click <strong>Add Adjustment</strong> to record one.</>}
@@ -315,9 +316,7 @@ export function StockAdjustments() {
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="text-xs text-gray-600 tabular-nums">
-                          {new Date(a.createdAt).toLocaleString('en-US', {
-                            year: '2-digit', month: 'short', day: '2-digit',
-                          })}
+                          {formatDate(a.createdAt)}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">{a.adjustmentNo}</TableCell>
                         <TableCell>
@@ -337,7 +336,7 @@ export function StockAdjustments() {
                         </TableCell>
                         <TableCell className="text-xs">{reasonLabel(a.reason)}</TableCell>
                         <TableCell className="text-center">
-                          <Badge variant={a.status === 'approved' ? 'default' : 'outline'}>
+                          <Badge variant="outline" className={statusBadgeClass(a.status)}>
                             {a.status}
                           </Badge>
                         </TableCell>
@@ -346,8 +345,8 @@ export function StockAdjustments() {
                         </TableCell>
                         {canRemove && (
                           <TableCell className="text-right">
-                            <Button size="sm" variant="ghost"
-                              className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            <Button size="icon" variant="ghost"
+                              className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => setDeleteTarget(a)} title="Remove" aria-label="Remove adjustment">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -385,27 +384,26 @@ export function StockAdjustments() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Item <span className="text-red-500">*</span></Label>
-              <select
+              {/* Searchable — a plain <select> of up to 1,000 items was
+                  unusable to scroll. */}
+              <SearchablePicker
+                options={itemOptions}
                 value={form.itemId}
-                onChange={e => setForm({ ...form, itemId: e.target.value })}
+                onChange={v => setForm({ ...form, itemId: v })}
+                placeholder="Pick an item…"
+                searchPlaceholder="Search name or SKU…"
+                allowClear={false}
                 disabled={saving}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">Pick an item…</option>
-                {items.filter(i => i.active).map(i => (
-                  <option key={i.id} value={i.id}>
-                    {i.sku ? `${i.sku} — ${i.name}` : i.name}
-                  </option>
-                ))}
-              </select>
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-1.5">
               <Label>Actual quantity <span className="text-red-500">*</span></Label>
-              <Input
-                type="number" step="0.01" min="0"
+              <NumericInput
+                decimals={2}
                 value={form.actualQty}
-                onChange={e => setForm({ ...form, actualQty: e.target.value })}
+                onChange={v => setForm({ ...form, actualQty: v })}
                 placeholder="e.g. 95"
               />
               {systemQty != null && Number.isFinite(actualParsed) && (
@@ -424,16 +422,18 @@ export function StockAdjustments() {
 
             <div className="space-y-1.5">
               <Label>Reason <span className="text-red-500">*</span></Label>
-              <select
+              <Select
                 value={form.reason}
-                onChange={e => setForm({ ...form, reason: e.target.value as adjustmentsApi.AdjustmentReason })}
+                onValueChange={v => setForm({ ...form, reason: v as adjustmentsApi.AdjustmentReason })}
                 disabled={saving}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                {adjustmentsApi.ADJUSTMENT_REASONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {adjustmentsApi.ADJUSTMENT_REASONS.map(r => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">

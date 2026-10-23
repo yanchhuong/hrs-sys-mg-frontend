@@ -11,7 +11,10 @@ import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import * as movementsApi from '../../api/stockMovements';
-import { History, RefreshCw, Info, X } from 'lucide-react';
+import { History, RefreshCw, Info, Search } from 'lucide-react';
+import { Label } from '../ui/label';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { useDateFormat } from '../../context/DateFormatContext';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -54,9 +57,12 @@ export function StockMovements() {
   })();
   const [dateFrom, setDateFrom] = useState(monthStart);
   const [dateTo, setDateTo] = useState(todayIso);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { formatDateTime } = useDateFormat();
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await movementsApi.list({
         type: typeFilter || undefined,
@@ -66,7 +72,7 @@ export function StockMovements() {
       });
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load movements');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load movements');
     } finally {
       setLoading(false);
     }
@@ -74,8 +80,9 @@ export function StockMovements() {
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [typeFilter, dateFrom, dateTo]);
 
-  const clearDates = () => { setDateFrom(''); setDateTo(''); };
-  const hasDateFilter = !!(dateFrom || dateTo);
+  // One Clear for every filter — search, type and the date range.
+  const clearFilters = () => { setSearch(''); setTypeFilter(''); setDateFrom(''); setDateTo(''); };
+  const hasFilter = !!(search || typeFilter || dateFrom || dateTo);
 
   // v-movement-search — narrow the loaded set by the search box
   // before paginating. Case-insensitive substring match across the
@@ -151,51 +158,37 @@ export function StockMovements() {
                 referenceNo / note (see filtered useMemo). Width caps
                 at 220 px so the range / type controls to the right
                 stay reachable on a narrow viewport. */}
-            <Input
-              placeholder="Search item, reference, note…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-8 w-[220px] text-sm"
-              aria-label="Search movements"
-            />
-            {/* DateInput renders a popover trigger button (not a native
-                <input>), so there's no id to hang a <label htmlFor> off.
-                Chrome DevTools flags an orphan "for" as an a11y issue —
-                use a plain span for the visual annotation instead. */}
-            <span className="text-xs text-gray-500">From</span>
-            <DateInput
-              value={dateFrom || null}
-              onChange={v => setDateFrom(v ?? '')}
-              max={dateTo || undefined}
-            />
-            <span className="text-xs text-gray-500">To</span>
-            <DateInput
-              value={dateTo || null}
-              onChange={v => setDateTo(v ?? '')}
-              min={dateFrom || undefined}
-            />
-            {hasDateFilter && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={clearDates}
-                title="Clear date filter"
-                aria-label="Clear date filter"
-                className="h-8 w-8"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search item, reference, note…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+                aria-label="Search movements"
+              />
+            </div>
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
-              className="h-8 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
               aria-label="Filter by type"
             >
               {TYPE_FILTERS.map(f => (
-                <option key={f.value} value={f.value}>{f.label}</option>
+                <option key={f.value} value={f.value}>Type : {f.label}</option>
               ))}
             </select>
+            {/* DateInput renders a popover trigger button (not a native
+                <input>), so there's no id to hang a <label htmlFor> off. */}
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilter && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         {/* Default CardContent padding — matches the Items page so
@@ -224,19 +217,22 @@ export function StockMovements() {
               {loading && rows.length === 0 && (
                 <TableBodySkeletonRows rows={6} columns={8} />
               )}
-              {!loading && filtered.length === 0 && rows.length > 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                    No movements match your filters.
-                  </TableCell>
-                </TableRow>
+              {!loading && loadError && rows.length === 0 && (
+                <ListError message={loadError} onRetry={() => void load()} colSpan={8} />
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && filtered.length === 0 && rows.length > 0 && (
+                <ListEmpty noun="movements" filtered colSpan={8} />
+              )}
+              {!loading && !loadError && rows.length === 0 && (
+                hasFilter
+                  ? <ListEmpty noun="movements" filtered colSpan={8} />
+                  : (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
                     No movements yet. Save an Invoice or an Adjustment to record one.
                   </TableCell>
                 </TableRow>
+                  )
               )}
               {pagination.paginatedItems.map(m => {
                     const signed = Number(m.quantity ?? 0);
@@ -244,10 +240,7 @@ export function StockMovements() {
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="text-xs text-gray-600 tabular-nums">
-                          {new Date(m.createdAt).toLocaleString('en-US', {
-                            year: '2-digit', month: 'short', day: '2-digit',
-                            hour: '2-digit', minute: '2-digit',
-                          })}
+                          {formatDateTime(m.createdAt)}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
                           {m.referenceNo || <span className="text-gray-300">—</span>}

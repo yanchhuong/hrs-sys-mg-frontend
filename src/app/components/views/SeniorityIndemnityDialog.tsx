@@ -6,6 +6,9 @@ import { loadXlsx } from '../../utils/xlsxLoader';
 import * as seniorityApi from '../../api/seniorityIndemnity';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { useDateFormat } from '../../context/DateFormatContext';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +21,6 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
   Table,
@@ -59,6 +61,7 @@ function money(n: number): string {
 }
 
 export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Props) {
+  const { formatDate } = useDateFormat();
   const initial = useMemo(defaultPeriod, []);
   const [startDate, setStartDate] = useState<string>(initial.startDate);
   const [endDate, setEndDate] = useState<string>(initial.endDate);
@@ -143,22 +146,24 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
     }
   };
 
-  // Selected total is computed from dailyWage × daysPaid for every
-  // checked row regardless of eligibility — the backend used to force
-  // amount=0 for ineligible rows, but the dialog now treats eligibility
-  // as advisory + lets HR choose. The same formula drives the per-row
-  // "Seniority" cell so the footer total always matches the sum of
-  // what's visible above.
+  // Selected count/total cover exactly the rows Create sends: checked AND
+  // eligible. handleCreate filters on both, so counting ineligible ticks
+  // here made the footer and the button promise money that was never
+  // created. Same dailyWage × daysPaid formula as the per-row cell.
+  const isSent = (i: { eligible: boolean; employeeId: string }) =>
+    i.eligible && included.has(i.employeeId);
   const selectedTotal = useMemo(() => {
     if (!preview) return 0;
     return preview.items
-      .filter(i => included.has(i.employeeId))
+      .filter(isSent)
       .reduce((sum, i) => sum + i.dailyWage * preview.daysPaid, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, included]);
 
   const selectedCount = useMemo(() => {
     if (!preview) return 0;
-    return preview.items.filter(i => included.has(i.employeeId)).length;
+    return preview.items.filter(isSent).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, included]);
 
   /**
@@ -197,7 +202,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
       const monthTotals: Record<string, number> = {};
       for (const r of preview.items) {
         const seniorityUsd = r.dailyWage * preview.daysPaid;
-        const isIncluded = included.has(r.employeeId);
+        const isIncluded = r.eligible && included.has(r.employeeId);
         if (isIncluded) totalSeniority += seniorityUsd;
         const monthCells = monthKeys.map(k => {
           const v = r.monthlyGross?.[k] ?? 0;
@@ -299,32 +304,31 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
               Tax Calculator's Month/Year row. */}
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
-              <Label htmlFor="seniority-start">Start date</Label>
-              <Input
-                id="seniority-start"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+              <Label>Start date</Label>
+              <DateInput
+                value={startDate || null}
+                onChange={(v) => setStartDate(v ?? '')}
+                max={endDate || undefined}
+                className="w-full"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="seniority-end">End date</Label>
-              <Input
-                id="seniority-end"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+              <Label>End date</Label>
+              <DateInput
+                value={endDate || null}
+                onChange={(v) => setEndDate(v ?? '')}
+                min={startDate || undefined}
+                className="w-full"
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor="seniority-days">Days to pay</Label>
-              <Input
+              <NumericInput
                 id="seniority-days"
-                type="number"
-                step="0.5"
-                min="0"
+                decimals={1}
+                maxInt={3}
                 value={days}
-                onChange={(e) => setDays(e.target.value)}
+                onChange={setDays}
                 placeholder="7.5"
               />
             </div>
@@ -507,12 +511,16 @@ to $500/mo, not $167.`}
                             );
                           }
                           return visible.map(row => {
-                          const checked = included.has(row.employeeId);
+                          // Ineligible rows are never sent to the batch, so
+                          // they can't be ticked — the tick would be a lie.
+                          const checked = row.eligible && included.has(row.employeeId);
                           return (
                             <TableRow key={row.employeeId}>
                               <TableCell>
                                 <Checkbox
                                   checked={checked}
+                                  disabled={!row.eligible}
+                                  title={!row.eligible ? 'Not eligible — not included in the batch' : undefined}
                                   onCheckedChange={(v) => {
                                     setIncluded(prev => {
                                       const next = new Set(prev);
@@ -561,7 +569,7 @@ to $500/mo, not $167.`}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-4 py-3 text-sm">
                 <div>
                   <span className="text-gray-500">Period:</span>{' '}
-                  <strong>{preview.startDate} → {preview.endDate}</strong>
+                  <strong>{formatDate(preview.startDate)} → {formatDate(preview.endDate)}</strong>
                   {' · '}
                   <span className="text-gray-500">Roster:</span>{' '}
                   <strong>{preview.rosterCount}</strong>

@@ -17,6 +17,14 @@ import { Checkbox } from '../ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { statusBadgeClass } from '../../utils/statusTones';
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
+} from '../ui/select';
+
 import {
   Table,
   TableBody,
@@ -32,7 +40,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '../ui/dialog';
 import {
   AlertDialog,
@@ -57,11 +64,13 @@ import {
   Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
+
+/** Radix Select can't hold "" — sentinel for "no department". */
+const NO_DEPT = '__none__';
 
 // ---------------------------------------------------------------------------
 // Role + permission model
@@ -563,7 +572,7 @@ function adaptApiUser(u: usersApi.User): User {
 // ---------------------------------------------------------------------------
 export function UserManagement() {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   const confirm = useConfirm();
   const { isModuleAvailable, isModuleEnabled } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
@@ -576,7 +585,8 @@ export function UserManagement() {
     { user: User; email: string; busy: boolean } | null
   >(null);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [usersError, setUsersError] = useState<string | null>(null);
 
   const deptName = makeDeptName(deptList, '');
 
@@ -592,10 +602,11 @@ export function UserManagement() {
       // happens transiently right after the admin uninstalls
       // user-management via the Apps launcher while still mounted
       // on this page.
+      setUsersError(null);
       const res = await usersApi.list({ size: 200 });
       setUsers((res?.data ?? []).map(adaptApiUser));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load users');
+      setUsersError(err instanceof Error ? err.message : 'Failed to load users');
     }
   };
 
@@ -1011,13 +1022,19 @@ export function UserManagement() {
           patch.name = formData.name.trim();
         }
         await usersApi.update(editingUser.id, patch);
+        // Status isn't part of the PATCH DTO — it has its own endpoints.
+        // The form's Status select used to be ignored on save.
+        if (formData.isActive !== editingUser.isActive) {
+          if (formData.isActive) await usersApi.reactivate(editingUser.id);
+          else await usersApi.suspend(editingUser.id);
+        }
         toast.success(
           formData.password
             ? 'User updated. New password is active immediately.'
             : 'User updated successfully',
         );
       } else {
-        await usersApi.create({
+        const created = await usersApi.create({
           email: formData.email,
           role: formData.role as usersApi.UserRole,
           employeeId: linkEmployee ? (formData.employeeId || undefined) : undefined,
@@ -1030,6 +1047,8 @@ export function UserManagement() {
           // → email on the server if omitted.
           name: formData.name.trim() || undefined,
         });
+        // New accounts start active; honour an "Inactive" pick.
+        if (!formData.isActive && created?.id) await usersApi.suspend(created.id);
         toast.success('User created successfully');
       }
       setDialogOpen(false);
@@ -1078,6 +1097,13 @@ export function UserManagement() {
   const handleToggleStatus = async (userId: string) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
+
+    if (target.isActive && !(await confirm({
+      title: 'Suspend this user?',
+      message: `${target.name?.trim() || target.email} won't be able to sign in until they are reactivated.`,
+      variant: 'destructive',
+      confirmLabel: 'Suspend',
+    }))) return;
 
     if (USE_MOCKS) {
       setUsers(users.map(u =>
@@ -1289,7 +1315,15 @@ export function UserManagement() {
     }
   };
 
-  const handleResetPermissions = () => {
+  const handleResetPermissions = async () => {
+    if (!(await confirm({
+      title: USE_MOCKS ? 'Reset permissions to defaults?' : 'Discard unsaved permission changes?',
+      message: USE_MOCKS
+        ? 'Every role goes back to the built-in permission set and custom roles are removed.'
+        : 'The matrix goes back to the last saved permissions.',
+      variant: 'destructive',
+      confirmLabel: USE_MOCKS ? 'Reset' : 'Discard',
+    }))) return;
     // Local-only — re-fetch is the way to discard unsaved tweaks against
     // the backend; for live mode we re-pull the saved grids.
     if (USE_MOCKS) {
@@ -1450,57 +1484,24 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t('page.usermgmt.title')}</h1>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold">{t('page.usermgmt.title')}</h1>
+        <Button onClick={() => handleOpenDialog()}>
+          <UserPlus className="mr-2 h-4 w-4" />
+          Add User
+        </Button>
+      </div>
+
+      {loading && users.length === 0 ? (
+        <StatCardsSkeleton cards={4} className="stat-strip" />
+      ) : (
+        <div className="stat-strip">
+          <StatCard label="Total Users" hint="System accounts" value={users.length} icon={Users} tone="blue" />
+          <StatCard label="Active Users" hint="Currently active" value={users.filter(u => u.isActive).length} icon={UserCheck} tone="green" />
+          <StatCard label="Administrators" hint="Admin accounts" value={users.filter(u => u.role === 'admin').length} icon={Shield} tone="red" />
+          <StatCard label="Inactive Users" hint="Deactivated" value={users.filter(u => !u.isActive).length} icon={UserX} tone="orange" />
         </div>
-      </div>
-
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-gray-600" />
-              <span className="text-2xl font-bold text-gray-700">{users.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Total Users</p>
-            <p className="text-[11px] text-gray-500 truncate">System accounts</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <UserCheck className="h-5 w-5 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">{users.filter(u => u.isActive).length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Active Users</p>
-            <p className="text-[11px] text-gray-500 truncate">Currently active</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Shield className="h-5 w-5 text-red-600" />
-              <span className="text-2xl font-bold text-red-600">{users.filter(u => u.role === 'admin').length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Administrators</p>
-            <p className="text-[11px] text-gray-500 truncate">Admin accounts</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <UserX className="h-5 w-5 text-gray-600" />
-              <span className="text-2xl font-bold text-gray-500">{users.filter(u => !u.isActive).length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Inactive Users</p>
-            <p className="text-[11px] text-gray-500 truncate">Deactivated</p>
-          </CardContent>
-        </Card>
-      </div>
+      )}
 
       <Tabs defaultValue="users" className="space-y-6">
         <TabsList>
@@ -1528,12 +1529,6 @@ export function UserManagement() {
                   <CardDescription>{users.length} system accounts</CardDescription>
                 </div>
                 <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button onClick={() => handleOpenDialog()}>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Add User
-                    </Button>
-                  </DialogTrigger>
                   <DialogContent className="max-w-2xl">
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
@@ -1767,13 +1762,13 @@ export function UserManagement() {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="departmentId">Department / Group / Team</Label>
-                          <select
-                            id="departmentId"
-                            value={formData.departmentId}
-                            onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                            className="w-full pl-3 pr-8 py-2 border rounded-md truncate bg-white"
+                          <Select
+                            value={formData.departmentId || NO_DEPT}
+                            onValueChange={(v) => setFormData({ ...formData, departmentId: v === NO_DEPT ? '' : v })}
                           >
-                            <option value="">Select…</option>
+                            <SelectTrigger id="departmentId" className="w-full"><SelectValue placeholder="Select…" /></SelectTrigger>
+                            <SelectContent>
+                            <SelectItem value={NO_DEPT}>Select…</SelectItem>
                             {/* Group by type so admins see Departments, Groups,
                                 and Teams in tidy stacks. The optgroup label
                                 disambiguates rows that share a name across
@@ -1786,60 +1781,64 @@ export function UserManagement() {
                               const label = t === 'department' ? 'Departments'
                                 : t === 'group' ? 'Groups' : 'Teams';
                               return (
-                                <optgroup key={t} label={label}>
+                                <SelectGroup key={t}>
+                                  <SelectLabel>{label}</SelectLabel>
                                   {bucket.map(dept => (
-                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                    <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                                   ))}
-                                </optgroup>
+                                </SelectGroup>
                               );
                             })}
-                          </select>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="role">Role *</Label>
-                          <select
-                            id="role"
+                          <Label htmlFor="role">Role <span className="text-red-500">*</span></Label>
+                          <Select
                             value={formData.role}
-                            onChange={(e) => setFormData({ ...formData, role: e.target.value as User['role'] })}
-                            className="w-full px-3 py-2 border rounded-md"
+                            onValueChange={(v) => setFormData({ ...formData, role: v as User['role'] })}
                           >
+                            <SelectTrigger id="role" className="w-full"><SelectValue /></SelectTrigger>
+                            <SelectContent>
                             {/* Built-in + custom roles, sorted with built-ins first. */}
                             {roles
                               .slice()
                               .sort((a, b) => Number(b.builtIn) - Number(a.builtIn))
                               .map(role => (
-                                <option key={role.key} value={role.key}>
+                                <SelectItem key={role.key} value={role.key}>
                                   {role.name}
                                   {role.builtIn ? '' : ' (custom)'}
-                                </option>
+                                </SelectItem>
                               ))}
-                          </select>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="isActive">Status</Label>
-                          <select
-                            id="isActive"
+                          <Select
                             value={formData.isActive ? 'active' : 'inactive'}
-                            onChange={(e) => setFormData({ ...formData, isActive: e.target.value === 'active' })}
-                            className="w-full px-3 py-2 border rounded-md"
+                            onValueChange={(v) => setFormData({ ...formData, isActive: v === 'active' })}
                           >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
+                            <SelectTrigger id="isActive" className="w-full"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-4">
+                      <DialogFooter className="pt-4">
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>
                           Cancel
                         </Button>
                         <Button onClick={handleSaveUser}>
-                          {editingUser ? 'Update User' : 'Create User'}
+                          Save
                         </Button>
-                      </div>
+                      </DialogFooter>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -1865,11 +1864,11 @@ export function UserManagement() {
                 </TableHeader>
                 <TableBody>
                   {usersPagination.paginatedItems.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
-                        No users match these filters.
-                      </TableCell>
-                    </TableRow>
+                    loading && users.length === 0
+                      ? <TableBodySkeletonRows rows={6} columns={9} />
+                      : usersError
+                        ? <ListError message={usersError} onRetry={() => void loadUsers()} colSpan={9} />
+                        : <ListEmpty noun="users" colSpan={9} />
                   )}
                   {usersPagination.paginatedItems.map((user) => {
                     const employee = employees.find(
@@ -1896,31 +1895,34 @@ export function UserManagement() {
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
                         <TableCell>
                           {user.isActive ? (
-                            <Badge className="bg-green-100 text-green-800">Active</Badge>
+                            <Badge variant="outline" className={statusBadgeClass('active')}>Active</Badge>
                           ) : (
-                            <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>
+                            <Badge variant="outline" className={statusBadgeClass('inactive')}>Inactive</Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-sm">{formatDate(user.createdAt)}</TableCell>
                         <TableCell className="text-sm">
-                          {user.lastLogin ? format(new Date(user.lastLogin), 'MMM dd, HH:mm') : '-'}
+                          {user.lastLogin ? formatDateTime(user.lastLogin) : '-'}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
+                          <div className="flex gap-1">
                             <Button
-                              variant="outline"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
                               onClick={() => handleOpenDialog(user)}
+                              title="Edit"
                             >
-                              <Edit className="h-3 w-3" />
+                              <Edit className="h-3.5 w-3.5" />
                             </Button>
                             <Button
-                              variant="outline"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
+                              className={`h-7 w-7 ${user.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
                               onClick={() => handleToggleStatus(user.id)}
                               title={user.isActive ? 'Suspend' : 'Reactivate'}
                             >
-                              {user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                              {user.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
                             </Button>
                             {/* V-admin-reset-picker — click the key icon
                                 to open a small chooser. Two paths:
@@ -1931,11 +1933,12 @@ export function UserManagement() {
                             <Popover>
                               <PopoverTrigger asChild>
                                 <Button
-                                  variant="outline"
-                                  size="sm"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
                                   title="Reset password…"
                                 >
-                                  <Key className="h-3 w-3" />
+                                  <Key className="h-3.5 w-3.5" />
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent align="end" className="w-64 p-1">
@@ -1976,11 +1979,13 @@ export function UserManagement() {
                               </PopoverContent>
                             </Popover>
                             <Button
-                              variant="outline"
-                              size="sm"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-red-600 hover:text-red-700"
                               onClick={() => handleDeleteUser(user.id)}
+                              title="Delete"
                             >
-                              <Trash2 className="h-3 w-3 text-red-600" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </TableCell>
@@ -2037,12 +2042,11 @@ export function UserManagement() {
                   <CardContent className="space-y-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-gray-500">Description</Label>
-                      <textarea
-                        value={roleDescriptions[role.key] ?? ''}
-                        onChange={(e) => setRoleDescriptions(prev => ({ ...prev, [role.key]: e.target.value }))}
-                        rows={3}
-                        className="w-full px-3 py-2 border rounded-md text-sm resize-none"
-                      />
+                      {/* Read-only: the roles API has no update endpoint, so an
+                          editable box here looked saved but was lost on reload. */}
+                      <p className="text-sm text-gray-700 min-h-[3.75rem] whitespace-pre-wrap">
+                        {roleDescriptions[role.key]?.trim() || <span className="text-gray-400">—</span>}
+                      </p>
                     </div>
                     <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
                       <span>Access to <strong className="text-gray-900">{grants}</strong> / {permModules.length} modules</span>
@@ -2074,7 +2078,7 @@ export function UserManagement() {
               <div className="text-sm">
                 <p className="font-medium">Need a custom role?</p>
                 <p className="text-xs text-gray-500">
-                  Create a role with its own tailored permission set. Start from an existing role or blank.
+                  Create a role with its own tailored permission set. It starts with full access — narrow it down in the Permissions tab.
                 </p>
               </div>
               <Button variant="outline" onClick={openCustomRoleDialog}>
@@ -2113,8 +2117,8 @@ export function UserManagement() {
                   </CardTitle>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleResetPermissions}>
-                    Reset to Defaults
+                  <Button variant="outline" onClick={() => void handleResetPermissions()}>
+                    {USE_MOCKS ? 'Reset to Defaults' : 'Discard Changes'}
                   </Button>
                   <Button onClick={handleSavePermissions}>
                     <Save className="h-4 w-4 mr-2" />

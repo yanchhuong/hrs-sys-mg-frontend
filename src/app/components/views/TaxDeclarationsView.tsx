@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { FileSpreadsheet, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
+import { RefreshCw, Settings as SettingsIcon } from 'lucide-react';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '../ui/table';
+import { Pagination } from '../common/Pagination';
+import { ListError } from '../common/ListStates';
+import { usePagination } from '../../hooks/usePagination';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { formatMoneyForCurrency } from '../../utils/format';
+import { TONE_CLASS, type Tone } from '../../utils/statusTones';
 import * as declApi from '../../api/agencyTaxDecl';
 import type { TaxDeclStatus, TaxDeclarationDto } from '../../api/agencyTaxDecl';
 import { PageTitleTooltip } from './agency/PageTitleTooltip';
@@ -11,15 +19,24 @@ import { AgencyAccessDialog } from '../common/AgencyAccessDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useAuth } from '../../context/AuthContext';
 
-const STATUS_CLS: Record<TaxDeclStatus, string> = {
-  draft:     'bg-slate-100 text-slate-700 border-slate-200',
-  prepared:  'bg-blue-100 text-blue-700 border-blue-200',
-  reviewed:  'bg-violet-100 text-violet-700 border-violet-200',
-  approved:  'bg-emerald-100 text-emerald-700 border-emerald-200',
-  submitted: 'bg-teal-100 text-teal-700 border-teal-200',
-  accepted:  'bg-lime-100 text-lime-700 border-lime-200',
-  rejected:  'bg-rose-100 text-rose-700 border-rose-200',
+// App-wide status palette (utils/statusTones). "submitted" here means
+// lodged with GDT, so it reads as done (green) like "accepted".
+const STATUS_TONE: Record<TaxDeclStatus, Tone> = {
+  draft:     'neutral',
+  prepared:  'attention',
+  reviewed:  'attention',
+  approved:  'success',
+  submitted: 'success',
+  accepted:  'success',
+  rejected:  'danger',
 };
+
+/** Amount in its own currency — "$1,200.00" / "៛ 4,800,000", as on Invoices. */
+function fmtAmount(n: number | null | undefined, currency: string | null | undefined): string {
+  const cur = currency || 'USD';
+  const num = formatMoneyForCurrency(n, cur);
+  return cur === 'USD' ? `$${num}` : cur === 'KHR' ? `៛ ${num}` : `${cur} ${num}`;
+}
 
 /**
  * v-agency-fe-9 — tenant-side read of the tax declarations the
@@ -33,13 +50,17 @@ export function TaxDeclarationsView() {
   const [rows, setRows] = useState<TaxDeclarationDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { formatDate } = useDateFormat();
+  const pagination = usePagination(rows, 15);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await declApi.tenant.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load declarations');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load declarations');
     } finally {
       setLoading(false);
     }
@@ -49,9 +70,8 @@ export function TaxDeclarationsView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
           Tax Declarations
           <PageTitleTooltip label="About Tax Declarations">
             Read-only view of the tax filings your agency is preparing.
@@ -87,39 +107,66 @@ export function TaxDeclarationsView() {
         <CardContent>
           {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={6} columns={5} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">
               Nothing yet. Your agency's tax declarations will appear here as
               they're drafted.
             </p>
           ) : (
-            <ul className="divide-y">
-              {rows.map(r => (
-                <li key={r.id} className="py-3 px-1 flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-gray-900">{r.obligationName}</span>
-                      <span className="text-xs text-gray-500 tabular-nums">{r.period}</span>
-                      <Badge className={`border ${STATUS_CLS[r.status]} text-[10px] px-1.5 py-0`}>
-                        {r.status}
-                      </Badge>
-                      {r.gdtReferenceNo && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          GDT: {r.gdtReferenceNo}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-3">
-                      <span className="tabular-nums">{r.amountOwed} {r.currency}</span>
-                      {r.preparerName && <span>Prepared by {r.preparerName}</span>}
-                      {r.approverName && <span>Approved by {r.approverName}</span>}
-                      {r.submittedAt && <span>Submitted {new Date(r.submittedAt).toLocaleDateString()}</span>}
-                      {r.acceptedAt && <span>Accepted {new Date(r.acceptedAt).toLocaleDateString()}</span>}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                    <TableRow>
+                      <TableHead>Obligation</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Amount Owed</TableHead>
+                      <TableHead>GDT Ref.</TableHead>
+                      <TableHead>Prepared / Approved</TableHead>
+                      <TableHead>Submitted</TableHead>
+                      <TableHead>Accepted</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagination.paginatedItems.map(r => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-sm font-medium text-gray-900">{r.obligationName}</TableCell>
+                        <TableCell className="text-xs text-gray-600 tabular-nums">{r.period}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={TONE_CLASS[STATUS_TONE[r.status] ?? 'neutral']}>
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-sm">{fmtAmount(r.amountOwed, r.currency)}</TableCell>
+                        <TableCell className="text-xs tabular-nums">{r.gdtReferenceNo || <span className="text-gray-300">—</span>}</TableCell>
+                        <TableCell className="text-xs text-gray-600">
+                          {r.preparerName || r.approverName
+                            ? [r.preparerName, r.approverName].filter(Boolean).join(' / ')
+                            : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs">{r.submittedAt ? formatDate(r.submittedAt) : <span className="text-gray-300">—</span>}</TableCell>
+                        <TableCell className="text-xs">{r.acceptedAt ? formatDate(r.acceptedAt) : <span className="text-gray-300">—</span>}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {rows.length > 15 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    onPageChange={pagination.goToPage}
+                    startIndex={pagination.startIndex}
+                    endIndex={pagination.endIndex}
+                    totalItems={pagination.totalItems}
+                  />
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -6,10 +6,9 @@ import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../ui/alert-dialog';
+import { useConfirm } from '../../context/ConfirmContext';
+import { ListError } from '../common/ListStates';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { Plus, Trash2, Save, RotateCcw, Info, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import * as settingsApi from '../../api/settings';
@@ -57,7 +56,12 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
   );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
+  const confirm = useConfirm();
+  // Whether the saved schedule has actually been read. Until it has (or
+  // when the read fails) the NBC seed rows are NOT the tenant's saved
+  // brackets, so they must not be shown or saved as if they were.
+  const [loaded, setLoaded] = useState<boolean>(USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Test-formula playground at the bottom of the page.
   const [testSalaryUsd, setTestSalaryUsd] = useState<number>(800);
@@ -69,6 +73,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await settingsApi.getPayrollTaxSettings();
       setKhrPerUsd(Number(data.khrPerUsd));
@@ -80,8 +85,9 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
         ratePercent: Number(b.ratePercent),
         excessAmount: Number(b.excessAmount),
       })));
+      setLoaded(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load tax settings');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load tax settings');
     } finally {
       setLoading(false);
     }
@@ -165,11 +171,22 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
     }
   };
 
+  const askReset = async () => {
+    const ok = await confirm({
+      title: 'Reset to NBC defaults?',
+      message: 'This replaces the current brackets with the canonical Cambodian TOS schedule '
+        + '(5 rows, 0–20% bands) and resets the KHR/USD rate to 4,100. Update the rate to the '
+        + 'current NBC mid-month figure afterwards. Your existing bracket rows will be deleted.',
+      confirmLabel: 'Reset',
+      variant: 'destructive',
+    });
+    if (ok) await resetDefaults();
+  };
+
   const resetDefaults = async () => {
     if (USE_MOCKS) {
       setRows(NBC_DEFAULT_BRACKETS.map(b => ({ ...b, key: seedKey() })));
       setKhrPerUsd(4100);
-      setResetOpen(false);
       toast.success('Reset to NBC defaults (mock)');
       return;
     }
@@ -191,7 +208,6 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to reset');
     } finally {
-      setResetOpen(false);
     }
   };
 
@@ -214,11 +230,25 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
   return (
     <div className="space-y-4">
       {!embedded && (
-        <div>
+        <div className="page-header-strip">
           <h1 className="text-3xl font-bold">Tax Brackets</h1>
         </div>
       )}
 
+      {loadError ? (
+        <Card>
+          <CardContent>
+            <ListError message={`Could not load the saved tax brackets — ${loadError}`} onRetry={() => void load()} />
+          </CardContent>
+        </Card>
+      ) : !loaded ? (
+        <Card>
+          <CardContent className="pt-6">
+            <TableRowsSkeleton rows={5} columns={5} />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
       {/* FX rate row + formula reminder. The KHR/USD field is the only piece
           of cross-row state; brackets are evaluated per-row using it. */}
       <Card>
@@ -269,7 +299,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setResetOpen(true)} disabled={!canEdit || saving}>
+              <Button variant="outline" size="sm" onClick={() => void askReset()} disabled={!canEdit || saving}>
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                 Reset to NBC
               </Button>
@@ -440,23 +470,8 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
         </CardContent>
       </Card>
 
-      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset to NBC defaults?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This replaces the current brackets with the canonical Cambodian
-              TOS schedule (5 rows, 0–20% bands) and resets the KHR/USD rate
-              to 4,100. Update the rate to the current NBC mid-month figure
-              afterwards. Your existing bracket rows will be deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={resetDefaults}>Reset</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </>
+      )}
     </div>
   );
 }

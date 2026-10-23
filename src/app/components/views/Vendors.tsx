@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -17,6 +17,8 @@ import {
 } from '../ui/table';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 import { DocAuditLine } from '../common/DocAuditLine';
 import * as vendorsApi from '../../api/vendors';
 import { Plus, Pencil, Trash2, Search, User, Building2, RefreshCw, Upload } from 'lucide-react';
@@ -71,9 +73,11 @@ export function Vendors() {
   const [saving, setSaving] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<vendorsApi.Vendor | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // Server-side pagination would matter at the 5k-row scale; for now
       // we pull a generous page and paginate client-side so the search +
@@ -85,20 +89,29 @@ export function Vendors() {
       });
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load vendors');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load vendors');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [typeFilter]);
+  // Type changes refetch at once; typing in Search refetches after a
+  // short pause (it used to wait for Enter / blur, so the list looked
+  // unfiltered while the box said otherwise).
+  const firstLoad = useRef(true);
+  useEffect(() => {
+    if (firstLoad.current) { firstLoad.current = false; void load(); return; }
+    const t = setTimeout(() => { void load(); }, 300);
+    return () => clearTimeout(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [typeFilter, search]);
 
-  // Debounce-light: search refetch fires on submit / blur rather than
-  // per keystroke. Keeps the UI calm and the network quiet.
   const onSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     void load();
   };
+  const hasFilter = !!search.trim() || typeFilter !== 'all';
+  const clearFilters = () => { setSearch(''); setTypeFilter('all'); };
 
   const filtered = useMemo(() => {
     // Server already filtered by type+q on the last fetch; this is just
@@ -210,40 +223,39 @@ export function Vendors() {
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5">
-              {TYPE_FILTERS.map(f => (
-                <button
-                  key={f.value}
-                  onClick={() => setTypeFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-                    typeFilter === f.value
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onBlur={() => void load()}
-                  placeholder="Search name, phone, TIN…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
+            <form onSubmit={onSearchSubmit} className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, phone, TIN…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </form>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              {TYPE_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>Type : {f.label}</option>
+              ))}
+            </select>
+            {hasFilter && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
           {loading && filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+            <TableRowsSkeleton rows={6} columns={7} />
+          ) : loadError && filtered.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No vendors yet.</p>
+            <ListEmpty noun="vendors" filtered={hasFilter} />
           ) : (
             <>
               {/* v-list-table-invoice-shape — border+scroll wrapper +
@@ -289,17 +301,18 @@ export function Vendors() {
                       <TableCell className="text-right">
                         <div className="inline-flex gap-1">
                           {canEdit && (
-                            <Button size="sm" variant="ghost" className="h-7" onClick={() => openEdit(c)}>
-                              <Pencil className="h-3 w-3 mr-1" /> Edit
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(c)} title="Edit" aria-label="Edit vendor">
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canRemove && (
                             <Button
-                              size="sm" variant="ghost"
-                              className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              size="icon" variant="ghost"
+                              className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => setDeleteTarget(c)}
+                              title="Delete" aria-label="Delete vendor"
                             >
-                              <Trash2 className="h-3 w-3 mr-1" /> Delete
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </div>

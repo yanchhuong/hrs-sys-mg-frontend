@@ -7,17 +7,14 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import { StatCard, STAT_CARD_TONES } from '../common/StatCard';
-import { formatMoney, formatNumber } from '../../utils/format';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../ui/select';
+import { formatMoneyForCurrency, formatNumber } from '../../utils/format';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Clock, DollarSign, Download, FileText, Eye,
-  TrendingUp, Users, Building2, AlertCircle,
+  TrendingUp, Users, Building2, AlertCircle, Search,
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { toast } from 'sonner';
@@ -71,11 +68,37 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Pagination } from '../common/Pagination';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { usePagination } from '../../hooks/usePagination';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 
-const TODAY = new Date('2026-04-20');
+const TODAY = new Date();
+
+/** Money in its own currency — "$1,200.00" / "៛ 4,800,000", as on Invoices. */
+function fmtCur(n: number | null | undefined, currency: string | undefined): string {
+  const cur = currency || 'USD';
+  const v = Number(n ?? 0);
+  const num = formatMoneyForCurrency(Math.abs(v), cur);
+  const body = cur === 'USD' ? `$${num}` : cur === 'KHR' ? `៛ ${num}` : `${cur} ${num}`;
+  return v < 0 ? `− ${body}` : body;
+}
+
+/** Sum a payroll field per currency and render "$1,000.00 + ៛ 400,000"
+ *  so USD and KHR payslips are never added into one number. */
+/** Default report range: one month back to today. */
+const DEFAULT_FROM = format(subMonths(TODAY, 1), 'yyyy-MM-dd');
+const DEFAULT_TO = format(TODAY, 'yyyy-MM-dd');
+
+function fmtPayTotals(rows: PayrollItem[], pick: (p: PayrollItem) => number): string {
+  const by = new Map<string, number>();
+  rows.forEach(p => {
+    const c = p.currency || 'USD';
+    by.set(c, (by.get(c) ?? 0) + (pick(p) || 0));
+  });
+  if (by.size === 0) return fmtCur(0, 'USD');
+  return Array.from(by.entries()).map(([c, v]) => fmtCur(v, c)).join(' + ');
+}
 
 interface DeptLite { id: string; name: string; }
 
@@ -216,7 +239,7 @@ export function Reports({ initialView }: ReportsProps = {}) {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="page-header-strip">
         <h1 className="text-3xl font-bold">{t('page.reports.title')}</h1>
       </div>
 
@@ -324,8 +347,8 @@ function AttendanceReport({
   departments: DeptLite[];
   sharedLoading: boolean;
 }) {
-  const [startDate, setStartDate] = useState(format(subMonths(TODAY, 1), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(TODAY, 'yyyy-MM-dd'));
+  const [startDate, setStartDate] = useState(DEFAULT_FROM);
+  const [endDate, setEndDate] = useState(DEFAULT_TO);
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
@@ -667,6 +690,20 @@ function AttendanceReport({
       setEndDate(format(TODAY, 'yyyy-MM-dd'));
     }
   };
+  // Which quick range (if any) the current From/To matches — drives the
+  // "Range" select so it reads back the preset instead of a stale label.
+  const activePreset = (() => {
+    const today = format(TODAY, 'yyyy-MM-dd');
+    const back = (d: number) => { const x = new Date(TODAY); x.setDate(x.getDate() - d); return format(x, 'yyyy-MM-dd'); };
+    const prev = subMonths(TODAY, 1);
+    if (startDate === format(startOfMonth(TODAY), 'yyyy-MM-dd') && endDate === today) return 'thisMonth';
+    if (startDate === format(startOfMonth(prev), 'yyyy-MM-dd') && endDate === format(endOfMonth(prev), 'yyyy-MM-dd')) return 'lastMonth';
+    if (startDate === back(7) && endDate === today) return 'last7';
+    if (startDate === back(30) && endDate === today) return 'last30';
+    return '';
+  })();
+  const attFiltersSet = departmentFilter !== 'all' || statusFilter !== 'all'
+    || startDate !== DEFAULT_FROM || endDate !== DEFAULT_TO;
 
   return (
     <>
@@ -676,7 +713,7 @@ function AttendanceReport({
           table renders, so the numbers stay in lockstep. Surfaced
           directly under the page title so HR sees the headline numbers
           before drilling in with filters. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
+      <div className="stat-strip">
         <KpiCard
           label="Perfect Attendance"
           subtitle="No late · No absent"
@@ -725,50 +762,59 @@ function AttendanceReport({
           and the page H1 already frame the section. */}
       <Card>
         <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs text-gray-500">From</Label>
-            <DateInput
-              value={startDate}
-              onChange={setStartDate}
-              className="h-9 w-36 text-sm"
-              title="Start date"
-            />
-            <Label className="text-xs text-gray-500">To</Label>
-            <DateInput
-              value={endDate}
-              onChange={setEndDate}
-              className="h-9 w-36 text-sm"
-              title="End date"
-            />
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map(d => (
-                  // value matches Employee.department (id in live, name in mock)
-                  <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-36 text-sm" title="Status"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="present">Present</SelectItem>
-                <SelectItem value="late">Late</SelectItem>
-                <SelectItem value="early_leave">Early Leave</SelectItem>
-                <SelectItem value="leave">On Leave</SelectItem>
-                <SelectItem value="absent">Absent</SelectItem>
-                <SelectItem value="no_checkin">No Check-in</SelectItem>
-                <SelectItem value="no_checkout">No Check-out</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="ml-auto flex flex-wrap items-center gap-1">
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('thisMonth')}>This Month</Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('lastMonth')}>Last Month</Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('last7')}>7d</Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setPreset('last30')}>30d</Button>
-            </div>
+          <div className="filter-strip">
+            <select
+              value={departmentFilter}
+              onChange={e => setDepartmentFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by department"
+            >
+              <option value="all">Department : All</option>
+              {departments.map(d => (
+                // value matches Employee.department (id in live, name in mock)
+                <option key={d.id} value={USE_MOCKS ? d.name : d.id}>Department : {d.name}</option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              <option value="all">Status : All</option>
+              <option value="present">Status : Present</option>
+              <option value="late">Status : Late</option>
+              <option value="early_leave">Status : Early Leave</option>
+              <option value="leave">Status : On Leave</option>
+              <option value="absent">Status : Absent</option>
+              <option value="no_checkin">Status : No Check-in</option>
+              <option value="no_checkout">Status : No Check-out</option>
+            </select>
+            <select
+              value={activePreset}
+              onChange={e => { if (e.target.value) setPreset(e.target.value as 'thisMonth' | 'lastMonth' | 'last7' | 'last30'); }}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Quick date range"
+            >
+              <option value="">Range : Custom</option>
+              <option value="thisMonth">Range : This Month</option>
+              <option value="lastMonth">Range : Last Month</option>
+              <option value="last7">Range : Last 7 days</option>
+              <option value="last30">Range : Last 30 days</option>
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={startDate} onChange={v => setStartDate(v ?? DEFAULT_FROM)} max={endDate || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={endDate} onChange={v => setEndDate(v ?? DEFAULT_TO)} min={startDate || undefined} /></div>
+            {attFiltersSet && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setDepartmentFilter('all'); setStatusFilter('all'); setStartDate(DEFAULT_FROM); setEndDate(DEFAULT_TO); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -907,12 +953,13 @@ function PayrollReport({
   const deptName = useMemo(() => makeDeptName(departments), [departments]);
 
   const byDept = useMemo(() => {
-    const map = new Map<string, { count: number; earn: number; ded: number; net: number }>();
+    const map = new Map<string, { count: number; earn: number; ded: number; net: number; rows: PayrollItem[] }>();
     filtered.forEach(p => {
       const empDept = allEmployees.find(e => e.id === p.employeeId)?.department || 'Unknown';
       const display = deptName(empDept);
-      const v = map.get(display) || { count: 0, earn: 0, ded: 0, net: 0 };
+      const v = map.get(display) || { count: 0, earn: 0, ded: 0, net: 0, rows: [] as PayrollItem[] };
       v.count++;
+      v.rows.push(p);
       v.earn += p.totalEarnings;
       v.ded += p.deductions;
       v.net += p.totalPay;
@@ -939,37 +986,49 @@ function PayrollReport({
     <>
       {/* Summary Stats — surfaced before the filter bar so the headline
           numbers land first, matching the Attendance and Compliance tabs. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
+      <div className="stat-strip">
         <StatCard label="Records" value={stats.count} icon={FileText} tone="blue" />
-        <StatCard label="Total Earnings" value={`$${formatMoney(stats.earn)}`} icon={TrendingUp} tone="green" />
-        <StatCard label="Total Deductions" value={`$${formatMoney(stats.ded)}`} icon={DollarSign} tone="red" />
-        <StatCard label="Net Salary" value={`$${formatMoney(stats.net)}`} icon={DollarSign} tone="purple" />
+        <StatCard label="Total Earnings" value={fmtPayTotals(filtered, p => p.totalEarnings)} icon={TrendingUp} tone="green" />
+        <StatCard label="Total Deductions" value={fmtPayTotals(filtered, p => p.deductions)} icon={DollarSign} tone="red" />
+        <StatCard label="Net Salary" value={fmtPayTotals(filtered, p => p.totalPay)} icon={DollarSign} tone="purple" />
       </div>
 
       {/* Filter bar — same compact single-row treatment as the
           Attendance tab. Only two selects here (Month + Department). */}
       <Card>
         <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs text-gray-500">Month</Label>
-            <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="h-9 w-44 text-sm" title="Month"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Months</SelectItem>
-                {availableMonths.map(m => (
-                  <SelectItem key={m} value={m}>{format(parseISO(m + '-01'), 'MMMM yyyy')}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map(d => (
-                  <SelectItem key={d.id} value={USE_MOCKS ? d.name : d.id}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="filter-strip">
+            <select
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by month"
+            >
+              <option value="all">Month : All</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>Month : {format(parseISO(m + '-01'), 'MMMM yyyy')}</option>
+              ))}
+            </select>
+            <select
+              value={departmentFilter}
+              onChange={e => setDepartmentFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by department"
+            >
+              <option value="all">Department : All</option>
+              {departments.map(d => (
+                <option key={d.id} value={USE_MOCKS ? d.name : d.id}>Department : {d.name}</option>
+              ))}
+            </select>
+            {(monthFilter !== 'all' || departmentFilter !== 'all') && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setMonthFilter('all'); setDepartmentFilter('all'); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1011,13 +1070,13 @@ function PayrollReport({
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(v.count)}</TableCell>
                     <TableCell className="text-right text-green-700">
-                      ${formatMoney(v.earn)}
+                      {fmtPayTotals(v.rows, p => p.totalEarnings)}
                     </TableCell>
                     <TableCell className="text-right text-red-700">
-                      ${formatMoney(v.ded)}
+                      {fmtPayTotals(v.rows, p => p.deductions)}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
-                      ${formatMoney(v.net)}
+                      {fmtPayTotals(v.rows, p => p.totalPay)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1131,6 +1190,11 @@ function AttendanceDetailTable({
     | 'employee' | 'department' | 'work' | 'ot' | 'late'
     | 'leave' | 'totalAL' | 'remaining' | 'attendance';
   const [sortKey, setSortKey] = useState<SortKey>('attendance');
+  const SORT_LABEL: Record<SortKey, string> = {
+    employee: 'employee', department: 'department', work: 'hours worked', ot: 'OT',
+    late: 'late', leave: 'leave used', totalAL: 'annual leave', remaining: 'remaining leave',
+    attendance: 'attendance',
+  };
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const toggleSort = (key: SortKey) => {
@@ -1225,7 +1289,7 @@ function AttendanceDetailTable({
               </button>
             )}
             <span className="text-xs font-normal text-gray-500">
-              Sorted by attendance — best first
+              Sorted by {SORT_LABEL[sortKey]} — {sortDir === 'asc' ? 'ascending' : 'descending'}
             </span>
           </CardTitle>
           {onExport && (
@@ -1243,9 +1307,11 @@ function AttendanceDetailTable({
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
+          loading ? <TableRowsSkeleton rows={6} columns={6} /> : (
           <p className="text-sm text-gray-400 text-center py-6">
-            {loading ? 'Loading…' : 'No active employees in the current scope'}
+            No active employees in the current scope
           </p>
+          )
         ) : sorted.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">
             No employees match the current filter — <button onClick={onClearFilter} className="text-blue-600 hover:underline">clear filter</button> to show all.
@@ -1424,23 +1490,11 @@ function AttendanceEmployeeDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Days</p>
-              <p className="text-lg font-semibold">{myRecords.length}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Leave</p>
-              <p className="text-lg font-semibold text-blue-600">{stats.byStatus['leave'] ?? 0}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Late</p>
-              <p className="text-lg font-semibold text-amber-600">{stats.byStatus['late'] ?? 0}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Absences</p>
-              <p className="text-lg font-semibold text-red-600">{stats.byStatus['absent'] ?? 0}</p>
-            </div>
+          <div className="stat-strip">
+            <StatCard label="Total Days" value={myRecords.length} icon={FileText} tone="purple" />
+            <StatCard label="Total Leave" value={stats.byStatus['leave'] ?? 0} icon={Users} tone="blue" />
+            <StatCard label="Total Late" value={stats.byStatus['late'] ?? 0} icon={Clock} tone="amber" />
+            <StatCard label="Total Absences" value={stats.byStatus['absent'] ?? 0} icon={AlertCircle} tone="red" />
           </div>
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
@@ -1543,7 +1597,6 @@ function PayrollDetailTable({
   };
   const dedAmount = (p: PayrollItem, code: string): number => p.deductionsBreakdown?.[code] ?? 0;
 
-  const fmt = (n: number) => formatMoney(n);
 
   return (
     <Card>
@@ -1570,9 +1623,11 @@ function PayrollDetailTable({
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
+          loading ? <TableRowsSkeleton rows={6} columns={8} /> : (
           <p className="text-sm text-gray-400 text-center py-6">
-            {loading ? 'Loading…' : 'No payroll records in the selected range'}
+            No payroll records in the selected range
           </p>
+          )
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -1620,26 +1675,26 @@ function PayrollDetailTable({
                         {useDynamic ? (
                           <>
                             {earningCols.map(c => (
-                              <TableCell key={c.id} className="text-right text-xs">${fmt(earnAmount(p, c.code))}</TableCell>
+                              <TableCell key={c.id} className="text-right text-xs">{fmtCur(earnAmount(p, c.code), p.currency)}</TableCell>
                             ))}
-                            <TableCell className="text-right text-xs text-green-700 font-medium">${fmt(p.totalEarnings)}</TableCell>
+                            <TableCell className="text-right text-xs text-green-700 font-medium">{fmtCur(p.totalEarnings, p.currency)}</TableCell>
                             {deductionCols.map(c => (
-                              <TableCell key={c.id} className="text-right text-xs">${fmt(dedAmount(p, c.code))}</TableCell>
+                              <TableCell key={c.id} className="text-right text-xs">{fmtCur(dedAmount(p, c.code), p.currency)}</TableCell>
                             ))}
-                            <TableCell className="text-right text-xs text-red-700 font-medium">${fmt(p.deductions)}</TableCell>
+                            <TableCell className="text-right text-xs text-red-700 font-medium">{fmtCur(p.deductions, p.currency)}</TableCell>
                           </>
                         ) : (
                           <>
-                            <TableCell className="text-right text-xs">${fmt(p.baseSalary)}</TableCell>
-                            <TableCell className="text-right text-xs">${fmt(p.otPay)}</TableCell>
-                            <TableCell className="text-right text-xs">${fmt(allowance)}</TableCell>
-                            <TableCell className="text-right text-xs text-green-700">${fmt(p.totalEarnings)}</TableCell>
-                            <TableCell className="text-right text-xs">${fmt(p.taxOnSalary ?? 0)}</TableCell>
-                            <TableCell className="text-right text-xs">${fmt(p.nssfPension ?? 0)}</TableCell>
-                            <TableCell className="text-right text-xs">${fmt(p.otherDeductions ?? 0)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(p.baseSalary, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(p.otPay, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(allowance, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs text-green-700">{fmtCur(p.totalEarnings, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(p.taxOnSalary ?? 0, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(p.nssfPension ?? 0, p.currency)}</TableCell>
+                            <TableCell className="text-right text-xs">{fmtCur(p.otherDeductions ?? 0, p.currency)}</TableCell>
                           </>
                         )}
-                        <TableCell className="text-right text-sm font-semibold">${fmt(p.totalPay)}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{fmtCur(p.totalPay, p.currency)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -1692,12 +1747,6 @@ function PayrollDeptDialog({
     });
   }, [department, records, empById, resolveDept]);
 
-  const totals = useMemo(() => {
-    let earn = 0, ded = 0, net = 0;
-    myRecords.forEach(p => { earn += p.totalEarnings; ded += p.deductions; net += p.totalPay; });
-    return { earn, ded, net };
-  }, [myRecords]);
-
   return (
     <Dialog open={!!department} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl">
@@ -1708,25 +1757,10 @@ function PayrollDeptDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Earnings</p>
-              <p className="text-lg font-semibold text-green-700">
-                ${formatMoney(totals.earn)}
-              </p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Total Deductions</p>
-              <p className="text-lg font-semibold text-red-700">
-                ${formatMoney(totals.ded)}
-              </p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-md">
-              <p className="text-xs text-gray-500">Net Salary</p>
-              <p className="text-lg font-semibold">
-                ${formatMoney(totals.net)}
-              </p>
-            </div>
+          <div className="stat-strip">
+            <StatCard label="Total Earnings" value={fmtPayTotals(myRecords, p => p.totalEarnings)} icon={TrendingUp} tone="green" />
+            <StatCard label="Total Deductions" value={fmtPayTotals(myRecords, p => p.deductions)} icon={DollarSign} tone="red" />
+            <StatCard label="Net Salary" value={fmtPayTotals(myRecords, p => p.totalPay)} icon={DollarSign} tone="purple" />
           </div>
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
@@ -1757,13 +1791,13 @@ function PayrollDeptDialog({
                       </TableCell>
                       <TableCell className="text-xs">{p.month}</TableCell>
                       <TableCell className="text-right text-xs text-green-700">
-                        ${formatMoney(p.totalEarnings)}
+                        {fmtCur(p.totalEarnings, p.currency)}
                       </TableCell>
                       <TableCell className="text-right text-xs text-red-700">
-                        ${formatMoney(p.deductions)}
+                        {fmtCur(p.deductions, p.currency)}
                       </TableCell>
                       <TableCell className="text-right text-sm font-semibold">
-                        ${formatMoney(p.totalPay)}
+                        {fmtCur(p.totalPay, p.currency)}
                       </TableCell>
                     </TableRow>
                   );
@@ -1785,8 +1819,8 @@ function PayrollDeptDialog({
 // observation pattern (e.g. user 6151: 98/102 single-scan days).
 // ---------------------------------------------------------------------------
 function ComplianceReport({ departments }: { departments: DeptLite[] }) {
-  const [startDate, setStartDate] = useState(format(subMonths(TODAY, 1), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(TODAY, 'yyyy-MM-dd'));
+  const [startDate, setStartDate] = useState(DEFAULT_FROM);
+  const [endDate, setEndDate] = useState(DEFAULT_TO);
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [rows, setRows] = useState<reportsApi.ComplianceRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1848,7 +1882,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
     <>
       {/* Aggregate stats — surfaced before the filter bar so the
           headline numbers land first, matching the other report tabs. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
+      <div className="stat-strip">
         <StatCard label="Overall Compliance" value={`${totals.overallPct}%`} icon={TrendingUp} tone={totals.overallPct >= 90 ? 'green' : totals.overallPct >= 60 ? 'orange' : 'red'} />
         <StatCard label="Complete Days" value={totals.complete} icon={FileText} tone="green" />
         <StatCard label="Single-Scan Days" value={totals.single} icon={AlertCircle} tone="orange" />
@@ -1858,36 +1892,40 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
       {/* Filter bar — single-row compact layout. */}
       <Card>
         <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Label className="text-xs text-gray-500">From</Label>
-            <DateInput
-              value={startDate}
-              onChange={setStartDate}
-              className="h-9 w-36 text-sm"
-              title="Start date"
-            />
-            <Label className="text-xs text-gray-500">To</Label>
-            <DateInput
-              value={endDate}
-              onChange={setEndDate}
-              className="h-9 w-36 text-sm"
-              title="End date"
-            />
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="h-9 w-44 text-sm" title="Department"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map(d => (
-                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Name, ID, or department"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-8 w-56 text-sm ml-auto"
-            />
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Name, ID, or department"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <select
+              value={departmentFilter}
+              onChange={e => setDepartmentFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by department"
+            >
+              <option value="all">Department : All</option>
+              {departments.map(d => (
+                <option key={d.id} value={d.id}>Department : {d.name}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={startDate} onChange={v => setStartDate(v ?? DEFAULT_FROM)} max={endDate || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={endDate} onChange={v => setEndDate(v ?? DEFAULT_TO)} min={startDate || undefined} /></div>
+            {(search || departmentFilter !== 'all' || startDate !== DEFAULT_FROM || endDate !== DEFAULT_TO) && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setDepartmentFilter('all'); setStartDate(DEFAULT_FROM); setEndDate(DEFAULT_TO); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1903,7 +1941,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">Loading…</p>
+            <TableRowsSkeleton rows={6} columns={5} />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">No employees in the selected scope</p>
           ) : (
@@ -1981,28 +2019,16 @@ function KpiCard({
   onClick: () => void;
 }) {
   const t = TONE_MAP[tone];
+  // The shared StatCard, wrapped in a button so the tile still toggles
+  // the Detailed Records filter; the ring marks the active filter.
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`text-left transition w-full ${active ? `ring-2 ${t.ring} rounded-lg` : ''}`}
+      title={active ? 'Click again to clear filter' : undefined}
+      className={`text-left transition w-full rounded-xl [&>*]:h-full hover:shadow-md ${active ? `ring-2 ${t.ring}` : ''}`}
     >
-      <Card className="hover:shadow-md transition-shadow">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className={`p-2 rounded-lg ${t.bg}`}>
-              <Icon className={`h-4 w-4 ${t.text}`} />
-            </div>
-            <div className={`flex items-baseline gap-1 ${t.text}`}>
-              <span className="text-2xl font-bold">{count}</span>
-              <span className="text-sm text-gray-400">/ {total}</span>
-            </div>
-          </div>
-          <p className="text-xs font-medium text-gray-700">{label}</p>
-          {subtitle && <p className="text-[10px] text-gray-500">{subtitle}</p>}
-          {active && <p className="text-[10px] text-gray-500 mt-1 italic">Click again to clear filter</p>}
-        </CardContent>
-      </Card>
+      <StatCard label={label} value={`${count} / ${total}`} hint={subtitle} icon={Icon} tone={tone} />
     </button>
   );
 }

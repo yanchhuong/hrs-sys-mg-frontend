@@ -5,6 +5,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { DateInput } from '../common/DateInput';
 import {
   ArrowLeft, ArrowRight, Check, FileText, Send, Sparkles, Loader2,
   UserRound, LayoutGrid, Target, Info,
@@ -601,7 +602,7 @@ export function RequirementSurveyForm({ onBack }: Props) {
                     </Select>
                   </Field>
                   <Field label="Expected implementation">
-                    <Input type="date" value={expectedImplDate} onChange={e => setExpectedDate(e.target.value)} />
+                    <DateInput value={expectedImplDate || null} onChange={v => setExpectedDate(v ?? '')} clearable className="w-full" />
                   </Field>
                 </div>
 

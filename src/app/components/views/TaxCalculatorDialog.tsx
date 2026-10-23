@@ -14,6 +14,7 @@ import {
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Card, CardContent } from '../ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
@@ -75,6 +76,9 @@ function money(n: number, locale: 'usd' | 'khr' = 'usd'): string {
  *                       maritalStatus so a widowed / divorced single
  *                       parent with custody keeps their children
  *                       deduction without a phantom spouse line. */
+const MONTH_OPTIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  .map((label, i) => ({ value: String(i + 1).padStart(2, '0'), label: `${String(i + 1).padStart(2, '0')} — ${label}` }));
+
 function dependentsFor(e: Employee): number {
   if (!e.decouple) return 0;
   const spouse = e.claimSpouse ? 1 : 0;
@@ -142,6 +146,14 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
   const now = new Date();
   const [month, setMonth] = useState<string>(String(now.getMonth() + 1).padStart(2, '0'));
   const [year, setYear] = useState<string>(String(now.getFullYear()));
+  // Picker range: five years back to next year, plus whatever is selected.
+  const yearOptions = useMemo(() => {
+    const cur = new Date().getFullYear();
+    const ys = new Set<string>();
+    for (let y = cur + 1; y >= cur - 5; y--) ys.add(String(y));
+    if (year) ys.add(year);
+    return Array.from(ys).sort((a, b) => b.localeCompare(a));
+  }, [year]);
   /** Editable FX-rate override. Blank = use the configured tenant rate
    *  from {@link Props#taxSettings}. Lets HR run "what if NBC publishes
    *  4,050 next month?" scenarios without touching Settings → Tax
@@ -373,23 +385,25 @@ export function TaxCalculatorDialog({ open, onOpenChange, employees, taxSettings
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label>Month</Label>
-              <Input
-                inputMode="numeric"
-                maxLength={2}
-                placeholder="MM"
-                value={month}
-                onChange={e => setMonth(e.target.value.replace(/\D/g, '').slice(0, 2))}
-              />
+              <Select value={month} onValueChange={setMonth}>
+                <SelectTrigger><SelectValue placeholder="MM" /></SelectTrigger>
+                <SelectContent>
+                  {MONTH_OPTIONS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label>Year</Label>
-              <Input
-                inputMode="numeric"
-                maxLength={4}
-                placeholder="YYYY"
-                value={year}
-                onChange={e => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              />
+              <Select value={year} onValueChange={setYear}>
+                <SelectTrigger><SelectValue placeholder="YYYY" /></SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => (
+                    <SelectItem key={y} value={y}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="flex items-center gap-2">
@@ -461,12 +475,13 @@ taxKhr     = (taxableKhr × ratePercent ÷ 100) − excessAmount
 taxUsd     = taxKhr ÷ khrPerUsd`}
               </p>
               <p className="text-[11px] text-gray-500">
-                Gross used = Basic Salary + Position Allowance + Evaluation Allowance.
-                OT / bonus / other variable earnings differ by month and aren't in this preview;
+                Gross used = Basic Salary + Position Allowance + Evaluation Allowance
+                + approved OT for the month (workday rate, 1.5×) + bonus for the month.
+                Weekend / holiday OT rates and other variable earnings aren't in this preview;
                 the payroll batch auto-fill uses the full earnings map.
               </p>
               <p className="text-[11px] text-gray-500">
-                <strong>dependents</strong> = (1 if married + N children) when the employee's{' '}
+                <strong>dependents</strong> = (1 if Claim Spouse is Yes + N children) when the employee's{' '}
                 <em>Claim Dependents (TOS)</em> flag is <strong>Yes</strong>, else <strong>0</strong>.
                 See the <Info className="h-3 w-3 inline -mt-0.5 text-blue-500" /> beside the Decouple column for the full rule.
               </p>
